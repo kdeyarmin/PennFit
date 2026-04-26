@@ -13,6 +13,8 @@ import type { MaskEntryType } from "./maskEntryType";
 export interface MaskEntry {
   id: string;
   name: string;
+  /** Penn Home Medical Supply SKU / model number for ordering */
+  modelNumber: string;
   manufacturer: string;
   type: MaskEntryType;
   /** Marketing-style description of the mask */

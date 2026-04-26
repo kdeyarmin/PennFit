@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCcw, Info, CheckCircle2, ChevronRight, AlertCircle, Weight, Activity, Wind } from "lucide-react";
+import { RefreshCcw, Info, CheckCircle2, ChevronRight, AlertCircle, Weight, Activity, Wind, Tag, Sparkles } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 
@@ -114,12 +114,31 @@ export function Results() {
                 </div>
 
                 <div className="w-full md:w-2/3 p-6 flex flex-col">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
+                  <div className="flex justify-between items-start mb-4 gap-4">
+                    <div className="min-w-0">
                       {idx === 0 && <span className="text-xs font-bold uppercase tracking-wider text-primary mb-1 block">Best Match</span>}
                       <CardTitle className="text-2xl mb-1">{mask.name}</CardTitle>
-                      <p className="text-sm text-muted-foreground">Match confidence: {Math.round(mask.confidence * 100)}%</p>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5" />
+                          Model{" "}
+                          <code className="font-mono font-semibold text-foreground bg-muted px-1.5 py-0.5 rounded text-xs">
+                            {mask.modelNumber}
+                          </code>
+                        </span>
+                        <span>Match confidence: {Math.round(mask.confidence * 100)}%</span>
+                      </div>
                     </div>
+                  </div>
+
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-primary mb-1.5 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Why this fits you
+                    </h4>
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {mask.summary}
+                    </p>
                   </div>
 
                   {details?.description && (

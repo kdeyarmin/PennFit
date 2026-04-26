@@ -49,9 +49,11 @@ export interface MaskTypeWeights {
 export interface MaskRecommendation {
   maskId: string;
   name: string;
+  modelNumber: string;
   manufacturer: string;
   type: MaskType;
   confidence: number;
+  summary: string;
   reasoning: string[];
   features: string[];
   contraindications: string[];
@@ -308,6 +310,93 @@ function generateReasoning(
 }
 
 /**
+ * Generate a personalized one-sentence summary tying the patient's specific
+ * measurements and stated needs to the chosen mask. This is what the customer
+ * sees first — it should sound human, not clinical.
+ */
+function generateSummary(
+  mask: MaskEntry,
+  measurements: FacialMeasurements,
+  answers: QuestionnaireAnswers,
+): string {
+  // Build a profile of the patient's most relevant needs, but only include
+  // needs that are CONGRUENT with the recommended mask type — never claim a
+  // user "prefers minimal coverage" while we're handing them a full-face mask.
+  const needs: string[] = [];
+  if (answers.mouthBreather && (mask.type === "fullFace" || mask.type === "hybrid")) {
+    needs.push("breathe through your mouth at night");
+  }
+  if (answers.claustrophobic && (mask.type === "nasalPillow" || mask.type === "nasal")) {
+    needs.push("prefer minimal facial coverage");
+  }
+  if (answers.sideOrStomachSleeper) needs.push("sleep on your side or stomach");
+  if (answers.heavyFacialHair && (mask.type === "nasalPillow" || mask.type === "hybrid")) {
+    needs.push("have facial hair");
+  }
+  if (answers.wearsGlasses) needs.push("wear glasses");
+  if (answers.frequentCongestion && (mask.type === "fullFace" || mask.type === "hybrid")) {
+    needs.push("often have nasal congestion");
+  }
+  if (answers.sensitiveSkin) needs.push("have sensitive skin");
+  if (answers.siliconeSensitivity && !mask.cushionMaterial.toLowerCase().includes("silicone")) {
+    needs.push("are sensitive to silicone");
+  }
+  if (answers.mobilityLimitations) needs.push("need easy on/off");
+
+  const needsClause =
+    needs.length === 0
+      ? "you primarily need a comfortable nasal-breathing seal"
+      : needs.length === 1
+        ? `you ${needs[0]}`
+        : needs.length === 2
+          ? `you ${needs[0]} and ${needs[1]}`
+          : `you ${needs.slice(0, -1).join(", ")}, and ${needs[needs.length - 1]}`;
+
+  // Highlight the mask's most relevant matching feature
+  let matchClause = "";
+  if (mask.type === "fullFace") {
+    matchClause = "covers both your nose and mouth for stable airflow";
+  } else if (mask.type === "nasal") {
+    matchClause = "seals comfortably over the nose with a lower profile than full-face";
+  } else if (mask.type === "nasalPillow") {
+    matchClause = "uses minimal-contact nasal pillows that stay clear of your face";
+  } else if (mask.type === "hybrid") {
+    matchClause = "combines a top-of-head hose with under-nose coverage for freedom of movement";
+  }
+
+  // Add ONE feature-specific tie-in that actually addresses a stated need
+  const featureLower = mask.features.map((f) => f.toLowerCase());
+  if (answers.mobilityLimitations && featureLower.some((f) => f.includes("magnetic"))) {
+    matchClause += ", and the magnetic clips make it easy to put on and take off";
+  } else if (answers.wearsGlasses && featureLower.some((f) => f.includes("glass") || f.includes("top-of-head") || f.includes("open"))) {
+    matchClause += ", and it stays clear of your line of sight so glasses fit comfortably";
+  } else if (answers.sensitiveSkin && (mask.cushionMaterial.toLowerCase().includes("foam") || mask.cushionMaterial.toLowerCase().includes("gel"))) {
+    matchClause += `, and the ${mask.cushionMaterial.toLowerCase()} cushion is gentler on sensitive skin`;
+  } else if (answers.sideOrStomachSleeper && (mask.hoseConnection === "top" || featureLower.some((f) => f.includes("low profile") || f.includes("compact") || f.includes("minimal")))) {
+    matchClause += mask.hoseConnection === "top"
+      ? ", and the top-of-head hose stays out of the way when you change positions"
+      : ", and the low-profile design holds its seal when you move";
+  }
+
+  // Truth-preserving measurement tie-in: only claim a "fits squarely within"
+  // when the patient's nose width is actually inside the mask's range.
+  // Otherwise use neutral wording about the closest available size range.
+  const noseW = measurements.noseWidth;
+  const min = mask.fitRanges.noseWidthMin;
+  const max = mask.fitRanges.noseWidthMax;
+  let measureClause: string;
+  if (noseW >= min && noseW <= max) {
+    measureClause = `your ${noseW.toFixed(0)} mm nose width falls within the ${min}–${max} mm range of available cushion sizes`;
+  } else {
+    // Out of range — be honest about it and recommend professional sizing
+    const direction = noseW < min ? "narrower than" : "wider than";
+    measureClause = `your ${noseW.toFixed(0)} mm nose width is ${direction} this mask's typical ${min}–${max} mm range, so a sizing fitting at Penn Home Medical Supply is recommended`;
+  }
+
+  return `Because ${needsClause}, the ${mask.manufacturer} ${mask.name} (model ${mask.modelNumber}) ${matchClause} — and ${measureClause}.`;
+}
+
+/**
  * Check if a mask is contraindicated for this patient.
  * Returns array of triggered contraindication strings, empty if none.
  */
@@ -361,13 +450,16 @@ export function recommend(
     const rawScore = (typeScore * 0.60 + fitScore * 0.40) * contraMultiplier;
 
     const reasoning = generateReasoning(mask, measurements, answers, typeWeights);
+    const summary = generateSummary(mask, measurements, answers);
 
     const recommendation: MaskRecommendation = {
       maskId: mask.id,
       name: mask.name,
+      modelNumber: mask.modelNumber,
       manufacturer: mask.manufacturer,
       type: mask.type,
       confidence: Math.min(1, Math.max(0, rawScore)),
+      summary,
       reasoning,
       features: mask.features,
       contraindications: mask.contraindications,

@@ -33,6 +33,7 @@ export interface FitRanges {
 export interface MaskEntry {
   id: string;
   name: string;
+  modelNumber: string;
   manufacturer: string;
   type: MaskType;
   description: string;
@@ -56,6 +57,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-f20",
     name: "AirFit F20",
+    modelNumber: "PHM-RM-F20",
     manufacturer: "ResMed",
     type: "fullFace",
     description:
@@ -82,6 +84,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-f30",
     name: "AirFit F30",
+    modelNumber: "PHM-RM-F30",
     manufacturer: "ResMed",
     type: "fullFace",
     description:
@@ -108,6 +111,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "philips-dreamwear-ff",
     name: "DreamWear Full Face",
+    modelNumber: "PHM-PR-DWFF",
     manufacturer: "Philips Respironics",
     type: "fullFace",
     description:
@@ -134,6 +138,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "fisher-paykel-vitera",
     name: "Vitera Full Face",
+    modelNumber: "PHM-FP-VTR",
     manufacturer: "Fisher & Paykel",
     type: "fullFace",
     description:
@@ -160,6 +165,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-f40",
     name: "AirFit F40",
+    modelNumber: "PHM-RM-F40",
     manufacturer: "ResMed",
     type: "fullFace",
     description:
@@ -188,6 +194,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-n20",
     name: "AirFit N20",
+    modelNumber: "PHM-RM-N20",
     manufacturer: "ResMed",
     type: "nasal",
     description:
@@ -214,6 +221,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-n30",
     name: "AirFit N30",
+    modelNumber: "PHM-RM-N30",
     manufacturer: "ResMed",
     type: "nasal",
     description:
@@ -240,6 +248,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "philips-dreamwear-nasal",
     name: "DreamWear Nasal",
+    modelNumber: "PHM-PR-DWN",
     manufacturer: "Philips Respironics",
     type: "nasal",
     description:
@@ -266,6 +275,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "fisher-paykel-eson2",
     name: "Eson 2 Nasal",
+    modelNumber: "PHM-FP-ESN2",
     manufacturer: "Fisher & Paykel",
     type: "nasal",
     description:
@@ -292,6 +302,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airtouch-n20",
     name: "AirTouch N20",
+    modelNumber: "PHM-RM-AT-N20",
     manufacturer: "ResMed",
     type: "nasal",
     description:
@@ -318,6 +329,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-mirage-fx",
     name: "Mirage FX Nasal",
+    modelNumber: "PHM-RM-MFX",
     manufacturer: "ResMed",
     type: "nasal",
     description:
@@ -346,6 +358,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-p10",
     name: "AirFit P10",
+    modelNumber: "PHM-RM-P10",
     manufacturer: "ResMed",
     type: "nasalPillow",
     description:
@@ -372,6 +385,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-p10-for-her",
     name: "AirFit P10 For Her",
+    modelNumber: "PHM-RM-P10H",
     manufacturer: "ResMed",
     type: "nasalPillow",
     description:
@@ -398,6 +412,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "fisher-paykel-brevida",
     name: "Brevida Nasal Pillow",
+    modelNumber: "PHM-FP-BRV",
     manufacturer: "Fisher & Paykel",
     type: "nasalPillow",
     description:
@@ -424,6 +439,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "philips-dreamwear-np",
     name: "DreamWear Nasal Pillow",
+    modelNumber: "PHM-PR-DWP",
     manufacturer: "Philips Respironics",
     type: "nasalPillow",
     description:
@@ -450,6 +466,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "bleep-dreamport",
     name: "DreamPort Solution",
+    modelNumber: "PHM-BL-DPS",
     manufacturer: "Bleep Sleep",
     type: "nasalPillow",
     description:
@@ -478,6 +495,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "resmed-airfit-f30i",
     name: "AirFit F30i",
+    modelNumber: "PHM-RM-F30i",
     manufacturer: "ResMed",
     type: "hybrid",
     description:
@@ -504,6 +522,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "philips-dreamwear-ff-gel",
     name: "DreamWear Full Face Gel",
+    modelNumber: "PHM-PR-DWFF-G",
     manufacturer: "Philips Respironics",
     type: "hybrid",
     description:
@@ -530,6 +549,7 @@ export const maskCatalog: MaskEntry[] = [
   {
     id: "philips-amara-view",
     name: "Amara View Full Face",
+    modelNumber: "PHM-PR-AMV",
     manufacturer: "Philips Respironics",
     type: "fullFace",
     description:

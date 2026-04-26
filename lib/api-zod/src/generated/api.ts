@@ -76,12 +76,22 @@ export const GetRecommendationResponse = zod.object({
       zod.object({
         maskId: zod.string(),
         name: zod.string(),
+        modelNumber: zod
+          .string()
+          .describe(
+            "Penn Home Medical Supply SKU \/ model number for ordering",
+          ),
         manufacturer: zod.string(),
         type: zod.enum(["fullFace", "nasal", "nasalPillow", "hybrid"]),
         confidence: zod
           .number()
           .min(getRecommendationResponseTopRecommendationsItemConfidenceMin)
           .max(getRecommendationResponseTopRecommendationsItemConfidenceMax),
+        summary: zod
+          .string()
+          .describe(
+            "One-sentence personalized explanation of why this mask fits the patient and their needs",
+          ),
         reasoning: zod.array(zod.string()),
         features: zod.array(zod.string()),
         contraindications: zod.array(zod.string()),
@@ -93,12 +103,20 @@ export const GetRecommendationResponse = zod.object({
     zod.object({
       maskId: zod.string(),
       name: zod.string(),
+      modelNumber: zod
+        .string()
+        .describe("Penn Home Medical Supply SKU \/ model number for ordering"),
       manufacturer: zod.string(),
       type: zod.enum(["fullFace", "nasal", "nasalPillow", "hybrid"]),
       confidence: zod
         .number()
         .min(getRecommendationResponseAlternativesItemConfidenceMin)
         .max(getRecommendationResponseAlternativesItemConfidenceMax),
+      summary: zod
+        .string()
+        .describe(
+          "One-sentence personalized explanation of why this mask fits the patient and their needs",
+        ),
       reasoning: zod.array(zod.string()),
       features: zod.array(zod.string()),
       contraindications: zod.array(zod.string()),
@@ -117,6 +135,9 @@ export const ListMasksResponse = zod.object({
     zod.object({
       id: zod.string(),
       name: zod.string(),
+      modelNumber: zod
+        .string()
+        .describe("Penn Home Medical Supply SKU \/ model number for ordering"),
       manufacturer: zod.string(),
       type: zod.enum(["fullFace", "nasal", "nasalPillow", "hybrid"]),
       description: zod

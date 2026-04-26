@@ -86,8 +86,11 @@ export function Masks() {
                   <div className="flex items-baseline justify-between gap-2 mb-1">
                     <h3 className="text-lg font-semibold leading-tight">{mask.name}</h3>
                   </div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                    {formatMaskType(mask.type)} Mask
+                  <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                    <span>{formatMaskType(mask.type)} Mask</span>
+                    <code className="font-mono normal-case tracking-normal text-foreground bg-muted px-1.5 py-0.5 rounded text-[11px]">
+                      {mask.modelNumber}
+                    </code>
                   </div>
                 </div>
 

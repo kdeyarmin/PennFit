@@ -10,6 +10,8 @@ import type { MaskRecommendationType } from "./maskRecommendationType";
 export interface MaskRecommendation {
   maskId: string;
   name: string;
+  /** Penn Home Medical Supply SKU / model number for ordering */
+  modelNumber: string;
   manufacturer: string;
   type: MaskRecommendationType;
   /**
@@ -17,6 +19,8 @@ export interface MaskRecommendation {
    * @maximum 1
    */
   confidence: number;
+  /** One-sentence personalized explanation of why this mask fits the patient and their needs */
+  summary: string;
   reasoning: string[];
   features: string[];
   contraindications: string[];
