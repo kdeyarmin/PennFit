@@ -21,20 +21,36 @@ export function Measure() {
   // measurements (which would otherwise re-fire this effect with capturedImage
   // === null, beating our setTimeout to /questionnaire).
   const startedRef = useRef(false);
+  // Ref-based mount guard. We can't use a local `let isMounted = true` because
+  // setCapturedImage(null) (run for privacy after extraction) is in the effect's
+  // dependency array path and causes React to invoke the cleanup, which would
+  // flip a local isMounted to false BEFORE the navigation setTimeout fires —
+  // stranding the user on "Measurements Ready" forever. The ref only flips on
+  // actual component unmount.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (startedRef.current) return;
+    // startedRef is checked BEFORE the !capturedImage redirect so that the
+    // intentional setCapturedImage(null) at the end of processing does not
+    // bounce the user back to /capture when this effect re-runs.
     if (!capturedImage) {
       setLocation("/capture");
       return;
     }
     startedRef.current = true;
 
-    let isMounted = true;
+    let faceLandmarker: FaceLandmarker | null = null;
 
     const processImage = async () => {
       try {
-        if (!isMounted) return;
+        if (!isMountedRef.current) return;
         setProgress(15);
         setStatus("Loading on-device facial landmark model…");
 
@@ -42,11 +58,11 @@ export function Measure() {
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm",
         );
 
-        if (!isMounted) return;
+        if (!isMountedRef.current) return;
         setProgress(40);
         setStatus("Configuring landmark detection…");
 
-        const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath:
               "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
@@ -57,17 +73,32 @@ export function Measure() {
           numFaces: 1,
         });
 
-        if (!isMounted) return;
+        if (!isMountedRef.current) return;
         setProgress(60);
         setStatus("Analyzing facial structure…");
 
+        // Bounded image-load with explicit error + timeout so a hung decode
+        // can't strand the user on this page indefinitely (the stall this
+        // page is otherwise prone to). Data URLs decode synchronously in
+        // most browsers but mobile Safari has been known to stall.
         const img = new Image();
         img.src = capturedImage;
-        await new Promise((resolve) => {
-          img.onload = resolve;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("Image decode timed out. Please retake the photo.")),
+            8000,
+          );
+          img.onload = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          img.onerror = () => {
+            clearTimeout(timer);
+            reject(new Error("Could not load the captured photo. Please retake it."));
+          };
         });
 
-        if (!isMounted) return;
+        if (!isMountedRef.current) return;
         setProgress(75);
         setStatus("Calibrating to your iris and extracting measurements…");
 
@@ -124,7 +155,7 @@ export function Measure() {
             calibrationMethod: "iris",
           };
 
-          if (!isMounted) return;
+          if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
           setMeasurements(measurements);
@@ -134,22 +165,33 @@ export function Measure() {
           setCapturedImage(null);
 
           setTimeout(() => {
-            if (isMounted) setLocation("/questionnaire");
+            if (isMountedRef.current) setLocation("/questionnaire");
           }, 900);
         } else {
           throw new Error("No face detected in the image. Please try the capture again.");
         }
       } catch (err: any) {
         console.error("Measurement error:", err);
-        if (isMounted) setError(err.message || "An error occurred during measurement extraction.");
+        if (isMountedRef.current) setError(err.message || "An error occurred during measurement extraction.");
+      } finally {
+        // Release the WASM-backed landmarker eagerly — both on success
+        // (we've already extracted what we need) and on error (so a retry
+        // doesn't pile up native handles).
+        try {
+          faceLandmarker?.close?.();
+        } catch {
+          /* noop — best-effort cleanup */
+        }
+        faceLandmarker = null;
       }
     };
 
     setTimeout(processImage, 100);
 
-    return () => {
-      isMounted = false;
-    };
+    // No effect-local cleanup: mount tracking lives in `isMountedRef` (above),
+    // which only flips on actual component unmount. A local cleanup here would
+    // run again when `setCapturedImage(null)` triggers a re-render (capturedImage
+    // is a dep), prematurely cancelling the post-analysis navigation.
     // setCapturedImage is intentionally omitted — including it would re-run the
     // entire MediaPipe pipeline when we clear the image on success.
     // eslint-disable-next-line react-hooks/exhaustive-deps
