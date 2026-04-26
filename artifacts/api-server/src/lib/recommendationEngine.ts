@@ -406,9 +406,9 @@ export function recommend(
   const alternatives = remaining.slice(0, 5).map((m) => m.recommendation);
 
   const disclaimer =
-    "This is a starting recommendation to guide your initial fitting — not a clinical diagnosis or prescription. " +
+    "This is a starting recommendation from Penn Home Medical Supply to guide your initial fitting — not a clinical diagnosis or prescription. " +
     "Actual mask fit depends on individual facial anatomy, pressure settings, and personal comfort. " +
-    "Always work with your DME provider or a respiratory therapist to confirm fit with physical sizing templates " +
+    "Please contact your Penn Home Medical Supply respiratory therapist or DME specialist to confirm fit with physical sizing templates " +
     "before finalizing your mask selection.";
 
   return {

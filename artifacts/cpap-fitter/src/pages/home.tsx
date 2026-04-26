@@ -13,10 +13,12 @@ export function Home() {
           <span>100% Private On-Device Processing</span>
         </div>
         <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-foreground mb-6">
-          Find Your Perfect CPAP Mask Fit in Minutes
+          Penn Fit — Your Perfect CPAP Mask in Minutes
         </h1>
         <p className="text-lg md:text-xl text-muted-foreground leading-relaxed mb-8">
-          Our clinical-grade fitting tool uses your device's camera to measure your facial structure securely, then matches you with the ideal mask based on your unique needs.
+          From the team at Penn Home Medical Supply. Our clinical-grade fitting tool uses your
+          device's camera to measure your facial structure securely, then matches you with the
+          ideal mask from our catalog based on your unique needs.
         </p>
         <Link href="/consent">
           <Button size="lg" className="h-14 px-8 text-lg rounded-full shadow-lg hover:shadow-xl transition-all hover:-translate-y-1">

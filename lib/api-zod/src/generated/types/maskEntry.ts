@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { MaskEntryFitRanges } from "./maskEntryFitRanges";
+import type { MaskEntryHoseConnection } from "./maskEntryHoseConnection";
+import type { MaskEntryPriceTier } from "./maskEntryPriceTier";
 import type { MaskEntryType } from "./maskEntryType";
 
 export interface MaskEntry {
@@ -13,8 +15,28 @@ export interface MaskEntry {
   name: string;
   manufacturer: string;
   type: MaskEntryType;
+  /** Marketing-style description of the mask */
+  description: string;
   fitRanges: MaskEntryFitRanges;
   features: string[];
   contraindications: string[];
+  /** e.g. Silicone, Memory Foam, Gel */
+  cushionMaterial: string;
+  /** e.g. Standard straps, Soft fabric, Magnetic clips */
+  headgearStyle: string;
+  /** Where the hose attaches */
+  hoseConnection: MaskEntryHoseConnection;
+  /** Total mask weight in grams */
+  weightGrams: number;
+  /** Available cushion/pillow sizes */
+  sizesAvailable: string[];
+  /** Minimum recommended CPAP pressure (cmH2O) */
+  pressureRangeMin: number;
+  /** Maximum recommended CPAP pressure (cmH2O) */
+  pressureRangeMax: number;
+  /** General price tier for budgeting */
+  priceTier: MaskEntryPriceTier;
+  /** Patient profiles this mask works best for */
+  bestFor: string[];
   imageUrl?: string | null;
 }

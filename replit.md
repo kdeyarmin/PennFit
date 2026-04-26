@@ -1,8 +1,19 @@
-# CPAP Mask Fitter — AeroFit
+# Penn Fit — CPAP Mask Fitter
 
 ## Overview
 
-CPAP mask recommendation web app for DME companies. Guides patients through a privacy-first facial measurement flow and clinical questionnaire to find the best-fit CPAP mask.
+CPAP mask recommendation web app for **Penn Home Medical Supply, LLC** (DME company), branded as **Penn Fit**. Guides patients through a privacy-first facial measurement flow and clinical questionnaire to find the best-fit CPAP mask from Penn's catalog.
+
+### Brand
+- App name: **Penn Fit**
+- Company: **Penn Home Medical Supply, LLC**
+- Logo: `attached_assets/IMG_2053_1777233708393.jpeg` (imported via `@assets` alias)
+- Theme: Penn navy (HSL `213 51% 25%`) + Penn gold (HSL `41 86% 59%`)
+
+### Mask Catalog
+- 20 masks across full face / nasal / nasal pillow / hybrid types
+- Each mask now ships with: description, cushion material, headgear style, hose connection (front/top), weight (g), available sizes, recommended pressure range (cmH₂O), price tier (budget/standard/premium), and "best for" tags
+- Product images live in `artifacts/cpap-fitter/src/assets/masks/{full-face,nasal,nasal-pillow,hybrid}.png` and are mapped by mask `type` via `src/lib/mask-images.ts`
 
 ## Architecture
 

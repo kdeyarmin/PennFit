@@ -230,6 +230,9 @@ components:
         type:
           type: string
           enum: [fullFace, nasal, nasalPillow, hybrid]
+        description:
+          type: string
+          description: Marketing-style description of the mask
         fitRanges:
           type: object
           properties:
@@ -260,6 +263,39 @@ components:
           type: array
           items:
             type: string
+        cushionMaterial:
+          type: string
+          description: e.g. Silicone, Memory Foam, Gel
+        headgearStyle:
+          type: string
+          description: e.g. Standard straps, Soft fabric, Magnetic clips
+        hoseConnection:
+          type: string
+          enum: [front, top]
+          description: Where the hose attaches
+        weightGrams:
+          type: number
+          description: Total mask weight in grams
+        sizesAvailable:
+          type: array
+          items:
+            type: string
+          description: Available cushion/pillow sizes
+        pressureRangeMin:
+          type: number
+          description: Minimum recommended CPAP pressure (cmH2O)
+        pressureRangeMax:
+          type: number
+          description: Maximum recommended CPAP pressure (cmH2O)
+        priceTier:
+          type: string
+          enum: [budget, standard, premium]
+          description: General price tier for budgeting
+        bestFor:
+          type: array
+          items:
+            type: string
+          description: Patient profiles this mask works best for
         imageUrl:
           type: string
           nullable: true
@@ -268,9 +304,19 @@ components:
         - name
         - manufacturer
         - type
+        - description
         - fitRanges
         - features
         - contraindications
+        - cushionMaterial
+        - headgearStyle
+        - hoseConnection
+        - weightGrams
+        - sizesAvailable
+        - pressureRangeMin
+        - pressureRangeMax
+        - priceTier
+        - bestFor
 
     MaskCatalogResponse:
       type: object

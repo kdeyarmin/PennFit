@@ -13,6 +13,8 @@ export * from "./healthStatus";
 export * from "./maskCatalogResponse";
 export * from "./maskEntry";
 export * from "./maskEntryFitRanges";
+export * from "./maskEntryHoseConnection";
+export * from "./maskEntryPriceTier";
 export * from "./maskEntryType";
 export * from "./maskRecommendation";
 export * from "./maskRecommendationType";

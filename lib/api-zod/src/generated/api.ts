@@ -119,6 +119,9 @@ export const ListMasksResponse = zod.object({
       name: zod.string(),
       manufacturer: zod.string(),
       type: zod.enum(["fullFace", "nasal", "nasalPillow", "hybrid"]),
+      description: zod
+        .string()
+        .describe("Marketing-style description of the mask"),
       fitRanges: zod.object({
         noseWidthMin: zod.number(),
         noseWidthMax: zod.number(),
@@ -129,6 +132,29 @@ export const ListMasksResponse = zod.object({
       }),
       features: zod.array(zod.string()),
       contraindications: zod.array(zod.string()),
+      cushionMaterial: zod.string().describe("e.g. Silicone, Memory Foam, Gel"),
+      headgearStyle: zod
+        .string()
+        .describe("e.g. Standard straps, Soft fabric, Magnetic clips"),
+      hoseConnection: zod
+        .enum(["front", "top"])
+        .describe("Where the hose attaches"),
+      weightGrams: zod.number().describe("Total mask weight in grams"),
+      sizesAvailable: zod
+        .array(zod.string())
+        .describe("Available cushion\/pillow sizes"),
+      pressureRangeMin: zod
+        .number()
+        .describe("Minimum recommended CPAP pressure (cmH2O)"),
+      pressureRangeMax: zod
+        .number()
+        .describe("Maximum recommended CPAP pressure (cmH2O)"),
+      priceTier: zod
+        .enum(["budget", "standard", "premium"])
+        .describe("General price tier for budgeting"),
+      bestFor: zod
+        .array(zod.string())
+        .describe("Patient profiles this mask works best for"),
       imageUrl: zod.string().nullish(),
     }),
   ),

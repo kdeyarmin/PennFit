@@ -1,0 +1,26 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "QAlpLPmgNNkL1Y4JHDyJL"
+uri = "file://artifacts/cpap-fitter/src/assets/masks/full-face.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "iUqyiyNTSOLMES4UW_dI0"
+uri = "file://artifacts/cpap-fitter/src/assets/masks/nasal.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "rVxTniJtCZYX-rrTtJCjS"
+uri = "file://artifacts/cpap-fitter/src/assets/masks/nasal-pillow.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "vwsUjhLh2Qp1uT_sUMNT7"
+uri = "file://artifacts/cpap-fitter/src/assets/masks/hybrid.png"
+type = "image"
+title = "generated_image"
