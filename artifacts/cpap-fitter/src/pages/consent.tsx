@@ -24,7 +24,7 @@ export function Consent() {
           </div>
           <CardTitle className="text-3xl text-center">Privacy & Consent</CardTitle>
           <CardDescription className="text-center text-lg max-w-xl mx-auto">
-            Your privacy is our absolute priority. Before we begin, please review how we protect your data.
+            At Penn Home Medical Supply, your privacy is our absolute priority. Before we begin, please review how Penn Fit protects your data.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
@@ -56,11 +56,11 @@ export function Consent() {
               <div className="space-y-3">
                 <p className="font-medium text-blue-900 dark:text-blue-300">Biometric Information Privacy Disclosure <span className="text-xs text-muted-foreground uppercase tracking-wider ml-2">[ATTORNEY REVIEW]</span></p>
                 <p className="text-blue-800/80 dark:text-blue-200/80 leading-relaxed">
-                  To provide mask recommendations, this application uses facial recognition technology to extract numerical measurements (such as the distance between your nose and chin). 
-                  <strong> No images or biometric identifiers are stored, recorded, or transmitted to our servers.</strong>
+                  To provide mask recommendations, Penn Fit uses facial recognition technology to extract numerical measurements (such as the distance between your nose and chin).
+                  <strong> No images or biometric identifiers are stored, recorded, or transmitted to Penn Home Medical Supply or any third party.</strong>
                 </p>
                 <p className="text-blue-800/80 dark:text-blue-200/80 leading-relaxed">
-                  Only the extracted numerical values (in millimeters) and your questionnaire answers are sent securely to our recommendation engine.
+                  Only the extracted numerical values (in millimeters) and your questionnaire answers are sent securely to the Penn Fit recommendation engine.
                 </p>
               </div>
             </div>
