@@ -20,6 +20,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </Link>
           <nav className="flex items-center gap-6 text-sm font-medium">
+            <Link href="/how-it-works" className="text-muted-foreground transition-colors hover:text-primary">
+              How It Works
+            </Link>
             <Link href="/masks" className="text-muted-foreground transition-colors hover:text-primary">
               Mask Catalog
             </Link>

@@ -14,6 +14,7 @@ import { Order } from "@/pages/order";
 import { OrderSuccess } from "@/pages/order-success";
 import { Masks } from "@/pages/masks";
 import { Privacy } from "@/pages/privacy";
+import { HowItWorks } from "@/pages/how-it-works";
 import { FitterProvider } from "@/hooks/use-fitter-store";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ function Router() {
         <Route path="/order" component={Order} />
         <Route path="/order-success" component={OrderSuccess} />
         <Route path="/masks" component={Masks} />
+        <Route path="/how-it-works" component={HowItWorks} />
         <Route path="/privacy" component={Privacy} />
         <Route component={NotFound} />
       </Switch>

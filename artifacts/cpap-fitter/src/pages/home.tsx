@@ -20,11 +20,18 @@ export function Home() {
           device's camera to measure your facial structure securely, then matches you with the
           ideal mask from our catalog based on your unique needs.
         </p>
-        <Link href="/consent">
-          <Button size="lg" className="h-14 px-8 text-lg rounded-full shadow-lg hover:shadow-xl transition-all hover:-translate-y-1">
-            Start Fitting Process
-          </Button>
-        </Link>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <Link href="/consent">
+            <Button size="lg" className="h-14 px-8 text-lg rounded-full shadow-lg hover:shadow-xl transition-all hover:-translate-y-1">
+              Start Fitting Process
+            </Button>
+          </Link>
+          <Link href="/how-it-works">
+            <Button size="lg" variant="ghost" className="h-14 px-6 text-base rounded-full">
+              How it works
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-3 gap-8 w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150 fill-mode-both">
