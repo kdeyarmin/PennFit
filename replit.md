@@ -106,8 +106,8 @@ Replace with actual DME inventory before production use.
 
 `POST /api/orders` forwards the order to Penn Home Medical Supply via SendGrid.
 
-- **SendGrid credentials**: obtained on demand from the Replit SendGrid connector (no `SENDGRID_API_KEY` to manage). See `artifacts/api-server/src/lib/orderEmail.ts` → `getSendGridApiKey()`. Tokens are fetched fresh per request (never cached) so rotation works.
-- **Required env vars**:
+- **Required secrets / env vars** (the Replit SendGrid connector was offered but the user opted to manage credentials manually — do not re-propose the connector unless asked):
+  - `SENDGRID_API_KEY` — SendGrid API key with "Mail Send" permission
   - `PENN_FULFILLMENT_EMAIL` — destination address Penn receives orders at
   - `PENN_FROM_EMAIL` — verified sender address on the SendGrid account (must be verified in SendGrid before delivery works)
 - **Failure modes** (route returns explicit HTTP codes — never silently drops):
