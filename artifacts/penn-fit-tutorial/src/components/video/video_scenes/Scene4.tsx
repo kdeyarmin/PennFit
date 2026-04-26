@@ -36,12 +36,12 @@ export function Scene4() {
               Step 3 & 4
             </motion.h2>
             <motion.h3 
-              className="text-5xl font-extrabold text-[#1F3A5C] leading-tight"
+              className="text-5xl font-extrabold text-[#1F3A5C] leading-[1.05] tracking-tight"
               style={{ fontFamily: 'var(--font-display)' }}
               initial={{ opacity: 0, y: 20 }}
               animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
             >
-              Details &<br/>Results
+              Details & Results
             </motion.h3>
           </div>
 
@@ -54,10 +54,14 @@ export function Scene4() {
               <div className="w-8 h-8 rounded-full bg-[#1F3A5C]/10 flex items-center justify-center shrink-0 mt-1">
                 <span className="text-[#1F3A5C] font-bold">3</span>
               </div>
-              <p className="text-xl text-[#475569] leading-relaxed">
-                Answer 11 quick clinical questions. <br/>
-                <span className="font-semibold text-[#1F3A5C]">Not sure of your pressure? Just say so.</span>
-              </p>
+              <div className="space-y-1.5">
+                <p className="text-xl text-[#475569] leading-relaxed">
+                  Answer 11 quick clinical questions.
+                </p>
+                <p className="text-base font-semibold text-[#1F3A5C] leading-snug">
+                  Not sure of your pressure? Just say so.
+                </p>
+              </div>
             </motion.div>
 
             <motion.div 

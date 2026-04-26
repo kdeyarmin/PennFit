@@ -7,9 +7,9 @@ export function Scene1() {
 
   useEffect(() => {
     const timers = [
-      setTimeout(() => setPhase(1), 300),   // Logo scales down
-      setTimeout(() => setPhase(2), 800),   // Subtitle fades in
-      setTimeout(() => setPhase(3), 1500),  // "How to Use" appears
+      setTimeout(() => setPhase(1), 300),   // Logo lands
+      setTimeout(() => setPhase(2), 900),   // "Penn Fit" title
+      setTimeout(() => setPhase(3), 1500),  // "How to Use" badge
       setTimeout(() => setPhase(4), 2800),  // Elements start exiting
     ];
     return () => timers.forEach(t => clearTimeout(t));
@@ -44,10 +44,10 @@ export function Scene1() {
 
         {/* Title */}
         <motion.h1 
-          className="text-5xl md:text-7xl font-bold text-[#1F3A5C] mt-8 tracking-tight"
+          className="text-5xl md:text-7xl font-bold text-[#1F3A5C] mt-8 tracking-tight leading-none"
           style={{ fontFamily: 'var(--font-display)' }}
           initial={{ opacity: 0, y: 20 }}
-          animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
         >
           Penn Fit
@@ -55,12 +55,12 @@ export function Scene1() {
 
         {/* Subtitle */}
         <motion.div
-          className="mt-4 px-6 py-2 rounded-full bg-[#F4B942]/10 border border-[#F4B942]/30"
+          className="mt-5 px-6 py-2 rounded-full bg-[#F4B942]/10 border border-[#F4B942]/30"
           initial={{ opacity: 0, scale: 0.9 }}
-          animate={phase >= 2 ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
+          animate={phase >= 3 ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.5 }}
         >
-          <p className="text-lg md:text-xl font-medium text-[#1F3A5C] uppercase tracking-widest">
+          <p className="text-base md:text-lg font-semibold text-[#1F3A5C] uppercase tracking-[0.2em]">
             How to Use
           </p>
         </motion.div>

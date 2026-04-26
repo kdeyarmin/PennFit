@@ -74,13 +74,13 @@ export function Scene2() {
               Step 1 & 2
             </motion.h2>
             <motion.h3 
-              className="text-5xl font-extrabold text-[#1F3A5C] leading-tight"
+              className="text-5xl font-extrabold text-[#1F3A5C] leading-[1.05] tracking-tight"
               style={{ fontFamily: 'var(--font-display)' }}
               initial={{ opacity: 0, y: 20 }}
               animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               transition={{ duration: 0.6 }}
             >
-              Capture &<br/>Measure
+              Capture & Measure
             </motion.h3>
           </div>
 
@@ -95,7 +95,7 @@ export function Scene2() {
                 <span className="text-[#1F3A5C] font-bold">1</span>
               </div>
               <p className="text-xl text-[#475569] leading-relaxed">
-                Hold your device at eye level.<br/>A 3-second timer takes your photo.
+                Hold your device at eye level. A 3-second timer takes your photo.
               </p>
             </motion.div>
 

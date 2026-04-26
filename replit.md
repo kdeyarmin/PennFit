@@ -127,6 +127,14 @@ Replace with actual DME inventory before production use.
 - **Order reference format**: `PHM-XXX-XXX` using a confusion-free alphabet (no I/O/0/1)
 - **Logging**: pino-http is configured to NOT log request/response bodies for `/api/orders`. Never add body logging.
 
+## Tutorial Video
+
+A short animated walkthrough of the Penn Fit experience lives in the `@workspace/penn-fit-tutorial` artifact (path `/penn-fit-tutorial/`). It's built with framer-motion + lucide-react, brand-themed (navy `#1F3A5C` + gold `#F4B942`), 5 scenes (intro, capture/measure, pro tips, questionnaire/results, outro). Linked from the cpap-fitter app in two places:
+- Home page: "Watch the tutorial" outline button next to "Start Fitting Process" / "How it works"
+- How It Works page: embedded as an iframe at the top of the page
+
+To re-link from anywhere else, use the path `/penn-fit-tutorial/` (separate artifact under the same domain — do **not** use wouter `<Link>` because it stays inside the cpap-fitter route base).
+
 ## Important Notes
 
 - **Do not add image logging** anywhere in the backend — this breaks the PHI architecture guarantee

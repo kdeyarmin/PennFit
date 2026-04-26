@@ -43,7 +43,7 @@ export function Scene5() {
         </motion.div>
 
         <motion.h2 
-          className="text-4xl md:text-5xl font-medium text-white tracking-tight"
+          className="text-4xl md:text-5xl font-medium text-white tracking-tight leading-tight"
           style={{ fontFamily: 'var(--font-display)' }}
           initial={{ opacity: 0, y: 20 }}
           animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
@@ -58,7 +58,7 @@ export function Scene5() {
           transition={{ type: 'spring', stiffness: 200, damping: 15 }}
         >
           <h2 
-            className="text-5xl md:text-6xl font-bold text-[#F4B942] mt-4 tracking-tight"
+            className="text-5xl md:text-6xl font-bold text-[#F4B942] mt-1 tracking-tight leading-tight"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             in minutes.

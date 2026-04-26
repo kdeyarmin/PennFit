@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScanFace, ClipboardList, Zap, Shield } from "lucide-react";
+import { ScanFace, ClipboardList, Zap, Shield, PlayCircle } from "lucide-react";
 
 export function Home() {
   return (
@@ -31,6 +31,13 @@ export function Home() {
               How it works
             </Button>
           </Link>
+          <Button asChild size="lg" variant="outline" className="h-14 px-6 text-base rounded-full gap-2">
+            <a href="/penn-fit-tutorial/" target="_blank" rel="noopener noreferrer">
+              <PlayCircle className="w-5 h-5" />
+              Watch the tutorial
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          </Button>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Sun, Ruler, Glasses, MessageCircleQuestion, Lightbulb } from 'lucide-react';
 
 export function Scene3() {
   const [phase, setPhase] = useState(0);
@@ -17,10 +18,10 @@ export function Scene3() {
   }, []);
 
   const tips = [
-    { id: 1, icon: "☀️", text: "Face a window for bright, even lighting" },
-    { id: 2, icon: "📏", text: "Hold device at eye level & arm's length" },
-    { id: 3, icon: "👓", text: "Remove glasses & tie hair back" },
-    { id: 4, icon: "🤔", text: "Answer honestly (guess-free is okay!)" },
+    { id: 1, Icon: Sun, text: "Face a window for bright, even lighting" },
+    { id: 2, Icon: Ruler, text: "Hold device at eye level and arm's length" },
+    { id: 3, Icon: Glasses, text: "Remove glasses and tie hair back" },
+    { id: 4, Icon: MessageCircleQuestion, text: "Answer honestly — \u201CI'm not sure\u201D is fine" },
   ];
 
   return (
@@ -45,26 +46,31 @@ export function Scene3() {
           initial={{ opacity: 0, y: -20 }}
           animate={phase >= 1 ? { opacity: 1, y: 0 } : { opacity: 0, y: -20 }}
         >
-          <span className="text-2xl">💡</span>
-          <span className="text-[#F4B942] font-semibold tracking-widest uppercase">Pro Tips for Accuracy</span>
+          <Lightbulb className="w-5 h-5 text-[#F4B942]" strokeWidth={2.5} />
+          <span className="text-[#F4B942] font-semibold tracking-[0.2em] uppercase text-sm">Pro Tips for Accuracy</span>
         </motion.div>
 
-        <div className="grid grid-cols-2 gap-8 w-full">
-          {tips.map((tip, index) => (
-            <motion.div
-              key={tip.id}
-              className="bg-white/5 border border-white/10 p-8 rounded-3xl backdrop-blur-md flex items-start gap-6"
-              initial={{ opacity: 0, x: index % 2 === 0 ? -40 : 40, rotateX: 45 }}
-              animate={phase >= index + 2 ? { opacity: 1, x: 0, rotateX: 0 } : { opacity: 0, x: index % 2 === 0 ? -40 : 40, rotateX: 45 }}
-              transition={{ type: 'spring', stiffness: 150, damping: 20 }}
-              style={{ transformPerspective: 1000 }}
-            >
-              <div className="text-4xl">{tip.icon}</div>
-              <p className="text-white text-xl leading-snug font-medium mt-1">
-                {tip.text}
-              </p>
-            </motion.div>
-          ))}
+        <div className="grid grid-cols-2 gap-6 w-full">
+          {tips.map((tip, index) => {
+            const { Icon } = tip;
+            return (
+              <motion.div
+                key={tip.id}
+                className="bg-white/5 border border-white/10 p-7 rounded-3xl backdrop-blur-md flex items-center gap-5"
+                initial={{ opacity: 0, x: index % 2 === 0 ? -40 : 40, rotateX: 45 }}
+                animate={phase >= index + 2 ? { opacity: 1, x: 0, rotateX: 0 } : { opacity: 0, x: index % 2 === 0 ? -40 : 40, rotateX: 45 }}
+                transition={{ type: 'spring', stiffness: 150, damping: 20 }}
+                style={{ transformPerspective: 1000 }}
+              >
+                <div className="shrink-0 w-14 h-14 rounded-2xl bg-[#F4B942]/15 border border-[#F4B942]/30 flex items-center justify-center">
+                  <Icon className="w-7 h-7 text-[#F4B942]" strokeWidth={2} />
+                </div>
+                <p className="text-white text-lg leading-snug font-medium">
+                  {tip.text}
+                </p>
+              </motion.div>
+            );
+          })}
         </div>
 
       </div>
