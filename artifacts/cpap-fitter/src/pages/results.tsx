@@ -123,13 +123,24 @@ export function Results() {
   }
 
   return (
-    <div className="container max-w-4xl mx-auto px-4 py-12 animate-in fade-in duration-500">
+    <div className="container max-w-4xl mx-auto px-4 py-12 animate-shimmer-in">
       <div className="text-center mb-10 space-y-4">
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-50 text-green-700 font-medium mb-2 border border-green-200">
-          <CheckCircle2 className="w-5 h-5" />
-          <span>Analysis Complete</span>
+        <div className="flex justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-emerald-700 font-medium border border-emerald-200/70 shadow-sm">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Analysis Complete</span>
+          </div>
         </div>
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
+        <div className="flex justify-center">
+          <div className="inline-flex items-center gap-3">
+            <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+              Penn Fit · Recommendation
+            </span>
+            <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+          </div>
+        </div>
+        <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight text-gradient-brand leading-[1.05]">
           Your Recommended Masks
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
@@ -139,14 +150,14 @@ export function Results() {
 
       {/* Patient measurements panel — collapsible, builds trust by showing exactly what was measured */}
       <Collapsible open={showMeasurements} onOpenChange={setShowMeasurements} className="mb-8">
-        <Card className="border-border bg-gradient-to-br from-muted/30 to-transparent">
+        <Card className="border-0 glass-card rounded-2xl">
           <CollapsibleTrigger asChild>
             <button
-              className="w-full p-5 flex items-center justify-between gap-4 text-left hover:bg-muted/30 transition-colors rounded-lg"
+              className="w-full p-5 flex items-center justify-between gap-4 text-left hover:bg-white/30 transition-colors rounded-2xl"
               data-testid="button-toggle-measurements"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <div className="w-11 h-11 rounded-xl icon-halo-navy flex items-center justify-center shrink-0">
                   <Ruler className="w-5 h-5" />
                 </div>
                 <div>
@@ -184,20 +195,22 @@ export function Results() {
       </Collapsible>
 
       <div className="space-y-6 mb-12">
-        <h2 className="text-xl font-semibold px-2">Top Recommendations</h2>
+        <h2 className="text-xl font-semibold px-2 tracking-tight">Top Recommendations</h2>
         {data.topRecommendations.map((mask, idx) => {
           const details = catalogById.get(mask.maskId);
           const confidencePct = Math.round(mask.confidence * 100);
           return (
             <Card
               key={mask.maskId}
-              className={`overflow-hidden ${
-                idx === 0 ? "border-primary/50 shadow-lg ring-1 ring-primary/20" : "border-border"
+              className={`overflow-hidden border-0 glass-card lift-on-hover rounded-2xl ${
+                idx === 0
+                  ? "ring-2 ring-[hsl(var(--penn-gold)/0.50)] shadow-[0_0_0_4px_hsl(var(--penn-gold)/0.10),0_24px_48px_hsl(var(--penn-navy)/0.12)]"
+                  : ""
               }`}
             >
               <div className="flex flex-col md:flex-row">
-                <div className="w-full md:w-1/3 bg-gradient-to-br from-muted/50 to-muted/10 p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-border">
-                  <div className="aspect-square w-full max-w-[220px] bg-white rounded-xl shadow-sm border border-border overflow-hidden mb-4">
+                <div className="w-full md:w-1/3 bg-gradient-to-br from-[hsl(var(--penn-mist))] to-white/30 p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-border/40">
+                  <div className="aspect-square w-full max-w-[220px] bg-white rounded-xl shadow-md border border-border/40 overflow-hidden mb-4">
                     <img
                       src={getMaskImage(mask.type)}
                       alt={`${mask.manufacturer} ${mask.name}`}
@@ -271,9 +284,15 @@ export function Results() {
                     </div>
                   </div>
 
-                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
+                  <div
+                    className="rounded-xl p-4 mb-4 border border-[hsl(var(--penn-navy)/0.15)] relative overflow-hidden"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, hsl(var(--penn-navy) / 0.06) 0%, hsl(var(--penn-gold) / 0.06) 100%)",
+                    }}
+                  >
                     <h4 className="text-xs font-bold uppercase tracking-wider text-primary mb-1.5 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--penn-gold))]" />
                       Why this fits you
                     </h4>
                     <p className="text-sm text-foreground leading-relaxed">{mask.summary}</p>
@@ -286,7 +305,7 @@ export function Results() {
                   )}
 
                   {details && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 p-3 bg-muted/30 rounded-lg text-xs">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 p-3 glass-panel rounded-xl text-xs">
                       <Spec icon={<Weight className="w-3.5 h-3.5 text-primary" />} label="Weight">
                         {details.weightGrams} g
                       </Spec>
@@ -362,12 +381,12 @@ export function Results() {
                     )}
                   </div>
 
-                  <div className="mt-5 pt-5 border-t border-border">
+                  <div className="mt-5 pt-5 border-t border-border/50">
                     <Button
                       onClick={() => handleChooseMask(mask)}
                       size="lg"
                       variant={idx === 0 ? "default" : "outline"}
-                      className="w-full"
+                      className={`w-full ${idx === 0 ? "btn-primary-glow" : "glass-panel"}`}
                       data-testid={`button-choose-${mask.maskId}`}
                     >
                       <ShoppingCart className="w-4 h-4 mr-2" />
@@ -384,22 +403,22 @@ export function Results() {
         })}
       </div>
 
-      <div className="bg-muted/30 rounded-2xl p-6 border border-border flex flex-col md:flex-row items-center justify-between gap-6 mb-12">
+      <div className="glass-card rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 mb-12">
         <div className="space-y-2">
-          <h3 className="font-semibold text-lg">Looking for more options?</h3>
+          <h3 className="font-semibold text-lg tracking-tight">Looking for more options?</h3>
           <p className="text-sm text-muted-foreground">
             Browse the full catalog to see all available masks.
           </p>
         </div>
         <Link href="/masks">
-          <Button variant="outline" className="shrink-0 group">
+          <Button variant="outline" className="shrink-0 group glass-panel">
             View All Masks
             <ChevronRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Button>
         </Link>
       </div>
 
-      <div className="text-xs text-muted-foreground/80 text-center max-w-3xl mx-auto p-4 bg-muted/20 rounded-lg">
+      <div className="text-xs text-muted-foreground/80 text-center max-w-3xl mx-auto p-4 glass-panel rounded-xl">
         <strong>Medical Disclaimer:</strong> {data.disclaimer}
       </div>
 

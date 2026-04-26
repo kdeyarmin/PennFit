@@ -155,7 +155,7 @@ export function Questionnaire() {
       </div>
 
       <div className="animate-in slide-in-from-right-4 fade-in duration-300" key={currentIndex}>
-        <Card className="border-border shadow-sm min-h-[400px] flex flex-col">
+        <Card className="border-0 glass-card rounded-2xl min-h-[400px] flex flex-col">
           <CardHeader className="pb-4">
             <CardTitle className="text-2xl leading-tight">{currentQ.question}</CardTitle>
             {currentQ.description && (

@@ -120,14 +120,25 @@ const faqs = [
 
 export function HowItWorks() {
   return (
-    <div className="container max-w-4xl mx-auto px-4 py-12 space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="container max-w-4xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
       {/* Hero */}
-      <header className="text-center space-y-4">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium">
-          <HelpCircle className="w-4 h-4" />
-          <span>Getting the Best Results</span>
+      <header className="text-center space-y-5">
+        <div className="flex justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
+            <HelpCircle className="w-4 h-4" />
+            <span>Getting the Best Results</span>
+          </div>
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
+        <div className="flex justify-center">
+          <div className="inline-flex items-center gap-3">
+            <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+              How It Works
+            </span>
+            <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+          </div>
+        </div>
+        <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-gradient-brand leading-[1.05]">
           How Penn Fit Works
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
@@ -165,13 +176,13 @@ export function HowItWorks() {
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           {steps.map(({ icon: Icon, title, body }) => (
-            <Card key={title} className="border-border/60">
+            <Card key={title} className="border-0 glass-card lift-on-hover rounded-2xl">
               <CardContent className="pt-6 flex gap-4">
-                <div className="shrink-0 h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
                   <Icon className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="font-semibold">{title}</h3>
+                  <h3 className="font-semibold tracking-tight">{title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {body}
                   </p>
@@ -195,13 +206,13 @@ export function HowItWorks() {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {captureTips.map(({ icon: Icon, title, body }) => (
-            <Card key={title} className="border-border/60 bg-muted/20">
+            <Card key={title} className="border-0 glass-card lift-on-hover rounded-2xl">
               <CardContent className="pt-6 flex gap-4">
-                <div className="shrink-0 h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
                   <Icon className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="font-semibold">{title}</h3>
+                  <h3 className="font-semibold tracking-tight">{title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     {body}
                   </p>
@@ -214,13 +225,13 @@ export function HowItWorks() {
 
       {/* Questionnaire tips */}
       <section>
-        <Card className="border-border/60">
+        <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+              <div className="h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
                 <ClipboardList className="w-5 h-5" />
               </div>
-              <CardTitle className="text-xl">
+              <CardTitle className="text-xl tracking-tight">
                 Answering the Questionnaire
               </CardTitle>
             </div>
@@ -271,14 +282,24 @@ export function HowItWorks() {
 
       {/* Privacy note */}
       <section>
-        <Card className="border-border/60 bg-blue-50/50 dark:bg-blue-950/20">
-          <CardContent className="pt-6 flex gap-4">
-            <ShieldCheck className="w-6 h-6 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+        <Card className="border-0 glass-card rounded-2xl relative overflow-hidden">
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse 60% 80% at 0% 0%, hsl(var(--penn-navy) / 0.10), transparent 60%)",
+            }}
+            aria-hidden="true"
+          />
+          <CardContent className="pt-6 flex gap-4 relative">
+            <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
             <div className="space-y-2">
-              <h3 className="font-semibold text-blue-900 dark:text-blue-200">
+              <h3 className="font-semibold tracking-tight text-primary">
                 A Quick Privacy Reminder
               </h3>
-              <p className="text-sm text-blue-900/80 dark:text-blue-200/80 leading-relaxed">
+              <p className="text-sm text-muted-foreground leading-relaxed">
                 Your photo is processed entirely in your browser and is never
                 uploaded. The only information sent to Penn Home Medical Supply
                 is your numerical face measurements, your questionnaire answers,
@@ -287,7 +308,7 @@ export function HowItWorks() {
               </p>
               <Link
                 href="/privacy"
-                className="text-sm font-medium text-blue-700 dark:text-blue-300 hover:underline"
+                className="text-sm font-medium text-primary hover:underline"
               >
                 Read the full Privacy Policy →
               </Link>
@@ -303,9 +324,9 @@ export function HowItWorks() {
         </h2>
         <div className="space-y-3">
           {faqs.map(({ q, a }) => (
-            <Card key={q} className="border-border/60">
+            <Card key={q} className="border-0 glass-card lift-on-hover rounded-2xl">
               <CardContent className="pt-6 space-y-2">
-                <h3 className="font-semibold text-foreground flex gap-2">
+                <h3 className="font-semibold text-foreground flex gap-2 tracking-tight">
                   <HelpCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                   <span>{q}</span>
                 </h3>
@@ -320,14 +341,24 @@ export function HowItWorks() {
 
       {/* When to call instead */}
       <section>
-        <Card className="border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20">
-          <CardContent className="pt-6 flex gap-4">
-            <AlertTriangle className="w-6 h-6 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <Card className="border-0 glass-card rounded-2xl relative overflow-hidden">
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse 60% 80% at 100% 0%, hsl(var(--penn-gold) / 0.18), transparent 60%)",
+            }}
+            aria-hidden="true"
+          />
+          <CardContent className="pt-6 flex gap-4 relative">
+            <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
             <div className="space-y-1">
-              <h3 className="font-semibold text-amber-900 dark:text-amber-200">
+              <h3 className="font-semibold tracking-tight text-foreground">
                 When to Call Penn Home Medical Supply Directly
               </h3>
-              <p className="text-sm text-amber-900/80 dark:text-amber-200/80 leading-relaxed">
+              <p className="text-sm text-muted-foreground leading-relaxed">
                 Penn Fit is a recommendation tool — not a substitute for clinical
                 advice. If you have severe pressure sores, an open facial wound,
                 a recent facial injury, or you're a pediatric patient, please
@@ -341,16 +372,16 @@ export function HowItWorks() {
 
       {/* CTA */}
       <section className="text-center space-y-4 pt-4">
-        <h2 className="text-2xl font-semibold tracking-tight">
+        <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
           Ready to Find Your Mask?
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
           The full fitting takes about 3 minutes. Your camera image never leaves
           your device.
         </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
-            <Button size="lg" className="w-full sm:w-auto h-12 px-8 rounded-full">
+            <Button size="lg" className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow">
               Start Fitting Process
             </Button>
           </Link>
@@ -358,7 +389,7 @@ export function HowItWorks() {
             <Button
               size="lg"
               variant="outline"
-              className="w-full sm:w-auto h-12 px-8 rounded-full"
+              className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
               Browse Mask Catalog
             </Button>

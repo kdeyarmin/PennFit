@@ -27,9 +27,15 @@ export function Masks() {
 
   return (
     <div className="container max-w-6xl mx-auto px-4 py-12">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-6 animate-shimmer-in">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Mask Catalog</h1>
+          <div className="inline-flex items-center gap-3 mb-3">
+            <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+              Penn Fit · Catalog
+            </span>
+          </div>
+          <h1 className="text-display text-4xl md:text-5xl font-bold tracking-tight mb-2 text-gradient-brand">Mask Catalog</h1>
           <p className="text-muted-foreground">
             Browse all CPAP masks available through Penn Home Medical Supply.
           </p>
@@ -61,8 +67,8 @@ export function Masks() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredMasks.map((mask) => (
-            <Card key={mask.id} className="flex flex-col overflow-hidden hover:shadow-lg transition-shadow">
-              <div className="aspect-[4/3] w-full bg-gradient-to-br from-muted/40 to-muted/10 border-b border-border relative overflow-hidden">
+            <Card key={mask.id} className="flex flex-col overflow-hidden glass-card lift-on-hover rounded-2xl border-0">
+              <div className="aspect-[4/3] w-full bg-gradient-to-br from-[hsl(var(--penn-mist))] to-white/40 border-b border-border/50 relative overflow-hidden">
                 <img
                   src={getMaskImage(mask.type)}
                   alt={`${mask.manufacturer} ${mask.name}`}
