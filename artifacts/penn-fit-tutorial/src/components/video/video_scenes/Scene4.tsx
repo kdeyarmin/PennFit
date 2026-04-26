@@ -1,111 +1,181 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ClipboardList, Sparkles, ShieldCheck } from 'lucide-react';
+
+const questionnaireScreenshot = `${import.meta.env.BASE_URL}screenshots/questionnaire-mobile.jpg`;
+const resultsScreenshot = `${import.meta.env.BASE_URL}screenshots/results-mobile.jpg`;
 
 export function Scene4() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
+    // Two-act scene: first half ~5s on the questionnaire, second half ~5s on
+    // the results, with a soft cross-fade between the phone screenshots.
     const timers = [
-      setTimeout(() => setPhase(1), 300),
-      setTimeout(() => setPhase(2), 1000),
-      setTimeout(() => setPhase(3), 1800),
-      setTimeout(() => setPhase(4), 2600),
-      setTimeout(() => setPhase(5), 3500),
+      setTimeout(() => setPhase(1), 300),     // Questionnaire phone slides in
+      setTimeout(() => setPhase(2), 1500),    // Heading + subhead
+      setTimeout(() => setPhase(3), 3000),    // Question bullets
+      setTimeout(() => setPhase(4), 5500),    // Cross-fade to results phone
+      setTimeout(() => setPhase(5), 7000),    // "Top 3 mask matches" heading
+      setTimeout(() => setPhase(6), 8500),    // Confidence chips reveal
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);
 
+  const showingResults = phase >= 4;
+
+  const questionTopics = [
+    'Sleep position & breathing pattern',
+    'Facial hair, glasses, claustrophobia',
+    'Prescribed CPAP pressure',
+    'Skin & silicone sensitivity',
+  ];
+
+  const recommendations = [
+    { name: 'AirFit F20', score: 96 },
+    { name: 'AirFit P10', score: 91 },
+    { name: 'DreamWear Nasal', score: 87 },
+  ];
+
   return (
-    <motion.div 
+    <motion.div
       className="absolute inset-0 flex items-center justify-center"
       initial={{ opacity: 0, filter: 'blur(20px)' }}
       animate={{ opacity: 1, filter: 'blur(0px)' }}
       exit={{ y: '-100%', opacity: 0 }}
       transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-        
-        {/* Left: Text */}
-        <div className="space-y-6 lg:space-y-10 text-center lg:text-left order-2 lg:order-1">
+      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-8 lg:gap-16 items-center">
+
+        {/* LEFT: Text — swaps headline + body when results take over */}
+        <div className="space-y-5 lg:space-y-7 text-center lg:text-left order-2 lg:order-1">
           <div>
-            <motion.h2 
+            <motion.h2
               className="text-[#F4B942] font-bold tracking-wider uppercase text-xs sm:text-sm mb-2"
               initial={{ opacity: 0, x: -20 }}
-              animate={phase >= 1 ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+              animate={phase >= 2 ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
             >
-              Step 3 & 4
+              {showingResults ? 'Step 5 · Your Recommendations' : 'Step 4 · Quick Questionnaire'}
             </motion.h2>
-            <motion.h3 
-              className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#1F3A5C] leading-[1.05] tracking-tight"
-              style={{ fontFamily: 'var(--font-display)' }}
-              initial={{ opacity: 0, y: 20 }}
-              animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            >
-              Details & Results
-            </motion.h3>
-          </div>
-
-          <div className="space-y-4 sm:space-y-6">
-            <motion.div 
-              className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
-              initial={{ opacity: 0, y: 20 }}
-              animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#1F3A5C]/10 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[#1F3A5C] font-bold text-sm sm:text-base">3</span>
-              </div>
-              <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
-                  Answer 11 quick clinical questions.
-                </p>
-                <p className="text-sm sm:text-base font-semibold text-[#1F3A5C] leading-snug">
-                  Not sure of your pressure? Just say so.
-                </p>
-              </div>
-            </motion.div>
-
-            <motion.div 
-              className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
-              initial={{ opacity: 0, y: 20 }}
-              animate={phase >= 4 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#F4B942]/20 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[#F4B942] font-bold text-sm sm:text-base">4</span>
-              </div>
-              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
-                Get your top 3 mask recommendations with confidence scores.
-              </p>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* Right: Results UI Mockup */}
-        <div className="relative aspect-[4/5] w-full max-w-[180px] sm:max-w-[240px] lg:max-w-none mx-auto rounded-2xl sm:rounded-[2rem] lg:rounded-[3rem] bg-white border border-gray-100 shadow-2xl flex flex-col p-3 sm:p-5 lg:p-8 overflow-hidden order-1 lg:order-2">
-          <motion.div 
-            className="w-full h-12 sm:h-20 lg:h-32 rounded-xl lg:rounded-2xl bg-[#1F3A5C]/5 mb-3 sm:mb-4 lg:mb-6 animate-pulse"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={phase >= 3 ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
-          />
-          
-          <div className="space-y-2 sm:space-y-3 lg:space-y-4">
-            {[1, 2, 3].map((item, i) => (
-              <motion.div 
-                key={item}
-                className="w-full p-2 sm:p-3 lg:p-4 rounded-lg lg:rounded-xl border border-gray-100 flex items-center gap-2 sm:gap-3 lg:gap-4 bg-white shadow-sm"
-                initial={{ opacity: 0, x: 40 }}
-                animate={phase >= 4 ? { opacity: 1, x: 0 } : { opacity: 0, x: 40 }}
-                transition={{ delay: i * 0.15 + (phase >= 4 ? 0 : 0) }}
+            <AnimatePresence mode="wait">
+              <motion.h3
+                key={showingResults ? 'results' : 'questionnaire'}
+                className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#1F3A5C] leading-[1.05] tracking-tight"
+                style={{ fontFamily: 'var(--font-display)' }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.5 }}
               >
-                <div className="w-6 h-6 sm:w-9 sm:h-9 lg:w-12 lg:h-12 rounded-full bg-[#1F3A5C]/10 flex-shrink-0" />
-                <div className="flex-1 space-y-1 sm:space-y-1.5 lg:space-y-2 min-w-0">
-                  <div className="w-2/3 h-2 sm:h-2.5 lg:h-3 rounded-full bg-gray-200" />
-                  <div className="w-1/3 h-1.5 sm:h-2 rounded-full bg-gray-100" />
-                </div>
-                <div className="text-[#F4B942] font-bold text-xs sm:text-sm lg:text-lg">{98 - i * 4}%</div>
-              </motion.div>
-            ))}
+                {showingResults ? 'Your top 3 mask matches.' : '11 quick clinical questions.'}
+              </motion.h3>
+            </AnimatePresence>
           </div>
+
+          {/* Questionnaire body */}
+          {!showingResults && (
+            <motion.div
+              className="space-y-3 sm:space-y-4 max-w-md mx-auto lg:mx-0"
+              initial={{ opacity: 0, y: 16 }}
+              animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
+              transition={{ duration: 0.5 }}
+            >
+              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed text-left">
+                Answer questions about how you sleep and what your CPAP setup looks like. Each one
+                takes seconds — and <span className="font-semibold text-[#1F3A5C]">"I'm not sure" is a valid answer</span>.
+              </p>
+              <ul className="space-y-1.5 text-left">
+                {questionTopics.map((topic, i) => (
+                  <motion.li
+                    key={topic}
+                    className="flex items-start gap-2 text-sm sm:text-base text-[#475569]"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={phase >= 3 ? { opacity: 1, x: 0 } : { opacity: 0, x: -10 }}
+                    transition={{ delay: 0.1 + i * 0.12 }}
+                  >
+                    <ClipboardList className="w-4 h-4 text-[#F4B942] mt-0.5 shrink-0" strokeWidth={2.4} />
+                    <span>{topic}</span>
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+
+          {/* Results body */}
+          {showingResults && (
+            <motion.div
+              className="space-y-3 sm:space-y-4 max-w-md mx-auto lg:mx-0"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed text-left">
+                Penn Fit ranks every mask in our catalog against your measurements and answers, then
+                surfaces the three best fits with a confidence score for each.
+              </p>
+              <div className="space-y-2">
+                {recommendations.map((r, i) => (
+                  <motion.div
+                    key={r.name}
+                    className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-white border border-[#1F3A5C]/12 shadow-sm"
+                    initial={{ opacity: 0, x: -16 }}
+                    animate={phase >= 6 ? { opacity: 1, x: 0 } : { opacity: 0, x: -16 }}
+                    transition={{ delay: 0.1 + i * 0.12, type: 'spring', stiffness: 180, damping: 22 }}
+                  >
+                    <span className="text-sm sm:text-base font-semibold text-[#1F3A5C]">
+                      #{i + 1} · {r.name}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-[#F4B942]">
+                      <Sparkles className="w-3.5 h-3.5" /> {r.score}% match
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+              <motion.p
+                className="flex items-center gap-1.5 text-xs sm:text-sm text-[#1F3A5C]/70 font-medium pt-1"
+                initial={{ opacity: 0 }}
+                animate={phase >= 6 ? { opacity: 1 } : { opacity: 0 }}
+                transition={{ delay: 0.5 }}
+              >
+                <ShieldCheck className="w-4 h-4 text-[#F4B942]" />
+                Order direct from Penn Home Medical Supply.
+              </motion.p>
+            </motion.div>
+          )}
         </div>
+
+        {/* RIGHT: Phone frame — cross-fade between two real screenshots */}
+        <motion.div
+          className="relative mx-auto order-1 lg:order-2"
+          initial={{ opacity: 0, y: 40, rotateY: 12 }}
+          animate={
+            phase >= 1
+              ? { opacity: 1, y: 0, rotateY: 0 }
+              : { opacity: 0, y: 40, rotateY: 12 }
+          }
+          transition={{ type: 'spring', stiffness: 130, damping: 18 }}
+          style={{ transformPerspective: 1200 }}
+        >
+          <div className="relative rounded-[2.5rem] lg:rounded-[3rem] bg-[#1F3A5C] p-2 sm:p-2.5 shadow-2xl">
+            <div className="relative overflow-hidden rounded-[2rem] lg:rounded-[2.5rem] bg-white w-[180px] sm:w-[220px] lg:w-[260px] aspect-[390/844]">
+              <AnimatePresence mode="sync">
+                <motion.img
+                  key={showingResults ? 'results' : 'questionnaire'}
+                  src={showingResults ? resultsScreenshot : questionnaireScreenshot}
+                  alt={showingResults ? 'Recommendations screen' : 'Questionnaire screen'}
+                  className="absolute inset-0 w-full h-full object-cover object-top"
+                  initial={{ opacity: 0, scale: 1.04 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                  draggable={false}
+                />
+              </AnimatePresence>
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-16 h-1.5 rounded-full bg-[#1F3A5C]/80" />
+            </div>
+          </div>
+          <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-[#F4B942]/20 blur-3xl" />
+        </motion.div>
 
       </div>
     </motion.div>

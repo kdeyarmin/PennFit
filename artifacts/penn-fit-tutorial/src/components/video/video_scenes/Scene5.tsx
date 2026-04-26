@@ -6,10 +6,12 @@ export function Scene5() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
+    // Slowed so the closing tagline lingers long enough to feel intentional
+    // rather than a quick stinger.
     const timers = [
-      setTimeout(() => setPhase(1), 400),
-      setTimeout(() => setPhase(2), 1200),
-      setTimeout(() => setPhase(3), 2000),
+      setTimeout(() => setPhase(1), 500),
+      setTimeout(() => setPhase(2), 1800),
+      setTimeout(() => setPhase(3), 3000),
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);

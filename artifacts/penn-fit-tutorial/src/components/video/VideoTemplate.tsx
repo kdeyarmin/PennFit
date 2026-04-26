@@ -7,12 +7,17 @@ import { Scene3 } from './video_scenes/Scene3';
 import { Scene4 } from './video_scenes/Scene4';
 import { Scene5 } from './video_scenes/Scene5';
 
+// Scene timings — chosen so a first-time viewer can comfortably read every
+// line of body copy at least once. Earlier versions clocked in at ~21s total
+// and most viewers reported the text "flashing past" before they could read
+// it; the values below run ~43s and were tuned by reading each scene aloud
+// at a relaxed cadence.
 export const SCENE_DURATIONS = {
-  intro: 3500,
-  capture_measure: 4500,
-  pro_tips: 5000,
-  questionnaire_results: 4500,
-  outro: 4000,
+  intro: 6000,
+  capture_measure: 10000,
+  pro_tips: 10000,
+  questionnaire_results: 12000,
+  outro: 5500,
 };
 
 const SCENE_COMPONENTS: Record<string, React.ComponentType> = {
@@ -44,7 +49,7 @@ export default function VideoTemplate({
   const SceneComponent = SCENE_COMPONENTS[baseSceneKey];
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-[var(--color-bg-light)]">
+    <div className="relative w-full h-full overflow-hidden bg-[var(--color-bg-light)]">
 
       {/* Persistent Background Layer */}
       <div className="absolute inset-0 z-0">

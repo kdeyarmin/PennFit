@@ -6,11 +6,13 @@ export function Scene1() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
+    // Slower phase ramp — give viewers a beat to actually look at each piece
+    // (logo → title → tagline) before the next one slides in.
     const timers = [
-      setTimeout(() => setPhase(1), 300),   // Logo lands
-      setTimeout(() => setPhase(2), 900),   // "Penn Fit" title
-      setTimeout(() => setPhase(3), 1500),  // "How to Use" badge
-      setTimeout(() => setPhase(4), 2800),  // Elements start exiting
+      setTimeout(() => setPhase(1), 400),   // Logo lands
+      setTimeout(() => setPhase(2), 1500),  // "Penn Fit" title
+      setTimeout(() => setPhase(3), 2600),  // "How to Use" badge
+      setTimeout(() => setPhase(4), 5200),  // Elements start exiting
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);

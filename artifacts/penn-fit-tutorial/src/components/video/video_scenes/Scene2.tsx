@@ -1,118 +1,148 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Camera, ScanFace, Ruler } from 'lucide-react';
+
+const captureScreenshot = `${import.meta.env.BASE_URL}screenshots/capture-mobile.jpg`;
 
 export function Scene2() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
+    // Spread the four reveals across ~8s so each step has time to land
+    // before the next one slides in. Final hold (~1.5s) lets the viewer
+    // re-read the steps in full.
     const timers = [
-      setTimeout(() => setPhase(1), 200),
-      setTimeout(() => setPhase(2), 800),
-      setTimeout(() => setPhase(3), 1600),
-      setTimeout(() => setPhase(4), 2400),
-      setTimeout(() => setPhase(5), 3500),
+      setTimeout(() => setPhase(1), 300),    // Phone frame slides in
+      setTimeout(() => setPhase(2), 1500),   // Heading
+      setTimeout(() => setPhase(3), 2900),   // Step 1
+      setTimeout(() => setPhase(4), 4600),   // Step 2
+      setTimeout(() => setPhase(5), 6300),   // Step 3
+      setTimeout(() => setPhase(6), 8000),   // Step 4 + measurement chips
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);
 
+  const steps = [
+    { Icon: Camera, num: 1, text: 'Open Penn Fit and tap Start Fitting Process.' },
+    { Icon: ScanFace, num: 2, text: 'Frame your face inside the oval — a 3-second timer takes the photo.' },
+    { Icon: Ruler, num: 3, text: 'On-device AI extracts 5 facial measurements in millimeters.' },
+  ];
+
+  const measurementChips = [
+    { label: 'Nose Width', value: '35.2 mm' },
+    { label: 'Nose Height', value: '48.7 mm' },
+    { label: 'Nose → Chin', value: '62.3 mm' },
+    { label: 'Mouth Width', value: '52.1 mm' },
+    { label: 'Cheek Width', value: '138.4 mm' },
+  ];
+
   return (
-    <motion.div 
+    <motion.div
       className="absolute inset-0 flex items-center justify-center"
       initial={{ clipPath: 'circle(0% at 50% 50%)' }}
       animate={{ clipPath: 'circle(150% at 50% 50%)' }}
       exit={{ opacity: 0, scale: 1.05 }}
       transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-        
-        {/* Left Side: Graphic / Visual */}
-        <div className="relative aspect-square w-full max-w-[200px] sm:max-w-[260px] lg:max-w-none mx-auto rounded-[2rem] lg:rounded-[3rem] bg-[#1F3A5C] overflow-hidden flex items-center justify-center shadow-2xl">
-          <motion.div 
-            className="absolute inset-0 opacity-40 bg-cover bg-center"
-            style={{ backgroundImage: `url(${import.meta.env.BASE_URL}images/face-mesh.png)` }}
-            animate={{ scale: [1, 1.1, 1], rotate: [0, 2, -2, 0] }}
-            transition={{ duration: 15, repeat: Infinity, ease: 'linear' }}
-          />
-          
-          <motion.div 
-            className="relative z-10 w-[55%] h-[70%] lg:w-48 lg:h-64 border-4 border-[#F4B942]/80 rounded-[2rem] lg:rounded-[2.5rem] flex flex-col items-center justify-center"
-            initial={{ scale: 0, rotate: -15 }}
-            animate={phase >= 1 ? { scale: 1, rotate: 0 } : { scale: 0, rotate: -15 }}
-            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-          >
-            {/* Phone screen UI mockup */}
-            <div className="w-full h-full p-4 flex flex-col justify-between">
-              <motion.div 
-                className="w-16 h-16 mx-auto rounded-full border-2 border-dashed border-white/50"
-                animate={phase >= 2 ? { scale: [1, 1.2, 1], borderColor: ['rgba(255,255,255,0.5)', '#F4B942', 'rgba(255,255,255,0.5)'] } : {}}
-                transition={{ duration: 2, repeat: Infinity }}
-              />
-              <motion.div 
-                className="w-full h-2 bg-white/20 rounded-full overflow-hidden"
-                initial={{ opacity: 0 }}
-                animate={phase >= 3 ? { opacity: 1 } : { opacity: 0 }}
-              >
-                <motion.div 
-                  className="h-full bg-[#F4B942]"
-                  initial={{ width: '0%' }}
-                  animate={phase >= 3 ? { width: '100%' } : { width: '0%' }}
-                  transition={{ duration: 1.5, ease: 'easeInOut' }}
-                />
-              </motion.div>
-            </div>
-          </motion.div>
-        </div>
+      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-8 lg:gap-16 items-center">
 
-        {/* Right Side: Text Content */}
-        <div className="space-y-6 lg:space-y-10 text-center lg:text-left">
+        {/* LEFT: Real phone-frame screenshot of the home page */}
+        <motion.div
+          className="relative mx-auto"
+          initial={{ opacity: 0, y: 40, rotateY: -12 }}
+          animate={
+            phase >= 1
+              ? { opacity: 1, y: 0, rotateY: 0 }
+              : { opacity: 0, y: 40, rotateY: -12 }
+          }
+          transition={{ type: 'spring', stiffness: 130, damping: 18 }}
+          style={{ transformPerspective: 1200 }}
+        >
+          {/* Phone bezel */}
+          <div className="relative rounded-[2.5rem] lg:rounded-[3rem] bg-[#1F3A5C] p-2 sm:p-2.5 shadow-2xl">
+            <div className="relative overflow-hidden rounded-[2rem] lg:rounded-[2.5rem] bg-white w-[180px] sm:w-[220px] lg:w-[260px] aspect-[390/844]">
+              <img
+                src={captureScreenshot}
+                alt="Penn Fit capture screen"
+                className="absolute inset-0 w-full h-full object-cover object-top"
+                draggable={false}
+              />
+              {/* Soft top bezel notch */}
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-16 h-1.5 rounded-full bg-[#1F3A5C]/80" />
+            </div>
+          </div>
+          {/* Glow halo */}
+          <div className="absolute -inset-6 -z-10 rounded-[3rem] bg-[#F4B942]/20 blur-3xl" />
+        </motion.div>
+
+        {/* RIGHT: Numbered steps */}
+        <div className="space-y-5 lg:space-y-7 text-center lg:text-left">
           <div>
-            <motion.h2 
+            <motion.h2
               className="text-[#F4B942] font-bold tracking-wider uppercase text-xs sm:text-sm mb-2"
               initial={{ opacity: 0, x: -20 }}
-              animate={phase >= 1 ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+              animate={phase >= 2 ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
             >
-              Step 1 & 2
+              Steps 1 – 3 · Capture &amp; Measure
             </motion.h2>
-            <motion.h3 
+            <motion.h3
               className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#1F3A5C] leading-[1.05] tracking-tight"
               style={{ fontFamily: 'var(--font-display)' }}
               initial={{ opacity: 0, y: 20 }}
               animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               transition={{ duration: 0.6 }}
             >
-              Capture & Measure
+              Take one photo.
             </motion.h3>
           </div>
 
-          <div className="space-y-4 sm:space-y-6">
-            <motion.div 
-              className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
-              initial={{ opacity: 0, y: 20 }}
-              animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#1F3A5C]/10 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[#1F3A5C] font-bold text-sm sm:text-base">1</span>
-              </div>
-              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
-                Hold your device at eye level. A 3-second timer takes your photo.
-              </p>
-            </motion.div>
-
-            <motion.div 
-              className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
-              initial={{ opacity: 0, y: 20 }}
-              animate={phase >= 4 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#F4B942]/20 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-[#F4B942] font-bold text-sm sm:text-base">2</span>
-              </div>
-              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
-                Our on-device AI instantly extracts 5 key facial measurements.
-              </p>
-            </motion.div>
+          <div className="space-y-3 sm:space-y-4">
+            {steps.map((s, i) => {
+              const { Icon } = s;
+              return (
+                <motion.div
+                  key={s.num}
+                  className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={phase >= 3 + i ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#1F3A5C]/8 border border-[#1F3A5C]/15 flex items-center justify-center shrink-0 mt-0.5">
+                    <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-[#1F3A5C]" strokeWidth={2.2} />
+                  </div>
+                  <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
+                    <span className="font-semibold text-[#1F3A5C]">Step {s.num}.</span> {s.text}
+                  </p>
+                </motion.div>
+              );
+            })}
           </div>
+
+          {/* Measurement chips reveal */}
+          <motion.div
+            className="pt-2 sm:pt-3"
+            initial={{ opacity: 0, y: 12 }}
+            animate={phase >= 6 ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
+            transition={{ duration: 0.6 }}
+          >
+            <p className="text-[11px] sm:text-xs uppercase tracking-[0.18em] text-[#1F3A5C]/60 mb-2 font-semibold">
+              Extracted measurements
+            </p>
+            <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center lg:justify-start max-w-md mx-auto lg:mx-0">
+              {measurementChips.map((c, i) => (
+                <motion.span
+                  key={c.label}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-[#1F3A5C]/15 text-[11px] sm:text-xs font-medium text-[#1F3A5C] shadow-sm"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={phase >= 6 ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
+                  transition={{ delay: i * 0.08, type: 'spring', stiffness: 220, damping: 18 }}
+                >
+                  <span className="text-[#475569]">{c.label}</span>
+                  <span className="font-bold text-[#1F3A5C]">{c.value}</span>
+                </motion.span>
+              ))}
+            </div>
+          </motion.div>
         </div>
 
       </div>

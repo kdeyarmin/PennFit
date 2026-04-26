@@ -15,6 +15,51 @@ interface FitterState {
   chosenMask: ChosenMask | null;
 }
 
+// Demo mode (?demo=1) pre-populates realistic but fake state so we can:
+//   1. Capture screenshots of the gated /questionnaire and /results pages
+//      for the tutorial video, and
+//   2. Walk customers through the full app at trade shows / live demos
+//      without needing a working camera.
+// The values here are NOT real patient data — keep them clearly synthetic.
+const DEMO_MEASUREMENTS: FacialMeasurements = {
+  noseWidth: 35.2,
+  noseHeight: 48.7,
+  noseToChin: 62.3,
+  mouthWidth: 52.1,
+  faceWidthAtCheekbones: 138.4,
+  calibrationMethod: "iris",
+};
+const DEMO_ANSWERS: Partial<QuestionnaireAnswers> = {
+  mouthBreather: false,
+  claustrophobic: false,
+  sideOrStomachSleeper: true,
+  heavyFacialHair: false,
+  wearsGlasses: false,
+  frequentCongestion: false,
+  priorMaskExperience: "none",
+  mobilityLimitations: false,
+  sensitiveSkin: false,
+  siliconeSensitivity: false,
+  cpapPressureSetting: "medium",
+};
+// Demo mode is gated behind a development build (or an explicit
+// VITE_ENABLE_DEMO=1 env at build time) so a public production user can't
+// bypass the measurement/answer flow gating just by appending ?demo=1 to the
+// URL — that would let them view recommendations based on synthetic data
+// instead of their own. For trade-show / sales-demo deployments, build with
+// VITE_ENABLE_DEMO=1 to re-enable demo mode in production.
+function isDemoMode(): boolean {
+  if (typeof window === "undefined") return false;
+  const enabled =
+    import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO === "1";
+  if (!enabled) return false;
+  try {
+    return new URLSearchParams(window.location.search).get("demo") === "1";
+  } catch {
+    return false;
+  }
+}
+
 interface FitterContextType extends FitterState {
   setMeasurements: (measurements: FacialMeasurements) => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
@@ -26,10 +71,18 @@ interface FitterContextType extends FitterState {
 const FitterContext = createContext<FitterContextType | undefined>(undefined);
 
 export function FitterProvider({ children }: { children: ReactNode }) {
-  const [measurements, setMeasurements] = useState<FacialMeasurements | null>(null);
+  // Lazy initializers run BEFORE any child renders, which means demo state is
+  // available on first paint — critical for /results, which redirects to "/"
+  // in a useEffect when measurements are null.
+  const demo = isDemoMode();
 
-  // Load initial answers from sessionStorage
+  const [measurements, setMeasurements] = useState<FacialMeasurements | null>(
+    demo ? DEMO_MEASUREMENTS : null,
+  );
+
+  // Load initial answers from sessionStorage (or demo answers in demo mode).
   const [answers, setAnswers] = useState<Partial<QuestionnaireAnswers>>(() => {
+    if (demo) return DEMO_ANSWERS;
     try {
       const stored = sessionStorage.getItem("fitter_answers");
       return stored ? JSON.parse(stored) : {};
