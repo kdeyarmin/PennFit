@@ -1,0 +1,31 @@
+kind = "video"
+previewPath = "/penn-fit-tutorial/"
+title = "Penn Fit — How To Use"
+version = "1.0.0"
+id = "artifacts/penn-fit-tutorial"
+router = "path"
+
+[[integratedSkills]]
+name = "video-js"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/penn-fit-tutorial/" ]
+localPort = 20466
+
+[services.development]
+run = "pnpm --filter @workspace/penn-fit-tutorial run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/penn-fit-tutorial", "run", "build" ]
+publicDir = "artifacts/penn-fit-tutorial/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20466"
+BASE_PATH = "/penn-fit-tutorial/"
