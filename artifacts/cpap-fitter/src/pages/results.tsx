@@ -6,13 +6,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCcw, Info, CheckCircle2, ChevronRight, AlertCircle, Weight, Activity, Wind, Tag, Sparkles } from "lucide-react";
+import { RefreshCcw, Info, CheckCircle2, ChevronRight, AlertCircle, Weight, Activity, Wind, Tag, Sparkles, ShoppingCart } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
 
 export function Results() {
   const [, setLocation] = useLocation();
-  const { measurements, answers, reset } = useFitterStore();
+  const { measurements, answers, reset, setChosenMask } = useFitterStore();
+
+  const handleChooseMask = (mask: { maskId: string; name: string; modelNumber: string; manufacturer: string }) => {
+    setChosenMask({
+      maskId: mask.maskId,
+      name: mask.name,
+      modelNumber: mask.modelNumber,
+      manufacturer: mask.manufacturer,
+    });
+    setLocation("/order");
+  };
   const { mutate, data, isPending, error } = useGetRecommendation();
   const { data: catalog } = useListMasks();
   const catalogById = React.useMemo(() => {
@@ -200,6 +210,22 @@ export function Results() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  <div className="mt-5 pt-5 border-t border-border">
+                    <Button
+                      onClick={() => handleChooseMask(mask)}
+                      size="lg"
+                      variant={idx === 0 ? "default" : "outline"}
+                      className="w-full"
+                      data-testid={`button-choose-${mask.maskId}`}
+                    >
+                      <ShoppingCart className="w-4 h-4 mr-2" />
+                      Order This Mask
+                    </Button>
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      We'll collect your insurance and shipping info, then send your order to Penn Home Medical Supply.
+                    </p>
                   </div>
                 </div>
               </div>

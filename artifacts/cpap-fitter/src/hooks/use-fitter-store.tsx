@@ -1,16 +1,25 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import type { FacialMeasurements, QuestionnaireAnswers } from "@workspace/api-client-react";
 
+export interface ChosenMask {
+  maskId: string;
+  name: string;
+  modelNumber: string;
+  manufacturer: string;
+}
+
 interface FitterState {
   measurements: FacialMeasurements | null;
   answers: Partial<QuestionnaireAnswers>;
   capturedImage: string | null; // Data URL for display purposes only. Never uploaded.
+  chosenMask: ChosenMask | null;
 }
 
 interface FitterContextType extends FitterState {
   setMeasurements: (measurements: FacialMeasurements) => void;
   updateAnswers: (answers: Partial<QuestionnaireAnswers>) => void;
   setCapturedImage: (image: string | null) => void;
+  setChosenMask: (mask: ChosenMask | null) => void;
   reset: () => void;
 }
 
@@ -18,7 +27,7 @@ const FitterContext = createContext<FitterContextType | undefined>(undefined);
 
 export function FitterProvider({ children }: { children: ReactNode }) {
   const [measurements, setMeasurements] = useState<FacialMeasurements | null>(null);
-  
+
   // Load initial answers from sessionStorage
   const [answers, setAnswers] = useState<Partial<QuestionnaireAnswers>>(() => {
     try {
@@ -30,6 +39,18 @@ export function FitterProvider({ children }: { children: ReactNode }) {
   });
 
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+
+  // Chosen mask survives a refresh on the order page so the patient doesn't
+  // have to redo the questionnaire. Stored in sessionStorage (cleared on tab
+  // close); never persisted to disk or transmitted on its own.
+  const [chosenMask, setChosenMaskState] = useState<ChosenMask | null>(() => {
+    try {
+      const stored = sessionStorage.getItem("fitter_chosen_mask");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const updateAnswers = (newAnswers: Partial<QuestionnaireAnswers>) => {
     setAnswers((prev) => {
@@ -43,11 +64,26 @@ export function FitterProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setChosenMask = (mask: ChosenMask | null) => {
+    setChosenMaskState(mask);
+    try {
+      if (mask) {
+        sessionStorage.setItem("fitter_chosen_mask", JSON.stringify(mask));
+      } else {
+        sessionStorage.removeItem("fitter_chosen_mask");
+      }
+    } catch (e) {
+      console.error("Failed to persist chosen mask", e);
+    }
+  };
+
   const reset = () => {
     setMeasurements(null);
     setAnswers({});
     setCapturedImage(null);
+    setChosenMaskState(null);
     sessionStorage.removeItem("fitter_answers");
+    sessionStorage.removeItem("fitter_chosen_mask");
   };
 
   return (
@@ -56,9 +92,11 @@ export function FitterProvider({ children }: { children: ReactNode }) {
         measurements,
         answers,
         capturedImage,
+        chosenMask,
         setMeasurements,
         updateAnswers,
         setCapturedImage,
+        setChosenMask,
         reset,
       }}
     >

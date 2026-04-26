@@ -26,7 +26,8 @@ Each `MaskRecommendation` includes:
 ### Privacy-First Design (Critical Constraint)
 - **All facial image processing happens ON-DEVICE in the browser** using MediaPipe Face Mesh
 - **Images NEVER leave the user's device** — only numeric measurements (mm) are transmitted
-- **Backend is fully stateless** — no database, no PHI storage, no request body logging
+- **Backend is fully stateless** for the recommendation flow — no database, no PHI storage, no request body logging
+- **Order intake (`POST /api/orders`) is the ONE PHI-touching endpoint.** It validates, forwards the order to Penn via SendGrid, and discards the payload. Body is **never logged, never persisted**, never cached. Order reference numbers are generated per-request and live only in the email Penn receives.
 - Deployment target: HIPAA-compliant infra (AWS with BAA)
 
 ### Stack
@@ -48,9 +49,11 @@ Each `MaskRecommendation` includes:
 3. **Capture** (`/capture`) — Live camera with SVG face oval guide + credit card calibration reference
 4. **Measure** (`/measure`) — On-device MediaPipe Face Mesh processing → numeric measurements
 5. **Questionnaire** (`/questionnaire`) — Clinical questions (mouth breathing, claustrophobia, sleep position, etc.)
-6. **Results** (`/results`) — Top 3 mask recommendations with confidence scores and reasoning
-7. **Masks** (`/masks`) — Mask catalog browser (filterable by type)
-8. **Privacy** (`/privacy`) — Privacy policy stub for attorney completion
+6. **Results** (`/results`) — Top 3 mask recommendations with confidence scores; each card has an **Order This Mask** button
+7. **Order** (`/order`) — Patient/contact/shipping/insurance/prescription intake form, gated on consent checkbox; submits to `POST /api/orders`
+8. **Order Success** (`/order-success`) — Confirmation page showing the generated order reference (e.g. `PHM-7K3-N9X`) and what happens next
+9. **Masks** (`/masks`) — Mask catalog browser (filterable by type)
+10. **Privacy** (`/privacy`) — Privacy policy stub for attorney completion
 
 ### Network Boundary
 
@@ -64,6 +67,12 @@ Pixel→mm calibration (never leaves)
 Measurements (mm)  ─── POST /api/recommend ──→  Recommendation engine
 Questionnaire answers                           (pure function, stateless)
                    ←── Top 3 masks + reasoning ─
+
+Order form fields  ─── POST /api/orders ─────→  Validate → SendGrid email
+(name, address,                                  to PENN_FULFILLMENT_EMAIL,
+ insurance, Rx)                                  then DISCARD (no DB write,
+                                                 no log of body)
+                   ←── { orderReference } ──────
 ```
 
 ### Packages
@@ -93,9 +102,26 @@ Replace with actual DME inventory before production use.
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
+## Order Email Delivery
+
+`POST /api/orders` forwards the order to Penn Home Medical Supply via SendGrid.
+
+- **SendGrid credentials**: obtained on demand from the Replit SendGrid connector (no `SENDGRID_API_KEY` to manage). See `artifacts/api-server/src/lib/orderEmail.ts` → `getSendGridApiKey()`. Tokens are fetched fresh per request (never cached) so rotation works.
+- **Required env vars**:
+  - `PENN_FULFILLMENT_EMAIL` — destination address Penn receives orders at
+  - `PENN_FROM_EMAIL` — verified sender address on the SendGrid account (must be verified in SendGrid before delivery works)
+- **Failure modes** (route returns explicit HTTP codes — never silently drops):
+  - `400` — validation failure (missing field, invalid email, missing consent)
+  - `503` — SendGrid not connected OR `PENN_FULFILLMENT_EMAIL`/`PENN_FROM_EMAIL` missing
+  - `502` — SendGrid returned an error
+  - `200` — delivered, returns `{ orderReference, deliveredAt, message }`
+- **Order reference format**: `PHM-XXX-XXX` using a confusion-free alphabet (no I/O/0/1)
+- **Logging**: pino-http is configured to NOT log request/response bodies for `/api/orders`. Never add body logging.
+
 ## Important Notes
 
 - **Do not add image logging** anywhere in the backend — this breaks the PHI architecture guarantee
+- **Do not log or persist order request bodies** — `/api/orders` is the only PHI endpoint and must remain stateless
 - **Do not add a database** unless specifically for non-PHI business data (mask catalog, etc.)
 - Consent screen has `[ATTORNEY REVIEW]` placeholders — requires attorney sign-off before launch
 - FDA SaMD analysis may be required before patient use — consult regulatory counsel

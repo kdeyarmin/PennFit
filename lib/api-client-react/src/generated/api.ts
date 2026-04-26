@@ -20,6 +20,8 @@ import type {
   ErrorResponse,
   HealthStatus,
   MaskCatalogResponse,
+  OrderRequest,
+  OrderResponse,
   RecommendationRequest,
   RecommendationResponse,
 } from "./api.schemas";
@@ -108,6 +110,97 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Accepts patient contact, shipping address, insurance information, and
+the chosen mask. Forwards the order to Penn Home Medical Supply via
+secure email. Stateless — order details are NOT stored on the server,
+NOT logged, and discarded after the email is sent.
+
+ * @summary Submit a mask order to Penn Home Medical Supply
+ */
+export const getSubmitOrderUrl = () => {
+  return `/api/orders`;
+};
+
+export const submitOrder = async (
+  orderRequest: OrderRequest,
+  options?: RequestInit,
+): Promise<OrderResponse> => {
+  return customFetch<OrderResponse>(getSubmitOrderUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(orderRequest),
+  });
+};
+
+export const getSubmitOrderMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitOrder>>,
+    TError,
+    { data: BodyType<OrderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitOrder>>,
+  TError,
+  { data: BodyType<OrderRequest> },
+  TContext
+> => {
+  const mutationKey = ["submitOrder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitOrder>>,
+    { data: BodyType<OrderRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return submitOrder(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitOrder>>
+>;
+export type SubmitOrderMutationBody = BodyType<OrderRequest>;
+export type SubmitOrderMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Submit a mask order to Penn Home Medical Supply
+ */
+export const useSubmitOrder = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitOrder>>,
+    TError,
+    { data: BodyType<OrderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitOrder>>,
+  TError,
+  { data: BodyType<OrderRequest> },
+  TContext
+> => {
+  return useMutation(getSubmitOrderMutationOptions(options));
+};
 
 /**
  * Accepts facial measurements (numeric only) and questionnaire answers.

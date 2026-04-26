@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: recommend
     description: Mask recommendation operations
+  - name: orders
+    description: Mask order submission
 paths:
   /healthz:
     get:
@@ -26,6 +28,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /orders:
+    post:
+      operationId: submitOrder
+      tags: [orders]
+      summary: Submit a mask order to Penn Home Medical Supply
+      description: |
+        Accepts patient contact, shipping address, insurance information, and
+        the chosen mask. Forwards the order to Penn Home Medical Supply via
+        secure email. Stateless — order details are NOT stored on the server,
+        NOT logged, and discarded after the email is sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderRequest"
+      responses:
+        "200":
+          description: Order submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderResponse"
+        "400":
+          description: Invalid order payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Upstream email provider failed to deliver the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Email delivery not configured on this server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /recommend:
     post:
@@ -355,3 +399,143 @@ components:
           nullable: true
       required:
         - error
+
+    OrderRequest:
+      type: object
+      description: |
+        Patient and insurance information for a CPAP mask order.
+        Forwarded to Penn Home Medical Supply via email and immediately discarded.
+      properties:
+        chosenMask:
+          type: object
+          properties:
+            maskId:
+              type: string
+            name:
+              type: string
+            modelNumber:
+              type: string
+            manufacturer:
+              type: string
+          required: [maskId, name, modelNumber, manufacturer]
+        patient:
+          type: object
+          properties:
+            firstName:
+              type: string
+              minLength: 1
+              maxLength: 100
+            lastName:
+              type: string
+              minLength: 1
+              maxLength: 100
+            dateOfBirth:
+              type: string
+              description: YYYY-MM-DD
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+            email:
+              type: string
+              format: email
+              maxLength: 200
+            phone:
+              type: string
+              minLength: 7
+              maxLength: 30
+          required: [firstName, lastName, dateOfBirth, email, phone]
+        shippingAddress:
+          type: object
+          properties:
+            street1:
+              type: string
+              minLength: 1
+              maxLength: 200
+            street2:
+              type: string
+              maxLength: 200
+            city:
+              type: string
+              minLength: 1
+              maxLength: 100
+            state:
+              type: string
+              minLength: 2
+              maxLength: 2
+              description: Two-letter US state code
+            zip:
+              type: string
+              minLength: 5
+              maxLength: 10
+              pattern: "^\\d{5}(-\\d{4})?$"
+          required: [street1, city, state, zip]
+        insurance:
+          type: object
+          properties:
+            provider:
+              type: string
+              minLength: 1
+              maxLength: 100
+              description: e.g. "Aetna", "Blue Cross Blue Shield", "Medicare"
+            memberId:
+              type: string
+              minLength: 1
+              maxLength: 50
+            groupNumber:
+              type: string
+              maxLength: 50
+            planName:
+              type: string
+              maxLength: 100
+            policyholderName:
+              type: string
+              maxLength: 200
+              description: Leave blank if patient is the policyholder
+            policyholderRelationship:
+              type: string
+              enum: [self, spouse, parent, child, other]
+          required: [provider, memberId]
+        prescription:
+          type: object
+          properties:
+            hasExistingPrescription:
+              type: boolean
+              description: Whether the patient already has a CPAP prescription on file
+            physicianName:
+              type: string
+              maxLength: 200
+            physicianPhone:
+              type: string
+              maxLength: 30
+          required: [hasExistingPrescription]
+        notes:
+          type: string
+          maxLength: 1000
+          description: Optional notes from the patient (allergies, special requests, etc.)
+        consentToContact:
+          type: boolean
+          description: Patient consents to be contacted by Penn Home Medical Supply about this order
+      required:
+        - chosenMask
+        - patient
+        - shippingAddress
+        - insurance
+        - prescription
+        - consentToContact
+
+    OrderResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        orderReference:
+          type: string
+          description: Short reference number the patient can use when calling Penn
+        deliveredAt:
+          type: string
+          description: ISO-8601 timestamp string of when the order was delivered
+        message:
+          type: string
+      required:
+        - success
+        - orderReference
+        - deliveredAt
+        - message

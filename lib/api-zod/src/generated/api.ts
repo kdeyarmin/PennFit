@@ -16,6 +16,166 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * Accepts patient contact, shipping address, insurance information, and
+the chosen mask. Forwards the order to Penn Home Medical Supply via
+secure email. Stateless — order details are NOT stored on the server,
+NOT logged, and discarded after the email is sent.
+
+ * @summary Submit a mask order to Penn Home Medical Supply
+ */
+export const submitOrderBodyPatientFirstNameMax = 100;
+
+export const submitOrderBodyPatientLastNameMax = 100;
+
+export const submitOrderBodyPatientDateOfBirthRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const submitOrderBodyPatientEmailMax = 200;
+
+export const submitOrderBodyPatientPhoneMin = 7;
+export const submitOrderBodyPatientPhoneMax = 30;
+
+export const submitOrderBodyShippingAddressStreet1Max = 200;
+
+export const submitOrderBodyShippingAddressStreet2Max = 200;
+
+export const submitOrderBodyShippingAddressCityMax = 100;
+
+export const submitOrderBodyShippingAddressStateMin = 2;
+export const submitOrderBodyShippingAddressStateMax = 2;
+
+export const submitOrderBodyShippingAddressZipMin = 5;
+export const submitOrderBodyShippingAddressZipMax = 10;
+
+export const submitOrderBodyShippingAddressZipRegExp = new RegExp(
+  "^\\d{5}(-\\d{4})?$",
+);
+export const submitOrderBodyInsuranceProviderMax = 100;
+
+export const submitOrderBodyInsuranceMemberIdMax = 50;
+
+export const submitOrderBodyInsuranceGroupNumberMax = 50;
+
+export const submitOrderBodyInsurancePlanNameMax = 100;
+
+export const submitOrderBodyInsurancePolicyholderNameMax = 200;
+
+export const submitOrderBodyPrescriptionPhysicianNameMax = 200;
+
+export const submitOrderBodyPrescriptionPhysicianPhoneMax = 30;
+
+export const submitOrderBodyNotesMax = 1000;
+
+export const SubmitOrderBody = zod
+  .object({
+    chosenMask: zod.object({
+      maskId: zod.string(),
+      name: zod.string(),
+      modelNumber: zod.string(),
+      manufacturer: zod.string(),
+    }),
+    patient: zod.object({
+      firstName: zod.string().min(1).max(submitOrderBodyPatientFirstNameMax),
+      lastName: zod.string().min(1).max(submitOrderBodyPatientLastNameMax),
+      dateOfBirth: zod
+        .string()
+        .regex(submitOrderBodyPatientDateOfBirthRegExp)
+        .describe("YYYY-MM-DD"),
+      email: zod.string().email().max(submitOrderBodyPatientEmailMax),
+      phone: zod
+        .string()
+        .min(submitOrderBodyPatientPhoneMin)
+        .max(submitOrderBodyPatientPhoneMax),
+    }),
+    shippingAddress: zod.object({
+      street1: zod
+        .string()
+        .min(1)
+        .max(submitOrderBodyShippingAddressStreet1Max),
+      street2: zod
+        .string()
+        .max(submitOrderBodyShippingAddressStreet2Max)
+        .optional(),
+      city: zod.string().min(1).max(submitOrderBodyShippingAddressCityMax),
+      state: zod
+        .string()
+        .min(submitOrderBodyShippingAddressStateMin)
+        .max(submitOrderBodyShippingAddressStateMax)
+        .describe("Two-letter US state code"),
+      zip: zod
+        .string()
+        .min(submitOrderBodyShippingAddressZipMin)
+        .max(submitOrderBodyShippingAddressZipMax)
+        .regex(submitOrderBodyShippingAddressZipRegExp),
+    }),
+    insurance: zod.object({
+      provider: zod
+        .string()
+        .min(1)
+        .max(submitOrderBodyInsuranceProviderMax)
+        .describe('e.g. \"Aetna\", \"Blue Cross Blue Shield\", \"Medicare\"'),
+      memberId: zod.string().min(1).max(submitOrderBodyInsuranceMemberIdMax),
+      groupNumber: zod
+        .string()
+        .max(submitOrderBodyInsuranceGroupNumberMax)
+        .optional(),
+      planName: zod
+        .string()
+        .max(submitOrderBodyInsurancePlanNameMax)
+        .optional(),
+      policyholderName: zod
+        .string()
+        .max(submitOrderBodyInsurancePolicyholderNameMax)
+        .optional()
+        .describe("Leave blank if patient is the policyholder"),
+      policyholderRelationship: zod
+        .enum(["self", "spouse", "parent", "child", "other"])
+        .optional(),
+    }),
+    prescription: zod.object({
+      hasExistingPrescription: zod
+        .boolean()
+        .describe(
+          "Whether the patient already has a CPAP prescription on file",
+        ),
+      physicianName: zod
+        .string()
+        .max(submitOrderBodyPrescriptionPhysicianNameMax)
+        .optional(),
+      physicianPhone: zod
+        .string()
+        .max(submitOrderBodyPrescriptionPhysicianPhoneMax)
+        .optional(),
+    }),
+    notes: zod
+      .string()
+      .max(submitOrderBodyNotesMax)
+      .optional()
+      .describe(
+        "Optional notes from the patient (allergies, special requests, etc.)",
+      ),
+    consentToContact: zod
+      .boolean()
+      .describe(
+        "Patient consents to be contacted by Penn Home Medical Supply about this order",
+      ),
+  })
+  .describe(
+    "Patient and insurance information for a CPAP mask order.\nForwarded to Penn Home Medical Supply via email and immediately discarded.\n",
+  );
+
+export const SubmitOrderResponse = zod.object({
+  success: zod.boolean(),
+  orderReference: zod
+    .string()
+    .describe("Short reference number the patient can use when calling Penn"),
+  deliveredAt: zod
+    .string()
+    .describe("ISO-8601 timestamp string of when the order was delivered"),
+  message: zod.string(),
+});
+
+/**
  * Accepts facial measurements (numeric only) and questionnaire answers.
 Returns ranked mask recommendations. No images accepted. No PHI stored.
 

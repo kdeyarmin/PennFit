@@ -10,6 +10,8 @@ import { Capture } from "@/pages/capture";
 import { Measure } from "@/pages/measure";
 import { Questionnaire } from "@/pages/questionnaire";
 import { Results } from "@/pages/results";
+import { Order } from "@/pages/order";
+import { OrderSuccess } from "@/pages/order-success";
 import { Masks } from "@/pages/masks";
 import { Privacy } from "@/pages/privacy";
 import { FitterProvider } from "@/hooks/use-fitter-store";
@@ -26,6 +28,8 @@ function Router() {
         <Route path="/measure" component={Measure} />
         <Route path="/questionnaire" component={Questionnaire} />
         <Route path="/results" component={Results} />
+        <Route path="/order" component={Order} />
+        <Route path="/order-success" component={OrderSuccess} />
         <Route path="/masks" component={Masks} />
         <Route path="/privacy" component={Privacy} />
         <Route component={NotFound} />

@@ -191,3 +191,135 @@ export interface ErrorResponse {
   error: string;
   details?: string[] | null;
 }
+
+export type OrderRequestChosenMask = {
+  maskId: string;
+  name: string;
+  modelNumber: string;
+  manufacturer: string;
+};
+
+export type OrderRequestPatient = {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  firstName: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  lastName: string;
+  /**
+   * YYYY-MM-DD
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  dateOfBirth: string;
+  /** @maxLength 200 */
+  email: string;
+  /**
+   * @minLength 7
+   * @maxLength 30
+   */
+  phone: string;
+};
+
+export type OrderRequestShippingAddress = {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  street1: string;
+  /** @maxLength 200 */
+  street2?: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  city: string;
+  /**
+   * Two-letter US state code
+   * @minLength 2
+   * @maxLength 2
+   */
+  state: string;
+  /**
+   * @minLength 5
+   * @maxLength 10
+   * @pattern ^\d{5}(-\d{4})?$
+   */
+  zip: string;
+};
+
+export type OrderRequestInsurancePolicyholderRelationship =
+  (typeof OrderRequestInsurancePolicyholderRelationship)[keyof typeof OrderRequestInsurancePolicyholderRelationship];
+
+export const OrderRequestInsurancePolicyholderRelationship = {
+  self: "self",
+  spouse: "spouse",
+  parent: "parent",
+  child: "child",
+  other: "other",
+} as const;
+
+export type OrderRequestInsurance = {
+  /**
+   * e.g. "Aetna", "Blue Cross Blue Shield", "Medicare"
+   * @minLength 1
+   * @maxLength 100
+   */
+  provider: string;
+  /**
+   * @minLength 1
+   * @maxLength 50
+   */
+  memberId: string;
+  /** @maxLength 50 */
+  groupNumber?: string;
+  /** @maxLength 100 */
+  planName?: string;
+  /**
+   * Leave blank if patient is the policyholder
+   * @maxLength 200
+   */
+  policyholderName?: string;
+  policyholderRelationship?: OrderRequestInsurancePolicyholderRelationship;
+};
+
+export type OrderRequestPrescription = {
+  /** Whether the patient already has a CPAP prescription on file */
+  hasExistingPrescription: boolean;
+  /** @maxLength 200 */
+  physicianName?: string;
+  /** @maxLength 30 */
+  physicianPhone?: string;
+};
+
+/**
+ * Patient and insurance information for a CPAP mask order.
+Forwarded to Penn Home Medical Supply via email and immediately discarded.
+
+ */
+export interface OrderRequest {
+  chosenMask: OrderRequestChosenMask;
+  patient: OrderRequestPatient;
+  shippingAddress: OrderRequestShippingAddress;
+  insurance: OrderRequestInsurance;
+  prescription: OrderRequestPrescription;
+  /**
+   * Optional notes from the patient (allergies, special requests, etc.)
+   * @maxLength 1000
+   */
+  notes?: string;
+  /** Patient consents to be contacted by Penn Home Medical Supply about this order */
+  consentToContact: boolean;
+}
+
+export interface OrderResponse {
+  success: boolean;
+  /** Short reference number the patient can use when calling Penn */
+  orderReference: string;
+  /** ISO-8601 timestamp string of when the order was delivered */
+  deliveredAt: string;
+  message: string;
+}
