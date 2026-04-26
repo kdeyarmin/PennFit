@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Progress } from "@/components/ui/progress";
@@ -16,12 +16,19 @@ export function Measure() {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("Initializing secure on-device processor…");
   const [error, setError] = useState<string | null>(null);
+  // Guard so the effect doesn't redirect us back to /capture once we
+  // intentionally clear the captured image for privacy after extracting
+  // measurements (which would otherwise re-fire this effect with capturedImage
+  // === null, beating our setTimeout to /questionnaire).
+  const startedRef = useRef(false);
 
   useEffect(() => {
+    if (startedRef.current) return;
     if (!capturedImage) {
       setLocation("/capture");
       return;
     }
+    startedRef.current = true;
 
     let isMounted = true;
 
