@@ -37,6 +37,7 @@ export interface QuestionnaireAnswers {
   mobilityLimitations: boolean;
   sensitiveSkin: boolean;
   siliconeSensitivity: boolean;
+  cpapPressureSetting: "unknown" | "low" | "medium" | "high";
 }
 
 export interface MaskTypeWeights {
@@ -169,6 +170,22 @@ export function scoreAnswers(answers: QuestionnaireAnswers): MaskTypeWeights {
     weights.nasalPillow -= 0.10;
     weights.hybrid += 0.05;
   }
+
+  // CPAP pressure setting
+  // Source: AASM titration guidelines; manufacturer pressure ratings on most
+  // nasal pillows top out around 20 cmH2O, while full-face masks are rated to 25+.
+  // High pressures (>15) make a tight, broad-contact seal mandatory.
+  if (answers.cpapPressureSetting === "high") {
+    weights.fullFace += 0.20;
+    weights.hybrid += 0.10;
+    weights.nasalPillow -= 0.20;
+    weights.nasal -= 0.05;
+  } else if (answers.cpapPressureSetting === "low") {
+    // Low pressure makes minimal-contact masks more viable / comfortable
+    weights.nasalPillow += 0.05;
+    weights.nasal += 0.05;
+  }
+  // medium and unknown: no adjustment (medium is the design center for most masks)
 
   // Normalize to [0, 1]
   const total = Object.values(weights).reduce((a, b) => a + b, 0);
@@ -446,10 +463,22 @@ export function recommend(
     // They may still appear in alternatives with low confidence
     const contraMultiplier = activeContras.length > 0 ? 0.15 : 1.0;
 
+    // Pressure-rating penalty: if the patient is on high pressure (>15 cmH2O)
+    // but the mask isn't rated for it, mark it as a soft contra. Most nasal
+    // pillows top out at ~20 cmH2O; high-pressure patients need a mask rated
+    // ≥20 to preserve the seal under load.
+    let pressureMultiplier = 1.0;
+    let pressureNote: string | null = null;
+    if (answers.cpapPressureSetting === "high" && mask.pressureRangeMax < 20) {
+      pressureMultiplier = 0.5;
+      pressureNote = `Note: ${mask.name} is rated up to ${mask.pressureRangeMax} cmH₂O; high-pressure patients (15+) typically need a mask rated to at least 20 cmH₂O.`;
+    }
+
     // Combined score: 60% type preference (questionnaire-driven), 40% physical fit
-    const rawScore = (typeScore * 0.60 + fitScore * 0.40) * contraMultiplier;
+    const rawScore = (typeScore * 0.60 + fitScore * 0.40) * contraMultiplier * pressureMultiplier;
 
     const reasoning = generateReasoning(mask, measurements, answers, typeWeights);
+    if (pressureNote) reasoning.unshift(pressureNote);
     const summary = generateSummary(mask, measurements, answers);
 
     const recommendation: MaskRecommendation = {
@@ -466,7 +495,11 @@ export function recommend(
       imageUrl: mask.imageUrl,
     };
 
-    return { recommendation, hasContraindications: activeContras.length > 0 };
+    return {
+      recommendation,
+      hasContraindications: activeContras.length > 0 || pressureMultiplier < 1.0,
+      maskType: mask.type,
+    };
   });
 
   // Sort by confidence descending
@@ -476,25 +509,60 @@ export function recommend(
   const nonContraindicated = scoredMasks.filter((m) => !m.hasContraindications);
   const contraindicated = scoredMasks.filter((m) => m.hasContraindications);
 
-  const topRecommendations = nonContraindicated.slice(0, 3).map((m) => m.recommendation);
+  // Build top 3 with diversification: prefer at least 2 distinct mask types
+  // in the top 3 so the customer has a meaningful choice between options
+  // rather than 3 nearly-identical masks. The #1 slot is always the highest
+  // scorer; slot #3 is swapped for a different-type mask if available within
+  // a reasonable confidence band.
+  const topRecommendations: MaskRecommendation[] = [];
+  if (nonContraindicated.length > 0) {
+    topRecommendations.push(nonContraindicated[0].recommendation);
+  }
+  if (nonContraindicated.length > 1) {
+    topRecommendations.push(nonContraindicated[1].recommendation);
+  }
+  if (nonContraindicated.length > 2) {
+    const slot3Default = nonContraindicated[2];
+    const top1Type = nonContraindicated[0].maskType;
+    const top2Type = nonContraindicated.length > 1 ? nonContraindicated[1].maskType : null;
+    const allSameSoFar = top2Type === null || top1Type === top2Type;
+    const slot3SameType = slot3Default.maskType === top1Type;
 
-  // If we don't have 3 non-contraindicated, fill with contraindicated (with lower confidence)
-  while (topRecommendations.length < 3 && contraindicated.length > 0) {
-    const next = contraindicated.shift();
-    if (next) {
-      const rec = {
-        ...next.recommendation,
-        reasoning: [
-          "Note: This mask has considerations that may affect fit for your profile — discuss with your DME provider.",
-          ...next.recommendation.reasoning,
-        ],
-      };
-      topRecommendations.push(rec);
+    // If the top 3 would otherwise all be the same type, look for a
+    // different-type alternative whose confidence is within 0.20 of the
+    // default slot-3 candidate. Otherwise keep the natural ranking.
+    if (allSameSoFar && slot3SameType) {
+      const alt = nonContraindicated.slice(3).find(
+        (m) =>
+          m.maskType !== top1Type &&
+          m.recommendation.confidence >= slot3Default.recommendation.confidence - 0.20,
+      );
+      topRecommendations.push((alt ?? slot3Default).recommendation);
+    } else {
+      topRecommendations.push(slot3Default.recommendation);
     }
   }
 
+  // If we don't have 3 non-contraindicated, fill with contraindicated (with lower confidence)
+  let contraIdx = 0;
+  while (topRecommendations.length < 3 && contraIdx < contraindicated.length) {
+    const next = contraindicated[contraIdx++];
+    const rec = {
+      ...next.recommendation,
+      reasoning: [
+        "Note: This mask has considerations that may affect fit for your profile — discuss with your DME provider.",
+        ...next.recommendation.reasoning,
+      ],
+    };
+    topRecommendations.push(rec);
+  }
+
   // Alternatives: next 5 masks after top 3 (non-contraindicated preferred)
-  const remaining = [...nonContraindicated.slice(3), ...contraindicated];
+  const usedIds = new Set(topRecommendations.map((r) => r.maskId));
+  const remaining = [
+    ...nonContraindicated.filter((m) => !usedIds.has(m.recommendation.maskId)),
+    ...contraindicated.filter((m) => !usedIds.has(m.recommendation.maskId)),
+  ];
   const alternatives = remaining.slice(0, 5).map((m) => m.recommendation);
 
   const disclaimer =

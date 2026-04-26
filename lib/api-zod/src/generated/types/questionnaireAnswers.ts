@@ -5,6 +5,7 @@
  * CPAP Mask Fitting API - stateless recommendation service. No PHI stored.
  * OpenAPI spec version: 0.1.0
  */
+import type { QuestionnaireAnswersCpapPressureSetting } from "./questionnaireAnswersCpapPressureSetting";
 import type { QuestionnaireAnswersPriorMaskExperience } from "./questionnaireAnswersPriorMaskExperience";
 
 /**
@@ -21,4 +22,6 @@ export interface QuestionnaireAnswers {
   mobilityLimitations: boolean;
   sensitiveSkin: boolean;
   siliconeSensitivity: boolean;
+  /** Patient's prescribed CPAP pressure (cmH2O). low = 4–9, medium = 10–14, high = 15+. unknown if patient hasn't been titrated yet. High pressures favor full-face/hybrid masks because most nasal pillows aren't rated above ~20 cmH2O. */
+  cpapPressureSetting: QuestionnaireAnswersCpapPressureSetting;
 }

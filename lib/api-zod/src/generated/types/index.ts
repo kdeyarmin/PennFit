@@ -27,6 +27,7 @@ export * from "./orderRequestPrescription";
 export * from "./orderRequestShippingAddress";
 export * from "./orderResponse";
 export * from "./questionnaireAnswers";
+export * from "./questionnaireAnswersCpapPressureSetting";
 export * from "./questionnaireAnswersPriorMaskExperience";
 export * from "./recommendationRequest";
 export * from "./recommendationResponse";

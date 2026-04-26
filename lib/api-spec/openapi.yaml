@@ -179,6 +179,13 @@ components:
           type: boolean
         siliconeSensitivity:
           type: boolean
+        cpapPressureSetting:
+          type: string
+          enum: [unknown, low, medium, high]
+          description: >-
+            Patient's prescribed CPAP pressure (cmH2O).
+            low = 4–9, medium = 10–14, high = 15+. unknown if patient hasn't been titrated yet.
+            High pressures favor full-face/hybrid masks because most nasal pillows aren't rated above ~20 cmH2O.
       required:
         - mouthBreather
         - claustrophobic
@@ -190,6 +197,7 @@ components:
         - mobilityLimitations
         - sensitiveSkin
         - siliconeSensitivity
+        - cpapPressureSetting
 
     RecommendationRequest:
       type: object

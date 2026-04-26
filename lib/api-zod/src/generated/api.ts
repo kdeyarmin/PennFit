@@ -218,6 +218,11 @@ export const GetRecommendationBody = zod.object({
       mobilityLimitations: zod.boolean(),
       sensitiveSkin: zod.boolean(),
       siliconeSensitivity: zod.boolean(),
+      cpapPressureSetting: zod
+        .enum(["unknown", "low", "medium", "high"])
+        .describe(
+          "Patient's prescribed CPAP pressure (cmH2O). low = 4–9, medium = 10–14, high = 15+. unknown if patient hasn't been titrated yet. High pressures favor full-face\/hybrid masks because most nasal pillows aren't rated above ~20 cmH2O.",
+        ),
     })
     .describe("Clinical questionnaire answers affecting mask type suitability"),
 });

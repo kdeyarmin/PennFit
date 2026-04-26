@@ -51,6 +51,19 @@ export const QuestionnaireAnswersPriorMaskExperience = {
 } as const;
 
 /**
+ * Patient's prescribed CPAP pressure (cmH2O). low = 4–9, medium = 10–14, high = 15+. unknown if patient hasn't been titrated yet. High pressures favor full-face/hybrid masks because most nasal pillows aren't rated above ~20 cmH2O.
+ */
+export type QuestionnaireAnswersCpapPressureSetting =
+  (typeof QuestionnaireAnswersCpapPressureSetting)[keyof typeof QuestionnaireAnswersCpapPressureSetting];
+
+export const QuestionnaireAnswersCpapPressureSetting = {
+  unknown: "unknown",
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+
+/**
  * Clinical questionnaire answers affecting mask type suitability
  */
 export interface QuestionnaireAnswers {
@@ -64,6 +77,8 @@ export interface QuestionnaireAnswers {
   mobilityLimitations: boolean;
   sensitiveSkin: boolean;
   siliconeSensitivity: boolean;
+  /** Patient's prescribed CPAP pressure (cmH2O). low = 4–9, medium = 10–14, high = 15+. unknown if patient hasn't been titrated yet. High pressures favor full-face/hybrid masks because most nasal pillows aren't rated above ~20 cmH2O. */
+  cpapPressureSetting: QuestionnaireAnswersCpapPressureSetting;
 }
 
 export interface RecommendationRequest {
