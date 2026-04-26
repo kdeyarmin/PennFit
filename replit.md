@@ -164,6 +164,16 @@ The Penn Fit web app uses a high-end, tech, professional visual language built o
 ### Eyebrow pattern
 Every major page header uses the same pattern: a small caps eyebrow text such as `PENN FIT · CHECKOUT` flanked by two short gradient gold accent lines, sitting above a `.text-gradient-brand` page title. This anchors the brand voice across home, masks, capture, measure, questionnaire, results, order, order-success, privacy, and 404.
 
+### Page background
+The body background is a deliberately layered "ambient wash":
+- **Five large radial gradient blobs** (navy + gold) at low alpha, viewport-fixed, that blend into a single continuous wash rather than reading as discrete circles. Tweaking any one blob's position or alpha will shift the whole composition's balance — adjust them as a set.
+- **`body::before`** — soft navy dot grid, masked to a centered ellipse so it never tiles to the edges.
+- **`body::after`** — SVG `feTurbulence` grain at ~6% opacity with `mix-blend-mode: multiply`. Gives the page a tactile, "premium printed material" feel. Do not crank the opacity above ~0.08 — it starts to read as digital noise instead of grain.
+- All three layers sit at `z-index: 0`; `#root` is `z-index: 1`. Keep new decorative layers behind `#root`.
+
+### Scroll restoration
+`Layout` mounts a `ScrollToTop` helper that listens to Wouter's `useLocation` and calls `window.scrollTo(0, 0)` on every route change. This is critical for long pages (Results → Order, Order → Order Success): without it, the user lands halfway down the new page and misses its hero. Use `behavior: "auto"` (instant) — animated scrolls race with the per-route `animate-shimmer-in` mount animation.
+
 ## Important Notes
 
 - **Do not add image logging** anywhere in the backend — this breaks the PHI architecture guarantee

@@ -165,25 +165,50 @@
   body {
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
+    /* Layered ambient blobs — tuned for an editorial, high-end feel.
+       Order matters: top-left navy bloom, top-right gold sunrise, a
+       mid-right depth bloom, a bottom plinth, and a soft gold whisper
+       in the lower-left for warmth. All blobs are large + low alpha so
+       gradients blend into a continuous wash rather than reading as
+       discrete circles. */
     background-image:
-      radial-gradient(ellipse 80% 60% at 15% -10%, hsl(var(--penn-navy) / 0.10), transparent 60%),
-      radial-gradient(ellipse 70% 50% at 95% 0%, hsl(var(--penn-gold) / 0.10), transparent 55%),
-      radial-gradient(ellipse 60% 50% at 50% 110%, hsl(var(--penn-navy) / 0.07), transparent 60%);
+      radial-gradient(ellipse 95% 65% at 8% -12%, hsl(var(--penn-navy) / 0.13), transparent 65%),
+      radial-gradient(ellipse 75% 55% at 100% -5%, hsl(var(--penn-gold) / 0.14), transparent 60%),
+      radial-gradient(ellipse 55% 45% at 115% 45%, hsl(var(--penn-navy) / 0.06), transparent 60%),
+      radial-gradient(ellipse 70% 55% at 50% 118%, hsl(var(--penn-navy) / 0.10), transparent 62%),
+      radial-gradient(ellipse 50% 40% at -5% 95%, hsl(var(--penn-gold) / 0.07), transparent 65%);
     background-attachment: fixed;
   }
 
-  /* Subtle dot grid overlay — anchored to the viewport so it never tiles weirdly */
+  /* Subtle dot grid overlay — anchored to the viewport so it never tiles weirdly.
+     Slightly softer than before so the new gradient layering reads first. */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.08) 1px, transparent 0);
-    background-size: 28px 28px;
-    mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 30%, transparent 80%);
-    -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 30%, transparent 80%);
-    opacity: 0.55;
+    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.07) 1px, transparent 0);
+    background-size: 30px 30px;
+    mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 82%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 82%);
+    opacity: 0.45;
+  }
+
+  /* Premium grain — a hair of texture so the page never reads as flat
+     digital gradient. Very low opacity SVG noise, viewport-fixed so it
+     doesn't tile-shift on scroll. Keeps the surface feeling tactile,
+     like premium printed material. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.18  0 0 0 0 0.30  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    background-size: 240px 240px;
+    opacity: 0.06;
+    mix-blend-mode: multiply;
   }
 
   /* Make sure app content sits above the decorative layers */

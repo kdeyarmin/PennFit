@@ -1,11 +1,25 @@
-import React from "react";
-import { Link } from "wouter";
+import React, { useEffect } from "react";
+import { Link, useLocation } from "wouter";
 import { ShieldCheck } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
+
+// Reset scroll to the top on every route change. Without this, navigating
+// from a long page (e.g. Results) into a new page leaves the user halfway
+// down the document — they often miss the new page's hero entirely.
+function ScrollToTop() {
+  const [location] = useLocation();
+  useEffect(() => {
+    // Use "auto" (instant) — animated scroll on route change is jarring
+    // and can race with route-mount animations.
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [location]);
+  return null;
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-[100dvh] flex flex-col text-foreground">
+      <ScrollToTop />
       <header className="sticky top-0 z-50 w-full">
         <div className="glass-panel border-x-0 border-t-0 border-b border-border/40">
           <div className="container mx-auto flex h-20 items-center justify-between px-4 md:px-6">
