@@ -38,13 +38,13 @@ export function Scene1() {
           <img 
             src={logoSrc} 
             alt="Penn Home Medical Supply Logo" 
-            className="w-48 md:w-64 object-contain"
+            className="w-32 sm:w-40 md:w-56 lg:w-64 object-contain"
           />
         </motion.div>
 
         {/* Title */}
         <motion.h1 
-          className="text-5xl md:text-7xl font-bold text-[#1F3A5C] mt-8 tracking-tight leading-none"
+          className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-[#1F3A5C] mt-6 sm:mt-8 tracking-tight leading-none"
           style={{ fontFamily: 'var(--font-display)' }}
           initial={{ opacity: 0, y: 20 }}
           animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
@@ -55,12 +55,12 @@ export function Scene1() {
 
         {/* Subtitle */}
         <motion.div
-          className="mt-5 px-6 py-2 rounded-full bg-[#F4B942]/10 border border-[#F4B942]/30"
+          className="mt-4 sm:mt-5 px-4 sm:px-6 py-1.5 sm:py-2 rounded-full bg-[#F4B942]/10 border border-[#F4B942]/30"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={phase >= 3 ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
           transition={{ duration: 0.5 }}
         >
-          <p className="text-base md:text-lg font-semibold text-[#1F3A5C] uppercase tracking-[0.2em]">
+          <p className="text-sm sm:text-base md:text-lg font-semibold text-[#1F3A5C] uppercase tracking-[0.2em]">
             How to Use
           </p>
         </motion.div>

@@ -135,6 +135,13 @@ A short animated walkthrough of the Penn Fit experience lives in the `@workspace
 
 To re-link from anywhere else, use the path `/penn-fit-tutorial/` (separate artifact under the same domain — do **not** use wouter `<Link>` because it stays inside the cpap-fitter route base).
 
+### Mobile-responsive scenes
+Every scene is **mobile-first** and uses Tailwind responsive ramps so the same composition reads correctly from ~360px portrait phones up through desktop:
+- **Scenes 2 & 4** (split-pane: graphic + text): `grid-cols-1 lg:grid-cols-2` — stacks vertically on mobile, side-by-side at ≥1024px. Side graphics (`aspect-square` face panel, `aspect-[4/5]` results card) carry `max-w-[180px-260px] sm:... lg:max-w-none mx-auto` so they don't dominate vertical space on portrait phones. Headings use `text-3xl sm:text-4xl lg:text-5xl`, body uses `text-base sm:text-lg lg:text-xl`. Container padding ramps `px-5 sm:px-8 lg:px-12`. Scene 4 also uses `order-1/2 lg:order-` to put the phone mockup above the text on mobile.
+- **Scene 3** (4 tip cards, navy bg): `grid-cols-1 sm:grid-cols-2`. Card padding `p-4 sm:p-5 lg:p-7`, icon containers `w-10 h-10 sm:w-12 lg:w-14`, tip text `text-sm sm:text-base lg:text-lg`. The "Pro Tips for Accuracy" pill carries `whitespace-nowrap` and `text-[11px] sm:text-sm` so it never wraps oddly.
+- **Scenes 1 & 5** (centered title cards): typography ramps `text-4xl sm:text-5xl md:text-6xl lg:text-7xl` for the hero text, with `max-w-4xl` containers + smaller logo widths on small viewports.
+- **Verified at** 360–1280px wide. Add a Playwright smoke test before changing scene layouts again — earlier `grid-cols-2` + `text-5xl` defaults caused right-edge clipping on iPhone-sized viewports.
+
 ## Visual Design System (Light-mode only)
 
 The Penn Fit web app uses a high-end, tech, professional visual language built on the Penn navy + gold brand palette. **There is no dark mode** — the `.dark` token block and `@custom-variant dark` directive were intentionally removed from `index.css`. A `prefers-reduced-motion` global guard disables animations for users who request it.

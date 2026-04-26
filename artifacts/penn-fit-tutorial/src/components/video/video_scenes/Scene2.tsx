@@ -23,10 +23,10 @@ export function Scene2() {
       exit={{ opacity: 0, scale: 1.05 }}
       transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="w-full max-w-6xl px-12 grid grid-cols-2 gap-16 items-center">
+      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 items-center">
         
         {/* Left Side: Graphic / Visual */}
-        <div className="relative aspect-square rounded-[3rem] bg-[#1F3A5C] overflow-hidden flex items-center justify-center shadow-2xl">
+        <div className="relative aspect-square w-full max-w-[200px] sm:max-w-[260px] lg:max-w-none mx-auto rounded-[2rem] lg:rounded-[3rem] bg-[#1F3A5C] overflow-hidden flex items-center justify-center shadow-2xl">
           <motion.div 
             className="absolute inset-0 opacity-40 bg-cover bg-center"
             style={{ backgroundImage: `url(${import.meta.env.BASE_URL}images/face-mesh.png)` }}
@@ -35,7 +35,7 @@ export function Scene2() {
           />
           
           <motion.div 
-            className="relative z-10 w-48 h-64 border-4 border-[#F4B942]/80 rounded-[2.5rem] flex flex-col items-center justify-center"
+            className="relative z-10 w-[55%] h-[70%] lg:w-48 lg:h-64 border-4 border-[#F4B942]/80 rounded-[2rem] lg:rounded-[2.5rem] flex flex-col items-center justify-center"
             initial={{ scale: 0, rotate: -15 }}
             animate={phase >= 1 ? { scale: 1, rotate: 0 } : { scale: 0, rotate: -15 }}
             transition={{ type: 'spring', stiffness: 200, damping: 20 }}
@@ -64,17 +64,17 @@ export function Scene2() {
         </div>
 
         {/* Right Side: Text Content */}
-        <div className="space-y-10">
+        <div className="space-y-6 lg:space-y-10 text-center lg:text-left">
           <div>
             <motion.h2 
-              className="text-[#F4B942] font-bold tracking-wider uppercase text-sm mb-2"
+              className="text-[#F4B942] font-bold tracking-wider uppercase text-xs sm:text-sm mb-2"
               initial={{ opacity: 0, x: -20 }}
               animate={phase >= 1 ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
             >
               Step 1 & 2
             </motion.h2>
             <motion.h3 
-              className="text-5xl font-extrabold text-[#1F3A5C] leading-[1.05] tracking-tight"
+              className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-[#1F3A5C] leading-[1.05] tracking-tight"
               style={{ fontFamily: 'var(--font-display)' }}
               initial={{ opacity: 0, y: 20 }}
               animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
@@ -84,31 +84,31 @@ export function Scene2() {
             </motion.h3>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             <motion.div 
-              className="flex items-start gap-4"
+              className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
               initial={{ opacity: 0, y: 20 }}
               animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               transition={{ duration: 0.5 }}
             >
-              <div className="w-8 h-8 rounded-full bg-[#1F3A5C]/10 flex items-center justify-center shrink-0 mt-1">
-                <span className="text-[#1F3A5C] font-bold">1</span>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#1F3A5C]/10 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[#1F3A5C] font-bold text-sm sm:text-base">1</span>
               </div>
-              <p className="text-xl text-[#475569] leading-relaxed">
+              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
                 Hold your device at eye level. A 3-second timer takes your photo.
               </p>
             </motion.div>
 
             <motion.div 
-              className="flex items-start gap-4"
+              className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
               initial={{ opacity: 0, y: 20 }}
               animate={phase >= 4 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               transition={{ duration: 0.5 }}
             >
-              <div className="w-8 h-8 rounded-full bg-[#F4B942]/20 flex items-center justify-center shrink-0 mt-1">
-                <span className="text-[#F4B942] font-bold">2</span>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#F4B942]/20 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[#F4B942] font-bold text-sm sm:text-base">2</span>
               </div>
-              <p className="text-xl text-[#475569] leading-relaxed">
+              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
                 Our on-device AI instantly extracts 5 key facial measurements.
               </p>
             </motion.div>

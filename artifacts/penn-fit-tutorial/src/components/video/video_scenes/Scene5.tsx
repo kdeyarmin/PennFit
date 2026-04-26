@@ -31,19 +31,19 @@ export function Scene5() {
         <div className="w-[60vw] h-[60vw] rounded-full bg-[#F4B942]/20 blur-[100px]" />
       </motion.div>
 
-      <div className="relative z-10 flex flex-col items-center text-center px-12">
+      <div className="relative z-10 flex flex-col items-center text-center px-5 sm:px-8 lg:px-12 max-w-4xl">
         <motion.div
-          className="bg-white p-8 rounded-3xl shadow-2xl mb-12"
+          className="bg-white p-4 sm:p-6 lg:p-8 rounded-2xl lg:rounded-3xl shadow-2xl mb-6 sm:mb-8 lg:mb-12"
           initial={{ opacity: 0, y: 40, rotateX: 30 }}
           animate={phase >= 1 ? { opacity: 1, y: 0, rotateX: 0 } : { opacity: 0, y: 40, rotateX: 30 }}
           transition={{ type: 'spring', stiffness: 150, damping: 20 }}
           style={{ transformPerspective: 1000 }}
         >
-          <img src={logoSrc} alt="Penn Home Medical Supply" className="w-64 object-contain" />
+          <img src={logoSrc} alt="Penn Home Medical Supply" className="w-36 sm:w-48 lg:w-64 object-contain" />
         </motion.div>
 
         <motion.h2 
-          className="text-4xl md:text-5xl font-medium text-white tracking-tight leading-tight"
+          className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-medium text-white tracking-tight leading-tight"
           style={{ fontFamily: 'var(--font-display)' }}
           initial={{ opacity: 0, y: 20 }}
           animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
@@ -58,7 +58,7 @@ export function Scene5() {
           transition={{ type: 'spring', stiffness: 200, damping: 15 }}
         >
           <h2 
-            className="text-5xl md:text-6xl font-bold text-[#F4B942] mt-1 tracking-tight leading-tight"
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-[#F4B942] mt-1 tracking-tight leading-tight"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             in minutes.
