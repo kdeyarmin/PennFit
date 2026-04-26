@@ -5,6 +5,7 @@
  * CPAP Mask Fitting API - stateless recommendation service. No PHI stored.
  * OpenAPI spec version: 0.1.0
  */
+import type { FacialMeasurements } from "./facialMeasurements";
 import type { OrderRequestChosenMask } from "./orderRequestChosenMask";
 import type { OrderRequestInsurance } from "./orderRequestInsurance";
 import type { OrderRequestPatient } from "./orderRequestPatient";
@@ -27,6 +28,8 @@ export interface OrderRequest {
    * @maxLength 1000
    */
   notes?: string;
+  /** Optional facial measurements (mm) captured on-device during the Penn Fit flow. Forwarded to Penn so fulfillment can verify size selection. Numeric only — never includes images. */
+  measurements?: FacialMeasurements;
   /** Patient consents to be contacted by Penn Home Medical Supply about this order */
   consentToContact: boolean;
 }

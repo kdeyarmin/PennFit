@@ -29,6 +29,14 @@ export interface OrderPayload {
     modelNumber: string;
     manufacturer: string;
   };
+  measurements?: {
+    noseWidth: number;
+    noseHeight: number;
+    noseToChin: number;
+    mouthWidth: number;
+    faceWidthAtCheekbones: number;
+    calibrationMethod?: string;
+  };
   patient: {
     firstName: string;
     lastName: string;
@@ -96,6 +104,20 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
   lines.push(`${order.chosenMask.manufacturer} ${order.chosenMask.name}`);
   lines.push(`Model number: ${order.chosenMask.modelNumber}`);
   lines.push("");
+  if (order.measurements) {
+    const m = order.measurements;
+    const fmt = (v: number) => `${v.toFixed(1)} mm`;
+    lines.push("─── FACIAL MEASUREMENTS (on-device, mm) ───");
+    lines.push(`Nose width:               ${fmt(m.noseWidth)}`);
+    lines.push(`Nose height:              ${fmt(m.noseHeight)}`);
+    lines.push(`Nose tip to chin:         ${fmt(m.noseToChin)}`);
+    lines.push(`Mouth width:              ${fmt(m.mouthWidth)}`);
+    lines.push(`Face width at cheekbones: ${fmt(m.faceWidthAtCheekbones)}`);
+    if (m.calibrationMethod) {
+      lines.push(`Calibration method:       ${m.calibrationMethod}`);
+    }
+    lines.push("");
+  }
   lines.push("─── PATIENT ───");
   lines.push(`Name:  ${order.patient.firstName} ${order.patient.lastName}`);
   lines.push(`DOB:   ${order.patient.dateOfBirth}`);

@@ -518,6 +518,12 @@ components:
           type: string
           maxLength: 1000
           description: Optional notes from the patient (allergies, special requests, etc.)
+        measurements:
+          $ref: "#/components/schemas/FacialMeasurements"
+          description: >-
+            Optional facial measurements (mm) captured on-device during the
+            Penn Fit flow. Forwarded to Penn so fulfillment can verify size
+            selection. Numeric only — never includes images.
         consentToContact:
           type: boolean
           description: Patient consents to be contacted by Penn Home Medical Supply about this order

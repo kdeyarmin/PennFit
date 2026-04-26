@@ -60,7 +60,7 @@ const US_STATES = [
 
 export function Order() {
   const [, setLocation] = useLocation();
-  const { chosenMask, setChosenMask } = useFitterStore();
+  const { chosenMask, setChosenMask, measurements } = useFitterStore();
   const { mutate, isPending, error } = useSubmitOrder();
 
   const {
@@ -97,6 +97,9 @@ export function Order() {
       {
         data: {
           chosenMask,
+          // Forward the on-device measurements so Penn can verify sizing.
+          // Numeric only — image was discarded after the measure step.
+          ...(measurements ? { measurements } : {}),
           patient: values.patient,
           shippingAddress: {
             street1: values.shippingAddress.street1,

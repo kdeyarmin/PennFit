@@ -154,6 +154,27 @@ export const SubmitOrderBody = zod
       .describe(
         "Optional notes from the patient (allergies, special requests, etc.)",
       ),
+    measurements: zod
+      .object({
+        noseWidth: zod.number().describe("Width of nose at bridge in mm"),
+        noseHeight: zod
+          .number()
+          .describe("Height of nose from bridge to tip in mm"),
+        noseToChin: zod
+          .number()
+          .describe("Distance from nose tip to chin in mm"),
+        mouthWidth: zod.number().describe("Width of mouth at corners in mm"),
+        faceWidthAtCheekbones: zod
+          .number()
+          .describe("Width of face at cheekbone level in mm"),
+        calibrationMethod: zod
+          .enum(["creditCard", "iris", "manual"])
+          .describe("Method used to calibrate mm\/pixel conversion"),
+      })
+      .optional()
+      .describe(
+        "Optional facial measurements (mm) captured on-device during the Penn Fit flow. Forwarded to Penn so fulfillment can verify size selection. Numeric only — never includes images.",
+      ),
     consentToContact: zod
       .boolean()
       .describe(
