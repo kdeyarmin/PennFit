@@ -14,9 +14,9 @@ const priceTierLabel: Record<string, string> = {
 };
 
 const priceTierColor: Record<string, string> = {
-  budget: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  standard: "bg-blue-50 text-blue-700 border-blue-200",
-  premium: "bg-amber-50 text-amber-700 border-amber-200",
+  budget: "chip-tier-budget",
+  standard: "chip-tier-standard",
+  premium: "chip-tier-premium",
 };
 
 export function Masks() {
@@ -51,6 +51,11 @@ export function Masks() {
               variant={filter === t ? "default" : "outline"}
               size="sm"
               onClick={() => setFilter(t)}
+              className={
+                filter === t
+                  ? "btn-primary-glow rounded-full"
+                  : "rounded-full glass-panel hover:border-primary/40"
+              }
             >
               {t === "all" ? "All" : formatMaskType(t)}
             </Button>
@@ -75,11 +80,14 @@ export function Masks() {
                   className="w-full h-full object-contain p-4"
                   loading="lazy"
                 />
-                <Badge className="absolute top-3 left-3" variant="secondary">
+                <Badge
+                  className="absolute top-3 left-3 glass-panel text-foreground border-0 font-medium"
+                  variant="secondary"
+                >
                   {mask.manufacturer}
                 </Badge>
                 <Badge
-                  className={`absolute top-3 right-3 border ${priceTierColor[mask.priceTier] ?? ""}`}
+                  className={`absolute top-3 right-3 font-medium ${priceTierColor[mask.priceTier] ?? ""}`}
                   variant="outline"
                 >
                   <Tag className="w-3 h-3 mr-1" />

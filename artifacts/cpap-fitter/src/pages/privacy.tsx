@@ -1,37 +1,50 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
 export function Privacy() {
   return (
-    <div className="container max-w-3xl mx-auto px-4 py-12">
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-3xl">Penn Fit Privacy Policy</CardTitle>
-          <p className="text-sm text-muted-foreground">A service of Penn Home Medical Supply, LLC</p>
-        </CardHeader>
-        <CardContent className="space-y-6 text-sm text-foreground/90 leading-relaxed">
-          <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded-md p-4 flex gap-3 text-yellow-800 dark:text-yellow-200">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <div>
-              <strong className="font-semibold">ATTORNEY REVIEW REQUIRED:</strong> This is a placeholder policy and must be reviewed by legal counsel for compliance with HIPAA, BIPA, CCPA, and other applicable privacy regulations.
-            </div>
+    <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
+      <Card className="border-0 glass-card rounded-2xl">
+        <CardHeader className="space-y-4 pb-2">
+          <div className="flex items-center justify-center w-16 h-16 rounded-2xl icon-halo-navy mx-auto mb-1">
+            <ShieldCheck className="w-7 h-7" />
           </div>
-
+          <div className="text-center space-y-3">
+            <div className="inline-flex items-center gap-3">
+              <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+              <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+                Penn Fit · Privacy
+              </span>
+              <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+            </div>
+            <CardTitle className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
+              Privacy Policy
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">A service of Penn Home Medical Supply, LLC</p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6 text-sm text-foreground/90 leading-relaxed pt-6">
           <p>
             This Privacy Policy describes how Penn Home Medical Supply, LLC ("Penn Home Medical Supply," "we," "us," or "our") handles information you provide while using the Penn Fit CPAP mask fitting tool ("Penn Fit").
           </p>
 
-          <section>
-            <h3 className="text-lg font-semibold text-foreground mb-2">1. Data Processing and Camera Use</h3>
+          <section className="space-y-2">
+            <h3 className="text-lg font-semibold text-foreground tracking-tight">
+              <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">01</span>
+              Data Processing and Camera Use
+            </h3>
             <p>
               Penn Fit uses your device's camera to perform real-time facial measurements required for CPAP mask fitting.
               <strong> All image and video processing occurs locally on your device.</strong> Penn Home Medical Supply does not capture, record, store, or transmit photographs, video streams, or biometric identifiers to our servers.
             </p>
           </section>
 
-          <section>
-            <h3 className="text-lg font-semibold text-foreground mb-2">2. Data Transmitted</h3>
+          <section className="space-y-2">
+            <h3 className="text-lg font-semibold text-foreground tracking-tight">
+              <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">02</span>
+              Data Transmitted
+            </h3>
             <p>
               The only data transmitted from your device to Penn Home Medical Supply's servers are:
             </p>
@@ -45,15 +58,21 @@ export function Privacy() {
             </p>
           </section>
 
-          <section>
-            <h3 className="text-lg font-semibold text-foreground mb-2">3. Third-Party Services</h3>
+          <section className="space-y-2">
+            <h3 className="text-lg font-semibold text-foreground tracking-tight">
+              <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">03</span>
+              Third-Party Services
+            </h3>
             <p>
               Penn Fit uses Google's MediaPipe technology for on-device landmark detection. This operates entirely within your browser environment. Order emails are delivered to Penn Home Medical Supply through SendGrid, our transactional email provider.
             </p>
           </section>
 
-          <section>
-            <h3 className="text-lg font-semibold text-foreground mb-2">4. Your Rights</h3>
+          <section className="space-y-2">
+            <h3 className="text-lg font-semibold text-foreground tracking-tight">
+              <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">04</span>
+              Your Rights
+            </h3>
             <p>
               Because Penn Fit does not store your biometric data or measurements beyond the immediate session, there is no ongoing profile data to delete. Simply closing the browser or clicking "Start Over" clears the session data. For questions about an order you have submitted to Penn Home Medical Supply, contact us directly.
             </p>

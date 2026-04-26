@@ -135,6 +135,27 @@ A short animated walkthrough of the Penn Fit experience lives in the `@workspace
 
 To re-link from anywhere else, use the path `/penn-fit-tutorial/` (separate artifact under the same domain — do **not** use wouter `<Link>` because it stays inside the cpap-fitter route base).
 
+## Visual Design System (Light-mode only)
+
+The Penn Fit web app uses a high-end, tech, professional visual language built on the Penn navy + gold brand palette. **There is no dark mode** — the `.dark` token block and `@custom-variant dark` directive were intentionally removed from `index.css`. A `prefers-reduced-motion` global guard disables animations for users who request it.
+
+### Brand tokens (`artifacts/cpap-fitter/src/index.css`)
+- `--penn-navy: 213 51% 25%`, `--penn-navy-deep: 213 60% 18%`, `--penn-gold: 41 86% 59%`, `--penn-mist: 210 30% 96%`, `--glass-stroke` for frosted borders.
+
+### Reusable utility classes
+- **Surfaces:** `.glass-card` (frosted card), `.glass-panel` (lighter frost), `.lift-on-hover` (animated card lift).
+- **Iconography:** `.icon-halo-navy`, `.icon-halo-gold` — glowing circular/square icon containers.
+- **Type:** `.text-gradient-brand`, `.text-gradient-stat` — luminous navy gradient text.
+- **CTAs:** `.btn-primary-glow` (premium primary button with gold accent on hover).
+- **Decoration:** `.aurora-divider`, `.animate-shimmer-in`, `.pulse-soft`.
+- **Tier chips (mask price):** `.chip-tier-budget` (mist), `.chip-tier-standard` (navy tint), `.chip-tier-premium` (gold).
+- **Callouts:** `.callout-navy`, `.callout-gold`, `.callout-success` (brand-aligned info panels).
+- **Forms:** `.input-premium` (frosted input), `.option-tile` + `.option-tile-selected` (radio/boolean selectable buttons with restored `:focus-visible` ring).
+- **Featured items:** `.ring-gold-soft` (gold halo around a card).
+
+### Eyebrow pattern
+Every major page header uses the same pattern: a small caps eyebrow text such as `PENN FIT · CHECKOUT` flanked by two short gradient gold accent lines, sitting above a `.text-gradient-brand` page title. This anchors the brand voice across home, masks, capture, measure, questionnaire, results, order, order-success, privacy, and 404.
+
 ## Important Notes
 
 - **Do not add image logging** anywhere in the backend — this breaks the PHI architecture guarantee

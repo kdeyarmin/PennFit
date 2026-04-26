@@ -115,14 +115,14 @@ export function Capture() {
 
   if (hasPermission === false || error) {
     return (
-      <div className="container max-w-2xl mx-auto px-4 py-12">
-        <Alert variant="destructive" className="mb-6">
+      <div className="container max-w-2xl mx-auto px-4 py-16 animate-shimmer-in">
+        <Alert variant="destructive" className="mb-6 glass-card border-destructive/30">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Camera Access Required</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
         <div className="flex justify-center">
-          <Button onClick={startCamera} variant="outline" className="gap-2">
+          <Button onClick={startCamera} className="gap-2 rounded-full btn-primary-glow px-6">
             <RefreshCw className="h-4 w-4" /> Try Again
           </Button>
         </div>
@@ -131,21 +131,30 @@ export function Capture() {
   }
 
   return (
-    <div className="container max-w-3xl mx-auto px-4 py-8 flex flex-col items-center animate-in fade-in duration-500">
-      <div className="text-center mb-6 max-w-xl">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-3">
+    <div className="container max-w-3xl mx-auto px-4 py-12 flex flex-col items-center animate-shimmer-in">
+      <div className="text-center mb-8 max-w-xl">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-xs font-medium mb-4">
           <ScanFace className="w-3.5 h-3.5" />
-          <span>Step 1 of 3 · Capture</span>
+          <span className="font-semibold tracking-wide">Step 1 of 3 · Capture</span>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Position Your Face</h1>
-        <p className="text-muted-foreground">
+        <div className="inline-flex items-center justify-center gap-3 mb-3">
+          <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+          <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+            Position
+          </span>
+          <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+        </div>
+        <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight mb-3 text-gradient-brand">
+          Position Your Face
+        </h1>
+        <p className="text-muted-foreground leading-relaxed">
           Center your face in the oval and look straight at the camera. Penn Fit
           uses your eye's iris (a known size) to calibrate the measurement scale —
           no rulers or cards needed.
         </p>
       </div>
 
-      <div className="relative w-full max-w-lg aspect-[3/4] md:aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl mb-6 border border-border">
+      <div className="relative w-full max-w-lg aspect-[3/4] md:aspect-video bg-black rounded-2xl overflow-hidden mb-6 border border-[hsl(var(--penn-navy)/0.18)] shadow-[0_20px_60px_hsl(var(--penn-navy)/0.20),0_0_0_1px_hsl(var(--penn-navy)/0.08)]">
         {/* Loading state indicator */}
         {hasPermission === null && (
           <div className="absolute inset-0 flex items-center justify-center text-white/50">
@@ -203,7 +212,7 @@ export function Capture() {
 
       <Button
         size="lg"
-        className="h-16 px-12 rounded-full text-lg shadow-lg hover:scale-105 transition-transform disabled:opacity-100"
+        className="h-16 px-12 rounded-full text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"
         onClick={startCountdown}
         disabled={countdown !== null || hasPermission === null}
         data-testid="button-capture"

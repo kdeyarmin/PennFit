@@ -157,19 +157,30 @@ export function Measure() {
 
   if (error) {
     return (
-      <div className="container max-w-md mx-auto px-4 py-24 text-center">
-        <Alert variant="destructive" className="mb-6 text-left">
+      <div className="container max-w-md mx-auto px-4 py-24 text-center animate-shimmer-in">
+        <Alert variant="destructive" className="mb-6 text-left glass-card border-destructive/30">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-        <Button onClick={() => setLocation("/capture")}>Return to Camera</Button>
+        <Button onClick={() => setLocation("/capture")} className="rounded-full btn-primary-glow px-6">
+          Return to Camera
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="container max-w-2xl mx-auto px-4 py-12 animate-in fade-in zoom-in-95 duration-500">
-      <Card className="border-border shadow-md overflow-hidden">
+    <div className="container max-w-2xl mx-auto px-4 py-12 animate-shimmer-in">
+      <div className="text-center mb-6">
+        <div className="inline-flex items-center justify-center gap-3 mb-3">
+          <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+          <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+            Step 2 of 3 · Analyze
+          </span>
+          <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+        </div>
+      </div>
+      <Card className="border-0 glass-card rounded-2xl overflow-hidden">
         <CardContent className="p-0">
           {/* Image with scan line overlay — feels active and "tech" */}
           {capturedImage ? (
@@ -215,15 +226,15 @@ export function Measure() {
 
           <div className="p-8 space-y-5">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold tracking-tight">
+              <h2 className="text-display text-2xl font-bold tracking-tight text-gradient-brand">
                 {progress === 100 ? "Measurements Ready" : "Processing Your Measurements"}
               </h2>
               <p className="text-sm text-muted-foreground h-5">{status}</p>
             </div>
             <Progress value={progress} className="h-2 w-full" />
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-4 py-2.5 rounded-lg">
-              <BrainCircuit className="h-4 w-4 shrink-0 text-primary" />
-              <span>
+            <div className="flex items-start gap-2.5 text-xs text-foreground/80 callout-navy px-4 py-3 rounded-xl">
+              <BrainCircuit className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+              <span className="leading-relaxed">
                 Your photo is being processed entirely on this device by Google's
                 MediaPipe library. The image is discarded the moment your
                 measurements are extracted.

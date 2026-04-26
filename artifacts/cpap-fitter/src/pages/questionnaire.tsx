@@ -135,37 +135,49 @@ export function Questionnaire() {
   };
 
   return (
-    <div className="container max-w-2xl mx-auto px-4 py-12">
-      <div className="mb-8 space-y-4">
-        <div className="flex items-center gap-4 text-sm font-medium text-muted-foreground mb-4">
+    <div className="container max-w-2xl mx-auto px-4 py-12 animate-shimmer-in">
+      <div className="mb-8 space-y-3">
+        <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
             onClick={handleBack}
             disabled={currentIndex === 0}
-            className="h-8 w-8 rounded-full"
+            className="h-9 w-9 rounded-full glass-panel border-0 disabled:opacity-40"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span>
-            Step {currentIndex + 1} of {questions.length}
-          </span>
+          <div className="flex-1 flex items-baseline justify-between gap-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+              Penn Fit · Questionnaire
+            </span>
+            <span className="text-xs font-mono text-muted-foreground tabular-nums">
+              <span className="text-[hsl(var(--penn-gold))] font-bold">
+                {String(currentIndex + 1).padStart(2, "0")}
+              </span>
+              {" / "}
+              {String(questions.length).padStart(2, "0")}
+            </span>
+          </div>
         </div>
-        <Progress value={progress} className="h-2" />
+        <Progress value={progress} className="h-1.5" />
       </div>
 
       <div className="animate-in slide-in-from-right-4 fade-in duration-300" key={currentIndex}>
-        <Card className="border-0 glass-card rounded-2xl min-h-[400px] flex flex-col">
+        <Card className="border-0 glass-card rounded-2xl min-h-[420px] flex flex-col">
           <CardHeader className="pb-4">
-            <CardTitle className="text-2xl leading-tight">{currentQ.question}</CardTitle>
+            <CardTitle className="text-display text-2xl md:text-3xl leading-tight tracking-tight font-bold">
+              {currentQ.question}
+            </CardTitle>
             {currentQ.description && (
-              <p className="text-muted-foreground mt-2">{currentQ.description}</p>
+              <p className="text-muted-foreground mt-2 leading-relaxed">{currentQ.description}</p>
             )}
             {currentQ.helpText && (
-              <div className="mt-3 flex items-start gap-2 text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-md p-2.5">
-                <Lightbulb className="w-3.5 h-3.5 mt-0.5 text-amber-600 shrink-0" />
-                <span>
-                  <strong className="text-amber-800">Why we ask:</strong> {currentQ.helpText}
+              <div className="mt-4 flex items-start gap-2.5 text-xs rounded-xl callout-gold p-3">
+                <Lightbulb className="w-4 h-4 mt-0.5 text-[hsl(var(--penn-navy))] shrink-0" />
+                <span className="text-foreground/85 leading-relaxed">
+                  <strong className="text-[hsl(var(--penn-navy-deep))] font-semibold">Why we ask:</strong>{" "}
+                  {currentQ.helpText}
                 </span>
               </div>
             )}
@@ -173,42 +185,38 @@ export function Questionnaire() {
           <CardContent className="flex-1 flex flex-col justify-center gap-4">
             {currentQ.type === "boolean" ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <Button
-                  variant="outline"
-                  className={`h-20 text-lg border-2 ${
-                    answers[currentQ.id] === true
-                      ? "border-primary bg-primary/5"
-                      : "hover:border-primary/50"
-                  }`}
+                <button
+                  type="button"
+                  className={`option-tile ${
+                    answers[currentQ.id] === true ? "option-tile-selected" : ""
+                  } h-20 text-lg font-semibold tracking-tight rounded-xl px-5 flex items-center justify-center text-foreground`}
                   onClick={() => handleAnswer(true)}
                   data-testid={`button-${currentQ.id}-yes`}
                 >
                   Yes
-                </Button>
-                <Button
-                  variant="outline"
-                  className={`h-20 text-lg border-2 ${
-                    answers[currentQ.id] === false
-                      ? "border-primary bg-primary/5"
-                      : "hover:border-primary/50"
-                  }`}
+                </button>
+                <button
+                  type="button"
+                  className={`option-tile ${
+                    answers[currentQ.id] === false ? "option-tile-selected" : ""
+                  } h-20 text-lg font-semibold tracking-tight rounded-xl px-5 flex items-center justify-center text-foreground`}
                   onClick={() => handleAnswer(false)}
                   data-testid={`button-${currentQ.id}-no`}
                 >
                   No
-                </Button>
+                </button>
               </div>
             ) : (
               <div className="flex flex-col gap-3 mt-4">
                 {currentQ.options?.map((opt) => {
                   const selected = answers[currentQ.id] === opt.value;
                   return (
-                    <Button
+                    <button
                       key={opt.value}
-                      variant="outline"
-                      className={`h-auto py-4 px-5 justify-start text-left whitespace-normal border-2 ${
-                        selected ? "border-primary bg-primary/5" : "hover:border-primary/50"
-                      }`}
+                      type="button"
+                      className={`option-tile ${
+                        selected ? "option-tile-selected" : ""
+                      } py-4 px-5 text-left whitespace-normal rounded-xl text-foreground`}
                       onClick={() => handleAnswer(opt.value)}
                       data-testid={`button-${currentQ.id}-${opt.value}`}
                     >
@@ -221,7 +229,7 @@ export function Questionnaire() {
                           )}
                         </div>
                         <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                          <span className="font-medium">{opt.label}</span>
+                          <span className="font-medium tracking-tight">{opt.label}</span>
                           {opt.sublabel && (
                             <span className="text-xs text-muted-foreground font-normal">
                               {opt.sublabel}
@@ -229,7 +237,7 @@ export function Questionnaire() {
                           )}
                         </div>
                       </div>
-                    </Button>
+                    </button>
                   );
                 })}
               </div>

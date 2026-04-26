@@ -149,44 +149,69 @@ export function Order() {
   };
 
   return (
-    <div className="container max-w-3xl mx-auto px-4 py-12 animate-in fade-in duration-300">
+    <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
       <div className="mb-6">
         <Link href="/results">
-          <Button variant="ghost" size="sm" className="text-muted-foreground" data-testid="link-back-to-results">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-primary rounded-full"
+            data-testid="link-back-to-results"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to recommendations
           </Button>
         </Link>
       </div>
 
-      <div className="text-center mb-8 space-y-3">
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Order Your Mask</h1>
-        <p className="text-muted-foreground max-w-xl mx-auto">
+      <div className="text-center mb-10 space-y-3">
+        <div className="inline-flex items-center justify-center gap-3 mb-1">
+          <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+          <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+            Penn Fit · Checkout
+          </span>
+          <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+        </div>
+        <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight text-gradient-brand">
+          Order Your Mask
+        </h1>
+        <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
           Tell us where to send your mask and how to bill your insurance. Your order goes directly to
           Penn Home Medical Supply for fulfillment.
         </p>
       </div>
 
-      <Card className="mb-8 border-primary/30 bg-primary/5">
+      <Card className="mb-8 border-0 glass-card rounded-2xl ring-gold-soft">
         <CardContent className="p-5 flex items-start gap-4">
-          <Tag className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+          <div className="h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center shrink-0">
+            <Tag className="w-4 h-4" />
+          </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs uppercase tracking-wider text-primary font-semibold mb-1">Selected Mask</div>
-            <div className="font-semibold text-lg leading-tight">{chosenMask.name}</div>
+            <div className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--penn-navy))]/70 font-semibold mb-1">
+              Selected Mask
+            </div>
+            <div className="font-semibold text-lg leading-tight tracking-tight">{chosenMask.name}</div>
             <div className="text-sm text-muted-foreground">
               {chosenMask.manufacturer} ·{" "}
-              <code className="font-mono text-foreground bg-background px-1.5 py-0.5 rounded text-xs">
+              <code className="font-mono text-foreground bg-white/60 px-1.5 py-0.5 rounded text-xs">
                 {chosenMask.modelNumber}
               </code>
             </div>
           </div>
           <Link href="/results">
-            <Button variant="outline" size="sm" data-testid="button-change-mask">Change</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full glass-panel border-0"
+              data-testid="button-change-mask"
+            >
+              Change
+            </Button>
           </Link>
         </CardContent>
       </Card>
 
       {error && (
-        <Alert variant="destructive" className="mb-6" data-testid="alert-order-error">
+        <Alert variant="destructive" className="mb-6 glass-card border-destructive/30" data-testid="alert-order-error">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>We couldn't submit your order</AlertTitle>
           <AlertDescription>
@@ -207,9 +232,9 @@ export function Order() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Patient info */}
-        <Card>
+        <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl">Your Information</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">Your Information</CardTitle>
             <CardDescription>This is the patient who will be using the mask.</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -249,9 +274,9 @@ export function Order() {
         </Card>
 
         {/* Shipping address */}
-        <Card>
+        <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl">Shipping Address</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">Shipping Address</CardTitle>
             <CardDescription>Where should we ship your mask?</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
@@ -291,9 +316,9 @@ export function Order() {
         </Card>
 
         {/* Insurance */}
-        <Card>
+        <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl">Insurance Information</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">Insurance Information</CardTitle>
             <CardDescription>
               Penn Home Medical Supply will bill your insurance directly. Have your card ready.
             </CardDescription>
@@ -355,9 +380,9 @@ export function Order() {
         </Card>
 
         {/* Prescription */}
-        <Card>
+        <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl">Prescription</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">Prescription</CardTitle>
             <CardDescription>
               CPAP equipment requires a valid prescription. We'll work with your physician if needed.
             </CardDescription>
@@ -402,9 +427,9 @@ export function Order() {
         </Card>
 
         {/* Notes + consent */}
-        <Card>
+        <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl">Notes & Consent</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">Notes & Consent</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <Field label="Anything else we should know? (optional)" error={errors.notes?.message}>
@@ -447,9 +472,14 @@ export function Order() {
           </CardContent>
         </Card>
 
-        <div className="flex flex-col-reverse md:flex-row md:justify-between gap-3">
+        <div className="flex flex-col-reverse md:flex-row md:justify-between gap-3 pt-2">
           <Link href="/results">
-            <Button type="button" variant="outline" className="w-full md:w-auto" data-testid="button-cancel">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full md:w-auto rounded-full glass-panel border-0 px-6"
+              data-testid="button-cancel"
+            >
               Cancel
             </Button>
           </Link>
@@ -457,7 +487,7 @@ export function Order() {
             type="submit"
             size="lg"
             disabled={isPending}
-            className="w-full md:w-auto md:min-w-[220px]"
+            className="w-full md:w-auto md:min-w-[260px] rounded-full btn-primary-glow disabled:opacity-70"
             data-testid="button-submit-order"
           >
             {isPending ? (
