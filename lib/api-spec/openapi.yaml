@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CPAP Mask Fitting API - stateless recommendation service. No PHI stored.
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: recommend
+    description: Mask recommendation operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /recommend:
+    post:
+      operationId: getRecommendation
+      tags: [recommend]
+      summary: Get mask recommendation
+      description: |
+        Accepts facial measurements (numeric only) and questionnaire answers.
+        Returns ranked mask recommendations. No images accepted. No PHI stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecommendationRequest"
+      responses:
+        "200":
+          description: Recommendation results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecommendationResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /masks:
+    get:
+      operationId: listMasks
+      tags: [recommend]
+      summary: List mask catalog
+      description: Returns full catalog of available CPAP masks with fit ranges
+      responses:
+        "200":
+          description: Mask catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaskCatalogResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +79,221 @@ components:
       required:
         - status
 
+    FacialMeasurements:
+      type: object
+      description: Numeric measurements in millimeters derived from on-device face mesh. No image data.
+      properties:
+        noseWidth:
+          type: number
+          description: Width of nose at bridge in mm
+        noseHeight:
+          type: number
+          description: Height of nose from bridge to tip in mm
+        noseToChin:
+          type: number
+          description: Distance from nose tip to chin in mm
+        mouthWidth:
+          type: number
+          description: Width of mouth at corners in mm
+        faceWidthAtCheekbones:
+          type: number
+          description: Width of face at cheekbone level in mm
+        calibrationMethod:
+          type: string
+          enum: [creditCard, iris, manual]
+          description: Method used to calibrate mm/pixel conversion
+      required:
+        - noseWidth
+        - noseHeight
+        - noseToChin
+        - mouthWidth
+        - faceWidthAtCheekbones
+        - calibrationMethod
+
+    QuestionnaireAnswers:
+      type: object
+      description: Clinical questionnaire answers affecting mask type suitability
+      properties:
+        mouthBreather:
+          type: boolean
+        claustrophobic:
+          type: boolean
+        sideOrStomachSleeper:
+          type: boolean
+        heavyFacialHair:
+          type: boolean
+        wearsGlasses:
+          type: boolean
+        frequentCongestion:
+          type: boolean
+        priorMaskExperience:
+          type: string
+          enum: [none, nasal, nasalPillow, fullFace, hybrid]
+        mobilityLimitations:
+          type: boolean
+        sensitiveSkin:
+          type: boolean
+        siliconeSensitivity:
+          type: boolean
+      required:
+        - mouthBreather
+        - claustrophobic
+        - sideOrStomachSleeper
+        - heavyFacialHair
+        - wearsGlasses
+        - frequentCongestion
+        - priorMaskExperience
+        - mobilityLimitations
+        - sensitiveSkin
+        - siliconeSensitivity
+
+    RecommendationRequest:
+      type: object
+      properties:
+        measurements:
+          $ref: "#/components/schemas/FacialMeasurements"
+        answers:
+          $ref: "#/components/schemas/QuestionnaireAnswers"
+      required:
+        - measurements
+        - answers
+
+    MaskRecommendation:
+      type: object
+      properties:
+        maskId:
+          type: string
+        name:
+          type: string
+        manufacturer:
+          type: string
+        type:
+          type: string
+          enum: [fullFace, nasal, nasalPillow, hybrid]
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasoning:
+          type: array
+          items:
+            type: string
+        features:
+          type: array
+          items:
+            type: string
+        contraindications:
+          type: array
+          items:
+            type: string
+        imageUrl:
+          type: string
+          nullable: true
+      required:
+        - maskId
+        - name
+        - manufacturer
+        - type
+        - confidence
+        - reasoning
+        - features
+        - contraindications
+
+    RecommendationResponse:
+      type: object
+      properties:
+        topRecommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaskRecommendation"
+          maxItems: 3
+        alternatives:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaskRecommendation"
+        disclaimer:
+          type: string
+      required:
+        - topRecommendations
+        - alternatives
+        - disclaimer
+
+    MaskEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        manufacturer:
+          type: string
+        type:
+          type: string
+          enum: [fullFace, nasal, nasalPillow, hybrid]
+        fitRanges:
+          type: object
+          properties:
+            noseWidthMin:
+              type: number
+            noseWidthMax:
+              type: number
+            noseToChinMin:
+              type: number
+            noseToChinMax:
+              type: number
+            mouthWidthMin:
+              type: number
+            mouthWidthMax:
+              type: number
+          required:
+            - noseWidthMin
+            - noseWidthMax
+            - noseToChinMin
+            - noseToChinMax
+            - mouthWidthMin
+            - mouthWidthMax
+        features:
+          type: array
+          items:
+            type: string
+        contraindications:
+          type: array
+          items:
+            type: string
+        imageUrl:
+          type: string
+          nullable: true
+      required:
+        - id
+        - name
+        - manufacturer
+        - type
+        - fitRanges
+        - features
+        - contraindications
+
+    MaskCatalogResponse:
+      type: object
+      properties:
+        masks:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaskEntry"
+        total:
+          type: integer
+      required:
+        - masks
+        - total
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+          nullable: true
+      required:
+        - error

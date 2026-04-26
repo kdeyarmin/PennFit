@@ -1,0 +1,197 @@
+# CPAP Mask Fitting App — Claude Code Prompts
+
+Use these in sequence. Run each, verify the output, then move to the next.
+
+The architecture they collectively build:
+
+- **Frontend:** React + TypeScript + Vite + Tailwind PWA
+- **On-device image processing:** MediaPipe Face Mesh in the browser — images never leave the device
+- **Backend:** stateless Node/Express recommendation service that only receives numeric measurements and questionnaire answers
+- **Hosting target:** HIPAA-compliant infrastructure (AWS with BAA executed)
+- **Zero PHI on the server, ever.**
+
+-----
+
+## Context block — paste at the start of every Claude Code session
+
+```
+Project context: I'm building a CPAP mask recommendation web app for my DME company. 
+Architecture constraints (do not violate these without flagging):
+
+- Stack: React + TypeScript + Vite + Tailwind (frontend), Node + Express + TypeScript (backend)
+- All facial image processing happens ON-DEVICE in the browser using MediaPipe Face Mesh.
+  Images NEVER leave the user's device. Only numeric measurements are transmitted.
+- Backend is fully stateless. No database, no logging of request bodies, no image handling.
+- Deployment target is HIPAA-compliant infra (AWS with BAA), but the architecture is designed
+  to minimize PHI exposure regardless.
+- Quality bar: ESLint strict, TypeScript strict mode, ≥80% test coverage on business logic.
+- Work in small commits. Write tests alongside code, not after. Run lint + typecheck + tests
+  before declaring any task complete.
+```
+
+-----
+
+## Prompt 1 — Scaffold
+
+```
+Initialize a new React + TypeScript + Vite project with Tailwind CSS. Set up:
+
+- ESLint with @typescript-eslint/strict and prettier integration
+- Vitest + React Testing Library for unit/integration tests
+- Husky + lint-staged pre-commit hook running lint, typecheck, and tests
+- Folder structure: src/features/{capture,measure,questionnaire,recommend}, src/lib, src/types
+- A README.md documenting the architecture decisions, especially the on-device-only 
+  image processing constraint and why
+- A .env.example file (no real secrets)
+
+Verify by running `npm run lint`, `npm run typecheck`, and `npm test`. All must pass.
+Commit when green with a clear conventional-commit message.
+```
+
+## Prompt 2 — Camera capture
+
+```
+Build a CameraCapture component in src/features/capture/:
+
+- Uses navigator.mediaDevices.getUserMedia with the front-facing camera
+- Shows a live video preview with an SVG overlay: face oval guide and instructions 
+  to hold a standard credit card flat against the chin for scale calibration
+- On capture, returns an HTMLCanvasElement with the still frame held in memory only
+- Handles: permission denied, no camera, unsupported browser, switching cameras
+- Includes unit tests with mocked getUserMedia
+- Includes a demo page at /capture-demo for manual QA
+
+CRITICAL: the captured frame must never be uploaded, persisted, or written to storage.
+Pass it by reference to the next module.
+```
+
+## Prompt 3 — Face mesh and measurement
+
+```
+Add @mediapipe/tasks-vision and build the measurement module in src/features/measure/:
+
+- useFaceMesh hook: accepts a canvas, returns the 478 face landmarks
+- extractMeasurements(landmarks, mmPerPixel): pure function returning
+  { noseWidth, noseHeight, noseToChin, mouthWidth, faceWidthAtCheekbones } in mm
+- calibrateFromCreditCard(canvas): detects the rectangular card edges in the lower frame 
+  and computes mm/pixel from ISO/IEC 7810 ID-1 dimensions (85.60 × 53.98 mm)
+- calibrateFromIris(landmarks): fallback using average iris diameter 11.7 mm
+- qualityCheck(landmarks, frame): rejects frames with face not centered, head tilt >15°, 
+  poor lighting, or missing calibration reference. Returns { ok: boolean, reasons: string[] }
+- Comprehensive unit tests using fixture landmark JSON files
+
+Document the mm/pixel calibration math in code comments — future-me needs to understand it.
+```
+
+## Prompt 4 — Questionnaire engine
+
+```
+In src/features/questionnaire/:
+
+- Typed schema for questions: { id, prompt, type, options, weight, affects: MaskTypeWeights }
+- src/data/questions.json with the full clinical questionnaire covering: claustrophobia, 
+  mouth breathing, sleep position, facial hair, glasses use, frequent congestion, prior mask 
+  experience, mobility/dexterity, sensitive skin, allergies to silicone
+- QuestionnaireFlow component: one question at a time with progress indicator and back button
+- scoreAnswers(answers): pure function returning weights for { fullFace, nasal, nasalPillow, hybrid }
+- Persist answers to sessionStorage only (cleared on tab close, never sent to server until submit)
+- Tests covering every question and each scoring path
+
+Reference clinical guidance: full-face for mouth breathers, nasal pillows for claustrophobic users 
+and side sleepers, full-face contraindicated for heavy beard, etc. Cite sources in comments.
+```
+
+## Prompt 5 — Recommendation engine
+
+```
+In src/features/recommend/:
+
+- MaskCatalog data model with seed data for ~20 representative masks across categories.
+  Use real product names from ResMed AirFit, Philips DreamWear, and Fisher & Paykel Brevida 
+  lines as starter data — I'll replace with my actual inventory later.
+- Each mask entry: { id, name, manufacturer, type, fitRanges: { noseWidthMin/Max, ... }, 
+  contraindications: string[], features: string[] }
+- recommend(measurements, scores): pure function returning ranked masks with 
+  { mask, confidence: 0-1, reasoning: string[] }
+- RecommendationResults component: top 3 with reasoning, "show alternatives" fallback path, 
+  and a clear disclaimer that this is a starting recommendation, not a clinical fit
+- Property-based tests with fast-check: for any plausible input, at least one viable mask 
+  must be returned
+```
+
+## Prompt 6 — Consent, privacy, and the no-image-leaves-device guarantee
+
+```
+Build the consent and privacy layer:
+
+- ConsentScreen component shown before camera access. Must explicitly state: image processed 
+  on-device, never uploaded, only numeric measurements transmitted, user can decline at any time.
+- BIPA-aware disclosures: collection, purpose, retention, deletion. Leave [ATTORNEY REVIEW] 
+  placeholders for the actual legal text.
+- PrivacyPolicy.tsx with stub policy and a TODO list of items my attorney needs to complete.
+- Add an integration test that wraps fetch globally and FAILS if any outgoing request body 
+  contains a base64 string >1KB, an ArrayBuffer, a Blob, or a FormData with a File. This test 
+  is the safety net that enforces our architecture constraint.
+
+After this prompt, run the full test suite and confirm the no-image-leaves-device test passes.
+```
+
+## Prompt 7 — Backend recommendation service
+
+```
+Create a server/ directory with a minimal Express + TypeScript service:
+
+- POST /api/recommend: accepts { measurements: {...}, answers: {...} }, returns recommendation
+- Strict input validation with zod. Reject payloads containing image data, base64, binary, 
+  or any unexpected field. Return 400 with a clear error.
+- NO persistence layer. NO database. Add a comment block at the top of server/index.ts 
+  explaining this is intentional for HIPAA data minimization.
+- Structured logging (pino) that explicitly redacts the request body — log only method, 
+  path, status, latency, and a request ID.
+- Helmet, cors (allowlist only), express-rate-limit, compression
+- Health check at /healthz
+- Dockerfile for deployment to ECS/Fargate
+- Tests covering valid input, invalid input, and the image-rejection logic
+```
+
+## Prompt 8 — Production readiness pass
+
+```
+Run a full production readiness audit and fix everything you find:
+
+- npm audit: resolve all high/critical vulnerabilities
+- npx depcheck: remove unused dependencies  
+- Lighthouse audit: PWA, performance, accessibility, best-practices — fix anything below 90
+- npx tsc --noEmit --strict: zero errors
+- Test coverage: ≥80% on src/features/
+- Add .github/workflows/ci.yml running lint, typecheck, test, and npm audit on every PR
+- Add SECURITY.md with vuln disclosure contact, CHANGELOG.md, CONTRIBUTING.md
+- Generate ARCHITECTURE.md documenting data flow, with a clear diagram of what data crosses 
+  the network boundary and what stays on-device
+- Add a manual QA checklist for cross-browser testing (Safari iOS, Chrome Android, desktop)
+
+Report the final state with all metrics. Do not declare done until every check is green.
+```
+
+-----
+
+## How to use these
+
+- Run prompts one at a time. After each, ask Claude Code to summarize what changed and
+  run the verification commands. Don’t move on until the previous step is green.
+- Repeat the **context block** at the top of any new Claude Code session so the architecture
+  constraints stay in scope.
+- For large changes within a prompt, ask Claude Code to plan first, then implement in chunks.
+
+## What these prompts do NOT cover
+
+- **Native iOS app with TrueDepth.** Web/MediaPipe is good enough to start. If you later want
+  millimeter-grade accuracy, build a native iOS companion using ARKit’s face tracking — that’s
+  a separate project.
+- **Legal review.** The consent flow has [ATTORNEY REVIEW] placeholders. Do not launch to
+  real patients without a healthcare attorney signing off.
+- **FDA / SaMD analysis.** A regulatory consultant should opine on whether a mask
+  recommendation tool falls under FDA Software-as-a-Medical-Device jurisdiction. Budget for
+  this conversation before you launch.
+- **Mask catalog.** The seed data uses public product names for testing. You’ll need to replace
+  it with your actual inventory, fit data from manufacturer spec sheets, and your pricing.
