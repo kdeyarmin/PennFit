@@ -2,11 +2,11 @@ import { useClerk, useUser } from "@clerk/react";
 
 // Friendly "you can't see the operator console" screen.
 //
-// Two distinct failure modes funnel into this page; both rendering
-// branches are intentional, because they require different operator
+// Three distinct failure modes funnel into this page; each rendering
+// branch is intentional, because they require different operator
 // follow-ups:
 //
-//   reason="not-authorized" (HTTP 403)
+//   reason="not-authorized" (HTTP 401/403/most 4xx)
 //     The signed-in user passed Clerk's session check but is not on
 //     the RESUPPLY_OPERATOR_EMAILS allowlist. Resolution is "ask an
 //     admin to add me" — so we show the email, tell them to contact
@@ -18,6 +18,13 @@ import { useClerk, useUser } from "@clerk/react";
 //     (the env var didn't ship). Resolution is "ask an SRE to fix
 //     the config" — the user retrying or signing out won't help.
 //
+//   reason="transient" (status 0 or 5xx that isn't 503)
+//     A network blip, a server crash, or anything else that smells
+//     like it'll resolve on its own. We tell the user to retry rather
+//     than implying their access has been revoked. A 30-second
+//     connectivity drop should not look the same as "you've been
+//     removed from the allowlist".
+//
 // We deliberately keep the messaging short and don't echo the API's
 // raw error string. The API never includes the user's id, the
 // allowlist contents, or any environment fragment in its 4xx/5xx
@@ -25,13 +32,25 @@ import { useClerk, useUser } from "@clerk/react";
 // belt-and-braces: we only render Clerk-side data the user already
 // owns.
 
-export type NotAuthorizedReason = "not-authorized" | "not-configured";
+export type NotAuthorizedReason =
+  | "not-authorized"
+  | "not-configured"
+  | "transient";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// Operator-facing contact address. Override per environment with
+// VITE_RESUPPLY_CONTACT_EMAIL so a production cutover (mailbox
+// rename, distribution list change, etc.) doesn't require shipping
+// a code change. Default is the current Penn Home Medical operations
+// inbox, which is also the production value in dev/staging.
+const DEFAULT_CONTACT_EMAIL =
+  (import.meta.env.VITE_RESUPPLY_CONTACT_EMAIL as string | undefined) ??
+  "rt-coordinator@pennhomemedical.com";
+
 export function NotAuthorizedPage({
   reason,
-  contactEmail = "rt-coordinator@pennhomemedical.com",
+  contactEmail = DEFAULT_CONTACT_EMAIL,
 }: {
   reason: NotAuthorizedReason;
   contactEmail?: string;
@@ -41,6 +60,21 @@ export function NotAuthorizedPage({
   const email = user?.primaryEmailAddress?.emailAddress ?? "your account";
 
   const isConfigError = reason === "not-configured";
+  const isTransient = reason === "transient";
+
+  // Per-reason headline copy. The body for each branch is rendered
+  // inline below — three short branches read more clearly than a
+  // table of JSX in this file.
+  const eyebrow = isConfigError
+    ? "Server not configured"
+    : isTransient
+      ? "Connection problem"
+      : "Not authorized";
+  const headline = isConfigError
+    ? "Operator access isn't set up on this server yet"
+    : isTransient
+      ? "We can't reach the resupply server right now"
+      : "This account isn't approved for the operator console";
 
   return (
     <div
@@ -64,7 +98,7 @@ export function NotAuthorizedPage({
               Penn Resupply Console
             </div>
             <div className="text-xs" style={{ color: "#c9a24a" }}>
-              Access denied
+              {isTransient ? "Access pending" : "Access denied"}
             </div>
           </div>
         </div>
@@ -82,17 +116,15 @@ export function NotAuthorizedPage({
         >
           <p
             className="text-xs uppercase tracking-[0.2em] mb-3 font-semibold"
-            style={{ color: "#b91c1c" }}
+            style={{ color: isTransient ? "#b45309" : "#b91c1c" }}
           >
-            {isConfigError ? "Server not configured" : "Not authorized"}
+            {eyebrow}
           </p>
           <h1
             className="text-2xl font-semibold mb-3"
             style={{ color: "#0a1f44" }}
           >
-            {isConfigError
-              ? "Operator access isn't set up on this server yet"
-              : "This account isn't approved for the operator console"}
+            {headline}
           </h1>
 
           {isConfigError ? (
@@ -117,6 +149,43 @@ export function NotAuthorizedPage({
                 </code>
                 .
               </p>
+            </>
+          ) : isTransient ? (
+            <>
+              <p
+                className="text-sm leading-relaxed mb-4"
+                style={{ color: "#374151" }}
+              >
+                The dashboard couldn't confirm your operator access just
+                now — the server may be restarting, or your connection
+                may have dropped briefly. This is almost always a few-
+                seconds blip, not a permissions change.
+              </p>
+              <p
+                className="text-sm leading-relaxed mb-4"
+                style={{ color: "#374151" }}
+              >
+                Try refreshing the page in a moment. If it keeps
+                happening, contact{" "}
+                <a
+                  href={`mailto:${contactEmail}`}
+                  className="underline font-semibold"
+                  style={{ color: "#0a1f44" }}
+                >
+                  {contactEmail}
+                </a>
+                .
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="text-sm font-semibold px-4 py-2 rounded text-white"
+                  style={{ backgroundColor: "#0a1f44" }}
+                >
+                  Try again
+                </button>
+              </div>
             </>
           ) : (
             <>

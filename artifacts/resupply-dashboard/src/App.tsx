@@ -65,34 +65,36 @@ function BrandHeader({ rightSlot }: { rightSlot?: React.ReactNode }) {
 // Translates the /me probe outcome into one of three terminal states:
 //
 //   - pending  → loading shimmer in the existing console chrome
-//   - error    → dedicated NotAuthorizedPage (handles both 403 and the
-//                production-only 503 "allowlist not configured" case;
-//                anything else collapses into the same screen with a
-//                generic message — better than rendering an empty
-//                console UI on a transient API blip).
+//   - error    → dedicated NotAuthorizedPage. The page knows three
+//                reasons:
+//                  * "not-configured" — HTTP 503 from requireOperator,
+//                    meaning the server has no allowlist set; ops fix.
+//                  * "transient"      — anything that smells like a
+//                    blip (status 0 from a network failure, 5xx that
+//                    isn't 503, or anything that didn't surface as
+//                    an ApiError); user can retry.
+//                  * "not-authorized" — everything else, primarily
+//                    HTTP 403 / 401 / other 4xx; user is signed in
+//                    but not on the allowlist.
 //   - success  → the (currently-placeholder) operator UI.
 //
-// The 403/503 split is the only place in the dashboard that switches
-// on an HTTP status code, and it's done by reading `error.status` off
-// the generated client's ApiError. Status codes outside that pair
-// fall through to "not-authorized" because (a) any 4xx that isn't 403
-// from this endpoint is effectively "we won't let you in" and (b) a
-// 5xx that isn't 503 likely IS a transient blip but we'd rather show
-// a stable screen than thrash with a retry that may also fail.
+// Reading `error.status` off the generated client's ApiError is type-
+// safe rather than a generic `unknown` cast. Status 0 (assigned when
+// the error isn't an ApiError instance — e.g. a `fetch` TypeError
+// from a connection drop) intentionally maps to "transient" rather
+// than "not-authorized" so a 30-second connectivity blip doesn't tell
+// the operator they've been un-allowlisted.
 function OperatorConsole() {
   const { data, isPending, isError, error } = useGetOperatorMe();
 
   if (isError) {
-    // The custom-fetch in @workspace/resupply-api-client always throws
-    // an `ApiError` (or `ResponseParseError`, which also exposes
-    // `status`) for non-2xx responses, so reading `error.status` is
-    // type-safe rather than a generic `unknown` cast. Anything that
-    // isn't an ApiError instance (e.g. a network blip that surfaces as
-    // a TypeError) falls through to "not-authorized" with a 0 status —
-    // the friendly screen is a strictly better default than rendering
-    // an empty console UI on a transient API failure.
     const status = error instanceof ApiError ? error.status : 0;
-    const reason = status === 503 ? "not-configured" : "not-authorized";
+    const reason: "not-configured" | "transient" | "not-authorized" =
+      status === 503
+        ? "not-configured"
+        : status === 0 || (status >= 500 && status < 600)
+          ? "transient"
+          : "not-authorized";
     return <NotAuthorizedPage reason={reason} />;
   }
 

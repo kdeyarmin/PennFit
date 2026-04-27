@@ -184,6 +184,31 @@ describe.skipIf(skipReason !== null)("/readyz integration", () => {
     }
   }, 30_000);
 
+  // Single redaction assertion called from EVERY test — happy path
+  // included — so a regression that started echoing connection
+  // string fragments anywhere in the response body would be caught
+  // even by the 200 case. The architect's review pointed out that
+  // narrowing redaction asserts to one failure-mode test would not
+  // catch a regression in the success body's shape.
+  //
+  // Substrings checked (each must be empty or absent):
+  //   - the literal `postgres://` / `postgresql://` URL prefix
+  //   - the full DATABASE_URL we connected with
+  //   - the password segment (if any)
+  //   - the hostname segment
+  //   - the username segment — sensitive in shared-tenant Postgres
+  //     deployments where the username can imply tenancy or role,
+  //     and pg's "permission denied for user X" messages echo it
+  function assertNoLeaks(resBody: unknown): void {
+    const body = JSON.stringify(resBody);
+    expect(body).not.toMatch(/postgres(?:ql)?:\/\//i);
+    expect(body).not.toContain(testDbUrl);
+    const u = new URL(testDbUrl);
+    if (u.password.length > 0) expect(body).not.toContain(u.password);
+    if (u.hostname.length > 0) expect(body).not.toContain(u.hostname);
+    if (u.username.length > 0) expect(body).not.toContain(u.username);
+  }
+
   it("returns 200 ready when Postgres and the pg-boss schema are both up", async () => {
     const res = await request(app).get("/resupply-api/readyz");
     expect(res.status).toBe(200);
@@ -191,6 +216,7 @@ describe.skipIf(skipReason !== null)("/readyz integration", () => {
       status: "ready",
       checks: { db: "ok", queue: "ok" },
     });
+    assertNoLeaks(res.body);
   });
 
   it("returns 503 with queue=schema_not_initialized when the pg-boss schema is dropped", async () => {
@@ -203,6 +229,7 @@ describe.skipIf(skipReason !== null)("/readyz integration", () => {
       expect(res.body.status).toBe("not_ready");
       expect(res.body.checks).toEqual({ db: "ok", queue: "failed" });
       expect(res.body.errors).toEqual({ queue: "schema_not_initialized" });
+      assertNoLeaks(res.body);
     } finally {
       // Restore so subsequent tests start from a clean state.
       await testPool.query("CREATE SCHEMA IF NOT EXISTS pgboss_resupply");
@@ -229,6 +256,9 @@ describe.skipIf(skipReason !== null)("/readyz integration", () => {
       // pool can't open a connection.
       expect(res.body.checks).toEqual({ db: "failed", queue: "failed" });
       expect(res.body.errors?.db).toBe("connection_refused");
+      // Note: this test points at a DIFFERENT URL than testDbUrl, so
+      // assertNoLeaks(res.body) here would assert against the wrong
+      // string. The test below covers the redaction case explicitly.
     } finally {
       process.env.DATABASE_URL = testDbUrl;
       __resetDbPoolForTests();
@@ -236,26 +266,14 @@ describe.skipIf(skipReason !== null)("/readyz integration", () => {
   });
 
   it("never echoes the connection string, password, or DATABASE_URL fragments in the response body", async () => {
-    // Force a failure so we exercise the error-rendering path.
+    // Force a failure so we exercise the error-rendering path with
+    // testDbUrl still active.
     const testPool = new Pool({ connectionString: testDbUrl, max: 1 });
     try {
       await testPool.query("DROP SCHEMA pgboss_resupply CASCADE");
       const res = await request(app).get("/resupply-api/readyz");
       expect(res.status).toBe(503);
-
-      const body = JSON.stringify(res.body);
-      expect(body).not.toMatch(/postgres(?:ql)?:\/\//i);
-      expect(body).not.toContain(testDbUrl);
-      const password = new URL(testDbUrl).password;
-      // Some local configs use no password. Only assert if there is one.
-      if (password.length > 0) {
-        expect(body).not.toContain(password);
-      }
-      // The host is a hostname like "helium" — also should not appear.
-      const host = new URL(testDbUrl).hostname;
-      if (host.length > 0) {
-        expect(body).not.toContain(host);
-      }
+      assertNoLeaks(res.body);
     } finally {
       await testPool.query("CREATE SCHEMA IF NOT EXISTS pgboss_resupply");
       await testPool.query(
