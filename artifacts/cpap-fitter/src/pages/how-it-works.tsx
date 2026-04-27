@@ -15,7 +15,6 @@ import {
   ClipboardList,
   Sparkles,
   PackageCheck,
-  Sun,
   Glasses,
   Scissors,
   Smile,
@@ -59,11 +58,6 @@ const steps = [
 ];
 
 const captureTips = [
-  {
-    icon: Sun,
-    title: "Use Soft, Even Lighting",
-    body: "Face a window during daylight or sit in front of a soft lamp. Avoid harsh overhead light or strong backlight from a window behind you — both create shadows that confuse the landmark detector.",
-  },
   {
     icon: Smartphone,
     title: "Hold the Device at Eye Level",

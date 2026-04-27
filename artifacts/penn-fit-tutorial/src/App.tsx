@@ -8,7 +8,6 @@ import {
   ClipboardList,
   Sparkles,
   ShoppingBag,
-  Sun,
   Glasses,
   MessageCircleQuestion,
   ShieldCheck,
@@ -183,7 +182,6 @@ const guideSteps: GuideStep[] = [
     title: "Frame your face inside the oval",
     body: "Hold your device at eye level, about an arm's length away, with your whole face visible inside the on-screen guide.",
     detail: [
-      "Face a window or bright light — even, indirect lighting gives the best result.",
       "Remove glasses, tie back hair, and trim or part heavy facial hair if possible.",
       "Keep a neutral expression with your mouth closed.",
     ],
@@ -314,7 +312,6 @@ function WrittenGuide() {
 }
 
 const proTips = [
-  { Icon: Sun, title: "Light from the front", text: "Face a window or lamp so light hits your face evenly. Avoid backlighting." },
   { Icon: Ruler, title: "Eye level, arm's length", text: "Hold the phone so the camera sits roughly between your eyebrows and chin." },
   { Icon: Glasses, title: "Glasses off, hair back", text: "Anything covering your nose bridge, cheekbones, or chin will skew the measurements." },
   { Icon: MessageCircleQuestion, title: "Honest answers win", text: "If you're unsure of your CPAP pressure, just pick \"I'm not sure\" — Penn Fit handles it." },

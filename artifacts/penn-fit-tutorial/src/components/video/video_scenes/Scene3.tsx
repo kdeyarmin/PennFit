@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sun, Ruler, Glasses, MessageCircleQuestion, Lightbulb } from 'lucide-react';
+import { Ruler, Glasses, MessageCircleQuestion, Lightbulb } from 'lucide-react';
 
 export function Scene3() {
   const [phase, setPhase] = useState(0);
@@ -21,10 +21,9 @@ export function Scene3() {
   }, []);
 
   const tips = [
-    { id: 1, Icon: Sun, text: "Face a window for bright, even lighting" },
-    { id: 2, Icon: Ruler, text: "Hold device at eye level and arm's length" },
-    { id: 3, Icon: Glasses, text: "Remove glasses and tie hair back" },
-    { id: 4, Icon: MessageCircleQuestion, text: "Answer honestly — \u201CI'm not sure\u201D is fine" },
+    { id: 1, Icon: Ruler, text: "Hold device at eye level and arm's length" },
+    { id: 2, Icon: Glasses, text: "Remove glasses and tie hair back" },
+    { id: 3, Icon: MessageCircleQuestion, text: "Answer honestly — \u201CI'm not sure\u201D is fine" },
   ];
 
   return (
