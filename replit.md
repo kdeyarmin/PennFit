@@ -119,6 +119,7 @@ Twelve ADRs in `docs/resupply/adr/` (000–007 and 009–012) document why the R
 
 ### Validation
 *   `resupply-check` validation step runs the architecture check + `pnpm -r --filter '@workspace/resupply-*' run typecheck` + vitest.
+*   A local pre-commit hook (`scripts/git-hooks/pre-commit`, installed by `scripts/install-hooks.sh`) runs the codegen drift + architecture checks before the commit lands, so developers don't wait for server-side validation to discover a missed `pnpm run codegen`. The hook is auto-installed by `scripts/post-merge.sh`, runs only when staged files touch `lib/api-spec`, `lib/resupply-api-spec`, the generated client trees, `lib/resupply-*`, or `artifacts/resupply-*`, and is bypassable with `SKIP_HOOKS=1` or `git commit --no-verify`.
 
 ## External Dependencies
 

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# managed by scripts/install-hooks.sh
+#
+# Pre-commit hook: catches resupply / Penn Fit drift before the commit
+# lands, so developers don't find out at validation time minutes later.
+#
+# Behavior:
+#   - Skipped entirely when no staged file touches the relevant trees.
+#   - Selectively runs:
+#       * scripts/check-codegen.sh
+#           when an OpenAPI spec or its generated client tree changes
+#       * scripts/check-resupply-architecture.sh
+#           when resupply lib/ or artifact code changes
+#   - Bypass with `git commit --no-verify` or `SKIP_HOOKS=1 git commit ...`
+#     for emergencies (e.g. a hotfix while orval itself is broken).
+#   - Safe to run on every commit because both checks restore their
+#     working tree on failure (see the headers of those scripts).
+#
+# Note: checks read the working tree, not the staged index. If you have
+# unrelated unstaged edits in spec/generated files, prefer to stash
+# them before committing or the hook may flag drift you didn't introduce.
+
+set -euo pipefail
+
+if [[ "${SKIP_HOOKS:-0}" == "1" ]]; then
+  exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Diff against HEAD when present, otherwise against the empty tree
+# (initial commit). Newly-added files are picked up either way.
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+  staged="$(git diff --cached --name-only --diff-filter=ACMR HEAD)"
+else
+  staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+fi
+
+if [[ -z "$staged" ]]; then
+  exit 0
+fi
+
+need_codegen=0
+need_arch=0
+
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  # Spec/client trees: drift only matters when the spec or its generated
+  # client changes. Touching unrelated files in those packages (e.g.
+  # README) still triggers the check, which is fine — it's cheap when
+  # nothing actually drifted.
+  case "$file" in
+    lib/resupply-api-spec/*|lib/api-spec/*|lib/resupply-api-client/*|lib/api-client-react/*|lib/api-zod/*)
+      need_codegen=1
+      ;;
+  esac
+  # Resupply trees: any change to resupply libs or artifacts can violate
+  # an architecture rule, so run the check defensively.
+  case "$file" in
+    lib/resupply-*/*|artifacts/resupply-*/*)
+      need_arch=1
+      ;;
+  esac
+done <<< "$staged"
+
+if [[ $need_codegen -eq 0 && $need_arch -eq 0 ]]; then
+  exit 0
+fi
+
+failed=0
+
+# Architecture first: it's the cheapest, so on a multi-failure commit
+# the developer sees the easiest signal at the top of the output.
+if [[ $need_arch -eq 1 ]]; then
+  printf '[pre-commit] Running resupply architecture check…\n' >&2
+  if ! bash "$REPO_ROOT/scripts/check-resupply-architecture.sh"; then
+    failed=1
+  fi
+fi
+
+if [[ $need_codegen -eq 1 ]]; then
+  printf '[pre-commit] Running OpenAPI codegen drift check…\n' >&2
+  if ! bash "$REPO_ROOT/scripts/check-codegen.sh"; then
+    failed=1
+  fi
+fi
+
+if [[ $failed -ne 0 ]]; then
+  cat >&2 <<'EOF'
+
+[pre-commit] One or more checks failed. Fix the issues above and
+re-stage, or skip the hook for this commit with:
+
+    SKIP_HOOKS=1 git commit ...
+        (or)
+    git commit --no-verify ...
+
+EOF
+  exit 1
+fi
+
+exit 0
