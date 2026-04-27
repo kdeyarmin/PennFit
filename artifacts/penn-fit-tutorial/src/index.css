@@ -46,35 +46,46 @@ body {
   color: var(--color-text-primary);
   /* Warm cream base — same hue the tutorial has always used. */
   background-color: #FAF7F2;
-  /* Layered ambient blooms tuned for an editorial, high-end feel.
-     Top-left navy bloom, top-right gold sunrise, mid-right depth bloom,
-     bottom plinth, and a soft gold whisper in the lower-left. All blooms
-     are large + low alpha so the gradients blend into a continuous wash
-     rather than reading as discrete circles. Fixed attachment so they
-     don't move with scroll. */
+  /* Layered ambient atmosphere — editorial, high-end, with real depth.
+     Order, from back to front:
+       1. Cool atmospheric haze along the bottom.
+       2. Concentrated warm gold "sun" at the top-right corner.
+       3. Wide gold sunrise glow that washes the upper-right area.
+       4. Top-left navy bloom (anchors the heading).
+       5. Mid-right deep navy depth bloom.
+       6. Bottom navy plinth (grounds the page).
+       7. Lower-left soft gold whisper (warmth balance).
+       8. Diagonal sheen — a faint angular highlight band so the surface
+          reads as polished material rather than flat paper.
+     All blobs use large radii + tuned alpha so they fuse into a single
+     continuous wash rather than reading as discrete circles. Fixed
+     attachment keeps them anchored as the page scrolls. */
   background-image:
-    radial-gradient(ellipse 95% 65% at 8% -12%, rgba(31, 58, 92, 0.14), transparent 65%),
-    radial-gradient(ellipse 75% 55% at 100% -5%, rgba(244, 185, 66, 0.16), transparent 60%),
-    radial-gradient(ellipse 55% 45% at 115% 45%, rgba(31, 58, 92, 0.07), transparent 60%),
-    radial-gradient(ellipse 70% 55% at 50% 118%, rgba(31, 58, 92, 0.11), transparent 62%),
-    radial-gradient(ellipse 50% 40% at -5% 95%, rgba(244, 185, 66, 0.08), transparent 65%);
+    radial-gradient(ellipse 90% 50% at 50% 110%, rgba(214, 234, 248, 0.55), transparent 70%),
+    radial-gradient(circle 30% at 92% -2%, rgba(244, 185, 66, 0.34), transparent 65%),
+    radial-gradient(ellipse 75% 55% at 100% -5%, rgba(244, 185, 66, 0.22), transparent 60%),
+    radial-gradient(ellipse 95% 65% at 8% -12%, rgba(31, 58, 92, 0.20), transparent 65%),
+    radial-gradient(ellipse 55% 45% at 115% 45%, rgba(31, 58, 92, 0.10), transparent 60%),
+    radial-gradient(ellipse 70% 55% at 50% 118%, rgba(31, 58, 92, 0.16), transparent 62%),
+    radial-gradient(ellipse 50% 40% at -5% 95%, rgba(244, 185, 66, 0.13), transparent 65%),
+    linear-gradient(125deg, transparent 35%, rgba(244, 185, 66, 0.06) 50%, transparent 65%);
   background-attachment: fixed;
 }
 
-/* Subtle navy dot grid — viewport-fixed, masked into a soft center bloom
-   so it fades at the edges rather than tiling to the corners. Adds the
-   "scientific instrument" quality without competing with content. */
+/* Navy dot grid — viewport-fixed, masked into a soft center bloom so it
+   fades at the edges. More present than before so the surface reads as a
+   designed instrument panel, not a flat cream. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background-image: radial-gradient(circle at 1px 1px, rgba(31, 58, 92, 0.08) 1px, transparent 0);
-  background-size: 30px 30px;
-  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 82%);
-  mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 82%);
-  opacity: 0.5;
+  background-image: radial-gradient(circle at 1px 1px, rgba(31, 58, 92, 0.11) 1px, transparent 0);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
+  mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
+  opacity: 0.6;
 }
 
 /* Premium grain — a hair of SVG fractal-noise texture so the page never

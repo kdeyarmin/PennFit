@@ -165,34 +165,47 @@
   body {
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
-    /* Layered ambient blobs — tuned for an editorial, high-end feel.
-       Order matters: top-left navy bloom, top-right gold sunrise, a
-       mid-right depth bloom, a bottom plinth, and a soft gold whisper
-       in the lower-left for warmth. All blobs are large + low alpha so
-       gradients blend into a continuous wash rather than reading as
-       discrete circles. */
+    /* Layered ambient atmosphere — editorial, high-end, with real depth.
+       Order, from back to front:
+         1. Soft cool plinth at the bottom (cool atmospheric haze).
+         2. Warm gold "sun" concentrated top-right (the headline accent).
+         3. Wide gold sunrise glow that washes top-right area.
+         4. Top-left navy bloom (anchors the heading).
+         5. Mid-right deep navy depth bloom.
+         6. Bottom navy plinth (grounds the page).
+         7. Lower-left soft gold whisper (warmth balance).
+         8. Diagonal sheen — a faint angular highlight band that gives
+            the surface a sense of being a polished material rather than
+            flat paper. Last so it sits on top of the color blooms.
+       All blobs use large radii + carefully tuned alpha so they fuse
+       into a continuous wash instead of reading as discrete circles. */
     background-image:
-      radial-gradient(ellipse 95% 65% at 8% -12%, hsl(var(--penn-navy) / 0.13), transparent 65%),
-      radial-gradient(ellipse 75% 55% at 100% -5%, hsl(var(--penn-gold) / 0.14), transparent 60%),
-      radial-gradient(ellipse 55% 45% at 115% 45%, hsl(var(--penn-navy) / 0.06), transparent 60%),
-      radial-gradient(ellipse 70% 55% at 50% 118%, hsl(var(--penn-navy) / 0.10), transparent 62%),
-      radial-gradient(ellipse 50% 40% at -5% 95%, hsl(var(--penn-gold) / 0.07), transparent 65%);
+      radial-gradient(ellipse 90% 50% at 50% 110%, hsl(var(--penn-mist) / 0.55), transparent 70%),
+      radial-gradient(circle 30% at 92% -2%, hsl(var(--penn-gold) / 0.32), transparent 65%),
+      radial-gradient(ellipse 75% 55% at 100% -5%, hsl(var(--penn-gold) / 0.20), transparent 60%),
+      radial-gradient(ellipse 95% 65% at 8% -12%, hsl(var(--penn-navy) / 0.20), transparent 65%),
+      radial-gradient(ellipse 55% 45% at 115% 45%, hsl(var(--penn-navy) / 0.10), transparent 60%),
+      radial-gradient(ellipse 70% 55% at 50% 118%, hsl(var(--penn-navy) / 0.16), transparent 62%),
+      radial-gradient(ellipse 50% 40% at -5% 95%, hsl(var(--penn-gold) / 0.12), transparent 65%),
+      linear-gradient(125deg, transparent 35%, hsl(var(--penn-gold) / 0.05) 50%, transparent 65%);
     background-attachment: fixed;
   }
 
-  /* Subtle dot grid overlay — anchored to the viewport so it never tiles weirdly.
-     Slightly softer than before so the new gradient layering reads first. */
+  /* Dot grid overlay — anchored to the viewport so it never tiles weirdly.
+     Slightly more present than before so the page reads as a designed
+     surface, not a flat color. Still masked into a center bloom so it
+     fades softly at the edges. */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.07) 1px, transparent 0);
-    background-size: 30px 30px;
-    mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 82%);
-    -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 35%, black 25%, transparent 82%);
-    opacity: 0.45;
+    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.11) 1px, transparent 0);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
+    -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
+    opacity: 0.6;
   }
 
   /* Premium grain — a hair of texture so the page never reads as flat
