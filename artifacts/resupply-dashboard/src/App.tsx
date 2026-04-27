@@ -1,5 +1,5 @@
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
-import { Show } from "@clerk/react";
+import { Show, useClerk } from "@clerk/react";
 import { useGetOperatorMe, ApiError } from "@workspace/resupply-api-client";
 import NotFound from "./pages/not-found";
 import { SignInPage } from "./pages/sign-in";
@@ -84,6 +84,33 @@ function BrandHeader({ rightSlot }: { rightSlot?: React.ReactNode }) {
 // from a connection drop) intentionally maps to "transient" rather
 // than "not-authorized" so a 30-second connectivity blip doesn't tell
 // the operator they've been un-allowlisted.
+// Header chip rendered for a signed-in operator: shows the email and a
+// Sign-out button. Lives at the top right of the OperatorConsole shell
+// so an operator who lands on the wrong account can recover without
+// digging through Clerk's user menu (which we don't currently mount).
+function OperatorHeaderChip({ email }: { email: string }) {
+  const { signOut } = useClerk();
+  return (
+    <div className="flex items-center gap-3">
+      <span>
+        Signed in as <span className="font-semibold">{email}</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => signOut()}
+        className="text-xs font-semibold px-3 py-1.5 rounded border"
+        style={{
+          color: "#0a1f44",
+          backgroundColor: "#ffffff",
+          borderColor: "#c9a24a",
+        }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
+
 function OperatorConsole() {
   const { data, isPending, isError, error } = useGetOperatorMe();
 
@@ -105,11 +132,7 @@ function OperatorConsole() {
     >
       <BrandHeader
         rightSlot={
-          data?.email ? (
-            <span>
-              Signed in as <span className="font-semibold">{data.email}</span>
-            </span>
-          ) : undefined
+          data?.email ? <OperatorHeaderChip email={data.email} /> : undefined
         }
       />
 
