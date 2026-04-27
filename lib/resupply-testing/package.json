@@ -14,12 +14,16 @@
   },
   "dependencies": {
     "@workspace/resupply-contracts": "workspace:*",
+    "@workspace/resupply-db": "workspace:*",
     "@workspace/resupply-domain": "workspace:*",
     "@faker-js/faker": "^9.3.0",
+    "drizzle-orm": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "^8.18.0",
+    "pg": "^8.20.0",
     "vitest": "^2.1.8"
   }
 }
