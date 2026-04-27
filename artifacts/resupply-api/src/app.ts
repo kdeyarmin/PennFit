@@ -16,12 +16,26 @@ app.set("trust proxy", 1);
 // can call the API. In production, only explicitly-listed origins
 // (comma-separated env var) are allowed — operators should only access
 // the dashboard from a vetted URL.
+//
+// Production fails CLOSED: if NODE_ENV=production and the env var is
+// missing or empty, the process exits at boot rather than silently
+// inheriting the dev allowlist. Misconfigured CORS in prod could
+// expose the operator API to attacker-controlled origins, and that
+// risk grows as soon as Phase 1 lands real PHI-touching endpoints —
+// catching it at boot is cheaper than catching it after a leak.
 const allowedOrigins = (() => {
   const fromEnv = (process.env.RESUPPLY_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
   if (fromEnv.length > 0) return fromEnv;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "RESUPPLY_ALLOWED_ORIGINS must be set in production. Refusing to " +
+        "fall back to the dev allowlist (localhost + Replit dev domain) — " +
+        "that would expose the operator API to unintended origins.",
+    );
+  }
   const dev: string[] = [];
   if (process.env.REPLIT_DEV_DOMAIN) {
     dev.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
