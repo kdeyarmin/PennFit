@@ -63,7 +63,7 @@ export default function App() {
 
 function TutorialLandingPage() {
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-[#1F3A5C]">
+    <div className="min-h-screen text-[#1F3A5C]">
       <Header />
       <Hero />
       <VideoSection />
