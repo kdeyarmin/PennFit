@@ -45,10 +45,10 @@ export function Scene4() {
       exit={{ y: '-100%', opacity: 0 }}
       transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-8 lg:gap-16 items-center">
+      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 sm:gap-8 lg:gap-16 items-center">
 
         {/* LEFT: Text — swaps headline + body when results take over */}
-        <div className="space-y-5 lg:space-y-7 text-center lg:text-left order-2 lg:order-1">
+        <div className="space-y-3 sm:space-y-5 lg:space-y-7 text-center lg:text-left order-2 lg:order-1">
           <div>
             <motion.h2
               className="text-[#F4B942] font-bold tracking-wider uppercase text-xs sm:text-sm mb-2"
@@ -75,25 +75,25 @@ export function Scene4() {
           {/* Questionnaire body */}
           {!showingResults && (
             <motion.div
-              className="space-y-3 sm:space-y-4 max-w-md mx-auto lg:mx-0"
+              className="space-y-2 sm:space-y-3 lg:space-y-4 max-w-md mx-auto lg:mx-0"
               initial={{ opacity: 0, y: 16 }}
               animate={phase >= 3 ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
               transition={{ duration: 0.5 }}
             >
-              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed text-left">
+              <p className="hidden sm:block text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed text-left">
                 Answer questions about how you sleep and what your CPAP setup looks like. Each one
                 takes seconds — and <span className="font-semibold text-[#1F3A5C]">"I'm not sure" is a valid answer</span>.
               </p>
-              <ul className="space-y-1.5 text-left">
+              <ul className="space-y-1 sm:space-y-1.5 text-left">
                 {questionTopics.map((topic, i) => (
                   <motion.li
                     key={topic}
-                    className="flex items-start gap-2 text-sm sm:text-base text-[#475569]"
+                    className="flex items-start gap-2 text-xs sm:text-sm lg:text-base text-[#475569]"
                     initial={{ opacity: 0, x: -10 }}
                     animate={phase >= 3 ? { opacity: 1, x: 0 } : { opacity: 0, x: -10 }}
                     transition={{ delay: 0.1 + i * 0.12 }}
                   >
-                    <ClipboardList className="w-4 h-4 text-[#F4B942] mt-0.5 shrink-0" strokeWidth={2.4} />
+                    <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F4B942] mt-0.5 shrink-0" strokeWidth={2.4} />
                     <span>{topic}</span>
                   </motion.li>
                 ))}
@@ -104,35 +104,35 @@ export function Scene4() {
           {/* Results body */}
           {showingResults && (
             <motion.div
-              className="space-y-3 sm:space-y-4 max-w-md mx-auto lg:mx-0"
+              className="space-y-2 sm:space-y-3 lg:space-y-4 max-w-md mx-auto lg:mx-0"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed text-left">
+              <p className="hidden sm:block text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed text-left">
                 Penn Fit ranks every mask in our catalog against your measurements and answers, then
                 surfaces the three best fits with a confidence score for each.
               </p>
-              <div className="space-y-2">
+              <div className="space-y-1.5 sm:space-y-2">
                 {recommendations.map((r, i) => (
                   <motion.div
                     key={r.name}
-                    className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-white border border-[#1F3A5C]/12 shadow-sm"
+                    className="flex items-center justify-between gap-2 sm:gap-3 px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 rounded-xl bg-white border border-[#1F3A5C]/12 shadow-sm"
                     initial={{ opacity: 0, x: -16 }}
                     animate={phase >= 6 ? { opacity: 1, x: 0 } : { opacity: 0, x: -16 }}
                     transition={{ delay: 0.1 + i * 0.12, type: 'spring', stiffness: 180, damping: 22 }}
                   >
-                    <span className="text-sm sm:text-base font-semibold text-[#1F3A5C]">
+                    <span className="text-xs sm:text-sm lg:text-base font-semibold text-[#1F3A5C]">
                       #{i + 1} · {r.name}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-bold text-[#F4B942]">
-                      <Sparkles className="w-3.5 h-3.5" /> {r.score}% match
+                    <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs lg:text-sm font-bold text-[#F4B942]">
+                      <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> {r.score}%
                     </span>
                   </motion.div>
                 ))}
               </div>
               <motion.p
-                className="flex items-center gap-1.5 text-xs sm:text-sm text-[#1F3A5C]/70 font-medium pt-1"
+                className="hidden sm:flex items-center gap-1.5 text-xs sm:text-sm text-[#1F3A5C]/70 font-medium pt-1"
                 initial={{ opacity: 0 }}
                 animate={phase >= 6 ? { opacity: 1 } : { opacity: 0 }}
                 transition={{ delay: 0.5 }}
@@ -144,7 +144,7 @@ export function Scene4() {
           )}
         </div>
 
-        {/* RIGHT: Phone frame — cross-fade between two real screenshots */}
+        {/* RIGHT (mobile: TOP): Phone frame — cross-fade between two real screenshots */}
         <motion.div
           className="relative mx-auto order-1 lg:order-2"
           initial={{ opacity: 0, y: 40, rotateY: 12 }}
@@ -157,7 +157,7 @@ export function Scene4() {
           style={{ transformPerspective: 1200 }}
         >
           <div className="relative rounded-[2.5rem] lg:rounded-[3rem] bg-[#1F3A5C] p-2 sm:p-2.5 shadow-2xl">
-            <div className="relative overflow-hidden rounded-[2rem] lg:rounded-[2.5rem] bg-white w-[180px] sm:w-[220px] lg:w-[260px] aspect-[390/844]">
+            <div className="relative overflow-hidden rounded-[2rem] lg:rounded-[2.5rem] bg-white w-[120px] sm:w-[200px] lg:w-[260px] aspect-[390/844]">
               <AnimatePresence mode="sync">
                 <motion.img
                   key={showingResults ? 'results' : 'questionnaire'}

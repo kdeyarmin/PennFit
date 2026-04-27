@@ -126,17 +126,17 @@ function Header() {
 
 function Hero() {
   return (
-    <section className="container mx-auto px-4 sm:px-6 pt-10 sm:pt-14 pb-6 text-center">
+    <section className="container mx-auto px-4 sm:px-6 pt-5 sm:pt-14 pb-4 sm:pb-6 text-center">
       <p className="text-xs sm:text-sm uppercase tracking-[0.2em] text-[#F4B942] font-bold">
         Penn Fit · Tutorial
       </p>
       <h1
-        className="mt-3 text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]"
+        className="mt-2 sm:mt-3 text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]"
         style={{ fontFamily: "var(--font-display)" }}
       >
         A 45-second walkthrough.
       </h1>
-      <p className="mt-4 sm:mt-5 text-base sm:text-lg lg:text-xl text-[#475569] max-w-2xl mx-auto leading-relaxed">
+      <p className="mt-2 sm:mt-5 text-sm sm:text-lg lg:text-xl text-[#475569] max-w-2xl mx-auto leading-snug sm:leading-relaxed">
         See exactly how Penn Fit goes from one selfie to a confident CPAP mask
         recommendation — then read the full step-by-step guide below.
       </p>
@@ -147,7 +147,7 @@ function Hero() {
 function VideoSection() {
   return (
     <section className="container mx-auto px-4 sm:px-6 pb-10">
-      <div className="mx-auto max-w-5xl aspect-video rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-[#1F3A5C]/10 bg-white relative">
+      <div className="mx-auto max-w-5xl aspect-[3/5] sm:aspect-video rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-[#1F3A5C]/10 bg-white relative">
         <VideoWithControls />
       </div>
       <p className="text-center text-xs sm:text-sm text-[#1F3A5C]/60 mt-3 px-4">

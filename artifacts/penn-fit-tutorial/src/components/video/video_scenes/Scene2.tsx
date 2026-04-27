@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Camera, ScanFace, Ruler } from 'lucide-react';
 
-const captureScreenshot = `${import.meta.env.BASE_URL}screenshots/capture-mobile.jpg`;
+// Use the home-page screenshot — it's the actual entry point patients see when
+// they open Penn Fit (Step 1 of this scene's narrative). The cpap-fitter capture
+// page itself can't be screenshotted in headless because it requires a working
+// camera permission.
+const homeScreenshot = `${import.meta.env.BASE_URL}screenshots/home-mobile.jpg`;
 
 export function Scene2() {
   const [phase, setPhase] = useState(0);
@@ -44,7 +48,7 @@ export function Scene2() {
       exit={{ opacity: 0, scale: 1.05 }}
       transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-8 lg:gap-16 items-center">
+      <div className="w-full max-w-6xl px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-3 sm:gap-8 lg:gap-16 items-center">
 
         {/* LEFT: Real phone-frame screenshot of the home page */}
         <motion.div
@@ -60,10 +64,10 @@ export function Scene2() {
         >
           {/* Phone bezel */}
           <div className="relative rounded-[2.5rem] lg:rounded-[3rem] bg-[#1F3A5C] p-2 sm:p-2.5 shadow-2xl">
-            <div className="relative overflow-hidden rounded-[2rem] lg:rounded-[2.5rem] bg-white w-[180px] sm:w-[220px] lg:w-[260px] aspect-[390/844]">
+            <div className="relative overflow-hidden rounded-[2rem] lg:rounded-[2.5rem] bg-white w-[120px] sm:w-[200px] lg:w-[260px] aspect-[390/844]">
               <img
-                src={captureScreenshot}
-                alt="Penn Fit capture screen"
+                src={homeScreenshot}
+                alt="Penn Fit home screen"
                 className="absolute inset-0 w-full h-full object-cover object-top"
                 draggable={false}
               />
@@ -76,7 +80,7 @@ export function Scene2() {
         </motion.div>
 
         {/* RIGHT: Numbered steps */}
-        <div className="space-y-5 lg:space-y-7 text-center lg:text-left">
+        <div className="space-y-3 sm:space-y-5 lg:space-y-7 text-center lg:text-left">
           <div>
             <motion.h2
               className="text-[#F4B942] font-bold tracking-wider uppercase text-xs sm:text-sm mb-2"
@@ -96,21 +100,21 @@ export function Scene2() {
             </motion.h3>
           </div>
 
-          <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-1.5 sm:space-y-3 lg:space-y-4">
             {steps.map((s, i) => {
               const { Icon } = s;
               return (
                 <motion.div
                   key={s.num}
-                  className="flex items-start gap-3 sm:gap-4 text-left max-w-md mx-auto lg:mx-0"
+                  className="flex items-start gap-2 sm:gap-3 lg:gap-4 text-left max-w-md mx-auto lg:mx-0"
                   initial={{ opacity: 0, y: 20 }}
                   animate={phase >= 3 + i ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#1F3A5C]/8 border border-[#1F3A5C]/15 flex items-center justify-center shrink-0 mt-0.5">
-                    <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-[#1F3A5C]" strokeWidth={2.2} />
+                  <div className="w-7 h-7 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-xl bg-[#1F3A5C]/8 border border-[#1F3A5C]/15 flex items-center justify-center shrink-0 mt-0.5">
+                    <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 lg:w-5 lg:h-5 text-[#1F3A5C]" strokeWidth={2.2} />
                   </div>
-                  <p className="text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
+                  <p className="text-xs sm:text-base lg:text-xl text-[#475569] leading-snug sm:leading-relaxed">
                     <span className="font-semibold text-[#1F3A5C]">Step {s.num}.</span> {s.text}
                   </p>
                 </motion.div>

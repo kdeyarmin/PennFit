@@ -160,7 +160,7 @@ export function HowItWorks() {
         {/* Aspect ratio is portrait on phones (where the tutorial scenes
             stack vertically and need room to breathe) and 16:9 from sm+
             up where the scenes lay out side-by-side. */}
-        <div className="relative w-full overflow-hidden rounded-2xl border border-border/60 shadow-lg bg-black aspect-[3/4] sm:aspect-video">
+        <div className="relative w-full overflow-hidden rounded-2xl border border-border/60 shadow-lg bg-black aspect-[3/5] sm:aspect-video">
           <iframe
             src="/penn-fit-tutorial/"
             title="Penn Fit — How To Use"
