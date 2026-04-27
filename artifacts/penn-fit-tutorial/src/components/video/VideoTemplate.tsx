@@ -8,16 +8,17 @@ import { Scene4 } from './video_scenes/Scene4';
 import { Scene5 } from './video_scenes/Scene5';
 
 // Scene timings — chosen so a first-time viewer can comfortably read every
-// line of body copy at least once. Earlier versions clocked in at ~21s total
-// and most viewers reported the text "flashing past" before they could read
-// it; the values below run ~43s and were tuned by reading each scene aloud
-// at a relaxed cadence.
+// line of body copy at least once AND have a few seconds of "all text on
+// screen" hold time before the next scene takes over. Earlier versions ran
+// at 21s and 43s; viewers still reported text "flashing past". The values
+// below run ~58s — each scene now holds for 4-6 seconds after its final
+// text element animates in.
 export const SCENE_DURATIONS = {
-  intro: 6000,
-  capture_measure: 10000,
-  pro_tips: 10000,
-  questionnaire_results: 12000,
-  outro: 5500,
+  intro: 7000,
+  capture_measure: 14000,
+  pro_tips: 14000,
+  questionnaire_results: 16000,
+  outro: 6500,
 };
 
 const SCENE_COMPONENTS: Record<string, React.ComponentType> = {

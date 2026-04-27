@@ -12,16 +12,16 @@ export function Scene2() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
-    // Spread the four reveals across ~8s so each step has time to land
-    // before the next one slides in. Final hold (~1.5s) lets the viewer
-    // re-read the steps in full.
+    // Reveals stretched to ~9.5s so each step lingers ~1.7-2s before the
+    // next one arrives. Scene total is 14s, leaving ~4.5s of "everything
+    // visible" hold time for re-reading.
     const timers = [
       setTimeout(() => setPhase(1), 300),    // Phone frame slides in
-      setTimeout(() => setPhase(2), 1500),   // Heading
-      setTimeout(() => setPhase(3), 2900),   // Step 1
-      setTimeout(() => setPhase(4), 4600),   // Step 2
-      setTimeout(() => setPhase(5), 6300),   // Step 3
-      setTimeout(() => setPhase(6), 8000),   // Step 4 + measurement chips
+      setTimeout(() => setPhase(2), 1800),   // Heading
+      setTimeout(() => setPhase(3), 3500),   // Step 1
+      setTimeout(() => setPhase(4), 5500),   // Step 2
+      setTimeout(() => setPhase(5), 7500),   // Step 3
+      setTimeout(() => setPhase(6), 9500),   // Measurement chips
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);

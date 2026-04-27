@@ -7,15 +7,15 @@ export function Scene3() {
 
   useEffect(() => {
     // Stretched ramp so each tip card has a clear arrival moment instead of
-    // four rectangles flying in at once. Final hold gives ~3s of read time
-    // with all four tips on screen.
+    // four rectangles flying in at once. Final hold gives ~4.5s of read
+    // time with all four tips on screen (scene total: 14s).
     const timers = [
       setTimeout(() => setPhase(1), 300),
-      setTimeout(() => setPhase(2), 1100),
-      setTimeout(() => setPhase(3), 2400),
-      setTimeout(() => setPhase(4), 3700),
-      setTimeout(() => setPhase(5), 5000),
-      setTimeout(() => setPhase(6), 8500),
+      setTimeout(() => setPhase(2), 1500),
+      setTimeout(() => setPhase(3), 3200),
+      setTimeout(() => setPhase(4), 5000),
+      setTimeout(() => setPhase(5), 6800),
+      setTimeout(() => setPhase(6), 9500),
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);

@@ -9,15 +9,16 @@ export function Scene4() {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
-    // Two-act scene: first half ~5s on the questionnaire, second half ~5s on
-    // the results, with a soft cross-fade between the phone screenshots.
+    // Two-act scene: first half ~7s on the questionnaire (so the bullets
+    // have time to register), second half ~9s on the results, with a soft
+    // cross-fade between the phone screenshots. Scene total: 16s.
     const timers = [
       setTimeout(() => setPhase(1), 300),     // Questionnaire phone slides in
-      setTimeout(() => setPhase(2), 1500),    // Heading + subhead
-      setTimeout(() => setPhase(3), 3000),    // Question bullets
-      setTimeout(() => setPhase(4), 5500),    // Cross-fade to results phone
-      setTimeout(() => setPhase(5), 7000),    // "Top 3 mask matches" heading
-      setTimeout(() => setPhase(6), 8500),    // Confidence chips reveal
+      setTimeout(() => setPhase(2), 1800),    // Heading + subhead
+      setTimeout(() => setPhase(3), 3500),    // Question bullets
+      setTimeout(() => setPhase(4), 7500),    // Cross-fade to results phone
+      setTimeout(() => setPhase(5), 9500),    // "Top 3 mask matches" heading
+      setTimeout(() => setPhase(6), 11500),   // Confidence chips reveal
     ];
     return () => timers.forEach(t => clearTimeout(t));
   }, []);

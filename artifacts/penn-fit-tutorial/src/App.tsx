@@ -134,7 +134,7 @@ function Hero() {
         className="mt-2 sm:mt-3 text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]"
         style={{ fontFamily: "var(--font-display)" }}
       >
-        A 45-second walkthrough.
+        A 1-minute walkthrough.
       </h1>
       <p className="mt-2 sm:mt-5 text-sm sm:text-lg lg:text-xl text-[#475569] max-w-2xl mx-auto leading-snug sm:leading-relaxed">
         See exactly how Penn Fit goes from one selfie to a confident CPAP mask
