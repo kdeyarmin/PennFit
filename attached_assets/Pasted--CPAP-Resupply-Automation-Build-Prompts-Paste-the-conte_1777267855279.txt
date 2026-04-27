@@ -1,0 +1,1475 @@
+# CPAP Resupply Automation — Build Prompts
+
+Paste the context block at the start of every Claude Code / Replit session, then run prompts in order. Verify lint + typecheck + tests pass after each before moving on.
+
+-----
+
+## Context block
+
+```
+
+```
+
+-----
+
+## Prompt 0.1 — Monorepo scaffold
+
+```
+Initialize a pnpm + Turborepo monorepo with these packages:
+
+apps/
+  api          - NestJS backend (REST + webhooks)
+  worker       - Temporal worker process
+  dashboard    - Next.js 14 (app router) operator UI
+packages/
+  db           - Prisma schema + generated client + migrations
+  domain       - Pure TypeScript domain models, value objects, business rules
+  contracts    - Shared zod schemas + DTOs used by api and dashboard
+  telecom      - Vendor adapters (Twilio SMS, Twilio Voice, SendGrid)
+  ai           - Anthropic adapter and prompt templates
+  audit        - Audit log helper + Prisma middleware
+  testing      - Test fixtures, factories, mock vendor implementations
+
+Setup:
+- TypeScript strict mode, project references, single tsconfig.base.json
+- ESLint with @typescript-eslint/strict, prettier, import/order
+- Vitest (unit) + supertest (API integration)
+- Husky + lint-staged: lint, typecheck, test on pre-commit
+- GitHub Actions CI: lint, typecheck, test, prisma migrate diff, npm audit
+- docker-compose.yml: postgres, redis, temporal dev server, mailhog (email capture)
+- Makefile or just-recipes for dev workflows: `make dev`, `make test`, `make migrate`
+
+Create ARCHITECTURE.md documenting the package layout and the dependency rules: 
+domain has no external deps, contracts depends only on zod, adapters depend on domain 
+but not vice versa, app layers depend on adapters and domain.
+
+Verify all checks green. Commit.
+```
+
+## Prompt 0.2 — Architecture Decision Records
+
+```
+Create docs/adr/ with ADRs (one markdown file each, numbered) covering each decision below. 
+Use the standard format: Context / Decision / Consequences / Alternatives Considered.
+
+001 — Why NestJS over Fastify/Express
+002 — Why Temporal for outreach orchestration (vs cron + queues)  
+003 — Why Postgres + Prisma (vs Mongo, vs Drizzle)
+004 — Why Twilio for telecom (vs Bandwidth, Vonage)
+005 — Why Claude for conversation AI (vs GPT)
+006 — TCPA consent model: opt-in capture, suppression, audit trail
+007 — HIPAA data minimization: what we store, what we don't, encryption boundaries
+008 — Multi-channel conversation state: how SMS, voice, email share context
+009 — Pacware manual CSV file exchange (vs SFTP, vs API): why human-in-the-loop, 
+      operational risks, migration exit ramp
+
+Each ADR should be concrete enough that a new engineer can understand WHY, not just what.
+Leave sections marked TODO for me to fill in business specifics where needed.
+```
+
+## Prompt 1.1 — Patient and supplies data model
+
+```
+In packages/db, design the Prisma schema for the core domain:
+
+- Patient: id, externalId (Pacware patient ID), firstName, lastName, dateOfBirth (encrypted), 
+  phone (encrypted, E.164), email (encrypted), addressLines, payerType (medicare/medicaid/
+  commercial/cash), insurancePlanId, primaryProviderNpi, preferredLanguage, preferredChannel, 
+  timezone, status (active/inactive/deceased), createdAt, updatedAt, softDeletedAt
+- Insurance: id, patientId, payerName, memberId (encrypted), groupNumber, effectiveDate, 
+  termDate, isPrimary
+- Equipment: id, patientId, deviceType, manufacturer, model, serialNumber, setupDate, 
+  prescribingPhysicianNpi, lastDownloadComplianceDate
+- SupplyItem: catalog of orderable items: id, hcpcsCode, description, manufacturer, model, 
+  category (mask/cushion/headgear/tubing/filter/chinstrap/humidifier), allowableSchedule 
+  (days between replacements per Medicare LCD), commercialOverrideDays
+- PatientSupply: which items a patient is set up to receive: id, patientId, supplyItemId, 
+  size, lastShippedDate, eligibleAfterDate, status (active/paused/discontinued), 
+  pauseReason, pausedUntil
+- Order: id, patientId, status (draft/pending_confirmation/confirmed/shipped/delivered/
+  cancelled/denied), confirmedAt, shippedAt, trackingNumber, claimNumber, totalAllowable
+- OrderLine: id, orderId, supplyItemId, size, quantity, unitAllowable
+- ConfirmationRecord: id, orderId, patientConfirmedAt, channel, conversationId, 
+  patientStatedSupplyCondition, patientStatedDeviceUseFrequency, transcript
+
+All PHI fields use Prisma client extensions for transparent encryption with AWS KMS 
+or local KMS in dev. Provide a migration that creates pgcrypto extension and the 
+needed key references.
+
+Add seed data: 
+- Full Medicare HCPCS supply catalog with allowable schedules
+- 50 fake patients with varied payers, devices, supply setups, last-shipped dates
+- Use @faker-js/faker for the names/addresses, but realistic clinical fields
+
+Tests: schema invariants (no negative quantities, valid HCPCS, etc.) using a 
+test database.
+
+Medicare LCD allowable schedules (encode as constants):
+- Full-face mask: every 3 months
+- Nasal mask, nasal pillow mask: every 3 months
+- Mask cushion (full-face): every month
+- Mask cushion (nasal pillows): every 2 weeks
+- Tubing: every 3 months
+- Headgear: every 6 months
+- Chinstrap: every 6 months
+- Disposable filter: every 2 weeks
+- Non-disposable filter: every 6 months
+- Humidifier water chamber: every 6 months
+```
+
+## Prompt 1.2 — Eligibility engine
+
+```
+In packages/domain, build the EligibilityService — pure functions, no I/O:
+
+- computeEligibility(patient, patientSupply, today) returns:
+  { eligible: boolean, eligibleDate: Date, daysUntilEligible: number, reason: string }
+- Logic accounts for:
+  - Payer rules: Medicare uses LCD allowable schedule; commercial may have plan-specific 
+    overrides (read from PatientSupply.commercialOverrideDays); cash-pay has no schedule
+  - Pause states: if patient.status != active, or patientSupply.status != active, 
+    or pausedUntil > today, not eligible
+  - Outstanding orders: if there's a non-final order for this supply item, not eligible 
+    until that resolves
+  - Compliance: for Medicare PAP supplies, optionally require recent compliance data 
+    (configurable lookback window). If no compliance data, flag for clinical review 
+    but don't block.
+- computeNextOutreachDate(patient, patientSupply, today) — returns when to first reach 
+  out (default: 7 days before eligible)
+- batchComputeDueList(patients, today) — returns patients due for outreach, with reasons
+
+Property-based tests with fast-check covering edge cases: leap years, time zone 
+boundaries, paused patients, terminated insurance, deceased patients (defensive: 
+must never reach out).
+
+Document the Medicare LCD references in comments with HCPCS code mappings.
+```
+
+## Prompt 1.3 — Audit logging
+
+```
+In packages/audit:
+
+- AuditLog Prisma model: id, actorType (system/user/patient/ai), actorId, action 
+  (e.g. patient.read, order.create, consent.grant), resourceType, resourceId, 
+  ipAddress, userAgent, metadata (JSONB), createdAt
+- Prisma client extension that automatically writes audit rows for all reads and writes 
+  on PHI-bearing tables. Reads must capture which fields were accessed.
+- AsyncLocalStorage-based context propagation so audit knows the current actor 
+  (set in NestJS middleware for HTTP, set by Temporal interceptor for workflows)
+- A decorator @Audited('action.name') for explicit business-action audits
+- Retention: audit rows are append-only and never deleted by application code. Add a 
+  database role that can write but not delete.
+
+Tests: prove that every PHI read/write produces exactly one audit row, that the actor 
+is always populated, that no audit row can be modified after creation.
+```
+
+## Prompt 2.1 — Consent and suppression model
+
+```
+In packages/db and packages/domain, build the consent/suppression system. This is 
+load-bearing for TCPA compliance — treat it as critical.
+
+Schema:
+- Consent: id, patientId, channel (sms/voice/email), scope (treatment/marketing/both), 
+  capturedVia (web_form/portal_signup/verbal_recorded/written_document), 
+  capturedAt, ipAddress, userAgent, signatureBlob (S3 key), evidenceText (full disclosure 
+  shown), revokedAt, revocationReason
+- Suppression: id, contactValue (phone E.164 or email), channel, reason 
+  (stop_keyword/unsubscribe/dnc_request/bounce/invalid), sourceMessageId, createdAt
+- ConversationContact: maps phone/email to patient (a contact may belong to multiple 
+  patients — e.g. caregiver phone). Tracks which patient consented for which channel.
+
+Domain service:
+- ConsentService.canContact(patientId, channel, purpose) returns 
+  { allowed: boolean, denialReason?, evidence?: ConsentRecord }
+- ConsentService.recordConsent(...) — strict input validation, must include 
+  evidence (signed blob or recorded call ID)
+- ConsentService.revokeConsent(...) — handles STOP/UNSUBSCRIBE/DNC; instant; 
+  also writes Suppression row
+- SuppressionService.isSuppressed(contactValue, channel) — must be checked before 
+  EVERY outbound message regardless of consent state
+
+Tests cover:
+- Cannot contact without active consent
+- STOP keyword on SMS produces suppression for that phone across all patients
+- Revoking treatment consent does not implicitly revoke marketing consent and vice versa
+- Quiet hours: 8am–9pm patient-local-time, with timezone fallback to area code lookup
+- 100% branch coverage required on this module
+```
+
+## Prompt 2.2 — TCPA gate
+
+```
+In packages/telecom, build a TcpaGate that wraps every outbound send:
+
+- gate.checkAndSend({ patientId, channel, purpose, payload, scheduledFor }) 
+  - Verifies consent exists and is not revoked
+  - Verifies suppression list does not contain the destination
+  - Verifies current time (patient-local) is within allowed hours, or schedules for 
+    next allowed window
+  - Verifies frequency cap (configurable: e.g. max 2 SMS per patient per day, max 
+    1 voice attempt per day)
+  - Returns either { sent: true, messageId } or { sent: false, reason, retryAt? }
+- Every gate decision is audit-logged
+- Every send writes to OutboundMessage table: id, patientId, channel, vendor, 
+  vendorMessageId, payload, status (queued/sent/delivered/failed), sentAt, deliveredAt
+
+Integration tests:
+- Mock vendors. Run scenarios: consented patient gets message, suppressed patient does 
+  not, quiet-hours patient gets scheduled, frequency-capped patient gets deferred, 
+  revoked consent results in no send and an alert.
+
+This gate is the chokepoint. Nothing in the system should send a message bypassing it. 
+Add a lint rule or architecture test that fails the build if telecom adapters are 
+imported anywhere outside packages/telecom.
+```
+
+## Prompt 3.1 — Twilio SMS and Voice adapters
+
+```
+In packages/telecom, implement adapters behind clean interfaces:
+
+interface SmsAdapter {
+  send(to: E164, body: string, idempotencyKey: string): Promise<{ vendorMessageId: string }>
+}
+interface VoiceAdapter {
+  initiateCall(to: E164, twimlUrl: URL, idempotencyKey: string): Promise<{ vendorCallId: string }>
+}
+interface EmailAdapter {
+  send(to: string, subject: string, html: string, text: string, idempotencyKey): Promise<...>
+}
+
+Twilio implementations using @twilio/twilio-node. Configure:
+- Messaging Service SID for SMS (10DLC compliant)
+- Verified caller ID / SHAKEN attestation for voice
+- Webhook signature validation on inbound (X-Twilio-Signature)
+
+Idempotency: every send takes an idempotency key. Persist key->vendorMessageId mapping 
+in Redis with 7-day TTL so retries don't double-send.
+
+Provide MockSmsAdapter, MockVoiceAdapter, MockEmailAdapter for tests and dev. They write 
+to an in-memory log that tests assert against.
+
+Add a feature flag to route through mocks in dev/staging. In CI, real Twilio is never called.
+
+Webhook receivers (in apps/api): /webhooks/twilio/sms-status, /webhooks/twilio/voice-status, 
+/webhooks/twilio/sms-inbound. All validate signatures, all enqueue events to a queue 
+(BullMQ) for processing — never do work synchronously in the webhook handler.
+```
+
+## Prompt 3.2 — Outbound message templates
+
+```
+Create a template system in packages/contracts for all outbound message bodies:
+
+Templates (write all of these — content is critical for TCPA / brand voice):
+- supply_due_initial_sms — first nudge, 7 days before eligible
+- supply_due_followup_sms — 3 days later, no response
+- supply_due_final_sms — day-of, with explicit "reply YES to confirm"
+- supply_confirmation_sms — after order placed
+- shipping_notification_sms — tracking number
+- delivery_confirmation_sms — please reply if not received
+- compliance_check_sms — gentle reminder if compliance data missing
+- supply_due_email — same intent, longer form
+- supply_due_voicemail_script — TwiML/text for AI voice or pre-recorded
+- opt_out_confirmation_sms — required response when patient texts STOP
+
+Every template:
+- Is a typed function: (vars: TypedVars) => string
+- Includes legally required language: company name, opt-out instructions, 
+  "this is a message from your durable medical equipment provider"
+- Has a snapshot test (so changes are intentional)
+- Has a max-length check for SMS (160 chars per segment, prefer <= 320)
+- Is reviewed by counsel — leave a [LEGAL REVIEW] comment block
+
+Build a template-preview UI route in the dashboard that renders all templates with 
+sample data so I can show counsel.
+```
+
+## Prompt 4.1 — Temporal setup and supply-due workflow
+
+```
+In apps/worker, set up Temporal:
+
+- Worker process that registers workflows and activities
+- Activities: PatientActivities (read patient, update last_outreach_at), 
+  TelecomActivities (sendSms, initiateCall, sendEmail — all wrap TcpaGate), 
+  OrderActivities (createDraftOrder, confirmOrder), AiActivities (generateSmsResponse)
+- All activities are idempotent and have retry policies
+- All activities log to audit
+
+SupplyDueWorkflow(patientId, patientSupplyId):
+  1. Wait until 7 days before eligible date
+  2. Send initial SMS (or email if SMS not consented)
+  3. Wait up to 72 hours for inbound response signal
+  4. If no response: send follow-up SMS
+  5. Wait another 72 hours
+  6. If still no response: place automated voice call
+  7. If still no response: escalate to human via dashboard task queue
+  8. If patient responds with confirmation at any step: 
+     - Run ConfirmOrderWorkflow
+  9. If patient responds with "not yet" or specific date: schedule follow-up
+  10. If patient opts out: cancel workflow, record consent revocation
+
+Workflow handles patient signals: patient_responded, patient_opted_out, patient_paused, 
+human_intervened. Use Temporal signals not polling.
+
+Tests with @temporalio/testing: time-skipping tests for the full happy path, 
+no-response path, opt-out path, paused path, deceased-patient path (must abort instantly).
+```
+
+## Prompt 4.2 — Daily eligibility scheduler
+
+```
+Build a scheduled workflow that runs daily at 6am UTC:
+
+- Reads all active patients with active supplies
+- Runs EligibilityService.batchComputeDueList
+- For each patient newly entering the "due soon" window, starts a SupplyDueWorkflow 
+  (one per supply item, with workflow ID = patient + supply + cycle so duplicates are 
+  rejected)
+- Emits metrics: due_today_count, started_workflows_count, deferred_count
+- Sends daily summary email to operations team
+
+Add a manual-trigger endpoint in the API (admin-only, audit-logged) so we can 
+re-run for a specific patient.
+
+Tests using a frozen clock that we advance day-by-day across a 90-day simulation.
+```
+
+## Prompt 5.1 — Conversation state model
+
+```
+Build a Conversation aggregate that maintains state across channels:
+
+Schema:
+- Conversation: id, patientId, currentChannel, intent (supply_reorder/info_update/
+  general_inquiry/opt_out/escalation), status (open/awaiting_patient/awaiting_agent/closed), 
+  workflowId (link to Temporal workflow), assignedAgentId, createdAt, lastActivityAt
+- Message: id, conversationId, direction (inbound/outbound), channel, vendorMessageId, 
+  body, transcribedFrom (for voice), aiGenerated (bool), aiModel, aiPromptVersion, createdAt
+- ConversationContext: id, conversationId, key, value — for collected info during a 
+  conversation (e.g., new_address, new_insurance_member_id, mask_size_change)
+
+Service operations:
+- routeInbound(channel, fromContact, body) — finds or creates conversation, links to 
+  patient by phone/email lookup, routes to AI or queues to human
+- continueConversation(conversationId, channel, message) — adds message, advances state
+- handoffToHuman(conversationId, reason) — flips status, notifies dashboard
+
+A patient texting from a phone we've called creates a single conversation that spans 
+both channels. A new phone number we don't recognize routes to human triage.
+
+Tests: cross-channel continuity, unknown contact handling, multiple-patient phone 
+(caregiver scenario), opted-out contact reaching out (should still respond, but only 
+with opt-back-in instructions).
+```
+
+## Prompt 5.2 — Inbound message handlers
+
+```
+In apps/api, build webhook processors (running off a BullMQ queue, not the webhook itself):
+
+- handleInboundSms({ from, to, body, vendorMessageId }):
+  - Hard rule: if body matches /^(stop|unsubscribe|cancel|end|quit)$/i — process opt-out 
+    immediately, send confirmation, write Suppression, signal any active workflow
+  - Look up contact, find conversation
+  - Append message
+  - If conversation has open AI session, signal it; else route to AI agent (Phase 6)
+
+- handleInboundCall({ from, to, twilioCallSid }):
+  - Returns TwiML for IVR or AI voice agent (Phase 6)
+  - Records call (with consent disclosure in greeting)
+  - On hangup, stores recording URL and transcript
+
+- handleInboundEmail({ from, subject, body, threadId }):
+  - Threading by message-id headers
+  - Strip quoted history
+  - Route same as SMS
+
+Hard tests for opt-out:
+- "stop" → suppressed within 100ms, all in-flight outbound for that contact cancelled, 
+  active workflow paused. Property-based testing across phrasing variants.
+```
+
+## Prompt 6.1 — Claude-powered SMS agent
+
+```
+In packages/ai, build the conversation agent:
+
+- ResupplyAgent class with conversation method that takes:
+  { conversation, patient, eligibility, recentMessages, availableTools }
+- Uses Anthropic Messages API with tool use
+- System prompt establishes: 
+  - Identity ("Pat from <DME company name>")
+  - Purpose (resupply confirmation, address/insurance updates, general questions)
+  - Strict guardrails: never give clinical advice, never quote prices that aren't 
+    verified, never confirm orders without explicit patient yes, never send to a 
+    suppressed contact (defense in depth)
+  - Required behaviors: confirm patient identity (DOB or last 4 of phone), state purpose, 
+    ask Medicare-required questions for Medicare patients (current supplies functioning? 
+    still using device? need replacement?), capture answers, confirm order
+- Tools available to the model:
+  - get_patient_supplies(patientId) — eligible items only
+  - get_supply_item_details(supplyItemId)
+  - update_patient_address(patientId, address) — requires confirmation step
+  - update_patient_insurance(patientId, insurance) — requires confirmation step
+  - place_order_pending_human_review(patientId, items) — for high-risk changes
+  - confirm_order(patientId, items, patientStatedAnswers) — only after explicit yes
+  - schedule_followup(patientId, date)
+  - escalate_to_human(reason)
+  - record_opt_out — should rarely be needed (string match handles most)
+- Response post-processing:
+  - Length check (SMS friendly)
+  - Forbidden content scan (no PHI from other patients leaked, no clinical advice)
+  - If anything trips, fall back to "Let me have a team member reach out" + escalate
+
+Tests:
+- Golden conversations (recorded transcripts) replayed against the agent — assert tool 
+  calls and final responses
+- Adversarial tests: patient asks for clinical advice, asks about another patient, 
+  tries to confirm order without yes, sends gibberish, sends in Spanish (route to 
+  Spanish prompt), tries to opt out via free text
+- Token cost budgets per conversation
+```
+
+## Prompt 6.2 — AI voice agent (or simpler IVR)
+
+```
+RECOMMENDED: start with IVR for outbound, AI voice for inbound only.
+
+Outbound IVR (TwiML):
+  - Greeting with company identity, recording disclosure, opt-out option
+  - "Press 1 to confirm reorder, 2 to speak with a person, 9 to opt out of these calls"
+  - Press 1 → run Medicare confirmation IVR script (multiple yes/no questions, 
+    DTMF or speech input), confirm at end, write ConfirmationRecord
+  - Press 2 → transfer to human queue (with screen pop in dashboard)
+  - Press 9 → opt-out confirmation, suppression
+  - No input → leave voicemail using same script as supply_due_voicemail_script
+
+Inbound AI voice (Vapi or Retell — pick based on BAA availability):
+  - Webhook integration: vendor calls our API for the agent to think
+  - Same system prompt and tools as SMS agent, voice-tuned
+  - Real-time transcript streaming
+  - Barge-in handling
+  - Hard timeout: 5 min max, then transfer to human
+
+For both, every call records the consent disclosure in the audio, generates a transcript, 
+and links the recording (S3) to the conversation.
+
+Tests with vendor sandbox/mocks: full-call simulations covering happy path and 
+each branch.
+```
+
+## Prompt 7.1 — Order workflow with Medicare verification
+
+```
+ConfirmOrderWorkflow(patientId, items, patientStatedAnswers, conversationId):
+  1. Re-check eligibility (defense in depth — caller may have stale data)
+  2. For Medicare patients: verify all required statements captured 
+     (still using device, supplies functioning per LCD, etc.). If missing, 
+     send signal back to conversation to collect.
+  3. Verify shipping address current. If not confirmed in conversation, prompt.
+  4. Verify insurance current. If patient mentioned change, route to verification queue.
+  5. Create Order in our DB (status: pending_review for high-value or first-time, 
+     auto_approved otherwise per configurable rules)
+  6. Push to Pacware via integration adapter (Phase 7.2)
+  7. On success, send confirmation message via same channel as conversation
+  8. Schedule shipping notification workflow
+
+ConfirmationRecord must capture: which channel, full transcript or recording URL, 
+patient-stated answers verbatim, timestamp, AI model + prompt version (for audit 
+and CMS evidence).
+
+Tests: Medicare path requires all confirmations, commercial path is lighter, 
+out-of-pocket path skips insurance steps, denial path (e.g., no compliance data) 
+escalates correctly.
+```
+
+## Prompt 7.2.1 — File upload pipeline
+
+```
+Build the integration service skeleton in apps/integration. This is a separate 
+NestJS service that runs alongside the api and worker. The dashboard provides the 
+upload UI; this service handles processing.
+
+Components:
+- FileUploadEndpoint in apps/api: POST /admin/integration/upload. Accepts multipart/
+  form-data with one or more files plus a fileType selector (patient_roster, insurance, 
+  equipment, shipments, entitlements). Authenticated, role-gated to integration_operator 
+  and admin. Streams to S3 (encrypted bucket) using multipart upload — never buffers 
+  full file in memory.
+- IngestedFile schema: id, sourceFile, sha256, sizeBytes, fetchedAt, processedAt, 
+  status (pending/processing/processed/failed/quarantined), errorSummary, 
+  rowsProcessed, rowsErrored, importBatchId, uploadedByUserId, fileType
+- On upload: write IngestedFile row in pending state, enqueue ProcessingJob to BullMQ. 
+  Return upload receipt with file ID.
+- ProcessingJob picks up the file from S3, runs the importer pipeline (Prompts 7.2.2-7.2.4), 
+  updates IngestedFile status with results.
+- Duplicate detection: file hash collision = rejected with clear "already uploaded on 
+  <date> by <user>" message. Override flag for legitimate re-uploads with audit note.
+- Quarantine: malformed files marked quarantined, available for download by admins for 
+  inspection.
+
+Dashboard upload UI (in apps/dashboard at /admin/integration/upload):
+- Drag-and-drop or file-picker for one or more CSVs
+- File type selector with auto-detection from filename (patients_*.csv → patient_roster)
+- Live progress indicator
+- After upload: shows processing status with refresh
+- Error display with row-level errors and link to quarantine if applicable
+- Upload history table on the same page: last 30 uploads with status
+
+Daily SOP task model:
+- DailyImportTask: id, expectedDate, fileTypes (json array of expected file types), 
+  status (pending/partial/complete/missed), completedAt, completedByUserId
+- Each business day at 6am, a new DailyImportTask is created with the expected file types
+- Marked complete when all expected file types received that day
+- Marked partial if some received
+- Marked missed if not complete by 11am next business day; this triggers an alert
+
+Dev fixtures:
+- Sample fixture CSVs in test-fixtures/pacware/: patients.csv, insurance.csv, 
+  equipment.csv, shipments.csv, supply_entitlements.csv with realistic Pacware-like 
+  formatting
+
+Tests:
+- Upload happy path with valid file
+- Duplicate hash rejection
+- File type mismatch (operator picks "patients" but uploads insurance file — 
+  validation catches it before processing)
+- Large file streaming (don't load 100MB into memory)
+- DailyImportTask creation, completion, miss detection
+- Audit log: every upload writes an audit row with user, file hash, file type
+- Permission test: non-operator user gets 403
+
+Don't process file contents yet — just get the bytes safely landed and tracked.
+```
+
+## Prompt 7.2.2 — Configurable schema mapper
+
+```
+Build a schema mapping layer that turns Pacware's CSV files into our domain types.
+
+Why config-driven: Pacware's column names will change without notice. We want to 
+fix mappings via a config file/UI, not a deploy.
+
+Schema:
+- ImportMapping: id, sourceType (patient/insurance/equipment/shipment/entitlement), 
+  version (semver, increments when mapping changes), columnMappings (JSONB), 
+  validations (JSONB), transformations (JSONB), createdBy, createdAt, activatedAt
+
+ColumnMapping shape:
+  {
+    sourceColumn: "PT_FIRST_NAME",   // Pacware column name (case-insensitive match)
+    targetField: "firstName",         // our domain field
+    required: true,
+    transform: "trim" | "uppercase" | "lowercase" | "phone_e164" | "date_us" | 
+               "date_iso" | "currency_to_cents" | "boolean_yn" | "custom:<fnName>",
+    fallback: null | <value> | "skipRow"
+  }
+
+Implementation:
+- Mapper service: takes a parsed CSV row + mapping config + context, returns 
+  { ok: true, value: T } | { ok: false, errors: ValidationError[] }
+- Pure functions; testable in isolation
+- Custom transform registry for one-off cases (e.g., Pacware's quirky payer-type 
+  encoding to our enum)
+- Encoding handling: detect Windows-1252 vs UTF-8 via BOM and content sniffing; 
+  re-encode to UTF-8 before parsing
+- Robust CSV parsing using `csv-parse` with relaxed mode (Pacware files in the wild 
+  may have unescaped commas in name fields, trailing whitespace, BOM, mixed line 
+  endings)
+
+Build out initial mapping configs for each file type as YAML files in 
+config/mappings/pacware/. These are the assumptions we'll refine when we see real files.
+
+Tests:
+- Each transformation has a unit test
+- Schema mapping with a real-shaped CSV fixture, including malformed rows that 
+  should error gracefully (not crash the whole import)
+- Encoding fallback: Windows-1252 file with smart quotes parses correctly
+- Mapping version change: switching to v2 mapping doesn't break in-progress imports
+```
+
+## Prompt 7.2.3 — Patient roster importer
+
+```
+Build the inbound patient pipeline. This is the most complex importer; it sets the 
+pattern for the others.
+
+Process:
+1. IngestedFile picked up by ImportProcessor
+2. ImportProcessor identifies file type from filename pattern (e.g., 
+   patients_YYYYMMDD.csv) and selects the active ImportMapping for that type
+3. CSV parsed row-by-row, each row mapped via SchemaMapper to a candidate 
+   PatientImportRecord
+4. Each record validated against zod schema (E.164 phone, valid email, etc.)
+5. All rows staged in PatientImportStaging table with importBatchId
+6. After full file is staged, run ReconciliationStep:
+   - Match staged rows to existing Patient records via externalId (Pacware's patient ID)
+   - Classify each as: NEW (no match), UPDATE (match, fields differ), 
+     UNCHANGED (match, no diffs), CONFLICT (match but local changes since last 
+     import — see below), MISSING (Patient exists locally but not in this import — 
+     could mean deactivated, or could mean this is a partial export)
+7. Apply changes within a single transaction:
+   - NEW: insert
+   - UPDATE: update with field-level audit log
+   - CONFLICT: do NOT auto-resolve. Stage as IntegrationConflict for operator review.
+   - MISSING: do NOT auto-deactivate from a partial file. Only deactivate if file 
+     metadata says "full snapshot" (configurable per import type).
+8. ImportBatch finalized with summary: rows in/new/updated/unchanged/conflicts/errors
+
+Conflict detection (critical):
+- Each Patient has lastSyncedFromPacwareAt and a hash of synced fields
+- If our local copy was modified after last sync (e.g., patient updated address via 
+  portal between syncs), and Pacware's value also differs, flag as CONFLICT
+- Do not silently overwrite. Operations decides which side wins per case.
+
+Audit:
+- Every field change has an audit row with old value, new value, source 
+  (pacware_import vs portal vs operator)
+- Field-level audit, not just record-level
+
+Tests:
+- Full snapshot import to empty DB
+- Incremental import with mix of new/updated/unchanged
+- Conflict detection: simulate local edit then re-import
+- Malformed row in middle of file: that row goes to errors, others process
+- Partial file (no MISSING semantics) leaves untouched patients alone
+- Same file imported twice = no-op on second run (idempotency)
+```
+
+## Prompt 7.2.4 — Insurance, equipment, shipment, entitlement importers
+
+```
+Apply the same pattern from Prompt 7.2.3 to the four remaining inbound file types. 
+Reuse SchemaMapper, staging tables, ReconciliationStep.
+
+Insurance (pacware_insurance_YYYYMMDD.csv):
+- Maps to Insurance table
+- Patient match by externalId
+- Multiple insurance rows per patient possible (primary, secondary)
+- isPrimary handling
+- Termed insurance: term date in past = mark inactive, don't delete
+
+Equipment (pacware_equipment_YYYYMMDD.csv):
+- Maps to Equipment table
+- Setup date, device model, serial number
+- Critical: this drives which supply items the patient is eligible for. New equipment 
+  setup may need to trigger NewPatientOnboardingWorkflow (Phase 11.2)
+
+Shipments (pacware_shipments_YYYYMMDD.csv):
+- THIS IS THE MOST IMPORTANT IMPORT for the eligibility engine. The lastShippedDate 
+  on each PatientSupply drives when they're eligible for resupply.
+- Maps to PatientSupply.lastShippedDate updates
+- Match by patientId + HCPCS code (or supplyItemId if Pacware exports SKU)
+- Idempotency: shipment file may include historical shipments — only update 
+  lastShippedDate if the imported date is newer
+- After this import, recompute eligibility for any affected PatientSupply
+
+Supply entitlements (pacware_entitlements_YYYYMMDD.csv):
+- Maps to PatientSupply records: which items each patient is set up for and at what size
+- This is what items they're allowed to receive, separate from what they've received
+
+Tests for each:
+- Standard import flow
+- Order-dependent imports: equipment must import before entitlements; shipments 
+  reference both. Document the dependency order.
+- After all imports complete, run integration test: pick a sample patient, verify 
+  eligibility computation matches expected.
+```
+
+## Prompt 7.2.5 — Outbound order export (use IF Pacware accepts CSV import)
+
+```
+Build the outbound order pipeline. This generates a daily downloadable CSV of confirmed 
+orders that staff imports into Pacware.
+
+NOTE: this prompt assumes Pacware accepts CSV order imports. If pre-build checklist 
+revealed it does not, use Prompt 7.2.5b (manual keying) instead.
+
+Process:
+1. ConfirmOrderWorkflow (from Phase 7.1) creates Order with status=confirmed_pending_export
+2. OrderExportBuilder runs daily at a configurable time (default 5am, before staff 
+   arrives so the file is ready when they start their import SOP)
+3. Builds CSV in Pacware's required format using the OUTBOUND mapping config
+4. Required fields per Pacware spec: patient external ID, item HCPCS, quantity, 
+   size, ship-to address, insurance to bill, confirmation evidence reference, 
+   shipping notes
+5. Stores CSV in S3 with a date-stamped filename (e.g., resupply-orders-YYYYMMDD.csv)
+6. Creates ExportedFile row, marks orders as status=exported_pending_confirmation
+7. Sends notification to designated import staff (email + dashboard alert) that 
+   today's file is ready
+
+Dashboard download page (/admin/integration/order-export):
+- Table of recent export files (last 30 days) with date, row count, status, 
+  download button, "mark imported" button
+- Each download writes an audit row (which user, when, file ID)
+- After staff imports the file in Pacware, they click "mark imported" and enter:
+   - Pacware's batch confirmation number (if they get one)
+   - Any rejected/erred orders from Pacware's import (paste-or-attach the error report)
+   - Free-text notes
+- This advances the orders to status=externally_imported with the Pacware batch ref
+
+Schema additions:
+- ExportedFile: id, exportType, sha256, rowsCount, exportedAt, downloadedAt, 
+  downloadedByUserId, importedAt, importedByUserId, externalBatchRef, 
+  rejectedOrdersReport (S3 key)
+- Order.externalOrderId (Pacware's order number after import; populated from 
+  rejected-orders report if available)
+- Order.exportStatus enum: pending_export | exported_pending_confirmation | 
+  externally_imported | import_rejected
+- Order.exportRejectionReason
+
+If staff identifies rejected orders during the import-confirmation step, those orders 
+are flipped to import_rejected with the reason and surface in an operator queue for 
+follow-up.
+
+Tests:
+- Happy path: order confirmed → exported → downloaded → marked imported → 
+  status=externally_imported
+- Rejected order path: marked rejected with reason → flagged for review
+- Duplicate prevention: same order doesn't appear in two export batches
+- Missed download alert: file generated but not downloaded by EOD → ops alert
+- Format validation: produced CSV matches Pacware's exact spec (column order, date 
+  format, encoding, line endings — they often require CRLF)
+```
+
+## Prompt 7.2.5b — Manual order staging (use IF Pacware can’t import CSV)
+
+```
+If Pacware's inbound import isn't available, build a manual-keying assist queue.
+
+Process:
+1. ConfirmOrderWorkflow creates Order with status=confirmed_pending_export
+2. Order appears in /admin/orders/pending-keying queue in dashboard
+3. Each row shows EVERYTHING the billing keyer needs to enter into Pacware:
+   - Patient name + external ID (link to copy)
+   - Insurance + member ID
+   - Each line item: HCPCS code, description, quantity, size — all copy-buttons
+   - Ship-to address (copy)
+   - Confirmation evidence link (transcript / recording)
+4. Keyer enters in Pacware, then clicks "Keyed in Pacware" with Pacware's order number
+5. Order marked status=externally_keyed
+6. Daily reconciliation report: orders confirmed but not keyed > 24 hours flagged
+
+This is a worse experience than CSV but unblocks launch if needed. Plan to revisit 
+when Pacware allows imports OR when migrating off Pacware entirely.
+
+Build a stopwatch in the dashboard to measure keying time per order so you can quantify 
+the labor cost vs. the CSV automation savings.
+
+Tests: queue ordering, copy-buttons populate clipboard correctly, keyed orders flow 
+to next state, SLA report computes correctly.
+```
+
+## Prompt 7.2.6 — Reconciliation and conflict UI
+
+```
+Build the operations dashboard for managing the integration.
+
+Pages in apps/dashboard:
+
+/admin/integration/runs — list of all import/export runs with status, row counts, 
+errors. Click for detail.
+
+/admin/integration/runs/[id] — full detail of one run:
+  - Source file metadata (name, hash, size)
+  - Mapping version used
+  - Per-row outcomes (new/updated/conflict/error/unchanged)
+  - Filterable, exportable
+  - Re-run button (replays the file with current mapping — useful when fixing a 
+    mapping bug)
+
+/admin/integration/conflicts — pending conflicts where Pacware data and our data 
+disagree. Each shows:
+  - Field, our value (with source: portal/operator), Pacware value, last sync, 
+    local edit timestamp
+  - Three actions: Accept Pacware, Keep Ours, Manual Override (with note)
+  - Bulk apply for repeated patterns
+
+/admin/integration/quarantine — files that failed parsing entirely. Download original, 
+view error trace, re-process after fixing mapping.
+
+/admin/integration/mappings — view/edit ImportMapping configs. Diff between versions. 
+Test a mapping against a sample file before activating. Roll back to prior version.
+
+/admin/integration/sop-history — calendar view of last 90 days, color-coded by SOP 
+status (green=complete on time, yellow=late, red=missed). Click any day for detail.
+
+Tests with Playwright covering each operator workflow.
+```
+
+## Prompt 7.2.7 — Backfill and onboarding tooling
+
+```
+Build the one-time tooling to onboard your existing patient base into the resupply 
+system.
+
+Process:
+1. Brightree generates historical exports: full patient roster, all active insurances, 
+   all equipment setups, last 18 months of shipments, current entitlements
+2. Run a one-shot BackfillImporter (CLI command): imports the snapshot in dependency 
+   order, with strict validation
+3. Generate a PreLaunchReport before any outreach starts:
+   - Total patients imported
+   - By payer mix
+   - By due-date distribution (how many are due this week, this month, this quarter)
+   - Patients with missing/stale compliance data
+   - Patients without consent on file (cannot be contacted via automation)
+   - Patients without valid phone or email (cannot be contacted at all)
+   - Address quality issues (USPS-validated count, failures)
+4. Operator reviews and resolves issues before opting any patient into automated 
+   outreach
+5. Phased opt-in: bulk operations to enroll patients into outreach by cohort 
+   (e.g., active CPAP patients with valid phone + signed consent first)
+
+Build a "consent gap" workflow: patients in Pacware without signed TCPA consent in 
+our system are queued for a one-time consent capture campaign (manual call or 
+mailed form) before automated outreach is enabled for them.
+
+Tests: full backfill against a fixture dataset, report accuracy, opt-in cohort 
+selection logic, consent gap queue.
+```
+
+## Prompt 7.2.8 — Monitoring, alerts, and SLAs for the integration
+
+```
+Production monitoring for the integration:
+
+Metrics:
+- Daily SOP completion rate (rolling 30-day)
+- Time of day each file type is typically uploaded (anomaly detection if shifts)
+- Rows imported per file vs. historical baseline (catch sudden drops indicating 
+  upstream issue)
+- Conflict count trend (if rising, mapping or data quality issue)
+- Order export download lag (file generated → downloaded by staff)
+- Order export import-confirmation lag (downloaded → marked imported)
+- Order rejection rate from Pacware imports
+
+Alerts (PagerDuty for severity 1, Slack for severity 2):
+- SEV1: DailyImportTask is missed (no upload by 11am next business day)
+- SEV1: Order export file downloaded but not marked imported by EOD
+- SEV1: Any audit log write failure
+- SEV1: Designated import staff has been out 2+ consecutive business days with no 
+  backup uploading
+- SEV2: Conflict count >2x rolling 7-day average
+- SEV2: >5% of orders rejected from Pacware import
+- SEV2: Mapping version mismatch (file has columns the active mapping doesn't)
+- SEV2: Upload row count <50% of historical average for that file type
+
+Runbooks in docs/runbooks/:
+- pacware-upload-overdue.md (designated staff didn't upload — escalation chain)
+- pacware-mapping-drift.md (Pacware changed column names — how to update mapping)
+- pacware-order-rejected.md (orders rejected on import — investigation flow)
+- pacware-staff-out.md (designated staff is sick/on leave — backup activation)
+
+Daily ops email to operations team with:
+- Yesterday's import/export summary
+- Pending conflicts
+- Pending failed-import orders
+- Patients newly eligible for outreach
+- Today's SOP status (what's done, what's still expected)
+```
+
+## Prompt 8.1 — Dashboard core
+
+```
+In apps/dashboard, build the Next.js operator UI. Auth via Cognito with role-based 
+access (admin, supervisor, agent, read-only).
+
+Pages:
+- /dashboard — operational summary: due today, in-progress conversations, escalations 
+  queue, daily KPIs (reorder rate, response rate by channel, AI deflection rate)
+- /patients — searchable list, click for patient detail with conversation history, 
+  supplies, orders, audit trail (filtered to actions on this patient)
+- /patients/[id] — full record. EVERY field view writes audit log via the API.
+- /conversations — live conversation list, filter by status. Real-time updates via 
+  Server-Sent Events from the API.
+- /conversations/[id] — chat-style transcript across SMS/voice/email. Agent can take 
+  over from AI (signals workflow). Can listen to call recordings inline.
+- /escalations — queue of conversations needing human attention with SLA timers
+- /orders — order list with statuses, filter by Medicare review queue
+- /templates — preview message templates with sample data (from Phase 3)
+- /admin/consent — view/export consent records, manage suppression list
+- /admin/audit — searchable audit log (admin only)
+- /admin/settings — frequency caps, quiet hours, escalation rules, AI model version
+
+Use shadcn/ui components, Tailwind, TanStack Query for data fetching with optimistic 
+updates, react-hook-form + zod for forms.
+
+Tests: Playwright for critical flows (login, view patient, take over conversation, 
+manage suppression).
+
+Accessibility: WCAG 2.1 AA. Keyboard navigation for the entire conversation viewer 
+(agents work fast, mouse is slow).
+```
+
+## Prompt 8.2 — Reporting and analytics
+
+```
+Build reporting:
+
+- Daily ops report: outbound sent by channel, response rate, conversion to order, 
+  AI handoff rate, opt-outs, average resolution time
+- Per-patient report: lifetime touches, last contact, current status
+- Compliance report (for CMS audits): Medicare orders with full confirmation evidence, 
+  filterable by date range, exportable as PDF with all transcripts/recordings linked
+- Telecom cost report: SMS segments sent, call minutes, email volume, allocated by patient
+
+Reports backed by a read-replica or materialized views — never run heavy aggregates on 
+the primary database.
+
+Add an export-to-CSV with audit logging (every export is recorded with the operator and 
+filter criteria).
+```
+
+## Prompt 9.1 — Security review and pen-test prep
+
+```
+Run a thorough security review and fix everything:
+
+- Authentication: MFA required for all dashboard users. Session timeout 30 min idle, 
+  12 hour absolute. Strong password policy or SSO only.
+- Authorization: every API endpoint declares required role; integration tests verify 
+  unauthorized access is denied.
+- Input validation: every endpoint uses zod schemas. SQL injection impossible via 
+  Prisma. XSS impossible via React (no dangerouslySetInnerHTML anywhere — add lint rule).
+- Secrets: all in AWS Secrets Manager, rotated quarterly. Never in env files committed 
+  to git. Pre-commit hook scans for secrets (gitleaks).
+- Encryption: confirm RDS at-rest encryption, S3 at-rest encryption, TLS 1.2+ enforced, 
+  HSTS header, secure cookies, no PHI in URLs or query strings, no PHI in log messages.
+- Webhooks: signature validation on all inbound. Replay protection (nonce + timestamp).
+- Rate limiting on all endpoints, stricter on auth endpoints.
+- Headers: helmet defaults plus strict CSP, no inline scripts.
+- Dependency audit: npm audit, snyk, dependabot enabled. Zero high/critical.
+- Penetration test prep: write a security.md describing the system, threat model, 
+  data flow diagram. Engage a healthcare-focused pen-test firm (budget $10–25k).
+
+Generate a SOC 2 readiness checklist mapping our controls to common criteria. We're 
+not SOC 2 certified yet but the gaps inform the roadmap.
+```
+
+## Prompt 9.2 — Observability, on-call, runbooks
+
+```
+Production observability:
+
+- Structured logging (pino) with PHI redaction by field allowlist (only log known-safe 
+  fields). Log shipper to Datadog/Honeycomb.
+- Metrics: outbound message latency, vendor error rates, AI agent latency and cost, 
+  workflow completion rates, queue depths.
+- Tracing: OpenTelemetry across api/worker/dashboard.
+- Alerts:
+  - PagerDuty for: webhook delivery failures, vendor outage, queue backlog, 
+    error rate spike, audit log write failure (CRITICAL — never silently fail)
+  - Slack for: high opt-out rate, AI escalation spike, daily anomalies
+- Dashboards: ops dashboard, AI quality dashboard, financials (cost per touch, 
+  cost per converted order)
+
+Runbooks in docs/runbooks/:
+- incident-twilio-outage.md
+- incident-vendor-baa-violation.md  
+- incident-tcpa-complaint.md
+- incident-suspected-phi-breach.md (must include 60-day breach notification timeline)
+- incident-ai-misbehavior.md (rollback prompt, kill switch)
+- routine-monthly-suppression-export.md
+- routine-quarterly-consent-audit.md
+- routine-cms-audit-response.md
+- pacware-upload-overdue.md
+- pacware-mapping-drift.md
+- pacware-order-rejected.md
+- pacware-staff-out.md
+
+Each runbook has a clear trigger, steps, escalation contacts, and a post-mortem template.
+```
+
+## Prompt 9.3 — Pilot rollout plan
+
+```
+Build the pilot rollout infrastructure:
+
+- Feature flags (use a flag service like LaunchDarkly with BAA, or build a simple 
+  Postgres-backed one). Every new behavior is flagged.
+- Cohort assignment: opt-in pilot list of 50–100 patients, all internal/employee 
+  patients first, then friendly customers.
+- Shadow mode: workflows run end-to-end but the final telecom send is replaced with 
+  a no-op + dashboard preview. Operations reviews each message before flipping the 
+  flag to live for the cohort.
+- Dual-track measurement: pilot vs control group (current manual process), measure 
+  reorder rate, response rate, complaint rate, opt-out rate, NPS.
+- Kill switch: a single config flip pauses ALL outbound across the system. Test it 
+  in staging weekly.
+
+Document the rollout plan as docs/rollout-plan.md with go/no-go criteria for 
+each expansion stage:
+  Stage 1: Shadow mode (2 weeks, 50 patients)
+  Stage 2: Live to 50 friendly patients (4 weeks)
+  Stage 3: Live to 500 patients (4 weeks)
+  Stage 4: Live to full census
+
+Each stage requires: opt-out rate < X, complaint rate = 0, AI quality score > Y, 
+no audit failures, counsel sign-off.
+```
+
+## Prompt 10.1 — Patient web portal
+
+```
+Build the patient-facing portal as a separate Next.js app at apps/portal. Auth via 
+Cognito with patient-tier role; flow is email/phone + OTP (SMS), no passwords for v1.
+
+Pages:
+- /login — phone/email + OTP
+- /dashboard — at-a-glance: next eligibility date, last order status, current 
+  device + supplies, message inbox count, compliance summary if data integration available
+- /order — wizard: review eligible items, edit quantities/sizes, confirm address, 
+  confirm Medicare statements (if Medicare patient), submit. Order goes into our 
+  same ConfirmOrderWorkflow as a confirmed conversation.
+- /orders — order history with statuses and tracking links
+- /messages — two-way message center (links to same Conversation aggregate as the 
+  staff dashboard; staff and AI can both reply)
+- /supplies — what items the patient is set up for, with images and replacement schedule
+- /account — update phone, email, address, insurance (with re-verification), preferred 
+  language, communication preferences (channel + cadence), opt-out toggles
+- /documents — upload prescription, insurance card photo, etc. (S3 with KMS + virus scan)
+- /caregiver — invite a caregiver (creates delegated access flow — see Prompt 10.3)
+
+Hard requirements:
+- Every page passes WCAG 2.1 AA (this is a senior-skewing user base; accessibility is 
+  not optional)
+- Mobile-first design — 60%+ of patients will be on phones
+- Large touch targets, large fonts, high contrast theme available
+- Read-aloud / screen-reader friendly
+- Brandable: pull DME brand config (logo, colors, name, contact phone) from environment 
+  so the same codebase serves multiple DMEs eventually
+- All actions write audit log via the API
+- Every PHI display has a viewing audit row
+
+Tests with Playwright covering: login flow, place an order end-to-end, send a message, 
+update insurance, accessibility audit (axe-core) on every page.
+```
+
+## Prompt 10.2 — Patient mobile app (React Native)
+
+```
+In apps/mobile, build a React Native app (use Expo for v1) with the same feature set 
+as the portal. Share business logic by extracting it to packages/patient-client which 
+both portal and mobile consume.
+
+Mobile-specific features:
+- Push notifications for: order eligible, message received, shipping update, delivery 
+  confirmation needed
+- Biometric login (Face ID / Touch ID) after first OTP setup
+- Camera integration for: prescription upload, insurance card capture, mask issue photo 
+  attached to a message, AND THE FACE-MEASUREMENT FITTING FLOW (Prompt 10.4)
+- Local document cache with encrypted storage (expo-secure-store)
+- Background sync for order status
+
+App store requirements:
+- Privacy nutrition labels: identify all data collected and how it's used
+- HIPAA-relevant: encrypt at rest, certificate pinning, no third-party SDKs that 
+  ingest PHI without BAA
+- Crash reporting via Sentry with PHI-scrubbed payloads only
+
+Tests: Detox e2e tests on iOS simulator and Android emulator for the critical paths.
+
+Document the path to native iOS for the TrueDepth-based fitting (which Expo can't 
+fully access) — this is a v2 native build, not v1.
+```
+
+## Prompt 10.3 — Caregiver delegated access
+
+```
+Build delegated access so a caregiver (adult child, spouse) can manage a patient's 
+account.
+
+Schema additions:
+- DelegatedAccess: id, patientId, caregiverContactId, scope (view_only/manage/full), 
+  status (invited/active/revoked), invitedAt, acceptedAt, revokedAt, evidenceUrl 
+  (S3 key for signed authorization form)
+- CaregiverContact: id, firstName, lastName, phone, email, relationship, createdAt
+
+Flow:
+- Patient initiates invite from /caregiver page. Provides caregiver's name, relationship, 
+  contact. System sends caregiver an invite link (signed JWT, 7-day expiry).
+- Caregiver clicks link, signs HIPAA authorization (DocuSign-like flow or e-sign 
+  in-app), sets up their own login.
+- Caregiver portal shows the patient(s) they're authorized for. Switch between accounts.
+- Every action by the caregiver is audit-logged with both their identity AND the 
+  patient context.
+- Patient can revoke access at any time from their account.
+- Caregiver receives notifications based on patient's preferences (e.g., patient may 
+  want orders to notify both, or just caregiver).
+
+Compliance:
+- HIPAA authorization form must be reviewed by counsel before launch ([ATTORNEY REVIEW])
+- Cannot delegate consent revocation — only the patient can opt-out of communications 
+  to themselves; caregiver can opt out of their own caregiver communications
+- Cannot delegate Medicare order confirmations for Medicare patients without specific 
+  authorization (CMS requires patient confirmation; check counsel)
+
+Tests: full invite-accept-act-revoke cycle, plus authorization edge cases.
+```
+
+## Prompt 10.4 — Mask refit integration (THE KILLER FEATURE)
+
+```
+Connect the resupply system to the existing mask fitting app. This is the killer 
+differentiator — no other resupply platform has this combination.
+
+Inside conversations and the patient portal/app, surface a "Mask not fitting right?" 
+flow:
+
+- Trigger points:
+  - In an SMS/voice conversation: AI agent recognizes mask-fit complaints (leaks, 
+    pressure marks, discomfort) and offers a refit. Tool call: offer_mask_refit(
+    patientId, conversationId, complaint).
+  - In the portal: prominent "Refit my mask" button on /supplies page when a mask 
+    item is in their setup
+  - In the mobile app: action item card "Time for a refit?" shown when last fit was 
+    >18 months ago, or when patient reports issues
+
+- Refit flow:
+  - Opens the fitting app (web for portal, embedded webview for mobile, native 
+    iOS module for v2)
+  - Captures measurements on-device (per the existing fitting app implementation)
+  - Returns to resupply with: { recommendedMaskIds, confidence, currentMaskStillFits 
+    (bool), measurements }
+  - If different mask recommended: offer to switch on next order, generate a clinical 
+    note for review
+  - If current mask still fits but cushion suspect: prioritize cushion replacement
+
+- Schema additions:
+  - FitRecord: id, patientId, conversationId?, measurements (encrypted JSON), 
+    recommendedMaskIds, currentMaskOk, capturedAt, capturedVia (portal/mobile/agent)
+  - Link Order to FitRecord when a mask change order is created
+
+- AI agent integration:
+  - Tool: offer_mask_refit
+  - System prompt addition: when patient mentions leaks, marks, irritation, or fit 
+    issues, offer the refit. Don't push it for patients who just want supplies and 
+    don't mention fit.
+
+- Cross-app boundary:
+  - The fitting app is on its own deploy. Resupply links to it via a short-lived 
+    signed URL: GET /api/refit-token?patientId=X creates a 15-min-expiry JWT, 
+    redirects to fitting-app.example.com/start?token=...
+  - Fitting app posts result back via webhook with the same token
+  - No PHI crosses except patient ID + measurement results
+
+Tests: full happy path from SMS complaint → refit → mask change → next order; refused 
+refit path; patient is fine path.
+```
+
+## Prompt 11.1 — AirView and DreamMapper integration
+
+```
+Build adapters in packages/integrations for CPAP compliance data:
+
+- ResMedAirViewAdapter: pulls patient compliance data from AirView API. Patient 
+  enrolls by linking their AirView account. Pull: nightly usage hours, AHI, leak rate, 
+  mask fit data, mode/pressure changes. Daily sync.
+- PhilipsDreamMapperAdapter: same shape for Philips devices. (DreamMapper data may 
+  need to be fetched via patient-shared exports for v1 if API access is gated.)
+- Add at least one fallback path: PDF parse of patient-uploaded compliance reports 
+  (some patients self-export from manufacturer portals).
+
+Schema:
+- ComplianceData: id, patientId, dataSource, date, usageMinutes, ahi, leakLh95, 
+  daysCompliant, fitScore (if available), createdAt
+- Patient-level rollups: PatientComplianceSummary (last 7d, last 30d, last 90d) 
+  computed daily
+
+Display:
+- Operator dashboard: per-patient compliance panel with sparklines
+- Patient portal: friendly compliance summary ("You've used your CPAP X of last 30 
+  nights — great job!")
+- Triggers: workflow that flags patients with declining compliance for proactive 
+  outreach (different from resupply outreach)
+
+Tests with recorded API fixtures.
+```
+
+## Prompt 11.2 — 90-day onboarding workflow
+
+```
+Build NewPatientOnboardingWorkflow in Temporal — runs for the first 90 days after 
+device setup. Models the "sleep coach" role that S3 Resupply markets, but automated 
+with AI + human escalation.
+
+Schedule:
+- Day 1: welcome SMS or call (per patient preference). Confirm setup. Offer questions.
+- Day 3: check-in. "How are the first few nights going?" Capture issues.
+- Day 7: usage review (if compliance data available). Coach if low.
+- Day 14: mask comfort check — offer refit if struggling.
+- Day 30: 30-day milestone. Compliance status, common-issue check, resupply preview.
+- Day 60: 60-day check. Adherence at this point predicts long-term success.
+- Day 80: 90-day adherence review. For Medicare, this is the cutoff for continued 
+  coverage — flag if below threshold (4hrs/night on 70% of nights in 30-day window).
+
+Each touchpoint:
+- Uses AI agent with onboarding-specific prompt and tools
+- Captures structured outcomes (issues, satisfaction, compliance status)
+- Escalates to human if: clinical issue raised, compliance trending below Medicare 
+  cutoff, patient requests human, AI confidence low
+
+90-day completion creates a patient handoff to the standard ResupplyOrchestrator. 
+Generates a clinical summary note from the 90-day journey.
+
+Tests: simulate full 90-day journey, simulate non-compliant patient (escalation paths), 
+simulate patient with mask issues (refit path).
+```
+
+## Prompt 11.3 — AI clinical note generation
+
+```
+For every conversation, generate a SOAP-style clinical note suitable for the 
+patient's chart.
+
+- After conversation closes (or workflow completes), trigger NoteGenerationActivity:
+  - Inputs: full transcript, structured data captured (orders, fit issues, compliance 
+    statements), patient context
+  - Model: Claude Opus, separate prompt with strict format, no clinical recommendations 
+    (we're documenting, not advising)
+  - Output: SOAP note (Subjective / Objective / Assessment / Plan) with explicit 
+    "AI-Generated, Pending Clinical Review" header
+- Notes go into a ClinicalNote table with status: pending_review/approved/rejected
+- Operator dashboard /clinical-notes queue for RTs/nurses to review, edit, approve
+- Approved notes are pushed to Pacware via the integration adapter
+- Audit: every note shows AI model + prompt version + transcript reference
+
+Quality gates:
+- Hallucination check: every clinical claim in the note must trace to a transcript 
+  quote (citation required). Use a separate model call to verify.
+- Forbidden content: no diagnoses, no medication recommendations, no contradicting 
+  the prescribing physician
+
+Tests: golden transcripts → expected note structure (loose match), adversarial 
+prompts that try to make it hallucinate, verification of citation traceability.
+```
+
+## Prompt 12.1 — Drop-ship and fulfillment integration
+
+```
+Most DMEs use distributors for resupply fulfillment. Build a FulfillmentAdapter 
+interface and adapters for the major partners:
+
+- Direct shipment from manufacturer (ResMed, Philips, F&P) where available
+- Major distributors (e.g., AdaptHealth, Medline, McKesson Medical Surgical, 
+  Concordance Healthcare Solutions). Most use SFTP CSV drops or proprietary web APIs.
+- In-house warehouse (your own ShipStation/EasyPost integration) as a fallback
+
+interface FulfillmentAdapter {
+  submitOrder(order): Promise<{ externalRef, estimatedShipDate }>
+  getShipmentStatus(externalRef): Promise<ShipmentStatus>
+  cancelOrder(externalRef): Promise<{ cancelled: boolean }>
+}
+
+Order routing rules engine: per supply item and payer, route to the cheapest/fastest 
+fulfillment source. Configurable per DME.
+
+Tracking sync: pull tracking numbers from fulfillment partner, push to patient via 
+preferred channel automatically.
+
+Tests: order placed via app → routed to right partner → tracking populated → 
+delivery confirmation outreach sent.
+```
+
+## Prompt 12.2 — Multi-language conversation
+
+```
+Add Spanish (priority 1), Vietnamese, Mandarin, Tagalog (priority 2) to the AI 
+conversation system.
+
+- Patient.preferredLanguage drives all outbound copy and AI prompt
+- Templates have translation files (i18n) reviewed by native speakers — leave 
+  [TRANSLATION REVIEW] markers
+- AI system prompt has language-specific versions
+- Response post-processing: language detection on inbound messages; if patient writes 
+  in different language than their profile, ask if they want to switch
+- Operator dashboard shows language flag on each conversation; agents can request 
+  translation for review
+
+For voice: 
+- IVR has language selection prompt up front
+- AI voice (when added) uses language-appropriate voice model
+
+Tests: Spanish-language conversation end-to-end, language-switching mid-conversation, 
+operator handoff with translation context.
+```
+
+## Prompt 12.3 — A/B testing and configurable cadence
+
+```
+Build experimentation infrastructure:
+
+- Experiment table: id, name, variants (json), allocation rules, status, metrics 
+  to track
+- Templates and workflow timings can reference experiment variants
+- Assignment is sticky per patient (deterministic hash of patient ID + experiment 
+  name)
+- Outcomes (response, conversion) tagged with variant
+- Dashboard: experiment results view with significance testing
+
+Configurable cadence per patient:
+- PatientPreferences.outreachCadence: aggressive/standard/light
+- Maps to different timing windows in the SupplyDueWorkflow
+- Patient can self-select in the portal
+
+Tests: deterministic assignment, sticky across sessions, results aggregation correctness.
+```
+
+## Prompt 12.4 — QA review queue for AI
+
+```
+Build AI quality oversight:
+
+- Sample 5% of all AI conversations for human QA (configurable, higher early on)
+- 100% sample for: opt-out conversations, escalations, conversations where AI changed 
+  insurance/address, first-90-day onboarding conversations
+- /admin/qa-review queue in the dashboard
+- Reviewers rate on dimensions: accuracy, tone, compliance, completeness
+- Reviewer ratings flow back into a continuous-improvement dataset for prompt tuning
+- Quality metrics dashboard shows AI scores trend
+
+Tests: sampling distribution, review workflow, metric aggregation.
+```
+
+## Prompt 13.1 — Propensity modeling
+
+```
+Build a propensity scoring service:
+
+- Score 1: probability patient orders this cycle (use for outreach prioritization)
+- Score 2: best channel for this patient this cycle
+- Score 3: best time-of-day for this patient
+
+Approach for v1:
+- Logistic regression (scikit-learn / Python service) trained on historical data:
+  patient features (age band, payer type, time on therapy, compliance trend), 
+  history features (last 5 outreach response patterns), supply features.
+- Train weekly on a snapshot
+- Serve via a small FastAPI service in apps/ml-api with strict input validation
+- Cache scores in Postgres, recompute on cycle entry
+
+Hard constraints:
+- No PHI in feature vectors that aren't necessary; redact identifiers
+- Model decisions are advisory only — they reorder outreach priority but never 
+  exclude a patient from outreach if they're due
+- Audit: every score served is logged with model version and inputs (hashed)
+- Bias check: monitor outcomes by demographic stratum; alert on disparate impact
+
+Tests: model serving latency, feature pipeline, fallback when model unavailable 
+(use uniform priority).
+```
+
+## Prompt 13.2 — Deductible-aware ordering
+
+```
+Add insurance intelligence:
+
+- InsuranceEligibility: cached eligibility check results from real-time API 
+  (e.g., Availity, Change Healthcare, pVerify — one of these, your billing team 
+  knows which)
+- Track: deductible amount, deductible met YTD, plan-year reset date, copay structure
+- Refresh strategy: monthly automatic, on-demand at order time, after patient 
+  reports change
+
+Conversation enhancement:
+- AI agent has tool: get_insurance_status(patientId) → returns deductible status, 
+  estimated patient responsibility
+- AI mentions deductible context only when relevant and helpful: "Good news, you've 
+  met your deductible for the year, this order is fully covered." Or: "Your deductible 
+  resets Jan 1, want me to flag your eligible items so we can get them in this year?"
+- Never frame as a sales tactic; always frame as patient-helpful information
+
+Tests: full eligibility-check → conversation flow with each common payer scenario.
+```
+
+## Prompt 13.3 — Adherence coaching workflow
+
+```
+Build AdherenceCoachingWorkflow that's separate from supply resupply:
+
+- Triggered when ComplianceData shows: usage drop >30% week-over-week, AHI rising, 
+  leak rate spiking, or patient flagged at 60-day mark with low usage
+- Initial outreach: empathetic SMS or call ("I noticed your usage has been lower 
+  this week — anything we can help with?")
+- Captures issues via AI conversation: discomfort, mask fit, machine issues, 
+  motivation, life changes
+- Routes to appropriate next step:
+  - Mask fit issue → refit flow (Phase 10.4)
+  - Mask comfort → cushion/headgear order
+  - Machine issue → equipment swap or RT consult
+  - Motivation → educational content + scheduled follow-up
+  - Lifestyle change (travel, sickness) → no action, follow up in 2 weeks
+- Generates clinical note for RT/nurse review
+- Schedule follow-up at appropriate interval
+
+Tests: each branch path, escalation to clinical when warranted.
+```
+
+## Prompt 14.1 — Voice biometrics for verification
+
+```
+Reduce verification friction for repeat callers using voice biometrics.
+
+- Vendor: Pindrop, Nuance Gatekeeper, or LumenVox — check BAA availability
+- On enrollment (during a verified conversation), capture a voiceprint with consent 
+- On future inbound calls, vendor matches voice against patient's voiceprint
+- Match confidence above threshold → skip DOB verification, log as "biometric verified"
+- Below threshold → standard DOB verification
+
+Hard requirements:
+- Explicit opt-in with [ATTORNEY REVIEW] disclosure
+- Voiceprints stored encrypted with vendor (BAA covered)
+- Patient can request deletion at any time
+- Never sole factor — fallback to knowledge-based verification always available
+
+Tests: enroll → recognize → fail-to-recognize → fallback flow.
+```
+
+## Prompt 14.2 — Refer-a-friend
+
+```
+Build a referral mechanic:
+
+- Patient has unique referral code in their account
+- Patient shares via in-app share sheet, email, SMS
+- Referred friend lands on a public page: "Your friend [X] thinks our DME is great. 
+  Sleep apnea? We can help — [book intake call]"
+- New patient that completes intake and orders → trigger reward to both
+- Reward: $25 supply credit applied to next eligible order (configurable)
+- TCPA: referrer's act of sending counts as their consent for that one message; 
+  do NOT enroll the referred contact in marketing without their own consent
+- Tracking: ReferralEvent records referrer, referred contact, status, reward issued
+
+Compliance: referred party has not consented to communications until they take action. 
+The first contact is initiated by the referrer, not by us. Counsel review required.
+
+Tests: full referrer → referred → ordered → rewards-applied flow.
+```
+
+## Prompt 14.3 — Multi-condition extension
+
+```
+Extend the platform to support other recurring DME categories. The architecture 
+should already support this if Phase 1 was done well — this prompt is about adding 
+the data and adapting the AI.
+
+- Add SupplyCategory enum: CPAP, CGM, OSTOMY, ENTERAL, INCONTINENCE
+- Add category-specific HCPCS codes and Medicare LCD allowables to the catalog
+- Add category-specific compliance/clinical questions to the questionnaire engine
+- Add category-specific AI agent prompt sections (CGM: sensor failure questions, 
+  insertion site issues; Ostomy: pouch type, skin issues, leak rate)
+- Add category-specific compliance data integrations (Dexcom Clarity for CGM, etc.)
+- Updated dashboard filters by category
+
+Caveat: each category has its own clinical nuances, regulatory subtleties, and 
+fulfillment partner relationships. Don't bolt on a category superficially — do the 
+diligence per category before launching it.
+
+Tests: each new category has a full integration test covering its specific workflow.
+```
