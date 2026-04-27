@@ -11,6 +11,41 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Resupply Worker"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "resupply-check"
+
+[[workflows.workflow]]
+name = "Resupply Worker"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/resupply-worker run dev"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "resupply-check"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/check-resupply-architecture.sh && pnpm -r --filter '@workspace/resupply-*' run typecheck && pnpm -r --filter '@workspace/resupply-*' run test"
+
+[workflows.workflow.metadata]
+isValidation = true
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
@@ -33,6 +68,14 @@ externalPort = 8081
 [[ports]]
 localPort = 8082
 externalPort = 4200
+
+[[ports]]
+localPort = 8083
+externalPort = 3001
+
+[[ports]]
+localPort = 19334
+externalPort = 3003
 
 [[ports]]
 localPort = 20466

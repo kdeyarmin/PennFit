@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../lib/resupply-contracts" },
+    { "path": "../../lib/resupply-domain" },
+    { "path": "../../lib/resupply-db" },
+    { "path": "../../lib/resupply-audit" },
+    { "path": "../../lib/resupply-telecom" },
+    { "path": "../../lib/resupply-ai" }
+  ]
+}

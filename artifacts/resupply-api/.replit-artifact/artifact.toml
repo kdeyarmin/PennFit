@@ -1,0 +1,31 @@
+kind = "api"
+previewPath = "/resupply-api" # Backend API — not directly previewable; kept for routing only.
+title = "Resupply API"
+version = "1.0.0"
+id = "resupply-api-3xQ7pK9wLm2nHvB8tYj4f"
+
+[[services]]
+localPort = 8083
+name = "Resupply API"
+paths = ["/resupply-api"]
+
+[services.development]
+run = "pnpm --filter @workspace/resupply-api run dev"
+
+[services.production]
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/resupply-api", "run", "build"]
+
+[services.production.build.env]
+NODE_ENV = "production"
+
+[services.production.run]
+args = ["node", "--enable-source-maps", "artifacts/resupply-api/dist/index.mjs"]
+
+[services.production.run.env]
+PORT = "8083"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/resupply-api/healthz"

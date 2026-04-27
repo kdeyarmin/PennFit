@@ -92,6 +92,27 @@ The application features a high-end, professional visual language using Penn's n
 ### Tutorial Video
 A short, animated tutorial (`/penn-fit-tutorial/`) guides users. The standalone landing page mirrors the cpap-fitter's "ambient atmosphere" page background (see the design-system note above) so the two artifacts feel like one product. It's built with framer-motion + lucide-react, brand-themed, and features dual-mode rendering: embedded (inside the main app) or standalone (full landing experience with navigation and a written walkthrough). Real app screenshots are embedded for visual accuracy. Total runtime is ~58 seconds — each scene is timed so all body copy is revealed by ~70% of its duration, leaving 4-6 seconds of "everything visible" hold time at the end for re-reading before the next scene transitions in. The video container uses a portrait aspect ratio (`aspect-[3/5]`) on mobile and 16:9 (`sm:aspect-video`) from tablet up — required because Scenes 2 and 4 stack their phone-mockup + text vertically on mobile, which doesn't fit a 16:9 letterbox. Scene 2 reuses the home-page screenshot for Step 1 (the camera-capture page can't be screenshotted in headless because no camera is available). Mobile-only content density is reduced in Scenes 2 and 4 (smaller phone, hidden long-form paragraphs/taglines, condensed chip rows) so all scene content fits inside the container without clipping.
 
+## CPAP Resupply Automation (separate product, same monorepo) — Phase 0
+
+A second product lives alongside Penn Fit in this repo: the **CPAP Resupply Automation** system. It is a different product (operator-facing console + automated multi-channel patient outreach) with different branding and a separate Postgres schema (`resupply.*`). Phase 0 ships scaffolding only — no business logic yet.
+
+### Layout
+*   `artifacts/resupply-api/` — Express + Zod + Pino HTTP API mounted at `/resupply-api/*`. Phase 0 only ships `GET /resupply-api/healthz`.
+*   `artifacts/resupply-worker/` — pg-boss background worker (no HTTP, no preview). Connects to `DATABASE_URL`, logs `resupply-worker ready`, stays alive. Workflow name: `Resupply Worker`.
+*   `artifacts/resupply-dashboard/` — React + Vite operator console at `/resupply/`. Default scaffold; real pages land in Phase 4+.
+*   `lib/resupply-{contracts,domain,db,audit,telecom,ai,testing}` — seven composite TypeScript libs with empty `src/index.ts` bodies and the dependency rules below.
+
+### Dependency rules
+Enforced by `scripts/check-resupply-architecture.sh` and the `resupply-check` validation step. The full ruleset and rationale live in `docs/resupply/ARCHITECTURE.md`. The short version: `contracts` may only import zod; `domain` is pure (no I/O); `db`/`telecom`/`ai` are isolated layers that do not import each other; `testing` is devDeps only and never reaches production code; the resupply tree may not import Penn Fit's `lib/db`, `lib/api-zod`, or `lib/api-client-react`.
+
+### Architectural decisions (deviations from original AWS plan)
+Thirteen ADRs in `docs/resupply/adr/000-...md` through `012-...md` document why the Replit substitutes were chosen. Highlights:
+*   Express + Zod (not NestJS), Drizzle (not Prisma), pg-boss (not Temporal), pgcrypto + `RESUPPLY_DATA_KEY` env var (not AWS KMS — migration trigger documented in ADR 007), Clerk (not Cognito), Twilio + SendGrid for telecom, Anthropic Claude for AI conversation, manual CSV exchange for the Pacware integration, no Docker / no Redis / no Mailhog, React + Vite (not Next.js), no Turborepo / no Husky.
+*   Each substitute lists its migration trigger so Phase 9 production hardening is a checklist, not a vibe.
+
+### Validation
+*   `resupply-check` validation step runs the architecture check + `pnpm -r --filter '@workspace/resupply-*' run typecheck` + vitest.
+
 ## External Dependencies
 
 *   **SendGrid:** For sending order fulfillment emails from `POST /api/orders`.
