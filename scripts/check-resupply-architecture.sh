@@ -146,6 +146,44 @@ for resdir in lib/resupply-contracts/src lib/resupply-domain/src lib/resupply-db
     "@workspace/api-client-react['\"]"
 done
 
+# Rule 7: only @workspace/resupply-db is allowed to construct a pg Pool
+# or import the `pg` package directly. Every other resupply package —
+# API, worker, dashboard, future query helpers — must consume the
+# shared pool via getDbPool(). This locks in the "exactly one Postgres
+# pool per process" invariant from ADR 003 (and Task #7). pg-boss
+# inside the worker stays untouched because it instantiates its pool
+# internally via `new PgBoss(...)`, never `new Pool(`.
+#
+# Two patterns are checked:
+#   (a) `new <maybe-namespace>.Pool(` / `new PgPool(` — catches the
+#       common forms. The optional namespace prefix handles
+#       `new pg.Pool(`; the `Pool|PgPool` alternation handles the
+#       common renamed-import alias.
+#   (b) Any import from the `pg` package. This closes the renamed-
+#       alias bypass entirely (`import { Pool as Whatever } from "pg"`)
+#       — if you can't import `pg`, you can't construct a pool.
+# Test files (`*.test.*`) are exempt because they may legitimately
+# stand up throwaway pools against test databases.
+for nopool in artifacts/resupply-api/src artifacts/resupply-worker/src \
+              artifacts/resupply-dashboard/src \
+              lib/resupply-contracts/src lib/resupply-domain/src \
+              lib/resupply-audit/src lib/resupply-telecom/src \
+              lib/resupply-ai/src lib/resupply-testing/src \
+              lib/resupply-api-client/src; do
+  if [[ -d "$nopool" ]]; then
+    bad="$(rg --no-messages -n "${RG_TYPES[@]}" \
+      -e 'new\s+([A-Za-z_$][\w$]*\.)?(Pool|PgPool)\(' \
+      -e "from ['\"]pg['\"]" \
+      -e "require\(['\"]pg['\"]\)" \
+      "$nopool" 2>/dev/null \
+      | rg -v '\.test\.' || true)"
+    if [[ -n "$bad" ]]; then
+      fail "$nopool: must not construct its own Postgres pool or import 'pg' directly — import getDbPool from @workspace/resupply-db"
+      echo "$bad" | sed 's/^/    /' >&2
+    fi
+  fi
+done
+
 if [[ "$errors" -gt 0 ]]; then
   echo "" >&2
   echo "$errors architecture rule violation(s). See docs/resupply/ARCHITECTURE.md for the full ruleset." >&2

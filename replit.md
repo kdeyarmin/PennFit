@@ -102,11 +102,15 @@ A second product lives alongside Penn Fit in this repo: the **CPAP Resupply Auto
 *   `artifacts/resupply-dashboard/` — React + Vite operator console at `/resupply/`. Default scaffold; real pages land in Phase 4+.
 *   `lib/resupply-{contracts,domain,db,audit,telecom,ai,testing}` — seven composite TypeScript libs with the dependency rules below. `resupply-db` now ships the full Phase 1 schema; the others remain empty until later phases.
 
+### Postgres pool
+There is exactly **one** Postgres pool per resupply process. It is owned by `@workspace/resupply-db` (`lib/resupply-db/src/pool.ts`) and exposed as `getDbPool()`. Every resupply package (API readiness, future query helpers, etc.) imports that helper. The `resupply-check` architecture rule (Rule 7) forbids `new Pool(` anywhere in `artifacts/resupply-*/src` or any other resupply lib so a future contributor can't silently re-introduce a second pool. The worker's pg-boss connection is intentionally separate (ADR 002).
+
 ### Database (Phase 1)
 *   All resupply tables live under the Postgres `resupply` schema (created by `pgSchema('resupply')` in `lib/resupply-db/src/schema/_schema.ts`). Tables: `patients`, `prescriptions`, `episodes`, `conversations`, `messages`, `fulfillments`, `audit_log`. Apply with `pnpm --filter @workspace/resupply-db push` (interactive) or `... push:force` (CI).
 *   Drizzle config (`lib/resupply-db/drizzle.config.ts`) sets `schemaFilter: ["resupply"]` so drizzle-kit ignores Penn Fit's `public.*` tables.
 *   PHI columns are stored as `bytea` and encrypted with pgcrypto. Helpers in `lib/resupply-db/src/encryption.ts`: `encryptedText(name)` / `encryptedJson(name)` declare the column; the SQL helpers `encrypt()` / `encryptJson()` go in `.values({...})` payloads, and `decrypt()` / `decryptJson()` go in select projections (`db.select({ dob: decrypt(patients.dateOfBirth) })`). The column types intentionally throw on direct read/write so plaintext can never bypass the helpers.
-*   `RESUPPLY_DATA_KEY` (32-byte hex) is required at every encrypt/decrypt site. Set in development; for production, see ADR 007's KMS migration trigger. The pgcrypto extension must be enabled in the database before push (`CREATE EXTENSION IF NOT EXISTS pgcrypto;`).
+*   `RESUPPLY_DATA_KEY` (32-byte hex) is required at every encrypt/decrypt site. Set in development; for production, see ADR 007's KMS migration trigger.
+*   pgcrypto preflight: `lib/resupply-db/scripts/preflight.mjs` runs `CREATE EXTENSION IF NOT EXISTS pgcrypto` and verifies it. It runs automatically from `scripts/post-merge.sh` BEFORE `db push`, so a fresh environment can never end up with the schema present but the extension missing. The API and worker also call `assertPgcryptoEnabled(getDbPool())` at startup (from `@workspace/resupply-db`) and refuse to listen / start pg-boss with a clear `PgcryptoNotInstalledError` if it is missing — this turns a confusing "function pgp_sym_encrypt does not exist" runtime error into a fail-fast boot error.
 *   Round-trip is covered by `lib/resupply-db/src/encryption.test.ts` (3 vitest cases including a missing-key safety test); the suite skips when `DATABASE_URL` or `RESUPPLY_DATA_KEY` is unset.
 
 ### Dependency rules

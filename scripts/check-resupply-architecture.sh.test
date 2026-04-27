@@ -171,6 +171,60 @@ echo 'import { healthCheck } from "@workspace/resupply-api-client";' \
 assert_pass "dashboard importing resupply-api-client"
 rm "$WORK"/artifacts/resupply-dashboard/src/ok.ts
 
+echo "[self-test] Rule 7: api may not construct 'new Pool('"
+echo "import { Pool } from 'pg';" > "$WORK"/artifacts/resupply-api/src/bad.ts
+echo "const p = new Pool({});" >> "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api constructing new Pool(" \
+  "must not construct its own Postgres pool"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 7: api may not construct 'new pg.Pool(' (namespace form)"
+echo "import pg from 'pg';" > "$WORK"/artifacts/resupply-api/src/bad.ts
+echo "const p = new pg.Pool({});" >> "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api constructing new pg.Pool(" \
+  "must not construct its own Postgres pool"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 7: worker may not import from 'pg' (closes alias bypass)"
+# Without this guard, a contributor could write
+# `import { Pool as Whatever } from "pg"; new Whatever()` and slip past
+# the Pool-name check.
+echo "import { Pool as PgPoolAlias } from 'pg';" \
+  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+assert_fail_with "worker importing from pg" \
+  "must not construct its own Postgres pool or import 'pg' directly"
+rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+
+echo "[self-test] Rule 7: dashboard may not import from 'pg'"
+echo 'import { Pool } from "pg";' \
+  > "$WORK"/artifacts/resupply-dashboard/src/bad.ts
+assert_fail_with "dashboard importing from pg" \
+  "must not construct its own Postgres pool or import 'pg' directly"
+rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
+
+echo "[self-test] Rule 7: resupply-api-client may not import from 'pg'"
+mkdir -p "$WORK"/lib/resupply-api-client/src
+echo 'export {};' > "$WORK"/lib/resupply-api-client/src/index.ts
+echo "import { Pool } from 'pg';" \
+  > "$WORK"/lib/resupply-api-client/src/bad.ts
+assert_fail_with "resupply-api-client importing from pg" \
+  "must not construct its own Postgres pool or import 'pg' directly"
+rm "$WORK"/lib/resupply-api-client/src/bad.ts
+
+echo "[self-test] Rule 7: test files are exempt"
+echo "import { Pool } from 'pg';" \
+  > "$WORK"/artifacts/resupply-api/src/foo.test.ts
+echo "const p = new Pool({});" \
+  >> "$WORK"/artifacts/resupply-api/src/foo.test.ts
+assert_pass "api test file may construct Pool"
+rm "$WORK"/artifacts/resupply-api/src/foo.test.ts
+
+echo "[self-test] Rule 7: resupply-db may construct its own Pool"
+echo "import { Pool } from 'pg';" > "$WORK"/lib/resupply-db/src/pool-ok.ts
+echo "export const p = new Pool({});" >> "$WORK"/lib/resupply-db/src/pool-ok.ts
+assert_pass "resupply-db constructing Pool"
+rm "$WORK"/lib/resupply-db/src/pool-ok.ts
+
 echo "[self-test] Final clean-tree check"
 assert_pass "post-test cleanup"
 

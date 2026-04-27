@@ -1,11 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the db-pool module so we never hit a real database from this
-// unit test. Each test installs its own pool.query behavior.
+// Mock the SHARED pool exported from `@workspace/resupply-db` so we
+// never hit a real database from this unit test, AND so this test
+// doubles as a guard that readiness.ts goes through the shared pool
+// (not its own private one — see Task #7). Every other resupply-db
+// export is preserved so unrelated imports keep working.
 const queryMock = vi.fn();
-vi.mock("./db-pool", () => ({
-  getDbPool: () => ({ query: queryMock }),
-}));
+vi.mock("@workspace/resupply-db", async () => {
+  const actual =
+    await vi.importActual<typeof import("@workspace/resupply-db")>(
+      "@workspace/resupply-db",
+    );
+  return {
+    ...actual,
+    getDbPool: () => ({ query: queryMock }),
+  };
+});
 
 import { checkReadiness } from "./readiness";
 

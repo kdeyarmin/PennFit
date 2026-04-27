@@ -1,3 +1,8 @@
+import {
+  PgcryptoNotInstalledError,
+  assertPgcryptoEnabled,
+  getDbPool,
+} from "@workspace/resupply-db";
 import PgBoss from "pg-boss";
 import { logger } from "./logger.js";
 
@@ -10,6 +15,25 @@ async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL must be set for the resupply worker.");
+  }
+
+  // Preflight: any future job handler that touches encrypted PHI
+  // requires pgcrypto. Refuse to start pg-boss if the extension is
+  // missing — much clearer than a job blowing up partway through
+  // execution. The check goes through the shared resupply-db pool,
+  // not pg-boss's internal pool, since pg-boss has not booted yet.
+  try {
+    await assertPgcryptoEnabled(getDbPool());
+  } catch (err) {
+    if (err instanceof PgcryptoNotInstalledError) {
+      logger.fatal({ err: { message: err.message } }, err.message);
+    } else {
+      logger.fatal(
+        { err },
+        "fatal: resupply-worker could not run pgcrypto preflight",
+      );
+    }
+    process.exit(1);
   }
 
   const boss = new PgBoss({

@@ -7,10 +7,10 @@
 //     `encryptedJson`, plus the `encrypt` / `decrypt` SQL helpers used at
 //     query sites). See ADR 007.
 //
-// Phase 1: schema + encryption only. The Postgres connection / pool is
-// owned by `@workspace/db` (Penn Fit's package); the resupply api and
-// worker import that pool directly so we don't run two pools against the
-// same DB.
+// Phase 1: schema + encryption + a single shared Postgres pool used by
+// every resupply package that needs to talk to Postgres. See `./pool.ts`
+// for sizing/timeout rationale and ADR 003 for the "one pool per
+// process" rule.
 
 export * from "./schema/index";
 export {
@@ -21,3 +21,14 @@ export {
   decrypt,
   decryptJson,
 } from "./encryption";
+export {
+  getDbPool,
+  setPoolErrorLogger,
+  __resetDbPoolForTests,
+} from "./pool";
+export {
+  PgcryptoNotInstalledError,
+  isPgcryptoEnabled,
+  assertPgcryptoEnabled,
+  ensurePgcryptoEnabled,
+} from "./preflight";

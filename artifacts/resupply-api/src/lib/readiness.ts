@@ -1,4 +1,4 @@
-import { getDbPool } from "./db-pool";
+import { getDbPool } from "@workspace/resupply-db";
 import { logger } from "./logger";
 
 // What "ready" means for the resupply API:
