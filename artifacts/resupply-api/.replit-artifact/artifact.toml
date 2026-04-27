@@ -27,5 +27,9 @@ args = ["node", "--enable-source-maps", "artifacts/resupply-api/dist/index.mjs"]
 PORT = "8083"
 NODE_ENV = "production"
 
+# Use /readyz (not /healthz) for the deploy gate so a deploy is only
+# marked successful when the API can actually reach Postgres and the
+# pg-boss queue. /healthz is a pure liveness check and would mark a
+# broken-but-running container as deployed.
 [services.production.health.startup]
-path = "/resupply-api/healthz"
+path = "/resupply-api/readyz"

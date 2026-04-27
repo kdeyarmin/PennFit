@@ -26,3 +26,61 @@ export interface HealthStatus {
   status: HealthStatusStatus;
   service: HealthStatusService;
 }
+
+export type CheckStatus = (typeof CheckStatus)[keyof typeof CheckStatus];
+
+export const CheckStatus = {
+  ok: "ok",
+  failed: "failed",
+} as const;
+
+/**
+ * Closed set of failure categories. We never expose raw driver
+error text — only one of these labels.
+
+ */
+export type CheckError = (typeof CheckError)[keyof typeof CheckError];
+
+export const CheckError = {
+  timeout: "timeout",
+  connection_refused: "connection_refused",
+  host_not_found: "host_not_found",
+  schema_not_initialized: "schema_not_initialized",
+  database_starting_up: "database_starting_up",
+  database_does_not_exist: "database_does_not_exist",
+  unavailable: "unavailable",
+} as const;
+
+export type ReadinessStatusStatus =
+  (typeof ReadinessStatusStatus)[keyof typeof ReadinessStatusStatus];
+
+export const ReadinessStatusStatus = {
+  ready: "ready",
+  not_ready: "not_ready",
+} as const;
+
+export type ReadinessStatusChecks = {
+  db: CheckStatus;
+  queue: CheckStatus;
+};
+
+/**
+ * Per-dependency failure category. Only present when status
+is not_ready, and only includes entries for dependencies
+whose check failed.
+
+ */
+export type ReadinessStatusErrors = {
+  db?: CheckError;
+  queue?: CheckError;
+};
+
+export interface ReadinessStatus {
+  status: ReadinessStatusStatus;
+  checks: ReadinessStatusChecks;
+  /** Per-dependency failure category. Only present when status
+is not_ready, and only includes entries for dependencies
+whose check failed.
+ */
+  errors?: ReadinessStatusErrors;
+}

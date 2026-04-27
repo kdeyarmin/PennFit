@@ -18,19 +18,42 @@ paths:
     get:
       operationId: healthCheck
       tags: [health]
-      summary: Health check
+      summary: Liveness check
       description: |
-        Liveness probe. Does NOT touch the database. The deploy gate uses
-        this to decide whether the container is up. A separate /readyz
-        endpoint will cover dependency readiness once those dependencies
-        exist.
+        Liveness probe. Does NOT touch the database or any other
+        dependency. Use /readyz for readiness gating.
       responses:
         "200":
-          description: Healthy
+          description: Process is up
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /readyz:
+    get:
+      operationId: readinessCheck
+      tags: [health]
+      summary: Readiness check
+      description: |
+        Readiness probe. Returns 200 only when every dependency the API
+        needs to serve traffic (Postgres + the pg-boss queue) is
+        reachable. The deploy gate uses this to decide whether the
+        service is healthy enough to receive traffic. Failure responses
+        report which dependency failed without leaking connection
+        details — see CheckError for the allowed failure categories.
+      responses:
+        "200":
+          description: All dependencies reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: One or more dependencies unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
 
 components:
   schemas:
@@ -46,3 +69,47 @@ components:
       required:
         - status
         - service
+    CheckStatus:
+      type: string
+      enum: [ok, failed]
+    CheckError:
+      type: string
+      description: |
+        Closed set of failure categories. We never expose raw driver
+        error text — only one of these labels.
+      enum:
+        - timeout
+        - connection_refused
+        - host_not_found
+        - schema_not_initialized
+        - database_starting_up
+        - database_does_not_exist
+        - unavailable
+    ReadinessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          properties:
+            db:
+              $ref: "#/components/schemas/CheckStatus"
+            queue:
+              $ref: "#/components/schemas/CheckStatus"
+          required: [db, queue]
+        errors:
+          type: object
+          description: |
+            Per-dependency failure category. Only present when status
+            is not_ready, and only includes entries for dependencies
+            whose check failed.
+          properties:
+            db:
+              $ref: "#/components/schemas/CheckError"
+            queue:
+              $ref: "#/components/schemas/CheckError"
+      required:
+        - status
+        - checks

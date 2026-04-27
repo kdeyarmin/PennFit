@@ -97,7 +97,7 @@ A short, animated tutorial (`/penn-fit-tutorial/`) guides users. The standalone 
 A second product lives alongside Penn Fit in this repo: the **CPAP Resupply Automation** system. It is a different product (operator-facing console + automated multi-channel patient outreach) with different branding and a separate Postgres schema (`resupply.*`). Phase 0 ships scaffolding only — no business logic yet.
 
 ### Layout
-*   `artifacts/resupply-api/` — Express + Zod + Pino HTTP API mounted at `/resupply-api/*`. Phase 0 only ships `GET /resupply-api/healthz`.
+*   `artifacts/resupply-api/` — Express + Zod + Pino HTTP API mounted at `/resupply-api/*`. Exposes `GET /resupply-api/healthz` (liveness, never touches dependencies) and `GET /resupply-api/readyz` (readiness — probes Postgres + the pg-boss queue, returns 503 with structured per-dependency error categories on failure, never echoes raw driver text). The deploy gate in `.replit-artifact/artifact.toml` points at `/readyz` so production is only marked deployed once dependencies are reachable. Readiness logic lives in `src/lib/readiness.ts` with a closed allowlist of failure categories that mirrors the `CheckError` enum in `lib/resupply-api-spec/openapi.yaml`.
 *   `artifacts/resupply-worker/` — pg-boss background worker (no HTTP, no preview). Connects to `DATABASE_URL`, logs `resupply-worker ready`, stays alive. Workflow name: `Resupply Worker`.
 *   `artifacts/resupply-dashboard/` — React + Vite operator console at `/resupply/`. Default scaffold; real pages land in Phase 4+.
 *   `lib/resupply-{contracts,domain,db,audit,telecom,ai,testing}` — seven composite TypeScript libs with empty `src/index.ts` bodies and the dependency rules below.
