@@ -24,6 +24,12 @@ export default [
       "**/node_modules/**",
       "**/.replit-artifact/**",
       "**/*.d.ts",
+      // Orval-generated code under lib/resupply-api-client. The shape
+      // is owned by the OpenAPI spec (lib/resupply-api-spec/openapi.yaml)
+      // and is overwritten on every codegen run, so lint findings here
+      // are not actionable. Typecheck still covers it via the lib's
+      // tsconfig.
+      "lib/resupply-api-client/src/generated/**",
       "scripts/check-resupply-architecture.sh.test", // bash, not JS
     ],
   },
@@ -64,6 +70,11 @@ export default [
       ],
       "@typescript-eslint/no-explicit-any": "warn",
       "no-empty": ["error", { allowEmptyCatch: true }],
+      // TypeScript already resolves and validates identifiers (including
+      // DOM types like `RequestInfo` / `HeadersInit`); ESLint's no-undef
+      // can't see lib.dom.d.ts and produces false positives. Typecheck
+      // is the source of truth for "is this defined".
+      "no-undef": "off",
     },
   },
 ];

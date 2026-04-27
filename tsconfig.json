@@ -6,6 +6,7 @@
     { "path": "./lib/db" },
     { "path": "./lib/api-client-react" },
     { "path": "./lib/api-zod" },
+    { "path": "./lib/resupply-api-client" },
     { "path": "./lib/resupply-contracts" },
     { "path": "./lib/resupply-domain" },
     { "path": "./lib/resupply-db" },

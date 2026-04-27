@@ -19,6 +19,8 @@ lib/
   resupply-telecom/     Twilio (SMS, Voice) + SendGrid (Email) adapters
   resupply-ai/          Anthropic Claude adapter for the conversation agent
   resupply-testing/     Fixtures, factories, mock vendors (devDeps only)
+  resupply-api-spec/    OpenAPI spec + orval config for the operator API
+  resupply-api-client/  Generated React-Query client consumed by the dashboard
 docs/resupply/
   ARCHITECTURE.md       This file.
   adr/                  Architectural Decision Records (000–012).
@@ -97,19 +99,11 @@ which runs as part of the `resupply-check` validation step.
   if they need to share something, factor it into `resupply-domain`.
 - Any production code → `resupply-testing`. Testing utilities are devDeps
   in every consumer.
-- Any resupply package → Penn Fit's `lib/db` or `lib/api-zod`. These are
-  separate products.
-
-### Temporary exceptions (must be removed before the phase listed)
-
-- `artifacts/resupply-dashboard` is permitted to depend on
-  `@workspace/api-client-react` while it is still the unmodified Vite
-  scaffold. This is a Penn Fit package and would normally be forbidden
-  by the rule above. The exception goes away in **Phase 4**, when the
-  dashboard is rewritten against a resupply-specific generated client
-  (`@workspace/resupply-api-client`). The architecture-check script
-  carves out this single edge by not including the dashboard's `src/`
-  in the Penn-Fit-import sweep; everything else still trips the gate.
+- Any resupply package → Penn Fit's `lib/db`, `lib/api-zod`, or
+  `lib/api-client-react`. These are separate products. The dashboard
+  ships `@workspace/resupply-api-client` (generated from
+  `lib/resupply-api-spec/openapi.yaml`) and is swept by the check
+  alongside every other resupply source dir.
 
 ## Schema and encryption
 

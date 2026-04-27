@@ -148,10 +148,28 @@ assert_fail_with "api importing @workspace/api-zod (single-quoted)" \
   "must not import Penn Fit packages"
 rm "$WORK"/artifacts/resupply-api/src/bad.ts
 
-echo "[self-test] Rule 6: dashboard exception — @workspace/api-client-react allowed"
-# (The dashboard dir is intentionally not in the loop; nothing to assert,
-#  this just documents the carve-out so a maintainer reading the harness
-#  doesn't add it by accident.)
+echo "[self-test] Rule 6: dashboard may not import @workspace/api-client-react"
+# Phase 4 retired the dashboard carve-out. The dashboard now ships
+# @workspace/resupply-api-client and is swept by Rule 6 like every
+# other resupply source dir.
+echo 'import { healthCheck } from "@workspace/api-client-react";' \
+  > "$WORK"/artifacts/resupply-dashboard/src/bad.ts
+assert_fail_with "dashboard importing @workspace/api-client-react" \
+  "must not import Penn Fit packages"
+rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
+
+echo "[self-test] Rule 6: dashboard may not import @workspace/db"
+echo "import { db } from '@workspace/db';" \
+  > "$WORK"/artifacts/resupply-dashboard/src/bad.ts
+assert_fail_with "dashboard importing @workspace/db (single-quoted)" \
+  "must not import Penn Fit packages"
+rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
+
+echo "[self-test] Rule 6: dashboard may import @workspace/resupply-api-client"
+echo 'import { healthCheck } from "@workspace/resupply-api-client";' \
+  > "$WORK"/artifacts/resupply-dashboard/src/ok.ts
+assert_pass "dashboard importing resupply-api-client"
+rm "$WORK"/artifacts/resupply-dashboard/src/ok.ts
 
 echo "[self-test] Final clean-tree check"
 assert_pass "post-test cleanup"

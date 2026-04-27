@@ -926,6 +926,18 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.3.5)(lightningcss@1.31.1)
 
+  lib/resupply-api-client:
+    dependencies:
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.90.21(react@19.1.0)
+
+  lib/resupply-api-spec:
+    devDependencies:
+      orval:
+        specifier: ^8.5.2
+        version: 8.5.3(prettier@3.8.1)(typescript@5.9.3)
+
   lib/resupply-audit:
     dependencies:
       '@workspace/resupply-db':
