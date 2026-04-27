@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ClerkProvider } from "@clerk/react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -16,9 +17,29 @@ import { OrderSuccess } from "@/pages/order-success";
 import { Masks } from "@/pages/masks";
 import { Privacy } from "@/pages/privacy";
 import { HowItWorks } from "@/pages/how-it-works";
+import { SignInPage } from "@/pages/sign-in";
+import { SignUpPage } from "@/pages/sign-up";
+import { AdminShell } from "@/pages/admin/admin-shell";
+import { AdminDashboard } from "@/pages/admin/dashboard";
+import { AdminOrders } from "@/pages/admin/orders";
+import { AdminOrderDetail } from "@/pages/admin/order-detail";
+import { AdminAuditLog } from "@/pages/admin/audit";
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 
 const queryClient = new QueryClient();
+
+const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
+  | string
+  | undefined;
+
+if (!CLERK_PUBLISHABLE_KEY) {
+  // Fail loudly at startup rather than rendering a half-broken UI later.
+  throw new Error(
+    "VITE_CLERK_PUBLISHABLE_KEY is required — set it in Replit Secrets.",
+  );
+}
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /**
  * Guard helpers — each is rendered as the function-child of a Wouter
@@ -79,7 +100,7 @@ function GuardedOrderSuccess() {
   return <OrderSuccess />;
 }
 
-function Router() {
+function PatientRouter() {
   return (
     <Layout>
       <Switch>
@@ -103,18 +124,91 @@ function Router() {
   );
 }
 
-function App() {
+/**
+ * Top-level <Switch>. We split admin and Clerk routes OUT of the patient
+ * <Layout> so they can render in their own chrome (sign-in centered card,
+ * admin sidebar shell). The admin pages mount inside <AdminShell> which
+ * does the Clerk + allowlist gate.
+ *
+ * Wouter's nested-routing trick: catching `/sign-in/:rest*` lets Clerk
+ * own everything below /sign-in (e.g. /sign-in/factor-one) without us
+ * pre-defining each step.
+ */
+function TopRouter() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <FitterProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </FitterProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <Switch>
+      <Route path="/sign-in" component={SignInPage} />
+      <Route path="/sign-in/:rest*" component={SignInPage} />
+      <Route path="/sign-up" component={SignUpPage} />
+      <Route path="/sign-up/:rest*" component={SignUpPage} />
+
+      <Route path="/admin">
+        <AdminShell>
+          <AdminDashboard />
+        </AdminShell>
+      </Route>
+      <Route path="/admin/orders">
+        <AdminShell>
+          <AdminOrders />
+        </AdminShell>
+      </Route>
+      <Route path="/admin/orders/:id">
+        <AdminShell>
+          <AdminOrderDetail />
+        </AdminShell>
+      </Route>
+      <Route path="/admin/audit">
+        <AdminShell>
+          <AdminAuditLog />
+        </AdminShell>
+      </Route>
+
+      {/* Everything else falls through to the patient experience. */}
+      <Route component={PatientRouter} />
+    </Switch>
+  );
+}
+
+function App() {
+  // Build absolute URLs for Clerk so Clerk's redirects respect our base
+  // path (they need to be browser-absolute paths, not React route paths).
+  return (
+    <ClerkProvider
+      publishableKey={CLERK_PUBLISHABLE_KEY!}
+      signInUrl={`${basePath}/sign-in`}
+      signUpUrl={`${basePath}/sign-up`}
+      signInFallbackRedirectUrl={`${basePath}/admin`}
+      signUpFallbackRedirectUrl={`${basePath}/admin`}
+      appearance={{
+        // Penn brand: navy primary + gold accent. The CSS @layer order in
+        // index.css ensures Tailwind's utilities don't clobber Clerk's
+        // internal styles.
+        variables: {
+          colorPrimary: "hsl(213 47% 24%)",
+          colorText: "hsl(220 25% 12%)",
+          colorBackground: "#ffffff",
+          fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+          borderRadius: "0.75rem",
+        },
+        layout: {
+          logoImageUrl: `${basePath}/logo.svg`,
+          logoPlacement: "inside",
+          showOptionalFields: true,
+          socialButtonsPlacement: "top",
+        },
+      }}
+    >
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <FitterProvider>
+            <WouterRouter base={basePath}>
+              <TopRouter />
+            </WouterRouter>
+            <Toaster />
+          </FitterProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ClerkProvider>
   );
 }
 

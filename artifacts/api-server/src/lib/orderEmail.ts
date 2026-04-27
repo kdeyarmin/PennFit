@@ -162,8 +162,14 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
  * can react appropriately. Never throws on missing config — returns
  * { configured: false } instead so the route can return HTTP 503.
  */
-export async function sendOrderToPenn(order: OrderPayload): Promise<SendOrderResult> {
-  const orderReference = generateOrderReference();
+export async function sendOrderToPenn(
+  order: OrderPayload,
+  options: { orderReference?: string } = {},
+): Promise<SendOrderResult> {
+  // The route may pass a pre-generated reference so the DB row, email, and
+  // patient-facing response all share the same value. Fall back to a
+  // freshly-generated one for legacy callers.
+  const orderReference = options.orderReference ?? generateOrderReference();
   const deliveredAt = new Date().toISOString();
 
   const apiKey = process.env.SENDGRID_API_KEY;

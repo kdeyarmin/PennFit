@@ -23,6 +23,7 @@ import {
   AlertCircle,
   Ruler,
 } from "lucide-react";
+import { track } from "@/lib/track";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 
@@ -33,6 +34,10 @@ export function Results() {
   // useEffect+redirect dance needed.
   const { measurements, answers, reset, setChosenMask } = useFitterStore();
   const [showMeasurements, setShowMeasurements] = useState(false);
+
+  useEffect(() => {
+    track("results_viewed");
+  }, []);
 
   const handleChooseMask = (mask: {
     maskId: string;
@@ -46,6 +51,7 @@ export function Results() {
       modelNumber: mask.modelNumber,
       manufacturer: mask.manufacturer,
     });
+    track("mask_chosen", { mask: mask.modelNumber });
     setLocation("/order");
   };
 

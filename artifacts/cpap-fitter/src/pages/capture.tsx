@@ -4,10 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Camera, AlertCircle, RefreshCw, Eye, Sun, ScanFace } from "lucide-react";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { track } from "@/lib/track";
 
 export function Capture() {
   const [, setLocation] = useLocation();
   const { setCapturedImage } = useFitterStore();
+  useEffect(() => {
+    track("capture_started");
+  }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -85,6 +89,7 @@ export function Capture() {
       const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
       setCapturedImage(dataUrl);
       stopCamera();
+      track("capture_taken");
       setLocation("/measure");
       return true;
     } catch (err: any) {

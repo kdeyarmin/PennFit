@@ -1,29 +1,34 @@
 /**
- * INTENTIONAL ARCHITECTURE NOTE — PHI Handling in Orders
+ * Orders endpoint — accepts patient PHI, persists to the orders table,
+ * and forwards a copy to Penn Home Medical Supply via SendGrid.
  *
- * Unlike /recommend (which stays stateless and PHI-free), this route
- * inevitably handles patient identifying data: name, DOB, address,
- * insurance, contact info. Our discipline:
+ * IMPORTANT — Privacy posture changed (April 2026):
+ * Earlier versions of this endpoint were strictly "validate → email →
+ * discard". We now persist orders to the orders table so Penn staff can
+ * see and act on them in the admin dashboard. This is disclosed in the
+ * `/consent` and `/privacy` pages, and patients re-consent at order time
+ * via the `consentToContact` checkbox (which now also covers storage).
  *
- *   - Body is validated by Zod (strict schema) and NEVER logged.
- *   - Order is forwarded to Penn Home Medical Supply via SendGrid and
- *     immediately discarded — no database write, no in-memory cache, no
- *     analytics event, no persistent reference number stored.
- *   - The reference number returned to the patient is generated per-request
- *     and lives only in the email Penn receives.
- *
- * If SENDGRID_API_KEY or PENN_FULFILLMENT_EMAIL is missing, we return HTTP
- * 503 instead of silently swallowing the order.
+ * Persistence rules:
+ *   - Validation runs first; bad orders never touch the DB.
+ *   - We INSERT the order with email_status="pending" before sending,
+ *     then UPDATE to "sent" / "failed" / "skipped" after the send.
+ *   - If the DB write fails, we still attempt the email (Penn would
+ *     rather receive an order with no DB record than lose it entirely).
+ *   - We do NOT log the request body (logger serializer redacts URL only).
  *
  * ANTI-SPAM: A hidden honeypot field (`website`) is rendered in the form
  * but kept invisible+aria-hidden+tabindex=-1. Humans never type into it;
  * naive bots fill in every visible input. If it's non-empty, we return a
- * fake success so the bot doesn't iterate, and skip the email.
+ * fake success without touching the DB or sending the email.
  */
 
 import { Router } from "express";
 import { SubmitOrderBody } from "@workspace/api-zod";
-import { sendOrderToPenn } from "../lib/orderEmail.js";
+import { db, ordersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { sendOrderToPenn, generateOrderReference } from "../lib/orderEmail.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
 
@@ -66,7 +71,67 @@ router.post("/orders", async (req, res) => {
     return;
   }
 
-  const result = await sendOrderToPenn(order);
+  // Persist BEFORE attempting delivery. If delivery fails, the row stays
+  // with email_status="failed" and an admin can investigate. We generate
+  // the reference here (instead of letting orderEmail do it) so the DB
+  // row, the SendGrid email, and the patient-facing response all share
+  // the same value.
+  const orderReference = generateOrderReference();
+
+  let dbId: string | null = null;
+  try {
+    const [inserted] = await db
+      .insert(ordersTable)
+      .values({
+        orderReference,
+        patientFirstName: order.patient.firstName,
+        patientLastName: order.patient.lastName,
+        patientEmail: order.patient.email,
+        patientPhone: order.patient.phone,
+        patientDateOfBirth: order.patient.dateOfBirth,
+        maskId: order.chosenMask.maskId,
+        maskName: order.chosenMask.name,
+        maskManufacturer: order.chosenMask.manufacturer,
+        maskModelNumber: order.chosenMask.modelNumber,
+        shippingCity: order.shippingAddress.city,
+        shippingState: order.shippingAddress.state,
+        shippingZip: order.shippingAddress.zip,
+        payload: order as unknown as Record<string, unknown>,
+      })
+      .returning({ id: ordersTable.id });
+    dbId = inserted.id;
+  } catch (err) {
+    // We deliberately don't fail the whole request on a DB write error.
+    // The patient's primary expectation is that Penn receives the order;
+    // losing the audit row is bad but recoverable, losing the email is not.
+    logger.error({ err }, "Failed to persist order before send (continuing with email)");
+  }
+
+  const result = await sendOrderToPenn(order, { orderReference });
+
+  // Update DB row with delivery status (best-effort; do not surface errors
+  // to the patient if this update fails)
+  if (dbId) {
+    try {
+      const status: "sent" | "failed" | "skipped" = !result.configured
+        ? "skipped"
+        : result.delivered
+          ? "sent"
+          : "failed";
+      await db
+        .update(ordersTable)
+        .set({
+          emailStatus: status,
+          emailError: result.delivered ? null : result.error ?? null,
+          emailDeliveredAt: result.delivered && result.deliveredAt
+            ? new Date(result.deliveredAt)
+            : null,
+        })
+        .where(eq(ordersTable.id, dbId));
+    } catch (err) {
+      logger.error({ err, dbId }, "Failed to update order email_status");
+    }
+  }
 
   if (!result.configured) {
     res.status(503).json({

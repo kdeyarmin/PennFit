@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ArrowLeft, ShieldCheck, Tag, AlertCircle, Loader2 } from "lucide-react";
+import { useEffect } from "react";
+import { track } from "@/lib/track";
 
 const formSchema = z.object({
   patient: z.object({
@@ -97,6 +99,10 @@ export function Order() {
   const hasRxValue = watch("prescription.hasExistingPrescription");
   const consentValue = watch("consentToContact");
 
+  useEffect(() => {
+    track("order_started");
+  }, []);
+
   if (!chosenMask) return null;
 
   const onSubmit = (values: FormValues) => {
@@ -167,6 +173,7 @@ export function Order() {
               mask: chosenMask,
             }),
           );
+          track("order_submitted_success", { mask: chosenMask.modelNumber });
           setLocation("/order-success");
         },
       },
@@ -490,8 +497,11 @@ export function Order() {
               />
               <div className="flex-1 -mt-0.5">
                 <Label htmlFor="consent" className="cursor-pointer font-normal text-sm leading-relaxed">
-                  I authorize Penn Home Medical Supply to contact me by phone, email, or SMS regarding this
-                  order, my insurance verification, and shipping updates.
+                  I authorize Penn Home Medical Supply to <strong>contact me</strong> by phone, email, or SMS
+                  regarding this order, my insurance verification, and shipping updates, and to{" "}
+                  <strong>store the order details I've entered above</strong> (including my contact, shipping,
+                  insurance, and prescription information) in Penn's secure system for fulfillment and
+                  recordkeeping.
                 </Label>
                 {isSubmitted && errors.consentToContact && (
                   <p className="text-xs text-destructive mt-1">{errors.consentToContact.message}</p>
@@ -502,8 +512,11 @@ export function Order() {
             <div className="flex items-start gap-3 text-xs text-muted-foreground">
               <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
               <p>
-                Your information is sent securely to Penn Home Medical Supply and is not stored on this
-                website. By submitting, you agree to our{" "}
+                Your order is sent securely to Penn Home Medical Supply and stored in their HIPAA-aware
+                fulfillment database, including the contact, shipping, insurance, and prescription details
+                above plus the numeric facial measurements that were used to recommend your mask. Your
+                camera image and video stream were never uploaded — only the measurement numbers leave your
+                device. By submitting, you agree to our{" "}
                 <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>.
               </p>
             </div>

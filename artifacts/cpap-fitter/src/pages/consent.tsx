@@ -1,16 +1,24 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ShieldCheck, Camera, ServerOff, AlertCircle } from "lucide-react";
+import { ShieldCheck, Camera, ServerOff, AlertCircle, Database } from "lucide-react";
+import { track } from "@/lib/track";
 
 export function Consent() {
   const [, setLocation] = useLocation();
   const [agreed, setAgreed] = useState(false);
 
+  // home_view fires on mount — the consent page is the first content view
+  // after the landing CTA, so it's the right anchor for the funnel.
+  useEffect(() => {
+    track("home_view");
+  }, []);
+
   const handleContinue = () => {
     if (agreed) {
+      track("consent_given");
       setLocation("/capture");
     }
   };
@@ -51,6 +59,31 @@ export function Consent() {
                   The capture is held temporarily in memory just long enough to extract measurements, then immediately discarded.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/*
+            Order-data storage disclosure — required reading before patients
+            commit. The image / measurement story above is unchanged (still
+            on-device only). Order details are different: once a patient
+            chooses to place an order, name/DOB/address/insurance/Rx ARE
+            stored on Penn's servers so staff can fulfill it. Be explicit so
+            consent is informed.
+          */}
+          <div className="flex gap-4 p-5 rounded-xl glass-panel border border-[hsl(var(--penn-gold)/0.4)]">
+            <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold mb-1 tracking-tight">If You Place an Order</h3>
+              <p className="text-sm text-muted-foreground">
+                Camera measurements stay on your device. <strong>However, when you submit an order</strong>,
+                the contact, shipping, insurance, and prescription details you enter are stored
+                in Penn Home Medical Supply's secure database so our fulfillment team can ship
+                your mask and bill your insurance. You'll re-confirm this at checkout. See our{" "}
+                <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
+                for full details.
+              </p>
             </div>
           </div>
 

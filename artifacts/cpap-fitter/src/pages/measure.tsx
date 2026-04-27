@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 
 import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 import type { FacialMeasurements } from "@workspace/api-client-react";
+import { track } from "@/lib/track";
 
 export function Measure() {
   const [, setLocation] = useLocation();
@@ -161,6 +162,7 @@ export function Measure() {
           setProgress(100);
           setStatus("Analysis complete.");
           setMeasurements(measurements);
+          track("measurements_extracted");
 
           // Privacy: discard the captured image from memory the moment we have
           // numeric measurements. Our UI promises this — keep it true.

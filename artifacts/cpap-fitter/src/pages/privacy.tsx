@@ -52,29 +52,62 @@ export function Privacy() {
               <li>Numerical facial measurements (e.g., nose width in millimeters).</li>
               <li>Responses to the clinical questionnaire (e.g., preferred sleep position).</li>
               <li>If you choose to place an order: the patient, shipping, insurance, and prescription details you submit on the order form.</li>
+              <li>Anonymous funnel-step events (e.g., "consent given," "results viewed") tagged with a random per-tab session identifier. These contain no name, IP address, device fingerprint, or contact information.</li>
             </ul>
             <p className="mt-2">
-              Measurement and questionnaire data is sent securely to generate a mask recommendation and is not stored or linked to Protected Health Information (PHI) within the stateless recommendation service. Order details you submit are forwarded by email to Penn Home Medical Supply for fulfillment and are not persisted by the Penn Fit application itself.
+              Measurement and questionnaire data is sent securely to generate a mask recommendation and is then discarded — the recommendation engine is stateless and does not write your facial measurements to any database.
             </p>
           </section>
 
           <section className="space-y-2">
             <h3 className="text-lg font-semibold text-foreground tracking-tight">
               <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">03</span>
-              Third-Party Services
+              Order Data Storage
             </h3>
             <p>
-              Penn Fit uses Google's MediaPipe technology for on-device landmark detection. This operates entirely within your browser environment. Order emails are delivered to Penn Home Medical Supply through SendGrid, our transactional email provider.
+              <strong>If you submit an order</strong>, the contact, shipping, insurance, prescription, and notes
+              fields you enter — together with the chosen mask, on-device measurements, and an anonymized
+              order reference — are stored in Penn Home Medical Supply's secure HIPAA-aware fulfillment
+              database. This information is used by Penn staff to:
+            </p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>Ship the mask to your address;</li>
+              <li>Bill your insurance and resolve any coverage questions;</li>
+              <li>Verify or obtain a CPAP prescription on your behalf;</li>
+              <li>Maintain records required by federal, state, and payer regulations.</li>
+            </ul>
+            <p className="mt-2">
+              You re-confirm this storage at checkout via a required consent checkbox. Access to stored
+              orders is limited to Penn Home Medical Supply staff who have signed in with an authorized
+              email and is recorded in an internal audit log. To request a copy or deletion of your stored
+              order information, contact Penn Home Medical Supply directly.
             </p>
           </section>
 
           <section className="space-y-2">
             <h3 className="text-lg font-semibold text-foreground tracking-tight">
               <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">04</span>
+              Third-Party Services
+            </h3>
+            <p>
+              Penn Fit uses Google's MediaPipe technology for on-device landmark detection. This operates
+              entirely within your browser environment. Order emails are delivered to Penn Home Medical
+              Supply through SendGrid, our transactional email provider. Authentication for Penn staff
+              is provided by Clerk.
+            </p>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-lg font-semibold text-foreground tracking-tight">
+              <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">05</span>
               Your Rights
             </h3>
             <p>
-              Because Penn Fit does not store your biometric data or measurements beyond the immediate session, there is no ongoing profile data to delete. Simply closing the browser or clicking "Start Over" clears the session data. For questions about an order you have submitted to Penn Home Medical Supply, contact us directly.
+              Camera images and biometric measurements are never stored beyond the immediate browser
+              session — closing the browser or clicking "Start Over" clears them. For data you submitted
+              with an order (contact, shipping, insurance, prescription), you may contact Penn Home
+              Medical Supply directly to request a copy, correction, or deletion subject to applicable
+              recordkeeping requirements.
             </p>
           </section>
         </CardContent>

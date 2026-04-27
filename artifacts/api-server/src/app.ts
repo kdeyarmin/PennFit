@@ -2,6 +2,11 @@ import express, { type Express, type Request } from "express";
 import cors from "cors";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import pinoHttp from "pino-http";
+import { clerkMiddleware } from "@clerk/express";
+import {
+  CLERK_PROXY_PATH,
+  clerkProxyMiddleware,
+} from "./middlewares/clerkProxyMiddleware.js";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -11,6 +16,10 @@ const app: Express = express();
 // looks like it came from 127.0.0.1 and the rate limiter would group all
 // users together (and refuse to start in strict mode).
 app.set("trust proxy", 1);
+
+// Clerk Frontend API proxy — must be mounted BEFORE body parsers because
+// the proxy streams raw bytes through to Clerk's backend. No-op in dev.
+app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
 // CORS allowlist. In dev (no PENN_ALLOWED_ORIGINS set) we allow same-origin
 // + the Replit dev domain so the preview iframe can call the API. In
@@ -68,6 +77,11 @@ app.use(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
+// Clerk session middleware — attaches auth state to every request so
+// downstream `getAuth(req)` can read it. Safe to mount on every route;
+// it's a no-op for unauthenticated requests.
+app.use(clerkMiddleware());
+
 // Rate limit on the order endpoint specifically. Recommendation/catalog are
 // cheap and stateless, so they don't need this. Orders cost Penn an email
 // + a fulfillment workflow per request, so we throttle hard:
@@ -86,6 +100,17 @@ const orderLimiter = rateLimit({
   },
 });
 app.use("/api/orders", orderLimiter);
+
+// Usage-event tracking is high-volume but anonymous — looser limit.
+const usageEventLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "Too many tracking events" },
+});
+app.use("/api/usage-events", usageEventLimiter);
 
 app.use("/api", router);
 

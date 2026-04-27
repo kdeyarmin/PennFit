@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { track } from "@/lib/track";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -118,6 +119,7 @@ export function Questionnaire() {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((curr) => curr + 1);
     } else {
+      track("questionnaire_completed");
       setLocation("/results");
     }
   };

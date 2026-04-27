@@ -19,15 +19,33 @@ I prefer iterative development, with a focus on delivering functional components
 I want detailed explanations for any complex architectural decisions or significant code changes.
 Please ask before making major changes to the project structure or core functionalities.
 Do not add image logging anywhere in the backend.
-Do not log or persist order request bodies.
-Do not add a database unless specifically for non-PHI business data (mask catalog, etc.).
+Do not log order request bodies in the application logger (treat every log line as world-readable).
+
+**Database / PHI policy (April 2026 update — overrides earlier "no PHI persistence" rule):**
+Order rows ARE persisted to PostgreSQL so Penn staff can ship, bill insurance, and verify prescriptions through an internal admin dashboard at `/admin/*`. The patient-facing consent and `/privacy` pages disclose this storage explicitly. Camera images and video streams remain on-device only — never uploaded.
 
 ## System Architecture
 
 The Penn Fit application adopts a privacy-first, stateless architecture with a focus on on-device processing for sensitive patient data.
 
 ### Privacy-First Design
-All facial image processing occurs exclusively on the user's device using MediaPipe Face Mesh. Only numeric measurements are transmitted to the backend. The backend is stateless for the recommendation flow, meaning no personal health information (PHI) is stored or logged. The only PHI-touching endpoint (`POST /api/orders`) validates, forwards the order via SendGrid, and immediately discards the payload, ensuring no persistence of sensitive data.
+All facial image processing occurs exclusively on the user's device using MediaPipe Face Mesh. Camera images and video streams never leave the browser. Only numeric measurements (in millimeters) are transmitted to the backend. The recommendation engine (`POST /api/recommend`) is stateless and discards measurements after responding.
+
+### Order Persistence + Admin Dashboard (HIPAA-aware)
+`POST /api/orders` writes a Drizzle row to the `orders` table BEFORE attempting SendGrid delivery, so a failed email leaves a recoverable row marked `email_status='failed'`. The patient consent checkbox at the order step and the `/privacy` page (Section 03 "Order Data Storage") disclose this storage explicitly. A honeypot field (`website`) short-circuits with fake success and never touches the DB.
+
+An internal admin dashboard lives inside the same `cpap-fitter` artifact at `/admin/*`, gated by:
+1. Clerk session (provisioned via `setupClerkWhitelabelAuth()`).
+2. `requireAdmin` middleware that requires a verified primary email AND membership in the `PENN_ADMIN_EMAILS` comma-separated allowlist. In production the middleware fails closed (503) if `PENN_ADMIN_EMAILS` is unset; in development any signed-in user is treated as admin for local-loop convenience.
+
+Every PHI-touching admin read writes a row to `admin_audit_log`: list-orders (any filter), search-orders, and view-order-detail.
+
+Anonymous funnel events (`home_view`, `consent_given`, `capture_started`, …) are POSTed to `/api/usage-events` (rate-limited 30/min, no auth, no IP/UA stored — only a per-tab session id).
+
+### Tech additions
+- `@workspace/db` (Drizzle + node-postgres) with three new tables: `orders`, `usage_events`, `admin_audit_log`.
+- `@clerk/express` (server) + `@clerk/react` + `@clerk/themes` (frontend) wrapped in a Penn-branded `<ClerkProvider>`.
+- Content-Security-Policy in `index.html` widened to allow `*.clerk.accounts.dev`, `*.clerk.com`, and `challenges.cloudflare.com` (Clerk bot protection).
 
 ### Technical Stack
 *   **Monorepo Tool:** pnpm workspaces
