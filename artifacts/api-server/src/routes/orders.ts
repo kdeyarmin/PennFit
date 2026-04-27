@@ -14,6 +14,11 @@
  *
  * If SENDGRID_API_KEY or PENN_FULFILLMENT_EMAIL is missing, we return HTTP
  * 503 instead of silently swallowing the order.
+ *
+ * ANTI-SPAM: A hidden honeypot field (`website`) is rendered in the form
+ * but kept invisible+aria-hidden+tabindex=-1. Humans never type into it;
+ * naive bots fill in every visible input. If it's non-empty, we return a
+ * fake success so the bot doesn't iterate, and skip the email.
  */
 
 import { Router } from "express";
@@ -23,6 +28,21 @@ import { sendOrderToPenn } from "../lib/orderEmail.js";
 const router = Router();
 
 router.post("/orders", async (req, res) => {
+  // Honeypot check — must run BEFORE schema parse, because Zod (with default
+  // strip mode) would silently drop the unknown field and we'd lose the
+  // signal. We deliberately return a fake-looking success so the bot
+  // believes its submission worked and stops retrying.
+  const honeypot = (req.body as Record<string, unknown> | null | undefined)?.website;
+  if (typeof honeypot === "string" && honeypot.trim().length > 0) {
+    res.json({
+      success: true,
+      orderReference: `PENN-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+      deliveredAt: new Date().toISOString(),
+      message: "Your order has been received.",
+    });
+    return;
+  }
+
   const parseResult = SubmitOrderBody.safeParse(req.body);
 
   if (!parseResult.success) {

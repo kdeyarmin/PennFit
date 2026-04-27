@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Button } from "@/components/ui/button";
@@ -103,17 +103,11 @@ const questions: Question[] = [
 
 export function Questionnaire() {
   const [, setLocation] = useLocation();
-  const { answers, updateAnswers, measurements } = useFitterStore();
+  // The route-level <ProtectedRoute> in App.tsx already guarantees that
+  // `measurements` is non-null by the time this component mounts — no
+  // local guard needed.
+  const { answers, updateAnswers } = useFitterStore();
   const [currentIndex, setCurrentIndex] = useState(0);
-
-  // Redirect to capture if measurements are missing — must run as an effect, not during render
-  useEffect(() => {
-    if (!measurements) {
-      setLocation("/capture");
-    }
-  }, [measurements, setLocation]);
-
-  if (!measurements) return null;
 
   const currentQ = questions[currentIndex];
   const progress = (currentIndex / questions.length) * 100;

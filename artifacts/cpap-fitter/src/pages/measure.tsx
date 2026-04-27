@@ -54,9 +54,12 @@ export function Measure() {
         setProgress(15);
         setStatus("Loading on-device facial landmark model…");
 
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm",
-        );
+        // Self-hosted MediaPipe — see scripts/setup-mediapipe.mjs. Loading
+        // these from our own origin (instead of jsdelivr/Google Storage)
+        // is what backs Penn Fit's "100% private" claim end-to-end and
+        // also lets the app pass a strict same-origin CSP.
+        const base = import.meta.env.BASE_URL; // includes trailing slash
+        const vision = await FilesetResolver.forVisionTasks(`${base}mediapipe/wasm`);
 
         if (!isMountedRef.current) return;
         setProgress(40);
@@ -64,8 +67,7 @@ export function Measure() {
 
         faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            modelAssetPath: `${base}mediapipe/models/face_landmarker.task`,
             delegate: "GPU",
           },
           outputFaceBlendshapes: false,
@@ -271,9 +273,29 @@ export function Measure() {
               <h2 className="text-display text-2xl font-bold tracking-tight text-gradient-brand">
                 {progress === 100 ? "Measurements Ready" : "Processing Your Measurements"}
               </h2>
-              <p className="text-sm text-muted-foreground h-5">{status}</p>
+              {/*
+                aria-live=polite so screen-reader users hear the changing
+                status ("Loading model", "Analyzing", ...) and the final
+                completion. role=status has implicit aria-live=polite, but
+                we set it explicitly for older screen readers.
+              */}
+              <p
+                className="text-sm text-muted-foreground h-5"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {status}
+              </p>
             </div>
-            <Progress value={progress} className="h-2 w-full" />
+            <Progress
+              value={progress}
+              className="h-2 w-full"
+              aria-label="Measurement progress"
+              aria-valuenow={progress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            />
             <div className="flex items-start gap-2.5 text-xs text-foreground/80 callout-navy px-4 py-3 rounded-xl">
               <BrainCircuit className="h-4 w-4 shrink-0 text-primary mt-0.5" />
               <span className="leading-relaxed">

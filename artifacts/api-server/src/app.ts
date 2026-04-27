@@ -1,10 +1,50 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request } from "express";
 import cors from "cors";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+
+// We're behind Replit's reverse proxy. Without trust proxy, every request
+// looks like it came from 127.0.0.1 and the rate limiter would group all
+// users together (and refuse to start in strict mode).
+app.set("trust proxy", 1);
+
+// CORS allowlist. In dev (no PENN_ALLOWED_ORIGINS set) we allow same-origin
+// + the Replit dev domain so the preview iframe can call the API. In
+// production, only the explicitly-listed origins (comma-separated env var)
+// can call us — this prevents arbitrary websites from posting orders into
+// Penn's fulfillment inbox.
+const allowedOrigins = (() => {
+  const fromEnv = (process.env.PENN_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  if (fromEnv.length > 0) return fromEnv;
+  // Dev fallback: allow Replit dev domain + localhost for local testing.
+  const dev: string[] = [];
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    dev.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+  }
+  dev.push("http://localhost:3000", "http://localhost:5173", "http://localhost:80");
+  return dev;
+})();
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Same-origin requests (server-to-server, curl, mobile) have no Origin
+      // header — allow them. Browser cross-origin requests must match the
+      // allowlist exactly.
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
+    },
+    credentials: true,
+  }),
+);
 
 app.use(
   pinoHttp({
@@ -25,9 +65,27 @@ app.use(
     },
   }),
 );
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "100kb" }));
+app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+
+// Rate limit on the order endpoint specifically. Recommendation/catalog are
+// cheap and stateless, so they don't need this. Orders cost Penn an email
+// + a fulfillment workflow per request, so we throttle hard:
+//   - 5 attempts per 10 min per IP
+//   - keyed by IP (with proxy trust set above)
+const orderLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  // ipKeyGenerator handles IPv6 normalization correctly.
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many order attempts from this network. Please wait a few minutes and try again, or call Penn Home Medical Supply directly.",
+  },
+});
+app.use("/api/orders", orderLimiter);
 
 app.use("/api", router);
 

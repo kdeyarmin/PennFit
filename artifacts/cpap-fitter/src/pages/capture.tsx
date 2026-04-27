@@ -195,6 +195,19 @@ export function Capture() {
             <Camera className="w-16 h-16 text-primary" />
           </div>
         )}
+        {/*
+          A11y: announce the countdown to assistive tech. The visual
+          countdown above is decorative (a giant numeral inside an
+          overlay) — without this live region, a screen-reader user
+          would have no idea the photo is about to be taken.
+        */}
+        <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">
+          {countdown === null
+            ? ""
+            : countdown > 0
+              ? `Capturing in ${countdown}…`
+              : "Capturing now"}
+        </div>
       </div>
 
       {/* Quick reminders */}

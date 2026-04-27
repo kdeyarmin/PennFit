@@ -77,5 +77,25 @@ A short, animated tutorial (`/penn-fit-tutorial/`) guides users. The standalone 
 ## External Dependencies
 
 *   **SendGrid:** For sending order fulfillment emails from `POST /api/orders`.
-*   **MediaPipe Face Mesh:** Google's machine learning solution for on-device facial landmark detection.
+*   **MediaPipe Face Mesh:** Google's machine learning solution for on-device facial landmark detection. WASM runtime and the `face_landmarker.task` model are **self-hosted** under `artifacts/cpap-fitter/public/mediapipe/` (populated by `scripts/setup-mediapipe.mjs` via predev/prebuild hooks; the directory is gitignored). No external CDN is contacted at runtime, which lets the app's CSP stay strict.
 *   **AWS:** Deployment target for HIPAA-compliant infrastructure with a Business Associate Agreement (BAA).
+
+## Recent Hardening (April 2026 deep-review pass)
+
+A full severity-ranked review was implemented end-to-end. Key items future contributors should be aware of:
+
+### Backend (`artifacts/api-server`)
+*   `app.ts` enables `trust proxy` (required for accurate client IPs behind the Replit / AWS proxy), reads its CORS allowlist from `PENN_ALLOWED_ORIGINS` (comma-separated), and caps JSON bodies at 100 kb.
+*   `routes/orders.ts` applies `express-rate-limit` keyed via `ipKeyGenerator` (do **not** swap to raw `req.ip` — it breaks IPv6 normalization), and short-circuits with a fake-success response if the honeypot field `website` is non-empty. Honeypot hits are intentionally indistinguishable from real success on the wire.
+
+### Frontend routing (`artifacts/cpap-fitter/src/App.tsx`)
+*   Protected routes are implemented as **inline `Guarded*` function components rendered via standard `<Route component={GuardedX}>`**. Wouter's `<Switch>` only inspects the `path` prop on its direct `<Route>` children, so a generic `<ProtectedRoute>` wrapper component falls through to `NotFound`. Keep guards inline.
+*   Each guard reads from the in-memory fitter store and returns `<Redirect>` when the precondition fails — preventing flash-of-protected-content. Per-page `useEffect`+`setLocation`+`return null` guards have been removed.
+
+### Form accessibility (`artifacts/cpap-fitter/src/pages/order.tsx`)
+*   The `Field` helper generates an id with `useId()` and clones its child input to bind `htmlFor`. For shadcn `Select` triggers (which already render their own label association), pass `skipHtmlFor` to avoid double-binding.
+*   The honeypot `website` input is registered in the zod schema, rendered offscreen with `aria-hidden`, `tabindex={-1}`, and `autocomplete="off"`; the submit handler short-circuits to a fake success when filled.
+
+### Type safety
+*   `lib/api-client-react/src/index.ts` now re-exports `ApiError` and `ErrorType` so consumers can type errors as `ApiError<{error?: string; details?: string[]}>` instead of `as any`.
+*   `order.tsx`'s `consentToContact` uses `z.boolean().refine()` so the form no longer needs the `false as unknown as true` cast.

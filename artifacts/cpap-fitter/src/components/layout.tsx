@@ -1,6 +1,6 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Menu, X } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 
 // Reset scroll to the top on every route change. Without this, navigating
@@ -16,7 +16,21 @@ function ScrollToTop() {
   return null;
 }
 
+const navLinks = [
+  { href: "/how-it-works", label: "How It Works" },
+  { href: "/masks", label: "Mask Catalog" },
+];
+
 export function Layout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Auto-close the mobile menu whenever the route changes — otherwise
+  // tapping a link leaves the menu drawer open over the new page.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location]);
+
   return (
     <div className="min-h-[100dvh] flex flex-col text-foreground">
       <ScrollToTop />
@@ -37,15 +51,54 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">CPAP Mask Fitting</span>
               </div>
             </Link>
-            <nav className="flex items-center gap-6 text-sm font-medium">
-              <Link href="/how-it-works" className="text-muted-foreground transition-colors hover:text-primary">
-                How It Works
-              </Link>
-              <Link href="/masks" className="text-muted-foreground transition-colors hover:text-primary">
-                Mask Catalog
-              </Link>
+
+            {/* Desktop nav */}
+            <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+              {navLinks.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="text-muted-foreground transition-colors hover:text-primary"
+                >
+                  {l.label}
+                </Link>
+              ))}
             </nav>
+
+            {/* Mobile hamburger */}
+            <button
+              type="button"
+              onClick={() => setMobileOpen((v) => !v)}
+              className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-lg glass-panel border-0 text-primary hover:opacity-80 transition-opacity"
+              aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-nav-panel"
+              data-testid="button-mobile-menu"
+            >
+              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
           </div>
+
+          {/* Mobile dropdown panel */}
+          {mobileOpen && (
+            <div
+              id="mobile-nav-panel"
+              className="md:hidden border-t border-border/40 bg-white/85 backdrop-blur-md"
+            >
+              <nav className="container mx-auto flex flex-col px-4 py-3 gap-1 text-sm font-medium">
+                {navLinks.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className="block px-3 py-2.5 rounded-lg text-foreground hover:bg-muted/60 transition-colors"
+                    data-testid={`mobile-link-${l.href.replace("/", "")}`}
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
+          )}
         </div>
         <div className="aurora-divider" aria-hidden="true" />
       </header>
@@ -65,7 +118,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex gap-4">
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
-              <Link href="/consent" className="hover:text-primary transition-colors">Terms of Service</Link>
+              {/*
+                /consent is the in-flow data-use consent screen, NOT a Terms
+                of Service. Mislabelling it as "Terms of Service" was a
+                liability — relabel to match what the page actually is.
+              */}
+              <Link href="/consent" className="hover:text-primary transition-colors">Data Use & Consent</Link>
             </div>
           </div>
         </div>

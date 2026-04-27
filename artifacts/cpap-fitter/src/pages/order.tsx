@@ -1,10 +1,10 @@
-import React, { useEffect } from "react";
+import React, { useId, isValidElement, cloneElement } from "react";
 import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFitterStore } from "@/hooks/use-fitter-store";
-import { useSubmitOrder } from "@workspace/api-client-react";
+import { useSubmitOrder, ApiError } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -45,9 +45,19 @@ const formSchema = z.object({
     physicianPhone: z.string().max(30).optional().or(z.literal("")),
   }),
   notes: z.string().max(1000).optional().or(z.literal("")),
-  consentToContact: z.literal(true, {
-    errorMap: () => ({ message: "You must consent to be contacted to submit an order" }),
-  }),
+  // Use a boolean (typed `boolean`) with a refine() instead of z.literal(true)
+  // so we can write `setValue("consentToContact", false)` without an awful
+  // `false as unknown as true` cast. The refine() still enforces the same
+  // submit-blocking behaviour.
+  consentToContact: z
+    .boolean()
+    .refine((v) => v === true, {
+      message: "You must consent to be contacted to submit an order",
+    }),
+  // Honeypot — this field is hidden from real users via CSS + aria. Bots
+  // tend to fill in every input they see; if this is non-empty we
+  // silently pretend the submission succeeded. Backend has the same check.
+  website: z.string().max(0).optional().or(z.literal("")),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -60,6 +70,8 @@ const US_STATES = [
 
 export function Order() {
   const [, setLocation] = useLocation();
+  // The route-level <ProtectedRoute> in App.tsx already guarantees that
+  // `chosenMask` is non-null by the time Order mounts.
   const { chosenMask, setChosenMask, measurements } = useFitterStore();
   const { mutate, isPending, error } = useSubmitOrder();
 
@@ -74,6 +86,8 @@ export function Order() {
     defaultValues: {
       prescription: { hasExistingPrescription: false },
       shippingAddress: { state: "" },
+      consentToContact: false,
+      website: "",
     } as Partial<FormValues> as FormValues,
     mode: "onBlur",
   });
@@ -83,16 +97,27 @@ export function Order() {
   const hasRxValue = watch("prescription.hasExistingPrescription");
   const consentValue = watch("consentToContact");
 
-  // If somehow the user lands here without choosing a mask, send them back.
-  useEffect(() => {
-    if (!chosenMask) {
-      setLocation("/results");
-    }
-  }, [chosenMask, setLocation]);
-
   if (!chosenMask) return null;
 
   const onSubmit = (values: FormValues) => {
+    // Frontend honeypot. Bots tend to fill in every visible input they
+    // can find — including ones we hide visually. Silently pretend
+    // success without ever hitting the API.
+    if (values.website && values.website.length > 0) {
+      sessionStorage.setItem(
+        "fitter_order_confirmation",
+        JSON.stringify({
+          orderReference: "PENN-FAKE",
+          deliveredAt: "queued",
+          message: "Order received.",
+          mask: chosenMask,
+        }),
+      );
+      setChosenMask(null);
+      setLocation("/order-success");
+      return;
+    }
+
     mutate(
       {
         data: {
@@ -147,6 +172,11 @@ export function Order() {
       },
     );
   };
+
+  // Type the React-Query mutation error as our generated ApiError so we
+  // can read the typed `.data.error` / `.data.details` payload without
+  // sprinkling `as any` everywhere.
+  const apiError = error as ApiError<{ error?: string; details?: string[] }> | null;
 
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
@@ -210,18 +240,18 @@ export function Order() {
         </CardContent>
       </Card>
 
-      {error && (
+      {apiError && (
         <Alert variant="destructive" className="mb-6 glass-card border-destructive/30" data-testid="alert-order-error">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>We couldn't submit your order</AlertTitle>
           <AlertDescription>
             <div>
-              {(error as any)?.error ||
+              {apiError.data?.error ??
                 "Something went wrong while sending your order. Please try again or call Penn Home Medical Supply directly."}
             </div>
-            {Array.isArray((error as any)?.details) && (error as any).details.length > 0 && (
+            {Array.isArray(apiError.data?.details) && apiError.data!.details!.length > 0 && (
               <ul className="mt-2 text-xs list-disc list-inside space-y-0.5 opacity-90">
-                {(error as any).details.map((d: string, i: number) => (
+                {apiError.data!.details!.map((d, i) => (
                   <li key={i}>{d}</li>
                 ))}
               </ul>
@@ -289,7 +319,14 @@ export function Order() {
             <Field label="City" error={errors.shippingAddress?.city?.message} required className="md:col-span-3">
               <Input data-testid="input-city" {...register("shippingAddress.city")} autoComplete="address-level2" />
             </Field>
-            <Field label="State" error={errors.shippingAddress?.state?.message} required className="md:col-span-1">
+            <Field
+              label="State"
+              error={errors.shippingAddress?.state?.message}
+              required
+              className="md:col-span-1"
+              /* Select renders its own trigger button — htmlFor binding to a button doesn't help, skip it. */
+              skipHtmlFor
+            >
               <Select
                 value={stateValue}
                 onValueChange={(v) => setValue("shippingAddress.state", v, { shouldValidate: true })}
@@ -355,6 +392,7 @@ export function Order() {
               label="Relationship to policyholder"
               error={errors.insurance?.policyholderRelationship?.message}
               className="md:col-span-2"
+              skipHtmlFor
             >
               <Select
                 value={relationshipValue ?? ""}
@@ -447,7 +485,7 @@ export function Order() {
                 data-testid="checkbox-consent"
                 checked={!!consentValue}
                 onCheckedChange={(c) =>
-                  setValue("consentToContact", c === true ? true : (false as unknown as true), { shouldValidate: true })
+                  setValue("consentToContact", c === true, { shouldValidate: true })
                 }
               />
               <div className="flex-1 -mt-0.5">
@@ -471,6 +509,23 @@ export function Order() {
             </div>
           </CardContent>
         </Card>
+
+        {/*
+          Honeypot. Real users never see this — it's positioned offscreen,
+          aria-hidden, and tabindex=-1 so keyboard / screen-reader users
+          skip past it. Bots that crawl forms tend to fill in everything
+          they can find. The submit handler short-circuits if this is set.
+        */}
+        <div aria-hidden="true" className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden">
+          <label htmlFor="penn-website-hp">Website (leave blank)</label>
+          <input
+            id="penn-website-hp"
+            type="text"
+            autoComplete="off"
+            tabIndex={-1}
+            {...register("website")}
+          />
+        </div>
 
         <div className="flex flex-col-reverse md:flex-row md:justify-between gap-3 pt-2">
           <Link href="/results">
@@ -504,26 +559,52 @@ export function Order() {
   );
 }
 
+/**
+ * Field — labels every form input with an auto-generated id and binds
+ * the <Label htmlFor> to the input via React.cloneElement. Without this,
+ * users navigating with screen readers (or who tap the label on mobile
+ * to focus the input) get no association between label and control.
+ *
+ * For composite controls like our Select (which renders a Radix trigger
+ * button — not a real form control), set `skipHtmlFor` and the wrapping
+ * label is rendered without a `for` attribute (the underlying button
+ * gets its own accessible name from its placeholder/value).
+ */
 function Field({
   label,
   required,
   error,
   className,
+  skipHtmlFor,
   children,
 }: {
   label: string;
   required?: boolean;
   error?: string;
   className?: string;
+  skipHtmlFor?: boolean;
   children: React.ReactNode;
 }) {
+  const generatedId = useId();
+  const child =
+    !skipHtmlFor && isValidElement(children)
+      ? cloneElement(children as React.ReactElement<{ id?: string }>, {
+          id: (children as React.ReactElement<{ id?: string }>).props.id ?? generatedId,
+        })
+      : children;
+  const inputId = skipHtmlFor
+    ? undefined
+    : isValidElement(children)
+      ? ((children as React.ReactElement<{ id?: string }>).props.id ?? generatedId)
+      : undefined;
+
   return (
     <div className={className}>
-      <Label className="text-sm font-medium mb-1.5 block">
+      <Label htmlFor={inputId} className="text-sm font-medium mb-1.5 block">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
-      {children}
+      {child}
       {error && <p className="text-xs text-destructive mt-1">{error}</p>}
     </div>
   );

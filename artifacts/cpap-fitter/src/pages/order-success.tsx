@@ -21,18 +21,17 @@ export function OrderSuccess() {
   const { reset } = useFitterStore();
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
 
+  // The route-level OrderSuccessGate in App.tsx already verified that the
+  // confirmation exists in sessionStorage before mounting this component.
+  // We just hydrate it into local state on first mount.
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem("fitter_order_confirmation");
-      if (!stored) {
-        setLocation("/");
-        return;
-      }
-      setConfirmation(JSON.parse(stored));
+      if (stored) setConfirmation(JSON.parse(stored));
     } catch {
-      setLocation("/");
+      /* fall through — the gate will redirect on next route change */
     }
-  }, [setLocation]);
+  }, []);
 
   if (!confirmation) return null;
 
