@@ -39,12 +39,12 @@ outputType = "console"
 name = "resupply-check"
 author = "agent"
 
-[workflows.workflow.metadata]
-isValidation = true
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bash scripts/check-resupply-architecture.sh --self-test && bash scripts/check-resupply-architecture.sh && bash scripts/check-codegen.sh --self-test && bash scripts/check-codegen.sh && bash scripts/git-hooks/lib-staged-snapshot.test && pnpm run lint:resupply && pnpm -r --filter '@workspace/resupply-*' run typecheck && pnpm -r --filter '@workspace/resupply-*' run test"
+
+[workflows.workflow.metadata]
+isValidation = true
 
 [agent]
 stack = "PNPM_WORKSPACE"
