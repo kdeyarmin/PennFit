@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# Negative-test harness for scripts/check-resupply-architecture.sh.
+#
+# Builds a fixture tree under a temp dir that mimics the parts of the
+# repo the checker scans, plants known violations, runs the checker
+# against the fixture (via RESUPPLY_CHECK_ROOT), and asserts each
+# violation is detected. Then removes the violations and asserts the
+# checker passes.
+#
+# This test exists because an earlier version of the checker computed
+# offending matches into a `bad=` variable but never evaluated it,
+# silently letting violations through. The architect review caught it.
+# Adding fixture-driven tests prevents that regression class from
+# recurring.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CHECKER="$REPO_ROOT/scripts/check-resupply-architecture.sh"
+
+WORK="$(mktemp -d -t resupply-check-test.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+
+mkdir -p "$WORK"/lib/resupply-contracts/src
+mkdir -p "$WORK"/lib/resupply-domain/src
+mkdir -p "$WORK"/lib/resupply-db/src
+mkdir -p "$WORK"/lib/resupply-telecom/src
+mkdir -p "$WORK"/lib/resupply-ai/src
+mkdir -p "$WORK"/lib/resupply-audit/src
+mkdir -p "$WORK"/lib/resupply-testing/src
+mkdir -p "$WORK"/artifacts/resupply-api/src
+mkdir -p "$WORK"/artifacts/resupply-worker/src
+mkdir -p "$WORK"/artifacts/resupply-dashboard/src
+
+# Baseline: every dir has a clean file. The checker should pass.
+echo 'export {};' > "$WORK"/lib/resupply-contracts/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-domain/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-db/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-telecom/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-ai/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-audit/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-testing/src/index.ts
+echo 'export {};' > "$WORK"/artifacts/resupply-api/src/index.ts
+echo 'export {};' > "$WORK"/artifacts/resupply-worker/src/index.ts
+echo 'export {};' > "$WORK"/artifacts/resupply-dashboard/src/index.ts
+
+run_checker() {
+  RESUPPLY_CHECK_ROOT="$WORK" bash "$CHECKER" 2>&1
+}
+
+assert_pass() {
+  local label="$1"
+  if run_checker >/dev/null; then
+    echo "  PASS: clean tree accepted ($label)"
+  else
+    echo "  FAIL: clean tree rejected ($label)" >&2
+    run_checker >&2 || true
+    exit 1
+  fi
+}
+
+assert_fail_with() {
+  local label="$1"; shift
+  local needle="$1"; shift
+  local out
+  if out="$(run_checker)"; then
+    echo "  FAIL: violation NOT detected: $label" >&2
+    echo "    expected output to contain: $needle" >&2
+    echo "    actual output:" >&2
+    echo "$out" | sed 's/^/      /' >&2
+    exit 1
+  fi
+  if ! echo "$out" | grep -qF "$needle"; then
+    echo "  FAIL: violation detected but wrong message: $label" >&2
+    echo "    expected to contain: $needle" >&2
+    echo "    actual output:" >&2
+    echo "$out" | sed 's/^/      /' >&2
+    exit 1
+  fi
+  echo "  PASS: $label"
+}
+
+echo "[self-test] baseline empty tree should pass"
+assert_pass "baseline"
+
+echo "[self-test] Rule 1: contracts may only import zod"
+echo 'import express from "express";' > "$WORK"/lib/resupply-contracts/src/bad.ts
+assert_fail_with "contracts importing express (double-quoted)" \
+  "lib/resupply-contracts may only import 'zod' or relative paths"
+rm "$WORK"/lib/resupply-contracts/src/bad.ts
+
+echo "[self-test] Rule 1: also catches single-quoted imports"
+echo "import pg from 'pg';" > "$WORK"/lib/resupply-contracts/src/bad.ts
+assert_fail_with "contracts importing pg (single-quoted)" \
+  "lib/resupply-contracts may only import 'zod' or relative paths"
+rm "$WORK"/lib/resupply-contracts/src/bad.ts
+
+echo "[self-test] Rule 1: zod is allowed"
+echo 'import { z } from "zod";' > "$WORK"/lib/resupply-contracts/src/ok.ts
+assert_pass "contracts importing zod"
+rm "$WORK"/lib/resupply-contracts/src/ok.ts
+
+echo "[self-test] Rule 1: relative imports are allowed"
+echo 'import { foo } from "./foo";' > "$WORK"/lib/resupply-contracts/src/ok.ts
+echo 'export const foo = 1;' > "$WORK"/lib/resupply-contracts/src/foo.ts
+assert_pass "contracts importing relative"
+rm "$WORK"/lib/resupply-contracts/src/ok.ts "$WORK"/lib/resupply-contracts/src/foo.ts
+
+echo "[self-test] Rule 2: domain may not import drizzle-orm"
+echo 'import { sql } from "drizzle-orm";' > "$WORK"/lib/resupply-domain/src/bad.ts
+assert_fail_with "domain importing drizzle-orm" \
+  "lib/resupply-domain must not import I/O packages"
+rm "$WORK"/lib/resupply-domain/src/bad.ts
+
+echo "[self-test] Rule 2: domain may not import resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-domain/src/bad.ts
+assert_fail_with "domain importing @workspace/resupply-db" \
+  "lib/resupply-domain must not import I/O packages"
+rm "$WORK"/lib/resupply-domain/src/bad.ts
+
+echo "[self-test] Rule 3: db may not import telecom"
+echo 'import { x } from "@workspace/resupply-telecom";' > "$WORK"/lib/resupply-db/src/bad.ts
+assert_fail_with "db importing telecom" \
+  "lib/resupply-db must not import vendor adapters"
+rm "$WORK"/lib/resupply-db/src/bad.ts
+
+echo "[self-test] Rule 4: telecom may not import ai"
+echo 'import { x } from "@workspace/resupply-ai";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing ai" \
+  "lib/resupply-telecom must not import lib/resupply-ai"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 5: api may not import resupply-testing"
+echo 'import { x } from "@workspace/resupply-testing";' > "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api importing resupply-testing" \
+  "must not import @workspace/resupply-testing"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 6: api may not import Penn Fit lib/db"
+echo 'import { db } from "@workspace/db";' > "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api importing @workspace/db" \
+  "must not import Penn Fit packages"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 6: api may not import Penn Fit lib/api-zod"
+echo "import { x } from '@workspace/api-zod';" > "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api importing @workspace/api-zod (single-quoted)" \
+  "must not import Penn Fit packages"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 6: dashboard exception — @workspace/api-client-react allowed"
+# (The dashboard dir is intentionally not in the loop; nothing to assert,
+#  this just documents the carve-out so a maintainer reading the harness
+#  doesn't add it by accident.)
+
+echo "[self-test] Final clean-tree check"
+assert_pass "post-test cleanup"
+
+echo ""
+echo "All resupply-architecture self-tests passed."

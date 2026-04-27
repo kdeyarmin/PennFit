@@ -24,11 +24,11 @@ The following substitutions are made for the Phase 0 build:
 | Temporal | pg-boss (Postgres-backed jobs + state-machine workflows in DB) | Move to Temporal at production hosting if multi-day workflow visibility becomes a real need | 002 |
 | AWS KMS | pgcrypto + `RESUPPLY_DATA_KEY` env var as KEK | Rotate to a managed KMS (AWS KMS, GCP KMS, or HashiCorp Vault) before signing any vendor BAA | 007 |
 | AWS Cognito | Clerk (matches existing Penn Fit pattern, BAA available on enterprise) | Confirm Clerk enterprise BAA before launch; otherwise migrate to Cognito | 005 |
-| Datadog / Honeycomb / Sentry | Pino structured logs (stdout) for v1; Sentry (BAA) added later | Add Sentry before Phase 9 production hardening | 010 |
+| Datadog / Honeycomb / Sentry | Pino structured logs (stdout) for v1; Sentry (BAA) added later | Add Sentry before Phase 9 production hardening | (no dedicated ADR; see ARCHITECTURE.md "Observability") |
 | Twilio (SMS / Voice / SendGrid) | Twilio (unchanged — Twilio runs fine from Replit, BAA required) | — | 004 |
 | Anthropic Claude | Anthropic Claude (unchanged — BAA required before any PHI in prompts) | — | 006 |
 | Docker Compose | Replit-managed Postgres; pg-boss replaces Redis; SendGrid sandbox replaces Mailhog | — | 010 |
-| Turborepo | pnpm workspaces (already in place) | — | 011 |
+| Turborepo | pnpm workspaces (already in place) | — | 012 |
 | Husky / lint-staged | Replit "validation steps" run on demand and before deploy | — | 012 |
 | GitHub Actions | Replit deploy gate uses the same validation steps | Add real GH Actions if the project leaves Replit | 012 |
 | Next.js operator dashboard | React + Vite (matches the Replit scaffold and the existing OpenAPI codegen pipeline) | — | 011 |

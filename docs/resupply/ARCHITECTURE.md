@@ -100,6 +100,17 @@ which runs as part of the `resupply-check` validation step.
 - Any resupply package → Penn Fit's `lib/db` or `lib/api-zod`. These are
   separate products.
 
+### Temporary exceptions (must be removed before the phase listed)
+
+- `artifacts/resupply-dashboard` is permitted to depend on
+  `@workspace/api-client-react` while it is still the unmodified Vite
+  scaffold. This is a Penn Fit package and would normally be forbidden
+  by the rule above. The exception goes away in **Phase 4**, when the
+  dashboard is rewritten against a resupply-specific generated client
+  (`@workspace/resupply-api-client`). The architecture-check script
+  carves out this single edge by not including the dashboard's `src/`
+  in the Penn-Fit-import sweep; everything else still trips the gate.
+
 ## Schema and encryption
 
 - All resupply tables live in the Postgres `resupply` schema (created by
