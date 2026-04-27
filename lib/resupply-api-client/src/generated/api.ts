@@ -16,7 +16,12 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus, ReadinessStatus } from "./api.schemas";
+import type {
+  AuthError,
+  HealthStatus,
+  OperatorIdentity,
+  ReadinessStatus,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
 import type { ErrorType } from "../custom-fetch";
@@ -179,6 +184,88 @@ export function useReadinessCheck<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getReadinessCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the signed-in operator's Clerk id and verified primary
+email when the caller is on the `RESUPPLY_OPERATOR_EMAILS`
+allowlist. The dashboard calls this immediately after sign-in
+to decide whether to render the operator console (200), the
+"not authorized" screen (403), or the "allowlist not
+configured" screen (503 in production with the env var unset).
+
+ * @summary Operator identity
+ */
+export const getGetOperatorMeUrl = () => {
+  return `/resupply-api/me`;
+};
+
+export const getOperatorMe = async (
+  options?: RequestInit,
+): Promise<OperatorIdentity> => {
+  return customFetch<OperatorIdentity>(getGetOperatorMeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOperatorMeQueryKey = () => {
+  return [`/resupply-api/me`] as const;
+};
+
+export const getGetOperatorMeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOperatorMe>>,
+  TError = ErrorType<AuthError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOperatorMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetOperatorMeQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOperatorMe>>> = ({
+    signal,
+  }) => getOperatorMe({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOperatorMe>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOperatorMeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOperatorMe>>
+>;
+export type GetOperatorMeQueryError = ErrorType<AuthError>;
+
+/**
+ * @summary Operator identity
+ */
+
+export function useGetOperatorMe<
+  TData = Awaited<ReturnType<typeof getOperatorMe>>,
+  TError = ErrorType<AuthError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOperatorMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOperatorMeQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

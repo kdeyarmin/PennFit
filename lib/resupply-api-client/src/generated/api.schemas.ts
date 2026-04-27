@@ -27,6 +27,32 @@ export interface HealthStatus {
   service: HealthStatusService;
 }
 
+/**
+ * Minimal identity payload for an authorized operator. Contains
+ONLY the fields the dashboard needs to render — no session
+token, no Clerk user object, no allowlist contents.
+
+ */
+export interface OperatorIdentity {
+  /** Stable Clerk user id, used for audit log writes. */
+  clerkId: string;
+  /** Verified primary email, lowercased. Displayed in the
+dashboard chrome and recorded in audit rows.
+ */
+  email: string;
+}
+
+/**
+ * Auth failure body. Carries a single human-readable `error`
+string safe for the dashboard to render verbatim. Never
+contains the underlying error message, the user id, or any
+connection details.
+
+ */
+export interface AuthError {
+  error: string;
+}
+
 export type CheckStatus = (typeof CheckStatus)[keyof typeof CheckStatus];
 
 export const CheckStatus = {

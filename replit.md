@@ -2,16 +2,16 @@
 
 ## Overview
 
-Penn Fit is a web application designed for Penn Home Medical Supply, LLC, to guide patients in selecting the best-fit CPAP mask. The application provides a privacy-first facial measurement process and a clinical questionnaire to recommend suitable CPAP masks from Penn's catalog.
+Penn Fit is a web application designed for Penn Home Medical Supply, LLC, to assist patients in selecting the most suitable CPAP mask. The application prioritizes user privacy through on-device facial measurements and combines this with a clinical questionnaire to provide personalized, justified mask recommendations from Penn's product catalog. It also facilitates order placement and adheres to Penn's brand guidelines, including an animated tutorial for user guidance.
 
 **Key Capabilities:**
 
-*   **Privacy-First Facial Measurement:** Utilizes on-device processing of facial images to extract numeric measurements without transmitting or storing sensitive image data.
-*   **Clinical Questionnaire:** Gathers patient-specific information to refine mask recommendations.
-*   **Personalized Mask Recommendations:** Provides a ranked list of top masks with detailed justifications, considering both facial fit and clinical needs.
-*   **Order Placement:** Facilitates order submission to Penn Home Medical Supply through a secure and stateless API.
-*   **Brand Alignment:** Adheres to Penn's branding with a distinct visual design system.
-*   **Tutorial:** Includes an animated tutorial to guide users through the fitting process.
+*   **Privacy-First Facial Measurement:** On-device processing of facial images for measurements, without transmitting or storing sensitive image data.
+*   **Clinical Questionnaire:** Gathers patient data for refined mask recommendations.
+*   **Personalized Mask Recommendations:** Delivers a ranked list of masks with justifications based on facial fit and clinical needs.
+*   **Order Placement:** Securely submits orders to Penn Home Medical Supply via a stateless API.
+*   **Brand Alignment:** Incorporates Penn's distinct visual design system.
+*   **Tutorial:** Guides users through the fitting process with an animated video.
 
 ## User Preferences
 
@@ -21,134 +21,84 @@ Please ask before making major changes to the project structure or core function
 Do not add image logging anywhere in the backend.
 Do not log order request bodies in the application logger (treat every log line as world-readable).
 
-**Database / PHI policy (April 2026 update — overrides earlier "no PHI persistence" rule):**
-Order rows ARE persisted to PostgreSQL so Penn staff can ship, bill insurance, and verify prescriptions through an internal admin dashboard at `/admin/*`. The patient-facing consent and `/privacy` pages disclose this storage explicitly. Camera images and video streams remain on-device only — never uploaded.
-
 ## System Architecture
 
-The Penn Fit application adopts a privacy-first, stateless architecture with a focus on on-device processing for sensitive patient data.
+The Penn Fit application employs a privacy-first, stateless architecture, emphasizing on-device processing for sensitive data and secure handling of persistent information.
 
-### Privacy-First Design
-All facial image processing occurs exclusively on the user's device using MediaPipe Face Mesh. Camera images and video streams never leave the browser. Only numeric measurements (in millimeters) are transmitted to the backend. The recommendation engine (`POST /api/recommend`) is stateless and discards measurements after responding.
+### Privacy and Data Handling
 
-### Order Persistence + Admin Dashboard (HIPAA-aware)
-`POST /api/orders` writes a Drizzle row to the `orders` table BEFORE attempting SendGrid delivery, so a failed email leaves a recoverable row marked `email_status='failed'`. The patient consent checkbox at the order step and the `/privacy` page (Section 03 "Order Data Storage") disclose this storage explicitly. A honeypot field (`website`) short-circuits with fake success and never touches the DB.
+Facial image processing is entirely on-device using MediaPipe Face Mesh; only numeric measurements are sent to the backend. The recommendation engine is stateless. Order data, including PHI, is persisted in PostgreSQL to facilitate shipping, billing, and prescription verification via an internal admin dashboard. Patient consent and privacy policies explicitly disclose this storage. Camera images and video streams are never uploaded or stored. Anonymous usage events are collected without storing identifiable information.
 
-An internal admin dashboard lives inside the same `cpap-fitter` artifact at `/admin/*`, gated by:
-1. Clerk session (provisioned via `setupClerkWhitelabelAuth()`).
-2. `requireAdmin` middleware that requires a verified primary email AND membership in the `PENN_ADMIN_EMAILS` comma-separated allowlist. In production the middleware fails closed (503) if `PENN_ADMIN_EMAILS` is unset; in development any signed-in user is treated as admin for local-loop convenience.
+### Admin Dashboard
 
-Every PHI-touching admin read writes a row to `admin_audit_log`: list-orders (any filter), search-orders, and view-order-detail.
-
-Anonymous funnel events (`home_view`, `consent_given`, `capture_started`, …) are POSTed to `/api/usage-events` (rate-limited 30/min, no auth, no IP/UA stored — only a per-tab session id).
-
-### Tech additions
-- `@workspace/db` (Drizzle + node-postgres) with three new tables: `orders`, `usage_events`, `admin_audit_log`.
-- `@clerk/express` (server) + `@clerk/react` + `@clerk/themes` (frontend) wrapped in a Penn-branded `<ClerkProvider>`.
-- Content-Security-Policy in `index.html` widened to allow `*.clerk.accounts.dev`, `*.clerk.com`, and `challenges.cloudflare.com` (Clerk bot protection).
+An internal admin dashboard (`/admin/*`) within the same artifact allows Penn staff to manage orders. Access is restricted via Clerk authentication and an email allowlist (`PENN_ADMIN_EMAILS`). All PHI-touching admin reads are logged in an `admin_audit_log` table.
 
 ### Technical Stack
+
 *   **Monorepo Tool:** pnpm workspaces
-*   **Node.js Version:** 24
+*   **Node.js:** v24
 *   **Package Manager:** pnpm
-*   **TypeScript Version:** 5.9
+*   **TypeScript:** v5.9
 *   **API Framework:** Express 5
-*   **Validation:** Zod (generated from OpenAPI spec)
-*   **API Codegen:** Orval (from OpenAPI spec)
-*   **On-device AI:** MediaPipe Face Mesh (`@mediapipe/tasks-vision`) for 478 facial landmarks
-*   **Frontend:** React, Vite, Tailwind CSS, Wouter routing
+*   **Validation:** Zod (from OpenAPI spec)
+*   **API Codegen:** Orval
+*   **On-device AI:** MediaPipe Face Mesh (`@mediapipe/tasks-vision`)
+*   **Frontend:** React, Vite, Tailwind CSS, Wouter
+*   **Database:** Drizzle ORM + node-postgres (`@workspace/db`) for `orders`, `usage_events`, `admin_audit_log`.
+*   **Authentication:** Clerk (`@clerk/express`, `@clerk/react`, `@clerk/themes`) for admin authentication.
 
 ### Application Flow
-The user journey includes distinct stages:
-1.  **Home:** Landing page.
-2.  **Consent:** BIPA-aware privacy disclosures.
-3.  **Capture:** Live camera feed with face oval guide and 3-second steady-shot countdown. Calibration is iris-based (11.7 mm average iris diameter).
-4.  **Measure:** On-device MediaPipe processing extracts numeric measurements, and the captured image is immediately discarded.
-5.  **Questionnaire:** 11 clinical questions for personalized recommendations.
-6.  **Results:** Displays top 3 mask recommendations with confidence scores.
-7.  **Order:** Patient/contact/shipping/insurance/prescription intake form.
-8.  **Order Success:** Confirmation page with an order reference.
-9.  **Masks:** Filterable mask catalog browser.
-10. **Privacy:** Privacy policy stub.
+
+The user journey is structured into several stages: Home, Consent, Capture (facial scan), Measure (on-device processing), Questionnaire, Results (mask recommendations), Order (intake form), Order Success, Masks (catalog browser), and Privacy policy.
 
 ### Recommendation Scoring
-The recommendation engine uses a combined score:
-*   **Combined score** = (typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier
-*   **typeScore:** Driven by questionnaire answers.
-*   **fitScore:** Based on physical match between facial measurements and mask size ranges.
-*   **contraMultiplier:** Reduces score for contraindications (e.g., heavy beard for full-face).
-*   **pressureMultiplier:** Reduces score for high-pressure patients with unsuitable masks.
-*   **Top-3 diversification:** Ensures a variety of mask types in the top recommendations.
+
+The recommendation engine calculates a combined score using:
+`Combined score = (typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier`
+`typeScore` is derived from questionnaire answers, `fitScore` from facial measurements, `contraMultiplier` reduces scores for contraindications, and `pressureMultiplier` adjusts for high-pressure patients. Diversification ensures variety in top recommendations.
 
 ### Visual Design System
-The application features a high-end, professional visual language using Penn's navy and gold brand palette.
-*   **No Dark Mode:** Intentional design decision for a light-mode-only interface.
-*   **Brand Tokens:** Custom CSS properties for Penn navy, gold, and other brand colors.
-*   **Reusable Utility Classes:** Tailwind CSS classes for consistent styling of cards, icons, buttons, and form elements.
-*   **Eyebrow Pattern:** Consistent page header design with small caps text and gradient gold accents.
-*   **Page Background:** Layered "ambient atmosphere" — eight stacked radial blooms (cool plinth, gold sun + sunrise top-right, navy bloom top-left, mid-right depth, navy bottom plinth, gold whisper bottom-left) plus a diagonal sheen highlight, a viewport-fixed navy dot grid masked into a soft center bloom, and a low-opacity SVG `feTurbulence` grain. Background is `fixed` so it anchors as you scroll. The penn-fit-tutorial standalone page mirrors the same recipe (with rgba literals instead of HSL vars) so the two artifacts feel like one product.
-*   **Scroll Restoration:** `window.scrollTo(0, 0)` on route changes for enhanced user experience.
+
+The application features a high-end, professional aesthetic using Penn's navy and gold brand palette.
+*   **Design Choices:** Light-mode only, custom CSS brand tokens, reusable Tailwind CSS utility classes, consistent "eyebrow" page header pattern, and a layered "ambient atmosphere" background with radial blooms and a dot grid.
+*   **Scroll Restoration:** `window.scrollTo(0, 0)` on route changes.
 
 ### Tutorial Video
-A short, animated tutorial (`/penn-fit-tutorial/`) guides users. The standalone landing page mirrors the cpap-fitter's "ambient atmosphere" page background (see the design-system note above) so the two artifacts feel like one product. It's built with framer-motion + lucide-react, brand-themed, and features dual-mode rendering: embedded (inside the main app) or standalone (full landing experience with navigation and a written walkthrough). Real app screenshots are embedded for visual accuracy. Total runtime is ~58 seconds — each scene is timed so all body copy is revealed by ~70% of its duration, leaving 4-6 seconds of "everything visible" hold time at the end for re-reading before the next scene transitions in. The video container uses a portrait aspect ratio (`aspect-[3/5]`) on mobile and 16:9 (`sm:aspect-video`) from tablet up — required because Scenes 2 and 4 stack their phone-mockup + text vertically on mobile, which doesn't fit a 16:9 letterbox. Scene 2 reuses the home-page screenshot for Step 1 (the camera-capture page can't be screenshotted in headless because no camera is available). Mobile-only content density is reduced in Scenes 2 and 4 (smaller phone, hidden long-form paragraphs/taglines, condensed chip rows) so all scene content fits inside the container without clipping.
 
-## CPAP Resupply Automation (separate product, same monorepo) — Phase 1
+A short, animated tutorial (`/penn-fit-tutorial/`) is provided, built with `framer-motion` and `lucide-react`, matching the main app's branding. It supports both embedded and standalone viewing, with responsive aspect ratios for mobile and tablet/desktop.
 
-A second product lives alongside Penn Fit in this repo: the **CPAP Resupply Automation** system. It is a different product (operator-facing console + automated multi-channel patient outreach) with different branding and a separate Postgres schema (`resupply.*`). Phase 0 shipped scaffolding; Phase 1 added the database schema and pgcrypto-backed PHI encryption — no operator-facing business logic yet.
+### CPAP Resupply Automation System
 
-### Layout
-*   `artifacts/resupply-api/` — Express + Zod + Pino HTTP API mounted at `/resupply-api/*`. Exposes `GET /resupply-api/healthz` (liveness, never touches dependencies) and `GET /resupply-api/readyz` (readiness — probes Postgres + the pg-boss queue, returns 503 with structured per-dependency error categories on failure, never echoes raw driver text). The deploy gate in `.replit-artifact/artifact.toml` points at `/readyz` so production is only marked deployed once dependencies are reachable. Readiness logic lives in `src/lib/readiness.ts` with a closed allowlist of failure categories that mirrors the `CheckError` enum in `lib/resupply-api-spec/openapi.yaml`.
-*   `artifacts/resupply-worker/` — pg-boss background worker (no HTTP, no preview). Connects to `DATABASE_URL`, logs `resupply-worker ready`, stays alive. Workflow name: `Resupply Worker`.
-*   `artifacts/resupply-dashboard/` — React + Vite operator console at `/resupply/`. Default scaffold; real pages land in Phase 4+.
-*   `lib/resupply-{contracts,domain,db,audit,telecom,ai,testing}` — seven composite TypeScript libs with the dependency rules below. `resupply-db` now ships the full Phase 1 schema; the others remain empty until later phases.
+A separate product, the CPAP Resupply Automation system, coexists in the monorepo. This system, for operators, uses a distinct Postgres schema (`resupply.*`) and focuses on automated patient outreach.
 
-### Postgres pool
-There is exactly **one** Postgres pool per resupply process. It is owned by `@workspace/resupply-db` (`lib/resupply-db/src/pool.ts`) and exposed as `getDbPool()`. Every resupply package (API readiness, future query helpers, etc.) imports that helper. The `resupply-check` architecture rule (Rule 7) forbids `new Pool(` anywhere in `artifacts/resupply-*/src` or any other resupply lib so a future contributor can't silently re-introduce a second pool. The worker's pg-boss connection is intentionally separate (ADR 002).
+*   **Components:** `artifacts/resupply-api/` (Express API on `:8083`, base path `/resupply-api`), `artifacts/resupply-worker/` (pg-boss background worker), `artifacts/resupply-dashboard/` (React operator console at `/resupply/`).
+*   **Database:** Resupply tables (`patients`, `prescriptions`, `episodes`, `conversations`, `messages`, `fulfillments`, `audit_log`) are under the `resupply` schema. PHI columns are encrypted using `pgcrypto` with `RESUPPLY_DATA_KEY`. Startup checks ensure `pgcrypto` is enabled.
+*   **Architecture Decisions (Resupply):** Utilizes Express + Zod, Drizzle, pg-boss, `pgcrypto`, and Clerk. ADRs live in `docs/resupply/adr/`.
 
-### Database (Phase 1)
-*   All resupply tables live under the Postgres `resupply` schema (created by `pgSchema('resupply')` in `lib/resupply-db/src/schema/_schema.ts`). Tables: `patients`, `prescriptions`, `episodes`, `conversations`, `messages`, `fulfillments`, `audit_log`. Apply with `pnpm --filter @workspace/resupply-db push` (interactive) or `... push:force` (CI).
-*   Drizzle config (`lib/resupply-db/drizzle.config.ts`) sets `schemaFilter: ["resupply"]` so drizzle-kit ignores Penn Fit's `public.*` tables.
-*   PHI columns are stored as `bytea` and encrypted with pgcrypto. Helpers in `lib/resupply-db/src/encryption.ts`: `encryptedText(name)` / `encryptedJson(name)` declare the column; the SQL helpers `encrypt()` / `encryptJson()` go in `.values({...})` payloads, and `decrypt()` / `decryptJson()` go in select projections (`db.select({ dob: decrypt(patients.dateOfBirth) })`). The column types intentionally throw on direct read/write so plaintext can never bypass the helpers.
-*   `RESUPPLY_DATA_KEY` (32-byte hex) is required at every encrypt/decrypt site. Set in development; for production, see ADR 007's KMS migration trigger.
-*   pgcrypto preflight: `lib/resupply-db/scripts/preflight.mjs` runs `CREATE EXTENSION IF NOT EXISTS pgcrypto` and verifies it. It runs automatically from `scripts/post-merge.sh` BEFORE `db push`, so a fresh environment can never end up with the schema present but the extension missing. The API and worker also call `assertPgcryptoEnabled(getDbPool())` at startup (from `@workspace/resupply-db`) and refuse to listen / start pg-boss with a clear `PgcryptoNotInstalledError` if it is missing — this turns a confusing "function pgp_sym_encrypt does not exist" runtime error into a fail-fast boot error.
-*   Round-trip is covered by `lib/resupply-db/src/encryption.test.ts` (3 vitest cases including a missing-key safety test); the suite skips when `DATABASE_URL` or `RESUPPLY_DATA_KEY` is unset.
-*   Test fixture factories live in `lib/resupply-testing/src/factories/` (`makePatient`, `makePrescription`, `makeEpisode`, `makeConversation`, `makeMessage`, `makeFulfillment`, `makeAuditLog`). Each factory takes plain values via a `Partial<XFixtureSpec>` override (or required FK ids) and applies `encrypt()` / `encryptJson()` internally so test sites cannot accidentally write plaintext PHI. Returns `PgInsertValue<typeof table>` to slot directly into `db.insert(...).values(...)`. The undefined-vs-key-present override pattern is intentional: omitting a key takes the faker default, while passing `email: null` writes SQL NULL. Round-trip integration test (`factories.test.ts`, 4 cases) inserts the full patient → prescription → episode → conversation → message + fulfillment + audit-log tree and decrypts every PHI column to assert equality; skips without `DATABASE_URL` / `RESUPPLY_DATA_KEY`.
+#### Versioned migrations (drizzle-kit)
+The resupply schema is owned by `@workspace/resupply-db` and managed with **versioned migrations**, not push. The runner is `lib/resupply-db/scripts/migrate.mjs`, invoked with `pnpm --filter @workspace/resupply-db migrate`. Two safety properties matter:
+*   **Migration application.** The runner delegates to drizzle-orm's `migrator` (`drizzle-orm/node-postgres/migrator`), which reads each `.sql` file in `lib/resupply-db/drizzle/`, splits on drizzle-kit's `--> statement-breakpoint` marker, and executes the statements on the supplied connection. Combined with drizzle's own `__drizzle_migrations` ledger this gives us idempotent, ordered migrations.
+*   **Cross-process advisory lock.** Before invoking the migrator, the runner takes `pg_advisory_lock(7427398427542000001)` on a pinned `PoolClient` (`max: 1`, so the same physical connection used to release the lock) and releases it after commit (or on error, falling back to `pool.end()` to drop the socket if `pg_advisory_unlock` itself failed inside an aborted transaction). Two CI runners or a redeploy + a developer running `migrate` in parallel will serialise on the lock instead of racing each other into duplicate-create errors.
+The post-merge script (`scripts/post-merge.sh`) runs `migrate` rather than `push:force` on every merge so production-shaped DDL is exercised in dev. Authoring new migrations: edit `lib/resupply-db/src/schema.ts`, then `pnpm --filter @workspace/resupply-db generate`, review the SQL, and check it in.
 
-### Dependency rules
-Enforced by `scripts/check-resupply-architecture.sh` and the `resupply-check` validation step. The full ruleset and rationale live in `docs/resupply/ARCHITECTURE.md`. The short version: `contracts` may only import zod; `domain` is pure (no I/O); `db`/`telecom`/`ai` are isolated layers that do not import each other; `testing` is devDeps only and never reaches production code; the resupply tree may not import Penn Fit's `lib/db`, `lib/api-zod`, or `lib/api-client-react`.
+#### Readiness probe (`/readyz`)
+`artifacts/resupply-api` exposes `/readyz`, a closed-allowlist probe used by the deployment health check. It runs two checks in parallel under a per-check timeout:
+*   **`db`** — a `SELECT 1` round-trip on the resupply DB pool.
+*   **`queue`** — `pg-boss` schema readiness, inferred from the existence of `pgboss_resupply.version`. The API process does not run `pg-boss` (the worker owns it — see `docs/resupply/adr/002-*`), so this is the only signal that the worker has finished bootstrapping the queue.
 
-### Architectural decisions (deviations from original AWS plan)
-Twelve ADRs in `docs/resupply/adr/` (000–007 and 009–012) document why the Replit substitutes were chosen. Highlights:
-*   Express + Zod (not NestJS), Drizzle (not Prisma), pg-boss (not Temporal), pgcrypto + `RESUPPLY_DATA_KEY` env var (not AWS KMS — migration trigger documented in ADR 007), Clerk (not Cognito), Twilio + SendGrid for telecom, Anthropic Claude for AI conversation, manual CSV exchange for the Pacware integration, no Docker / no Redis / no Mailhog, React + Vite (not Next.js), no Turborepo / no Husky.
-*   Each substitute lists its migration trigger so Phase 9 production hardening is a checklist, not a vibe.
+Failures are bucketed into a small fixed set of category strings (`timeout`, `connection_refused`, `host_not_found`, `database_starting_up`, `database_does_not_exist`, `schema_not_initialized`, `unavailable`) by `categorize()` in `artifacts/resupply-api/src/lib/readiness.ts`; raw driver text is sent through `logger.warn` but never returned in the HTTP body, because `pg`'s error messages happily echo `DATABASE_URL` fragments. Validated end-to-end by `artifacts/resupply-api/src/lib/readiness.integration.test.ts`, which boots the app against a real `DATABASE_URL`, creates a throwaway test DB, applies migrations via the shipped `migrate.mjs`, asserts the happy path returns 200, then induces failures (queue schema dropped; DB unroutable) and asserts the response body contains no `postgres://`, password, host, or full-`DATABASE_URL` text. The test skips cleanly when `DATABASE_URL`/`RESUPPLY_DATA_KEY` are unset, or when the connecting role lacks `CREATE DATABASE`, so it doesn't flap in environments without a suitably-privileged database. The pre-import permission probe sets `connectionTimeoutMillis: 5_000` so an unreachable URL can't hang vitest's discovery phase past the `describe.skipIf` gate.
 
-### Validation
-*   `resupply-check` validation step runs the architecture check + `pnpm -r --filter '@workspace/resupply-*' run typecheck` + vitest.
-*   A local pre-commit hook (`scripts/git-hooks/pre-commit`, installed by `scripts/install-hooks.sh`) runs the codegen drift + architecture checks before the commit lands, so developers don't wait for server-side validation to discover a missed `pnpm run codegen`. The hook is auto-installed by `scripts/post-merge.sh`, runs only when staged files touch `lib/api-spec`, `lib/resupply-api-spec`, the generated client trees, `lib/resupply-*`, or `artifacts/resupply-*`, and is bypassable with `SKIP_HOOKS=1` or `git commit --no-verify`.
-*   The hook executes against an **isolated snapshot of the staged index**, not the live working tree. Unstaged edits and untracked files are captured to a patch + tar archive, removed for the duration of the checks, then restored. This means the checks see exactly what the commit will introduce — unstaged edits can't mask drift the commit actually adds, and they can't trigger drift the commit doesn't add. The snapshot logic lives in `scripts/git-hooks/lib-staged-snapshot.sh` and is verified by `scripts/git-hooks/lib-staged-snapshot.test`. The snapshot is skipped during in-progress merges/rebases/cherry-picks (with a warning) since mutating the working tree in those states is unsafe.
+#### Operator authentication (Clerk)
+Both products share a single Clerk instance but use **disjoint allowlists** — `PENN_ADMIN_EMAILS` for Penn Fit and `RESUPPLY_OPERATOR_EMAILS` for Resupply — so rotating one product's staff list cannot accidentally grant access to the other.
+*   **API.** `clerkMiddleware()` runs in front of `requireOperator` (`artifacts/resupply-api/src/middlewares/requireOperator.ts`). Allowlist mode requires a verified primary email AND an allowlist match; an unset env var **fails closed with 503 in production** and falls through to "any signed-in user" in `NODE_ENV=development` so dev loops and the e2e harness work without managing an env var. The smoke endpoint `GET /resupply-api/me` returns `{ clerkId, email }` and is the dashboard's auth probe.
+*   **Dashboard.** `<ClerkProvider>` wraps the app in `main.tsx`; the console is gated by Clerk's `<Show when="signed-in">`. Bearer tokens are wired into the generated `@workspace/resupply-api-client` via `setAuthTokenGetter` registered at module load (so the very first `/me` request has a token without waiting for an effect commit) and re-registered on every session change in `useApiAuthBridge`.
+*   **Friendly denial.** `artifacts/resupply-dashboard/src/pages/not-authorized.tsx` renders for `/me` errors: 503 → "Operator access isn't set up on this server yet"; everything else (incl. 403) → "This account isn't approved for the operator console" with the signed-in email and the operations contact. The status is read from `ApiError.status` (re-exported from the generated client) so the branch is type-safe rather than a generic `unknown` cast.
+
+#### Validation
+`resupply-check` is the single command that gates every resupply change. It runs the architecture self-test (cross-package import rules and the codegen drift check), the staged-snapshot self-test, lint, typecheck, and tests for every `@workspace/resupply-*` package — including the readiness integration test described above.
 
 ## External Dependencies
 
-*   **SendGrid:** For sending order fulfillment emails from `POST /api/orders`.
-*   **MediaPipe Face Mesh:** Google's machine learning solution for on-device facial landmark detection. WASM runtime and the `face_landmarker.task` model are **self-hosted** under `artifacts/cpap-fitter/public/mediapipe/` (populated by `scripts/setup-mediapipe.mjs` via predev/prebuild hooks; the directory is gitignored). No external CDN is contacted at runtime, which lets the app's CSP stay strict.
-*   **AWS:** Deployment target for HIPAA-compliant infrastructure with a Business Associate Agreement (BAA).
-
-## Recent Hardening (April 2026 deep-review pass)
-
-A full severity-ranked review was implemented end-to-end. Key items future contributors should be aware of:
-
-### Backend (`artifacts/api-server`)
-*   `app.ts` enables `trust proxy` (required for accurate client IPs behind the Replit / AWS proxy), reads its CORS allowlist from `PENN_ALLOWED_ORIGINS` (comma-separated), and caps JSON bodies at 100 kb.
-*   `routes/orders.ts` applies `express-rate-limit` keyed via `ipKeyGenerator` (do **not** swap to raw `req.ip` — it breaks IPv6 normalization), and short-circuits with a fake-success response if the honeypot field `website` is non-empty. Honeypot hits are intentionally indistinguishable from real success on the wire.
-
-### Frontend routing (`artifacts/cpap-fitter/src/App.tsx`)
-*   Protected routes are implemented as **inline `Guarded*` function components rendered via standard `<Route component={GuardedX}>`**. Wouter's `<Switch>` only inspects the `path` prop on its direct `<Route>` children, so a generic `<ProtectedRoute>` wrapper component falls through to `NotFound`. Keep guards inline.
-*   Each guard reads from the in-memory fitter store and returns `<Redirect>` when the precondition fails — preventing flash-of-protected-content. Per-page `useEffect`+`setLocation`+`return null` guards have been removed.
-
-### Form accessibility (`artifacts/cpap-fitter/src/pages/order.tsx`)
-*   The `Field` helper generates an id with `useId()` and clones its child input to bind `htmlFor`. For shadcn `Select` triggers (which already render their own label association), pass `skipHtmlFor` to avoid double-binding.
-*   The honeypot `website` input is registered in the zod schema, rendered offscreen with `aria-hidden`, `tabindex={-1}`, and `autocomplete="off"`; the submit handler short-circuits to a fake success when filled.
-
-### Type safety
-*   `lib/api-client-react/src/index.ts` now re-exports `ApiError` and `ErrorType` so consumers can type errors as `ApiError<{error?: string; details?: string[]}>` instead of `as any`.
-*   `order.tsx`'s `consentToContact` uses `z.boolean().refine()` so the form no longer needs the `false as unknown as true` cast.
+*   **SendGrid:** Used for sending order fulfillment emails from the backend.
+*   **MediaPipe Face Mesh:** Google's on-device facial landmark detection solution. The WASM runtime and model are self-hosted to maintain a strict Content Security Policy.
+*   **AWS:** Deployment target, providing HIPAA-compliant infrastructure with a Business Associate Agreement (BAA).

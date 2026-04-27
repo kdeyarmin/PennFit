@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import { clerkMiddleware } from "@clerk/express";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -81,9 +82,18 @@ app.use(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
+// Clerk session middleware — attaches auth state (`getAuth(req)`) to
+// every request so downstream operator-gated routes can read it. Safe
+// to mount globally: it's a no-op for unauthenticated requests, and
+// the unauthenticated /healthz, /readyz probes don't read auth state
+// at all. We mount it BEFORE the route tree so every nested router
+// inherits it without needing per-router wiring.
+app.use(clerkMiddleware());
+
 // Routes are mounted under /resupply-api (matches the artifact.toml path
-// list). Phase 0 only ships /resupply-api/healthz; everything else lands
-// in later phases.
+// list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,
+// and the operator smoke endpoint /resupply-api/me; richer endpoints
+// land in later phases.
 app.use("/resupply-api", router);
 
 export default app;

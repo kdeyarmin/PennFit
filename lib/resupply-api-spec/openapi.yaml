@@ -13,6 +13,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: operator
+    description: Operator identity & session
 paths:
   /healthz:
     get:
@@ -54,6 +56,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReadinessStatus"
+  /me:
+    get:
+      operationId: getOperatorMe
+      tags: [operator]
+      summary: Operator identity
+      description: |
+        Returns the signed-in operator's Clerk id and verified primary
+        email when the caller is on the `RESUPPLY_OPERATOR_EMAILS`
+        allowlist. The dashboard calls this immediately after sign-in
+        to decide whether to render the operator console (200), the
+        "not authorized" screen (403), or the "allowlist not
+        configured" screen (503 in production with the env var unset).
+      responses:
+        "200":
+          description: Caller is a recognized operator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorIdentity"
+        "401":
+          description: |
+            No valid Clerk session, or Clerk lookup failed. The body
+            contains a generic error message — never the underlying
+            driver text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: |
+            Signed in, but either the primary email is unverified or
+            the email is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "503":
+          description: |
+            Operator allowlist is not configured on this server (only
+            possible in production — dev falls back to allowing any
+            signed-in, email-verified user).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
 
 components:
   schemas:
@@ -69,6 +116,37 @@ components:
       required:
         - status
         - service
+    OperatorIdentity:
+      type: object
+      description: |
+        Minimal identity payload for an authorized operator. Contains
+        ONLY the fields the dashboard needs to render — no session
+        token, no Clerk user object, no allowlist contents.
+      properties:
+        clerkId:
+          type: string
+          description: Stable Clerk user id, used for audit log writes.
+        email:
+          type: string
+          format: email
+          description: |
+            Verified primary email, lowercased. Displayed in the
+            dashboard chrome and recorded in audit rows.
+      required:
+        - clerkId
+        - email
+    AuthError:
+      type: object
+      description: |
+        Auth failure body. Carries a single human-readable `error`
+        string safe for the dashboard to render verbatim. Never
+        contains the underlying error message, the user id, or any
+        connection details.
+      properties:
+        error:
+          type: string
+      required:
+        - error
     CheckStatus:
       type: string
       enum: [ok, failed]

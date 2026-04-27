@@ -780,6 +780,13 @@ importers:
         version: 2.1.9(@types/node@25.3.5)(lightningcss@1.31.1)
 
   artifacts/resupply-dashboard:
+    dependencies:
+      '@clerk/react':
+        specifier: ^6.4.5
+        version: 6.4.5(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.90.21(react@19.1.0)
     devDependencies:
       '@replit/vite-plugin-cartographer':
         specifier: 'catalog:'

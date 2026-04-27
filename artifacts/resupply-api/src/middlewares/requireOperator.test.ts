@@ -176,7 +176,7 @@ describe("requireOperator middleware", () => {
     expect(res.status).toBe(503);
   });
 
-  it("falls back to allowing any signed-in, email-verified user in development when env var is unset", async () => {
+  it("falls back to allowing any signed-in user in development when env var is unset", async () => {
     // Confirms the dev-only escape hatch works so local development
     // doesn't require setting the env var. Paired with the 503 test
     // above to prove the same code path fails closed in production.
@@ -188,6 +188,53 @@ describe("requireOperator middleware", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.operatorEmail).toBe(NOT_ALLOWED_EMAIL);
+  });
+
+  it("dev fallback: also allows users whose primary email is unverified (no allowlist to spoof)", async () => {
+    // The verified-email check is defense-in-depth against allowlist
+    // spoofing. With no allowlist set, there's nothing to spoof, so
+    // the verification check is irrelevant. This branch is exercised
+    // by the e2e test harness, which creates Clerk users via the
+    // Backend API and does NOT mark their primary email as verified.
+    process.env.NODE_ENV = "development";
+    delete process.env.RESUPPLY_OPERATOR_EMAILS;
+    getAuthMock.mockReturnValue({ userId: "user_unverified" });
+    getUserMock.mockResolvedValue({
+      primaryEmailAddressId: "eml_1",
+      emailAddresses: [
+        {
+          id: "eml_1",
+          emailAddress: "fresh-test-user@example.com",
+          verification: { status: "unverified" },
+        },
+      ],
+    });
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+    expect(res.body.operatorEmail).toBe("fresh-test-user@example.com");
+    expect(res.body.operatorClerkId).toBe("user_unverified");
+  });
+
+  it("dev fallback: still issues an operator id even if Clerk returns no email at all", async () => {
+    // Edge case: a Clerk user with zero email addresses. Production
+    // would never reach this branch (allowlist would catch it), but
+    // dev should still let the operator in so the console isn't
+    // bricked by a fixture quirk.
+    process.env.NODE_ENV = "development";
+    delete process.env.RESUPPLY_OPERATOR_EMAILS;
+    getAuthMock.mockReturnValue({ userId: "user_no_email" });
+    getUserMock.mockResolvedValue({
+      primaryEmailAddressId: null,
+      emailAddresses: [],
+    });
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+    expect(res.body.operatorEmail).toBe("clerk:user_no_email");
+    expect(res.body.operatorClerkId).toBe("user_no_email");
   });
 
   it("returns 401 if Clerk lookup throws", async () => {
