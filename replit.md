@@ -106,7 +106,7 @@ A second product lives alongside Penn Fit in this repo: the **CPAP Resupply Auto
 Enforced by `scripts/check-resupply-architecture.sh` and the `resupply-check` validation step. The full ruleset and rationale live in `docs/resupply/ARCHITECTURE.md`. The short version: `contracts` may only import zod; `domain` is pure (no I/O); `db`/`telecom`/`ai` are isolated layers that do not import each other; `testing` is devDeps only and never reaches production code; the resupply tree may not import Penn Fit's `lib/db`, `lib/api-zod`, or `lib/api-client-react`.
 
 ### Architectural decisions (deviations from original AWS plan)
-Thirteen ADRs in `docs/resupply/adr/000-...md` through `012-...md` document why the Replit substitutes were chosen. Highlights:
+Twelve ADRs in `docs/resupply/adr/` (000–007 and 009–012) document why the Replit substitutes were chosen. Highlights:
 *   Express + Zod (not NestJS), Drizzle (not Prisma), pg-boss (not Temporal), pgcrypto + `RESUPPLY_DATA_KEY` env var (not AWS KMS — migration trigger documented in ADR 007), Clerk (not Cognito), Twilio + SendGrid for telecom, Anthropic Claude for AI conversation, manual CSV exchange for the Pacware integration, no Docker / no Redis / no Mailhog, React + Vite (not Next.js), no Turborepo / no Husky.
 *   Each substitute lists its migration trigger so Phase 9 production hardening is a checklist, not a vibe.
 
