@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+# Self-test for scripts/git-hooks/lib-staged-snapshot.sh.
+#
+# The library's whole reason to exist is to make pre-commit checks
+# see the EXACT staged snapshot, not the working tree. If it ever
+# regresses to "checks see the working tree", drift detection in the
+# pre-commit hook becomes silently unreliable in both directions
+# (false negatives AND false positives). These scenarios pin the
+# contract to four user-visible behaviors:
+#
+#   Scenario 1: during the wrapped command, working tree == staged
+#               index (no unstaged edits, no untracked files).
+#               After the wrapped command, both unstaged edits and
+#               untracked files are restored exactly.
+#
+#   Scenario 2: when the wrapped command fails, its exit code is
+#               preserved AND the working tree is still restored.
+#               (If we silently swallowed exit codes the hook would
+#                let bad commits through.)
+#
+#   Scenario 3: clean tree (nothing to stash) is a fast no-op
+#               pass-through — the wrapped command still runs.
+#
+#   Scenario 4: in-progress merge/rebase/cherry-pick is detected and
+#               the snapshot is skipped entirely (with a warning),
+#               because stashing during those operations corrupts
+#               git's state machine.
+#
+#   Scenario 5: when the wrapped command receives SIGTERM mid-run,
+#               the wrapper still restores the user's unstaged edits.
+#               Without the explicit signal trap + EXIT-trap chain
+#               in the library, an interrupted hook would leave the
+#               working tree pinned to the staged-only snapshot —
+#               i.e., the user would silently lose their unstaged
+#               work. This scenario catches any future regression of
+#               that signal-safety contract.
+#
+# Tests run inside a throwaway temp git repo so they never touch the
+# real workspace.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-staged-snapshot.sh
+source "$SCRIPT_DIR/lib-staged-snapshot.sh"
+
+fail() { printf 'lib-staged-snapshot self-test FAIL: %s\n' "$*" >&2; exit 1; }
+
+WORK="$(mktemp -d -t snap-test.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+cd "$WORK"
+
+git init -q -b main >/dev/null
+git config user.email selftest@example.invalid
+git config user.name selftest
+git config commit.gpgsign false
+
+# Reset the temp repo to a known baseline between scenarios so failure
+# modes don't leak between tests.
+reset_repo() {
+  git reset -q --hard 2>/dev/null || true
+  git clean -qfdx
+  echo base > tracked.txt
+  git add tracked.txt
+  if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    git commit -q --allow-empty -m sync
+  else
+    git commit -q -m base
+  fi
+}
+
+# ---------- Scenario 1: snapshot view + restoration ----------
+printf '[self-test] scenario 1: snapshot view + restoration\n'
+reset_repo
+echo staged > tracked.txt
+git add tracked.txt
+echo unstaged > tracked.txt
+echo scratch > untracked.txt
+
+# State has to round-trip via a tempfile because the wrapper runs
+# CMD in a subshell when isolation is active (see lib header).
+OBS_FILE="$WORK/observed.txt"
+probe() {
+  printf 'tracked=%s untracked=%s\n' \
+    "$(cat tracked.txt)" \
+    "$(test -e untracked.txt && echo y || echo n)" > "$OBS_FILE"
+}
+
+if ! with_staged_snapshot probe; then
+  fail "scenario 1 wrapper returned non-zero on a successful command"
+fi
+observed="$(cat "$OBS_FILE")"
+[[ "$observed" == "tracked=staged untracked=n" ]] || \
+  fail "scenario 1 in-snapshot view was '$observed', want 'tracked=staged untracked=n'"
+[[ "$(cat tracked.txt)" == "unstaged" ]] || \
+  fail "scenario 1 unstaged edit not restored: got '$(cat tracked.txt)'"
+[[ -f untracked.txt ]] || fail "scenario 1 untracked file not restored"
+
+# ---------- Scenario 2: exit code preserved + restore on failure ----------
+printf '[self-test] scenario 2: exit code preserved + restore on failure\n'
+reset_repo
+echo staged > tracked.txt
+git add tracked.txt
+echo unstaged > tracked.txt
+
+ec=0
+with_staged_snapshot bash -c 'exit 7' || ec=$?
+[[ $ec -eq 7 ]] || fail "scenario 2 exit code was $ec, want 7"
+[[ "$(cat tracked.txt)" == "unstaged" ]] || \
+  fail "scenario 2 unstaged edit not restored after failure"
+
+# ---------- Scenario 3: clean tree no-op pass-through ----------
+printf '[self-test] scenario 3: clean tree no-op pass-through\n'
+reset_repo
+RAN_FILE="$WORK/ran.txt"
+rm -f "$RAN_FILE"
+mark() { echo 1 > "$RAN_FILE"; }
+if ! with_staged_snapshot mark; then
+  fail "scenario 3 wrapper failed in clean-tree case"
+fi
+[[ -f "$RAN_FILE" ]] || fail "scenario 3 wrapped command was not executed"
+
+# ---------- Scenario 4: mid-merge skips snapshot, warns ----------
+printf '[self-test] scenario 4: mid-merge skips snapshot, warns\n'
+reset_repo
+git checkout -q -b feat
+echo feat > tracked.txt
+git commit -qam feat
+git checkout -q main
+echo main > tracked.txt
+git commit -qam main
+# Force a conflicting merge so we end up mid-merge.
+git merge --no-commit --no-ff feat >/dev/null 2>&1 || true
+echo user-edit > tracked.txt   # an unstaged edit during the merge
+
+# We use a tempfile rather than a shell variable here because
+# capturing the wrapper's stderr with $(…) would put probe_mid
+# inside a subshell, where any variable it sets cannot leak back.
+DURING_FILE="$WORK/during.txt"
+probe_mid() { cat tracked.txt > "$DURING_FILE"; }
+warn_log="$WORK/warn.log"
+with_staged_snapshot probe_mid 2> "$warn_log" || fail "scenario 4 wrapper unexpectedly failed"
+grep -q "merge/rebase/cherry-pick detected" "$warn_log" || \
+  fail "scenario 4 expected 'merge/rebase/cherry-pick detected' warning, got: $(cat "$warn_log")"
+[[ "$(cat "$DURING_FILE")" == "user-edit" ]] || \
+  fail "scenario 4 wrapper isolated snapshot during a merge (saw '$(cat "$DURING_FILE")', expected working-tree 'user-edit')"
+git merge --abort >/dev/null 2>&1 || true
+
+# ---------- Scenario 5: signal-safe restoration on SIGTERM ----------
+printf '[self-test] scenario 5: signal-safe restoration on SIGTERM\n'
+reset_repo
+echo staged > tracked.txt
+git add tracked.txt
+echo unstaged > tracked.txt
+echo scratch > untracked.txt
+
+# Run with_staged_snapshot wrapping a command that signals its own
+# parent (the subshell that with_staged_snapshot creates). We use a
+# small helper script so the kill target is the caller, not us — we
+# want to simulate a Ctrl-C / external SIGTERM landing INSIDE the
+# wrapped command's run.
+# Use an inline `bash -c` instead of writing a helper file — a
+# helper file inside $WORK would itself be an untracked file, and
+# the wrapper would (correctly) sweep it away as part of isolation,
+# leaving us with "No such file or directory" when bash tried to
+# execute it. The inline form has no on-disk presence to scrub.
+#
+# What it does: verifies the snapshot view (tracked.txt = staged
+# index content), then SIGTERMs its parent — the with_staged_snapshot
+# subshell — to simulate Ctrl-C / external kill mid-check. The
+# library's TERM trap redirects to a clean exit which fires the
+# EXIT trap, which restores the snapshotted state.
+sig_ret=0
+with_staged_snapshot bash -c '
+  test "$(cat tracked.txt)" = "staged" || { echo "snapshot view wrong: $(cat tracked.txt)" >&2; exit 99; }
+  kill -TERM $PPID
+  sleep 5  # paranoia — TERM should arrive before this
+' || sig_ret=$?
+
+# After the signal, the unstaged edit and untracked file MUST be back.
+[[ "$(cat tracked.txt)" == "unstaged" ]] || \
+  fail "scenario 5 unstaged edit not restored after SIGTERM (got '$(cat tracked.txt)')"
+[[ -f untracked.txt ]] || fail "scenario 5 untracked file not restored after SIGTERM"
+# The wrapper should propagate the signal-induced exit code (143 for
+# SIGTERM in our trap), not silently report success.
+[[ $sig_ret -ne 0 ]] || fail "scenario 5 wrapper masked SIGTERM with exit 0"
+
+# ---------- Scenario 6: capture failure fails closed ----------
+printf '[self-test] scenario 6: capture failure fails closed\n'
+reset_repo
+echo staged > tracked.txt
+git add tracked.txt
+echo unstaged > tracked.txt
+
+# Force `git diff` (the unstaged-delta capture) to fail by shadowing
+# `git` with a shell function. Other git invocations (rev-parse,
+# ls-files, etc.) pass through to the real binary, so we exercise
+# ONLY the capture-failure path the wrapper is supposed to fail
+# closed on. Functions are inherited by the wrapper's subshells.
+git() {
+  if [[ "${1:-}" == "diff" ]]; then return 99; fi
+  command git "$@"
+}
+ran_marker="$WORK/ran6.txt"
+rm -f "$ran_marker"
+fail_helper() { echo 1 > "$ran_marker"; }
+abort_ret=0
+with_staged_snapshot fail_helper >/dev/null 2>&1 || abort_ret=$?
+unset -f git
+[[ $abort_ret -ne 0 ]] || fail "scenario 6 wrapper fell open on capture failure"
+[[ ! -f "$ran_marker" ]] || \
+  fail "scenario 6 wrapped command ran despite capture failure (should have been aborted)"
+
+# Working tree must be intact after the failed run.
+[[ "$(cat tracked.txt)" == "unstaged" ]] || \
+  fail "scenario 6 working tree disturbed after capture failure"
+
+# ---------- Scenario 7: ls-files capture failure fails closed ----------
+printf '[self-test] scenario 7: ls-files capture failure fails closed\n'
+reset_repo
+echo staged > tracked.txt
+git add tracked.txt
+echo unstaged > tracked.txt
+
+# Same shadowing trick, but fail on ls-files instead of diff. This
+# pins the second capture step to the same fail-closed contract.
+git() {
+  if [[ "${1:-}" == "ls-files" ]]; then return 99; fi
+  command git "$@"
+}
+ran7="$WORK/ran7.txt"; rm -f "$ran7"
+helper7() { echo 1 > "$ran7"; }
+ret7=0
+with_staged_snapshot helper7 >/dev/null 2>&1 || ret7=$?
+unset -f git
+[[ $ret7 -ne 0 ]] || fail "scenario 7 wrapper fell open on ls-files failure"
+[[ ! -f "$ran7" ]] || fail "scenario 7 wrapped command ran despite ls-files failure"
+[[ "$(cat tracked.txt)" == "unstaged" ]] || \
+  fail "scenario 7 working tree disturbed after ls-files failure"
+
+# ---------- Scenario 8: tar archive failure fails closed ----------
+printf '[self-test] scenario 8: tar archive failure fails closed\n'
+reset_repo
+echo staged > tracked.txt
+git add tracked.txt
+echo unstaged > tracked.txt
+echo scratch > untracked.txt
+
+# Shadow tar so the archive step fails. Capture (diff + ls-files)
+# succeeds, then we hit the tar archive step which must fail closed
+# WITHOUT having deleted any untracked files yet. The order of
+# operations in the library is "archive THEN delete" precisely so
+# this case doesn't lose work.
+tar() { return 99; }
+ran8="$WORK/ran8.txt"; rm -f "$ran8"
+helper8() { echo 1 > "$ran8"; }
+ret8=0
+with_staged_snapshot helper8 >/dev/null 2>&1 || ret8=$?
+unset -f tar
+[[ $ret8 -ne 0 ]] || fail "scenario 8 wrapper fell open on tar archive failure"
+[[ ! -f "$ran8" ]] || fail "scenario 8 wrapped command ran despite tar failure"
+[[ "$(cat tracked.txt)" == "unstaged" ]] || \
+  fail "scenario 8 tracked file disturbed after tar failure"
+[[ -f untracked.txt ]] || \
+  fail "scenario 8 untracked file lost after tar failure (archive-before-delete order broke)"
+
+# ---------- Scenario 9: recovery-dir hint emitted before mutation ----------
+printf '[self-test] scenario 9: recovery-dir hint emitted before mutation\n'
+reset_repo
+echo staged > tracked.txt
+git add tracked.txt
+echo unstaged > tracked.txt
+
+hint_log="$WORK/hint.log"
+with_staged_snapshot true 2> "$hint_log"
+grep -q 'recovery dir:' "$hint_log" || \
+  fail "scenario 9 expected 'recovery dir:' breadcrumb in stderr, got: $(cat "$hint_log")"
+
+printf 'lib-staged-snapshot self-test PASS\n'

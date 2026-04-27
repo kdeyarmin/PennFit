@@ -120,6 +120,7 @@ Twelve ADRs in `docs/resupply/adr/` (000–007 and 009–012) document why the R
 ### Validation
 *   `resupply-check` validation step runs the architecture check + `pnpm -r --filter '@workspace/resupply-*' run typecheck` + vitest.
 *   A local pre-commit hook (`scripts/git-hooks/pre-commit`, installed by `scripts/install-hooks.sh`) runs the codegen drift + architecture checks before the commit lands, so developers don't wait for server-side validation to discover a missed `pnpm run codegen`. The hook is auto-installed by `scripts/post-merge.sh`, runs only when staged files touch `lib/api-spec`, `lib/resupply-api-spec`, the generated client trees, `lib/resupply-*`, or `artifacts/resupply-*`, and is bypassable with `SKIP_HOOKS=1` or `git commit --no-verify`.
+*   The hook executes against an **isolated snapshot of the staged index**, not the live working tree. Unstaged edits and untracked files are captured to a patch + tar archive, removed for the duration of the checks, then restored. This means the checks see exactly what the commit will introduce — unstaged edits can't mask drift the commit actually adds, and they can't trigger drift the commit doesn't add. The snapshot logic lives in `scripts/git-hooks/lib-staged-snapshot.sh` and is verified by `scripts/git-hooks/lib-staged-snapshot.test`. The snapshot is skipped during in-progress merges/rebases/cherry-picks (with a warning) since mutating the working tree in those states is unsafe.
 
 ## External Dependencies
 

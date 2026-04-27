@@ -11,14 +11,15 @@
 #           when an OpenAPI spec or its generated client tree changes
 #       * scripts/check-resupply-architecture.sh
 #           when resupply lib/ or artifact code changes
+#   - Both checks run against an isolated snapshot of the staged
+#     index — unstaged edits and untracked files are stashed for the
+#     duration of the hook and restored after, so the checks see
+#     exactly what the commit will introduce. See
+#     scripts/git-hooks/lib-staged-snapshot.sh for the contract.
 #   - Bypass with `git commit --no-verify` or `SKIP_HOOKS=1 git commit ...`
 #     for emergencies (e.g. a hotfix while orval itself is broken).
 #   - Safe to run on every commit because both checks restore their
 #     working tree on failure (see the headers of those scripts).
-#
-# Note: checks read the working tree, not the staged index. If you have
-# unrelated unstaged edits in spec/generated files, prefer to stash
-# them before committing or the hook may flag drift you didn't introduce.
 
 set -euo pipefail
 
@@ -67,25 +68,32 @@ if [[ $need_codegen -eq 0 && $need_arch -eq 0 ]]; then
   exit 0
 fi
 
-failed=0
+# shellcheck source=lib-staged-snapshot.sh
+source "$REPO_ROOT/scripts/git-hooks/lib-staged-snapshot.sh"
 
-# Architecture first: it's the cheapest, so on a multi-failure commit
-# the developer sees the easiest signal at the top of the output.
-if [[ $need_arch -eq 1 ]]; then
-  printf '[pre-commit] Running resupply architecture check…\n' >&2
-  if ! bash "$REPO_ROOT/scripts/check-resupply-architecture.sh"; then
-    failed=1
+# Wrapped so a single stash/unstash covers BOTH checks. Inside this
+# function the working tree mirrors the staged index; checks see
+# exactly what's about to land.
+run_checks() {
+  local f=0
+  # Architecture first: it's the cheapest, so on a multi-failure commit
+  # the developer sees the easiest signal at the top of the output.
+  if [[ $need_arch -eq 1 ]]; then
+    printf '[pre-commit] Running resupply architecture check…\n' >&2
+    if ! bash "$REPO_ROOT/scripts/check-resupply-architecture.sh"; then
+      f=1
+    fi
   fi
-fi
-
-if [[ $need_codegen -eq 1 ]]; then
-  printf '[pre-commit] Running OpenAPI codegen drift check…\n' >&2
-  if ! bash "$REPO_ROOT/scripts/check-codegen.sh"; then
-    failed=1
+  if [[ $need_codegen -eq 1 ]]; then
+    printf '[pre-commit] Running OpenAPI codegen drift check…\n' >&2
+    if ! bash "$REPO_ROOT/scripts/check-codegen.sh"; then
+      f=1
+    fi
   fi
-fi
+  return $f
+}
 
-if [[ $failed -ne 0 ]]; then
+if ! with_staged_snapshot run_checks; then
   cat >&2 <<'EOF'
 
 [pre-commit] One or more checks failed. Fix the issues above and
