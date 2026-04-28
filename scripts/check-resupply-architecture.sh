@@ -100,18 +100,50 @@ forbid_imports_in lib/resupply-domain/src \
   "['\"]@sendgrid/mail['\"]"
 
 # Rule 3: resupply-db may not import vendor adapters.
+# Patterns are quote-anchored so a code COMMENT mentioning the package
+# name (e.g. "see @workspace/resupply-telecom") does not trip the gate.
+# Only an actual import statement — which always closes with `'` or
+# `"` — counts.
 forbid_imports_in lib/resupply-db/src \
   "lib/resupply-db must not import vendor adapters (telecom/ai)" \
-  '@workspace/resupply-telecom' \
-  '@workspace/resupply-ai'
+  "@workspace/resupply-telecom['\"]" \
+  "@workspace/resupply-ai['\"]"
 
-# Rule 4: telecom and ai must not import each other.
+# Rule 4: telecom and ai must not import each other. Quote-anchored
+# for the same reason as Rule 3.
 forbid_imports_in lib/resupply-telecom/src \
   "lib/resupply-telecom must not import lib/resupply-ai (factor shared logic into resupply-domain)" \
-  '@workspace/resupply-ai'
+  "@workspace/resupply-ai['\"]"
 forbid_imports_in lib/resupply-ai/src \
   "lib/resupply-ai must not import lib/resupply-telecom (factor shared logic into resupply-domain)" \
-  '@workspace/resupply-telecom'
+  "@workspace/resupply-telecom['\"]"
+
+# Rule 9: lib/resupply-ai must NEVER import the DB layer or a telephony
+# vendor SDK. The AI lib is a pure OpenAI Realtime adapter — it owns
+# the model conversation state machine and tool schemas, nothing more.
+# Pulling in `pg`, `@workspace/resupply-db`, or the `twilio` SDK from
+# this layer would turn an "AI question" into a "DB-and-telecom
+# question" and erase the API's hexagonal boundary. (The Realtime
+# session itself uses the `ws` package; that one is allowed.)
+forbid_imports_in lib/resupply-ai/src \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs (keep it a pure OpenAI Realtime adapter)" \
+  "@workspace/resupply-db['\"]" \
+  "['\"]pg['\"]" \
+  "['\"]twilio['\"]"
+
+# Rule 10: lib/resupply-telecom must NEVER import the DB layer or any
+# AI/LLM SDK. The telecom lib is a pure Twilio adapter — it owns the
+# Media Stream protocol, signature validation, and the REST client.
+# Pulling in `pg`, `@workspace/resupply-db`, `openai`, or
+# `@anthropic-ai/sdk` from this layer would couple call routing to
+# both PHI storage and model selection in one place — exactly the
+# blast radius hexagonal architecture is meant to prevent.
+forbid_imports_in lib/resupply-telecom/src \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs (keep it a pure Twilio adapter)" \
+  "@workspace/resupply-db['\"]" \
+  "['\"]pg['\"]" \
+  "['\"]openai['\"]" \
+  "@anthropic-ai/sdk['\"]"
 
 # Rule 5: resupply-testing must not be imported by production code (api,
 # worker, dashboard, or any non-test file in libs).

@@ -8,10 +8,13 @@ PHI flows through this API and lives in the resupply.* schema.
 
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
@@ -20,11 +23,17 @@ import type {
   AuthError,
   HealthStatus,
   OperatorIdentity,
+  PlaceVoiceCallRequest,
+  PlaceVoiceCallResponse,
   ReadinessStatus,
+  TwilioStatusCallbackBody,
+  VoiceError,
+  VoiceStatusCallbackParams,
+  VoiceValidationError,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -273,3 +282,245 @@ export function useGetOperatorMe<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Operator-initiated outbound call. Looks up the patient + episode,
+opens a conversations row (channel=voice, status=open), registers
+a short-TTL pending-session entry keyed on conversationId, and
+asks Twilio to dial the patient's decrypted phone number. Twilio
+then drives the call lifecycle and reports back via
+/voice/status-callback. The patient phone number is NEVER
+returned to the dashboard; only `{ conversationId, callSid }`.
+
+Returns 503 when the voice subsystem is not configured (any of
+OPENAI_API_KEY / TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
+RESUPPLY_VOICE_PUBLIC_BASE_URL / TWILIO_PHONE_NUMBER missing).
+This is the published behaviour, not a bug — voice is feature-
+flagged on env presence.
+
+ * @summary Place an outbound resupply call
+ */
+export const getPlaceVoiceCallUrl = () => {
+  return `/resupply-api/voice/place-call`;
+};
+
+export const placeVoiceCall = async (
+  placeVoiceCallRequest: PlaceVoiceCallRequest,
+  options?: RequestInit,
+): Promise<PlaceVoiceCallResponse> => {
+  return customFetch<PlaceVoiceCallResponse>(getPlaceVoiceCallUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(placeVoiceCallRequest),
+  });
+};
+
+export const getPlaceVoiceCallMutationOptions = <
+  TError = ErrorType<VoiceValidationError | AuthError | VoiceError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof placeVoiceCall>>,
+    TError,
+    { data: BodyType<PlaceVoiceCallRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof placeVoiceCall>>,
+  TError,
+  { data: BodyType<PlaceVoiceCallRequest> },
+  TContext
+> => {
+  const mutationKey = ["placeVoiceCall"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof placeVoiceCall>>,
+    { data: BodyType<PlaceVoiceCallRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return placeVoiceCall(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PlaceVoiceCallMutationResult = NonNullable<
+  Awaited<ReturnType<typeof placeVoiceCall>>
+>;
+export type PlaceVoiceCallMutationBody = BodyType<PlaceVoiceCallRequest>;
+export type PlaceVoiceCallMutationError = ErrorType<
+  VoiceValidationError | AuthError | VoiceError
+>;
+
+/**
+ * @summary Place an outbound resupply call
+ */
+export const usePlaceVoiceCall = <
+  TError = ErrorType<VoiceValidationError | AuthError | VoiceError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof placeVoiceCall>>,
+    TError,
+    { data: BodyType<PlaceVoiceCallRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof placeVoiceCall>>,
+  TError,
+  { data: BodyType<PlaceVoiceCallRequest> },
+  TContext
+> => {
+  return useMutation(getPlaceVoiceCallMutationOptions(options));
+};
+
+/**
+ * Webhook called BY TWILIO (never by the dashboard) on every call
+lifecycle transition: initiated, ringing, answered, completed,
+failed, busy, no-answer, canceled. Authenticated via the Twilio
+request signature, NOT by Clerk. The dashboard MUST NOT call
+this — it's published here only so consumers of the spec can see
+it exists and understand the audit trail.
+
+Always returns 200 with an empty `<Response/>` so Twilio does
+not retry. Side effects:
+  * On terminal statuses, marks the conversation closed.
+  * On terminal statuses, writes a `voice.call.completed` audit
+    row tagged `source: "status_callback"`.
+The body fields From / To (which carry PHI) are deliberately
+ignored — only CallSid + CallStatus + the conversationId query
+param are read.
+
+ * @summary Twilio call lifecycle webhook (Twilio → API)
+ */
+export const getVoiceStatusCallbackUrl = (
+  params: VoiceStatusCallbackParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/voice/status-callback?${stringifiedParams}`
+    : `/resupply-api/voice/status-callback`;
+};
+
+export const voiceStatusCallback = async (
+  twilioStatusCallbackBody: TwilioStatusCallbackBody,
+  params: VoiceStatusCallbackParams,
+  options?: RequestInit,
+): Promise<string> => {
+  const formUrlEncoded = new URLSearchParams();
+  formUrlEncoded.append(`CallSid`, twilioStatusCallbackBody.CallSid);
+  formUrlEncoded.append(`CallStatus`, twilioStatusCallbackBody.CallStatus);
+
+  return customFetch<string>(getVoiceStatusCallbackUrl(params), {
+    ...options,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      ...options?.headers,
+    },
+    body: formUrlEncoded,
+  });
+};
+
+export const getVoiceStatusCallbackMutationOptions = <
+  TError = ErrorType<AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof voiceStatusCallback>>,
+    TError,
+    {
+      data: BodyType<TwilioStatusCallbackBody>;
+      params: VoiceStatusCallbackParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof voiceStatusCallback>>,
+  TError,
+  {
+    data: BodyType<TwilioStatusCallbackBody>;
+    params: VoiceStatusCallbackParams;
+  },
+  TContext
+> => {
+  const mutationKey = ["voiceStatusCallback"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof voiceStatusCallback>>,
+    {
+      data: BodyType<TwilioStatusCallbackBody>;
+      params: VoiceStatusCallbackParams;
+    }
+  > = (props) => {
+    const { data, params } = props ?? {};
+
+    return voiceStatusCallback(data, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VoiceStatusCallbackMutationResult = NonNullable<
+  Awaited<ReturnType<typeof voiceStatusCallback>>
+>;
+export type VoiceStatusCallbackMutationBody =
+  BodyType<TwilioStatusCallbackBody>;
+export type VoiceStatusCallbackMutationError = ErrorType<AuthError>;
+
+/**
+ * @summary Twilio call lifecycle webhook (Twilio → API)
+ */
+export const useVoiceStatusCallback = <
+  TError = ErrorType<AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof voiceStatusCallback>>,
+    TError,
+    {
+      data: BodyType<TwilioStatusCallbackBody>;
+      params: VoiceStatusCallbackParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof voiceStatusCallback>>,
+  TError,
+  {
+    data: BodyType<TwilioStatusCallbackBody>;
+    params: VoiceStatusCallbackParams;
+  },
+  TContext
+> => {
+  return useMutation(getVoiceStatusCallbackMutationOptions(options));
+};

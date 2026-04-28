@@ -15,6 +15,14 @@ tags:
     description: Health operations
   - name: operator
     description: Operator identity & session
+  - name: voice
+    description: |
+      Outbound voice (CPAP resupply phone calls). Operators initiate calls
+      via /voice/place-call; Twilio's Voice service then drives the call
+      lifecycle and reports back via /voice/status-callback. The TwiML
+      handshake endpoint is intentionally NOT included in this public
+      spec — Twilio is its only legitimate caller and exposing it would
+      tempt dashboard code to invoke it directly.
 paths:
   /healthz:
     get:
@@ -101,6 +109,157 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthError"
+  /voice/place-call:
+    post:
+      operationId: placeVoiceCall
+      tags: [voice]
+      summary: Place an outbound resupply call
+      description: |
+        Operator-initiated outbound call. Looks up the patient + episode,
+        opens a conversations row (channel=voice, status=open), registers
+        a short-TTL pending-session entry keyed on conversationId, and
+        asks Twilio to dial the patient's decrypted phone number. Twilio
+        then drives the call lifecycle and reports back via
+        /voice/status-callback. The patient phone number is NEVER
+        returned to the dashboard; only `{ conversationId, callSid }`.
+
+        Returns 503 when the voice subsystem is not configured (any of
+        OPENAI_API_KEY / TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
+        RESUPPLY_VOICE_PUBLIC_BASE_URL / TWILIO_PHONE_NUMBER missing).
+        This is the published behaviour, not a bug — voice is feature-
+        flagged on env presence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceVoiceCallRequest"
+      responses:
+        "201":
+          description: Call placed; Twilio is dialing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaceVoiceCallResponse"
+        "400":
+          description: Body failed zod validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceValidationError"
+        "401":
+          description: No valid Clerk session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "404":
+          description: Patient or episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceError"
+        "409":
+          description: |
+            A voice conversation is already open for this patient/episode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceError"
+        "422":
+          description: |
+            Patient cannot be called as requested — e.g. no phone number
+            on file or episode does not belong to this patient.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceError"
+        "500":
+          description: Server error creating the conversations row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceError"
+        "502":
+          description: Twilio rejected or failed the call placement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceError"
+        "503":
+          description: |
+            Voice subsystem is not configured on this server (env vars
+            missing) or the Twilio client could not be constructed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceError"
+  /voice/status-callback:
+    post:
+      operationId: voiceStatusCallback
+      tags: [voice]
+      summary: Twilio call lifecycle webhook (Twilio → API)
+      description: |
+        Webhook called BY TWILIO (never by the dashboard) on every call
+        lifecycle transition: initiated, ringing, answered, completed,
+        failed, busy, no-answer, canceled. Authenticated via the Twilio
+        request signature, NOT by Clerk. The dashboard MUST NOT call
+        this — it's published here only so consumers of the spec can see
+        it exists and understand the audit trail.
+
+        Always returns 200 with an empty `<Response/>` so Twilio does
+        not retry. Side effects:
+          * On terminal statuses, marks the conversation closed.
+          * On terminal statuses, writes a `voice.call.completed` audit
+            row tagged `source: "status_callback"`.
+        The body fields From / To (which carry PHI) are deliberately
+        ignored — only CallSid + CallStatus + the conversationId query
+        param are read.
+      parameters:
+        - in: query
+          name: conversationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Conversation row this call lifecycle event belongs to.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/TwilioStatusCallbackBody"
+      responses:
+        "200":
+          description: |
+            Always 200 — Twilio retries 5xx with backoff, so we ack even
+            on internal partial failures (audit failure is logged, not
+            re-thrown).
+          content:
+            application/xml:
+              schema:
+                type: string
+                example: "<Response/>"
+        "401":
+          description: |
+            Twilio signature header missing or did not match — request
+            rejected before any side effect runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "503":
+          description: Voice subsystem env vars not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
 
 components:
   schemas:
@@ -163,6 +322,118 @@ components:
         - database_starting_up
         - database_does_not_exist
         - unavailable
+    PlaceVoiceCallRequest:
+      type: object
+      description: |
+        Operator instruction to place an outbound resupply call.
+      properties:
+        patientId:
+          type: string
+          format: uuid
+          description: Patient row to call.
+        episodeId:
+          type: string
+          format: uuid
+          description: |
+            Episode the call is associated with. Must belong to
+            patientId; otherwise the request is 422'd.
+      required:
+        - patientId
+        - episodeId
+      additionalProperties: false
+    PlaceVoiceCallResponse:
+      type: object
+      description: |
+        Returned on a successful call placement. Contains only opaque
+        identifiers — never the patient phone number.
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+          description: |
+            New conversations row id. The dashboard subscribes to this
+            id to surface transcript turns as they're persisted.
+        callSid:
+          type: string
+          description: Twilio CallSid for cross-referencing with Twilio logs.
+      required:
+        - conversationId
+        - callSid
+    VoiceError:
+      type: object
+      description: |
+        Error body returned by voice endpoints. Carries a stable
+        machine-readable `error` code and an optional human-readable
+        `message`. NEVER carries vendor error text or PHI.
+      properties:
+        error:
+          type: string
+          description: Stable error code.
+          enum:
+            - voice_not_configured
+            - voice_outbound_not_configured
+            - patient_not_found
+            - episode_not_found
+            - patient_no_phone
+            - episode_patient_mismatch
+            - voice_conversation_already_open
+            - conversation_create_failed
+            - twilio_config_error
+            - twilio_call_failed
+        message:
+          type: string
+      required:
+        - error
+    VoiceValidationError:
+      type: object
+      description: |
+        Returned when the request body fails zod validation.
+      properties:
+        error:
+          type: string
+          enum: [invalid_body]
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+            required: [path, message]
+      required:
+        - error
+        - issues
+    TwilioStatusCallbackBody:
+      type: object
+      description: |
+        Subset of the Twilio Voice Status Callback form payload that the
+        endpoint actually reads. Twilio sends many more fields (From,
+        To, Duration, etc.); we deliberately ignore those because
+        From/To carry PHI (the patient phone number).
+      properties:
+        CallSid:
+          type: string
+          description: Twilio call identifier.
+        CallStatus:
+          type: string
+          description: |
+            Twilio call status. Terminal values close the conversation
+            and emit a `voice.call.completed` audit row.
+          enum:
+            - initiated
+            - ringing
+            - answered
+            - in-progress
+            - completed
+            - busy
+            - failed
+            - no-answer
+            - canceled
+      required:
+        - CallSid
+        - CallStatus
     ReadinessStatus:
       type: object
       properties:

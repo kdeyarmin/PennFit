@@ -130,6 +130,72 @@ assert_fail_with "telecom importing ai" \
   "lib/resupply-telecom must not import lib/resupply-ai"
 rm "$WORK"/lib/resupply-telecom/src/bad.ts
 
+# --- Rule 9: lib/resupply-ai must not touch DB or telephony SDKs -----
+echo "[self-test] Rule 9: ai may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing @workspace/resupply-db" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai may not import 'pg' (double-quoted)"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing pg (double-quoted)" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai may not import 'pg' (single-quoted)"
+echo "import { Pool } from 'pg';" > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing pg (single-quoted)" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai may not import 'twilio'"
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing twilio" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai importing 'ws' is allowed"
+# The Realtime adapter uses the `ws` package directly to talk to
+# OpenAI. This is an explicit carve-out — `ws` is a transport, not a
+# vendor SDK, and isolating the OpenAI API surface in this lib is
+# exactly what the rule is protecting.
+echo 'import WebSocket from "ws";' > "$WORK"/lib/resupply-ai/src/ok.ts
+assert_pass "ai importing ws (transport, not a vendor SDK)"
+rm "$WORK"/lib/resupply-ai/src/ok.ts
+
+# --- Rule 10: lib/resupply-telecom must not touch DB or AI SDKs ------
+echo "[self-test] Rule 10: telecom may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing @workspace/resupply-db" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom may not import 'pg'"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing pg" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom may not import 'openai'"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing openai" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom may not import '@anthropic-ai/sdk'"
+echo 'import Anthropic from "@anthropic-ai/sdk";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing @anthropic-ai/sdk" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom importing 'twilio' is allowed"
+# The whole point of this lib is to be the ONE place that talks to
+# Twilio. The rule blocks AI/DB SDKs, not Twilio.
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-telecom/src/ok.ts
+assert_pass "telecom importing twilio (its own vendor)"
+rm "$WORK"/lib/resupply-telecom/src/ok.ts
+
 echo "[self-test] Rule 5: api may not import resupply-testing"
 echo 'import { x } from "@workspace/resupply-testing";' > "$WORK"/artifacts/resupply-api/src/bad.ts
 assert_fail_with "api importing resupply-testing" \

@@ -77,6 +77,121 @@ export const CheckError = {
   unavailable: "unavailable",
 } as const;
 
+/**
+ * Operator instruction to place an outbound resupply call.
+
+ */
+export interface PlaceVoiceCallRequest {
+  /** Patient row to call. */
+  patientId: string;
+  /** Episode the call is associated with. Must belong to
+patientId; otherwise the request is 422'd.
+ */
+  episodeId: string;
+}
+
+/**
+ * Returned on a successful call placement. Contains only opaque
+identifiers — never the patient phone number.
+
+ */
+export interface PlaceVoiceCallResponse {
+  /** New conversations row id. The dashboard subscribes to this
+id to surface transcript turns as they're persisted.
+ */
+  conversationId: string;
+  /** Twilio CallSid for cross-referencing with Twilio logs. */
+  callSid: string;
+}
+
+/**
+ * Stable error code.
+ */
+export type VoiceErrorError =
+  (typeof VoiceErrorError)[keyof typeof VoiceErrorError];
+
+export const VoiceErrorError = {
+  voice_not_configured: "voice_not_configured",
+  voice_outbound_not_configured: "voice_outbound_not_configured",
+  patient_not_found: "patient_not_found",
+  episode_not_found: "episode_not_found",
+  patient_no_phone: "patient_no_phone",
+  episode_patient_mismatch: "episode_patient_mismatch",
+  voice_conversation_already_open: "voice_conversation_already_open",
+  conversation_create_failed: "conversation_create_failed",
+  twilio_config_error: "twilio_config_error",
+  twilio_call_failed: "twilio_call_failed",
+} as const;
+
+/**
+ * Error body returned by voice endpoints. Carries a stable
+machine-readable `error` code and an optional human-readable
+`message`. NEVER carries vendor error text or PHI.
+
+ */
+export interface VoiceError {
+  /** Stable error code. */
+  error: VoiceErrorError;
+  message?: string;
+}
+
+export type VoiceValidationErrorError =
+  (typeof VoiceValidationErrorError)[keyof typeof VoiceValidationErrorError];
+
+export const VoiceValidationErrorError = {
+  invalid_body: "invalid_body",
+} as const;
+
+export type VoiceValidationErrorIssuesItem = {
+  path: string;
+  message: string;
+};
+
+/**
+ * Returned when the request body fails zod validation.
+
+ */
+export interface VoiceValidationError {
+  error: VoiceValidationErrorError;
+  issues: VoiceValidationErrorIssuesItem[];
+}
+
+/**
+ * Twilio call status. Terminal values close the conversation
+and emit a `voice.call.completed` audit row.
+
+ */
+export type TwilioStatusCallbackBodyCallStatus =
+  (typeof TwilioStatusCallbackBodyCallStatus)[keyof typeof TwilioStatusCallbackBodyCallStatus];
+
+export const TwilioStatusCallbackBodyCallStatus = {
+  initiated: "initiated",
+  ringing: "ringing",
+  answered: "answered",
+  "in-progress": "in-progress",
+  completed: "completed",
+  busy: "busy",
+  failed: "failed",
+  "no-answer": "no-answer",
+  canceled: "canceled",
+} as const;
+
+/**
+ * Subset of the Twilio Voice Status Callback form payload that the
+endpoint actually reads. Twilio sends many more fields (From,
+To, Duration, etc.); we deliberately ignore those because
+From/To carry PHI (the patient phone number).
+
+ */
+export interface TwilioStatusCallbackBody {
+  /** Twilio call identifier. */
+  CallSid: string;
+  /** Twilio call status. Terminal values close the conversation
+and emit a `voice.call.completed` audit row.
+ */
+  CallStatus: TwilioStatusCallbackBodyCallStatus;
+}
+
 export type ReadinessStatusStatus =
   (typeof ReadinessStatusStatus)[keyof typeof ReadinessStatusStatus];
 
@@ -110,3 +225,10 @@ whose check failed.
  */
   errors?: ReadinessStatusErrors;
 }
+
+export type VoiceStatusCallbackParams = {
+  /**
+   * Conversation row this call lifecycle event belongs to.
+   */
+  conversationId: string;
+};
