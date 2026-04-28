@@ -108,11 +108,10 @@ export function Home() {
       </div>
 
       {/* Subtle stat strip */}
-      <div className="mt-20 w-full grid grid-cols-2 md:grid-cols-4 gap-4 animate-shimmer-in" style={{ animationDelay: "240ms" }}>
+      <div className="mt-20 w-full grid grid-cols-1 sm:grid-cols-3 gap-4 animate-shimmer-in" style={{ animationDelay: "240ms" }}>
         {[
           { v: "~3 min", l: "Average fitting time" },
           { v: "19", l: "Masks in our catalog" },
-          { v: "0 KB", l: "Image data uploaded" },
           { v: "100%", l: "On-device processing" },
         ].map(({ v, l }) => (
           <div key={l} className="glass-panel rounded-xl px-5 py-4">
