@@ -32,7 +32,7 @@ export function ShopCheckoutCancel() {
               Back to cart
             </Button>
           </Link>
-          <Link href="/order">
+          <Link href="/consent">
             <Button
               variant="outline"
               className="w-full"

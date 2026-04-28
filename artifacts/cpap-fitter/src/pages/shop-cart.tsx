@@ -351,7 +351,7 @@ export function ShopCart() {
 
               <div className="border-t border-border/40 mt-5 pt-4 text-center">
                 <Link
-                  href="/order"
+                  href="/consent"
                   className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5"
                   data-testid="cart-insurance-link"
                 >
@@ -391,7 +391,7 @@ function EmptyCart() {
             Browse the shop <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
         </Link>
-        <Link href="/order">
+        <Link href="/consent">
           <Button variant="outline" data-testid="cart-empty-insurance">
             Use insurance ($0)
           </Button>

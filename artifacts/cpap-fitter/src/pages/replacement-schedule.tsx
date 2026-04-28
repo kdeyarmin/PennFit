@@ -426,7 +426,7 @@ export function ReplacementSchedule() {
           is due — no calendar reminders, no guessing, no stale supplies.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-          <Link href="/order">
+          <Link href="/consent">
             <Button
               size="lg"
               className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow gap-2"

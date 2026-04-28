@@ -1,10 +1,12 @@
 // /shop — public PennPaps cash-pay catalog.
 //
-// Coexists with the insurance flow (/order). Each product card surfaces
-// two CTAs by design (per user product direction):
+// Coexists with the insurance flow (/consent → /capture → /measure →
+// /questionnaire → /results → /order). Each product card surfaces two
+// CTAs by design (per user product direction):
 //   - "Add to cart" — Stripe Hosted Checkout, charges card directly.
 //   - "Use insurance ($0 with prescription)" — sends shoppers into the
-//     existing /order flow rather than letting them double-pay.
+//     start of the on-device fitting funnel at /consent, NOT directly
+//     to /order which is a guarded route requiring measurements first.
 //
 // When the resupply-api can't reach Stripe (no STRIPE_SECRET_KEY in
 // dev), the shop endpoint returns 503 with `unavailable: true` and we
@@ -198,7 +200,7 @@ function ShopHero() {
         No prescription? No insurance? No problem. Order direct, ship to
         your door. Already covered? Use the{" "}
         <Link
-          href="/order"
+          href="/consent"
           className="text-primary font-medium underline-offset-4 hover:underline"
         >
           insurance flow
@@ -350,7 +352,7 @@ function ProductCard({ product }: { product: ShopProductView }) {
             )}
           </Button>
           <Link
-            href="/order"
+            href="/consent"
             className="block text-center text-xs text-muted-foreground hover:text-primary transition-colors"
           >
             Or use insurance — $0 with prescription
@@ -377,7 +379,7 @@ function InsuranceFooter() {
           out of pocket.
         </p>
       </div>
-      <Link href="/order">
+      <Link href="/consent">
         <Button
           variant="outline"
           className="whitespace-nowrap"
@@ -408,7 +410,7 @@ function PreviewModeBanner() {
           You&apos;re browsing a demo of the PennPaps storefront. Card
           checkout will be enabled as soon as Stripe is connected. The{" "}
           <Link
-            href="/order"
+            href="/consent"
             className="text-primary font-medium underline-offset-4 hover:underline"
           >
             insurance flow
@@ -436,7 +438,7 @@ function ShopComingSoon({ message }: { message: string }) {
         The PennPaps shop is opening soon.
       </h2>
       <p className="text-muted-foreground leading-relaxed mb-6">{message}</p>
-      <Link href="/order">
+      <Link href="/consent">
         <Button data-testid="shop-coming-soon-insurance-cta">
           Use insurance now — $0 with prescription{" "}
           <ArrowRight className="w-4 h-4 ml-2" />
