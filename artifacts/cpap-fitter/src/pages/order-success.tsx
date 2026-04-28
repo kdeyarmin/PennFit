@@ -76,7 +76,7 @@ export function OrderSuccess() {
               {confirmation.orderReference}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Save this reference for your records and to mention when calling PennPaps.
+              Save this reference for your records and to mention when calling Penn Home Medical Supply.
             </p>
           </div>
 
@@ -101,7 +101,7 @@ export function OrderSuccess() {
           <h3 className="font-semibold text-lg tracking-tight">What happens next</h3>
           <ol className="space-y-4 text-sm">
             <Step n={1}>
-              <strong>Within 1 business day:</strong> A PennPaps team member will call or
+              <strong>Within 1 business day:</strong> A Penn Home Medical Supply team member will call or
               email you to confirm your order and verify your insurance benefits.
             </Step>
             <Step n={2}>
@@ -146,7 +146,7 @@ export function OrderSuccess() {
       <div className="flex items-start gap-3 text-xs text-muted-foreground p-4 rounded-xl callout-navy mb-8">
         <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
         <p>
-          Your order details have been securely transmitted to PennPaps. We do not store
+          Your order details have been securely transmitted to Penn Home Medical Supply. We do not store
           your insurance, contact, or address information on this website.
         </p>
       </div>

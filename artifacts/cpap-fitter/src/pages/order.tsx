@@ -213,7 +213,7 @@ export function Order() {
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
           Tell us where to send your mask and how to bill your insurance. Your order goes directly to
-          PennPaps for fulfillment.
+          Penn Home Medical Supply for fulfillment.
         </p>
       </div>
 
@@ -254,7 +254,7 @@ export function Order() {
           <AlertDescription>
             <div>
               {apiError.data?.error ??
-                "Something went wrong while sending your order. Please try again or call PennPaps directly."}
+                "Something went wrong while sending your order. Please try again or call Penn Home Medical Supply directly."}
             </div>
             {Array.isArray(apiError.data?.details) && apiError.data!.details!.length > 0 && (
               <ul className="mt-2 text-xs list-disc list-inside space-y-0.5 opacity-90">
@@ -364,7 +364,7 @@ export function Order() {
           <CardHeader>
             <CardTitle className="text-xl tracking-tight font-bold">Insurance Information</CardTitle>
             <CardDescription>
-              PennPaps will bill your insurance directly. Have your card ready.
+              Penn Home Medical Supply will bill your insurance directly. Have your card ready.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -452,7 +452,7 @@ export function Order() {
                 </div>
               </RadioGroup>
               <p className="text-xs text-muted-foreground mt-2">
-                If you don't have one yet, PennPaps can help you obtain one before shipping.
+                If you don't have one yet, Penn Home Medical Supply can help you obtain one before shipping.
               </p>
             </div>
 
@@ -497,16 +497,16 @@ export function Order() {
               />
               <div className="flex-1 -mt-0.5 space-y-2">
                 <Label htmlFor="consent" className="cursor-pointer font-normal text-sm leading-relaxed block">
-                  I authorize PennPaps to <strong>contact me</strong> by phone, email, and SMS
+                  I authorize Penn Home Medical Supply to <strong>contact me</strong> by phone, email, and SMS
                   text message at the number and email above regarding this order, insurance
                   verification, shipping updates, and ongoing CPAP resupply reminders, and to{" "}
                   <strong>store the order details I've entered above</strong> (including my contact, shipping,
-                  insurance, and prescription information) in PennPaps's secure system for fulfillment and
+                  insurance, and prescription information) in Penn Home Medical Supply's secure system for fulfillment and
                   recordkeeping.
                 </Label>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   <strong>SMS terms:</strong> By providing your mobile number you consent to
-                  receive transactional text messages from PennPaps at that number, including via
+                  receive transactional text messages from Penn Home Medical Supply at that number, including via
                   automated systems. Approximately 1–2 messages per resupply cycle (typically
                   every 30–90 days). No marketing texts. <strong>Message and data rates may
                   apply.</strong> Reply <strong>HELP</strong> for help, <strong>STOP</strong> to
@@ -525,7 +525,7 @@ export function Order() {
             <div className="flex items-start gap-3 text-xs text-muted-foreground">
               <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
               <p>
-                Your order is sent securely to PennPaps and stored in their HIPAA-aware
+                Your order is sent securely to Penn Home Medical Supply and stored in their HIPAA-aware
                 fulfillment database, including the contact, shipping, insurance, and prescription details
                 above plus the numeric facial measurements that were used to recommend your mask. Your
                 camera image and video stream were never uploaded — only the measurement numbers leave your
@@ -578,7 +578,7 @@ export function Order() {
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending order...
               </>
             ) : (
-              "Send Order to PennPaps"
+              "Send Order to Penn Home Medical Supply"
             )}
           </Button>
         </div>

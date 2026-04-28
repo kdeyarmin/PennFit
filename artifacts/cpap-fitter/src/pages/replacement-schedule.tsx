@@ -274,7 +274,7 @@ export function ReplacementSchedule() {
         <p className="text-xs text-muted-foreground text-center max-w-3xl mx-auto leading-relaxed">
           Cadences shown reflect typical Medicare and commercial insurance
           allowances in the United States. Your specific plan may differ —
-          PennPaps verifies your benefit before each shipment.
+          Penn Home Medical Supply verifies your benefit before each shipment.
         </p>
       </section>
 
@@ -422,7 +422,7 @@ export function ReplacementSchedule() {
           Stop tracking it yourself.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          Sign up once and PennPaps will text or email you when each item
+          Sign up once and Penn Home Medical Supply will text or email you when each item
           is due — no calendar reminders, no guessing, no stale supplies.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">

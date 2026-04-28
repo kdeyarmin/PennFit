@@ -21,14 +21,14 @@ export function Terms() {
             <CardTitle className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
               Terms of Service
             </CardTitle>
-            <p className="text-sm text-muted-foreground">A service of PennPaps</p>
+            <p className="text-sm text-muted-foreground">PennPaps.com — operated by Penn Home Medical Supply</p>
           </div>
         </CardHeader>
         <CardContent className="space-y-6 text-sm text-foreground/90 leading-relaxed pt-6">
           <p>
             These Terms of Service ("Terms") govern your use of the PennPaps website, mask-fitting
             tool, ordering system, and SMS/text-messaging notifications (collectively, the
-            "Service") provided by PennPaps ("PennPaps," "we," "us," or "our"). By using the
+            "Service") operated by Penn Home Medical Supply ("Penn Home Medical Supply," "we," "us," or "our") at PennPaps.com. By using the
             Service, you agree to these Terms. If you do not agree, please do not use the Service.
           </p>
 

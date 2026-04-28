@@ -19,7 +19,7 @@ export function Home() {
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              PennPaps
+              Penn Home Medical Supply · PennPaps.com
             </span>
             <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>
@@ -32,9 +32,11 @@ export function Home() {
         </h1>
 
         <p className="text-lg md:text-xl text-muted-foreground leading-relaxed mb-10 max-w-2xl mx-auto">
-          From the team at PennPaps. Our clinical-grade fitting tool uses your
-          device's camera to measure your facial structure securely, then matches you with the
-          ideal mask from our catalog based on your unique needs.
+          <span className="font-semibold text-foreground">PennPaps.com</span> is the online sizing,
+          ordering, and resupply service from{" "}
+          <span className="font-semibold text-foreground">Penn Home Medical Supply</span>.
+          Our clinical-grade fitting tool uses your device's camera to measure your facial
+          structure securely, then matches you with the ideal mask from our catalog.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">

@@ -21,12 +21,12 @@ export function Privacy() {
             <CardTitle className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
               Privacy Policy
             </CardTitle>
-            <p className="text-sm text-muted-foreground">A service of PennPaps</p>
+            <p className="text-sm text-muted-foreground">PennPaps.com — operated by Penn Home Medical Supply</p>
           </div>
         </CardHeader>
         <CardContent className="space-y-6 text-sm text-foreground/90 leading-relaxed pt-6">
           <p>
-            This Privacy Policy describes how PennPaps ("PennPaps," "we," "us," or "our") handles information you provide while using the PennPaps CPAP mask fitting tool ("PennPaps").
+            This Privacy Policy describes how Penn Home Medical Supply ("Penn Home Medical Supply," "we," "us," or "our") — operator of the PennPaps.com CPAP mask fitting and resupply service (the "Service") — handles information you provide while using the Service.
           </p>
 
           <section className="space-y-2">
