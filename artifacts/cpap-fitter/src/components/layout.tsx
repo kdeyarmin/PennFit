@@ -19,6 +19,8 @@ function ScrollToTop() {
 const navLinks = [
   { href: "/how-it-works", label: "How It Works" },
   { href: "/masks", label: "Mask Catalog" },
+  { href: "/learn", label: "Learn" },
+  { href: "/faq", label: "FAQ" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -116,7 +118,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span>Secure & private. Images never leave your device.</span>
               </div>
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
+              <Link href="/learn" className="hover:text-primary transition-colors">Learn</Link>
+              <Link href="/faq" className="hover:text-primary transition-colors">FAQ</Link>
+              <Link href="/how-it-works" className="hover:text-primary transition-colors">How It Works</Link>
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
               {/*
                 /consent is the in-flow data-use consent screen, NOT a Terms

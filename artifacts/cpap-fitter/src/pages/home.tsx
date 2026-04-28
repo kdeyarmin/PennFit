@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { ScanFace, ClipboardList, Zap, Shield, PlayCircle, ArrowRight, Sparkles } from "lucide-react";
+import { ScanFace, ClipboardList, Zap, Shield, PlayCircle, ArrowRight, Sparkles, BookOpen, HelpCircle, Compass } from "lucide-react";
 
 export function Home() {
   return (
@@ -118,6 +118,87 @@ export function Home() {
             <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">{l}</div>
           </div>
         ))}
+      </div>
+
+      {/* More resources — directs customers to FAQ + Learn + How It Works */}
+      <div
+        className="mt-24 w-full animate-shimmer-in"
+        style={{ animationDelay: "360ms" }}
+      >
+        <div className="text-center max-w-2xl mx-auto mb-10 space-y-3">
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-3">
+              <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+              <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+                More Resources
+              </span>
+              <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+            </div>
+          </div>
+          <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-foreground/90">
+            New to CPAP, or just have questions?
+          </h2>
+          <p className="text-muted-foreground leading-relaxed">
+            Browse plain-language guides on sleep apnea and CPAP therapy, or
+            jump straight to specific answers about ordering, insurance, mask
+            care, and troubleshooting.
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-5">
+          {[
+            {
+              href: "/learn",
+              Icon: BookOpen,
+              title: "Patient education",
+              body: "Short, jargon-free articles on what CPAP does, why it matters, and how to live comfortably with therapy.",
+              cta: "Browse Learn",
+              testid: "home-resource-learn",
+              halo: "icon-halo-navy",
+            },
+            {
+              href: "/faq",
+              Icon: HelpCircle,
+              title: "Frequently asked questions",
+              body: "Direct answers to the questions our patients ask most — from prescriptions to mask leaks.",
+              cta: "Open the FAQ",
+              testid: "home-resource-faq",
+              halo: "icon-halo-gold",
+            },
+            {
+              href: "/how-it-works",
+              Icon: Compass,
+              title: "How Penn Fit works",
+              body: "A walkthrough of the three-minute fitting flow, plus tips for the most accurate face capture.",
+              cta: "See the walkthrough",
+              testid: "home-resource-how-it-works",
+              halo: "icon-halo-navy",
+            },
+          ].map(({ href, Icon, title, body, cta, testid, halo }) => (
+            <Link
+              key={href}
+              href={href}
+              className="glass-card lift-on-hover rounded-2xl p-6 flex flex-col items-start text-left group"
+              data-testid={testid}
+            >
+              <div
+                className={`relative h-12 w-12 rounded-2xl flex items-center justify-center mb-4 ${halo}`}
+              >
+                <Icon className="w-5 h-5" strokeWidth={2} />
+              </div>
+              <h3 className="text-lg font-semibold tracking-tight mb-2">
+                {title}
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed mb-4 flex-1">
+                {body}
+              </p>
+              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all">
+                {cta}
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );
