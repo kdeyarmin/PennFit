@@ -106,10 +106,20 @@ function Router() {
       <Route path="/sign-in/:rest*" component={SignInPage} />
       <Route path="/sign-up" component={SignUpPage} />
       <Route path="/sign-up/:rest*" component={SignUpPage} />
-      {/* Every other route — including detail pages — gets gated by
-          ConsoleRoute. ConsoleRoute itself renders a nested <Switch>
-          with the actual operator pages. */}
-      <Route path="/:rest*" component={ConsoleRoute} />
+      {/* Every other route — including the bare "/" landing page
+          and all detail pages — gets gated by ConsoleRoute.
+          ConsoleRoute itself renders a nested <Switch> with the
+          actual operator pages.
+
+          The pattern MUST be "*" (not "/:rest*"). Wouter uses
+          regexparam, and `/:rest*` requires at least one path
+          segment after the slash — so it matches "/foo" but NOT
+          "/" itself. Using "*" matches both, which is what we need
+          so the operator landing on /resupply/ actually gets
+          the dashboard (or the redirect to /sign-in when signed-out)
+          instead of a blank page from a Switch that found no
+          matching route. */}
+      <Route path="*" component={ConsoleRoute} />
     </Switch>
   );
 }

@@ -27,11 +27,11 @@ The Penn Fit application employs a privacy-first, stateless architecture, emphas
 
 ### Privacy and Data Handling
 
-Facial image processing is entirely on-device using MediaPipe Face Mesh; only numeric measurements are sent to the backend. The recommendation engine is stateless. Order data, including PHI, is persisted in PostgreSQL to facilitate shipping, billing, and prescription verification via an internal admin dashboard. Patient consent and privacy policies explicitly disclose this storage. Camera images and video streams are never uploaded or stored. Anonymous usage events are collected without storing identifiable information.
+Facial image processing is entirely on-device using MediaPipe Face Mesh; only numeric measurements are sent to the backend. The recommendation engine is stateless. Order data, including PHI, is persisted in PostgreSQL to facilitate shipping, billing, and prescription verification via an internal admin dashboard. Camera images and video streams are never uploaded or stored.
 
 ### Admin Dashboard
 
-An internal admin dashboard (`/admin/*`) within the same artifact allows Penn staff to manage orders. Access is restricted via Clerk authentication and an email allowlist (`PENN_ADMIN_EMAILS`). All PHI-touching admin reads are logged in an `admin_audit_log` table.
+An internal admin dashboard (`/admin/*`) allows Penn staff to manage orders. Access is restricted via Clerk authentication and an email allowlist (`PENN_ADMIN_EMAILS`). All PHI-touching admin reads are logged in an `admin_audit_log` table.
 
 ### Technical Stack
 
@@ -53,189 +53,35 @@ The user journey is structured into several stages: Home, Consent, Capture (faci
 
 ### Recommendation Scoring
 
-The recommendation engine calculates a combined score using:
-`Combined score = (typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier`
-`typeScore` is derived from questionnaire answers, `fitScore` from facial measurements, `contraMultiplier` reduces scores for contraindications, and `pressureMultiplier` adjusts for high-pressure patients. Diversification ensures variety in top recommendations.
+The recommendation engine calculates a combined score using: `Combined score = (typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier`.
 
 ### Visual Design System
 
-The application features a high-end, professional aesthetic using Penn's navy and gold brand palette.
-*   **Design Choices:** Light-mode only, custom CSS brand tokens, reusable Tailwind CSS utility classes, consistent "eyebrow" page header pattern, and a layered "ambient atmosphere" background with radial blooms and a dot grid.
-*   **Scroll Restoration:** `window.scrollTo(0, 0)` on route changes.
+The application features a high-end, professional aesthetic using Penn's navy and gold brand palette, with a light-mode only design, custom CSS brand tokens, and a layered "ambient atmosphere" background.
 
 ### Tutorial Video
 
-A short, animated tutorial (`/penn-fit-tutorial/`) is provided, built with `framer-motion` and `lucide-react`, matching the main app's branding. It supports both embedded and standalone viewing, with responsive aspect ratios for mobile and tablet/desktop.
+A short, animated tutorial (`/penn-fit-tutorial/`) built with `framer-motion` and `lucide-react` guides users through the fitting process.
 
 ### CPAP Resupply Automation System
 
-A separate product, the CPAP Resupply Automation system, coexists in the monorepo. This system, for operators, uses a distinct Postgres schema (`resupply.*`) and focuses on automated patient outreach.
+A separate CPAP Resupply Automation system within the monorepo provides automated patient outreach for operators.
 
-*   **Components:** `artifacts/resupply-api/` (Express API on `:8083`, base path `/resupply-api`), `artifacts/resupply-worker/` (pg-boss background worker), `artifacts/resupply-dashboard/` (React operator console at `/resupply/`).
-*   **Database:** Resupply tables (`patients`, `prescriptions`, `episodes`, `conversations`, `messages`, `fulfillments`, `audit_log`) are under the `resupply` schema. PHI columns are encrypted using `pgcrypto` with `RESUPPLY_DATA_KEY`. Startup checks ensure `pgcrypto` is enabled.
-*   **Architecture Decisions (Resupply):** Utilizes Express + Zod, Drizzle, pg-boss, `pgcrypto`, and Clerk. ADRs live in `docs/resupply/adr/`.
-
-#### Versioned migrations (drizzle-kit)
-The resupply schema is owned by `@workspace/resupply-db` and managed with **versioned migrations**, not push. The runner is `lib/resupply-db/scripts/migrate.mjs`, invoked with `pnpm --filter @workspace/resupply-db migrate`. Two safety properties matter:
-*   **Migration application.** The runner delegates to drizzle-orm's `migrator` (`drizzle-orm/node-postgres/migrator`), which reads each `.sql` file in `lib/resupply-db/drizzle/`, splits on drizzle-kit's `--> statement-breakpoint` marker, and executes the statements on the supplied connection. Combined with drizzle's own `__drizzle_migrations` ledger this gives us idempotent, ordered migrations.
-*   **Cross-process advisory lock.** Before invoking the migrator, the runner takes `pg_advisory_lock(7427398427542000001)` on a pinned `PoolClient` (`max: 1`, so the same physical connection used to release the lock) and releases it after commit (or on error, falling back to `pool.end()` to drop the socket if `pg_advisory_unlock` itself failed inside an aborted transaction). Two CI runners or a redeploy + a developer running `migrate` in parallel will serialise on the lock instead of racing each other into duplicate-create errors.
-The post-merge script (`scripts/post-merge.sh`) runs `migrate` rather than `push:force` on every merge so production-shaped DDL is exercised in dev. Authoring new migrations: edit `lib/resupply-db/src/schema.ts`, then `pnpm --filter @workspace/resupply-db generate`, review the SQL, and check it in.
-
-#### Readiness probe (`/readyz`)
-`artifacts/resupply-api` exposes `/readyz`, a closed-allowlist probe used by the deployment health check. It runs two checks in parallel under a per-check timeout:
-*   **`db`** — a `SELECT 1` round-trip on the resupply DB pool.
-*   **`queue`** — `pg-boss` schema readiness, inferred from the existence of `pgboss_resupply.version`. The API process does not run `pg-boss` (the worker owns it — see `docs/resupply/adr/002-*`), so this is the only signal that the worker has finished bootstrapping the queue.
-
-Failures are bucketed into a small fixed set of category strings (`timeout`, `connection_refused`, `host_not_found`, `database_starting_up`, `database_does_not_exist`, `schema_not_initialized`, `unavailable`) by `categorize()` in `artifacts/resupply-api/src/lib/readiness.ts`; raw driver text is sent through `logger.warn` but never returned in the HTTP body, because `pg`'s error messages happily echo `DATABASE_URL` fragments. Validated end-to-end by `artifacts/resupply-api/src/lib/readiness.integration.test.ts`, which boots the app against a real `DATABASE_URL`, creates a throwaway test DB, applies migrations via the shipped `migrate.mjs`, asserts the happy path returns 200, then induces failures (queue schema dropped; DB unroutable) and asserts the response body contains no `postgres://`, password, host, or full-`DATABASE_URL` text. The test skips cleanly when `DATABASE_URL`/`RESUPPLY_DATA_KEY` are unset, or when the connecting role lacks `CREATE DATABASE`, so it doesn't flap in environments without a suitably-privileged database. The pre-import permission probe sets `connectionTimeoutMillis: 5_000` so an unreachable URL can't hang vitest's discovery phase past the `describe.skipIf` gate.
-
-#### Operator authentication (Clerk)
-Both products share a single Clerk instance but use **disjoint allowlists** — `PENN_ADMIN_EMAILS` for Penn Fit and `RESUPPLY_OPERATOR_EMAILS` for Resupply — so rotating one product's staff list cannot accidentally grant access to the other.
-*   **API.** `clerkMiddleware()` runs in front of `requireOperator` (`artifacts/resupply-api/src/middlewares/requireOperator.ts`). Allowlist mode requires a verified primary email AND an allowlist match; an unset env var **fails closed with 503 in production** and falls through to "any signed-in user" in `NODE_ENV=development` so dev loops and the e2e harness work without managing an env var. The smoke endpoint `GET /resupply-api/me` returns `{ clerkId, email }` and is the dashboard's auth probe.
-*   **Dashboard.** `<ClerkProvider>` wraps the app in `main.tsx`; the console is gated by Clerk's `<Show when="signed-in">`. Bearer tokens are wired into the generated `@workspace/resupply-api-client` via `setAuthTokenGetter` registered at module load (so the very first `/me` request has a token without waiting for an effect commit) and re-registered on every session change in `useApiAuthBridge`.
-*   **Friendly denial.** `artifacts/resupply-dashboard/src/pages/not-authorized.tsx` renders for `/me` errors: 503 → "Operator access isn't set up on this server yet"; everything else (incl. 403) → "This account isn't approved for the operator console" with the signed-in email and the operations contact. The status is read from `ApiError.status` (re-exported from the generated client) so the branch is type-safe rather than a generic `unknown` cast.
-
-#### Operational hardening
-A deep-review follow-up batch tightened several edges that were correct but fragile:
-*   **Auth race / 4xx classification.** Dashboard query client (`main.tsx`) keeps the existing `staleTime`, disables `refetchOnWindowFocus`, and retries once on 401 (token refresh races) while still skipping retries for other 4xx — so a cold-load `/me` racing the Bearer wiring no longer produces a spurious "not authorized" screen.
-*   **Clerk upstream failure ≠ auth failure.** When `clerkClient.users.getUser` throws, `requireOperator` returns **502 Bad Gateway** (not 401) and logs only `{ errName, clerkStatus }` — never the raw error. The dashboard's `NotAuthorizedPage` already maps non-503 5xx → the "transient, please retry" branch, so an operator with a valid session sees retry, not "sign out and try again." Test updated accordingly.
-*   **Log redaction (defense in depth).** Both API and worker loggers (`logger.ts`) redact `err.message`, `err.detail`, `err.hint`, `err.where`, `err.hostname`, `err.address`, `err.stack`, and `err.cause.{message,stack}`. Stack is redacted because the message normally appears on line one of the stack — leaving stack open would re-leak DSN fragments / pg internals one field over. Call sites that need a stack must categorize (`{ errCategory, stackHash }`) instead of dumping `{ err }`.
-*   **Readiness log shape.** `readiness.ts` warns log only the closed-allowlist `errCategory` (`db.*`, `queue.*`), never `err.reason` — pg drivers embed connection-string fragments in error messages, and every log line is treated as world-readable.
-*   **Pino flush-on-exit.** Both API (`index.ts`) and worker (`index.ts`) await a 250ms flush window before `process.exit(1)` after `logger.fatal(...)`. Without it, pino's transport worker thread can drop the very line that explains why the process died.
-*   **CORS credentials off.** API drops `credentials: true` — the dashboard authenticates with `Authorization: Bearer`, never cookies, so the CORS surface is now the simpler Bearer-only shape (no need for cookie-CSRF mitigations).
-*   **Migration lock timeout.** `lib/resupply-db/scripts/migrate.mjs` sets `lock_timeout = '60s'` strictly around the `pg_advisory_lock` acquisition, then resets it to 0 before drizzle's migrate phase. A wedged holder fails the deploy gate audibly within 60s; legitimate long-running DDL is unbounded as before.
-*   **Sign-out redirect parity.** `OperatorHeaderChip` passes `redirectUrl: ${basePath}/sign-in` to `signOut()`, matching `NotAuthorizedPage` so sign-out lands on the sign-in URL in one step.
-*   **Audit-log helper (`@workspace/resupply-audit`).** A dedicated package owns every write to `resupply.audit_log`. `logAudit({ action, operatorEmail?, operatorClerkId?, targetTable?, targetId?, metadata?, ip?, userAgent? })` runs a raw INSERT via `getDbPool()` so the path is independent of the Drizzle schema graph. Metadata flows through `sanitizeMetadata` first: it rejects PHI-shaped keys at any depth, caps payload at 8 KiB, caps depth at 6, refuses non-plain objects (class instances, Maps, Sets, Buffers), refuses objects with a `toJSON` method (closes the "key check passes, then `JSON.stringify` rewrites the row" bypass), and refuses symbol-keyed properties. Key matching tokenizes with NFKC + camelCase / snake_case / kebab-case / digit splits so `patientEmail`, `email_address`, and the unicode-confusable `ｅmail` all hit the same denylist entry; generic terms like `state`/`name`/`notes` only fire on whole-key match so `previousState` and `displayName` pass. The helper throws on any violation — audit-row PHI is HIPAA-reportable, so a bug must surface as a 500 not a silent strip.
-*   **Sanitize/serialize TOCTOU defence.** `sanitizeMetadata` walks the input ONCE, captures `Object.entries` results into local snapshots, and builds a deep plain-data clone. The clone (not the input) is what `logAudit` serializes to JSON for the INSERT. This closes a Proxy/getter TOCTOU where the sanitizer's first walk and `JSON.stringify`'s second walk could see different shapes — the clone has no live proxies/accessors/`toJSON` to re-evaluate. Tests cover Proxy values that flip on second access, accessor counters that prove single-evaluation, and Proxy `length` that grows on subsequent reads (snapshotted).
-*   **Architecture Rule 8 (single audit writer).** `scripts/check-resupply-architecture.sh` bans `resupply.audit_log` writers anywhere outside `lib/resupply-audit/src/`. Runs in multi-line mode (`rg -U`) so a contributor can't slip past line-oriented patterns by reformatting across newlines. Three patterns: (1) `.insert(<ident>?.audit*)` catches bare and namespaced Drizzle inserts including pretty-printed multi-line forms; (2) `import { ... auditLog ... } from "@workspace/resupply-db"` bans ANY import of the `auditLog` schema symbol — bare, aliased (`auditLog as al`), or in a multi-line braced clause — which also kills the indirect two-step alias bypass `import { auditLog }; const al = auditLog; db.insert(al)` because the symbol simply isn't in scope without the import; (3) `(?i)INSERT [^;``"']* audit_log` catches raw SQL including multi-line pretty-printed template literals and `${schema}.audit_log` interpolations, with the gap matcher excluding string-literal boundaries (backtick / `"` / `'`) so it can't bridge from a code comment containing the word "INSERT" into an unrelated quoted DELETE on a later line. SELECT/DELETE remain allowed (queries + test cleanup). 14 self-tests cover every bypass class — bare import, aliased import, indirect alias, namespaced insert, multi-line braced import, multi-line `.insert(...)`, multi-line raw INSERT, template-literal interpolation, plus the no-false-positive cases (`.insert(patients)`, comment mentioning `audit_log`, comment containing the word "INSERT" near a legal `DELETE FROM audit_log`).
-*   **Dashboard test surface.** `artifacts/resupply-dashboard/vitest.config.ts` runs jsdom + `@vitejs/plugin-react` (standalone — `vite.config.ts` refuses to load without `PORT`/`BASE_PATH`, which are dev-server concerns). `not-authorized.test.tsx` exercises all three reason branches (`not-authorized`, `not-configured`, `transient`), the `contactEmail` prop override, the sign-out wiring, and the Try-again click — six cases total. The Try-again case asserts the click does not throw rather than spying on `window.location.reload`, because jsdom makes `location` non-configurable; the architect flagged this as a low-severity follow-up.
-
-#### Validation
-`resupply-check` is the single command that gates every resupply change. It runs the architecture self-test (cross-package import rules and the codegen drift check), the staged-snapshot self-test, lint, typecheck, and tests for every `@workspace/resupply-*` package — including the readiness integration test described above.
-
-#### Voice (outbound resupply calls)
-Outbound automated phone calls run inside `artifacts/resupply-api` itself — see ADR 008 for the full design. Twilio Voice handles the telephony (Media Streams, g711 µ-law @ 8 kHz); OpenAI's Realtime API (`gpt-realtime`, voice `marin`) drives the conversation. Both legs use g711 µ-law so audio is forwarded byte-for-byte with no transcoding. The bridge is a `WebSocketServer({ noServer: true })` attached to an explicit `http.createServer(app)`; the upgrade handler routes only `/resupply-api/voice/stream` and rejects everything else by destroying the socket.
-*   **Endpoints.** `POST /voice/place-call` (operator-protected) opens a `conversations` row, registers a 5-min in-memory pending session keyed on `conversationId`, and asks Twilio to dial. `POST /voice/twiml-connect` and `POST /voice/status-callback` are Twilio-only webhooks gated by HMAC signature (`requireTwilioSignature` from `@workspace/resupply-telecom`); `twiml-connect` is intentionally NOT in `lib/resupply-api-spec/openapi.yaml` because Twilio is its only legitimate caller. The WS handshake claims the pending session exactly once — a second claim returns null and the upgrade is rejected.
-*   **Patient-context binding.** The model is never given a patient identifier. The dispatcher is constructed bound to `{ patientId, conversationId, episodeId }` from the claimed pending session, so every tool call operates on the bound patient regardless of model arguments. `verify_patient_identity` enforces a hard 3-attempt cap with constant-time DOB compare (`Buffer + timingSafeEqual`). The dispatcher has a two-tier identity gate: pre-lockout it exempts only `verify_patient_identity`, `request_human_handoff`, and `end_call`; once `verifyAttempts >= 3` AND not yet verified, the lockout layer above the regular gate refuses *all* tools except `request_human_handoff` and `end_call` — including further `verify_patient_identity` calls — so a doomed caller cannot loop on DOB attempts. The lockout stub returns `attempts_remaining: 0` to give the model a stable exhausted-state signal. All seven tools (verify identity, lookup inventory, get/update address, place order, handoff, end call) are zod-typed in `lib/resupply-ai/src/tools.ts` and the lockout semantics are pinned by `tools-impl.test.ts` (countdown, 4th-call refusal without DB hit, side-effect blockade, escape-tool allowlist, repeat-stability).
-*   **Persistence + audit.** Transcript turns are coalesced per item id and persisted as one `resupply.messages` row per turn, body encrypted with the existing `encrypt()` helper. **Audio is never stored.** Tool invocations emit `voice.tool.invoked` audit rows with `sanitizeMetadata`-cleaned arg shapes; lifecycle emits `voice.call.placed` (from `place-call`) and `voice.call.completed` (from both the WS finaliser AND `status-callback`; idempotent `closed` makes double-firing safe). Twilio body fields `From`/`To` are deliberately ignored on the status callback because they carry PHI.
-*   **Architecture rules 9 + 10.** `lib/resupply-ai/src/` may not import `@workspace/resupply-db`, `pg`, or `twilio` (the AI lib is a pure OpenAI Realtime adapter; `ws` is the explicit transport carve-out). `lib/resupply-telecom/src/` may not import `@workspace/resupply-db`, `pg`, `openai`, or `@anthropic-ai/sdk`. Patterns are quote-anchored (`@workspace/resupply-db['"]`) so a code comment mentioning the package name doesn't trip the gate. Both rules are covered by negative self-tests in `scripts/check-resupply-architecture.sh.test`.
-*   **Feature-flagged on env presence.** Voice routes return a 503 with a stable error code (`voice_not_configured` or `voice_outbound_not_configured`) when any of `OPENAI_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `RESUPPLY_VOICE_PUBLIC_BASE_URL` (or `TWILIO_PHONE_NUMBER` for outbound only) is missing. The 503 is documented in the OpenAPI spec — it's published behaviour, not a bug. The Twilio Replit integration was offered and dismissed; voice credentials are loaded from secrets directly (re-propose `connector:ccfg_twilio_01K69QJTED9YTJFE2SJ7E4SY08` if you'd rather use the integration).
-*   **Single-instance assumption.** The pending-session map is in-process. A future multi-replica deploy needs a shared session store (Postgres-backed) before voice can scale out — captured in ADR 008 consequences.
-*   **Inbound deferred.** Inbound TwiML needs to map a caller's E.164 number back to a `patients` row, but the phone column is encrypted random-IV (`encryptedText`), so equality lookup is impossible without a separate lookup table or a deterministic-encrypted column. The messaging subsystem (below) solves the same problem for inbound SMS via a `phone_lookup` HMAC table; inbound voice can adopt the same table when we wire it.
-
-#### Messaging (SMS + Email reminders + ordering)
-Two-way patient messaging runs alongside voice in `artifacts/resupply-api` — see ADR 013 for the full design. SMS uses Twilio Programmable Messaging (re-using the `lib/resupply-telecom` adapter we already built for voice — ADR 004); email uses SendGrid via a brand-new `lib/resupply-email` package (BAA on Pro+ plans). Inbound email PARSING is intentionally out of scope; email is one-way outbound + signed link clicks.
-*   **Phone → patient lookup.** A separate `phone_lookup(patient_id PK→patients.id, hmac_phone bytea unique not null, created_at)` table indexes patients by HMAC-SHA256 of normalized E.164, keyed on `RESUPPLY_PHONE_HMAC_KEY` (a NEW secret, distinct from `RESUPPLY_DATA_KEY` so a leaked phone-lookup key can't decrypt anything else). Equality lookup is O(1) via the unique index without ever decrypting the patients table. The patients-table phone column is unchanged; the new table is purely additive. Helpers `normalizeE164`/`hmacPhone` live in `lib/resupply-db/src/phone-hash.ts` and are unit-tested for E.164 edge cases (10-digit US, +1 prefix, formatted, invalid) + HMAC stability + key-unset-throws.
-*   **Hybrid scripted + AI reply router.** Inbound SMS replies first hit `lib/resupply-messaging/keyword-router.ts` — a pure, vendor-free, table-driven matcher for Y/YES/N/NO/EDIT/STOP/HELP variants (case-insensitive, trim, ~20-row test matrix). On `intent='unknown'` only, the API process calls a small OpenAI chat-completions classifier (constrained to JSON, intent enum + optional patient-facing reply, in-process timeout, falls back to `unknown` on any error). The keyword router is the load-bearing path; the AI is the safety net. STOP and HELP are honored unconditionally regardless of conversation state — US carrier compliance.
-*   **Email interactivity via signed link tokens.** Each outbound reminder embeds three URL-safe-base64 tokens of `{conversationId, action, expiresAt}` signed with HMAC-SHA256 keyed on a NEW secret `RESUPPLY_LINK_HMAC_KEY` (separate from data + phone keys). Default TTL 7 days. Verification is constant-time and does not touch the DB before the signature passes. `GET /email/click?t=<token>` verifies, dispatches the action (`confirm` → place order, `edit` → park in operator queue, `stop` → pause patient), and renders a plain HTML confirmation page.
-*   **Endpoints.** `POST /sms/send-reminder` and `POST /email/send-reminder` are operator-protected; both create a `conversations` row, persist an outbound `messages` row (encrypted body), and audit `messaging.reminder.sent`. `POST /sms/inbound`, `POST /sms/status-callback`, `POST /email/sendgrid-events` are vendor webhooks gated by HMAC signature (Twilio's `requireTwilioSignature` reused; SendGrid's ECDSA `requireSendgridSignature` lives in `lib/resupply-email/src/signature.ts`); all three are intentionally NOT in `lib/resupply-api-spec/openapi.yaml` because their only legitimate callers are the vendors. `GET /email/click` IS in the spec (it's a public, patient-facing URL).
-*   **Reminder scheduling — pg-boss recurring scan.** `reminders.scan` runs hourly via cron in `artifacts/resupply-worker`; it selects patients with prescriptions overdue per `cadenceDays` since the last `fulfillments` row, skips `paused`/`closed` patients, and skips any patient who got a conversation opened in the last 48 hours (quiet period — prevents spam). Per-patient send jobs (`reminders.send-sms` / `reminders.send-email`) fan out from the scan and call into a SHARED helper (`lib/resupply-reminders/`) that the operator-facing API routes use too — operator-triggered and worker-triggered sends go down the exact same code path with the exact same audit trail and tagged-union outcome. Channel selection v1: SMS preferred if phone present, email fallback; one channel per scan to avoid double-pinging (deferred patient-preference column captured in ADR).
-*   **Persistence + audit.** Outbound and inbound message bodies are persisted as `resupply.messages` rows, body encrypted with the existing `encrypt()` helper. **Audit metadata is structural only** — never the inbound body, the From phone, the email address, or any operator-typed text. New event types: `messaging.reminder.sent`, `messaging.inbound.received`, `messaging.intent.parsed`, `messaging.order.confirmed`, `messaging.handoff.escalated`, `messaging.delivery.failed`, `email.delivery.bounced`, `email.link.clicked`. `lib/resupply-audit.logAudit()` remains the only writer per Rule 8.
-*   **Architecture rules 11 + 12 + 13.** `lib/resupply-messaging/src/` is a pure semantic layer (no `pg`, `@workspace/resupply-db`, `twilio`, `@sendgrid/mail`, `openai`, `@anthropic-ai/sdk`, `ws`). `lib/resupply-email/src/` is the SendGrid adapter — owns `@sendgrid/mail` (its only purpose) but cannot reach into the DB layer or any other vendor SDK; symmetric with Rule 10's telecom-owns-Twilio carve-out. `lib/resupply-reminders/src/` is the SHARED outbound code path used by both routes and worker; it MAY import `pg` (helpers receive a Pool and need its type) plus the DB / telecom / email / messaging / audit libs (composing them is its entire job) but MAY NOT import vendor SDKs directly — Twilio goes through `resupply-telecom`, SendGrid goes through `resupply-email`. All three rules are quote-anchored and covered by positive AND negative self-tests in `scripts/check-resupply-architecture.sh.test`.
-*   **Feature-flagged on env presence.** Messaging routes return 503 with stable error code `messaging_not_configured` when any of `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY`, `RESUPPLY_PHONE_HMAC_KEY`, `RESUPPLY_LINK_HMAC_KEY` is missing (TWILIO_* + OPENAI_API_KEY are shared with voice). The worker handlers log + return on missing config rather than throwing, so a half-configured deploy doesn't fill the pg-boss retry queue with permanent failures.
-
-#### Operator dashboard (read-side console)
-The placeholder console at `artifacts/resupply-dashboard` is now a full
-operator app sitting on top of new READ-side endpoints. The architecture
-follows the same contract→codegen→typed-hook pipeline established for the
-mutation endpoints, so adding a new screen is "edit `openapi.yaml`, run
-codegen, drop the hook into a page" with no hand-written client code.
-*   **API surface.** Seven new operator-only endpoints under `/resupply-api`,
-    all gated by `requireOperator`:
-    *   `GET /dashboard/summary` — KPI counts (active conversations,
-        awaiting_operator, overdue episodes, fulfillments-this-week,
-        paused patients) for the landing page.
-    *   `GET /patients?status=&search=&limit=&offset=` — paginated list
-        with server-side decryption of `firstName` / `lastName`.
-        `phoneE164` is **never** surfaced — only a boolean `hasPhone` /
-        `hasEmail` flag, so the dashboard can show "SMS / Email" capability
-        chips without putting reachable contact info in a list view.
-    *   `GET /patients/:id` — full patient detail: name + capability
-        flags, all prescriptions (`validFrom`/`validUntil` as date
-        strings — drizzle `date()` columns return `YYYY-MM-DD` already),
-        episodes, the last 10 conversations, and the last 10
-        fulfillments. The detail screen is the only place a single
-        patient's full record is ever assembled.
-    *   `GET /conversations?status=&channel=&limit=&offset=` — paginated
-        queue with the patient name decrypted server-side and the
-        `lastMessageAt` timestamp from `MAX(messages.created_at)`.
-    *   `GET /conversations/:id` — chronological message timeline, body
-        decrypted server-side. The list endpoint deliberately omits
-        bodies; only the detail endpoint pays the per-row decrypt cost.
-    *   `GET /episodes?status=overdue&limit=&offset=` — actionable queue
-        joined to patient names so the dashboard can render
-        "Mary J. — CPAP mask, 4 days overdue" without a second round
-        trip.
-    *   `GET /audit?action=&targetTable=&since=&limit=&offset=` —
-        paginated audit viewer. **Implementation note:** because Rule 8
-        forbids any bare `import { auditLog }` outside
-        `lib/resupply-audit/src/`, this handler issues a
-        parameterised raw `SELECT ... FROM resupply.audit_log`
-        through `getDbPool().query()` (Rule 8 explicitly allows
-        SELECT). The `params` array is `.slice()`-snapshotted before
-        the count query so test assertions on the bound parameters
-        are stable across the count→rows mutation.
-*   **PHI surface.** All decryption happens server-side; the wire format
-    contains plaintext names + bodies but **never** raw
-    phone/email/DOB. Patient ids in URLs are opaque UUIDs, not MRNs or
-    phone-derived slugs. Audit `metadata` already passed through
-    `sanitizeMetadata` on the write side, but the dashboard renderer
-    adds a defence-in-depth allowlist (`source`, `channel`, `status`,
-    `messageCount`, `messageId`/`Sid`, `callSid`, `conversationId`,
-    `patientId`, `episodeId`, `prescriptionId`, `fulfillmentId`,
-    `reason`, `outcome`, `deliveryStatus`, `errorCode`, `templateName`,
-    `duration`, `count`) and renders only those keys as labelled
-    chips — a raw JSON dump of metadata is exactly the silent
-    PHI-leak vector the structured renderer exists to prevent.
-*   **Pagination contract.** Every list endpoint returns
-    `{ items, total, limit, offset }` with `limit ≤ 100` enforced by
-    zod. Bad query params return `{ error: "invalid_query", issues }`
-    with a 400 — the dashboard's `ErrorPanel` keys off
-    `data.error === "invalid_query"` to render the field-level zod
-    issues inline rather than a generic banner.
-*   **Codegen.** `lib/resupply-api-spec/openapi.yaml` mirrors the zod
-    schemas for every response shape; orval generates
-    `useGetDashboardSummary`, `useListPatients`, `useGetPatient`,
-    `useListConversations`, `useGetConversation`, `useListEpisodes`,
-    `useListAudit` plus `getList<X>QueryKey(params)` helpers. The
-    helpers are **required** by react-query v5's strict typing —
-    every list page passes `queryKey: getListXQueryKey(params)`
-    alongside `placeholderData: keepPreviousData` so pagination feels
-    instant (last page stays visible until the next page arrives)
-    without losing query-key granularity.
-*   **UI shell.** `src/components/AppShell.tsx` wraps every page with a
-    persistent sidebar (Dashboard / Patients / Conversations /
-    Episodes / Audit, with active-route highlighting via wouter's
-    `useLocation`), the brand header chip, and a footer. Small
-    primitives in `src/components/` — `Card`+`KpiCard`, `Badge` (with
-    status-variant helpers per enum), `Button`, `Input`/`Label`/`Select`,
-    `Spinner`, `EmptyState`, `Pagination`, `ErrorPanel`, `Table` — are
-    deliberately tiny single-file modules, not a component library;
-    the brand chrome (navy `#0a1f44`, gold `#c9a24a`) uses inline
-    styles for the brand-locked surfaces and Tailwind for layout.
-*   **Pages.** `src/pages/` — `dashboard.tsx` (KPI cards + queue links),
-    `patients.tsx` (status filter + free-text search, paginated table),
-    `patient-detail.tsx` (header card + four tabs:
-    Episodes / Prescriptions / Conversations / Fulfillments),
-    `conversations.tsx` (status + channel filters, paginated),
-    `conversation-detail.tsx` (chronological inbound/outbound bubbles
-    with channel-aware styling + an `ActionBar` wired to the existing
-    `useSendSmsReminder` / `useSendEmailReminder` /
-    `usePlaceVoiceCall` mutations), `episodes.tsx` (overdue queue
-    with inline reminder/call action buttons), `audit.tsx` (paginated
-    viewer with action / targetTable / since filters and the
-    `SafeMetadata` allowlist renderer described above). Every page
-    handles loading / error / empty states using the shared
-    primitives so the visual language stays consistent.
-*   **Test surface.** All 7 new API routes have vitest coverage (30
-    new tests, 119 total in `@workspace/resupply-api`) using the
-    existing fluent-stub pattern from `inbound.test.ts` /
-    `send-reminder.test.ts`. The audit-list test mocks `pool.query`
-    directly (not drizzle) since the handler uses raw SQL, and
-    asserts the bound parameter array shape so a future regression
-    that drops the `targetTable` filter would fail loudly.
+*   **Components:** `artifacts/resupply-api/` (Express API), `artifacts/resupply-worker/` (pg-boss background worker), `artifacts/resupply-dashboard/` (React operator console).
+*   **Database:** Resupply tables are under the `resupply` schema with PHI columns encrypted using `pgcrypto`. Versioned migrations are used for schema management.
+*   **Readiness Probe:** `/readyz` endpoint for health checks, verifying database and queue schema readiness.
+*   **Operator Authentication:** Uses Clerk with a distinct email allowlist (`RESUPPLY_OPERATOR_EMAILS`).
+*   **Operational Hardening:** Includes log redaction, `pino` flush-on-exit, and CORS configuration.
+*   **Voice (Outbound Calls):** Integrates Twilio Voice and OpenAI's Realtime API for automated patient calls, with on-device patient identity verification and tool dispatching.
+*   **Messaging (SMS + Email):** Supports two-way SMS via Twilio and email via SendGrid. Patient lookup uses an HMAC-based `phone_lookup` table for privacy. Features a hybrid scripted and AI reply router for inbound messages and interactive email links.
+*   **Operator Dashboard:** Provides a full operator console with API endpoints for patient, conversation, episode, and audit log management, with server-side PHI decryption and strict pagination.
 
 ## External Dependencies
 
-*   **SendGrid:** Used for sending order fulfillment emails from the backend.
-*   **MediaPipe Face Mesh:** Google's on-device facial landmark detection solution. The WASM runtime and model are self-hosted to maintain a strict Content Security Policy.
-*   **AWS:** Deployment target, providing HIPAA-compliant infrastructure with a Business Associate Agreement (BAA).
+*   **SendGrid:** Used for sending order fulfillment emails and resupply email reminders.
+*   **MediaPipe Face Mesh:** Google's on-device facial landmark detection solution for privacy-first measurements.
+*   **AWS:** Deployment target, providing HIPAA-compliant infrastructure.
+*   **PostgreSQL:** Database for persisting orders, usage events, admin audit logs, and all resupply system data.
+*   **Clerk:** Third-party authentication service for admin and operator access control.
+*   **Twilio:** Used for CPAP Resupply Automation outbound voice calls and two-way SMS messaging.
+*   **OpenAI:** Utilized by the CPAP Resupply Automation system for Realtime API (voice conversation) and chat-completions (SMS intent classification).
