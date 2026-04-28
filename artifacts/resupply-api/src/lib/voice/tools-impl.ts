@@ -51,6 +51,18 @@ import type {
 
 const MAX_VERIFY_ATTEMPTS = 3;
 
+// Tools the dispatcher will still serve once the caller has burned all
+// MAX_VERIFY_ATTEMPTS without proving identity. Same as IDENTITY_EXEMPT
+// minus `verify_patient_identity` itself — once you're locked out you
+// don't get to keep trying. Caller can still escalate to a human or
+// hang up cleanly. Anything else gets the same `identity_required`
+// stub the unverified path returns, so the model is forced to call
+// handoff/end_call instead of looping on side-effect tools.
+const POST_LOCKOUT_ALLOWED: ReadonlySet<ToolName> = new Set([
+  "request_human_handoff",
+  "end_call",
+]);
+
 // Shape the dispatcher returns when the model tries to use a side-
 // effect tool before identity is verified. `verify_patient_identity`-
 // shaped result so the wire payload matches `ToolResultByName`. The
@@ -69,11 +81,16 @@ function identityRequiredResultFor<K extends ToolName>(
   // its name's `ToolResultByName[K]` shape at the type level.
   switch (name) {
     case "verify_patient_identity":
-      // Should not happen — identity tool is exempt — but return a
-      // safe shape anyway.
+      // Reached when the dispatcher's lockout guard refuses a 4th+
+      // verify attempt (verifyAttempts >= MAX, !verified). We report
+      // `attempts_remaining: 0` so the model sees a stable
+      // exhausted-state signal and routes to handoff/end_call instead
+      // of looping on more verify calls. This branch is NOT hit on
+      // the pre-lockout exempt path — verifyIdentity() handles those
+      // and returns the real countdown.
       return {
         matched: false,
-        attempts_remaining: MAX_VERIFY_ATTEMPTS,
+        attempts_remaining: 0,
       } as DispatchToolResult<K>["result"];
     case "lookup_resupply_inventory":
       return { items: [] } as unknown as DispatchToolResult<K>["result"];
@@ -146,6 +163,24 @@ class Impl implements VoiceToolDispatcher {
   async dispatch<K extends ToolName>(
     call: DispatchToolCall<K>,
   ): Promise<DispatchToolResult<K>> {
+    // Hard lockout: once MAX_VERIFY_ATTEMPTS DOB checks have failed
+    // without success, the only escape paths are human handoff or
+    // ending the call. This includes refusing further
+    // verify_patient_identity calls — those would just keep burning
+    // patient time on a doomed loop. The check sits ABOVE the regular
+    // identity-exempt gate so that even verify_patient_identity is
+    // refused once exhausted.
+    if (
+      !this.verified &&
+      this.verifyAttempts >= MAX_VERIFY_ATTEMPTS &&
+      !POST_LOCKOUT_ALLOWED.has(call.name)
+    ) {
+      return {
+        callId: call.callId,
+        name: call.name,
+        result: identityRequiredResultFor(call.name),
+      };
+    }
     if (!this.verified && !IDENTITY_EXEMPT.has(call.name)) {
       return {
         callId: call.callId,
