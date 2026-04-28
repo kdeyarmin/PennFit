@@ -1181,6 +1181,9 @@ importers:
       pg:
         specifier: ^8.20.0
         version: 8.20.0
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.31.1)

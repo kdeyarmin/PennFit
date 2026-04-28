@@ -16,13 +16,41 @@
 // the previous scan or from an operator's manual send). The threshold
 // is hard-coded; patient-controlled DND lives in a separate ADR.
 //
-// Channel selection (v1)
-// ----------------------
-// Prefer SMS when the patient has a phone on file; fall back to email
-// when the phone column is null. We send ONE channel per scan to avoid
-// double-pinging — the AI fallback in inbound.ts can suggest a
-// channel switch later if the patient doesn't respond. ADR 013
-// documents this and the deferred "patient channel preference" work.
+// Channel + cadence selection (v2)
+// --------------------------------
+// Both the cadence (when does this patient become due?) and the
+// outbound channel (sms / email / voice) come from
+// `resolveOutreachPlan` in @workspace/resupply-domain. The resolution
+// order is:
+//   1. Per-patient override (`patients.cadence_override_days` /
+//      `patients.channel_preference`).
+//   2. First active rule from `frequency_rules` (by priority asc,
+//      created_at asc) whose SKU prefix / payer / tenure window all
+//      match.
+//   3. Fall back to `prescriptions.cadence_days` and the legacy
+//      SMS-then-email channel selection.
+//
+// Voice handling: the worker has no fire-and-forget voice channel
+// (Twilio outbound voice in this app is initiated interactively from
+// the operator console, not from a cron). If a rule or override
+// resolves channel to "voice", the worker downgrades to SMS (if the
+// patient has a phone) or email — and warns. Operators who want
+// voice-only outreach should keep the `channel_preference` set to
+// `voice` so the dashboard surfaces the patient for a manual call;
+// the cron just won't auto-ping them.
+//
+// SQL pre-filter loosening:
+// -------------------------
+// The previous implementation filtered "due" in SQL using
+// `prescriptions.cadence_days`. With overrides + rules a patient may
+// be due SOONER than the prescription-level cadence, so the SQL filter
+// would silently miss them. We now pre-filter only on the cheap
+// predicates (active patient, active prescription, no recent
+// conversation) and apply the cadence math in TypeScript after
+// resolving each patient's effective plan. The expected candidate
+// set per scan is small (low thousands of patients, far fewer
+// active rows), so the extra TS work is dwarfed by the round-trip
+// cost.
 //
 // Episode resolution
 // ------------------
@@ -33,14 +61,22 @@
 // scan window — operators get one ping per patient per cycle, not one
 // per SKU.
 
-import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type PgBoss from "pg-boss";
 
 import {
+  resolveOutreachPlan,
+  type OutreachChannel,
+  type OutreachPatient,
+  type OutreachPrescription,
+  type OutreachRule,
+} from "@workspace/resupply-domain";
+import {
   conversations,
   decrypt,
   episodes,
+  frequencyRules,
   fulfillments,
   getDbPool,
   patients,
@@ -79,7 +115,20 @@ export interface SendJobData {
 interface ScanRow {
   patientId: string;
   episodeId: string;
+  /** The channel the worker will actually use. The eligibility plan
+   *  may resolve to "voice", but the worker downgrades that to sms or
+   *  email — only those two are valid at the queue boundary. */
   channel: "sms" | "email";
+}
+
+/**
+ * Whole-day age between two instants. Mirrors the math
+ * `resolveOutreachPlan` uses for tenure so the eligibility decision
+ * here lines up with what the dashboard previews.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+function daysBetween(earlier: Date, later: Date): number {
+  return Math.floor((later.getTime() - earlier.getTime()) / DAY_MS);
 }
 
 /**
@@ -187,21 +236,54 @@ export async function scanForDueReminders(
   const db = drizzle(pool);
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
 
-  // Step 1: candidate (patient, prescription, episode) tuples that
-  // are eligible by date math. We join episodes onto prescriptions to
-  // surface the one episode the send helper will operate on; we pull
-  // the most recent episode per (patient, prescription).
+  // Step 1: load every active rule once. Rules are tiny (operator-
+  // managed; expected count is in the tens) so we keep the whole list
+  // in memory for the duration of the scan and let `resolveOutreachPlan`
+  // pick the right one per patient. Sorting in SQL matches what the
+  // domain helper does internally; doing it here lets us skip a
+  // re-sort per row.
+  const ruleRows = await db
+    .select({
+      id: frequencyRules.id,
+      priority: frequencyRules.priority,
+      createdAt: frequencyRules.createdAt,
+      active: frequencyRules.active,
+      matchItemSkuPrefix: frequencyRules.matchItemSkuPrefix,
+      matchInsurancePayer: frequencyRules.matchInsurancePayer,
+      minTenureDays: frequencyRules.minTenureDays,
+      maxTenureDays: frequencyRules.maxTenureDays,
+      cadenceDays: frequencyRules.cadenceDays,
+      defaultChannel: frequencyRules.defaultChannel,
+    })
+    .from(frequencyRules)
+    .where(eq(frequencyRules.active, true))
+    .orderBy(asc(frequencyRules.priority), asc(frequencyRules.createdAt));
+  const rules: OutreachRule[] = ruleRows.map((r) => ({
+    id: r.id,
+    priority: r.priority,
+    createdAt: r.createdAt,
+    active: r.active,
+    matchItemSkuPrefix: r.matchItemSkuPrefix,
+    matchInsurancePayer: r.matchInsurancePayer,
+    minTenureDays: r.minTenureDays,
+    maxTenureDays: r.maxTenureDays,
+    cadenceDays: r.cadenceDays,
+    defaultChannel: r.defaultChannel as OutreachChannel | null,
+  }));
+
+  // Step 2: candidate (patient, prescription, episode) tuples. The
+  // SQL-side filter only enforces the cheap predicates — active
+  // patient + active prescription + no recent conversation. Cadence
+  // resolution happens in TypeScript so per-patient overrides and
+  // rules can SHORTEN the cadence below `prescriptions.cadence_days`.
+  // We surface the columns the domain helper needs (insurance payer,
+  // overrides, patient.created_at for tenure) plus the per-row
+  // lastFulfilledAt and prescription.created_at the eligibility
+  // check uses to compute "is this patient due RIGHT NOW".
   //
-  // The "due" predicate has two halves:
-  //   - prescription has at least one fulfilled episode and the most
-  //     recent fulfillment is older than cadence_days
-  //   - OR prescription has no fulfillments and was created more
-  //     than cadence_days ago.
-  //
-  // We compute "most recent fulfillment per (patient, item_sku)"
-  // inline as a correlated subquery — clearer than a CTE for this
-  // small table.
-  const cutoff = sql`now() - (${prescriptions.cadenceDays} || ' days')::interval`;
+  // Channel resolution still needs decrypted phone + email
+  // reachability — surfaced as booleans so the Set<string> dedupe
+  // below doesn't accidentally retain PHI.
   const lastFulfilledAt = sql<Date | null>`(
     SELECT MAX(${fulfillments.shippedAt})
     FROM ${fulfillments}
@@ -209,12 +291,20 @@ export async function scanForDueReminders(
       AND ${fulfillments.itemSku} = ${prescriptions.itemSku}
   )`;
 
-  const dueRows = await db
+  const candidateRows = await db
     .select({
       patientId: patients.id,
-      episodeId: episodes.id,
+      patientCreatedAt: patients.createdAt,
+      insurancePayer: patients.insurancePayer,
+      cadenceOverrideDays: patients.cadenceOverrideDays,
+      channelPreference: patients.channelPreference,
       phone: decrypt(patients.phoneE164),
       email: decrypt(patients.email),
+      prescriptionItemSku: prescriptions.itemSku,
+      prescriptionCadenceDays: prescriptions.cadenceDays,
+      prescriptionCreatedAt: prescriptions.createdAt,
+      episodeId: episodes.id,
+      lastFulfilledAt,
     })
     .from(patients)
     .innerJoin(prescriptions, eq(prescriptions.patientId, patients.id))
@@ -223,19 +313,6 @@ export async function scanForDueReminders(
       and(
         eq(patients.status, "active"),
         eq(prescriptions.status, "active"),
-        or(
-          // Has a prior fulfillment older than cadence_days
-          and(
-            sql`${lastFulfilledAt} IS NOT NULL`,
-            sql`${lastFulfilledAt} < ${cutoff}`,
-          ),
-          // Has never been fulfilled and the prescription is older
-          // than cadence_days
-          and(
-            sql`${lastFulfilledAt} IS NULL`,
-            lt(prescriptions.createdAt, cutoff as unknown as Date),
-          ),
-        ),
         // Quiet-period: no conversation opened in the last 48h for
         // this episode. Implemented as a NOT EXISTS so the row is
         // dropped at the SQL layer.
@@ -248,23 +325,127 @@ export async function scanForDueReminders(
     )
     .orderBy(desc(episodes.dueAt));
 
-  // Step 2: dedupe to one (patient, episode) per scan and pick the
-  // channel from decrypted contact info. SMS preferred when phone
-  // present; else email; else dropped (and logged).
+  // Step 3: per-row eligibility + channel resolution.
   const seenPatient = new Set<string>();
   const out: ScanRow[] = [];
-  for (const row of dueRows) {
+  for (const row of candidateRows) {
     if (seenPatient.has(row.patientId)) continue;
-    let channel: "sms" | "email" | null = null;
-    if (row.phone) channel = "sms";
-    else if (row.email) channel = "email";
-    if (!channel) {
-      logger.warn(
-        { patient_id: row.patientId, episode_id: row.episodeId },
-        "reminders.scan: patient has no phone or email — skipping",
-      );
+
+    const patient: OutreachPatient = {
+      id: row.patientId,
+      createdAt: row.patientCreatedAt,
+      insurancePayer: row.insurancePayer,
+      cadenceOverrideDays: row.cadenceOverrideDays,
+      channelPreference: row.channelPreference as OutreachChannel | null,
+      hasPhone: row.phone != null && row.phone.length > 0,
+    };
+    const prescription: OutreachPrescription = {
+      itemSku: row.prescriptionItemSku,
+      cadenceDays: row.prescriptionCadenceDays,
+    };
+    const plan = resolveOutreachPlan({
+      patient,
+      prescription,
+      rules,
+      now: asOf,
+    });
+
+    // Eligibility: due iff (lastFulfilledAt ?? prescription.createdAt)
+    // is at least `plan.cadenceDays` old.
+    const baselineRaw = row.lastFulfilledAt ?? row.prescriptionCreatedAt;
+    // Defensive Date coercion — `lastFulfilledAt` comes from a raw
+    // SQL subquery and may surface as a string in some pg type
+    // configurations.
+    const baseline =
+      baselineRaw instanceof Date ? baselineRaw : new Date(baselineRaw);
+    if (daysBetween(baseline, asOf) < plan.cadenceDays) {
+      // Not due yet — skip silently. Common case for the bulk of
+      // active patients on every scan.
       continue;
     }
+
+    // Channel resolution: the plan may resolve to "voice", which the
+    // worker can't initiate. Downgrade to sms (if phone present) or
+    // email; warn so operators can see the gap in scheduled outreach.
+    let channel: "sms" | "email";
+    if (plan.channel === "voice") {
+      if (patient.hasPhone) {
+        channel = "sms";
+        logger.warn(
+          {
+            patient_id: row.patientId,
+            episode_id: row.episodeId,
+            requested_channel: plan.channel,
+            channel_source: plan.channelSource,
+          },
+          "reminders.scan: voice channel requested — downgrading to sms (worker cannot place outbound voice calls)",
+        );
+      } else if (row.email) {
+        channel = "email";
+        logger.warn(
+          {
+            patient_id: row.patientId,
+            episode_id: row.episodeId,
+            requested_channel: plan.channel,
+            channel_source: plan.channelSource,
+          },
+          "reminders.scan: voice channel requested — downgrading to email (worker cannot place outbound voice calls)",
+        );
+      } else {
+        logger.warn(
+          { patient_id: row.patientId, episode_id: row.episodeId },
+          "reminders.scan: patient has no phone or email — skipping",
+        );
+        continue;
+      }
+    } else if (plan.channel === "sms") {
+      if (!patient.hasPhone) {
+        // Operator-set sms preference but no phone on file: fall back
+        // to email rather than silently drop.
+        if (!row.email) {
+          logger.warn(
+            { patient_id: row.patientId, episode_id: row.episodeId },
+            "reminders.scan: patient has no phone or email — skipping",
+          );
+          continue;
+        }
+        channel = "email";
+        logger.warn(
+          {
+            patient_id: row.patientId,
+            episode_id: row.episodeId,
+            channel_source: plan.channelSource,
+          },
+          "reminders.scan: sms requested but patient has no phone — falling back to email",
+        );
+      } else {
+        channel = "sms";
+      }
+    } else {
+      // plan.channel === "email"
+      if (!row.email) {
+        // Email preferred but no email on file: fall back to sms.
+        if (!patient.hasPhone) {
+          logger.warn(
+            { patient_id: row.patientId, episode_id: row.episodeId },
+            "reminders.scan: patient has no phone or email — skipping",
+          );
+          continue;
+        }
+        channel = "sms";
+        logger.warn(
+          {
+            patient_id: row.patientId,
+            episode_id: row.episodeId,
+            channel_source: plan.channelSource,
+          },
+          "reminders.scan: email requested but patient has no email — falling back to sms",
+        );
+      } else {
+        channel = "email";
+      }
+    }
+
     seenPatient.add(row.patientId);
     out.push({
       patientId: row.patientId,
@@ -273,10 +454,6 @@ export async function scanForDueReminders(
     });
   }
 
-  // Suppress unused import — `gte` and `isNull` are exported for
-  // possible future predicate work but not used in the current query.
-  void gte;
-  void isNull;
   return out;
 }
 

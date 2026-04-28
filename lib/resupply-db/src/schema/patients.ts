@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
-import { index, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  integer,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import { encryptedJson, encryptedText } from "../encryption";
 import { resupplySchema } from "./_schema";
@@ -54,6 +61,29 @@ export const patients = resupplySchema.table(
     status: text("status", { enum: ["active", "paused", "closed"] })
       .notNull()
       .default("active"),
+
+    // Insurance payer name as free text (e.g. "Aetna", "Medicare",
+    // "BCBS-PA"). Not encrypted — payer is sensitive but not PHI on
+    // its own, and the global rules engine has to be able to filter
+    // on it without round-tripping through pgcrypto. Operator-edited
+    // from the dashboard. Nullable: blank means the rules engine
+    // treats this patient's insurance as "unknown" and skips any
+    // rule that requires a specific payer match.
+    insurancePayer: text("insurance_payer"),
+
+    // Per-patient frequency override (in days). When set, this wins
+    // over both the matched rule and the prescription's default
+    // cadence — see `lib/resupply-domain/src/outreach-plan.ts`.
+    // Null means "no override; use the rules engine / prescription
+    // default". The rules engine never writes here; only operators do.
+    cadenceOverrideDays: integer("cadence_override_days"),
+
+    // Per-patient channel preference. Same precedence as the cadence
+    // override — operator-set, wins over rule defaults. Null means
+    // "fall back to the matched rule, then to SMS-then-email".
+    channelPreference: text("channel_preference", {
+      enum: ["sms", "email", "voice"],
+    }),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

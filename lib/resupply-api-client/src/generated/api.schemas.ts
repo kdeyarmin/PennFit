@@ -572,6 +572,22 @@ export const PatientDetailStatus = {
 } as const;
 
 /**
+ * Per-patient outbound channel override. Wins over rules
+and the legacy SMS-then-email fallback. NULL means no
+override.
+
+ */
+export type PatientDetailChannelPreference =
+  | (typeof PatientDetailChannelPreference)[keyof typeof PatientDetailChannelPreference]
+  | null;
+
+export const PatientDetailChannelPreference = {
+  sms: "sms",
+  email: "email",
+  voice: "voice",
+} as const;
+
+/**
  * Full patient detail for the patient detail page. Decrypted
 firstName + lastName for display; phone + email never returned.
 
@@ -584,6 +600,23 @@ export interface PatientDetail {
   status: PatientDetailStatus;
   hasPhone: boolean;
   hasEmail: boolean;
+  /** Free-text payer name set by an operator. Used as a match
+target by frequency_rules. NULL means no payer recorded.
+ */
+  insurancePayer?: string | null;
+  /**
+   * Per-patient cadence override (days). Wins over rules and
+the prescription's cadence. NULL means no override.
+
+   * @minimum 1
+   * @maximum 365
+   */
+  cadenceOverrideDays?: number | null;
+  /** Per-patient outbound channel override. Wins over rules
+and the legacy SMS-then-email fallback. NULL means no
+override.
+ */
+  channelPreference?: PatientDetailChannelPreference;
   createdAt: string;
   updatedAt: string;
   prescriptions: PatientPrescription[];
@@ -780,6 +813,233 @@ export interface AuditPage {
   limit: number;
   /** @minimum 0 */
   offset: number;
+}
+
+export type PatientUpdateChannelPreference =
+  | (typeof PatientUpdateChannelPreference)[keyof typeof PatientUpdateChannelPreference]
+  | null;
+
+export const PatientUpdateChannelPreference = {
+  sms: "sms",
+  email: "email",
+  voice: "voice",
+} as const;
+
+/**
+ * Body for PATCH /patients/{id}. All fields are independently
+optional; sending `null` explicitly clears the field, omitting
+it leaves the column unchanged. PHI columns (name, phone,
+email) are NOT writable via this endpoint.
+
+ */
+export interface PatientUpdate {
+  /** @maxLength 120 */
+  insurancePayer?: string | null;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  cadenceOverrideDays?: number | null;
+  channelPreference?: PatientUpdateChannelPreference;
+}
+
+/**
+ * Echoes the patient id and the list of column names changed.
+ */
+export interface PatientUpdateResponse {
+  id: string;
+  changed: string[];
+}
+
+export type PatientTimelineEventKind =
+  (typeof PatientTimelineEventKind)[keyof typeof PatientTimelineEventKind];
+
+export const PatientTimelineEventKind = {
+  patient_created: "patient_created",
+  prescription_created: "prescription_created",
+  episode_created: "episode_created",
+  message: "message",
+  fulfillment_queued: "fulfillment_queued",
+  fulfillment_submitted: "fulfillment_submitted",
+  fulfillment_shipped: "fulfillment_shipped",
+  fulfillment_delivered: "fulfillment_delivered",
+} as const;
+
+/**
+ * One row in the patient timeline. `kind` is the event type;
+`at` is an ISO-8601 timestamp; `episodeId` /
+`conversationId` / `prescriptionId` / `fulfillmentId` are
+optional cross-references the dashboard uses for deep-linking.
+
+ */
+export interface PatientTimelineEvent {
+  kind: PatientTimelineEventKind;
+  at: string;
+  title: string;
+  detail: string | null;
+  episodeId: string | null;
+  conversationId: string | null;
+  prescriptionId: string | null;
+  fulfillmentId: string | null;
+}
+
+export interface PatientTimeline {
+  patientId: string;
+  events: PatientTimelineEvent[];
+}
+
+export type FrequencyRuleDefaultChannel =
+  | (typeof FrequencyRuleDefaultChannel)[keyof typeof FrequencyRuleDefaultChannel]
+  | null;
+
+export const FrequencyRuleDefaultChannel = {
+  sms: "sms",
+  email: "email",
+  voice: "voice",
+} as const;
+
+/**
+ * A frequency rule consulted by the eligibility engine when a
+patient has no per-patient override. NULL `match_*` predicates
+mean "this rule does not constrain on that axis".
+
+ */
+export interface FrequencyRule {
+  id: string;
+  name: string;
+  /**
+   * Lower priority is evaluated first.
+   * @minimum 0
+   */
+  priority: number;
+  matchItemSkuPrefix: string | null;
+  matchInsurancePayer: string | null;
+  /** @minimum 0 */
+  minTenureDays: number | null;
+  /** @minimum 0 */
+  maxTenureDays: number | null;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  cadenceDays: number;
+  defaultChannel: FrequencyRuleDefaultChannel;
+  active: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FrequencyRuleList {
+  rules: FrequencyRule[];
+}
+
+export type FrequencyRuleCreateDefaultChannel =
+  | (typeof FrequencyRuleCreateDefaultChannel)[keyof typeof FrequencyRuleCreateDefaultChannel]
+  | null;
+
+export const FrequencyRuleCreateDefaultChannel = {
+  sms: "sms",
+  email: "email",
+  voice: "voice",
+} as const;
+
+/**
+ * Body for POST /rules. `name` and `cadenceDays` are required;
+every other field is optional or nullable per the same
+semantics as PATCH.
+
+ */
+export interface FrequencyRuleCreate {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  /**
+   * @minimum 0
+   * @maximum 100000
+   */
+  priority?: number;
+  /** @maxLength 120 */
+  matchItemSkuPrefix?: string | null;
+  /** @maxLength 120 */
+  matchInsurancePayer?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 36500
+   */
+  minTenureDays?: number | null;
+  /**
+   * @minimum 0
+   * @maximum 36500
+   */
+  maxTenureDays?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  cadenceDays: number;
+  defaultChannel?: FrequencyRuleCreateDefaultChannel;
+  active?: boolean;
+  /** @maxLength 2000 */
+  notes?: string | null;
+}
+
+export type FrequencyRuleUpdateDefaultChannel =
+  | (typeof FrequencyRuleUpdateDefaultChannel)[keyof typeof FrequencyRuleUpdateDefaultChannel]
+  | null;
+
+export const FrequencyRuleUpdateDefaultChannel = {
+  sms: "sms",
+  email: "email",
+  voice: "voice",
+} as const;
+
+/**
+ * Body for PATCH /rules/{id}. Every field is optional; sending
+`null` explicitly clears a nullable field.
+
+ */
+export interface FrequencyRuleUpdate {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name?: string;
+  /**
+   * @minimum 0
+   * @maximum 100000
+   */
+  priority?: number;
+  /** @maxLength 120 */
+  matchItemSkuPrefix?: string | null;
+  /** @maxLength 120 */
+  matchInsurancePayer?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 36500
+   */
+  minTenureDays?: number | null;
+  /**
+   * @minimum 0
+   * @maximum 36500
+   */
+  maxTenureDays?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  cadenceDays?: number;
+  defaultChannel?: FrequencyRuleUpdateDefaultChannel;
+  active?: boolean;
+  /** @maxLength 2000 */
+  notes?: string | null;
+}
+
+export interface FrequencyRuleUpdateResponse {
+  id: string;
+  changed: string[];
 }
 
 export type HandleEmailClickParams = {

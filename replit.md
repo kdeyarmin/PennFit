@@ -75,6 +75,7 @@ A separate CPAP Resupply Automation system within the monorepo provides automate
 *   **Voice (Outbound Calls):** Integrates Twilio Voice and OpenAI's Realtime API for automated patient calls, with on-device patient identity verification and tool dispatching.
 *   **Messaging (SMS + Email):** Supports two-way SMS via Twilio and email via SendGrid. Patient lookup uses an HMAC-based `phone_lookup` table for privacy. Features a hybrid scripted and AI reply router for inbound messages and interactive email links.
 *   **Operator Dashboard:** Provides a full operator console with API endpoints for patient, conversation, episode, and audit log management, with server-side PHI decryption and strict pagination.
+*   **Reminder Eligibility Engine:** Per-patient overrides (`patients.cadence_override_days`, `patients.channel_preference`, `patients.insurance_payer`) and a global rules engine (`resupply.frequency_rules` — matched by SKU prefix, payer, and tenure window with priority ordering) determine reminder cadence and channel. Resolution lives in `@workspace/resupply-domain`'s `resolveOutreachPlan` (zero DB deps) so both the worker and the dashboard preview agree. Operators manage rules at `/rules` and per-patient overrides on the patient detail page; a chronological Timeline tab on the patient detail page merges episode, message, and fulfillment events into one feed.
 
 ## External Dependencies
 

@@ -59,6 +59,13 @@ router.get("/patients/:id", requireOperator, async (req, res) => {
       status: patients.status,
       hasPhone: sql<boolean>`(${patients.phoneE164} IS NOT NULL)`,
       hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
+      // Operator-editable settings the new dashboard panel reads/writes
+      // via PATCH /patients/:id. All three are nullable: NULL means
+      // "no override / fall back to global rules / fall back to legacy
+      // SMS-then-email selection".
+      insurancePayer: patients.insurancePayer,
+      cadenceOverrideDays: patients.cadenceOverrideDays,
+      channelPreference: patients.channelPreference,
       createdAt: patients.createdAt,
       updatedAt: patients.updatedAt,
     })
@@ -169,6 +176,9 @@ router.get("/patients/:id", requireOperator, async (req, res) => {
     status: patient.status,
     hasPhone: Boolean(patient.hasPhone),
     hasEmail: Boolean(patient.hasEmail),
+    insurancePayer: patient.insurancePayer,
+    cadenceOverrideDays: patient.cadenceOverrideDays,
+    channelPreference: patient.channelPreference,
     createdAt: toIsoRequired(patient.createdAt),
     updatedAt: toIsoRequired(patient.updatedAt),
     prescriptions: prescriptionRows.map((p) => ({

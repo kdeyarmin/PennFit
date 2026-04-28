@@ -27,6 +27,11 @@ import type {
   ConversationListPage,
   DashboardSummary,
   EpisodeListPage,
+  FrequencyRule,
+  FrequencyRuleCreate,
+  FrequencyRuleList,
+  FrequencyRuleUpdate,
+  FrequencyRuleUpdateResponse,
   HandleEmailClickParams,
   HealthStatus,
   ListAuditParams,
@@ -39,6 +44,9 @@ import type {
   OperatorIdentity,
   PatientDetail,
   PatientListPage,
+  PatientTimeline,
+  PatientUpdate,
+  PatientUpdateResponse,
   PlaceVoiceCallRequest,
   PlaceVoiceCallResponse,
   ReadinessStatus,
@@ -1133,6 +1141,530 @@ export function useGetPatient<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Partial update of a patient's operator-editable fields:
+`insurancePayer`, `cadenceOverrideDays`, and
+`channelPreference`. Each field is independently optional;
+sending `null` explicitly clears the field, omitting it leaves
+the column unchanged. PHI columns (name, phone, email) are
+NOT writable through this endpoint.
+
+ * @summary Update operator-editable patient settings
+ */
+export const getUpdatePatientUrl = (id: string) => {
+  return `/resupply-api/patients/${id}`;
+};
+
+export const updatePatient = async (
+  id: string,
+  patientUpdate: PatientUpdate,
+  options?: RequestInit,
+): Promise<PatientUpdateResponse> => {
+  return customFetch<PatientUpdateResponse>(getUpdatePatientUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(patientUpdate),
+  });
+};
+
+export const getUpdatePatientMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePatient>>,
+    TError,
+    { id: string; data: BodyType<PatientUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePatient>>,
+  TError,
+  { id: string; data: BodyType<PatientUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updatePatient"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePatient>>,
+    { id: string; data: BodyType<PatientUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePatient(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePatientMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePatient>>
+>;
+export type UpdatePatientMutationBody = BodyType<PatientUpdate>;
+export type UpdatePatientMutationError = ErrorType<
+  ConsoleValidationError | AuthError | NotFoundError
+>;
+
+/**
+ * @summary Update operator-editable patient settings
+ */
+export const useUpdatePatient = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePatient>>,
+    TError,
+    { id: string; data: BodyType<PatientUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePatient>>,
+  TError,
+  { id: string; data: BodyType<PatientUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdatePatientMutationOptions(options));
+};
+
+/**
+ * Merges patient-creation, prescriptions, episodes, message
+metadata, and fulfillment milestones into one descending-by-
+time array. Message bodies are NOT included — call
+/conversations/{id} for the decrypted thread.
+
+ * @summary Unified chronological event feed for a patient
+ */
+export const getGetPatientTimelineUrl = (id: string) => {
+  return `/resupply-api/patients/${id}/timeline`;
+};
+
+export const getPatientTimeline = async (
+  id: string,
+  options?: RequestInit,
+): Promise<PatientTimeline> => {
+  return customFetch<PatientTimeline>(getGetPatientTimelineUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPatientTimelineQueryKey = (id: string) => {
+  return [`/resupply-api/patients/${id}/timeline`] as const;
+};
+
+export const getGetPatientTimelineQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPatientTimeline>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPatientTimeline>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPatientTimelineQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPatientTimeline>>
+  > = ({ signal }) => getPatientTimeline(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPatientTimeline>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPatientTimelineQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPatientTimeline>>
+>;
+export type GetPatientTimelineQueryError = ErrorType<AuthError | NotFoundError>;
+
+/**
+ * @summary Unified chronological event feed for a patient
+ */
+
+export function useGetPatientTimeline<
+  TData = Awaited<ReturnType<typeof getPatientTimeline>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPatientTimeline>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPatientTimelineQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns every rule, ordered by (priority asc, createdAt asc) —
+the same order the eligibility engine uses. Inactive rules are
+included so operators can re-enable them without re-entering
+the criteria.
+
+ * @summary List frequency rules (active + inactive)
+ */
+export const getListRulesUrl = () => {
+  return `/resupply-api/rules`;
+};
+
+export const listRules = async (
+  options?: RequestInit,
+): Promise<FrequencyRuleList> => {
+  return customFetch<FrequencyRuleList>(getListRulesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListRulesQueryKey = () => {
+  return [`/resupply-api/rules`] as const;
+};
+
+export const getListRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listRules>>,
+  TError = ErrorType<AuthError>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listRules>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListRulesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listRules>>> = ({
+    signal,
+  }) => listRules({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listRules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listRules>>
+>;
+export type ListRulesQueryError = ErrorType<AuthError>;
+
+/**
+ * @summary List frequency rules (active + inactive)
+ */
+
+export function useListRules<
+  TData = Awaited<ReturnType<typeof listRules>>,
+  TError = ErrorType<AuthError>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listRules>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListRulesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a frequency rule
+ */
+export const getCreateRuleUrl = () => {
+  return `/resupply-api/rules`;
+};
+
+export const createRule = async (
+  frequencyRuleCreate: FrequencyRuleCreate,
+  options?: RequestInit,
+): Promise<FrequencyRule> => {
+  return customFetch<FrequencyRule>(getCreateRuleUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(frequencyRuleCreate),
+  });
+};
+
+export const getCreateRuleMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRule>>,
+    TError,
+    { data: BodyType<FrequencyRuleCreate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createRule>>,
+  TError,
+  { data: BodyType<FrequencyRuleCreate> },
+  TContext
+> => {
+  const mutationKey = ["createRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createRule>>,
+    { data: BodyType<FrequencyRuleCreate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createRule(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createRule>>
+>;
+export type CreateRuleMutationBody = BodyType<FrequencyRuleCreate>;
+export type CreateRuleMutationError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Create a frequency rule
+ */
+export const useCreateRule = <
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRule>>,
+    TError,
+    { data: BodyType<FrequencyRuleCreate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createRule>>,
+  TError,
+  { data: BodyType<FrequencyRuleCreate> },
+  TContext
+> => {
+  return useMutation(getCreateRuleMutationOptions(options));
+};
+
+/**
+ * Partial update. Any field omitted from the body is left alone;
+nullable fields can be cleared by sending an explicit `null`.
+
+ * @summary Update a frequency rule
+ */
+export const getUpdateRuleUrl = (id: string) => {
+  return `/resupply-api/rules/${id}`;
+};
+
+export const updateRule = async (
+  id: string,
+  frequencyRuleUpdate: FrequencyRuleUpdate,
+  options?: RequestInit,
+): Promise<FrequencyRuleUpdateResponse> => {
+  return customFetch<FrequencyRuleUpdateResponse>(getUpdateRuleUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(frequencyRuleUpdate),
+  });
+};
+
+export const getUpdateRuleMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRule>>,
+    TError,
+    { id: string; data: BodyType<FrequencyRuleUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateRule>>,
+  TError,
+  { id: string; data: BodyType<FrequencyRuleUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateRule>>,
+    { id: string; data: BodyType<FrequencyRuleUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateRule(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateRule>>
+>;
+export type UpdateRuleMutationBody = BodyType<FrequencyRuleUpdate>;
+export type UpdateRuleMutationError = ErrorType<
+  ConsoleValidationError | AuthError | NotFoundError
+>;
+
+/**
+ * @summary Update a frequency rule
+ */
+export const useUpdateRule = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRule>>,
+    TError,
+    { id: string; data: BodyType<FrequencyRuleUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateRule>>,
+  TError,
+  { id: string; data: BodyType<FrequencyRuleUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateRuleMutationOptions(options));
+};
+
+/**
+ * @summary Delete a frequency rule
+ */
+export const getDeleteRuleUrl = (id: string) => {
+  return `/resupply-api/rules/${id}`;
+};
+
+export const deleteRule = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteRuleUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteRuleMutationOptions = <
+  TError = ErrorType<AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteRule>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteRule>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteRule(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteRule>>
+>;
+
+export type DeleteRuleMutationError = ErrorType<AuthError | NotFoundError>;
+
+/**
+ * @summary Delete a frequency rule
+ */
+export const useDeleteRule = <
+  TError = ErrorType<AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteRule>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteRuleMutationOptions(options));
+};
 
 /**
  * Paginated list of conversations across all channels. Includes the

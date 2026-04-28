@@ -14,6 +14,7 @@ import { PatientDetailPage } from "./pages/patient-detail";
 import { ConversationsPage } from "./pages/conversations";
 import { ConversationDetailPage } from "./pages/conversation-detail";
 import { EpisodesPage } from "./pages/episodes";
+import { RulesPage } from "./pages/rules";
 import { AuditPage } from "./pages/audit";
 
 // Penn Resupply Operator Console.
@@ -79,6 +80,7 @@ function OperatorConsole() {
           {(params) => <ConversationDetailPage id={params.id} />}
         </Route>
         <Route path="/episodes" component={EpisodesPage} />
+        <Route path="/rules" component={RulesPage} />
         <Route path="/audit" component={AuditPage} />
         <Route component={NotFound} />
       </Switch>

@@ -15,6 +15,13 @@
       "when": 1777384344952,
       "tag": "0001_wandering_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777396226583,
+      "tag": "0002_burly_amphibian",
+      "breakpoints": true
     }
   ]
 }

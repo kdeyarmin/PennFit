@@ -1,16 +1,16 @@
-// Patient routes — /patients (list) and /patients/:id (detail).
+// Frequency-rules routes — /rules CRUD.
 
 import { Router, type IRouter } from "express";
 
-import detailRouter from "./detail";
+import createRouter from "./create";
+import deleteRouter from "./delete";
 import listRouter from "./list";
-import timelineRouter from "./timeline";
 import updateRouter from "./update";
 
 const router: IRouter = Router();
 router.use(listRouter);
-router.use(detailRouter);
-router.use(timelineRouter);
+router.use(createRouter);
 router.use(updateRouter);
+router.use(deleteRouter);
 
 export default router;

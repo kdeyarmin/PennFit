@@ -637,6 +637,251 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthError"
+    patch:
+      operationId: updatePatient
+      tags: [patients]
+      summary: Update operator-editable patient settings
+      description: |
+        Partial update of a patient's operator-editable fields:
+        `insurancePayer`, `cadenceOverrideDays`, and
+        `channelPreference`. Each field is independently optional;
+        sending `null` explicitly clears the field, omitting it leaves
+        the column unchanged. PHI columns (name, phone, email) are
+        NOT writable through this endpoint.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientUpdate"
+      responses:
+        "200":
+          description: Update applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientUpdateResponse"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "404":
+          description: No patient with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /patients/{id}/timeline:
+    get:
+      operationId: getPatientTimeline
+      tags: [patients]
+      summary: Unified chronological event feed for a patient
+      description: |
+        Merges patient-creation, prescriptions, episodes, message
+        metadata, and fulfillment milestones into one descending-by-
+        time array. Message bodies are NOT included — call
+        /conversations/{id} for the decrypted thread.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Timeline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientTimeline"
+        "404":
+          description: No patient with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /rules:
+    get:
+      operationId: listRules
+      tags: [rules]
+      summary: List frequency rules (active + inactive)
+      description: |
+        Returns every rule, ordered by (priority asc, createdAt asc) —
+        the same order the eligibility engine uses. Inactive rules are
+        included so operators can re-enable them without re-entering
+        the criteria.
+      responses:
+        "200":
+          description: Rules list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrequencyRuleList"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+    post:
+      operationId: createRule
+      tags: [rules]
+      summary: Create a frequency rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FrequencyRuleCreate"
+      responses:
+        "201":
+          description: Rule created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrequencyRule"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /rules/{id}:
+    patch:
+      operationId: updateRule
+      tags: [rules]
+      summary: Update a frequency rule
+      description: |
+        Partial update. Any field omitted from the body is left alone;
+        nullable fields can be cleared by sending an explicit `null`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FrequencyRuleUpdate"
+      responses:
+        "200":
+          description: Update applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FrequencyRuleUpdateResponse"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "404":
+          description: No rule with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+    delete:
+      operationId: deleteRule
+      tags: [rules]
+      summary: Delete a frequency rule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          description: No rule with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
   /conversations:
     get:
       operationId: listConversations
@@ -1512,6 +1757,28 @@ components:
           type: boolean
         hasEmail:
           type: boolean
+        insurancePayer:
+          type: string
+          nullable: true
+          description: |
+            Free-text payer name set by an operator. Used as a match
+            target by frequency_rules. NULL means no payer recorded.
+        cadenceOverrideDays:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 365
+          description: |
+            Per-patient cadence override (days). Wins over rules and
+            the prescription's cadence. NULL means no override.
+        channelPreference:
+          type: string
+          enum: [sms, email, voice]
+          nullable: true
+          description: |
+            Per-patient outbound channel override. Wins over rules
+            and the legacy SMS-then-email fallback. NULL means no
+            override.
         createdAt:
           type: string
           format: date-time
@@ -1825,3 +2092,287 @@ components:
         - total
         - limit
         - offset
+    PatientUpdate:
+      type: object
+      description: |
+        Body for PATCH /patients/{id}. All fields are independently
+        optional; sending `null` explicitly clears the field, omitting
+        it leaves the column unchanged. PHI columns (name, phone,
+        email) are NOT writable via this endpoint.
+      properties:
+        insurancePayer:
+          type: string
+          nullable: true
+          maxLength: 120
+        cadenceOverrideDays:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 365
+        channelPreference:
+          type: string
+          nullable: true
+          enum: [sms, email, voice]
+      additionalProperties: false
+    PatientUpdateResponse:
+      type: object
+      description: Echoes the patient id and the list of column names changed.
+      properties:
+        id:
+          type: string
+          format: uuid
+        changed:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - changed
+    PatientTimelineEvent:
+      type: object
+      description: |
+        One row in the patient timeline. `kind` is the event type;
+        `at` is an ISO-8601 timestamp; `episodeId` /
+        `conversationId` / `prescriptionId` / `fulfillmentId` are
+        optional cross-references the dashboard uses for deep-linking.
+      properties:
+        kind:
+          type: string
+          enum:
+            - patient_created
+            - prescription_created
+            - episode_created
+            - message
+            - fulfillment_queued
+            - fulfillment_submitted
+            - fulfillment_shipped
+            - fulfillment_delivered
+        at:
+          type: string
+          format: date-time
+        title:
+          type: string
+        detail:
+          type: string
+          nullable: true
+        episodeId:
+          type: string
+          format: uuid
+          nullable: true
+        conversationId:
+          type: string
+          format: uuid
+          nullable: true
+        prescriptionId:
+          type: string
+          format: uuid
+          nullable: true
+        fulfillmentId:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - kind
+        - at
+        - title
+        - detail
+        - episodeId
+        - conversationId
+        - prescriptionId
+        - fulfillmentId
+    PatientTimeline:
+      type: object
+      properties:
+        patientId:
+          type: string
+          format: uuid
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientTimelineEvent"
+      required:
+        - patientId
+        - events
+    FrequencyRule:
+      type: object
+      description: |
+        A frequency rule consulted by the eligibility engine when a
+        patient has no per-patient override. NULL `match_*` predicates
+        mean "this rule does not constrain on that axis".
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        priority:
+          type: integer
+          minimum: 0
+          description: Lower priority is evaluated first.
+        matchItemSkuPrefix:
+          type: string
+          nullable: true
+        matchInsurancePayer:
+          type: string
+          nullable: true
+        minTenureDays:
+          type: integer
+          nullable: true
+          minimum: 0
+        maxTenureDays:
+          type: integer
+          nullable: true
+          minimum: 0
+        cadenceDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+        defaultChannel:
+          type: string
+          nullable: true
+          enum: [sms, email, voice]
+        active:
+          type: boolean
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - priority
+        - matchItemSkuPrefix
+        - matchInsurancePayer
+        - minTenureDays
+        - maxTenureDays
+        - cadenceDays
+        - defaultChannel
+        - active
+        - notes
+        - createdAt
+        - updatedAt
+    FrequencyRuleList:
+      type: object
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/FrequencyRule"
+      required:
+        - rules
+    FrequencyRuleCreate:
+      type: object
+      description: |
+        Body for POST /rules. `name` and `cadenceDays` are required;
+        every other field is optional or nullable per the same
+        semantics as PATCH.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        matchItemSkuPrefix:
+          type: string
+          nullable: true
+          maxLength: 120
+        matchInsurancePayer:
+          type: string
+          nullable: true
+          maxLength: 120
+        minTenureDays:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 36500
+        maxTenureDays:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 36500
+        cadenceDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+        defaultChannel:
+          type: string
+          nullable: true
+          enum: [sms, email, voice]
+        active:
+          type: boolean
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+      required:
+        - name
+        - cadenceDays
+      additionalProperties: false
+    FrequencyRuleUpdate:
+      type: object
+      description: |
+        Body for PATCH /rules/{id}. Every field is optional; sending
+        `null` explicitly clears a nullable field.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100000
+        matchItemSkuPrefix:
+          type: string
+          nullable: true
+          maxLength: 120
+        matchInsurancePayer:
+          type: string
+          nullable: true
+          maxLength: 120
+        minTenureDays:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 36500
+        maxTenureDays:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 36500
+        cadenceDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+        defaultChannel:
+          type: string
+          nullable: true
+          enum: [sms, email, voice]
+        active:
+          type: boolean
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+      additionalProperties: false
+    FrequencyRuleUpdateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        changed:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - changed

@@ -7,6 +7,7 @@ import episodesRouter from "./episodes/index.js";
 import healthRouter from "./health.js";
 import meRouter from "./me.js";
 import patientsRouter from "./patients/index.js";
+import rulesRouter from "./rules/index.js";
 import smsRouter from "./sms/index.js";
 import voiceRouter from "./voice/index.js";
 
@@ -26,6 +27,7 @@ router.use(emailRouter);
 // the conversation detail endpoint, never phone or email values.
 router.use(dashboardRouter);
 router.use(patientsRouter);
+router.use(rulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
 router.use(auditRouter);

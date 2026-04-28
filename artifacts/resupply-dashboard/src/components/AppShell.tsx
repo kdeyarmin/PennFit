@@ -28,6 +28,7 @@ const NAV_LINKS: ReadonlyArray<{
     matchPrefix: "/conversations",
   },
   { href: "/episodes", label: "Episodes", matchPrefix: "/episodes" },
+  { href: "/rules", label: "Rules", matchPrefix: "/rules" },
   { href: "/audit", label: "Audit", matchPrefix: "/audit" },
 ];
 
