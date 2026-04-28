@@ -374,8 +374,8 @@ export function Learn() {
               How PennPaps works
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              A walkthrough of the three-minute fitting flow, with capture
-              tips and questionnaire guidance.
+              A walkthrough of every part of PennPaps — the fitter, the shop,
+              customer accounts, and how resupply works.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -385,11 +385,11 @@ export function Learn() {
       {/* CTA */}
       <section className="text-center space-y-4 pt-2">
         <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
-          When you're ready, we'll fit you in minutes.
+          When you're ready, we're here.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          PennPaps uses your camera on-device to recommend the right mask. No
-          uploads, no waiting on a callback.
+          New to CPAP? Get matched to the right mask with our on-device fitter.
+          Already have your machine? Reorder cushions, filters, and tubing direct from the shop.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
@@ -398,16 +398,16 @@ export function Learn() {
               className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow gap-2"
             >
               <Sparkles className="w-4 h-4" />
-              Start Fitting Process
+              Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/masks">
+          <Link href="/shop">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Browse Mask Catalog
+              Shop CPAP supplies
             </Button>
           </Link>
         </div>

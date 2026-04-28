@@ -62,6 +62,10 @@ The `/learn` hub links to longer-form, single-purpose sub-pages:
 - `/learn/replacement-schedule` — full per-item cadences for cushions, tubing, filters, headgear, and chambers, with overdue self-check.
 - `/learn/device-setup` — new-patient step-by-step guide for setting up a CPAP or BiPAP: 7-step initial setup, first-night expectations, daily/weekly/monthly care, troubleshooting (leaks, dry mouth, aerophagia, claustrophobia, pressure intolerance), BiPAP-specific notes, and "when to call us vs. your doctor". Surfaced from `/learn` and from `/order-success` so newly-purchased customers see it immediately after checkout.
 
+### Site-Wide Editorial Voice (Storefront Reframe)
+
+The user-facing copy treats PennPaps as a full storefront, not just a mask fitter. Three canonical entry points are surfaced everywhere — **Get fitted for a mask** (`/consent`), **Shop CPAP supplies** (`/shop`), **My account** (`/account`) — with a unified CTA lexicon used across `home.tsx`, `learn.tsx`, `faq.tsx`, `not-found.tsx`, and `order-success.tsx`. Hero framing is *"Your CPAP, made simple. Fit. Shop. Resupply."* and the home page leads with a "Three ways to start" 3-card section before the legacy fitter feature grid (now scoped under a "The Mask Fitter" heading). Trust claims stay factual (e.g., "~3-minute fitting", "On-device face capture") and avoid plan-dependent guarantees like "$0 out of pocket". `index.html` title/OG describe the full fitter + shop + resupply scope.
+
 ### Cash-Pay Shop
 
 A customer-facing `/shop` offers CPAP supplies for direct purchase via Stripe Hosted Checkout, designed to coexist with the insurance flow and provide an "Use insurance" escape hatch.

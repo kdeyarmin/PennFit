@@ -22,25 +22,31 @@ export default function NotFound() {
             Page Not Found
           </CardTitle>
           <CardDescription className="text-base max-w-md mx-auto">
-            The page you're looking for doesn't exist on the PennPaps site. Let's get you back on track.
+            The page you're looking for doesn't exist on PennPaps. Try the home
+            page, the supply shop, or the mask fitter.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-8">
+        <CardContent className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-8 flex-wrap">
           <Link href="/">
             <Button className="w-full sm:w-auto btn-primary-glow rounded-full px-6">
               <HomeIcon className="w-4 h-4 mr-2" />
-              Return to PennPaps Home
+              Return home
             </Button>
           </Link>
-          <Link href="/masks">
+          <Link href="/shop">
             <Button variant="outline" className="w-full sm:w-auto rounded-full glass-panel border-0 px-6">
-              Browse Mask Catalog
+              Shop CPAP supplies
+            </Button>
+          </Link>
+          <Link href="/consent">
+            <Button variant="outline" className="w-full sm:w-auto rounded-full glass-panel border-0 px-6">
+              Get fitted for a mask
             </Button>
           </Link>
         </CardContent>
       </Card>
       <p className="text-center text-xs text-muted-foreground mt-6">
-        Need help? Contact PennPaps for personalized fitting assistance.
+        Need help? Contact PennPaps for help with mask fittings, supply orders, insurance, or resupply.
       </p>
     </div>
   );

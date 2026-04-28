@@ -173,19 +173,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       Penn Home Medical Supply
                     </div>
                     <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                      PennPaps.com — Online Fitting & Resupply
+                      PennPaps.com — Mask Fitting · Shop · Resupply
                     </div>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
-                  <span className="font-semibold text-foreground">PennPaps.com</span> is the online sizing,
-                  ordering, and resupply service from{" "}
-                  <span className="font-semibold text-foreground">Penn Home Medical Supply</span>,
-                  your local DME partner for CPAP therapy.
+                  <span className="font-semibold text-foreground">PennPaps.com</span> is the
+                  online CPAP storefront from{" "}
+                  <span className="font-semibold text-foreground">Penn Home Medical Supply</span>{" "}
+                  — fit a new mask, order supplies direct, and stay on a
+                  resupply schedule with your local DME team.
                 </p>
                 <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-white/40 px-3 py-1.5 text-xs text-muted-foreground">
                   <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                  <span>Secure & private — images never leave your device.</span>
+                  <span>Secure checkout · private on-device fitting.</span>
                 </div>
               </div>
 
@@ -198,7 +199,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <li><Link href="/how-it-works" className="text-muted-foreground hover:text-primary transition-colors">How It Works</Link></li>
                   <li><Link href="/masks" className="text-muted-foreground hover:text-primary transition-colors">Mask Catalog</Link></li>
                   <li><Link href="/shop" className="text-muted-foreground hover:text-primary transition-colors">Shop Supplies</Link></li>
-                  <li><Link href="/consent" className="text-muted-foreground hover:text-primary transition-colors">Use Insurance</Link></li>
+                  <li><Link href="/consent" className="text-muted-foreground hover:text-primary transition-colors">Order with Insurance</Link></li>
+                  <li><Link href="/account" className="text-muted-foreground hover:text-primary transition-colors">My Account</Link></li>
                   <li><Link href="/learn" className="text-muted-foreground hover:text-primary transition-colors">Learn</Link></li>
                   <li><Link href="/faq" className="text-muted-foreground hover:text-primary transition-colors">FAQ</Link></li>
                 </ul>

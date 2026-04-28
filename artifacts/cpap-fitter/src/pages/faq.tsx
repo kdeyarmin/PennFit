@@ -219,11 +219,33 @@ const sections: FaqSection[] = [
         q: "Can I order replacement supplies through PennPaps?",
         a: (
           <>
-            Resupply is handled separately by PennPaps's
-            resupply program — once you're an established patient, we'll reach
-            out by SMS, email, or phone when you're due for new cushions,
-            headgear, filters, and tubing. You don't need to re-run PennPaps
-            for resupply orders unless your fit has changed.
+            Yes, two ways. (1) <strong>Resupply program</strong> — once you're
+            an established patient, we'll reach out by SMS, email, or phone
+            when you're due for new cushions, headgear, filters, and tubing,
+            and bill insurance on the standard replacement schedule. (2){" "}
+            <strong>Shop direct</strong> — you can also browse and order
+            supplies any time at the{" "}
+            <Link href="/shop" className="text-primary underline-offset-4 hover:underline">
+              PennPaps shop
+            </Link>{" "}
+            on a cash-pay basis (no prescription needed for most consumables
+            like filters, tubing, and humidifier chambers). You don't need to
+            re-run the fitter for resupply unless your fit has changed.
+          </>
+        ),
+      },
+      {
+        q: "Do I need a PennPaps account to place an order?",
+        a: (
+          <>
+            No — you can check out as a guest. Creating a free{" "}
+            <Link href="/account" className="text-primary underline-offset-4 hover:underline">
+              account
+            </Link>{" "}
+            simply saves your shipping address and order history so future
+            orders are quicker, and gives you a "Reorder" button on past
+            purchases. Your account info is used only to fulfill your orders,
+            never sold to third parties.
           </>
         ),
       },
@@ -529,11 +551,11 @@ export function Faq() {
       {/* CTA */}
       <section className="text-center space-y-4 pt-2">
         <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
-          Ready to find your mask?
+          Ready when you are.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          PennPaps takes about three minutes. Your photo never leaves your
-          device.
+          Get fitted for a new mask in about three minutes (your photo never
+          leaves your device), or shop CPAP supplies direct.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
@@ -542,16 +564,16 @@ export function Faq() {
               className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow gap-2"
             >
               <Sparkles className="w-4 h-4" />
-              Start Fitting Process
+              Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/masks">
+          <Link href="/shop">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Browse Mask Catalog
+              Shop CPAP supplies
             </Button>
           </Link>
         </div>

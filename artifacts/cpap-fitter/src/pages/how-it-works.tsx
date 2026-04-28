@@ -136,8 +136,8 @@ export function HowItWorks() {
           How PennPaps Works
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          A short guide to using PennPaps and getting the most accurate CPAP mask
-          recommendation in just a few minutes — start to finish.
+          A short guide to everything PennPaps does — the on-device mask fitter,
+          the supply shop, customer accounts, and how resupply works.
         </p>
       </header>
 
@@ -356,11 +356,11 @@ export function HowItWorks() {
                 When to Call PennPaps Directly
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                PennPaps is a recommendation tool — not a substitute for clinical
-                advice. If you have severe pressure sores, an open facial wound,
-                a recent facial injury, or you're a pediatric patient, please
-                contact our team directly so a respiratory therapist can fit you
-                in person.
+                Our online fitter and shop are convenient, but they're not a
+                substitute for clinical advice. If you have severe pressure
+                sores, an open facial wound, a recent facial injury, or you're
+                a pediatric patient, please contact our team directly so a
+                respiratory therapist can fit you in person.
               </p>
             </div>
           </CardContent>
@@ -370,25 +370,26 @@ export function HowItWorks() {
       {/* CTA */}
       <section className="text-center space-y-4 pt-4">
         <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
-          Ready to Find Your Mask?
+          Ready to get started?
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          The full fitting takes about 3 minutes. Your camera image never leaves
-          your device.
+          New mask? The fitter takes about 3 minutes and your camera image
+          never leaves your device. Already know what you need? Skip straight
+          to the shop.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
             <Button size="lg" className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow">
-              Start Fitting Process
+              Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/masks">
+          <Link href="/shop">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Browse Mask Catalog
+              Shop CPAP supplies
             </Button>
           </Link>
         </div>

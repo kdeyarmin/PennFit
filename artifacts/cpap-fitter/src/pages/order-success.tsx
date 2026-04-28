@@ -172,7 +172,7 @@ export function OrderSuccess() {
         </div>
       </Link>
 
-      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+      <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
         <Link href="/">
           <Button
             variant="outline"
@@ -182,12 +182,21 @@ export function OrderSuccess() {
             <Home className="w-4 h-4 mr-2" /> Back to Home
           </Button>
         </Link>
+        <Link href="/shop">
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto rounded-full glass-panel border-0 px-6"
+            data-testid="button-shop"
+          >
+            Shop supplies
+          </Button>
+        </Link>
         <Button
           onClick={handleStartOver}
           className="w-full sm:w-auto rounded-full btn-primary-glow px-6"
           data-testid="button-start-over"
         >
-          <RefreshCcw className="w-4 h-4 mr-2" /> Start a New Fitting
+          <RefreshCcw className="w-4 h-4 mr-2" /> Start a new fitting
         </Button>
       </div>
     </div>

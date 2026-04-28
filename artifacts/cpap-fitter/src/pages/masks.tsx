@@ -37,7 +37,10 @@ export function Masks() {
           </div>
           <h1 className="text-display text-4xl md:text-5xl font-bold tracking-tight mb-2 text-gradient-brand">Mask Catalog</h1>
           <p className="text-muted-foreground">
-            Browse all CPAP masks available through PennPaps.
+            Every mask we carry. Get matched to one with the{" "}
+            <a href="/consent" className="text-primary underline-offset-4 hover:underline">on-device fitter</a>,
+            or order a complete mask direct from{" "}
+            <a href="/shop" className="text-primary underline-offset-4 hover:underline">the shop</a>.
           </p>
         </div>
 
