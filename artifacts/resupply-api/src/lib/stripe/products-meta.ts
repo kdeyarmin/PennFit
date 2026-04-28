@@ -47,6 +47,10 @@ export interface ShopProductView {
   replacementHint: string | null;
   /** Optional image URL (set via Stripe Dashboard or seed script). */
   imageUrl: string | null;
+  /** Manufacturer brand, e.g. "ResMed". From metadata.manufacturer. */
+  manufacturer: string | null;
+  /** Manufacturer model / part number, e.g. "62932". From metadata.model_number. */
+  modelNumber: string | null;
   price: {
     id: string;
     /** In whole-dollar cents (Stripe's `unit_amount`). */
@@ -98,6 +102,8 @@ export function projectProduct(p: Stripe.Product): ShopProductView | null {
     bundleContents,
     replacementHint: meta.replacement_hint ?? null,
     imageUrl: p.images?.[0] ?? null,
+    manufacturer: meta.manufacturer ?? null,
+    modelNumber: meta.model_number ?? null,
     price: {
       id: defaultPrice.id,
       unitAmount: defaultPrice.unit_amount,

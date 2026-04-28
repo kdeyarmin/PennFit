@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   fetchShopProducts,
   formatMoneyCents,
+  resolveProductImage,
   type ShopProductView,
   type ShopProductsResponse,
 } from "@/lib/shop-api";
@@ -241,6 +242,9 @@ function CategorySection({
 function ProductCard({ product }: { product: ShopProductView }) {
   const { addItem } = useCart();
   const [justAdded, setJustAdded] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
+  const resolvedImage = resolveProductImage(product.imageUrl);
+
   const handleAdd = () => {
     addItem({
       productId: product.id,
@@ -248,72 +252,110 @@ function ProductCard({ product }: { product: ShopProductView }) {
       name: product.name,
       unitAmountCents: product.price.unitAmount,
       currency: product.price.currency,
-      imageUrl: product.imageUrl,
+      imageUrl: resolvedImage,
       isBundle: product.isBundle,
     });
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), 1800);
   };
 
+  // Build the small "ResMed · Model #62932" line. Falls back gracefully
+  // if either field is missing so legacy products still render cleanly.
+  const modelLineParts: string[] = [];
+  if (product.manufacturer) modelLineParts.push(product.manufacturer);
+  if (product.modelNumber) modelLineParts.push(`Model #${product.modelNumber}`);
+  const modelLine = modelLineParts.join(" · ");
+
   return (
     <div
-      className="glass-card lift-on-hover rounded-2xl p-6 flex flex-col"
+      className="glass-card lift-on-hover rounded-2xl overflow-hidden flex flex-col"
       data-testid={`shop-card-${product.id}`}
     >
-      {product.isBundle && (
-        <Badge
-          className="self-start mb-3 bg-[hsl(var(--penn-gold))]/15 text-[hsl(var(--penn-navy))] border-[hsl(var(--penn-gold))]/30"
-          variant="outline"
-        >
-          Bundle · save vs. à la carte
-        </Badge>
-      )}
-      <h3 className="text-lg font-semibold tracking-tight">{product.name}</h3>
-      {product.tagline && (
-        <p className="text-sm text-muted-foreground mt-1">{product.tagline}</p>
-      )}
-      <div className="mt-4 mb-4">
-        <span className="text-3xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
-          {formatMoneyCents(product.price.unitAmount, product.price.currency)}
-        </span>
+      <div className="relative aspect-square bg-gradient-to-br from-slate-50 via-white to-slate-100 border-b border-slate-200/60 flex items-center justify-center">
+        {resolvedImage && !imgFailed ? (
+          <img
+            src={resolvedImage}
+            alt={product.name}
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="w-full h-full object-contain p-6"
+            data-testid={`shop-image-${product.id}`}
+          />
+        ) : (
+          <div className="w-20 h-20 rounded-2xl icon-halo-navy flex items-center justify-center text-[hsl(var(--penn-navy))]">
+            <Package className="w-9 h-9" />
+          </div>
+        )}
+        {product.isBundle && (
+          <Badge
+            className="absolute top-3 left-3 bg-[hsl(var(--penn-gold))]/95 text-[hsl(var(--penn-navy))] border-0 shadow-sm font-semibold"
+            variant="outline"
+          >
+            Bundle
+          </Badge>
+        )}
       </div>
-      {product.isBundle && product.bundleContents.length > 0 && (
-        <ul className="text-sm text-foreground/80 space-y-1.5 mb-4">
-          {product.bundleContents.map((line, i) => (
-            <li key={i} className="flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[hsl(var(--penn-gold))]" />
-              <span>{line}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {product.replacementHint && (
-        <p className="text-xs text-muted-foreground mb-4">
-          {product.replacementHint}
-        </p>
-      )}
-      <div className="mt-auto space-y-2">
-        <Button
-          onClick={handleAdd}
-          className="w-full"
-          data-testid={`shop-add-${product.id}`}
-        >
-          {justAdded ? (
-            <>
-              <CheckCircle2 className="w-4 h-4 mr-2" /> Added to cart
-            </>
-          ) : (
-            <>
-              <ShoppingCart className="w-4 h-4 mr-2" /> Add to cart
-            </>
-          )}
-        </Button>
-        <Link
-          href="/order"
-          className="block text-center text-xs text-muted-foreground hover:text-primary transition-colors"
-        >
-          Or use insurance — $0 with prescription
-        </Link>
+      <div className="p-6 flex flex-col flex-1">
+        {modelLine && (
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[hsl(var(--penn-navy))]/65 mb-1.5">
+            {modelLine}
+          </p>
+        )}
+        <h3 className="text-lg font-semibold tracking-tight leading-snug">
+          {product.name}
+        </h3>
+        {product.tagline && (
+          <p className="text-sm text-muted-foreground mt-1">{product.tagline}</p>
+        )}
+        {product.description && (
+          <p className="text-sm text-foreground/70 leading-relaxed mt-3 line-clamp-3">
+            {product.description}
+          </p>
+        )}
+        <div className="mt-4 mb-4">
+          <span className="text-3xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
+            {formatMoneyCents(product.price.unitAmount, product.price.currency)}
+          </span>
+        </div>
+        {product.isBundle && product.bundleContents.length > 0 && (
+          <ul className="text-sm text-foreground/80 space-y-1.5 mb-4">
+            {product.bundleContents.map((line, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-[hsl(var(--penn-gold))]" />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {product.replacementHint && (
+          <p className="text-xs text-muted-foreground mb-4">
+            {product.replacementHint}
+          </p>
+        )}
+        <div className="mt-auto space-y-2">
+          <Button
+            onClick={handleAdd}
+            className="w-full"
+            data-testid={`shop-add-${product.id}`}
+          >
+            {justAdded ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 mr-2" /> Added to cart
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="w-4 h-4 mr-2" /> Add to cart
+              </>
+            )}
+          </Button>
+          <Link
+            href="/order"
+            className="block text-center text-xs text-muted-foreground hover:text-primary transition-colors"
+          >
+            Or use insurance — $0 with prescription
+          </Link>
+        </div>
       </div>
     </div>
   );

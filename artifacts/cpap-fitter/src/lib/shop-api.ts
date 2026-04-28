@@ -29,11 +29,37 @@ export interface ShopProductView {
   bundleContents: string[];
   replacementHint: string | null;
   imageUrl: string | null;
+  /** Manufacturer brand, e.g. "ResMed". From product metadata. */
+  manufacturer: string | null;
+  /** Manufacturer model / part number, e.g. "62932". From product metadata. */
+  modelNumber: string | null;
   price: {
     id: string;
     unitAmount: number;
     currency: string;
   };
+}
+
+/**
+ * Resolve a product `imageUrl` returned by the API into something the
+ * `<img>` tag can render. The API returns either:
+ *   - an absolute https URL (production: Stripe CDN), or
+ *   - a path relative to the cpap-fitter base, e.g. "/products/foo.webp"
+ *     (preview catalog, served out of the cpap-fitter `public/` dir).
+ *
+ * For the relative case we prepend `import.meta.env.BASE_URL` so the
+ * image works correctly when the app is mounted under a path prefix
+ * (e.g. `/cpap-fitter/`).
+ */
+export function resolveProductImage(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  if (/^https?:\/\//i.test(imageUrl) || imageUrl.startsWith("data:")) {
+    return imageUrl;
+  }
+  const base = import.meta.env.BASE_URL || "/";
+  const baseWithSlash = base.endsWith("/") ? base : `${base}/`;
+  const trimmed = imageUrl.replace(/^\/+/, "");
+  return `${baseWithSlash}${trimmed}`;
 }
 
 export interface ShopProductsResponse {

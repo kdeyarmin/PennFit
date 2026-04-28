@@ -67,6 +67,8 @@ A customer-facing `/shop` offers CPAP supplies for direct purchase via Stripe Ho
 *   **Architecture:** Stripe acts as the source of truth for products and prices, with the API caching product lists. A local `resupply.shop_orders` table tracks session status without storing PHI.
 *   **Frontend:** Manages category-grouped product display, a localStorage-backed cart with cross-tab sync, and checkout success/cancel pages.
 *   **Backend:** Handles product retrieval (cached), Stripe Checkout session creation, and Stripe webhook processing. Rate limiting is implemented for abuse mitigation.
+*   **Product catalog:** Each SKU carries a real manufacturer name, exact manufacturer model number (e.g. ResMed AirFit P10 Mask = `#62932`), a product photo, and a long description. The Stripe seed script (`pnpm --filter @workspace/scripts run seed:shop`) writes `metadata.manufacturer` / `metadata.model_number` to each Stripe Product and uploads image URLs from `SHOP_PUBLIC_BASE_URL` so production cards render the same imagery as preview mode. Bundle cards reference component model numbers in their contents list (e.g. "1× ResMed AirFit N20 cushion · medium (#63551)") so patients can verify exactly what they're buying.
+*   **Image resolution:** Product `imageUrl` is either an absolute Stripe-CDN URL (production) or a path under `cpap-fitter/public/products/` (preview mode). The `resolveProductImage()` helper in `shop-api.ts` handles both cases by prepending `import.meta.env.BASE_URL` when the path is relative, so images work whether the cpap-fitter is mounted at `/` or under a path prefix.
 
 ### Customer Accounts (Shop)
 
