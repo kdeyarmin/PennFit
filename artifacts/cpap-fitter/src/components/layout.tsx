@@ -32,17 +32,26 @@ const navLinks = [
 // would just be indirection for a 20-line component.
 function CartNavIcon() {
   const { count } = useCart();
+  const hasItems = count > 0;
   return (
     <Link
       href="/shop/cart"
-      className="relative inline-flex items-center justify-center h-10 w-10 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/40 transition-colors"
+      className={`relative inline-flex items-center justify-center h-10 w-10 rounded-lg transition-colors ${
+        hasItems
+          ? "text-[hsl(var(--penn-navy))] hover:bg-secondary/40"
+          : "text-muted-foreground hover:text-primary hover:bg-secondary/40"
+      }`}
       aria-label={`Cart (${count} item${count === 1 ? "" : "s"})`}
       data-testid="nav-cart-icon"
     >
-      <ShoppingCart className="h-5 w-5" />
-      {count > 0 && (
+      <ShoppingCart className="h-5 w-5" strokeWidth={hasItems ? 2.25 : 2} />
+      {hasItems && (
         <span
-          className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] text-[10px] font-bold flex items-center justify-center tabular-nums"
+          // Floating gold pill: ring-2 ring-white separates it from the cart
+          // icon edge so the count never visually fuses with the cart strokes.
+          // tabular-nums keeps "12" the same width as "11" so the pill doesn't
+          // jiggle as the count changes.
+          className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1.5 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] text-[11px] font-bold leading-none flex items-center justify-center tabular-nums ring-2 ring-white shadow-sm"
           data-testid="nav-cart-count"
         >
           {count > 99 ? "99+" : count}
