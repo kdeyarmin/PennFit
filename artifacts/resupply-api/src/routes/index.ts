@@ -1,9 +1,14 @@
 import { Router, type IRouter } from "express";
+import auditRouter from "./audit/index.js";
+import conversationsRouter from "./conversations/index.js";
+import dashboardRouter from "./dashboard/index.js";
+import emailRouter from "./email/index.js";
+import episodesRouter from "./episodes/index.js";
 import healthRouter from "./health.js";
 import meRouter from "./me.js";
-import voiceRouter from "./voice/index.js";
+import patientsRouter from "./patients/index.js";
 import smsRouter from "./sms/index.js";
-import emailRouter from "./email/index.js";
+import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
 
@@ -15,5 +20,14 @@ router.use(meRouter);
 router.use(voiceRouter);
 router.use(smsRouter);
 router.use(emailRouter);
+// Operator-console READ endpoints. Each handler is gated by
+// requireOperator and surfaces only PHI the dashboard needs to
+// render — decrypted name on lists, decrypted message bodies only on
+// the conversation detail endpoint, never phone or email values.
+router.use(dashboardRouter);
+router.use(patientsRouter);
+router.use(conversationsRouter);
+router.use(episodesRouter);
+router.use(auditRouter);
 
 export default router;

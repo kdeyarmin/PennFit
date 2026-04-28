@@ -133,6 +133,107 @@ Two-way patient messaging runs alongside voice in `artifacts/resupply-api` — s
 *   **Architecture rules 11 + 12 + 13.** `lib/resupply-messaging/src/` is a pure semantic layer (no `pg`, `@workspace/resupply-db`, `twilio`, `@sendgrid/mail`, `openai`, `@anthropic-ai/sdk`, `ws`). `lib/resupply-email/src/` is the SendGrid adapter — owns `@sendgrid/mail` (its only purpose) but cannot reach into the DB layer or any other vendor SDK; symmetric with Rule 10's telecom-owns-Twilio carve-out. `lib/resupply-reminders/src/` is the SHARED outbound code path used by both routes and worker; it MAY import `pg` (helpers receive a Pool and need its type) plus the DB / telecom / email / messaging / audit libs (composing them is its entire job) but MAY NOT import vendor SDKs directly — Twilio goes through `resupply-telecom`, SendGrid goes through `resupply-email`. All three rules are quote-anchored and covered by positive AND negative self-tests in `scripts/check-resupply-architecture.sh.test`.
 *   **Feature-flagged on env presence.** Messaging routes return 503 with stable error code `messaging_not_configured` when any of `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY`, `RESUPPLY_PHONE_HMAC_KEY`, `RESUPPLY_LINK_HMAC_KEY` is missing (TWILIO_* + OPENAI_API_KEY are shared with voice). The worker handlers log + return on missing config rather than throwing, so a half-configured deploy doesn't fill the pg-boss retry queue with permanent failures.
 
+#### Operator dashboard (read-side console)
+The placeholder console at `artifacts/resupply-dashboard` is now a full
+operator app sitting on top of new READ-side endpoints. The architecture
+follows the same contract→codegen→typed-hook pipeline established for the
+mutation endpoints, so adding a new screen is "edit `openapi.yaml`, run
+codegen, drop the hook into a page" with no hand-written client code.
+*   **API surface.** Seven new operator-only endpoints under `/resupply-api`,
+    all gated by `requireOperator`:
+    *   `GET /dashboard/summary` — KPI counts (active conversations,
+        awaiting_operator, overdue episodes, fulfillments-this-week,
+        paused patients) for the landing page.
+    *   `GET /patients?status=&search=&limit=&offset=` — paginated list
+        with server-side decryption of `firstName` / `lastName`.
+        `phoneE164` is **never** surfaced — only a boolean `hasPhone` /
+        `hasEmail` flag, so the dashboard can show "SMS / Email" capability
+        chips without putting reachable contact info in a list view.
+    *   `GET /patients/:id` — full patient detail: name + capability
+        flags, all prescriptions (`validFrom`/`validUntil` as date
+        strings — drizzle `date()` columns return `YYYY-MM-DD` already),
+        episodes, the last 10 conversations, and the last 10
+        fulfillments. The detail screen is the only place a single
+        patient's full record is ever assembled.
+    *   `GET /conversations?status=&channel=&limit=&offset=` — paginated
+        queue with the patient name decrypted server-side and the
+        `lastMessageAt` timestamp from `MAX(messages.created_at)`.
+    *   `GET /conversations/:id` — chronological message timeline, body
+        decrypted server-side. The list endpoint deliberately omits
+        bodies; only the detail endpoint pays the per-row decrypt cost.
+    *   `GET /episodes?status=overdue&limit=&offset=` — actionable queue
+        joined to patient names so the dashboard can render
+        "Mary J. — CPAP mask, 4 days overdue" without a second round
+        trip.
+    *   `GET /audit?action=&targetTable=&since=&limit=&offset=` —
+        paginated audit viewer. **Implementation note:** because Rule 8
+        forbids any bare `import { auditLog }` outside
+        `lib/resupply-audit/src/`, this handler issues a
+        parameterised raw `SELECT ... FROM resupply.audit_log`
+        through `getDbPool().query()` (Rule 8 explicitly allows
+        SELECT). The `params` array is `.slice()`-snapshotted before
+        the count query so test assertions on the bound parameters
+        are stable across the count→rows mutation.
+*   **PHI surface.** All decryption happens server-side; the wire format
+    contains plaintext names + bodies but **never** raw
+    phone/email/DOB. Patient ids in URLs are opaque UUIDs, not MRNs or
+    phone-derived slugs. Audit `metadata` already passed through
+    `sanitizeMetadata` on the write side, but the dashboard renderer
+    adds a defence-in-depth allowlist (`source`, `channel`, `status`,
+    `messageCount`, `messageId`/`Sid`, `callSid`, `conversationId`,
+    `patientId`, `episodeId`, `prescriptionId`, `fulfillmentId`,
+    `reason`, `outcome`, `deliveryStatus`, `errorCode`, `templateName`,
+    `duration`, `count`) and renders only those keys as labelled
+    chips — a raw JSON dump of metadata is exactly the silent
+    PHI-leak vector the structured renderer exists to prevent.
+*   **Pagination contract.** Every list endpoint returns
+    `{ items, total, limit, offset }` with `limit ≤ 100` enforced by
+    zod. Bad query params return `{ error: "invalid_query", issues }`
+    with a 400 — the dashboard's `ErrorPanel` keys off
+    `data.error === "invalid_query"` to render the field-level zod
+    issues inline rather than a generic banner.
+*   **Codegen.** `lib/resupply-api-spec/openapi.yaml` mirrors the zod
+    schemas for every response shape; orval generates
+    `useGetDashboardSummary`, `useListPatients`, `useGetPatient`,
+    `useListConversations`, `useGetConversation`, `useListEpisodes`,
+    `useListAudit` plus `getList<X>QueryKey(params)` helpers. The
+    helpers are **required** by react-query v5's strict typing —
+    every list page passes `queryKey: getListXQueryKey(params)`
+    alongside `placeholderData: keepPreviousData` so pagination feels
+    instant (last page stays visible until the next page arrives)
+    without losing query-key granularity.
+*   **UI shell.** `src/components/AppShell.tsx` wraps every page with a
+    persistent sidebar (Dashboard / Patients / Conversations /
+    Episodes / Audit, with active-route highlighting via wouter's
+    `useLocation`), the brand header chip, and a footer. Small
+    primitives in `src/components/` — `Card`+`KpiCard`, `Badge` (with
+    status-variant helpers per enum), `Button`, `Input`/`Label`/`Select`,
+    `Spinner`, `EmptyState`, `Pagination`, `ErrorPanel`, `Table` — are
+    deliberately tiny single-file modules, not a component library;
+    the brand chrome (navy `#0a1f44`, gold `#c9a24a`) uses inline
+    styles for the brand-locked surfaces and Tailwind for layout.
+*   **Pages.** `src/pages/` — `dashboard.tsx` (KPI cards + queue links),
+    `patients.tsx` (status filter + free-text search, paginated table),
+    `patient-detail.tsx` (header card + four tabs:
+    Episodes / Prescriptions / Conversations / Fulfillments),
+    `conversations.tsx` (status + channel filters, paginated),
+    `conversation-detail.tsx` (chronological inbound/outbound bubbles
+    with channel-aware styling + an `ActionBar` wired to the existing
+    `useSendSmsReminder` / `useSendEmailReminder` /
+    `usePlaceVoiceCall` mutations), `episodes.tsx` (overdue queue
+    with inline reminder/call action buttons), `audit.tsx` (paginated
+    viewer with action / targetTable / since filters and the
+    `SafeMetadata` allowlist renderer described above). Every page
+    handles loading / error / empty states using the shared
+    primitives so the visual language stays consistent.
+*   **Test surface.** All 7 new API routes have vitest coverage (30
+    new tests, 119 total in `@workspace/resupply-api`) using the
+    existing fluent-stub pattern from `inbound.test.ts` /
+    `send-reminder.test.ts`. The audit-list test mocks `pool.query`
+    directly (not drizzle) since the handler uses raw SQL, and
+    asserts the bound parameter array shape so a future regression
+    that drops the `targetTable` filter would fail loudly.
+
 ## External Dependencies
 
 *   **SendGrid:** Used for sending order fulfillment emails from the backend.

@@ -15,6 +15,29 @@ tags:
     description: Health operations
   - name: operator
     description: Operator identity & session
+  - name: dashboard
+    description: |
+      Top-of-page summary counters for the operator dashboard.
+      Read-only; never returns PHI.
+  - name: patients
+    description: |
+      Patient list + detail. Decrypted first/last name for display only;
+      phone and email are surfaced as booleans (`hasPhone`, `hasEmail`).
+  - name: conversations
+    description: |
+      Conversation list + detail (decrypted message timeline). The detail
+      endpoint is the only place encrypted message bodies are surfaced
+      to the operator console.
+  - name: episodes
+    description: |
+      Episode queue (overdue / by-status). Joins prescriptions for
+      itemSku + cadenceDays display.
+  - name: audit
+    description: |
+      Append-only audit log viewer. `metadata` is already sanitised on
+      write by @workspace/resupply-audit (PHI-key denylist + size/depth
+      caps), so the API surfaces it as-is and the dashboard renders
+      only allowlisted keys.
   - name: voice
     description: |
       Outbound voice (CPAP resupply phone calls). Operators initiate calls
@@ -472,6 +495,389 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthError"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Top-of-page operator counters
+      description: |
+        Returns the small set of counts the dashboard home renders: open
+        conversations, conversations parked for an operator, overdue
+        episodes, fulfillments-this-week, paused patients. Read-only;
+        no PHI; gated by requireOperator.
+      responses:
+        "200":
+          description: Counters for the operator dashboard home.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /patients:
+    get:
+      operationId: listPatients
+      tags: [patients]
+      summary: Paginated patient list
+      description: |
+        Paginated list of patients. Decrypts firstName + lastName for
+        display. Phone and email are surfaced as booleans only —
+        `hasPhone` / `hasEmail` — so operators can tell which channels
+        are reachable without leaking the values themselves.
+
+        `search` matches against pacwareId (plaintext, indexed) AND
+        against the decrypted first/last name (server-side `pgp_sym_decrypt`).
+        Decrypted-name search is a Postgres-side full scan; the limit
+        cap and the operator-only gate make this acceptable for the
+        small steady-state operator workload.
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, paused, closed]
+          description: Filter by patient status.
+        - in: query
+          name: search
+          schema:
+            type: string
+            maxLength: 64
+          description: |
+            Case-insensitive substring match against pacwareId or the
+            decrypted first/last name.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated page of patients.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientListPage"
+        "400":
+          description: Query string failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /patients/{id}:
+    get:
+      operationId: getPatient
+      tags: [patients]
+      summary: Patient detail with episodes / prescriptions / recent activity
+      description: |
+        Returns the full patient header (decrypted name; hasPhone /
+        hasEmail booleans only) plus the patient's prescriptions, all
+        episodes, the 10 most recent conversations, and the 10 most
+        recent fulfillments. The conversation summaries on this
+        response do NOT include message bodies — call /conversations/{id}
+        for the decrypted timeline.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Patient detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientDetail"
+        "404":
+          description: No patient with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: Paginated conversation queue
+      description: |
+        Paginated list of conversations across all channels. Includes the
+        owning patient's decrypted firstName + lastName so the dashboard
+        can render the queue without an N+1 patient lookup. Sorted by
+        `lastMessageAt DESC NULLS LAST, createdAt DESC` so the freshest
+        thread is first.
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, awaiting_patient, awaiting_operator, closed]
+        - in: query
+          name: channel
+          schema:
+            type: string
+            enum: [sms, voice, email]
+        - in: query
+          name: patientId
+          schema:
+            type: string
+            format: uuid
+          description: Restrict to one patient.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated page of conversations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationListPage"
+        "400":
+          description: Query string failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /conversations/{id}:
+    get:
+      operationId: getConversation
+      tags: [conversations]
+      summary: Conversation detail with decrypted messages
+      description: |
+        Returns conversation header + every message in chronological order
+        with bodies decrypted server-side. This is the only endpoint that
+        surfaces decrypted message content to the operator console.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Conversation with decrypted message timeline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationDetail"
+        "404":
+          description: No conversation with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /episodes:
+    get:
+      operationId: listEpisodes
+      tags: [episodes]
+      summary: Paginated episode queue (overdue or by-status)
+      description: |
+        Paginated list of episodes. Joins prescriptions for itemSku +
+        cadenceDays display, and patients for decrypted firstName +
+        lastName. The synthetic `overdue` status is the operator's
+        actionable queue — episodes still in outreach (`outreach_pending`
+        or `awaiting_response`) whose dueAt is in the past. Sorted
+        oldest-due-first within the overdue queue, otherwise by
+        createdAt DESC.
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - overdue
+              - outreach_pending
+              - awaiting_response
+              - confirmed
+              - declined
+              - expired
+              - fulfilled
+              - canceled
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated page of episodes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EpisodeListPage"
+        "400":
+          description: Query string failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /audit:
+    get:
+      operationId: listAudit
+      tags: [audit]
+      summary: Paginated audit log viewer
+      description: |
+        Paginated audit-log viewer. Filters: action prefix, targetTable,
+        date floor (`since`). Sorted by occurredAt DESC. The `metadata`
+        column is the plaintext jsonb context written through
+        @workspace/resupply-audit's sanitiser (PHI-key denylist + size +
+        depth caps), so it is safe to surface as-is; the dashboard
+        renders only an allowlisted set of keys for defence-in-depth.
+      parameters:
+        - in: query
+          name: action
+          schema:
+            type: string
+            maxLength: 128
+          description: Substring match against `action` (e.g. "voice." or "patient.view").
+        - in: query
+          name: targetTable
+          schema:
+            type: string
+            maxLength: 64
+          description: Exact match against `target_table`.
+        - in: query
+          name: since
+          schema:
+            type: string
+            format: date-time
+          description: Lower bound on `occurred_at` (inclusive).
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated page of audit rows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditPage"
+        "400":
+          description: Query string failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
 
 components:
   schemas:
@@ -808,3 +1214,614 @@ components:
       required:
         - status
         - checks
+    PaginationMeta:
+      type: object
+      description: |
+        Envelope shared by every list endpoint. `total` is the COUNT(*)
+        of the filtered set (not the returned page).
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+      required:
+        - total
+        - limit
+        - offset
+    ConsoleValidationError:
+      type: object
+      description: Returned when a list endpoint's query string fails zod validation.
+      properties:
+        error:
+          type: string
+          enum: [invalid_query]
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+            required: [path, message]
+      required:
+        - error
+        - issues
+    NotFoundError:
+      type: object
+      description: Returned when a {id} path parameter does not match any row.
+      properties:
+        error:
+          type: string
+          enum: [not_found]
+      required:
+        - error
+    DashboardSummary:
+      type: object
+      description: |
+        Top-of-page operator counters. Every value is a row count over
+        the resupply.* tables, taken at request time. Numbers, not PHI.
+      properties:
+        activeConversations:
+          type: integer
+          description: |
+            conversations.status IN ('open','awaiting_patient','awaiting_operator')
+            across all channels.
+        awaitingOperator:
+          type: integer
+          description: |
+            conversations.status = 'awaiting_operator' — these are the
+            conversations parked for human attention.
+        overdueEpisodes:
+          type: integer
+          description: |
+            episodes where status IN ('outreach_pending','awaiting_response')
+            AND due_at <= now().
+        fulfillmentsThisWeek:
+          type: integer
+          description: |
+            fulfillments.created_at >= start of the current 7-day rolling
+            window (now() - interval '7 days').
+        pausedPatients:
+          type: integer
+          description: patients.status = 'paused'.
+      required:
+        - activeConversations
+        - awaitingOperator
+        - overdueEpisodes
+        - fulfillmentsThisWeek
+        - pausedPatients
+    PatientListItem:
+      type: object
+      description: |
+        One row in the patient list. Decrypts firstName + lastName for
+        display. NEVER includes the phone number or email — only booleans
+        showing whether the patient has each on file.
+      properties:
+        id:
+          type: string
+          format: uuid
+        pacwareId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        status:
+          type: string
+          enum: [active, paused, closed]
+        hasPhone:
+          type: boolean
+        hasEmail:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - pacwareId
+        - firstName
+        - lastName
+        - status
+        - hasPhone
+        - hasEmail
+        - createdAt
+        - updatedAt
+    PatientListPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientListItem"
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+      required:
+        - items
+        - total
+        - limit
+        - offset
+    PatientPrescription:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemSku:
+          type: string
+        cadenceDays:
+          type: integer
+        validFrom:
+          type: string
+          format: date
+        validUntil:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+          enum: [active, expired, revoked]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - itemSku
+        - cadenceDays
+        - validFrom
+        - status
+        - createdAt
+    PatientEpisode:
+      type: object
+      description: Patient-detail nested episode summary; itemSku denormalised from the prescription for display.
+      properties:
+        id:
+          type: string
+          format: uuid
+        prescriptionId:
+          type: string
+          format: uuid
+        itemSku:
+          type: string
+        status:
+          type: string
+          enum: [outreach_pending, awaiting_response, confirmed, declined, expired, fulfilled, canceled]
+        dueAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - prescriptionId
+        - itemSku
+        - status
+        - dueAt
+        - createdAt
+    PatientConversationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        episodeId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [sms, voice, email]
+        status:
+          type: string
+          enum: [open, awaiting_patient, awaiting_operator, closed]
+        lastMessageAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - episodeId
+        - channel
+        - status
+        - createdAt
+    PatientFulfillmentSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        episodeId:
+          type: string
+          format: uuid
+        itemSku:
+          type: string
+        quantity:
+          type: string
+        status:
+          type: string
+          enum: [queued, submitted_to_pacware, in_fulfillment, shipped, delivered, canceled, failed]
+        pacwareOrderRef:
+          type: string
+          nullable: true
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        shippedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - episodeId
+        - itemSku
+        - quantity
+        - status
+        - createdAt
+    PatientDetail:
+      type: object
+      description: |
+        Full patient detail for the patient detail page. Decrypted
+        firstName + lastName for display; phone + email never returned.
+      properties:
+        id:
+          type: string
+          format: uuid
+        pacwareId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        status:
+          type: string
+          enum: [active, paused, closed]
+        hasPhone:
+          type: boolean
+        hasEmail:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        prescriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientPrescription"
+        episodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientEpisode"
+        conversations:
+          type: array
+          description: Up to 10 most recent.
+          items:
+            $ref: "#/components/schemas/PatientConversationSummary"
+        fulfillments:
+          type: array
+          description: Up to 10 most recent.
+          items:
+            $ref: "#/components/schemas/PatientFulfillmentSummary"
+      required:
+        - id
+        - pacwareId
+        - firstName
+        - lastName
+        - status
+        - hasPhone
+        - hasEmail
+        - createdAt
+        - updatedAt
+        - prescriptions
+        - episodes
+        - conversations
+        - fulfillments
+    ConversationListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        patientId:
+          type: string
+          format: uuid
+        patientFirstName:
+          type: string
+        patientLastName:
+          type: string
+        episodeId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [sms, voice, email]
+        status:
+          type: string
+          enum: [open, awaiting_patient, awaiting_operator, closed]
+        lastMessageAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - patientId
+        - patientFirstName
+        - patientLastName
+        - episodeId
+        - channel
+        - status
+        - createdAt
+    ConversationListPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationListItem"
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+      required:
+        - items
+        - total
+        - limit
+        - offset
+    ConversationMessage:
+      type: object
+      description: |
+        One message turn with body decrypted. This is the only place
+        decrypted message bodies cross the API boundary.
+      properties:
+        id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        senderRole:
+          type: string
+          enum: [patient, operator, agent, system]
+        body:
+          type: string
+        deliveryStatus:
+          type: string
+          nullable: true
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - direction
+        - senderRole
+        - body
+        - createdAt
+    ConversationDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        patientId:
+          type: string
+          format: uuid
+        patientFirstName:
+          type: string
+        patientLastName:
+          type: string
+        episodeId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [sms, voice, email]
+        status:
+          type: string
+          enum: [open, awaiting_patient, awaiting_operator, closed]
+        lastMessageAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationMessage"
+      required:
+        - id
+        - patientId
+        - patientFirstName
+        - patientLastName
+        - episodeId
+        - channel
+        - status
+        - createdAt
+        - messages
+    EpisodeListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        patientId:
+          type: string
+          format: uuid
+        patientFirstName:
+          type: string
+        patientLastName:
+          type: string
+        prescriptionId:
+          type: string
+          format: uuid
+        itemSku:
+          type: string
+        cadenceDays:
+          type: integer
+        status:
+          type: string
+          enum: [outreach_pending, awaiting_response, confirmed, declined, expired, fulfilled, canceled]
+        dueAt:
+          type: string
+          format: date-time
+        daysOverdue:
+          type: integer
+          description: max(0, floor((now() - dueAt) / 1 day)) — server-computed.
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - patientId
+        - patientFirstName
+        - patientLastName
+        - prescriptionId
+        - itemSku
+        - cadenceDays
+        - status
+        - dueAt
+        - daysOverdue
+        - createdAt
+    EpisodeListPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EpisodeListItem"
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+      required:
+        - items
+        - total
+        - limit
+        - offset
+    AuditListItem:
+      type: object
+      description: |
+        One audit row. `metadata` is the plaintext jsonb context written
+        through @workspace/resupply-audit's sanitiser (PHI-key denylist
+        + size + depth caps), so it is safe to surface as-is. The
+        dashboard renderer additionally allowlists keys it knows how to
+        display.
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        operatorEmail:
+          type: string
+          nullable: true
+        operatorClerkId:
+          type: string
+          nullable: true
+        action:
+          type: string
+        targetTable:
+          type: string
+          nullable: true
+        targetId:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        ip:
+          type: string
+          nullable: true
+        userAgent:
+          type: string
+          nullable: true
+      required:
+        - id
+        - occurredAt
+        - action
+        - metadata
+    AuditPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditListItem"
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+      required:
+        - items
+        - total
+        - limit
+        - offset

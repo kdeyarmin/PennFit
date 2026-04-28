@@ -346,6 +346,442 @@ whose check failed.
   errors?: ReadinessStatusErrors;
 }
 
+/**
+ * Envelope shared by every list endpoint. `total` is the COUNT(*)
+of the filtered set (not the returned page).
+
+ */
+export interface PaginationMeta {
+  /** @minimum 0 */
+  total: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit: number;
+  /** @minimum 0 */
+  offset: number;
+}
+
+export type ConsoleValidationErrorError =
+  (typeof ConsoleValidationErrorError)[keyof typeof ConsoleValidationErrorError];
+
+export const ConsoleValidationErrorError = {
+  invalid_query: "invalid_query",
+} as const;
+
+export type ConsoleValidationErrorIssuesItem = {
+  path: string;
+  message: string;
+};
+
+/**
+ * Returned when a list endpoint's query string fails zod validation.
+ */
+export interface ConsoleValidationError {
+  error: ConsoleValidationErrorError;
+  issues: ConsoleValidationErrorIssuesItem[];
+}
+
+export type NotFoundErrorError =
+  (typeof NotFoundErrorError)[keyof typeof NotFoundErrorError];
+
+export const NotFoundErrorError = {
+  not_found: "not_found",
+} as const;
+
+/**
+ * Returned when a {id} path parameter does not match any row.
+ */
+export interface NotFoundError {
+  error: NotFoundErrorError;
+}
+
+/**
+ * Top-of-page operator counters. Every value is a row count over
+the resupply.* tables, taken at request time. Numbers, not PHI.
+
+ */
+export interface DashboardSummary {
+  /** conversations.status IN ('open','awaiting_patient','awaiting_operator')
+across all channels.
+ */
+  activeConversations: number;
+  /** conversations.status = 'awaiting_operator' — these are the
+conversations parked for human attention.
+ */
+  awaitingOperator: number;
+  /** episodes where status IN ('outreach_pending','awaiting_response')
+AND due_at <= now().
+ */
+  overdueEpisodes: number;
+  /** fulfillments.created_at >= start of the current 7-day rolling
+window (now() - interval '7 days').
+ */
+  fulfillmentsThisWeek: number;
+  /** patients.status = 'paused'. */
+  pausedPatients: number;
+}
+
+export type PatientListItemStatus =
+  (typeof PatientListItemStatus)[keyof typeof PatientListItemStatus];
+
+export const PatientListItemStatus = {
+  active: "active",
+  paused: "paused",
+  closed: "closed",
+} as const;
+
+/**
+ * One row in the patient list. Decrypts firstName + lastName for
+display. NEVER includes the phone number or email — only booleans
+showing whether the patient has each on file.
+
+ */
+export interface PatientListItem {
+  id: string;
+  pacwareId: string;
+  firstName: string;
+  lastName: string;
+  status: PatientListItemStatus;
+  hasPhone: boolean;
+  hasEmail: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PatientListPage {
+  items: PatientListItem[];
+  /** @minimum 0 */
+  total: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit: number;
+  /** @minimum 0 */
+  offset: number;
+}
+
+export type PatientPrescriptionStatus =
+  (typeof PatientPrescriptionStatus)[keyof typeof PatientPrescriptionStatus];
+
+export const PatientPrescriptionStatus = {
+  active: "active",
+  expired: "expired",
+  revoked: "revoked",
+} as const;
+
+export interface PatientPrescription {
+  id: string;
+  itemSku: string;
+  cadenceDays: number;
+  validFrom: string;
+  validUntil?: string | null;
+  status: PatientPrescriptionStatus;
+  createdAt: string;
+}
+
+export type PatientEpisodeStatus =
+  (typeof PatientEpisodeStatus)[keyof typeof PatientEpisodeStatus];
+
+export const PatientEpisodeStatus = {
+  outreach_pending: "outreach_pending",
+  awaiting_response: "awaiting_response",
+  confirmed: "confirmed",
+  declined: "declined",
+  expired: "expired",
+  fulfilled: "fulfilled",
+  canceled: "canceled",
+} as const;
+
+/**
+ * Patient-detail nested episode summary; itemSku denormalised from the prescription for display.
+ */
+export interface PatientEpisode {
+  id: string;
+  prescriptionId: string;
+  itemSku: string;
+  status: PatientEpisodeStatus;
+  dueAt: string;
+  expiresAt?: string | null;
+  createdAt: string;
+}
+
+export type PatientConversationSummaryChannel =
+  (typeof PatientConversationSummaryChannel)[keyof typeof PatientConversationSummaryChannel];
+
+export const PatientConversationSummaryChannel = {
+  sms: "sms",
+  voice: "voice",
+  email: "email",
+} as const;
+
+export type PatientConversationSummaryStatus =
+  (typeof PatientConversationSummaryStatus)[keyof typeof PatientConversationSummaryStatus];
+
+export const PatientConversationSummaryStatus = {
+  open: "open",
+  awaiting_patient: "awaiting_patient",
+  awaiting_operator: "awaiting_operator",
+  closed: "closed",
+} as const;
+
+export interface PatientConversationSummary {
+  id: string;
+  episodeId: string;
+  channel: PatientConversationSummaryChannel;
+  status: PatientConversationSummaryStatus;
+  lastMessageAt?: string | null;
+  createdAt: string;
+}
+
+export type PatientFulfillmentSummaryStatus =
+  (typeof PatientFulfillmentSummaryStatus)[keyof typeof PatientFulfillmentSummaryStatus];
+
+export const PatientFulfillmentSummaryStatus = {
+  queued: "queued",
+  submitted_to_pacware: "submitted_to_pacware",
+  in_fulfillment: "in_fulfillment",
+  shipped: "shipped",
+  delivered: "delivered",
+  canceled: "canceled",
+  failed: "failed",
+} as const;
+
+export interface PatientFulfillmentSummary {
+  id: string;
+  episodeId: string;
+  itemSku: string;
+  quantity: string;
+  status: PatientFulfillmentSummaryStatus;
+  pacwareOrderRef?: string | null;
+  submittedAt?: string | null;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
+  createdAt: string;
+}
+
+export type PatientDetailStatus =
+  (typeof PatientDetailStatus)[keyof typeof PatientDetailStatus];
+
+export const PatientDetailStatus = {
+  active: "active",
+  paused: "paused",
+  closed: "closed",
+} as const;
+
+/**
+ * Full patient detail for the patient detail page. Decrypted
+firstName + lastName for display; phone + email never returned.
+
+ */
+export interface PatientDetail {
+  id: string;
+  pacwareId: string;
+  firstName: string;
+  lastName: string;
+  status: PatientDetailStatus;
+  hasPhone: boolean;
+  hasEmail: boolean;
+  createdAt: string;
+  updatedAt: string;
+  prescriptions: PatientPrescription[];
+  episodes: PatientEpisode[];
+  /** Up to 10 most recent. */
+  conversations: PatientConversationSummary[];
+  /** Up to 10 most recent. */
+  fulfillments: PatientFulfillmentSummary[];
+}
+
+export type ConversationListItemChannel =
+  (typeof ConversationListItemChannel)[keyof typeof ConversationListItemChannel];
+
+export const ConversationListItemChannel = {
+  sms: "sms",
+  voice: "voice",
+  email: "email",
+} as const;
+
+export type ConversationListItemStatus =
+  (typeof ConversationListItemStatus)[keyof typeof ConversationListItemStatus];
+
+export const ConversationListItemStatus = {
+  open: "open",
+  awaiting_patient: "awaiting_patient",
+  awaiting_operator: "awaiting_operator",
+  closed: "closed",
+} as const;
+
+export interface ConversationListItem {
+  id: string;
+  patientId: string;
+  patientFirstName: string;
+  patientLastName: string;
+  episodeId: string;
+  channel: ConversationListItemChannel;
+  status: ConversationListItemStatus;
+  lastMessageAt?: string | null;
+  createdAt: string;
+}
+
+export interface ConversationListPage {
+  items: ConversationListItem[];
+  /** @minimum 0 */
+  total: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit: number;
+  /** @minimum 0 */
+  offset: number;
+}
+
+export type ConversationMessageDirection =
+  (typeof ConversationMessageDirection)[keyof typeof ConversationMessageDirection];
+
+export const ConversationMessageDirection = {
+  inbound: "inbound",
+  outbound: "outbound",
+} as const;
+
+export type ConversationMessageSenderRole =
+  (typeof ConversationMessageSenderRole)[keyof typeof ConversationMessageSenderRole];
+
+export const ConversationMessageSenderRole = {
+  patient: "patient",
+  operator: "operator",
+  agent: "agent",
+  system: "system",
+} as const;
+
+/**
+ * One message turn with body decrypted. This is the only place
+decrypted message bodies cross the API boundary.
+
+ */
+export interface ConversationMessage {
+  id: string;
+  direction: ConversationMessageDirection;
+  senderRole: ConversationMessageSenderRole;
+  body: string;
+  deliveryStatus?: string | null;
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  createdAt: string;
+}
+
+export type ConversationDetailChannel =
+  (typeof ConversationDetailChannel)[keyof typeof ConversationDetailChannel];
+
+export const ConversationDetailChannel = {
+  sms: "sms",
+  voice: "voice",
+  email: "email",
+} as const;
+
+export type ConversationDetailStatus =
+  (typeof ConversationDetailStatus)[keyof typeof ConversationDetailStatus];
+
+export const ConversationDetailStatus = {
+  open: "open",
+  awaiting_patient: "awaiting_patient",
+  awaiting_operator: "awaiting_operator",
+  closed: "closed",
+} as const;
+
+export interface ConversationDetail {
+  id: string;
+  patientId: string;
+  patientFirstName: string;
+  patientLastName: string;
+  episodeId: string;
+  channel: ConversationDetailChannel;
+  status: ConversationDetailStatus;
+  lastMessageAt?: string | null;
+  createdAt: string;
+  messages: ConversationMessage[];
+}
+
+export type EpisodeListItemStatus =
+  (typeof EpisodeListItemStatus)[keyof typeof EpisodeListItemStatus];
+
+export const EpisodeListItemStatus = {
+  outreach_pending: "outreach_pending",
+  awaiting_response: "awaiting_response",
+  confirmed: "confirmed",
+  declined: "declined",
+  expired: "expired",
+  fulfilled: "fulfilled",
+  canceled: "canceled",
+} as const;
+
+export interface EpisodeListItem {
+  id: string;
+  patientId: string;
+  patientFirstName: string;
+  patientLastName: string;
+  prescriptionId: string;
+  itemSku: string;
+  cadenceDays: number;
+  status: EpisodeListItemStatus;
+  dueAt: string;
+  /** max(0, floor((now() - dueAt) / 1 day)) — server-computed. */
+  daysOverdue: number;
+  expiresAt?: string | null;
+  createdAt: string;
+}
+
+export interface EpisodeListPage {
+  items: EpisodeListItem[];
+  /** @minimum 0 */
+  total: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit: number;
+  /** @minimum 0 */
+  offset: number;
+}
+
+export type AuditListItemMetadata = { [key: string]: unknown };
+
+/**
+ * One audit row. `metadata` is the plaintext jsonb context written
+through @workspace/resupply-audit's sanitiser (PHI-key denylist
++ size + depth caps), so it is safe to surface as-is. The
+dashboard renderer additionally allowlists keys it knows how to
+display.
+
+ */
+export interface AuditListItem {
+  id: string;
+  occurredAt: string;
+  operatorEmail?: string | null;
+  operatorClerkId?: string | null;
+  action: string;
+  targetTable?: string | null;
+  targetId?: string | null;
+  metadata: AuditListItemMetadata;
+  ip?: string | null;
+  userAgent?: string | null;
+}
+
+export interface AuditPage {
+  items: AuditListItem[];
+  /** @minimum 0 */
+  total: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit: number;
+  /** @minimum 0 */
+  offset: number;
+}
+
 export type HandleEmailClickParams = {
   /**
    * HMAC-signed link token. Carries `{conversationId, action, exp}`.
@@ -358,4 +794,126 @@ export type VoiceStatusCallbackParams = {
    * Conversation row this call lifecycle event belongs to.
    */
   conversationId: string;
+};
+
+export type ListPatientsParams = {
+  /**
+   * Filter by patient status.
+   */
+  status?: ListPatientsStatus;
+  /**
+ * Case-insensitive substring match against pacwareId or the
+decrypted first/last name.
+
+ * @maxLength 64
+ */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
+};
+
+export type ListPatientsStatus =
+  (typeof ListPatientsStatus)[keyof typeof ListPatientsStatus];
+
+export const ListPatientsStatus = {
+  active: "active",
+  paused: "paused",
+  closed: "closed",
+} as const;
+
+export type ListConversationsParams = {
+  status?: ListConversationsStatus;
+  channel?: ListConversationsChannel;
+  /**
+   * Restrict to one patient.
+   */
+  patientId?: string;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
+};
+
+export type ListConversationsStatus =
+  (typeof ListConversationsStatus)[keyof typeof ListConversationsStatus];
+
+export const ListConversationsStatus = {
+  open: "open",
+  awaiting_patient: "awaiting_patient",
+  awaiting_operator: "awaiting_operator",
+  closed: "closed",
+} as const;
+
+export type ListConversationsChannel =
+  (typeof ListConversationsChannel)[keyof typeof ListConversationsChannel];
+
+export const ListConversationsChannel = {
+  sms: "sms",
+  voice: "voice",
+  email: "email",
+} as const;
+
+export type ListEpisodesParams = {
+  status?: ListEpisodesStatus;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
+};
+
+export type ListEpisodesStatus =
+  (typeof ListEpisodesStatus)[keyof typeof ListEpisodesStatus];
+
+export const ListEpisodesStatus = {
+  overdue: "overdue",
+  outreach_pending: "outreach_pending",
+  awaiting_response: "awaiting_response",
+  confirmed: "confirmed",
+  declined: "declined",
+  expired: "expired",
+  fulfilled: "fulfilled",
+  canceled: "canceled",
+} as const;
+
+export type ListAuditParams = {
+  /**
+   * Substring match against `action` (e.g. "voice." or "patient.view").
+   * @maxLength 128
+   */
+  action?: string;
+  /**
+   * Exact match against `target_table`.
+   * @maxLength 64
+   */
+  targetTable?: string;
+  /**
+   * Lower bound on `occurred_at` (inclusive).
+   */
+  since?: string;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
 };

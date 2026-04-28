@@ -20,12 +20,25 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AuditPage,
   AuthError,
+  ConsoleValidationError,
+  ConversationDetail,
+  ConversationListPage,
+  DashboardSummary,
+  EpisodeListPage,
   HandleEmailClickParams,
   HealthStatus,
+  ListAuditParams,
+  ListConversationsParams,
+  ListEpisodesParams,
+  ListPatientsParams,
   MessagingError,
   MessagingValidationError,
+  NotFoundError,
   OperatorIdentity,
+  PatientDetail,
+  PatientListPage,
   PlaceVoiceCallRequest,
   PlaceVoiceCallResponse,
   ReadinessStatus,
@@ -839,3 +852,685 @@ export const useVoiceStatusCallback = <
 > => {
   return useMutation(getVoiceStatusCallbackMutationOptions(options));
 };
+
+/**
+ * Returns the small set of counts the dashboard home renders: open
+conversations, conversations parked for an operator, overdue
+episodes, fulfillments-this-week, paused patients. Read-only;
+no PHI; gated by requireOperator.
+
+ * @summary Top-of-page operator counters
+ */
+export const getGetDashboardSummaryUrl = () => {
+  return `/resupply-api/dashboard/summary`;
+};
+
+export const getDashboardSummary = async (
+  options?: RequestInit,
+): Promise<DashboardSummary> => {
+  return customFetch<DashboardSummary>(getGetDashboardSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDashboardSummaryQueryKey = () => {
+  return [`/resupply-api/dashboard/summary`] as const;
+};
+
+export const getGetDashboardSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDashboardSummary>>,
+  TError = ErrorType<AuthError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDashboardSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDashboardSummary>>
+  > = ({ signal }) => getDashboardSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDashboardSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDashboardSummary>>
+>;
+export type GetDashboardSummaryQueryError = ErrorType<AuthError>;
+
+/**
+ * @summary Top-of-page operator counters
+ */
+
+export function useGetDashboardSummary<
+  TData = Awaited<ReturnType<typeof getDashboardSummary>>,
+  TError = ErrorType<AuthError>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDashboardSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDashboardSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of patients. Decrypts firstName + lastName for
+display. Phone and email are surfaced as booleans only —
+`hasPhone` / `hasEmail` — so operators can tell which channels
+are reachable without leaking the values themselves.
+
+`search` matches against pacwareId (plaintext, indexed) AND
+against the decrypted first/last name (server-side `pgp_sym_decrypt`).
+Decrypted-name search is a Postgres-side full scan; the limit
+cap and the operator-only gate make this acceptable for the
+small steady-state operator workload.
+
+ * @summary Paginated patient list
+ */
+export const getListPatientsUrl = (params?: ListPatientsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/patients?${stringifiedParams}`
+    : `/resupply-api/patients`;
+};
+
+export const listPatients = async (
+  params?: ListPatientsParams,
+  options?: RequestInit,
+): Promise<PatientListPage> => {
+  return customFetch<PatientListPage>(getListPatientsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPatientsQueryKey = (params?: ListPatientsParams) => {
+  return [`/resupply-api/patients`, ...(params ? [params] : [])] as const;
+};
+
+export const getListPatientsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPatients>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListPatientsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPatients>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPatientsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listPatients>>> = ({
+    signal,
+  }) => listPatients(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPatients>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPatientsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPatients>>
+>;
+export type ListPatientsQueryError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Paginated patient list
+ */
+
+export function useListPatients<
+  TData = Awaited<ReturnType<typeof listPatients>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListPatientsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPatients>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPatientsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the full patient header (decrypted name; hasPhone /
+hasEmail booleans only) plus the patient's prescriptions, all
+episodes, the 10 most recent conversations, and the 10 most
+recent fulfillments. The conversation summaries on this
+response do NOT include message bodies — call /conversations/{id}
+for the decrypted timeline.
+
+ * @summary Patient detail with episodes / prescriptions / recent activity
+ */
+export const getGetPatientUrl = (id: string) => {
+  return `/resupply-api/patients/${id}`;
+};
+
+export const getPatient = async (
+  id: string,
+  options?: RequestInit,
+): Promise<PatientDetail> => {
+  return customFetch<PatientDetail>(getGetPatientUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPatientQueryKey = (id: string) => {
+  return [`/resupply-api/patients/${id}`] as const;
+};
+
+export const getGetPatientQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPatient>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPatient>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPatientQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPatient>>> = ({
+    signal,
+  }) => getPatient(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPatient>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPatientQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPatient>>
+>;
+export type GetPatientQueryError = ErrorType<AuthError | NotFoundError>;
+
+/**
+ * @summary Patient detail with episodes / prescriptions / recent activity
+ */
+
+export function useGetPatient<
+  TData = Awaited<ReturnType<typeof getPatient>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPatient>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPatientQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of conversations across all channels. Includes the
+owning patient's decrypted firstName + lastName so the dashboard
+can render the queue without an N+1 patient lookup. Sorted by
+`lastMessageAt DESC NULLS LAST, createdAt DESC` so the freshest
+thread is first.
+
+ * @summary Paginated conversation queue
+ */
+export const getListConversationsUrl = (params?: ListConversationsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/conversations?${stringifiedParams}`
+    : `/resupply-api/conversations`;
+};
+
+export const listConversations = async (
+  params?: ListConversationsParams,
+  options?: RequestInit,
+): Promise<ConversationListPage> => {
+  return customFetch<ConversationListPage>(getListConversationsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListConversationsQueryKey = (
+  params?: ListConversationsParams,
+) => {
+  return [`/resupply-api/conversations`, ...(params ? [params] : [])] as const;
+};
+
+export const getListConversationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listConversations>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListConversationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListConversationsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listConversations>>
+  > = ({ signal }) => listConversations(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listConversations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListConversationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listConversations>>
+>;
+export type ListConversationsQueryError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Paginated conversation queue
+ */
+
+export function useListConversations<
+  TData = Awaited<ReturnType<typeof listConversations>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListConversationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listConversations>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListConversationsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns conversation header + every message in chronological order
+with bodies decrypted server-side. This is the only endpoint that
+surfaces decrypted message content to the operator console.
+
+ * @summary Conversation detail with decrypted messages
+ */
+export const getGetConversationUrl = (id: string) => {
+  return `/resupply-api/conversations/${id}`;
+};
+
+export const getConversation = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ConversationDetail> => {
+  return customFetch<ConversationDetail>(getGetConversationUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetConversationQueryKey = (id: string) => {
+  return [`/resupply-api/conversations/${id}`] as const;
+};
+
+export const getGetConversationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getConversation>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getConversation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetConversationQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getConversation>>> = ({
+    signal,
+  }) => getConversation(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getConversation>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetConversationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getConversation>>
+>;
+export type GetConversationQueryError = ErrorType<AuthError | NotFoundError>;
+
+/**
+ * @summary Conversation detail with decrypted messages
+ */
+
+export function useGetConversation<
+  TData = Awaited<ReturnType<typeof getConversation>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getConversation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetConversationQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated list of episodes. Joins prescriptions for itemSku +
+cadenceDays display, and patients for decrypted firstName +
+lastName. The synthetic `overdue` status is the operator's
+actionable queue — episodes still in outreach (`outreach_pending`
+or `awaiting_response`) whose dueAt is in the past. Sorted
+oldest-due-first within the overdue queue, otherwise by
+createdAt DESC.
+
+ * @summary Paginated episode queue (overdue or by-status)
+ */
+export const getListEpisodesUrl = (params?: ListEpisodesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/episodes?${stringifiedParams}`
+    : `/resupply-api/episodes`;
+};
+
+export const listEpisodes = async (
+  params?: ListEpisodesParams,
+  options?: RequestInit,
+): Promise<EpisodeListPage> => {
+  return customFetch<EpisodeListPage>(getListEpisodesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEpisodesQueryKey = (params?: ListEpisodesParams) => {
+  return [`/resupply-api/episodes`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEpisodesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEpisodes>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListEpisodesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEpisodes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListEpisodesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listEpisodes>>> = ({
+    signal,
+  }) => listEpisodes(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEpisodes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEpisodesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEpisodes>>
+>;
+export type ListEpisodesQueryError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Paginated episode queue (overdue or by-status)
+ */
+
+export function useListEpisodes<
+  TData = Awaited<ReturnType<typeof listEpisodes>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListEpisodesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEpisodes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEpisodesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Paginated audit-log viewer. Filters: action prefix, targetTable,
+date floor (`since`). Sorted by occurredAt DESC. The `metadata`
+column is the plaintext jsonb context written through
+@workspace/resupply-audit's sanitiser (PHI-key denylist + size +
+depth caps), so it is safe to surface as-is; the dashboard
+renders only an allowlisted set of keys for defence-in-depth.
+
+ * @summary Paginated audit log viewer
+ */
+export const getListAuditUrl = (params?: ListAuditParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/audit?${stringifiedParams}`
+    : `/resupply-api/audit`;
+};
+
+export const listAudit = async (
+  params?: ListAuditParams,
+  options?: RequestInit,
+): Promise<AuditPage> => {
+  return customFetch<AuditPage>(getListAuditUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAuditQueryKey = (params?: ListAuditParams) => {
+  return [`/resupply-api/audit`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAuditQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAudit>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListAuditParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAudit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAuditQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listAudit>>> = ({
+    signal,
+  }) => listAudit(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAudit>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAuditQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAudit>>
+>;
+export type ListAuditQueryError = ErrorType<ConsoleValidationError | AuthError>;
+
+/**
+ * @summary Paginated audit log viewer
+ */
+
+export function useListAudit<
+  TData = Awaited<ReturnType<typeof listAudit>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListAuditParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAudit>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAuditQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
