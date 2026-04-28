@@ -36,7 +36,7 @@
 //
 //   3. The serialized JSON is bounded. Multi-megabyte audit rows
 //      destroy log readability and pad backups. The cap (8 KiB) is
-//      far above any legitimate operator-action payload — request
+//      far above any legitimate admin-action payload — request
 //      ids, before/after deltas of NON-PHI fields, filter shapes —
 //      and far below "someone is dumping a query result here".
 //

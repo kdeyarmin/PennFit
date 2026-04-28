@@ -3,7 +3,7 @@ import { useGetDashboardSummary } from "@workspace/resupply-api-client";
 import { KpiCard } from "../components/Card";
 import { ErrorPanel } from "../components/ErrorPanel";
 
-// Operator landing page. Six KPI tiles + four "filtered queue" deep
+// Admin landing page. Six KPI tiles + four "filtered queue" deep
 // links. Numbers come from /dashboard/summary which is a single
 // COUNT(*)-only query — no PHI crosses the API boundary.
 
@@ -31,11 +31,11 @@ export function DashboardPage() {
           label="Active conversations"
           value={data?.activeConversations ?? "—"}
           isLoading={isPending}
-          hint="open · awaiting_patient · awaiting_operator"
+          hint="open · awaiting_patient · awaiting_admin"
         />
         <KpiCard
-          label="Awaiting operator"
-          value={data?.awaitingOperator ?? "—"}
+          label="Awaiting admin"
+          value={data?.awaitingAdmin ?? "—"}
           isLoading={isPending}
           hint="parked for human attention"
         />
@@ -72,11 +72,11 @@ export function DashboardPage() {
         <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
           <li>
             <Link
-              href="/conversations?status=awaiting_operator"
+              href="/conversations?status=awaiting_admin"
               className="underline"
               style={{ color: "#0a1f44" }}
             >
-              Conversations awaiting operator →
+              Conversations awaiting admin →
             </Link>
           </li>
           <li>

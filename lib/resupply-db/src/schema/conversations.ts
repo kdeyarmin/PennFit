@@ -38,7 +38,7 @@ export const conversations = resupplySchema.table(
     channel: text("channel", { enum: ["sms", "voice", "email"] }).notNull(),
 
     status: text("status", {
-      enum: ["open", "awaiting_patient", "awaiting_operator", "closed"],
+      enum: ["open", "awaiting_patient", "awaiting_admin", "closed"],
     })
       .notNull()
       .default("open"),
@@ -48,7 +48,7 @@ export const conversations = resupplySchema.table(
     externalRef: text("external_ref"),
 
     // Last time a message was added to this conversation. Drives the
-    // operator inbox sort order.
+    // admin inbox sort order.
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
 
     createdAt: timestamp("created_at", { withTimezone: true })

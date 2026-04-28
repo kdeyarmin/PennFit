@@ -20,9 +20,9 @@ import { Button } from "../components/Button";
 import { fullName, formatDateTime } from "../lib/format";
 
 // Conversation viewer. Renders the chronological message timeline as
-// channel-aware bubbles (operator/agent on the right, patient on the
+// channel-aware bubbles (admin/agent on the right, patient on the
 // left). The action bar at the bottom wires the existing
-// send-reminder + place-call mutations so an operator can act from
+// send-reminder + place-call mutations so an admin can act from
 // inside the thread.
 //
 // Mutations target the existing /sms/send-reminder, /email/send-reminder,
@@ -201,7 +201,7 @@ function ActionBar({
   }
 
   return (
-    <Card title="Operator actions" subtitle="All actions write to the audit log.">
+    <Card title="Admin actions" subtitle="All actions write to the audit log.">
       <div className="flex flex-wrap items-center gap-3">
         <Button
           isLoading={sms.isPending}

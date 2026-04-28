@@ -1,18 +1,18 @@
-// POST /sms/send-reminder — operator-initiated outbound SMS.
+// POST /sms/send-reminder — admin-initiated outbound SMS.
 //
 // Thin wrapper around `sendReminderSms` from @workspace/resupply-reminders.
 // Both the API route and the worker's reminders.send-sms job call the
 // same helper — the helper owns conversation creation, phone_lookup
 // upsert, Twilio invocation, message-row persistence, and audit
 // emission. This route's job is just:
-//   1. requireOperator gate.
+//   1. requireAdmin gate.
 //   2. Messaging-config readiness gate (503 with stable error code).
 //   3. Body validation (zod).
 //   4. Delegate to sendReminderSms.
 //   5. Translate the helper's tagged outcome to an HTTP response.
 //
 // We do NOT roll back the conversations row when Twilio rejects the
-// send: the operator made the attempt, the audit log + dashboard
+// send: the admin made the attempt, the audit log + dashboard
 // timeline must show that. This matches the voice place-call
 // philosophy.
 
@@ -28,7 +28,7 @@ import { TwilioConfigError } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const sendBody = z
   .object({
@@ -36,7 +36,7 @@ const sendBody = z
     episodeId: z.string().uuid().optional(),
     /**
      * Optional override for the message body. When absent the helper
-     * renders a default reminder template. Operator-typed bodies are
+     * renders a default reminder template. Admin-typed bodies are
      * passed through verbatim (encrypted at rest in `messages.body`).
      */
     body: z.string().min(1).max(1600).optional(),
@@ -45,7 +45,7 @@ const sendBody = z
 
 const router: IRouter = Router();
 
-router.post("/sms/send-reminder", requireOperator, async (req, res) => {
+router.post("/sms/send-reminder", requireAdmin, async (req, res) => {
   const cfg = readMessagingConfigOrNull();
   if (!cfg) {
     res.status(503).json({
@@ -90,9 +90,9 @@ router.post("/sms/send-reminder", requireOperator, async (req, res) => {
       episodeId,
       body,
       actor: {
-        kind: "operator",
-        operatorEmail: req.operatorEmail ?? null,
-        operatorClerkId: req.operatorClerkId ?? null,
+        kind: "admin",
+        adminEmail: req.adminEmail ?? null,
+        adminClerkId: req.adminClerkId ?? null,
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       },
@@ -142,9 +142,9 @@ router.post("/sms/send-reminder", requireOperator, async (req, res) => {
       // already in the system. We refused to overwrite the lookup row
       // because doing so would silently re-route inbound STOP/HELP
       // and order-confirmation replies onto the wrong patient. The
-      // operator must resolve the duplicate before any reminder can
+      // admin must resolve the duplicate before any reminder can
       // be sent. We deliberately do NOT include the conflicting
-      // patient_id in the response body — operators look it up via
+      // patient_id in the response body — admins look it up via
       // the audit row (`messaging.phone_lookup.conflict`) where
       // access is gated by their existing roles.
       res.status(409).json({

@@ -2,7 +2,7 @@
 //
 // Filters: action substring, exact targetTable, lower-bound on
 // occurredAt. Sort key: occurredAt DESC (newest first — that's the
-// shape an operator wants when investigating "what just
+// shape an admin wants when investigating "what just
 // happened?").
 //
 // Architecture note: per Rule 8 of check-resupply-architecture.sh
@@ -26,7 +26,7 @@ import { z } from "zod";
 
 import { getDbPool } from "@workspace/resupply-db";
 
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const listQuery = z
   .object({
@@ -57,7 +57,7 @@ interface CountRow {
 
 const router: IRouter = Router();
 
-router.get("/audit", requireOperator, async (req, res) => {
+router.get("/audit", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({
@@ -124,8 +124,8 @@ router.get("/audit", requireOperator, async (req, res) => {
     items: rowsResult.rows.map((r) => ({
       id: r.id,
       occurredAt: toIsoRequired(r.occurred_at),
-      operatorEmail: r.operator_email,
-      operatorClerkId: r.operator_clerk_id,
+      adminEmail: r.operator_email,
+      adminClerkId: r.operator_clerk_id,
       action: r.action,
       targetTable: r.target_table,
       targetId: r.target_id,

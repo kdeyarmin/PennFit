@@ -112,12 +112,12 @@ router.post(
         // `other` rather than echoing whatever the vendor sent.
         // The freeform reason is preserved on the `messages` row above
         // (encrypted at rest), where investigators can pull it via the
-        // bound conversation_id without it leaking into the operator
+        // bound conversation_id without it leaking into the admin
         // audit feed.
         await safeAudit({
           action: "email.delivery.bounced",
-          operatorEmail: null,
-          operatorClerkId: null,
+          adminEmail: null,
+          adminClerkId: null,
           targetTable: "messages",
           targetId: null,
           metadata: {
@@ -139,7 +139,7 @@ router.post(
 
 /**
  * Whitelist SendGrid bounce-event `type` strings into a small fixed
- * vocabulary that we are comfortable surfacing on the operator audit
+ * vocabulary that we are comfortable surfacing on the admin audit
  * feed. Anything outside the known set collapses to `other` rather
  * than echoing untrusted vendor text.
  *

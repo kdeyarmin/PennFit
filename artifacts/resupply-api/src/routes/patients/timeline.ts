@@ -18,7 +18,7 @@
 //
 // What's NOT included on purpose:
 //   - Decrypted message bodies. The timeline is a "scan the chart"
-//     surface; if the operator needs the actual text they click
+//     surface; if the admin needs the actual text they click
 //     through to /conversations/:id, which is the single chokepoint
 //     where message-body audits already happen. Keeping bodies out
 //     of the timeline avoids accidentally surfacing PHI in a screen
@@ -49,7 +49,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -81,7 +81,7 @@ const toIso = (v: Date | string | null | undefined): string | null => {
 
 const router: IRouter = Router();
 
-router.get("/patients/:id/timeline", requireOperator, async (req, res) => {
+router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
   const parsed = idParam.safeParse(req.params);
   if (!parsed.success) {
     res.status(404).json({ error: "not_found" });
@@ -293,8 +293,8 @@ router.get("/patients/:id/timeline", requireOperator, async (req, res) => {
   try {
     await logAudit({
       action: "patient.timeline.view",
-      operatorEmail: req.operatorEmail ?? null,
-      operatorClerkId: req.operatorClerkId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminClerkId: req.adminClerkId ?? null,
       targetTable: "patients",
       targetId: id,
       ip: req.ip ?? null,

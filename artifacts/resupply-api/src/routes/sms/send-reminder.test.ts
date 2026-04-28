@@ -1,7 +1,7 @@
 // Route tests for POST /sms/send-reminder.
 //
 // Same mocking strategy as voice/place-call.test.ts:
-//   - Mock @clerk/express so requireOperator is exercisable.
+//   - Mock @clerk/express so requireAdmin is exercisable.
 //   - Mock drizzle so we stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioSmsClient so we
 //     never hit Twilio.
@@ -91,7 +91,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -117,7 +117,7 @@ const ENV_KEYS = [
   "RESUPPLY_PHONE_HMAC_KEY",
   "RESUPPLY_LINK_HMAC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
-  "RESUPPLY_OPERATOR_EMAILS",
+  "RESUPPLY_ADMIN_EMAILS",
   "NODE_ENV",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
@@ -134,7 +134,7 @@ function setMessagingEnv(): void {
   process.env.RESUPPLY_PHONE_HMAC_KEY = "phone-hmac-test-key-32bytesXXXXXX";
   process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
-  process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+  process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.NODE_ENV = "test";
 }
 
@@ -162,8 +162,8 @@ describe("POST /sms/send-reminder", () => {
   });
 
   it("returns 503 messaging_not_configured when env is missing", async () => {
-    stubVerifiedOperator();
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    stubVerifiedAdmin();
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     const res = await request(makeApp())
       .post("/resupply-api/sms/send-reminder")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
@@ -182,7 +182,7 @@ describe("POST /sms/send-reminder", () => {
 
   it("returns 400 on invalid body (missing patientId)", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp())
       .post("/resupply-api/sms/send-reminder")
       .send({});
@@ -192,7 +192,7 @@ describe("POST /sms/send-reminder", () => {
 
   it("returns 404 when patient does not exist", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([]);
     const res = await request(makeApp())
       .post("/resupply-api/sms/send-reminder")
@@ -203,7 +203,7 @@ describe("POST /sms/send-reminder", () => {
 
   it("returns 409 when patient is not active", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,
@@ -221,7 +221,7 @@ describe("POST /sms/send-reminder", () => {
 
   it("returns 422 when patient has no phone", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,
@@ -239,7 +239,7 @@ describe("POST /sms/send-reminder", () => {
 
   it("returns 422 on episode/patient mismatch", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,
@@ -260,7 +260,7 @@ describe("POST /sms/send-reminder", () => {
 
   it("sends, opens conversation, audits, returns 201", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,
@@ -308,7 +308,7 @@ describe("POST /sms/send-reminder", () => {
 
   it("returns 502 + audits twilio_error when Twilio API rejects", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,
@@ -345,7 +345,7 @@ describe("POST /sms/send-reminder", () => {
     // detects the conflict, audits it, and refuses to send;
     // the route surfaces it as 409 (no PHI in body).
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const OTHER_PATIENT_ID = "55555555-5555-4555-8555-555555555555";
     selectQueue.push([
       {
@@ -366,13 +366,13 @@ describe("POST /sms/send-reminder", () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("phone_in_use_by_other_patient");
     // Defense in depth: do not leak the other patient_id over the
-    // wire — operators retrieve it via the audit row.
+    // wire — admins retrieve it via the audit row.
     expect(JSON.stringify(res.body)).not.toContain(OTHER_PATIENT_ID);
     // No outbound SMS, no conversation insert.
     expect(sendSmsMock).not.toHaveBeenCalled();
 
     // Two audit calls fire on this path: the conflict (from the lib)
-    // and the operator-facing reminder.sent outcome (status=
+    // and the admin-facing reminder.sent outcome (status=
     // phone_in_use_by_other_patient). Both carry the right shape.
     expect(logAuditMock).toHaveBeenCalled();
     const calls = logAuditMock.mock.calls.map((c) => c[0]);

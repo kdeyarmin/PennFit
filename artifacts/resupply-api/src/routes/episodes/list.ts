@@ -1,6 +1,6 @@
 // GET /episodes — paginated episode queue.
 //
-// The synthetic `overdue` status is the operator's actionable queue:
+// The synthetic `overdue` status is the admin's actionable queue:
 // episodes still in outreach (`outreach_pending` or
 // `awaiting_response`) whose dueAt is in the past. Sort key for the
 // overdue queue is oldest-due-first (the most overdue is most
@@ -24,7 +24,7 @@ import {
   prescriptions,
 } from "@workspace/resupply-db";
 
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const listQuery = z
   .object({
@@ -47,7 +47,7 @@ const listQuery = z
 
 const router: IRouter = Router();
 
-router.get("/episodes", requireOperator, async (req, res) => {
+router.get("/episodes", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({

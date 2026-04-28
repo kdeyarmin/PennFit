@@ -20,8 +20,8 @@ import { logAudit } from "@workspace/resupply-audit";
 
 await logAudit({
   action: "patient.view",       // required, free-form verb string
-  operatorEmail: "ops@…",       // optional
-  operatorClerkId: "user_…",     // optional
+  adminEmail: "ops@…",       // optional
+  adminClerkId: "user_…",     // optional
   targetTable: "patients",       // optional, e.g. "patients" / "episodes"
   targetId: "pat_abc",           // optional
   metadata: { requestId: "…" },  // optional, see "metadata contract"

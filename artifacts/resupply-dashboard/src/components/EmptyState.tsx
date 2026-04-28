@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 // Shared empty state for tables and lists. Title is a single short
 // sentence ("No conversations match this filter."); the optional hint
-// suggests the next operator action ("Try clearing filters." etc).
+// suggests the next admin action ("Try clearing filters." etc).
 
 export function EmptyState({
   title,

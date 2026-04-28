@@ -9,12 +9,12 @@
 //   3. Patient confirmed via SMS                 (confirmed + queued fulfillment)
 //   4. Patient declined via SMS                  (declined)
 //   5. Order shipped, full lifecycle complete    (fulfilled + delivered)
-//   6. Voice check-in placed, follow-up needed   (voice channel, awaiting_operator)
-//   7. Email reminder + patient reply            (email channel, awaiting_operator)
+//   6. Voice check-in placed, follow-up needed   (voice channel, awaiting_admin)
+//   7. Email reminder + patient reply            (email channel, awaiting_admin)
 //   8. Patient paused — no outreach              (status=paused)
 //   9. Reminder expired with no reply            (expired)
 //  10. Multi-conversation: SMS thread closed,
-//      operator opened a follow-up voice call    (two conversations on one episode)
+//      admin opened a follow-up voice call    (two conversations on one episode)
 //
 // The script is idempotent: any prior `seed-*` patient (and via
 // ON DELETE CASCADE everything below it — episodes, conversations,
@@ -391,7 +391,7 @@ const SCENARIOS: SeedScenario[] = [
     },
   },
   {
-    // 6. Voice check-in placed, operator follow-up needed
+    // 6. Voice check-in placed, admin follow-up needed
     pacwareSlug: "felipe-rocha",
     firstName: "Felipe",
     lastName: "Rocha",
@@ -427,7 +427,7 @@ const SCENARIOS: SeedScenario[] = [
             patientId,
             episodeId: ep.id,
             channel: "voice",
-            status: "awaiting_operator",
+            status: "awaiting_admin",
             lastMessageAt: NOW,
           }),
         )
@@ -452,7 +452,7 @@ const SCENARIOS: SeedScenario[] = [
     },
   },
   {
-    // 7. Email reminder + patient reply, operator follow-up
+    // 7. Email reminder + patient reply, admin follow-up
     pacwareSlug: "gina-sato",
     firstName: "Gina",
     lastName: "Sato",
@@ -489,7 +489,7 @@ const SCENARIOS: SeedScenario[] = [
             patientId,
             episodeId: ep.id,
             channel: "email",
-            status: "awaiting_operator",
+            status: "awaiting_admin",
             lastMessageAt: days(1),
           }),
         )
@@ -657,7 +657,7 @@ const SCENARIOS: SeedScenario[] = [
             patientId,
             episodeId: ep.id,
             channel: "voice",
-            status: "awaiting_operator",
+            status: "awaiting_admin",
             lastMessageAt: days(1),
           }),
         )
@@ -666,8 +666,8 @@ const SCENARIOS: SeedScenario[] = [
         makeMessage({
           conversationId: voiceConv.id,
           direction: "outbound",
-          senderRole: "operator",
-          body: "[Operator-initiated voice call queued — pending dial]",
+          senderRole: "admin",
+          body: "[Admin-initiated voice call queued — pending dial]",
           sentAt: days(1),
           deliveredAt: days(1),
         }),

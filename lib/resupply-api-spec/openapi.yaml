@@ -4,7 +4,7 @@ info:
   title: Api
   version: 0.1.0
   description: |
-    CPAP Resupply Automation operator API. Powers the operator dashboard
+    CPAP Resupply Automation admin API. Powers the admin dashboard
     (queue, episode detail, conversation viewer, fulfillment). Patient
     PHI flows through this API and lives in the resupply.* schema.
 servers:
@@ -13,11 +13,11 @@ servers:
 tags:
   - name: health
     description: Health operations
-  - name: operator
-    description: Operator identity & session
+  - name: admin
+    description: Admin identity & session
   - name: dashboard
     description: |
-      Top-of-page summary counters for the operator dashboard.
+      Top-of-page summary counters for the admin dashboard.
       Read-only; never returns PHI.
   - name: patients
     description: |
@@ -27,7 +27,7 @@ tags:
     description: |
       Conversation list + detail (decrypted message timeline). The detail
       endpoint is the only place encrypted message bodies are surfaced
-      to the operator console.
+      to the admin console.
   - name: episodes
     description: |
       Episode queue (overdue / by-status). Joins prescriptions for
@@ -40,7 +40,7 @@ tags:
       only allowlisted keys.
   - name: voice
     description: |
-      Outbound voice (CPAP resupply phone calls). Operators initiate calls
+      Outbound voice (CPAP resupply phone calls). Admins initiate calls
       via /voice/place-call; Twilio's Voice service then drives the call
       lifecycle and reports back via /voice/status-callback. The TwiML
       handshake endpoint is intentionally NOT included in this public
@@ -89,23 +89,23 @@ paths:
                 $ref: "#/components/schemas/ReadinessStatus"
   /me:
     get:
-      operationId: getOperatorMe
-      tags: [operator]
-      summary: Operator identity
+      operationId: getAdminMe
+      tags: [admin]
+      summary: Admin identity
       description: |
-        Returns the signed-in operator's Clerk id and verified primary
-        email when the caller is on the `RESUPPLY_OPERATOR_EMAILS`
+        Returns the signed-in admin's Clerk id and verified primary
+        email when the caller is on the `RESUPPLY_ADMIN_EMAILS`
         allowlist. The dashboard calls this immediately after sign-in
-        to decide whether to render the operator console (200), the
+        to decide whether to render the admin console (200), the
         "not authorized" screen (403), or the "allowlist not
         configured" screen (503 in production with the env var unset).
       responses:
         "200":
-          description: Caller is a recognized operator
+          description: Caller is a recognized admin
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OperatorIdentity"
+                $ref: "#/components/schemas/AdminIdentity"
         "401":
           description: |
             No valid Clerk session, or Clerk lookup failed. The body
@@ -118,14 +118,14 @@ paths:
         "403":
           description: |
             Signed in, but either the primary email is unverified or
-            the email is not on the operator allowlist.
+            the email is not on the admin allowlist.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "503":
           description: |
-            Operator allowlist is not configured on this server (only
+            Admin allowlist is not configured on this server (only
             possible in production — dev falls back to allowing any
             signed-in, email-verified user).
           content:
@@ -138,7 +138,7 @@ paths:
       tags: [voice]
       summary: Place an outbound resupply call
       description: |
-        Operator-initiated outbound call. Looks up the patient + episode,
+        Admin-initiated outbound call. Looks up the patient + episode,
         opens a conversations row (channel=voice, status=open), registers
         a short-TTL pending-session entry keyed on conversationId, and
         asks Twilio to dial the patient's decrypted phone number. Twilio
@@ -177,7 +177,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist
+          description: Caller is not on the admin allowlist
           content:
             application/json:
               schema:
@@ -227,9 +227,9 @@ paths:
     post:
       operationId: sendSmsReminder
       tags: [messaging]
-      summary: Operator-initiated outbound SMS resupply reminder
+      summary: Admin-initiated outbound SMS resupply reminder
       description: |
-        Operator-initiated outbound SMS reminder. Looks up the patient
+        Admin-initiated outbound SMS reminder. Looks up the patient
         + episode, opens a conversations row (channel=sms,
         status=open), upserts the inbound-lookup row in
         `phone_lookup`, and dispatches the message via Twilio
@@ -268,7 +268,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist
+          description: Caller is not on the admin allowlist
           content:
             application/json:
               schema:
@@ -311,9 +311,9 @@ paths:
     post:
       operationId: sendEmailReminder
       tags: [messaging]
-      summary: Operator-initiated outbound email resupply reminder
+      summary: Admin-initiated outbound email resupply reminder
       description: |
-        Operator-initiated outbound email reminder. Same shape as
+        Admin-initiated outbound email reminder. Same shape as
         /sms/send-reminder: opens a conversation, signs three short-
         TTL link tokens (confirm/edit/stop), renders the templated
         email, and dispatches via SendGrid.
@@ -348,7 +348,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist
+          description: Caller is not on the admin allowlist
           content:
             application/json:
               schema:
@@ -398,7 +398,7 @@ paths:
         Always returns plain HTML (text/html) so the patient sees a
         confirmation page in their browser. The action is idempotent:
         confirm-twice = one fulfillment row, stop-twice = still
-        paused, edit-twice = still awaiting_operator.
+        paused, edit-twice = still awaiting_admin.
       parameters:
         - in: query
           name: t
@@ -499,15 +499,15 @@ paths:
     get:
       operationId: getDashboardSummary
       tags: [dashboard]
-      summary: Top-of-page operator counters
+      summary: Top-of-page admin counters
       description: |
         Returns the small set of counts the dashboard home renders: open
-        conversations, conversations parked for an operator, overdue
+        conversations, conversations parked for an admin, overdue
         episodes, fulfillments-this-week, paused patients. Read-only;
-        no PHI; gated by requireOperator.
+        no PHI; gated by requireAdmin.
       responses:
         "200":
-          description: Counters for the operator dashboard home.
+          description: Counters for the admin dashboard home.
           content:
             application/json:
               schema:
@@ -519,7 +519,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -532,14 +532,14 @@ paths:
       description: |
         Paginated list of patients. Decrypts firstName + lastName for
         display. Phone and email are surfaced as booleans only —
-        `hasPhone` / `hasEmail` — so operators can tell which channels
+        `hasPhone` / `hasEmail` — so admins can tell which channels
         are reachable without leaking the values themselves.
 
         `search` matches against pacwareId (plaintext, indexed) AND
         against the decrypted first/last name (server-side `pgp_sym_decrypt`).
         Decrypted-name search is a Postgres-side full scan; the limit
-        cap and the operator-only gate make this acceptable for the
-        small steady-state operator workload.
+        cap and the admin-only gate make this acceptable for the
+        small steady-state admin workload.
       parameters:
         - in: query
           name: status
@@ -588,11 +588,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthError"
+    post:
+      operationId: createPatient
+      tags: [patients]
+      summary: Create a new patient
+      description: |
+        Admin-initiated patient creation from the dashboard. Encrypts
+        first/last name, DOB, phone, email, and address at the SQL
+        site via pgcrypto. Returns the new patient's id; the
+        dashboard navigates to /patients/{id} on success.
+
+        409 with `error: "duplicate_pacware_id"` when the supplied
+        Pacware id is already in use — pacware_id is the unique join
+        key for CSV imports and may not be reused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePatientRequest"
+      responses:
+        "201":
+          description: Patient created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePatientResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "409":
+          description: Pacware id already in use.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuplicatePacwareIdError"
   /patients/{id}:
     get:
       operationId: getPatient
@@ -632,7 +682,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -640,9 +690,9 @@ paths:
     patch:
       operationId: updatePatient
       tags: [patients]
-      summary: Update operator-editable patient settings
+      summary: Update admin-editable patient settings
       description: |
-        Partial update of a patient's operator-editable fields:
+        Partial update of a patient's admin-editable fields:
         `insurancePayer`, `cadenceOverrideDays`, and
         `channelPreference`. Each field is independently optional;
         sending `null` explicitly clears the field, omitting it leaves
@@ -687,7 +737,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -729,7 +779,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -742,7 +792,7 @@ paths:
       description: |
         Returns every rule, ordered by (priority asc, createdAt asc) —
         the same order the eligibility engine uses. Inactive rules are
-        included so operators can re-enable them without re-entering
+        included so admins can re-enable them without re-entering
         the criteria.
       responses:
         "200":
@@ -758,7 +808,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -793,7 +843,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -845,7 +895,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -877,7 +927,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -898,7 +948,7 @@ paths:
           name: status
           schema:
             type: string
-            enum: [open, awaiting_patient, awaiting_operator, closed]
+            enum: [open, awaiting_patient, awaiting_admin, closed]
         - in: query
           name: channel
           schema:
@@ -943,7 +993,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -956,7 +1006,7 @@ paths:
       description: |
         Returns conversation header + every message in chronological order
         with bodies decrypted server-side. This is the only endpoint that
-        surfaces decrypted message content to the operator console.
+        surfaces decrypted message content to the admin console.
       parameters:
         - in: path
           name: id
@@ -984,7 +1034,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -997,7 +1047,7 @@ paths:
       description: |
         Paginated list of episodes. Joins prescriptions for itemSku +
         cadenceDays display, and patients for decrypted firstName +
-        lastName. The synthetic `overdue` status is the operator's
+        lastName. The synthetic `overdue` status is the admin's
         actionable queue — episodes still in outreach (`outreach_pending`
         or `awaiting_response`) whose dueAt is in the past. Sorted
         oldest-due-first within the overdue queue, otherwise by
@@ -1049,7 +1099,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -1118,7 +1168,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
         "403":
-          description: Caller is not on the operator allowlist.
+          description: Caller is not on the admin allowlist.
           content:
             application/json:
               schema:
@@ -1138,10 +1188,10 @@ components:
       required:
         - status
         - service
-    OperatorIdentity:
+    AdminIdentity:
       type: object
       description: |
-        Minimal identity payload for an authorized operator. Contains
+        Minimal identity payload for an authorized admin. Contains
         ONLY the fields the dashboard needs to render — no session
         token, no Clerk user object, no allowlist contents.
       properties:
@@ -1188,7 +1238,7 @@ components:
     PlaceVoiceCallRequest:
       type: object
       description: |
-        Operator instruction to place an outbound resupply call.
+        Admin instruction to place an outbound resupply call.
       properties:
         patientId:
           type: string
@@ -1300,7 +1350,7 @@ components:
     SendSmsReminderRequest:
       type: object
       description: |
-        Operator instruction to send an outbound SMS reminder.
+        Admin instruction to send an outbound SMS reminder.
       properties:
         patientId:
           type: string
@@ -1343,7 +1393,7 @@ components:
     SendEmailReminderRequest:
       type: object
       description: |
-        Operator instruction to send an outbound email reminder.
+        Admin instruction to send an outbound email reminder.
       properties:
         patientId:
           type: string
@@ -1508,21 +1558,126 @@ components:
           enum: [not_found]
       required:
         - error
+    DuplicatePacwareIdError:
+      type: object
+      description: |
+        Returned by POST /patients when the supplied pacwareId is
+        already in use. The dashboard renders the message inline on
+        the create-patient form so the admin can correct or jump to
+        the existing record.
+      properties:
+        error:
+          type: string
+          enum: [duplicate_pacware_id]
+        message:
+          type: string
+      required:
+        - error
+        - message
+    CreatePatientRequest:
+      type: object
+      description: |
+        Body for POST /patients. PHI fields (name, DOB, phone, email,
+        address) are pgcrypto-encrypted server-side at the SQL site —
+        the API never logs them and the request body never echoes back
+        in any response.
+      properties:
+        pacwareId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Pacware patient id. Plaintext, indexed, unique. The same
+            id used by the legacy DME system; required so future CSV
+            imports correlate cleanly.
+        legalFirstName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        legalLastName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        dateOfBirth:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+          description: ISO date in YYYY-MM-DD form (no time / timezone).
+        phoneE164:
+          type: string
+          nullable: true
+          pattern: "^\\+[1-9]\\d{7,14}$"
+          description: |
+            E.164 phone (e.g. `+14155551212`). Null / omitted means
+            the patient has no phone on file; SMS / voice reminders
+            will not be attempted.
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 254
+        address:
+          nullable: true
+          type: object
+          properties:
+            line1: { type: string, minLength: 1, maxLength: 120 }
+            line2: { type: string, maxLength: 120 }
+            city: { type: string, minLength: 1, maxLength: 80 }
+            state: { type: string, minLength: 1, maxLength: 40 }
+            postalCode: { type: string, minLength: 1, maxLength: 20 }
+            country: { type: string, minLength: 1, maxLength: 40 }
+          required: [line1, city, state, postalCode, country]
+        status:
+          type: string
+          enum: [active, paused, closed]
+          description: Defaults to `active` when omitted.
+        insurancePayer:
+          type: string
+          nullable: true
+          maxLength: 120
+          description: |
+            Free-text payer name (e.g. "Aetna"). Used as a match
+            target by frequency_rules.
+        cadenceOverrideDays:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 365
+          description: |
+            Per-patient cadence override (days). Wins over rules and
+            the prescription cadence when set at create time.
+        channelPreference:
+          type: string
+          enum: [sms, email, voice]
+          nullable: true
+          description: Per-patient outbound channel override.
+      required:
+        - pacwareId
+        - legalFirstName
+        - legalLastName
+        - dateOfBirth
+    CreatePatientResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+      required:
+        - id
     DashboardSummary:
       type: object
       description: |
-        Top-of-page operator counters. Every value is a row count over
+        Top-of-page admin counters. Every value is a row count over
         the resupply.* tables, taken at request time. Numbers, not PHI.
       properties:
         activeConversations:
           type: integer
           description: |
-            conversations.status IN ('open','awaiting_patient','awaiting_operator')
+            conversations.status IN ('open','awaiting_patient','awaiting_admin')
             across all channels.
-        awaitingOperator:
+        awaitingAdmin:
           type: integer
           description: |
-            conversations.status = 'awaiting_operator' — these are the
+            conversations.status = 'awaiting_admin' — these are the
             conversations parked for human attention.
         overdueEpisodes:
           type: integer
@@ -1539,7 +1694,7 @@ components:
           description: patients.status = 'paused'.
       required:
         - activeConversations
-        - awaitingOperator
+        - awaitingAdmin
         - overdueEpisodes
         - fulfillmentsThisWeek
         - pausedPatients
@@ -1680,7 +1835,7 @@ components:
           enum: [sms, voice, email]
         status:
           type: string
-          enum: [open, awaiting_patient, awaiting_operator, closed]
+          enum: [open, awaiting_patient, awaiting_admin, closed]
         lastMessageAt:
           type: string
           format: date-time
@@ -1761,7 +1916,7 @@ components:
           type: string
           nullable: true
           description: |
-            Free-text payer name set by an operator. Used as a match
+            Free-text payer name set by an admin. Used as a match
             target by frequency_rules. NULL means no payer recorded.
         cadenceOverrideDays:
           type: integer
@@ -1838,7 +1993,7 @@ components:
           enum: [sms, voice, email]
         status:
           type: string
-          enum: [open, awaiting_patient, awaiting_operator, closed]
+          enum: [open, awaiting_patient, awaiting_admin, closed]
         lastMessageAt:
           type: string
           format: date-time
@@ -1891,7 +2046,7 @@ components:
           enum: [inbound, outbound]
         senderRole:
           type: string
-          enum: [patient, operator, agent, system]
+          enum: [patient, admin, agent, system]
         body:
           type: string
         deliveryStatus:
@@ -1935,7 +2090,7 @@ components:
           enum: [sms, voice, email]
         status:
           type: string
-          enum: [open, awaiting_patient, awaiting_operator, closed]
+          enum: [open, awaiting_patient, awaiting_admin, closed]
         lastMessageAt:
           type: string
           format: date-time
@@ -2042,10 +2197,10 @@ components:
         occurredAt:
           type: string
           format: date-time
-        operatorEmail:
+        adminEmail:
           type: string
           nullable: true
-        operatorClerkId:
+        adminClerkId:
           type: string
           nullable: true
         action:

@@ -4,7 +4,7 @@
 // live DB / pg-boss / lib helpers and are exercised via the api-side
 // integration suite (the lib code path is shared — see ADR 013). This
 // file pins the worker's local `readWorkerMessagingConfig` because it
-// is the env-shape contract between the worker and the operator-facing
+// is the env-shape contract between the worker and the admin-facing
 // API: a half-configured deploy that boots the worker but is missing
 // SMS or email secrets MUST log + skip rather than throw, otherwise
 // pg-boss fills its retry queue with permanent failures.

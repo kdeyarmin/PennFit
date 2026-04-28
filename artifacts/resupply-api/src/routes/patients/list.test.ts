@@ -57,7 +57,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -71,7 +71,7 @@ function stubVerifiedOperator(): void {
   });
 }
 
-const ENV_KEYS = ["RESUPPLY_OPERATOR_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -80,7 +80,7 @@ describe("GET /patients", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
     getAuthMock.mockReset();
     getUserMock.mockReset();
@@ -100,7 +100,7 @@ describe("GET /patients", () => {
   });
 
   it("returns 400 invalid_query on bad limit", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp()).get(
       "/resupply-api/patients?limit=999",
     );
@@ -109,7 +109,7 @@ describe("GET /patients", () => {
   });
 
   it("returns 400 invalid_query on bad status", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp()).get(
       "/resupply-api/patients?status=zzz",
     );
@@ -118,7 +118,7 @@ describe("GET /patients", () => {
   });
 
   it("returns paginated, decrypted-name page with hasPhone/hasEmail booleans", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 2 }]);
     selectQueue.push([
       {
@@ -168,7 +168,7 @@ describe("GET /patients", () => {
   });
 
   it("applies status + search filters without crashing", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 0 }]);
     selectQueue.push([]);
 
@@ -181,7 +181,7 @@ describe("GET /patients", () => {
   });
 
   it("uses defaults limit=25 offset=0 when not supplied", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 0 }]);
     selectQueue.push([]);
 

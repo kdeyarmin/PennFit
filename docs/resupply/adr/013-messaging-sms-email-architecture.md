@@ -43,7 +43,7 @@ for "comms with patient", not two divergent ones.
   replies) is **explicitly out of scope**. Email is one-way outbound +
   link-click inbound only. Free-text email replies that arrive at the
   configured From address are NOT processed in v1; we'll revisit if
-  the operator backlog says we need it.
+  the admin backlog says we need it.
 
 ### 2. Phone → patient lookup via a separate `phone_lookup` table
 
@@ -118,8 +118,8 @@ got a conversation opened in the last 48 hours (quiet period — prevents
 the same patient from being pinged twice in a single overdue window).
 Per-patient send jobs (`reminders.send-sms` / `reminders.send-email`)
 fan out from the scan and call into a SHARED helper
-(`lib/resupply-reminders/`) that the operator-facing API routes use
-too — so worker-triggered and operator-triggered sends go down the
+(`lib/resupply-reminders/`) that the admin-facing API routes use
+too — so worker-triggered and admin-triggered sends go down the
 exact same code path with the exact same audit trail.
 
 ### 6. Channel selection (v1 default)
@@ -150,7 +150,7 @@ email addresses):
 - `messaging.inbound.received` — inbound SMS arrived (no body in meta).
 - `messaging.intent.parsed` — keyword router OR AI fallback verdict.
 - `messaging.order.confirmed` — patient confirmed a resupply order.
-- `messaging.handoff.escalated` — operator queue assignment.
+- `messaging.handoff.escalated` — admin queue assignment.
 - `messaging.delivery.failed` — Twilio status callback says
   `failed`/`undelivered`.
 - `email.delivery.bounced` — SendGrid Event Webhook bounce.
@@ -187,7 +187,7 @@ All three rules have positive AND negative self-tests in
   patients table.
 - Hybrid router is cheap on the happy path and graceful on the long tail.
 - Outbound email never needs an inbound parser because clicks suffice.
-- Operator-triggered + worker-triggered sends share one code path,
+- Admin-triggered + worker-triggered sends share one code path,
   one audit shape, one set of tests.
 - Each new package boundary is enforced by an architecture self-test
   so a future contributor cannot silently bypass it.
@@ -203,7 +203,7 @@ All three rules have positive AND negative self-tests in
   is bounded, and the attack only links phone → opaque patient_id
   with no PHI attached.
 - AI fallback is best-effort. If OpenAI is down or slow, we degrade
-  to "operator queue, no auto-action" — the conversation is parked
+  to "admin queue, no auto-action" — the conversation is parked
   and the patient gets a "we'll get back to you" reply rather than
   the system guessing.
 - Channel selection is hard-coded SMS-first for v1. Adding patient
@@ -223,7 +223,7 @@ All three rules have positive AND negative self-tests in
   webhook signature / config surface for no net benefit.
 - **Pure scripted router, no AI fallback** — rejected; ~5% of replies
   would dead-end at "sorry I didn't understand" and end up in the
-  operator queue, defeating the automation goal.
+  admin queue, defeating the automation goal.
 - **Pure AI router** — rejected; cost, latency, auditability, and
   carrier-required STOP/HELP handling all argue for a deterministic
   first stage.

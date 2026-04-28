@@ -13,7 +13,7 @@
 // We skip a patient/episode pair if a `conversations` row was opened
 // in the last 48 hours for it. This prevents the hourly scan from
 // double-pinging a patient who just received a reminder (whether from
-// the previous scan or from an operator's manual send). The threshold
+// the previous scan or from an admin's manual send). The threshold
 // is hard-coded; patient-controlled DND lives in a separate ADR.
 //
 // Channel + cadence selection (v2)
@@ -32,9 +32,9 @@
 //
 // Voice handling: the worker has no fire-and-forget voice channel
 // (Twilio outbound voice in this app is initiated interactively from
-// the operator console, not from a cron). If a rule or override
+// the admin console, not from a cron). If a rule or override
 // resolves channel to "voice", the worker downgrades to SMS (if the
-// patient has a phone) or email — and warns. Operators who want
+// patient has a phone) or email — and warns. Admins who want
 // voice-only outreach should keep the `channel_preference` set to
 // `voice` so the dashboard surfaces the patient for a manual call;
 // the cron just won't auto-ping them.
@@ -58,7 +58,7 @@
 // helper resolves the episode internally (most-recent for the
 // patient). For patients with multiple overdue scripts the scan
 // enqueues one send per script, deduped by patient_id within the
-// scan window — operators get one ping per patient per cycle, not one
+// scan window — admins get one ping per patient per cycle, not one
 // per SKU.
 
 import { and, asc, desc, eq, sql } from "drizzle-orm";
@@ -236,7 +236,7 @@ export async function scanForDueReminders(
   const db = drizzle(pool);
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
 
-  // Step 1: load every active rule once. Rules are tiny (operator-
+  // Step 1: load every active rule once. Rules are tiny (admin-
   // managed; expected count is in the tens) so we keep the whole list
   // in memory for the duration of the scan and let `resolveOutreachPlan`
   // pick the right one per patient. Sorting in SQL matches what the
@@ -366,7 +366,7 @@ export async function scanForDueReminders(
 
     // Channel resolution: the plan may resolve to "voice", which the
     // worker can't initiate. Downgrade to sms (if phone present) or
-    // email; warn so operators can see the gap in scheduled outreach.
+    // email; warn so admins can see the gap in scheduled outreach.
     let channel: "sms" | "email";
     if (plan.channel === "voice") {
       if (patient.hasPhone) {
@@ -400,7 +400,7 @@ export async function scanForDueReminders(
       }
     } else if (plan.channel === "sms") {
       if (!patient.hasPhone) {
-        // Operator-set sms preference but no phone on file: fall back
+        // Admin-set sms preference but no phone on file: fall back
         // to email rather than silently drop.
         if (!row.email) {
           logger.warn(

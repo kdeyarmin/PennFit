@@ -47,7 +47,7 @@ type Row = {
 export function EpisodesPage() {
   const [location, setLocation] = useLocation();
 
-  // Default to overdue queue — that's the operator's primary triage view.
+  // Default to overdue queue — that's the admin's primary triage view.
   const initial = useMemo(
     () => readQueryParam(location, "status") ?? "overdue",
     [],

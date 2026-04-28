@@ -1,6 +1,6 @@
 // GET /rules — list every frequency rule (active + inactive).
 //
-// The dashboard's rules page needs both states so operators can
+// The dashboard's rules page needs both states so admins can
 // toggle a rule back on without re-creating it. We sort by the same
 // (priority asc, createdAt asc) the eligibility engine uses so the
 // page reads top-to-bottom in evaluation order.
@@ -16,11 +16,11 @@ import { logAudit } from "@workspace/resupply-audit";
 import { frequencyRules, getDbPool } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/rules", requireOperator, async (req, res) => {
+router.get("/rules", requireAdmin, async (req, res) => {
   const db = drizzle(getDbPool());
 
   const rows = await db
@@ -31,8 +31,8 @@ router.get("/rules", requireOperator, async (req, res) => {
   try {
     await logAudit({
       action: "rules.list",
-      operatorEmail: req.operatorEmail ?? null,
-      operatorClerkId: req.operatorClerkId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminClerkId: req.adminClerkId ?? null,
       targetTable: "frequency_rules",
       targetId: null,
       ip: req.ip ?? null,

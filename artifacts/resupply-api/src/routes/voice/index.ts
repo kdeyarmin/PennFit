@@ -4,7 +4,7 @@
 // HTTP server, not the Express router.
 //
 // These three routes are mounted unconditionally — each handler does
-// its own feature-flag check (so a single 503 reply tells operators
+// its own feature-flag check (so a single 503 reply tells admins
 // exactly which env var is missing). That avoids a class of subtle
 // "routes vanished after deploy" bug where a missing env var would
 // silently demote a 503 into a generic 404.

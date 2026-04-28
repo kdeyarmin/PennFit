@@ -4,7 +4,7 @@ import { useClerk } from "@clerk/react";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 
 // Console chrome: brand header + sidebar nav + footer + content slot.
-// Used by every signed-in operator screen so layout, brand chrome,
+// Used by every signed-in admin screen so layout, brand chrome,
 // and the active-route indicator stay in lockstep across pages.
 //
 // Active-route detection uses wouter's `useLocation`. The
@@ -72,7 +72,7 @@ function isLinkActive(location: string, link: (typeof NAV_LINKS)[number]): boole
   return location === prefix || location.startsWith(`${prefix}/`);
 }
 
-export function OperatorHeaderChip({ email }: { email: string }) {
+export function AdminHeaderChip({ email }: { email: string }) {
   const { signOut } = useClerk();
   return (
     <div className="flex items-center gap-3">
@@ -96,10 +96,10 @@ export function OperatorHeaderChip({ email }: { email: string }) {
 }
 
 export function AppShell({
-  operatorEmail,
+  adminEmail,
   children,
 }: {
-  operatorEmail?: string;
+  adminEmail?: string;
   children: ReactNode;
 }) {
   const [location] = useLocation();
@@ -111,7 +111,7 @@ export function AppShell({
     >
       <BrandHeader
         rightSlot={
-          operatorEmail ? <OperatorHeaderChip email={operatorEmail} /> : undefined
+          adminEmail ? <AdminHeaderChip email={adminEmail} /> : undefined
         }
       />
       <div className="flex-1 flex">

@@ -78,7 +78,7 @@ describe("@workspace/resupply-db preflight (pgcrypto)", () => {
       ).rejects.toBeInstanceOf(PgcryptoNotInstalledError);
 
       // Re-run to inspect the message text — the wording is a contract
-      // because operators grep for it in logs.
+      // because admins grep for it in logs.
       queryMock.mockResolvedValue({ rows: [{ exists: false }] });
       try {
         await assertPgcryptoEnabled(fakePool(queryMock));

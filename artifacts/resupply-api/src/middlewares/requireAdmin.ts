@@ -3,11 +3,11 @@ import { getAuth, clerkClient } from "@clerk/express";
 import { logger } from "../lib/logger";
 
 /**
- * requireOperator — gate for the resupply operator API.
+ * requireAdmin — gate for the resupply admin API.
  *
  * This is the resupply equivalent of Penn Fit's `requireAdmin`. The two
  * products run on the same Clerk instance but use disjoint allowlists,
- * so a Penn Fit admin is NOT automatically a resupply operator and vice
+ * so a Penn Fit admin is NOT automatically a resupply admin and vice
  * versa. Keeping the two env vars separate means rotating one product's
  * staff list cannot accidentally grant access to the other product's
  * console.
@@ -17,25 +17,25 @@ import { logger } from "../lib/logger";
  *   2. (Allowlist mode only.) The signed-in user's primary email is
  *      verified.
  *   3. (Allowlist mode only.) That email is in the
- *      RESUPPLY_OPERATOR_EMAILS allowlist.
+ *      RESUPPLY_ADMIN_EMAILS allowlist.
  *
  * The allowlist is a comma-separated env var, e.g.
- *   RESUPPLY_OPERATOR_EMAILS="rt-coordinator@pennhomemedical.com,billing@pennhomemedical.com"
+ *   RESUPPLY_ADMIN_EMAILS="rt-coordinator@pennhomemedical.com,billing@pennhomemedical.com"
  *
- * Behavior when RESUPPLY_OPERATOR_EMAILS is unset:
+ * Behavior when RESUPPLY_ADMIN_EMAILS is unset:
  *   - In `NODE_ENV=development` we allow any signed-in user — verified
  *     email or not. This makes the local dev loop bearable: you can
- *     poke the operator console without managing env vars, and the
+ *     poke the admin console without managing env vars, and the
  *     end-to-end testing harness (which creates Clerk users via the
  *     Backend API and does NOT mark their primary email as verified)
- *     can exercise the operator console happy path. Skipping the
+ *     can exercise the admin console happy path. Skipping the
  *     verification check is safe in this mode because there is NO
  *     allowlist to spoof past — the security argument for requiring
  *     a verified email only applies when "this email is in the list"
  *     is the gate. Dev DBs never carry real PHI.
- *   - In production we DENY all requests with a 503 "operator allowlist
+ *   - In production we DENY all requests with a 503 "admin allowlist
  *     not configured" response. This is the single most important rule
- *     in this file: better to have NO operators than an accidentally
+ *     in this file: better to have NO admins than an accidentally
  *     world-open console if a deploy ships without the env var.
  *     Phase 2+ endpoints behind this middleware will read and write
  *     PHI; a missing env var must fail closed.
@@ -48,7 +48,7 @@ import { logger } from "../lib/logger";
  * the *primary* email — the one Clerk has confirmed via a click-
  * through link or code.
  *
- * On success we attach `req.operatorEmail` and `req.operatorClerkId` so
+ * On success we attach `req.adminEmail` and `req.adminClerkId` so
  * route handlers and the audit logger can record "who did this" without
  * re-fetching the user from Clerk on every write. In the dev fallback
  * branch we still attach both fields so audit logs and the /me endpoint
@@ -60,16 +60,40 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      operatorEmail?: string;
-      operatorClerkId?: string;
+      adminEmail?: string;
+      adminClerkId?: string;
     }
   }
 }
 
-const ENV_VAR = "RESUPPLY_OPERATOR_EMAILS";
+const ENV_VAR = "RESUPPLY_ADMIN_EMAILS";
+// Pre-rename name for the same allowlist. Read-only fallback so
+// existing production deployments keep working until ops flips the
+// var name. NEVER rename to RESUPPLY_ADMIN_EMAILS — that would
+// silently turn the fallback into a no-op.
+const LEGACY_ENV_VAR = "RESUPPLY_OPERATOR_EMAILS";
+
+let legacyEnvWarned = false;
 
 function parseAllowlist(): string[] | null {
-  const raw = process.env[ENV_VAR];
+  // Prefer the new var; fall back to the legacy name so existing
+  // deployments don't 503 the moment this code lands. Warn once per
+  // process when only the legacy var is set so admins see the
+  // signal in production logs and can rotate config at their own pace.
+  let raw = process.env[ENV_VAR];
+  if (!raw) {
+    const legacy = process.env[LEGACY_ENV_VAR];
+    if (legacy) {
+      if (!legacyEnvWarned) {
+        legacyEnvWarned = true;
+        logger.warn(
+          { event: "resupply_admin_legacy_env_var_in_use", legacy: LEGACY_ENV_VAR, current: ENV_VAR },
+          `${LEGACY_ENV_VAR} is deprecated; rename it to ${ENV_VAR}.`,
+        );
+      }
+      raw = legacy;
+    }
+  }
   if (!raw) return null;
   const list = raw
     .split(",")
@@ -80,7 +104,7 @@ function parseAllowlist(): string[] | null {
   return list.length > 0 ? list : null;
 }
 
-export async function requireOperator(
+export async function requireAdmin(
   req: Request,
   res: Response,
   next: NextFunction,
@@ -101,8 +125,8 @@ export async function requireOperator(
   if (allowlist === null && isProduction) {
     res.status(503).json({
       error:
-        "Operator access is not configured on this server. Set " +
-        `${ENV_VAR} to a comma-separated list of operator emails.`,
+        "Admin access is not configured on this server. Set " +
+        `${ENV_VAR} to a comma-separated list of admin emails.`,
     });
     return;
   }
@@ -136,17 +160,17 @@ export async function requireOperator(
     // request" (this branch). The user's session is fine; it's our
     // upstream call to Clerk that failed — a 5xx, throttle, or
     // network blip. Returning 401 here would tell a perfectly-valid
-    // operator to "sign in again", which is wrong AND confusing —
+    // admin to "sign in again", which is wrong AND confusing —
     // they're already signed in and signing in again won't fix
     // anything when Clerk itself is unhealthy.
     //
     // We use 502 Bad Gateway: an upstream service we depend on is
     // unhealthy. We deliberately do NOT use 503 here because the
-    // dashboard reserves 503 for the "operator allowlist not
+    // dashboard reserves 503 for the "admin allowlist not
     // configured" case (a deploy-side problem with a different
     // remediation). The dashboard maps any non-503 5xx to a
     // "transient — please retry" screen, which is exactly what an
-    // operator should see during a Clerk Backend API blip.
+    // admin should see during a Clerk Backend API blip.
     //
     // The log line emits the error CLASS name and Clerk's HTTP
     // status (when available) — never the raw message. Clerk's
@@ -157,11 +181,11 @@ export async function requireOperator(
       ?.status;
     logger.warn(
       {
-        event: "resupply_operator_clerk_lookup_failed",
+        event: "resupply_admin_clerk_lookup_failed",
         errName,
         clerkStatus,
       },
-      "requireOperator: Clerk Backend API lookup failed",
+      "requireAdmin: Clerk Backend API lookup failed",
     );
     res.status(502).json({
       error:
@@ -180,22 +204,22 @@ export async function requireOperator(
     // Log every dev-fallback request at WARN. Defense-in-depth: if a
     // real deployment ever ships with NODE_ENV unset (or set to
     // anything other than the literal string "production") AND
-    // RESUPPLY_OPERATOR_EMAILS unset — two missing env vars at once,
-    // which is plausible for a junior operator's first deploy — this
+    // RESUPPLY_ADMIN_EMAILS unset — two missing env vars at once,
+    // which is plausible for a junior admin's first deploy — this
     // line is the grep-able signal that the gate has degraded to
     // "any signed-in Clerk user". A loud WARN per request makes the
     // misconfiguration impossible to miss in production logs.
     logger.warn(
       {
-        event: "resupply_operator_dev_fallback_active",
+        event: "resupply_admin_dev_fallback_active",
         clerkId: userId,
         emailVerified: primaryEmailVerified,
         nodeEnv: process.env.NODE_ENV ?? "(unset)",
       },
-      `requireOperator: ${ENV_VAR} is unset; allowing any signed-in user (dev fallback). This MUST NOT happen in production.`,
+      `requireAdmin: ${ENV_VAR} is unset; allowing any signed-in user (dev fallback). This MUST NOT happen in production.`,
     );
-    req.operatorEmail = email ?? `clerk:${userId}`;
-    req.operatorClerkId = userId;
+    req.adminEmail = email ?? `clerk:${userId}`;
+    req.adminClerkId = userId;
     next();
     return;
   }
@@ -212,18 +236,18 @@ export async function requireOperator(
   if (!primaryEmailVerified) {
     res.status(403).json({
       error:
-        "Your primary email address is not verified. Please verify it from your account settings before accessing the operator console.",
+        "Your primary email address is not verified. Please verify it from your account settings before accessing the admin console.",
     });
     return;
   }
   if (!allowlist.includes(email)) {
     res
       .status(403)
-      .json({ error: "This account is not authorized for operator access." });
+      .json({ error: "This account is not authorized for admin access." });
     return;
   }
 
-  req.operatorEmail = email;
-  req.operatorClerkId = userId;
+  req.adminEmail = email;
+  req.adminClerkId = userId;
   next();
 }

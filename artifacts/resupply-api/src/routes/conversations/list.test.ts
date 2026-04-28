@@ -55,7 +55,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -69,7 +69,7 @@ function stubVerifiedOperator(): void {
   });
 }
 
-const ENV_KEYS = ["RESUPPLY_OPERATOR_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -78,7 +78,7 @@ describe("GET /conversations", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
     getAuthMock.mockReset();
     getUserMock.mockReset();
@@ -98,7 +98,7 @@ describe("GET /conversations", () => {
   });
 
   it("returns 400 invalid_query on bad channel", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp()).get(
       "/resupply-api/conversations?channel=foo",
     );
@@ -107,7 +107,7 @@ describe("GET /conversations", () => {
   });
 
   it("returns paginated page joined with patient name", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 1 }]);
     selectQueue.push([
       {
@@ -117,14 +117,14 @@ describe("GET /conversations", () => {
         patientLastName: "Smith",
         episodeId: EPISODE_ID,
         channel: "sms",
-        status: "awaiting_operator",
+        status: "awaiting_admin",
         lastMessageAt: new Date("2025-04-02T12:00:00Z"),
         createdAt: new Date("2025-04-01T11:00:00Z"),
       },
     ]);
 
     const res = await request(makeApp()).get(
-      "/resupply-api/conversations?status=awaiting_operator&limit=25",
+      "/resupply-api/conversations?status=awaiting_admin&limit=25",
     );
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -134,12 +134,12 @@ describe("GET /conversations", () => {
       patientFirstName: "Alice",
       patientLastName: "Smith",
       channel: "sms",
-      status: "awaiting_operator",
+      status: "awaiting_admin",
     });
   });
 
   it("filters by patientId", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 0 }]);
     selectQueue.push([]);
     const res = await request(makeApp()).get(

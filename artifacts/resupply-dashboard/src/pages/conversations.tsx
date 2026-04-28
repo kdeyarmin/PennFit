@@ -50,7 +50,7 @@ export function ConversationsPage() {
   const [location, setLocation] = useLocation();
 
   // Read initial filter from URL on first mount so deep links from
-  // the dashboard ("Awaiting operator queue") land prefiltered.
+  // the dashboard ("Awaiting admin queue") land prefiltered.
   const initialStatus = useMemo(() => readQueryParam(location, "status"), []);
   const initialChannel = useMemo(() => readQueryParam(location, "channel"), []);
 
@@ -136,7 +136,7 @@ export function ConversationsPage() {
           Conversations
         </h1>
         <p className="text-sm" style={{ color: "#374151" }}>
-          Cross-channel inbox. Body content is decrypted only when an operator
+          Cross-channel inbox. Body content is decrypted only when an admin
           opens a single thread.
         </p>
       </header>

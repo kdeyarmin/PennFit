@@ -344,7 +344,7 @@ forbid_imports_in lib/resupply-email/src \
   "['\"]ws['\"]"
 
 # Rule 13: lib/resupply-reminders is the SHARED outbound-reminder code
-# path, called by both the operator-facing API routes and the worker's
+# path, called by both the admin-facing API routes and the worker's
 # pg-boss handlers. It IS allowed to import db/telecom/email/messaging/
 # audit (that is its entire job — composing them into a send pipeline)
 # and it IS allowed to import `pg` directly because the helpers receive

@@ -5,7 +5,7 @@ import { Button } from "./Button";
 // readable explanation off the generated client's ApiError when
 // possible (zod validation surfaces structured `issues`); falls back
 // to a generic message otherwise. Always offers a Retry button so an
-// operator can recover from a transient blip without a full reload.
+// admin can recover from a transient blip without a full reload.
 
 export function ErrorPanel({
   error,

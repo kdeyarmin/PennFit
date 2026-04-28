@@ -7,7 +7,7 @@ patients to confirm reorder timing, verify shipping addresses, gather
 mask-fit feedback, and read back Medicare-required disclosures. The
 conversation transcript and tool-call decisions must persist into the
 existing `resupply.conversations` and `resupply.messages` tables so
-operators can audit every call and so SMS/email follow-ups carry the
+admins can audit every call and so SMS/email follow-ups carry the
 same context.
 
 Hard constraints, derived from the threat model and the Anthropic /
@@ -24,9 +24,9 @@ OpenAI / Twilio BAA documentation:
    cannot be trusted to gate this on its own, so the gate is enforced
    server-side in the tool dispatcher, not in the prompt.
 4. **HIPAA-grade audit trail**: every tool invocation, every call
-   lifecycle transition, and every operator-initiated call must land in
+   lifecycle transition, and every admin-initiated call must land in
    `resupply.audit_log` via `lib/resupply-audit` (per Rule 8).
-5. **Operator-initiated only (this batch)**: outbound calls only.
+5. **Admin-initiated only (this batch)**: outbound calls only.
    Inbound is deferred (it requires phone-number lookup against an
    encrypted column, which is a separate design problem — see Backlog).
 
@@ -61,7 +61,7 @@ process**, not as a separate service. Why:
 
 - The bridge needs the resupply DB pool, the audit helper, and the
   encryption keys — exactly what `resupply-api` already has wired up.
-- One TLS endpoint, one Clerk-protected operator surface, one set of
+- One TLS endpoint, one Clerk-protected admin surface, one set of
   env vars to manage.
 - A separate "voice service" would force a public WS endpoint for
   Twilio plus a private channel back to the API for tool calls — more
@@ -77,7 +77,7 @@ routes WebSocket handshakes whose path is
 
 | Method | Path                              | Caller                          | Auth                  |
 |--------|-----------------------------------|---------------------------------|-----------------------|
-| POST   | `/resupply-api/voice/place-call`  | Operator dashboard              | `requireOperator`     |
+| POST   | `/resupply-api/voice/place-call`  | Admin dashboard              | `requireAdmin`     |
 | POST   | `/resupply-api/voice/twiml-connect` | Twilio (after dial picks up)  | Twilio HMAC signature |
 | POST   | `/resupply-api/voice/status-callback` | Twilio (lifecycle webhook)  | Twilio HMAC signature |
 | WS     | `/resupply-api/voice/stream`      | Twilio Media Stream             | Pending-session claim |
@@ -86,7 +86,7 @@ routes WebSocket handshakes whose path is
 `lib/resupply-api-spec/openapi.yaml`. Twilio is the only legitimate
 caller; publishing it tempts the dashboard to invoke it directly.
 `status-callback` IS in the spec — the dashboard must not call it
-either, but operators reading the spec need to see it exists to
+either, but admins reading the spec need to see it exists to
 understand the audit-row provenance.
 
 ### Patient-context binding
@@ -183,9 +183,9 @@ returns 503 with a stable error code when missing:
 | `OPENAI_API_KEY`                     | WS bridge + `place-call`    | OpenAI BAA project key  |
 | `TWILIO_ACCOUNT_SID`                 | All voice routes            | Twilio integration      |
 | `TWILIO_AUTH_TOKEN`                  | Signature validation + REST | Twilio integration      |
-| `RESUPPLY_VOICE_PUBLIC_BASE_URL`     | TwiML + Status callback URL | Operator-supplied       |
-| `TWILIO_PHONE_NUMBER`                | `place-call` only           | Operator-supplied (E.164)|
-| `RESUPPLY_PRACTICE_NAME` (optional)  | System prompt branding      | Operator-supplied       |
+| `RESUPPLY_VOICE_PUBLIC_BASE_URL`     | TwiML + Status callback URL | Admin-supplied       |
+| `TWILIO_PHONE_NUMBER`                | `place-call` only           | Admin-supplied (E.164)|
+| `RESUPPLY_PRACTICE_NAME` (optional)  | System prompt branding      | Admin-supplied       |
 
 The 503 is the published behaviour, not a bug. The OpenAPI spec lists
 it explicitly.

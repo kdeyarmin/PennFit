@@ -1,11 +1,11 @@
 // Shared audit writer used by sendReminderSms / sendReminderEmail.
 //
 // Two responsibilities:
-//   1. Translate the SendActor union into the operatorEmail /
-//      operatorClerkId / ip / userAgent fields logAudit expects.
+//   1. Translate the SendActor union into the adminEmail /
+//      adminClerkId / ip / userAgent fields logAudit expects.
 //   2. Append `actor_kind` (and `job_id` for system runs) to the
 //      structural metadata so downstream queries can filter
-//      operator-initiated vs scheduled reminders without parsing
+//      admin-initiated vs scheduled reminders without parsing
 //      the timeline.
 //
 // Audit-write failures are swallowed here because:
@@ -38,13 +38,13 @@ export interface SafeAuditInput {
 export async function safeAuditFromActor(
   input: SafeAuditInput,
 ): Promise<void> {
-  const operatorEmail =
-    input.actor.kind === "operator" ? input.actor.operatorEmail : null;
-  const operatorClerkId =
-    input.actor.kind === "operator" ? input.actor.operatorClerkId : null;
-  const ip = input.actor.kind === "operator" ? input.actor.ip : null;
+  const adminEmail =
+    input.actor.kind === "admin" ? input.actor.adminEmail : null;
+  const adminClerkId =
+    input.actor.kind === "admin" ? input.actor.adminClerkId : null;
+  const ip = input.actor.kind === "admin" ? input.actor.ip : null;
   const userAgent =
-    input.actor.kind === "operator" ? input.actor.userAgent : null;
+    input.actor.kind === "admin" ? input.actor.userAgent : null;
   const metadata =
     input.actor.kind === "system"
       ? {
@@ -52,12 +52,12 @@ export async function safeAuditFromActor(
           actor_kind: "system",
           job_id: input.actor.jobId,
         }
-      : { ...input.metadata, actor_kind: "operator" };
+      : { ...input.metadata, actor_kind: "admin" };
   try {
     await logAudit({
       action: input.action,
-      operatorEmail,
-      operatorClerkId,
+      adminEmail,
+      adminClerkId,
       targetTable: input.targetTable,
       targetId: input.targetId,
       metadata,

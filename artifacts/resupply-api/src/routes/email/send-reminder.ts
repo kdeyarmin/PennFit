@@ -1,4 +1,4 @@
-// POST /email/send-reminder — operator-initiated outbound email.
+// POST /email/send-reminder — admin-initiated outbound email.
 //
 // Thin wrapper around `sendReminderEmail` from @workspace/resupply-reminders.
 // Both the API route and the worker's reminders.send-email job call the
@@ -18,7 +18,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const sendBody = z
   .object({
@@ -29,7 +29,7 @@ const sendBody = z
 
 const router: IRouter = Router();
 
-router.post("/email/send-reminder", requireOperator, async (req, res) => {
+router.post("/email/send-reminder", requireAdmin, async (req, res) => {
   const cfg = readMessagingConfigOrNull();
   if (!cfg) {
     res.status(503).json({
@@ -68,9 +68,9 @@ router.post("/email/send-reminder", requireOperator, async (req, res) => {
       patientId,
       episodeId,
       actor: {
-        kind: "operator",
-        operatorEmail: req.operatorEmail ?? null,
-        operatorClerkId: req.operatorClerkId ?? null,
+        kind: "admin",
+        adminEmail: req.adminEmail ?? null,
+        adminClerkId: req.adminClerkId ?? null,
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       },

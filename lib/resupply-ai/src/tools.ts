@@ -182,7 +182,7 @@ export interface PlaceResupplyOrderResult {
 
 export interface RequestHumanHandoffResult {
   ok: boolean;
-  /** Operator-visible escalation id for the queue. */
+  /** Admin-visible escalation id for the queue. */
   handoff_id: string;
 }
 
@@ -319,7 +319,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
     type: "function",
     name: "request_human_handoff",
     description:
-      "Escalate the call to a human operator. Use for distress, billing/insurance questions, medical questions, repeated misunderstanding, or identity-verification failure.",
+      "Escalate the call to a human admin. Use for distress, billing/insurance questions, medical questions, repeated misunderstanding, or identity-verification failure.",
     parameters: {
       type: "object",
       properties: {
@@ -338,7 +338,7 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
         notes: {
           type: "string",
           maxLength: 500,
-          description: "Optional non-PHI context for the receiving operator.",
+          description: "Optional non-PHI context for the receiving admin.",
         },
       },
       required: ["reason"],

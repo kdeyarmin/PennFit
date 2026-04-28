@@ -31,7 +31,7 @@ The following substitutions are made for the Phase 0 build:
 | Turborepo | pnpm workspaces (already in place) | — | 012 |
 | Husky / lint-staged | Replit "validation steps" run on demand and before deploy | — | 012 |
 | GitHub Actions | Replit deploy gate uses the same validation steps | Add real GH Actions if the project leaves Replit | 012 |
-| Next.js operator dashboard | React + Vite (matches the Replit scaffold and the existing OpenAPI codegen pipeline) | — | 011 |
+| Next.js admin dashboard | React + Vite (matches the Replit scaffold and the existing OpenAPI codegen pipeline) | — | 011 |
 
 ## Consequences
 

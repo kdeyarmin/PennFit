@@ -21,14 +21,14 @@
 //     3. Optional thread snippets (last N messages) to disambiguate
 //        ambiguous one-word replies. The caller is responsible for
 //        choosing the snippet set; we do not crack open the DB here.
-//   We do NOT send patient name, DOB, address, or any operator-only
+//   We do NOT send patient name, DOB, address, or any admin-only
 //   metadata. The system prompt instructs the model to NEVER echo PHI
 //   in its `reply` even if the patient included it inbound.
 //
 // Failure mode:
 //   Any error (HTTP failure, malformed JSON, timeout, model-says-no)
 //   collapses to `{intent: 'unknown'}` — the caller will then escalate
-//   to a human operator. We never throw out of `classify()`: a runtime
+//   to a human admin. We never throw out of `classify()`: a runtime
 //   crash in the LLM path must NOT 500 a successful Twilio webhook.
 
 import type {

@@ -23,7 +23,7 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
             Penn Resupply Console
           </div>
           <div className="text-xs" style={{ color: "#c9a24a" }}>
-            Operator workstation
+            Admin workstation
           </div>
         </div>
       </div>

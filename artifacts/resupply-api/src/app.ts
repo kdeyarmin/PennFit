@@ -13,15 +13,15 @@ const app: Express = express();
 app.set("trust proxy", 1);
 
 // CORS allowlist. In dev (no RESUPPLY_ALLOWED_ORIGINS set) we allow the
-// Replit dev domain + localhost so the operator dashboard preview iframe
+// Replit dev domain + localhost so the admin dashboard preview iframe
 // can call the API. In production, only explicitly-listed origins
-// (comma-separated env var) are allowed — operators should only access
+// (comma-separated env var) are allowed — admins should only access
 // the dashboard from a vetted URL.
 //
 // Production fails CLOSED: if NODE_ENV=production and the env var is
 // missing or empty, the process exits at boot rather than silently
 // inheriting the dev allowlist. Misconfigured CORS in prod could
-// expose the operator API to attacker-controlled origins, and that
+// expose the admin API to attacker-controlled origins, and that
 // risk grows as soon as Phase 1 lands real PHI-touching endpoints —
 // catching it at boot is cheaper than catching it after a leak.
 const allowedOrigins = (() => {
@@ -34,7 +34,7 @@ const allowedOrigins = (() => {
     throw new Error(
       "RESUPPLY_ALLOWED_ORIGINS must be set in production. Refusing to " +
         "fall back to the dev allowlist (localhost + Replit dev domain) — " +
-        "that would expose the operator API to unintended origins.",
+        "that would expose the admin API to unintended origins.",
     );
   }
   const dev: string[] = [];
@@ -92,7 +92,7 @@ app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
 // Clerk session middleware — attaches auth state (`getAuth(req)`) to
-// every request so downstream operator-gated routes can read it. Safe
+// every request so downstream admin-gated routes can read it. Safe
 // to mount globally: it's a no-op for unauthenticated requests, and
 // the unauthenticated /healthz, /readyz probes don't read auth state
 // at all. We mount it BEFORE the route tree so every nested router
@@ -101,7 +101,7 @@ app.use(clerkMiddleware());
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,
-// and the operator smoke endpoint /resupply-api/me; richer endpoints
+// and the admin smoke endpoint /resupply-api/me; richer endpoints
 // land in later phases.
 app.use("/resupply-api", router);
 

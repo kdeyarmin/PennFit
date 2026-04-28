@@ -11,7 +11,7 @@
 //       Gmail link-warmer) WILL fire these GETs. The downstream
 //       handlers are idempotent: confirm twice = one fulfillment;
 //       stop twice = still paused; edit twice = still
-//       awaiting_operator. We do NOT block the action on a "human
+//       awaiting_admin. We do NOT block the action on a "human
 //       click" check — false negatives there would break legitimate
 //       Outlook users whose corporate proxy strips Referer.
 //
@@ -119,8 +119,8 @@ router.get("/email/click", async (req, res) => {
 
   await safeAudit({
     action: "email.link.clicked",
-    operatorEmail: null,
-    operatorClerkId: null,
+    adminEmail: null,
+    adminClerkId: null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {
@@ -147,8 +147,8 @@ router.get("/email/click", async (req, res) => {
           if (result.status === "ok") {
             await safeAudit({
               action: "messaging.order.confirmed",
-              operatorEmail: null,
-              operatorClerkId: null,
+              adminEmail: null,
+              adminClerkId: null,
               targetTable: "episodes",
               targetId: result.episodeId,
               metadata: {
@@ -189,12 +189,12 @@ router.get("/email/click", async (req, res) => {
       case "edit": {
         await db
           .update(conversations)
-          .set({ status: "awaiting_operator", updatedAt: new Date() })
+          .set({ status: "awaiting_admin", updatedAt: new Date() })
           .where(eq(conversations.id, conversationId));
         await safeAudit({
           action: "messaging.handoff.escalated",
-          operatorEmail: null,
-          operatorClerkId: null,
+          adminEmail: null,
+          adminClerkId: null,
           targetTable: "conversations",
           targetId: conversationId,
           metadata: {
@@ -225,8 +225,8 @@ router.get("/email/click", async (req, res) => {
           .where(eq(conversations.id, conversationId));
         await safeAudit({
           action: "messaging.handoff.escalated",
-          operatorEmail: null,
-          operatorClerkId: null,
+          adminEmail: null,
+          adminClerkId: null,
           targetTable: "patients",
           targetId: conv.patientId,
           metadata: {

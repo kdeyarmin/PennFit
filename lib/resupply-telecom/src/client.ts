@@ -152,7 +152,7 @@ export function createTwilioClient(
           statusCallback: input.statusCallbackUrl,
           // Subscribe to the full call lifecycle. Twilio defaults to
           // just `completed`, but we want `initiated`/`ringing`/
-          // `answered` for the operator dashboard timeline.
+          // `answered` for the admin dashboard timeline.
           statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
           statusCallbackMethod: "POST",
           // Recording: ALWAYS off. We persist the encrypted transcript;

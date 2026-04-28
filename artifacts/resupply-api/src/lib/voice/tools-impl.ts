@@ -387,7 +387,7 @@ class Impl implements VoiceToolDispatcher {
       };
     }
     // Mark the episode as `confirmed`. Actual order placement against
-    // Pacware is a downstream worker job; the operator dashboard will
+    // Pacware is a downstream worker job; the admin dashboard will
     // pick this episode up in the "ready to fulfil" queue.
     const orderId = randomUUID();
     await this.db
@@ -410,13 +410,13 @@ class Impl implements VoiceToolDispatcher {
     call: DispatchToolCall<"request_human_handoff">,
   ): Promise<DispatchToolResult<"request_human_handoff">> {
     const handoffId = randomUUID();
-    // Move the conversation into the operator queue so the dashboard
+    // Move the conversation into the admin queue so the dashboard
     // surfaces it immediately. We do NOT close the conversation here
-    // — the human operator will close it once they've handled the
+    // — the human admin will close it once they've handled the
     // escalation.
     await this.db
       .update(conversations)
-      .set({ status: "awaiting_operator", updatedAt: new Date() })
+      .set({ status: "awaiting_admin", updatedAt: new Date() })
       .where(eq(conversations.id, this.deps.conversationId));
 
     return {

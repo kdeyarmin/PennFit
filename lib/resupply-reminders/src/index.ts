@@ -1,7 +1,7 @@
 // Public surface for @workspace/resupply-reminders.
 //
 // This package is the SHARED code path for outbound resupply reminders.
-// Both the operator-facing API routes (POST /sms/send-reminder,
+// Both the admin-facing API routes (POST /sms/send-reminder,
 // POST /email/send-reminder) and the worker's pg-boss handlers
 // (reminders.send-sms, reminders.send-email) call into the same two
 // helpers — `sendReminderSms` and `sendReminderEmail`.
@@ -10,7 +10,7 @@
 //   - The worker is its own process and cannot import from
 //     artifacts/resupply-api/. A shared helper has to live in lib/.
 //   - Keeping the helpers here forces us to keep them
-//     framework-agnostic: no Express, no req/res leak, no operator
+//     framework-agnostic: no Express, no req/res leak, no admin
 //     auth coupling. The actor is passed in explicitly.
 //
 // Architecture rule (Rule 13): this package may import db, telecom,

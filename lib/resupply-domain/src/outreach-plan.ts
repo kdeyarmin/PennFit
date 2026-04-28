@@ -16,7 +16,7 @@
 //        - `patient.cadenceOverrideDays !== null` → use it. The matched
 //          rule (if any) does not get to overwrite the cadence.
 //        - `patient.channelPreference !== null`   → use it. Same idea.
-//      Each override is independent: an operator can override cadence
+//      Each override is independent: an admin can override cadence
 //      but not channel, or vice versa.
 //
 //   2. Rules
@@ -137,7 +137,7 @@ function ruleMatches(
   if (rule.matchInsurancePayer !== null) {
     // A rule that requires a specific payer can only match patients
     // whose payer is recorded AND equal. Patients with NULL payer do
-    // not match a payer-constrained rule — operators have to record
+    // not match a payer-constrained rule — admins have to record
     // the payer first. This is the safe default: silently matching
     // unknown-payer patients to a payer-specific rule would route
     // outreach into a regime they shouldn't be in.

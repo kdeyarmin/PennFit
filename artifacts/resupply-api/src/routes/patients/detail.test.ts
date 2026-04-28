@@ -65,7 +65,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -79,7 +79,7 @@ function stubVerifiedOperator(): void {
   });
 }
 
-const ENV_KEYS = ["RESUPPLY_OPERATOR_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -88,7 +88,7 @@ describe("GET /patients/:id", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
     getAuthMock.mockReset();
     getUserMock.mockReset();
@@ -111,14 +111,14 @@ describe("GET /patients/:id", () => {
   });
 
   it("returns 404 for non-uuid id", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp()).get("/resupply-api/patients/not-a-uuid");
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
   });
 
   it("returns 404 when patient row is empty", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([]); // patient
     const res = await request(makeApp()).get(
       `/resupply-api/patients/${PATIENT_ID}`,
@@ -129,7 +129,7 @@ describe("GET /patients/:id", () => {
   });
 
   it("returns full detail and writes a patient.view audit row", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,
@@ -212,7 +212,7 @@ describe("GET /patients/:id", () => {
         action: "patient.view",
         targetTable: "patients",
         targetId: PATIENT_ID,
-        operatorEmail: ALLOWED_EMAIL,
+        adminEmail: ALLOWED_EMAIL,
       }),
     );
   });

@@ -62,7 +62,7 @@ describe("PendingSessions", () => {
     expect(registry.claim("c1")).toBeNull();
   });
 
-  it("re-registering the same conversationId overwrites (operator re-dials)", () => {
+  it("re-registering the same conversationId overwrites (admin re-dials)", () => {
     registry.register({
       conversationId: "c1",
       patientId: "p1",

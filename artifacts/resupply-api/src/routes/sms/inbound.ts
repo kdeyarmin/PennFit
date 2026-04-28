@@ -14,11 +14,11 @@
 //   7. Dispatch the resolved intent:
 //      - confirm → placeResupplyOrderForConversation, reply "Got it…"
 //      - decline → mark conversation closed, reply "Okay, we won't ship…"
-//      - edit_address → mark conversation awaiting_operator, reply "An
+//      - edit_address → mark conversation awaiting_admin, reply "An
 //        agent will follow up about your address."
 //      - stop → pause patient + close conversation, reply STOP boilerplate.
 //      - help → reply HELP boilerplate.
-//      - unknown (after AI) → mark awaiting_operator, reply "We've passed
+//      - unknown (after AI) → mark awaiting_admin, reply "We've passed
 //        this to a team member."
 //   8. Audit `messaging.intent.parsed` + dispatch-specific events.
 //   9. Respond 200 TwiML <Response><Message>...</Message></Response>.
@@ -175,8 +175,8 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     if (earlyRouted.intent === "stop" || earlyRouted.intent === "help") {
       await safeAudit({
         action: "messaging.inbound.received",
-        operatorEmail: null,
-        operatorClerkId: null,
+        adminEmail: null,
+        adminClerkId: null,
         targetTable: null,
         targetId: null,
         metadata: {
@@ -202,8 +202,8 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     }
     await safeAudit({
       action: "messaging.inbound.received",
-      operatorEmail: null,
-      operatorClerkId: null,
+      adminEmail: null,
+      adminClerkId: null,
       targetTable: null,
       targetId: null,
       metadata: {
@@ -242,8 +242,8 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     if (earlyRouted.intent === "stop" || earlyRouted.intent === "help") {
       await safeAudit({
         action: "messaging.inbound.received",
-        operatorEmail: null,
-        operatorClerkId: null,
+        adminEmail: null,
+        adminClerkId: null,
         targetTable: null,
         targetId: null,
         metadata: {
@@ -269,8 +269,8 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     }
     await safeAudit({
       action: "messaging.inbound.received",
-      operatorEmail: null,
-      operatorClerkId: null,
+      adminEmail: null,
+      adminClerkId: null,
       targetTable: null,
       targetId: null,
       metadata: {
@@ -296,7 +296,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
   // sms conversation for this patient — same thread, same context.
   // If none is open, we open a new one bound to the most recent
   // episode. (Inbound SMS without an episode is rare but possible —
-  // a patient texts back days after the operator already closed the
+  // a patient texts back days after the admin already closed the
   // conversation.)
   // `conversationId` is assigned in EVERY branch below before the
   // first read at line ~273 (the if-then sets it from openConv, the
@@ -331,8 +331,8 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       // to confirm. Audit + reply with help boilerplate.
       await safeAudit({
         action: "messaging.inbound.received",
-        operatorEmail: null,
-        operatorClerkId: null,
+        adminEmail: null,
+        adminClerkId: null,
         targetTable: null,
         targetId: null,
         metadata: {
@@ -388,8 +388,8 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
 
   await safeAudit({
     action: "messaging.inbound.received",
-    operatorEmail: null,
-    operatorClerkId: null,
+    adminEmail: null,
+    adminClerkId: null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {
@@ -448,8 +448,8 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
 
   await safeAudit({
     action: "messaging.intent.parsed",
-    operatorEmail: null,
-    operatorClerkId: null,
+    adminEmail: null,
+    adminClerkId: null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {
@@ -531,8 +531,8 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
           .where(eq(conversations.id, input.conversationId));
         await safeAudit({
           action: "messaging.order.confirmed",
-          operatorEmail: null,
-          operatorClerkId: null,
+          adminEmail: null,
+          adminClerkId: null,
           targetTable: "episodes",
           targetId: result.episodeId,
           metadata: {
@@ -569,12 +569,12 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     case "edit_address": {
       await db
         .update(conversations)
-        .set({ status: "awaiting_operator", updatedAt: new Date() })
+        .set({ status: "awaiting_admin", updatedAt: new Date() })
         .where(eq(conversations.id, input.conversationId));
       await safeAudit({
         action: "messaging.handoff.escalated",
-        operatorEmail: null,
-        operatorClerkId: null,
+        adminEmail: null,
+        adminClerkId: null,
         targetTable: "conversations",
         targetId: input.conversationId,
         metadata: {
@@ -600,8 +600,8 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         .where(eq(conversations.id, input.conversationId));
       await safeAudit({
         action: "messaging.handoff.escalated",
-        operatorEmail: null,
-        operatorClerkId: null,
+        adminEmail: null,
+        adminClerkId: null,
         targetTable: "patients",
         targetId: input.patientId,
         metadata: {
@@ -626,12 +626,12 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     case "unknown": {
       await db
         .update(conversations)
-        .set({ status: "awaiting_operator", updatedAt: new Date() })
+        .set({ status: "awaiting_admin", updatedAt: new Date() })
         .where(eq(conversations.id, input.conversationId));
       await safeAudit({
         action: "messaging.handoff.escalated",
-        operatorEmail: null,
-        operatorClerkId: null,
+        adminEmail: null,
+        adminClerkId: null,
         targetTable: "conversations",
         targetId: input.conversationId,
         metadata: {

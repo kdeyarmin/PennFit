@@ -1,5 +1,5 @@
 // In-memory pending-session registry — short-TTL handoff between
-// `POST /voice/place-call` (operator-initiated) and the inbound Twilio
+// `POST /voice/place-call` (admin-initiated) and the inbound Twilio
 // Media Stream WebSocket.
 //
 // Why an in-memory Map and not a DB row:
@@ -74,7 +74,7 @@ export class PendingSessions {
 
   /**
    * Register a new pending session. Overwrites any existing entry for
-   * the same conversationId — operators can re-trigger a dial after a
+   * the same conversationId — admins can re-trigger a dial after a
    * busy/no-answer outcome and we don't want the second attempt to
    * collide with a stale entry from the first.
    */

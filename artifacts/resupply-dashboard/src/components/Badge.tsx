@@ -56,7 +56,7 @@ export function conversationStatusVariant(status: string): Variant {
       return "info";
     case "awaiting_patient":
       return "neutral";
-    case "awaiting_operator":
+    case "awaiting_admin":
       return "warning";
     case "closed":
       return "muted";

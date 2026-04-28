@@ -1,4 +1,4 @@
-// GET /patients/:id — full patient detail for the operator console.
+// GET /patients/:id — full patient detail for the admin console.
 //
 // Returns the patient header (decrypted name; phone/email surfaced
 // only as boolean reachability flags) plus, in one round-trip per
@@ -34,13 +34,13 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
 
 const router: IRouter = Router();
 
-router.get("/patients/:id", requireOperator, async (req, res) => {
+router.get("/patients/:id", requireAdmin, async (req, res) => {
   const parsed = idParam.safeParse(req.params);
   if (!parsed.success) {
     res.status(404).json({ error: "not_found" });
@@ -59,7 +59,7 @@ router.get("/patients/:id", requireOperator, async (req, res) => {
       status: patients.status,
       hasPhone: sql<boolean>`(${patients.phoneE164} IS NOT NULL)`,
       hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
-      // Operator-editable settings the new dashboard panel reads/writes
+      // Admin-editable settings the new dashboard panel reads/writes
       // via PATCH /patients/:id. All three are nullable: NULL means
       // "no override / fall back to global rules / fall back to legacy
       // SMS-then-email selection".
@@ -153,8 +153,8 @@ router.get("/patients/:id", requireOperator, async (req, res) => {
   try {
     await logAudit({
       action: "patient.view",
-      operatorEmail: req.operatorEmail ?? null,
-      operatorClerkId: req.operatorClerkId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminClerkId: req.adminClerkId ?? null,
       targetTable: "patients",
       targetId: id,
       ip: req.ip ?? null,

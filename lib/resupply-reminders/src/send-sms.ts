@@ -1,7 +1,7 @@
 // sendReminderSms — shared code path for outbound reminder SMS.
 //
 // Called by:
-//   - POST /sms/send-reminder       (operator-initiated, actor='operator')
+//   - POST /sms/send-reminder       (admin-initiated, actor='admin')
 //   - reminders.send-sms pg-boss job (system-initiated, actor='system')
 //
 // The function never throws on a recoverable error — it returns a
@@ -14,7 +14,7 @@
 //   - Audit is written from this function for both success and
 //     vendor-failure paths. The caller MUST NOT double-audit.
 //   - Metadata is structural only — never the SMS body, never the
-//     phone number plaintext, never the operator's typed text.
+//     phone number plaintext, never the admin's typed text.
 
 import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -47,7 +47,7 @@ export interface SendReminderSmsInput {
   episodeId?: string;
   /**
    * Optional override for the message body. When absent we render a
-   * default reminder template. Operator-typed bodies are passed through
+   * default reminder template. Admin-typed bodies are passed through
    * verbatim to Twilio (and stored encrypted in `messages.body`).
    */
   body?: string;
@@ -119,7 +119,7 @@ export async function sendReminderSms(
   //     refresh updated_at (idempotent re-send).
   //   - If a row exists for this hmac AND it belongs to a DIFFERENT
   //     patient → CONFLICT. Do NOT overwrite. Audit + abort the send
-  //     so an operator can resolve the data-quality issue.
+  //     so an admin can resolve the data-quality issue.
   //
   // We use ON CONFLICT (patient_id) — the table's primary key — which
   // is the only conflict path we want to silently merge (same patient,
@@ -234,7 +234,7 @@ export async function sendReminderSms(
   } catch (err) {
     if (err instanceof TwilioConfigError) {
       // Surface to caller — caller decides whether to 503 (api) or
-      // crash the worker (worker). Either way the process operator
+      // crash the worker (worker). Either way the process admin
       // needs to know secrets are misconfigured.
       throw err;
     }

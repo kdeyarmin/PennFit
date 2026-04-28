@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 
-// Penn Resupply Operator Console entry point.
+// Penn Resupply Admin Console entry point.
 //
 // Two providers wrap the app, in this exact order:
 //
@@ -41,10 +41,10 @@ const queryClient = new QueryClient({
     queries: {
       // Cache /me for a minute so quick tab switches don't hammer the
       // API. We deliberately disable refetchOnWindowFocus: every focus
-      // refetch of /me runs requireOperator, which today calls
+      // refetch of /me runs requireAdmin, which today calls
       // clerkClient.users.getUser per request — a Clerk Backend API
       // round-trip we don't want to pay on every tab return. The
-      // operator's session validity is already enforced by Clerk
+      // admin's session validity is already enforced by Clerk
       // itself; on token expiry the next API call (or page nav) will
       // fail closed and re-route through sign-in.
       staleTime: 60_000,
@@ -58,7 +58,7 @@ const queryClient = new QueryClient({
         // — Clerk rotates the session token roughly every minute and
         // the SDK's `getToken()` returns null mid-rotation. Without
         // this single retry, that blip routes a perfectly-valid
-        // operator to the "Not authorized" screen and the only fix
+        // admin to the "Not authorized" screen and the only fix
         // is a manual page reload. One retry gives the SDK time to
         // refresh; if it's still 401 after that, the user really is
         // not signed in and the gate handles it.

@@ -1,7 +1,7 @@
-// POST /voice/place-call — operator-initiated outbound call.
+// POST /voice/place-call — admin-initiated outbound call.
 //
 // Flow:
-//   1. requireOperator gate (clerk + allowlist).
+//   1. requireAdmin gate (clerk + allowlist).
 //   2. Voice config gate — 503 if any required env var is missing.
 //   3. Body validation (zod) — { patientId, episodeId } UUIDs.
 //   4. Patient + episode lookup. Decrypt phone number SQL-side; refuse
@@ -24,8 +24,8 @@
 //
 // We deliberately do NOT roll back the conversations row on Twilio
 // failure: the audit log + the dashboard timeline both need to show
-// "the operator tried to call at T". Rolling back would erase that
-// trail — exactly the wrong instinct for HIPAA-bound operator action
+// "the admin tried to call at T". Rolling back would erase that
+// trail — exactly the wrong instinct for HIPAA-bound admin action
 // audits.
 
 import { Router, type IRouter } from "express";
@@ -50,7 +50,7 @@ import {
 import { logger } from "../../lib/logger";
 import { getPendingSessions } from "../../lib/voice/pending-sessions";
 import { readVoiceConfigOrNull } from "../../lib/voice/voice-config";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const placeCallBody = z
   .object({
@@ -61,7 +61,7 @@ const placeCallBody = z
 
 const router: IRouter = Router();
 
-router.post("/voice/place-call", requireOperator, async (req, res) => {
+router.post("/voice/place-call", requireAdmin, async (req, res) => {
   const config = readVoiceConfigOrNull();
   if (!config) {
     res.status(503).json({
@@ -207,13 +207,13 @@ router.post("/voice/place-call", requireOperator, async (req, res) => {
       return;
     }
     if (err instanceof TwilioApiError) {
-      // Audit the failed attempt — operator did initiate the call,
+      // Audit the failed attempt — admin did initiate the call,
       // even if Twilio refused. PHI-safe: phone number is NOT in
       // metadata, only the structural failure code.
       await safeAudit({
         action: "voice.call.placed",
-        operatorEmail: req.operatorEmail ?? null,
-        operatorClerkId: req.operatorClerkId ?? null,
+        adminEmail: req.adminEmail ?? null,
+        adminClerkId: req.adminClerkId ?? null,
         targetTable: "conversations",
         targetId: conversationId,
         metadata: {
@@ -245,8 +245,8 @@ router.post("/voice/place-call", requireOperator, async (req, res) => {
 
   await safeAudit({
     action: "voice.call.placed",
-    operatorEmail: req.operatorEmail ?? null,
-    operatorClerkId: req.operatorClerkId ?? null,
+    adminEmail: req.adminEmail ?? null,
+    adminClerkId: req.adminClerkId ?? null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {

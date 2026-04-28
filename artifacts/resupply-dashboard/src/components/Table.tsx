@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// Minimal data table primitive. Operator console tables are read-only
+// Minimal data table primitive. Admin console tables are read-only
 // with one optional row click; nothing fancy like sticky headers,
 // virtualization or column reordering. Width control lives on the
 // caller via column.className so we don't reinvent CSS grid.

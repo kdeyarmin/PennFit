@@ -11,7 +11,7 @@
 // shape.
 //
 // Why this split:
-//   1. Lets us swap OpenAI → Anthropic → "operator queue" by changing
+//   1. Lets us swap OpenAI → Anthropic → "admin queue" by changing
 //      the implementation, not the call sites.
 //   2. Tests can pass a stub `AiFallbackAdapter` directly into the
 //      route handler without mocking @sendgrid/mail or openai.
@@ -30,11 +30,11 @@ export interface AiFallbackInput {
    * to keep token cost bounded.
    */
   thread?: ReadonlyArray<{
-    role: "patient" | "agent" | "operator";
+    role: "patient" | "agent" | "admin";
     body: string;
   }>;
   /**
-   * Optional patient-context summary the operator wants in scope
+   * Optional patient-context summary the admin wants in scope
    * (e.g. "current address: 123 Main St", "next refill due 2026-05-01").
    * NEVER pass full PHI; this is a hand-curated summary line.
    */
@@ -54,7 +54,7 @@ export interface AiFallbackResult {
   /**
    * 0..1 confidence score self-reported by the model. Routes can use
    * this to decide whether to accept the AI's classification or
-   * escalate straight to a human operator. Implementations that
+   * escalate straight to a human admin. Implementations that
    * don't expose a score should return undefined.
    */
   confidence?: number;

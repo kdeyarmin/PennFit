@@ -1,8 +1,8 @@
-# ADR 011 — React + Vite (not Next.js) for the operator dashboard
+# ADR 011 — React + Vite (not Next.js) for the admin dashboard
 
 ## Context
 
-The original plan called for Next.js 14 (app router) for the operator
+The original plan called for Next.js 14 (app router) for the admin
 dashboard. Replit's web scaffold is React + Vite + Tailwind + shadcn/ui,
 and the existing `artifacts/cpap-fitter` (Penn Fit) follows that pattern.
 
@@ -27,12 +27,12 @@ Use React + Vite for `artifacts/resupply-dashboard` at `previewPath: "/resupply/
 - UI: Tailwind + shadcn/ui (matches Penn Fit).
 - Auth: Clerk React provider (see ADR 005).
 
-The dashboard is purely an internal operator tool — there is no SEO need,
+The dashboard is purely an internal admin tool — there is no SEO need,
 no public marketing pages, no need for SSR. Static React fits perfectly.
 
 ## Consequences
 
-- Same frontend stack across both products. Operators get a familiar UX,
+- Same frontend stack across both products. Admins get a familiar UX,
   developers get one mental model.
 - We give up Next.js features we would not have used anyway (RSC, ISR,
   built-in API routes). The api lives in `artifacts/resupply-api`
@@ -42,5 +42,5 @@ no public marketing pages, no need for SSR. Static React fits perfectly.
 
 - **Next.js** — rejected as above.
 - **Remix** — same critique as Next.js.
-- **Plain HTML + htmx** — operators want filters, sortable tables, and
+- **Plain HTML + htmx** — admins want filters, sortable tables, and
   modal flows; SPAs handle this better.

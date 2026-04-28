@@ -1,4 +1,4 @@
-// Email routes — /email/send-reminder (operator), /email/click
+// Email routes — /email/send-reminder (admin), /email/click
 // (public link-click), /email/sendgrid-events (SendGrid webhook).
 // Per-handler feature-flag check; 503 + stable error code when env is
 // missing.

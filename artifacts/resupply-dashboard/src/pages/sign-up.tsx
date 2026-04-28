@@ -1,12 +1,12 @@
 import { SignUp } from "@clerk/react";
 
 // Penn-branded Clerk sign-up page. We expose sign-up because Clerk's
-// default sign-in form links to it; the operator allowlist still
+// default sign-in form links to it; the admin allowlist still
 // gates console access, so a self-signed-up user lands on the "not
 // authorized" screen until an admin adds them to
-// RESUPPLY_OPERATOR_EMAILS. That is intentional — it lets a new RT
+// RESUPPLY_ADMIN_EMAILS. That is intentional — it lets a new RT
 // coordinator self-serve account creation while keeping the
-// authorization decision an explicit operator action.
+// authorization decision an explicit admin action.
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 

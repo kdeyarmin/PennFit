@@ -14,16 +14,16 @@
  */
 export type SendActor =
   | {
-      kind: "operator";
-      operatorEmail: string | null;
-      operatorClerkId: string | null;
+      kind: "admin";
+      adminEmail: string | null;
+      adminClerkId: string | null;
       ip: string | null;
       userAgent: string | null;
     }
   | {
       kind: "system";
       /**
-       * pg-boss job id, surfaced into the audit metadata so operators
+       * pg-boss job id, surfaced into the audit metadata so admins
        * can trace a reminder back to the worker run that produced it.
        */
       jobId: string | null;
@@ -63,13 +63,13 @@ export type SendReminderOutcome =
    * DIFFERENT patient_id in `phone_lookup`. We refuse to reassign the
    * lookup row because doing so silently re-routes inbound SMS replies
    * (including STOP/HELP keywords AND order confirmations) to whichever
-   * patient the operator most recently sent a reminder to.
+   * patient the admin most recently sent a reminder to.
    *
    * This is a data-quality conflict — two patients in the system
-   * sharing the same phone number — that requires operator triage
+   * sharing the same phone number — that requires admin triage
    * before any reminder can go out. The send is aborted, an audit row
    * (`messaging.phone_lookup.conflict`) is written so the conflict
-   * surfaces in the operator console, and the caller decides how to
+   * surfaces in the admin console, and the caller decides how to
    * surface it (HTTP 409 from the API, log + skip from the worker).
    */
   | {

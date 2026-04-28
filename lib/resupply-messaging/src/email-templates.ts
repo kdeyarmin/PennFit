@@ -18,7 +18,7 @@
 //     for passing well-formed URLs in.
 
 export interface RenderResupplyReminderInput {
-  /** Practice display name (e.g. "Penn Sleep Center"). Already operator-vetted. */
+  /** Practice display name (e.g. "Penn Sleep Center"). Already admin-vetted. */
   practiceName: string;
   /** Patient's first name. PHI — render in the body, not the subject. */
   firstName: string;
@@ -130,7 +130,7 @@ export function renderResupplyReminder(
 }
 
 export interface RenderClickConfirmationInput {
-  /** Practice display name. Already operator-vetted. */
+  /** Practice display name. Already admin-vetted. */
   practiceName: string;
   /** What the patient just did. */
   action: "confirm" | "edit" | "stop";
@@ -138,7 +138,7 @@ export interface RenderClickConfirmationInput {
 
 /**
  * Minimal HTML page returned to the browser after a successful
- * /email/click. Operator confirmations only — no PHI rendered, no
+ * /email/click. Admin confirmations only — no PHI rendered, no
  * dynamic patient name (we don't want a forwarded link to leak the
  * recipient's name to whoever opens it next).
  */
@@ -185,7 +185,7 @@ export function renderClickConfirmation(
 export interface RenderClickErrorInput {
   /** Practice display name. */
   practiceName: string;
-  /** Why verification failed (operator-readable). */
+  /** Why verification failed (admin-readable). */
   reason: "malformed" | "bad-signature" | "expired" | "unknown-action";
 }
 

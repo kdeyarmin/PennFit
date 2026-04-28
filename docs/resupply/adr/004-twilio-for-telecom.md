@@ -17,7 +17,7 @@ Enterprise plan.
   Opt-Out + locally enforced suppression (see ADR 006).
 - Voice: Twilio Programmable Voice. Outbound caller-id is verified and
   SHAKEN-attested. Inbound calls are routed to a TwiML webhook that
-  decides AI vs operator queue.
+  decides AI vs admin queue.
 - Email: SendGrid via Twilio's API. Domain authentication (SPF / DKIM /
   DMARC) is required before any production send.
 

@@ -64,7 +64,7 @@ const TARGET_TABLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 type Row = {
   id: string;
   occurredAt: string;
-  operatorEmail?: string | null;
+  adminEmail?: string | null;
   action: string;
   targetTable?: string | null;
   targetId?: string | null;
@@ -122,11 +122,11 @@ export function AuditPage() {
       ),
     },
     {
-      key: "operator",
-      header: "Operator",
+      key: "admin",
+      header: "Admin",
       render: (r) => (
         <span className="text-xs" style={{ color: "#0a1f44" }}>
-          {r.operatorEmail ?? "—"}
+          {r.adminEmail ?? "—"}
         </span>
       ),
     },
@@ -178,7 +178,7 @@ export function AuditPage() {
           Audit log
         </h1>
         <p className="text-sm" style={{ color: "#374151" }}>
-          Operator-visible action history. Only allowlisted metadata keys are
+          Admin-visible action history. Only allowlisted metadata keys are
           rendered to prevent accidental PHI surface.
         </p>
       </header>

@@ -33,7 +33,7 @@ import { resupplySchema } from "./_schema";
  * Cardinality: one row per patient (patient_id is PK), one row per
  *   phone number (hmac_phone is UNIQUE). Two patients sharing the
  *   same phone number would violate the unique constraint and require
- *   operator triage — which is the right behavior; it surfaces a real
+ *   admin triage — which is the right behavior; it surfaces a real
  *   data quality problem instead of silently routing replies to the
  *   wrong patient.
  *

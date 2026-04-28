@@ -4,7 +4,7 @@
 // We deliberately do NOT throw when env vars are missing. This module
 // is imported at boot regardless of feature-flag state, and we want
 // the API to come up cleanly even when voice is disabled (most
-// non-voice operators will deploy without these secrets). The "off"
+// non-voice admins will deploy without these secrets). The "off"
 // path is a clean 503 from the route handler, not a crash.
 //
 // Why one helper, not three env reads scattered across routes:

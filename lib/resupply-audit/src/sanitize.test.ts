@@ -64,7 +64,7 @@ describe("sanitizeMetadata", () => {
     ["email_address"],
     ["EMAIL-ADDRESS"],
     ["email.address"],
-    ["operatorEmailNote"],
+    ["adminEmailNote"],
     ["phone"],
     ["phoneNumber"],
     ["patientPhone"],

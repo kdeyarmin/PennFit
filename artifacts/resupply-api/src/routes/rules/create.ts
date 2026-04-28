@@ -15,7 +15,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { frequencyRules, getDbPool } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 // Shared shape used by both POST and PATCH. PATCH wraps every field
 // in `.optional()`; here we keep `name` and `cadenceDays` required.
@@ -69,7 +69,7 @@ const ruleBody = z
 
 const router: IRouter = Router();
 
-router.post("/rules", requireOperator, async (req, res) => {
+router.post("/rules", requireAdmin, async (req, res) => {
   const parsed = ruleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -102,8 +102,8 @@ router.post("/rules", requireOperator, async (req, res) => {
   try {
     await logAudit({
       action: "rules.create",
-      operatorEmail: req.operatorEmail ?? null,
-      operatorClerkId: req.operatorClerkId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminClerkId: req.adminClerkId ?? null,
       targetTable: "frequency_rules",
       targetId: row.id,
       ip: req.ip ?? null,

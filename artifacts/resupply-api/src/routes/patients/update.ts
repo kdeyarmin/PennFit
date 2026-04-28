@@ -1,4 +1,4 @@
-// PATCH /patients/:id — operator-editable settings.
+// PATCH /patients/:id — admin-editable settings.
 //
 // Today this only updates the three "outreach plan" fields:
 //   - insurance_payer        (free text, ≤ 120 chars)
@@ -13,7 +13,7 @@
 // default" button needs.
 //
 // PHI handling: none of these columns hold PHI. The audit log entry
-// records *which* columns changed but never the new values — operator
+// records *which* columns changed but never the new values — admin
 // edits are auditable as activity, but the values themselves are
 // dashboard-visible and don't need to be re-keyed into the audit log.
 
@@ -26,7 +26,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, patients } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -58,7 +58,7 @@ const bodySchema = z
 
 const router: IRouter = Router();
 
-router.patch("/patients/:id", requireOperator, async (req, res) => {
+router.patch("/patients/:id", requireAdmin, async (req, res) => {
   const idParsed = idParam.safeParse(req.params);
   if (!idParsed.success) {
     res.status(404).json({ error: "not_found" });
@@ -119,8 +119,8 @@ router.patch("/patients/:id", requireOperator, async (req, res) => {
   try {
     await logAudit({
       action: "patient.update",
-      operatorEmail: req.operatorEmail ?? null,
-      operatorClerkId: req.operatorClerkId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminClerkId: req.adminClerkId ?? null,
       targetTable: "patients",
       targetId: id,
       ip: req.ip ?? null,

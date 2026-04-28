@@ -229,7 +229,7 @@ describe("GET /email/click", () => {
     expect(handoffAudit).toBeDefined();
   });
 
-  it("edit: parks conversation in awaiting_operator, audits", async () => {
+  it("edit: parks conversation in awaiting_admin, audits", async () => {
     setMessagingEnv();
     const token = signLinkToken({
       conversationId: CONVERSATION_ID,

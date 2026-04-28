@@ -18,15 +18,15 @@ vi.mock("@clerk/express", () => ({
   },
 }));
 
-import { requireOperator } from "./requireOperator";
+import { requireAdmin } from "./requireAdmin";
 
 function makeApp(): Express {
   const app = express();
-  app.get("/protected", requireOperator, (req, res) => {
+  app.get("/protected", requireAdmin, (req, res) => {
     res.json({
       ok: true,
-      operatorEmail: req.operatorEmail,
-      operatorClerkId: req.operatorClerkId,
+      adminEmail: req.adminEmail,
+      adminClerkId: req.adminClerkId,
     });
   });
   return app;
@@ -49,24 +49,35 @@ function stubVerifiedUser(email: string, userId = "user_abc123"): void {
   });
 }
 
-describe("requireOperator middleware", () => {
+describe("requireAdmin middleware", () => {
   let originalAllowlist: string | undefined;
+  let originalLegacyAllowlist: string | undefined;
   let originalNodeEnv: string | undefined;
 
   beforeEach(() => {
     getAuthMock.mockReset();
     getUserMock.mockReset();
-    originalAllowlist = process.env.RESUPPLY_OPERATOR_EMAILS;
+    originalAllowlist = process.env.RESUPPLY_ADMIN_EMAILS;
+    originalLegacyAllowlist = process.env.RESUPPLY_OPERATOR_EMAILS;
     originalNodeEnv = process.env.NODE_ENV;
+    // Reset BOTH names — the middleware reads the legacy var as a
+    // fallback, so leaving it set leaks state into tests that
+    // expect "no allowlist configured".
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
     delete process.env.RESUPPLY_OPERATOR_EMAILS;
     process.env.NODE_ENV = "test";
   });
 
   afterEach(() => {
     if (originalAllowlist === undefined) {
+      delete process.env.RESUPPLY_ADMIN_EMAILS;
+    } else {
+      process.env.RESUPPLY_ADMIN_EMAILS = originalAllowlist;
+    }
+    if (originalLegacyAllowlist === undefined) {
       delete process.env.RESUPPLY_OPERATOR_EMAILS;
     } else {
-      process.env.RESUPPLY_OPERATOR_EMAILS = originalAllowlist;
+      process.env.RESUPPLY_OPERATOR_EMAILS = originalLegacyAllowlist;
     }
     if (originalNodeEnv === undefined) {
       delete process.env.NODE_ENV;
@@ -78,7 +89,7 @@ describe("requireOperator middleware", () => {
   // --- Required rejection paths from the task description ---
 
   it("returns 401 when there is no Clerk session", async () => {
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     getAuthMock.mockReturnValue({ userId: null });
 
     const res = await request(makeApp()).get("/protected");
@@ -90,34 +101,34 @@ describe("requireOperator middleware", () => {
   });
 
   it("returns 403 when the signed-in email is not in the allowlist", async () => {
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     stubVerifiedUser(NOT_ALLOWED_EMAIL);
 
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({
-      error: "This account is not authorized for operator access.",
+      error: "This account is not authorized for admin access.",
     });
   });
 
-  it("returns 503 in production when RESUPPLY_OPERATOR_EMAILS is unset (fail-closed)", async () => {
+  it("returns 503 in production when RESUPPLY_ADMIN_EMAILS is unset (fail-closed)", async () => {
     process.env.NODE_ENV = "production";
-    delete process.env.RESUPPLY_OPERATOR_EMAILS;
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
     stubVerifiedUser(ALLOWED_EMAIL);
 
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(503);
-    // The error message must name the env var so an operator looking
+    // The error message must name the env var so an admin looking
     // at the response can fix the deploy without grepping the source.
-    expect(res.body.error).toMatch(/RESUPPLY_OPERATOR_EMAILS/);
+    expect(res.body.error).toMatch(/RESUPPLY_ADMIN_EMAILS/);
   });
 
   // --- Adjacent behaviors that protect the allowlist's invariants ---
 
-  it("allows a signed-in operator whose verified email is in the allowlist", async () => {
-    process.env.RESUPPLY_OPERATOR_EMAILS = `someone-else@example.com,${ALLOWED_EMAIL}`;
+  it("allows a signed-in admin whose verified email is in the allowlist", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = `someone-else@example.com,${ALLOWED_EMAIL}`;
     stubVerifiedUser(ALLOWED_EMAIL);
 
     const res = await request(makeApp()).get("/protected");
@@ -125,26 +136,26 @@ describe("requireOperator middleware", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       ok: true,
-      operatorEmail: ALLOWED_EMAIL,
-      operatorClerkId: "user_abc123",
+      adminEmail: ALLOWED_EMAIL,
+      adminClerkId: "user_abc123",
     });
   });
 
-  it("matches allowlist case-insensitively (operator emails are not case-sensitive)", async () => {
-    process.env.RESUPPLY_OPERATOR_EMAILS = "RT-Coordinator@PennHomeMedical.com";
+  it("matches allowlist case-insensitively (admin emails are not case-sensitive)", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = "RT-Coordinator@PennHomeMedical.com";
     stubVerifiedUser(ALLOWED_EMAIL);
 
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(200);
-    expect(res.body.operatorEmail).toBe(ALLOWED_EMAIL);
+    expect(res.body.adminEmail).toBe(ALLOWED_EMAIL);
   });
 
   it("returns 403 when the primary email is unverified, even if it matches the allowlist", async () => {
     // Defense-in-depth: an attacker who could add someone else's
     // address to a Clerk profile (without proving they control the
     // inbox) must not get past the allowlist on that basis alone.
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     getAuthMock.mockReturnValue({ userId: "user_abc123" });
     getUserMock.mockResolvedValue({
       primaryEmailAddressId: "eml_1",
@@ -165,10 +176,10 @@ describe("requireOperator middleware", () => {
 
   it("treats an env var of only commas/whitespace as unset (fail-closed in production)", async () => {
     // Regression guard: a deploy that ships
-    // RESUPPLY_OPERATOR_EMAILS=", , ," must NOT silently fall through
-    // to the dev-mode "any signed-in user is an operator" branch.
+    // RESUPPLY_ADMIN_EMAILS=", , ," must NOT silently fall through
+    // to the dev-mode "any signed-in user is an admin" branch.
     process.env.NODE_ENV = "production";
-    process.env.RESUPPLY_OPERATOR_EMAILS = " , ,, ";
+    process.env.RESUPPLY_ADMIN_EMAILS = " , ,, ";
     stubVerifiedUser(ALLOWED_EMAIL);
 
     const res = await request(makeApp()).get("/protected");
@@ -181,13 +192,13 @@ describe("requireOperator middleware", () => {
     // doesn't require setting the env var. Paired with the 503 test
     // above to prove the same code path fails closed in production.
     process.env.NODE_ENV = "development";
-    delete process.env.RESUPPLY_OPERATOR_EMAILS;
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
     stubVerifiedUser(NOT_ALLOWED_EMAIL);
 
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(200);
-    expect(res.body.operatorEmail).toBe(NOT_ALLOWED_EMAIL);
+    expect(res.body.adminEmail).toBe(NOT_ALLOWED_EMAIL);
   });
 
   it("dev fallback: also allows users whose primary email is unverified (no allowlist to spoof)", async () => {
@@ -197,7 +208,7 @@ describe("requireOperator middleware", () => {
     // by the e2e test harness, which creates Clerk users via the
     // Backend API and does NOT mark their primary email as verified.
     process.env.NODE_ENV = "development";
-    delete process.env.RESUPPLY_OPERATOR_EMAILS;
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
     getAuthMock.mockReturnValue({ userId: "user_unverified" });
     getUserMock.mockResolvedValue({
       primaryEmailAddressId: "eml_1",
@@ -213,17 +224,17 @@ describe("requireOperator middleware", () => {
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(200);
-    expect(res.body.operatorEmail).toBe("fresh-test-user@example.com");
-    expect(res.body.operatorClerkId).toBe("user_unverified");
+    expect(res.body.adminEmail).toBe("fresh-test-user@example.com");
+    expect(res.body.adminClerkId).toBe("user_unverified");
   });
 
-  it("dev fallback: still issues an operator id even if Clerk returns no email at all", async () => {
+  it("dev fallback: still issues an admin id even if Clerk returns no email at all", async () => {
     // Edge case: a Clerk user with zero email addresses. Production
     // would never reach this branch (allowlist would catch it), but
-    // dev should still let the operator in so the console isn't
+    // dev should still let the admin in so the console isn't
     // bricked by a fixture quirk.
     process.env.NODE_ENV = "development";
-    delete process.env.RESUPPLY_OPERATOR_EMAILS;
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
     getAuthMock.mockReturnValue({ userId: "user_no_email" });
     getUserMock.mockResolvedValue({
       primaryEmailAddressId: null,
@@ -233,8 +244,8 @@ describe("requireOperator middleware", () => {
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(200);
-    expect(res.body.operatorEmail).toBe("clerk:user_no_email");
-    expect(res.body.operatorClerkId).toBe("user_no_email");
+    expect(res.body.adminEmail).toBe("clerk:user_no_email");
+    expect(res.body.adminClerkId).toBe("user_no_email");
   });
 
   it("returns 502 if Clerk lookup throws (upstream failure, not an auth failure)", async () => {
@@ -246,7 +257,7 @@ describe("requireOperator middleware", () => {
     // thing — an upstream we depend on failed — and the dashboard
     // maps non-503 5xx responses to the "transient" not-authorized
     // screen, which suggests retrying rather than re-auth.
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     getAuthMock.mockReturnValue({ userId: "user_abc123" });
     getUserMock.mockRejectedValue(
       new Error("clerk says: user user_abc123 is locked out"),
@@ -264,5 +275,50 @@ describe("requireOperator middleware", () => {
     // hand back as world-readable.
     expect(JSON.stringify(res.body)).not.toMatch(/user_abc123/);
     expect(JSON.stringify(res.body)).not.toMatch(/locked out/);
+  });
+
+  // --- Backward-compat env var fallback (operator → admin rename) ---
+
+  it("accepts the legacy RESUPPLY_OPERATOR_EMAILS allowlist when the new var is unset", async () => {
+    // Production deploys still on the old env var name MUST keep
+    // working until ops rotates the config — otherwise the rename
+    // ships as a covert outage.
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
+    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    stubVerifiedUser(ALLOWED_EMAIL);
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+    expect(res.body.adminEmail).toBe(ALLOWED_EMAIL);
+  });
+
+  it("prefers RESUPPLY_ADMIN_EMAILS over the legacy variable when both are set", async () => {
+    // If ops sets both during a rollout, the new name wins — that
+    // is the precondition for safely deleting the legacy var later
+    // without coordinating an exact deploy moment.
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_OPERATOR_EMAILS = NOT_ALLOWED_EMAIL;
+    stubVerifiedUser(ALLOWED_EMAIL);
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 503 in production when neither env var is set", async () => {
+    // Belt-and-suspenders: the existing 503 test deletes only the
+    // new var. This one removes BOTH names so a future regression
+    // that swaps the legacy var name (the bug the architect caught)
+    // is detected here — not in production.
+    process.env.NODE_ENV = "production";
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
+    delete process.env.RESUPPLY_OPERATOR_EMAILS;
+    stubVerifiedUser(ALLOWED_EMAIL);
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/RESUPPLY_ADMIN_EMAILS/);
   });
 });

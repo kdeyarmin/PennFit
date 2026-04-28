@@ -1,4 +1,4 @@
-// Dashboard routes — operator counters for the dashboard home.
+// Dashboard routes — admin counters for the dashboard home.
 
 import { Router, type IRouter } from "express";
 

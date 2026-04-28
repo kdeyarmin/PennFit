@@ -58,8 +58,8 @@ describeIfDb("logAudit (live db)", () => {
   it("inserts a well-formed audit row", async () => {
     await logAudit({
       action: "patient.view",
-      operatorEmail: "test@example.com",
-      operatorClerkId: "user_test123",
+      adminEmail: "test@example.com",
+      adminClerkId: "user_test123",
       targetTable: "patients",
       targetId: "00000000-0000-0000-0000-000000000001",
       metadata: { _runTag: runTag, requestId: "req_abc" },

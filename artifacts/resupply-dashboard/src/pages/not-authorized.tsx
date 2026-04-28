@@ -1,14 +1,14 @@
 import { useClerk, useUser } from "@clerk/react";
 
-// Friendly "you can't see the operator console" screen.
+// Friendly "you can't see the admin console" screen.
 //
 // Three distinct failure modes funnel into this page; each rendering
-// branch is intentional, because they require different operator
+// branch is intentional, because they require different admin
 // follow-ups:
 //
 //   reason="not-authorized" (HTTP 401/403/most 4xx)
 //     The signed-in user passed Clerk's session check but is not on
-//     the RESUPPLY_OPERATOR_EMAILS allowlist. Resolution is "ask an
+//     the RESUPPLY_ADMIN_EMAILS allowlist. Resolution is "ask an
 //     admin to add me" — so we show the email, tell them to contact
 //     the resupply admin, and offer a sign-out button so they can
 //     try a different account.
@@ -28,7 +28,7 @@ import { useClerk, useUser } from "@clerk/react";
 // We deliberately keep the messaging short and don't echo the API's
 // raw error string. The API never includes the user's id, the
 // allowlist contents, or any environment fragment in its 4xx/5xx
-// bodies (see /me OpenAPI definition + requireOperator.ts), but
+// bodies (see /me OpenAPI definition + requireAdmin.ts), but
 // belt-and-braces: we only render Clerk-side data the user already
 // owns.
 
@@ -39,7 +39,7 @@ export type NotAuthorizedReason =
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// Operator-facing contact address. Override per environment with
+// Admin-facing contact address. Override per environment with
 // VITE_RESUPPLY_CONTACT_EMAIL so a production cutover (mailbox
 // rename, distribution list change, etc.) doesn't require shipping
 // a code change. Default is the current Penn Home Medical operations
@@ -71,10 +71,10 @@ export function NotAuthorizedPage({
       ? "Connection problem"
       : "Not authorized";
   const headline = isConfigError
-    ? "Operator access isn't set up on this server yet"
+    ? "Admin access isn't set up on this server yet"
     : isTransient
       ? "We can't reach the resupply server right now"
-      : "This account isn't approved for the operator console";
+      : "This account isn't approved for the admin console";
 
   return (
     <div
@@ -133,7 +133,7 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "#374151" }}
               >
-                The resupply API doesn't have an operator allowlist
+                The resupply API doesn't have an admin allowlist
                 configured, so it's refusing every sign-in until an
                 administrator finishes the setup. This is a deploy-side
                 fix — signing out and back in won't change the result.
@@ -145,7 +145,7 @@ export function NotAuthorizedPage({
                 Please contact your Penn Home Medical Supply IT
                 administrator and reference{" "}
                 <code className="text-xs px-1 py-0.5 bg-gray-100 rounded">
-                  RESUPPLY_OPERATOR_EMAILS
+                  RESUPPLY_ADMIN_EMAILS
                 </code>
                 .
               </p>
@@ -156,7 +156,7 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "#374151" }}
               >
-                The dashboard couldn't confirm your operator access just
+                The dashboard couldn't confirm your admin access just
                 now — the server may be restarting, or your connection
                 may have dropped briefly. This is almost always a few-
                 seconds blip, not a permissions change.
@@ -195,7 +195,7 @@ export function NotAuthorizedPage({
               >
                 You're signed in as{" "}
                 <span className="font-semibold">{email}</span>, but that
-                address isn't on the resupply operator allowlist.
+                address isn't on the resupply admin allowlist.
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"

@@ -15,7 +15,7 @@ Phase 1.
 artifacts/
   resupply-api/          Express + Zod HTTP API (only /healthz today)
   resupply-worker/       pg-boss background worker (no jobs registered yet)
-  resupply-dashboard/    React + Vite operator console (Phase 0 placeholder)
+  resupply-dashboard/    React + Vite admin console (Phase 0 placeholder)
 lib/
   resupply-contracts/    Zod schemas — empty
   resupply-domain/       Pure business logic — empty
@@ -75,7 +75,7 @@ so a future contributor can't silently regress it (the architect review
 that produced this scaffold caught exactly that bug class).
 
 The full resupply build plan is twelve phases (0 → scaffold,
-1 → schema, 2 → operator auth, 3 → telecom, 4 → operator UI,
+1 → schema, 2 → admin auth, 3 → telecom, 4 → admin UI,
 5 → conversation engine, 6 → AI, 7 → fulfillment, 8 → analytics,
 9 → production hardening, 10 → patient auth, 11 → Pacware automation,
 12 → multi-tenant). Each later phase depends on the schema landing in
@@ -95,7 +95,7 @@ trigger that forces a migration before any real PHI can land. Read ADR
   `lib/db`, `lib/api-zod`, and `lib/api-client-react` are off-limits to
   every resupply package (the dashboard's `api-client-react` import is
   an explicit, time-limited exception — see ARCHITECTURE.md).
-- **Patient-facing UI.** The dashboard is operator-only. Patient-facing
+- **Patient-facing UI.** The dashboard is admin-only. Patient-facing
   flows are SMS/voice/email-only until Phase 10.
 - **Real PHI in dev.** Synthetic data only until ADR 007's migration
   triggers fire (managed KMS + signed BAAs).

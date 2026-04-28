@@ -52,7 +52,7 @@ const buildSystemPromptInputSchema = z.object({
   practiceName: z.string().trim().min(1, "practiceName is required"),
 
   /**
-   * Operator-facing display name. The agent uses this if a patient
+   * Admin-facing display name. The agent uses this if a patient
    * asks "who is this?" — e.g. "I'm Avery, calling for Penn Home
    * Medical's resupply program." Optional; defaults to "your CPAP
    * resupply assistant".

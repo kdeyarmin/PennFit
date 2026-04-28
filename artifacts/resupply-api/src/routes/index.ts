@@ -21,8 +21,8 @@ router.use(meRouter);
 router.use(voiceRouter);
 router.use(smsRouter);
 router.use(emailRouter);
-// Operator-console READ endpoints. Each handler is gated by
-// requireOperator and surfaces only PHI the dashboard needs to
+// Admin-console READ endpoints. Each handler is gated by
+// requireAdmin and surfaces only PHI the dashboard needs to
 // render — decrypted name on lists, decrypted message bodies only on
 // the conversation detail endpoint, never phone or email values.
 router.use(dashboardRouter);

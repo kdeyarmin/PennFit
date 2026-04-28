@@ -45,7 +45,7 @@ export interface SendEmailInput {
   text: string;
   /**
    * Optional Reply-To. Defaults to the From address. Useful when an
-   * operator should receive bounces/replies at a different mailbox
+   * admin should receive bounces/replies at a different mailbox
    * than the noreply address.
    */
   replyTo?: string;
@@ -115,7 +115,7 @@ export interface SendgridClient {
  *
  * Production fail-closed: a missing API key or From address should never
  * silently degrade to "email didn't go out" — it must surface as a 503
- * at the route handler so operators see the misconfig immediately.
+ * at the route handler so admins see the misconfig immediately.
  */
 export function createSendgridClient(
   opts: CreateSendgridClientOptions = {},

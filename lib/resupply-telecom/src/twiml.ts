@@ -79,7 +79,7 @@ export function buildConnectStreamTwiml(
  * pending-session lookup fails so we don't open a WS bridge that
  * has no patient context.
  *
- * The optional `<Say>` reads BEFORE the hangup so the operator
+ * The optional `<Say>` reads BEFORE the hangup so the admin
  * console can present a friendly explanation in the dashboard
  * (we record the TwiML body alongside the conversation row).
  */

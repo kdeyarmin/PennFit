@@ -21,7 +21,7 @@ import { setAuthTokenGetter } from "@workspace/resupply-api-client";
 //      module load guarantees the very first API call has a token
 //      source — if we waited for `useEffect` inside `useApiAuthBridge`,
 //      a query that fires during the same render commit (e.g. a
-//      gated `useGetOperatorMe`) would issue WITHOUT a token because
+//      gated `useGetAdminMe`) would issue WITHOUT a token because
 //      effects run after children render.
 //
 //   2. `useApiAuthBridge` re-registers the getter against Clerk's

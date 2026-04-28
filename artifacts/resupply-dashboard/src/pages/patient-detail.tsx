@@ -408,7 +408,7 @@ function PrescriptionsTab({ prescriptions }: { prescriptions: Prescription[] }) 
 // Settings panel
 // ----------------------
 //
-// Three operator-managed fields that override the defaults used by
+// Three admin-managed fields that override the defaults used by
 // the eligibility engine:
 //   - insurancePayer: free-text payer name (e.g. "Aetna"). Used as a
 //     match key by frequency_rules; blank means "no payer recorded"
@@ -418,7 +418,7 @@ function PrescriptionsTab({ prescriptions }: { prescriptions: Prescription[] }) 
 //   - channelPreference: hard override of the outbound channel.
 //     Wins over rules and the SMS-then-email fallback.
 //
-// "Save" sends ONLY the fields the operator actually changed (the
+// "Save" sends ONLY the fields the admin actually changed (the
 // PATCH endpoint treats omitted keys as "leave alone" and explicit
 // `null` as "clear"). "Reset to default" clears all three overrides
 // in a single PATCH so the eligibility engine falls all the way
@@ -633,7 +633,7 @@ function SettingsCard({
             disabled={isPending}
           />
           <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
-            Voice is operator-initiated only.
+            Voice is admin-initiated only.
           </p>
         </div>
       </div>

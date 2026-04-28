@@ -10,7 +10,7 @@ must obey. The "why" for each major choice lives in `docs/resupply/adr/`.
 artifacts/
   resupply-api/         Express + Zod HTTP API (Clerk-protected)
   resupply-worker/      pg-boss background worker (durable jobs)
-  resupply-dashboard/   React + Vite operator console (Clerk auth)
+  resupply-dashboard/   React + Vite admin console (Clerk auth)
 lib/
   resupply-contracts/   Zod schemas + DTOs (shared over the wire)
   resupply-domain/      Pure business logic — no I/O
@@ -19,7 +19,7 @@ lib/
   resupply-telecom/     Twilio (SMS, Voice) + SendGrid (Email) adapters
   resupply-ai/          Anthropic Claude adapter for the conversation agent
   resupply-testing/     Fixtures, factories, mock vendors (devDeps only)
-  resupply-api-spec/    OpenAPI spec + orval config for the operator API
+  resupply-api-spec/    OpenAPI spec + orval config for the admin API
   resupply-api-client/  Generated React-Query client consumed by the dashboard
 docs/resupply/
   ARCHITECTURE.md       This file.
@@ -115,9 +115,9 @@ which runs as part of the `resupply-check` validation step.
 
 ## Auth model
 
-- Operators authenticate via Clerk (ADR 005). The api enforces a
-  `requireOperator` middleware that checks the operator allowlist
-  (`RESUPPLY_OPERATOR_EMAILS` env var, comma-separated).
+- Admins authenticate via Clerk (ADR 005). The api enforces a
+  `requireAdmin` middleware that checks the admin allowlist
+  (`RESUPPLY_ADMIN_EMAILS` env var, comma-separated).
 - Patients do NOT have Clerk accounts. Patient-facing endpoints use
   short-lived signed links delivered via SMS or email, plus device-side
   session tokens. Patient auth lands in Phase 10.
@@ -129,7 +129,7 @@ which runs as part of the `resupply-check` validation step.
 - Sentry (BAA tier) is added before Phase 9 production hardening (ADR 010).
 - The `admin_audit_log`-style append-only audit table for the resupply
   product lives in `lib/resupply-audit`'s schema. Every PHI read or write
-  by an operator writes one row.
+  by an admin writes one row.
 
 ## How to run locally
 
@@ -162,6 +162,6 @@ Phase 0 ships scaffolding only. Specifically:
   `/resupply/`. Real pages land in Phase 4+.
 - The architecture-check script verifies the dependency rules above.
 
-Any business logic, schema, real vendor wiring, or operator UI is
+Any business logic, schema, real vendor wiring, or admin UI is
 explicitly **out of scope** for Phase 0 and will be addressed in
 subsequent phases (1 through 12) of the plan.

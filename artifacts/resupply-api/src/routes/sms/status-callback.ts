@@ -4,7 +4,7 @@
 // sending, sent, delivered, undelivered, failed. We persist the
 // terminal-state delivery_status onto the messages row keyed by
 // MessageSid (we stamped the SID into vendorMetadata at send time)
-// and audit any failure so the operator inbox can surface bounces.
+// and audit any failure so the admin inbox can surface bounces.
 //
 // 200 every signed request. Twilio retries 5xx with exponential
 // backoff, which would amplify any downstream incident.
@@ -101,8 +101,8 @@ router.post(
     if (FAILURE_STATUSES.has(status)) {
       await safeAudit({
         action: "messaging.delivery.failed",
-        operatorEmail: null,
-        operatorClerkId: null,
+        adminEmail: null,
+        adminClerkId: null,
         targetTable: "messages",
         targetId: null,
         metadata: {

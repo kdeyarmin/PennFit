@@ -17,7 +17,7 @@
 //   2. Latency. Twilio expects a TwiML response within ~10s. A round
 //      trip to an LLM adds 1–3s; the keyword path stays well under
 //      100ms.
-//   3. Auditability. Operators can re-derive a routing decision by
+//   3. Auditability. Admins can re-derive a routing decision by
 //      looking at the body — no model output to second-guess.
 //   4. Carrier compliance. STOP / HELP MUST be honored. Sending the
 //      decision through an LLM introduces a non-zero risk that the

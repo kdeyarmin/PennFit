@@ -23,12 +23,12 @@ import {
   patients,
 } from "@workspace/resupply-db";
 
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const listQuery = z
   .object({
     status: z
-      .enum(["open", "awaiting_patient", "awaiting_operator", "closed"])
+      .enum(["open", "awaiting_patient", "awaiting_admin", "closed"])
       .optional(),
     channel: z.enum(["sms", "voice", "email"]).optional(),
     patientId: z.string().uuid().optional(),
@@ -39,7 +39,7 @@ const listQuery = z
 
 const router: IRouter = Router();
 
-router.get("/conversations", requireOperator, async (req, res) => {
+router.get("/conversations", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({

@@ -65,17 +65,17 @@ A short, animated tutorial (`/penn-fit-tutorial/`) built with `framer-motion` an
 
 ### CPAP Resupply Automation System
 
-A separate CPAP Resupply Automation system within the monorepo provides automated patient outreach for operators.
+A separate CPAP Resupply Automation system within the monorepo provides automated patient outreach for admins.
 
-*   **Components:** `artifacts/resupply-api/` (Express API), `artifacts/resupply-worker/` (pg-boss background worker), `artifacts/resupply-dashboard/` (React operator console).
+*   **Components:** `artifacts/resupply-api/` (Express API), `artifacts/resupply-worker/` (pg-boss background worker), `artifacts/resupply-dashboard/` (React admin console).
 *   **Database:** Resupply tables are under the `resupply` schema with PHI columns encrypted using `pgcrypto`. Versioned migrations are used for schema management.
 *   **Readiness Probe:** `/readyz` endpoint for health checks, verifying database and queue schema readiness.
-*   **Operator Authentication:** Uses Clerk with a distinct email allowlist (`RESUPPLY_OPERATOR_EMAILS`).
+*   **Admin Authentication:** Uses Clerk with a distinct email allowlist (`RESUPPLY_ADMIN_EMAILS`). The legacy variable name `RESUPPLY_OPERATOR_EMAILS` is read as a fallback (with a one-time deprecation warning) so existing deployments keep working until the env var is rotated.
 *   **Operational Hardening:** Includes log redaction, `pino` flush-on-exit, and CORS configuration.
 *   **Voice (Outbound Calls):** Integrates Twilio Voice and OpenAI's Realtime API for automated patient calls, with on-device patient identity verification and tool dispatching.
 *   **Messaging (SMS + Email):** Supports two-way SMS via Twilio and email via SendGrid. Patient lookup uses an HMAC-based `phone_lookup` table for privacy. Features a hybrid scripted and AI reply router for inbound messages and interactive email links.
-*   **Operator Dashboard:** Provides a full operator console with API endpoints for patient, conversation, episode, and audit log management, with server-side PHI decryption and strict pagination.
-*   **Reminder Eligibility Engine:** Per-patient overrides (`patients.cadence_override_days`, `patients.channel_preference`, `patients.insurance_payer`) and a global rules engine (`resupply.frequency_rules` — matched by SKU prefix, payer, and tenure window with priority ordering) determine reminder cadence and channel. Resolution lives in `@workspace/resupply-domain`'s `resolveOutreachPlan` (zero DB deps) so both the worker and the dashboard preview agree. Operators manage rules at `/rules` and per-patient overrides on the patient detail page; a chronological Timeline tab on the patient detail page merges episode, message, and fulfillment events into one feed.
+*   **Admin Dashboard:** Provides a full admin console with API endpoints for patient, conversation, episode, and audit log management, with server-side PHI decryption and strict pagination. Admins can create new customers from the patients page via a "+ New customer" modal that posts to `POST /patients` (PHI encrypted server-side, duplicate `pacware_id` returns 409, all create attempts are audited with field-name lists only — never PHI values).
+*   **Reminder Eligibility Engine:** Per-patient overrides (`patients.cadence_override_days`, `patients.channel_preference`, `patients.insurance_payer`) and a global rules engine (`resupply.frequency_rules` — matched by SKU prefix, payer, and tenure window with priority ordering) determine reminder cadence and channel. Resolution lives in `@workspace/resupply-domain`'s `resolveOutreachPlan` (zero DB deps) so both the worker and the dashboard preview agree. Admins manage rules at `/rules` and per-patient overrides on the patient detail page; a chronological Timeline tab on the patient detail page merges episode, message, and fulfillment events into one feed.
 
 ## External Dependencies
 
@@ -83,6 +83,6 @@ A separate CPAP Resupply Automation system within the monorepo provides automate
 *   **MediaPipe Face Mesh:** Google's on-device facial landmark detection solution for privacy-first measurements.
 *   **AWS:** Deployment target, providing HIPAA-compliant infrastructure.
 *   **PostgreSQL:** Database for persisting orders, usage events, admin audit logs, and all resupply system data.
-*   **Clerk:** Third-party authentication service for admin and operator access control.
+*   **Clerk:** Third-party authentication service for admin and admin access control.
 *   **Twilio:** Used for CPAP Resupply Automation outbound voice calls and two-way SMS messaging.
 *   **OpenAI:** Utilized by the CPAP Resupply Automation system for Realtime API (voice conversation) and chat-completions (SMS intent classification).

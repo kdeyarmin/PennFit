@@ -57,7 +57,7 @@ export const patients = resupplySchema.table(
 
     // Lifecycle. "active" patients are in scope for outreach; "paused"
     // are temporarily suppressed; "closed" are off the program (moved,
-    // declined, deceased — operator-set, see audit_log for the why).
+    // declined, deceased — admin-set, see audit_log for the why).
     status: text("status", { enum: ["active", "paused", "closed"] })
       .notNull()
       .default("active"),
@@ -65,7 +65,7 @@ export const patients = resupplySchema.table(
     // Insurance payer name as free text (e.g. "Aetna", "Medicare",
     // "BCBS-PA"). Not encrypted — payer is sensitive but not PHI on
     // its own, and the global rules engine has to be able to filter
-    // on it without round-tripping through pgcrypto. Operator-edited
+    // on it without round-tripping through pgcrypto. Admin-edited
     // from the dashboard. Nullable: blank means the rules engine
     // treats this patient's insurance as "unknown" and skips any
     // rule that requires a specific payer match.
@@ -75,11 +75,11 @@ export const patients = resupplySchema.table(
     // over both the matched rule and the prescription's default
     // cadence — see `lib/resupply-domain/src/outreach-plan.ts`.
     // Null means "no override; use the rules engine / prescription
-    // default". The rules engine never writes here; only operators do.
+    // default". The rules engine never writes here; only admins do.
     cadenceOverrideDays: integer("cadence_override_days"),
 
     // Per-patient channel preference. Same precedence as the cadence
-    // override — operator-set, wins over rule defaults. Null means
+    // override — admin-set, wins over rule defaults. Null means
     // "fall back to the matched rule, then to SMS-then-email".
     channelPreference: text("channel_preference", {
       enum: ["sms", "email", "voice"],

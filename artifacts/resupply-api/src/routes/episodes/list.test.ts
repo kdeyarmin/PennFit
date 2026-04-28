@@ -55,7 +55,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -69,7 +69,7 @@ function stubVerifiedOperator(): void {
   });
 }
 
-const ENV_KEYS = ["RESUPPLY_OPERATOR_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -78,7 +78,7 @@ describe("GET /episodes", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
     getAuthMock.mockReset();
     getUserMock.mockReset();
@@ -98,14 +98,14 @@ describe("GET /episodes", () => {
   });
 
   it("returns 400 invalid_query on bad status", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp()).get("/resupply-api/episodes?status=zzz");
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_query");
   });
 
   it("returns paginated episodes joined with patient + prescription", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 1 }]);
     selectQueue.push([
       {
@@ -142,7 +142,7 @@ describe("GET /episodes", () => {
   });
 
   it("returns empty page on no results", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 0 }]);
     selectQueue.push([]);
     const res = await request(makeApp()).get(

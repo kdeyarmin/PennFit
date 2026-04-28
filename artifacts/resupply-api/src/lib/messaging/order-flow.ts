@@ -22,7 +22,7 @@
 //   double-create fulfillments. We return `{status: 'already_confirmed'}`
 //   so the caller can render "you've already confirmed this order".
 //   Re-confirming a `declined` episode is allowed and flips it back to
-//   `confirmed` — operators have asked for this so a patient who
+//   `confirmed` — admins have asked for this so a patient who
 //   accidentally typed NO can still ship.
 
 import { and, eq } from "drizzle-orm";
@@ -98,7 +98,7 @@ export async function placeResupplyOrderForConversation(
     // emits the row-level lock clause; the lock is released on commit
     // or rollback. We intentionally lock by episode (not conversation)
     // because two concurrent conversations CAN exist for the same
-    // episode (operator opened a second one) and we want both to
+    // episode (admin opened a second one) and we want both to
     // serialize against the same episode-confirmation window.
     const episodeRows = await tx
       .select({
@@ -125,7 +125,7 @@ export async function placeResupplyOrderForConversation(
     // Defense in depth: if a prior confirm already inserted
     // fulfillment rows for this episode (e.g. a previous transaction
     // committed but then crashed before updating episode status, or
-    // a manual operator action), refuse to insert duplicates. The
+    // a manual admin action), refuse to insert duplicates. The
     // FOR UPDATE lock above prevents the common race; this check
     // catches the rare misordered-write case.
     const existingFulfillments = await tx

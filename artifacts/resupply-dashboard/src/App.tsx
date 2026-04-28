@@ -1,6 +1,6 @@
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { Show } from "@clerk/react";
-import { useGetOperatorMe, ApiError } from "@workspace/resupply-api-client";
+import { useGetAdminMe, ApiError } from "@workspace/resupply-api-client";
 import NotFound from "./pages/not-found";
 import { SignInPage } from "./pages/sign-in";
 import { SignUpPage } from "./pages/sign-up";
@@ -17,7 +17,7 @@ import { EpisodesPage } from "./pages/episodes";
 import { RulesPage } from "./pages/rules";
 import { AuditPage } from "./pages/audit";
 
-// Penn Resupply Operator Console.
+// Penn Resupply Admin Console.
 //
 // Three routing layers, in order:
 //
@@ -30,7 +30,7 @@ import { AuditPage } from "./pages/audit";
 //        - everything else funnels through <ConsoleRoute>
 //
 //   3. <ConsoleRoute> — Clerk gate + /me probe + AppShell. Routes
-//      to operator pages live INSIDE this gate so a signed-out user
+//      to admin pages live INSIDE this gate so a signed-out user
 //      never lands on a page that fires authenticated queries.
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -39,14 +39,14 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 // /me probe outcomes funnel into:
 //   - pending  → loading spinner inside the console shell
 //   - error    → NotAuthorizedPage with a reason derived from status
-//   - success  → AppShell + nested operator pages
+//   - success  → AppShell + nested admin pages
 //
 // `error.status` mapping is unchanged from the placeholder build.
 // status 0 (network drop, ApiError-not-thrown) → "transient" so a
-// connectivity blip doesn't tell the operator they were de-allow-listed.
+// connectivity blip doesn't tell the admin they were de-allow-listed.
 
-function OperatorConsole() {
-  const { data, isPending, isError, error } = useGetOperatorMe();
+function AdminConsole() {
+  const { data, isPending, isError, error } = useGetAdminMe();
 
   if (isError) {
     const status = error instanceof ApiError ? error.status : 0;
@@ -62,13 +62,13 @@ function OperatorConsole() {
   if (isPending) {
     return (
       <AppShell>
-        <Spinner label="Confirming operator access…" />
+        <Spinner label="Confirming admin access…" />
       </AppShell>
     );
   }
 
   return (
-    <AppShell operatorEmail={data?.email}>
+    <AppShell adminEmail={data?.email}>
       <Switch>
         <Route path="/" component={DashboardPage} />
         <Route path="/patients" component={PatientsPage} />
@@ -95,7 +95,7 @@ function ConsoleRoute() {
         <Redirect to="/sign-in" />
       </Show>
       <Show when="signed-in">
-        <OperatorConsole />
+        <AdminConsole />
       </Show>
     </>
   );
@@ -111,13 +111,13 @@ function Router() {
       {/* Every other route — including the bare "/" landing page
           and all detail pages — gets gated by ConsoleRoute.
           ConsoleRoute itself renders a nested <Switch> with the
-          actual operator pages.
+          actual admin pages.
 
           The pattern MUST be "*" (not "/:rest*"). Wouter uses
           regexparam, and `/:rest*` requires at least one path
           segment after the slash — so it matches "/foo" but NOT
           "/" itself. Using "*" matches both, which is what we need
-          so the operator landing on /resupply/ actually gets
+          so the admin landing on /resupply/ actually gets
           the dashboard (or the redirect to /sign-in when signed-out)
           instead of a blank page from a Switch that found no
           matching route. */}

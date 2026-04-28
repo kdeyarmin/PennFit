@@ -5,7 +5,7 @@
 // WS to my bridge endpoint and connect this call to it".
 //
 // Excluded from the public OpenAPI spec on purpose: this endpoint is
-// for Twilio only. It carries no operator-facing contract; documenting
+// for Twilio only. It carries no admin-facing contract; documenting
 // it would just make it a more obvious target for unsigned probes.
 //
 // Why we PEEK and not CLAIM:

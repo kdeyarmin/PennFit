@@ -11,7 +11,7 @@ import { resupplySchema } from "./_schema";
 
 /**
  * Append-only audit log for the resupply product. Every PHI read or
- * mutation by an operator (and every system action that touches PHI)
+ * mutation by an admin (and every system action that touches PHI)
  * writes one row here.
  *
  * Why we deliberately do NOT have a foreign key on `targetId`:
@@ -32,10 +32,10 @@ export const auditLog = resupplySchema.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
 
-    // Who. operatorEmail is denormalised from Clerk so the audit row
+    // Who. adminEmail is denormalised from Clerk so the audit row
     // remains readable if the Clerk user is later deleted.
-    operatorEmail: text("operator_email"),
-    operatorClerkId: text("operator_clerk_id"),
+    adminEmail: text("operator_email"),
+    adminClerkId: text("operator_clerk_id"),
 
     // What. Action is a free-form verb namespaced like
     // "patient.view" / "episode.confirm" / "fulfillment.upload_csv".
@@ -62,7 +62,7 @@ export const auditLog = resupplySchema.table(
   },
   (t) => ({
     occurredAtIdx: index("audit_log_occurred_at_idx").on(t.occurredAt),
-    operatorIdx: index("audit_log_operator_idx").on(t.operatorEmail),
+    adminIdx: index("audit_log_operator_idx").on(t.adminEmail),
     actionIdx: index("audit_log_action_idx").on(t.action),
     targetIdx: index("audit_log_target_idx").on(t.targetTable, t.targetId),
   }),

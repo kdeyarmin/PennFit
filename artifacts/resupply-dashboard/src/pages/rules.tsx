@@ -30,13 +30,13 @@ import { formatDateTime } from "../lib/format";
 //      sku-prefix / payer / tenure-window all match
 //   3. prescription.cadence_days fallback
 //
-// This page lets operators view, create, edit, toggle, and delete
+// This page lets admins view, create, edit, toggle, and delete
 // rules. The "priority" column is editable inline via the edit
 // modal — we deliberately do NOT use drag-handles here:
 //   - the wider app already uses keyboard-friendly forms everywhere
 //   - drag reordering would require a server-side bulk update
 //     endpoint we haven't built (and don't need at this scale)
-//   - operators can simply edit the integer to re-rank a rule
+//   - admins can simply edit the integer to re-rank a rule
 //
 // All mutations invalidate the rules list query so the table
 // reflects the latest state without a manual refresh.

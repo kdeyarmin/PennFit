@@ -62,7 +62,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -76,7 +76,7 @@ function stubVerifiedOperator(): void {
   });
 }
 
-const ENV_KEYS = ["RESUPPLY_OPERATOR_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -85,7 +85,7 @@ describe("GET /conversations/:id", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
     getAuthMock.mockReset();
     getUserMock.mockReset();
@@ -108,7 +108,7 @@ describe("GET /conversations/:id", () => {
   });
 
   it("returns 404 when conversation row is empty", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([]);
     const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}`,
@@ -118,7 +118,7 @@ describe("GET /conversations/:id", () => {
   });
 
   it("returns conversation + decrypted messages and writes a conversation.view audit row", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: CONV_ID,
@@ -136,7 +136,7 @@ describe("GET /conversations/:id", () => {
       {
         id: MSG_A,
         direction: "outbound",
-        senderRole: "operator",
+        senderRole: "admin",
         body: "Hi Alice, your CPAP supplies are due. Reply YES to confirm.",
         deliveryStatus: "delivered",
         sentAt: new Date("2025-04-01T11:01:00Z"),
@@ -171,7 +171,7 @@ describe("GET /conversations/:id", () => {
         action: "conversation.view",
         targetTable: "conversations",
         targetId: CONV_ID,
-        operatorEmail: ALLOWED_EMAIL,
+        adminEmail: ALLOWED_EMAIL,
         metadata: expect.objectContaining({
           source: "console",
           channel: "sms",

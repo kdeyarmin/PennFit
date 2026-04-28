@@ -4,7 +4,7 @@
 #
 # Why this exists:
 #   `lib/resupply-api-spec/openapi.yaml` is the source of truth for the
-#   resupply operator API; `lib/resupply-api-client/src/generated/` is
+#   resupply admin API; `lib/resupply-api-client/src/generated/` is
 #   produced from it by orval. Penn Fit has the same arrangement
 #   (`lib/api-spec/openapi.yaml` -> `lib/api-client-react/src/generated/`
 #   AND `lib/api-zod/src/generated/`). The generated files are committed

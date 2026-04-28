@@ -98,7 +98,7 @@ main().catch((err) => {
   // Use the same flush helper as the in-main preflight path so the
   // fatal line isn't dropped by pino's transport worker buffer.
   // Without an awaited delay before exit, this terminal log can
-  // vanish, leaving operators with a process that died for no
+  // vanish, leaving admins with a process that died for no
   // visible reason.
   logger.fatal({ err }, "fatal: resupply-worker failed to start");
   void flushLogsAndExit(1);

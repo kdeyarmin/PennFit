@@ -18,7 +18,7 @@ import { resupplySchema } from "./_schema";
  *   The product asks for "global reminder frequencies for customers
  *   based on their therapy and insurance and how long they've been a
  *   customer". The simplest data shape that supports all three axes
- *   without forcing operators to write code is a small ordered list
+ *   without forcing admins to write code is a small ordered list
  *   of rules, each with a few optional `match_*` predicates plus the
  *   cadence/channel they should apply when matched.
  *
@@ -40,7 +40,7 @@ import { resupplySchema } from "./_schema";
  *
  * `priority` semantics: lower priority = evaluated first. We picked
  * lower-is-higher to match the "rule 1 / rule 2 / ..." mental model
- * operators already use, and to make the default (`100`) easy to
+ * admins already use, and to make the default (`100`) easy to
  * insert ahead of (priority 50) or behind (priority 200) without
  * renumbering every existing rule.
  *
@@ -58,8 +58,8 @@ export const frequencyRules = resupplySchema.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
 
-    // Operator-facing label, e.g. "Mask resupply for Aetna patients
-    // (year 1)". Free text; no uniqueness constraint — operators can
+    // Admin-facing label, e.g. "Mask resupply for Aetna patients
+    // (year 1)". Free text; no uniqueness constraint — admins can
     // duplicate names without breaking anything.
     name: text("name").notNull(),
 
@@ -75,7 +75,7 @@ export const frequencyRules = resupplySchema.table(
 
     // The cadence (in days) to apply when the rule matches. Must be
     // positive at the application layer; we don't add a CHECK here so
-    // operators can't accidentally lock themselves out via the
+    // admins can't accidentally lock themselves out via the
     // dashboard if a CHECK were ever miswritten — Zod validation in
     // the API enforces it instead.
     cadenceDays: integer("cadence_days").notNull(),
@@ -88,11 +88,11 @@ export const frequencyRules = resupplySchema.table(
     }),
 
     // Active rules are evaluated; inactive rules are skipped but
-    // retained so operators can toggle them back on without
+    // retained so admins can toggle them back on without
     // re-entering all the criteria.
     active: boolean("active").notNull().default(true),
 
-    // Free-text operator notes ("Per Aetna 2026 contract update").
+    // Free-text admin notes ("Per Aetna 2026 contract update").
     notes: text("notes"),
 
     createdAt: timestamp("created_at", { withTimezone: true })

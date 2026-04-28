@@ -26,7 +26,7 @@ const signOut = vi.fn();
 vi.mock("@clerk/react", () => ({
   useUser: () => ({
     user: {
-      primaryEmailAddress: { emailAddress: "operator@example.com" },
+      primaryEmailAddress: { emailAddress: "admin@example.com" },
     },
   }),
   useClerk: () => ({ signOut }),
@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe("NotAuthorizedPage", () => {
-  describe('reason="not-authorized" (403, signed-in non-operator)', () => {
+  describe('reason="not-authorized" (403, signed-in non-admin)', () => {
     it("renders the access-denied copy and a Sign out button", () => {
       render(<NotAuthorizedPage reason="not-authorized" />);
 
@@ -50,14 +50,14 @@ describe("NotAuthorizedPage", () => {
       expect(screen.getByText("Not authorized")).toBeDefined();
       expect(
         screen.getByText(
-          /This account isn't approved for the operator console/i,
+          /This account isn't approved for the admin console/i,
         ),
       ).toBeDefined();
 
-      // Echoes the signed-in email so the operator can see WHICH
+      // Echoes the signed-in email so the admin can see WHICH
       // account is being denied (they may have multiple Penn
       // identities).
-      expect(screen.getAllByText(/operator@example\.com/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/admin@example\.com/).length).toBeGreaterThan(0);
 
       // Action surface: Sign out, NOT Try again.
       expect(screen.getByRole("button", { name: /sign out/i })).toBeDefined();
@@ -90,25 +90,25 @@ describe("NotAuthorizedPage", () => {
   });
 
   describe('reason="not-configured" (HTTP 503, allowlist env var missing)', () => {
-    it("renders the deploy-side-fix copy and references RESUPPLY_OPERATOR_EMAILS", () => {
+    it("renders the deploy-side-fix copy and references RESUPPLY_ADMIN_EMAILS", () => {
       render(<NotAuthorizedPage reason="not-configured" />);
 
       // Eyebrow + headline distinguishes this from the 403 branch.
       expect(screen.getByText("Server not configured")).toBeDefined();
       expect(
         screen.getByText(
-          /Operator access isn't set up on this server yet/i,
+          /Admin access isn't set up on this server yet/i,
         ),
       ).toBeDefined();
 
-      // The whole point of this branch is telling the operator
+      // The whole point of this branch is telling the admin
       // that retrying / signing out won't help — the fix is
       // server-side. We surface the env-var name so they have a
       // concrete thing to reference when they file the IT ticket.
-      expect(screen.getByText("RESUPPLY_OPERATOR_EMAILS")).toBeDefined();
+      expect(screen.getByText("RESUPPLY_ADMIN_EMAILS")).toBeDefined();
 
       // Critical: this branch must NOT render any retry / sign-out
-      // surface. Showing one would imply the operator can self-
+      // surface. Showing one would imply the admin can self-
       // serve out of this state, which they can't.
       expect(
         screen.queryByRole("button", { name: /try again/i }),
@@ -123,7 +123,7 @@ describe("NotAuthorizedPage", () => {
     it("renders the connection-problem copy and a Try again button", () => {
       render(<NotAuthorizedPage reason="transient" />);
 
-      // Eyebrow says "Connection problem" — operator-friendly
+      // Eyebrow says "Connection problem" — admin-friendly
       // language for "we don't think this is your fault" — distinct
       // from "Not authorized". The architect fix that this test
       // guards against is a regression that re-routes 502 back to

@@ -13,7 +13,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { frequencyRules, getDbPool } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -54,7 +54,7 @@ const patchBody = z
 
 const router: IRouter = Router();
 
-router.patch("/rules/:id", requireOperator, async (req, res) => {
+router.patch("/rules/:id", requireAdmin, async (req, res) => {
   const idParsed = idParam.safeParse(req.params);
   if (!idParsed.success) {
     res.status(404).json({ error: "not_found" });
@@ -155,8 +155,8 @@ router.patch("/rules/:id", requireOperator, async (req, res) => {
   try {
     await logAudit({
       action: "rules.update",
-      operatorEmail: req.operatorEmail ?? null,
-      operatorClerkId: req.operatorClerkId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminClerkId: req.adminClerkId ?? null,
       targetTable: "frequency_rules",
       targetId: idParsed.data.id,
       ip: req.ip ?? null,

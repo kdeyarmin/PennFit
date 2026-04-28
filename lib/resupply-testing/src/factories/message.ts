@@ -6,7 +6,7 @@ type MessageInsertValue = PgInsertValue<typeof messages>;
 
 export interface MessageFixtureSpec {
   direction: "inbound" | "outbound";
-  senderRole: "patient" | "operator" | "agent" | "system";
+  senderRole: "patient" | "admin" | "agent" | "system";
   /** Plaintext body — the factory wraps it in encrypt(). */
   body: string;
   deliveryStatus: string | null;

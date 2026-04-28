@@ -1,4 +1,4 @@
-# ADR 005 — Clerk for operator auth (not AWS Cognito)
+# ADR 005 — Clerk for admin auth (not AWS Cognito)
 
 ## Context
 
@@ -10,11 +10,11 @@ same monorepo.
 
 ## Decision
 
-Use Clerk for operator authentication on the resupply dashboard, mirroring
+Use Clerk for admin authentication on the resupply dashboard, mirroring
 Penn Fit's pattern.
 
-- Operator allowlist: a comma-separated `RESUPPLY_OPERATOR_EMAILS` env var,
-  checked by a `requireOperator` middleware against the user's
+- Admin allowlist: a comma-separated `RESUPPLY_ADMIN_EMAILS` env var,
+  checked by a `requireAdmin` middleware against the user's
   Clerk-verified primary email.
 - The middleware fails closed in production when the allowlist is unset.
 - Patients are NOT given Clerk accounts. The patient self-service portal
@@ -22,7 +22,7 @@ Penn Fit's pattern.
   supports natively.
 
 The same pattern (Clerk allowlist) gates the Penn Fit admin dashboard, so
-operators get one login for both products if they are listed in both
+admins get one login for both products if they are listed in both
 allowlists.
 
 ## Consequences
@@ -30,7 +30,7 @@ allowlists.
 - One auth vendor across both products. One BAA to negotiate (Clerk
   Enterprise BAA — confirm before launch).
 - If Clerk's BAA terms become unworkable, we must migrate. The
-  `requireOperator` middleware already abstracts auth, so the migration
+  `requireAdmin` middleware already abstracts auth, so the migration
   surface is small.
 
 ## Alternatives Considered
@@ -39,7 +39,7 @@ allowlists.
 - **Self-rolled JWT auth** — rejected. Auth is hard; we are not the
   experts.
 - **Replit Auth** — fine for internal tools but not appropriate for a
-  HIPAA-bound operator console where we need verified email + audit
+  HIPAA-bound admin console where we need verified email + audit
   evidence + the ability to revoke sessions on demand.
 
 ## TODO

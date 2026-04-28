@@ -1,7 +1,7 @@
 // GET /conversations/:id — conversation detail with decrypted messages.
 //
 // This is the only endpoint that surfaces decrypted message bodies to
-// the operator console. Decryption happens in the SELECT projection
+// the admin console. Decryption happens in the SELECT projection
 // via `decrypt(messages.body)` so plaintext PHI never lives in Node
 // memory between Postgres and the JSON serialiser.
 //
@@ -25,13 +25,13 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
 
 const router: IRouter = Router();
 
-router.get("/conversations/:id", requireOperator, async (req, res) => {
+router.get("/conversations/:id", requireAdmin, async (req, res) => {
   const parsed = idParam.safeParse(req.params);
   if (!parsed.success) {
     res.status(404).json({ error: "not_found" });
@@ -90,8 +90,8 @@ router.get("/conversations/:id", requireOperator, async (req, res) => {
   try {
     await logAudit({
       action: "conversation.view",
-      operatorEmail: req.operatorEmail ?? null,
-      operatorClerkId: req.operatorClerkId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminClerkId: req.adminClerkId ?? null,
       targetTable: "conversations",
       targetId: id,
       ip: req.ip ?? null,

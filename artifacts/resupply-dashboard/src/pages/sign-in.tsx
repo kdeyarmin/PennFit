@@ -4,7 +4,7 @@ import { SignIn } from "@clerk/react";
 // base path so the same component can serve `/sign-in/*` (Clerk's
 // multi-step flow uses sub-paths internally for verify-email,
 // MFA, etc.). All redirects target the dashboard root, where the
-// operator gate runs the /me probe and routes to either the console
+// admin gate runs the /me probe and routes to either the console
 // or the "not authorized" screen.
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");

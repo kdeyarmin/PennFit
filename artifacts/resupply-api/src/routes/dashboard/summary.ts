@@ -1,15 +1,15 @@
-// GET /dashboard/summary — top-of-page operator counters.
+// GET /dashboard/summary — top-of-page admin counters.
 //
 // Five COUNT(*) queries over the resupply.* tables. No PHI in the
 // response — every value is a row count. Run as separate queries
 // rather than one giant UNION because (a) it's clearer, (b) the
 // table-level indexes already make each one cheap, and (c) each one
-// can fail independently and the operator gets a 500 with a clean
+// can fail independently and the admin gets a 500 with a clean
 // log message rather than a partially-populated dashboard.
 //
 // We do NOT write an audit row for this endpoint: the response
 // contains no PHI and no row identifiers, so there is nothing to
-// audit beyond "the operator opened the dashboard" — covered by
+// audit beyond "the admin opened the dashboard" — covered by
 // the existing /me audit on session bootstrap.
 
 import { Router, type IRouter } from "express";
@@ -24,11 +24,11 @@ import {
   patients,
 } from "@workspace/resupply-db";
 
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-router.get("/dashboard/summary", requireOperator, async (_req, res) => {
+router.get("/dashboard/summary", requireAdmin, async (_req, res) => {
   const db = drizzle(getDbPool());
 
   const countCol = sql<number>`count(*)::int`;
@@ -40,14 +40,14 @@ router.get("/dashboard/summary", requireOperator, async (_req, res) => {
       inArray(conversations.status, [
         "open",
         "awaiting_patient",
-        "awaiting_operator",
+        "awaiting_admin",
       ]),
     );
 
-  const [awaitingOperatorRow] = await db
+  const [awaitingAdminRow] = await db
     .select({ count: countCol })
     .from(conversations)
-    .where(eq(conversations.status, "awaiting_operator"));
+    .where(eq(conversations.status, "awaiting_admin"));
 
   const [overdueEpisodesRow] = await db
     .select({ count: countCol })
@@ -71,7 +71,7 @@ router.get("/dashboard/summary", requireOperator, async (_req, res) => {
 
   res.status(200).json({
     activeConversations: activeConversationsRow?.count ?? 0,
-    awaitingOperator: awaitingOperatorRow?.count ?? 0,
+    awaitingAdmin: awaitingAdminRow?.count ?? 0,
     overdueEpisodes: overdueEpisodesRow?.count ?? 0,
     fulfillmentsThisWeek: fulfillmentsThisWeekRow?.count ?? 0,
     pausedPatients: pausedPatientsRow?.count ?? 0,

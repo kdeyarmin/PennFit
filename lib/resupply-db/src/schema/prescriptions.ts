@@ -18,7 +18,7 @@ import { resupplySchema } from "./_schema";
  *
  * Why each column lives where it does:
  *   - `patientId` — owning patient. ON DELETE CASCADE is intentional:
- *     when a patient row is deleted (operator-initiated PHI purge), every
+ *     when a patient row is deleted (admin-initiated PHI purge), every
  *     prescription on file is also deleted.
  *   - `itemSku` and `cadenceDays` — the operational fields the eligibility
  *     engine reads on every tick. Plaintext, indexed.

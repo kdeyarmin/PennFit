@@ -1,7 +1,7 @@
 // Route tests for POST /voice/place-call.
 //
 // Mocking strategy:
-//   - Mock @clerk/express so requireOperator can be exercised without
+//   - Mock @clerk/express so requireAdmin can be exercised without
 //     a real Clerk lookup.
 //   - Mock drizzle so we can stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioClient so we
@@ -103,7 +103,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(email = ALLOWED_EMAIL): void {
+function stubVerifiedAdmin(email = ALLOWED_EMAIL): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -123,7 +123,7 @@ const ENV_KEYS = [
   "TWILIO_AUTH_TOKEN",
   "TWILIO_PHONE_NUMBER",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
-  "RESUPPLY_OPERATOR_EMAILS",
+  "RESUPPLY_ADMIN_EMAILS",
   "NODE_ENV",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
@@ -135,7 +135,7 @@ function setVoiceEnv(): void {
   process.env.TWILIO_AUTH_TOKEN = "test-twilio-token";
   process.env.TWILIO_PHONE_NUMBER = "+12158675309";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
-  process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+  process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.NODE_ENV = "test";
 }
 
@@ -165,8 +165,8 @@ describe("POST /voice/place-call", () => {
   });
 
   it("returns 503 voice_not_configured when env is missing", async () => {
-    stubVerifiedOperator();
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    stubVerifiedAdmin();
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
@@ -185,7 +185,7 @@ describe("POST /voice/place-call", () => {
 
   it("returns 400 on invalid body", async () => {
     setVoiceEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: "not-a-uuid" });
@@ -195,7 +195,7 @@ describe("POST /voice/place-call", () => {
 
   it("returns 404 when patient does not exist", async () => {
     setVoiceEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([]); // patient lookup → empty
     const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
@@ -206,7 +206,7 @@ describe("POST /voice/place-call", () => {
 
   it("returns 422 when patient has no phone", async () => {
     setVoiceEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       { id: PATIENT_ID, phoneE164: null, status: "active" },
     ]);
@@ -219,7 +219,7 @@ describe("POST /voice/place-call", () => {
 
   it("returns 422 on episode/patient mismatch", async () => {
     setVoiceEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       { id: PATIENT_ID, phoneE164: "+12155551212", status: "active" },
     ]);
@@ -235,7 +235,7 @@ describe("POST /voice/place-call", () => {
 
   it("dials Twilio, creates conversation, registers pending session, audits, returns 201", async () => {
     setVoiceEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       { id: PATIENT_ID, phoneE164: "+12155551212", status: "active" },
     ]);
@@ -286,7 +286,7 @@ describe("POST /voice/place-call", () => {
 
   it("returns 502 + audits twilio_error when Twilio API rejects", async () => {
     setVoiceEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       { id: PATIENT_ID, phoneE164: "+12155551212", status: "active" },
     ]);
@@ -305,7 +305,7 @@ describe("POST /voice/place-call", () => {
     expect(res.body.error).toBe("twilio_api_error");
     expect(res.body.twilioStatus).toBe(400);
 
-    // We DO audit the failed attempt — operator initiated the call,
+    // We DO audit the failed attempt — admin initiated the call,
     // the dashboard timeline must show that.
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect(logAuditMock.mock.calls[0][0].metadata.status).toBe("twilio_error");

@@ -174,7 +174,7 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
     const conversationId = insertedConvo!.id;
 
     // 5. One outbound + one inbound message — outbound has the
-    //    operator-attempted body, inbound is the patient's reply.
+    //    admin-attempted body, inbound is the patient's reply.
     const [insertedOutbound] = await db
       .insert(messages)
       .values(

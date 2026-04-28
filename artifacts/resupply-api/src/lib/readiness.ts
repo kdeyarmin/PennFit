@@ -4,7 +4,7 @@ import { logger } from "./logger";
 // What "ready" means for the resupply API:
 //
 //   db    — Postgres is reachable AND accepting queries from this
-//           process's connection pool. Anything operator-facing fails
+//           process's connection pool. Anything admin-facing fails
 //           if the DB is down, so this is a hard requirement.
 //   queue — pg-boss has bootstrapped its schema. We don't start
 //           pg-boss in the API process (the worker owns it — see
@@ -122,7 +122,7 @@ export async function checkReadiness(): Promise<ReadinessResult> {
     // fragments ("password authentication failed for user X on host
     // Y", "database X does not exist"). The HTTP body redaction is
     // already proven by the integration test; this keeps the
-    // operator-readable log stream equally clean. Treat every log
+    // admin-readable log stream equally clean. Treat every log
     // line as world-readable.
     logger.warn(
       { errCategory: errors.db },

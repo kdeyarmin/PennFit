@@ -85,7 +85,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -110,7 +110,7 @@ const ENV_KEYS = [
   "RESUPPLY_PHONE_HMAC_KEY",
   "RESUPPLY_LINK_HMAC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
-  "RESUPPLY_OPERATOR_EMAILS",
+  "RESUPPLY_ADMIN_EMAILS",
   "NODE_ENV",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
@@ -127,7 +127,7 @@ function setMessagingEnv(): void {
   process.env.RESUPPLY_PHONE_HMAC_KEY = "phone-hmac-test-key-32bytesXXXXXX";
   process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
-  process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+  process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.NODE_ENV = "test";
 }
 
@@ -155,8 +155,8 @@ describe("POST /email/send-reminder", () => {
   });
 
   it("returns 503 messaging_not_configured when env is missing", async () => {
-    stubVerifiedOperator();
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    stubVerifiedAdmin();
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     const res = await request(makeApp())
       .post("/resupply-api/email/send-reminder")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
@@ -166,7 +166,7 @@ describe("POST /email/send-reminder", () => {
 
   it("returns 400 on invalid body", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     const res = await request(makeApp())
       .post("/resupply-api/email/send-reminder")
       .send({ patientId: "not-a-uuid" });
@@ -176,7 +176,7 @@ describe("POST /email/send-reminder", () => {
 
   it("returns 422 when patient has no email", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,
@@ -194,7 +194,7 @@ describe("POST /email/send-reminder", () => {
 
   it("sends, opens conversation, audits, returns 201, scrubs email PHI", async () => {
     setMessagingEnv();
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([
       {
         id: PATIENT_ID,

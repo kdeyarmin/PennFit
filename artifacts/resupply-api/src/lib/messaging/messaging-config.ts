@@ -14,7 +14,7 @@
 //
 // SMS-only and email-only sub-feature flags:
 //   We expose `readSmsConfigOrNull()` and `readEmailConfigOrNull()`
-//   separately so an operator can ship SMS without SendGrid (or vice
+//   separately so an admin can ship SMS without SendGrid (or vice
 //   versa). The aggregate `readMessagingConfigOrNull()` is true only
 //   when both are configured AND the two cross-cutting HMAC keys
 //   (phone, link) are set.

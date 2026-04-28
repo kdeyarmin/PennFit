@@ -30,7 +30,7 @@ export const logger = pino({
     // Stack traces normally embed the message at the top
     // (`Error: <message>\n    at ...`), so redacting message
     // without redacting stack would leak the same secret one field
-    // over. Operators lose stack visibility on `{ err }` logs by
+    // over. Admins lose stack visibility on `{ err }` logs by
     // design — call sites that NEED a stack should categorize
     // (e.g. `{ errCategory: 'db.timeout', stackHash }`) instead of
     // dumping `err`.

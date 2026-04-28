@@ -4,7 +4,7 @@
 //   - Returns a tagged-union outcome (no exceptions on recoverable
 //     errors).
 //   - Audits success and SendGrid-failure paths from inside the helper.
-//   - Vendor-config errors throw — caller must surface to operator.
+//   - Vendor-config errors throw — caller must surface to admin.
 //
 // What's different from SMS:
 //   - No phone_lookup upsert (email channel uses signed link tokens

@@ -1,21 +1,21 @@
-// GET /patients — paginated patient list for the operator console.
+// GET /patients — paginated patient list for the admin console.
 //
 // Decrypts firstName + lastName for display via the existing
 // `decrypt(...)` SQL helper so plaintext PHI never crosses the
 // process boundary into Node memory between Postgres and the JSON
 // response. Phone + email are never returned — they are surfaced
 // as boolean `hasPhone` / `hasEmail` markers (CASE WHEN NOT NULL)
-// so the operator can see "this patient is reachable on SMS" without
+// so the admin can see "this patient is reachable on SMS" without
 // the page itself rendering the number.
 //
 // `search` is matched against the plaintext, indexed `pacware_id`
 // AND against the decrypted first/last name. Decrypted-name search
-// is a Postgres-side full scan; the limit cap and the operator-only
-// gate make this acceptable for the small steady-state operator
+// is a Postgres-side full scan; the limit cap and the admin-only
+// gate make this acceptable for the small steady-state admin
 // workload.
 //
 // We do NOT write an audit row per list-view: list pages are
-// page-flipped many times during normal operator workflow and one
+// page-flipped many times during normal admin workflow and one
 // audit row per page-flip drowns the audit log. The /patients/{id}
 // detail view does write an audit row (see ./detail.ts).
 
@@ -26,7 +26,7 @@ import { z } from "zod";
 
 import { decrypt, getDbPool, patients } from "@workspace/resupply-db";
 
-import { requireOperator } from "../../middlewares/requireOperator";
+import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const listQuery = z
   .object({
@@ -39,7 +39,7 @@ const listQuery = z
 
 const router: IRouter = Router();
 
-router.get("/patients", requireOperator, async (req, res) => {
+router.get("/patients", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({

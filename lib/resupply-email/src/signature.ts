@@ -146,7 +146,7 @@ export interface RequireSendgridSignatureOptions {
  * cannot reproduce the bytes SendGrid signed.
  *
  * 401 on missing/bad signature; 503 on missing public-key env so
- * operators see the misconfig immediately instead of every event
+ * admins see the misconfig immediately instead of every event
  * silently 401ing.
  */
 export function requireSendgridSignature(

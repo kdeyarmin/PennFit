@@ -2,7 +2,7 @@
 //
 // Same fluent-stub pattern as sms/inbound.test.ts. We queue one
 // `[{ count }]` row per COUNT(*) query in the order the handler
-// runs them: activeConversations, awaitingOperator, overdueEpisodes,
+// runs them: activeConversations, awaitingAdmin, overdueEpisodes,
 // fulfillmentsThisWeek, pausedPatients.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -60,7 +60,7 @@ function makeApp(): Express {
   return app;
 }
 
-function stubVerifiedOperator(): void {
+function stubVerifiedAdmin(): void {
   getAuthMock.mockReturnValue({ userId: "user_op" });
   getUserMock.mockResolvedValue({
     primaryEmailAddressId: "eml_1",
@@ -74,7 +74,7 @@ function stubVerifiedOperator(): void {
   });
 }
 
-const ENV_KEYS = ["RESUPPLY_OPERATOR_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -83,7 +83,7 @@ describe("GET /dashboard/summary", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
     getAuthMock.mockReset();
     getUserMock.mockReset();
@@ -103,9 +103,9 @@ describe("GET /dashboard/summary", () => {
   });
 
   it("returns the five COUNT(*) values in the response body", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([{ count: 7 }]); // activeConversations
-    selectQueue.push([{ count: 3 }]); // awaitingOperator
+    selectQueue.push([{ count: 3 }]); // awaitingAdmin
     selectQueue.push([{ count: 12 }]); // overdueEpisodes
     selectQueue.push([{ count: 41 }]); // fulfillmentsThisWeek
     selectQueue.push([{ count: 2 }]); // pausedPatients
@@ -114,7 +114,7 @@ describe("GET /dashboard/summary", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       activeConversations: 7,
-      awaitingOperator: 3,
+      awaitingAdmin: 3,
       overdueEpisodes: 12,
       fulfillmentsThisWeek: 41,
       pausedPatients: 2,
@@ -122,7 +122,7 @@ describe("GET /dashboard/summary", () => {
   });
 
   it("defaults a missing count row to 0", async () => {
-    stubVerifiedOperator();
+    stubVerifiedAdmin();
     selectQueue.push([]);
     selectQueue.push([{ count: 1 }]);
     selectQueue.push([]);
@@ -133,7 +133,7 @@ describe("GET /dashboard/summary", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       activeConversations: 0,
-      awaitingOperator: 1,
+      awaitingAdmin: 1,
       overdueEpisodes: 0,
       fulfillmentsThisWeek: 0,
       pausedPatients: 0,
