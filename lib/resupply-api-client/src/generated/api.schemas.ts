@@ -192,6 +192,126 @@ and emit a `voice.call.completed` audit row.
   CallStatus: TwilioStatusCallbackBodyCallStatus;
 }
 
+/**
+ * Operator instruction to send an outbound SMS reminder.
+
+ */
+export interface SendSmsReminderRequest {
+  /** Patient row to message. */
+  patientId: string;
+  /** Episode the reminder is associated with. Optional — if
+omitted, the most recent episode for this patient is
+used. When provided, must belong to patientId.
+ */
+  episodeId?: string;
+  /**
+   * Optional override for the SMS body. When omitted, the
+server renders the default reminder template using the
+patient's first name.
+
+   * @minLength 1
+   * @maxLength 1600
+   */
+  body?: string;
+}
+
+/**
+ * Returned on a successful SMS reminder dispatch. Contains only
+opaque identifiers — never the patient phone number.
+
+ */
+export interface SendSmsReminderResponse {
+  /** New conversations row id. */
+  conversationId: string;
+  /** Twilio MessageSid for cross-referencing with Twilio logs. */
+  messageSid: string;
+}
+
+/**
+ * Operator instruction to send an outbound email reminder.
+
+ */
+export interface SendEmailReminderRequest {
+  /** Patient row to message. */
+  patientId: string;
+  /** Episode the reminder is associated with. Optional — if
+omitted, the most recent episode for this patient is
+used. When provided, must belong to patientId.
+ */
+  episodeId?: string;
+}
+
+/**
+ * Returned on a successful email reminder dispatch. Contains
+only opaque identifiers — never the patient email address.
+
+ */
+export interface SendEmailReminderResponse {
+  /** New conversations row id. */
+  conversationId: string;
+  /** SendGrid X-Message-Id for cross-referencing in SendGrid. */
+  messageId: string;
+}
+
+/**
+ * Stable error code.
+ */
+export type MessagingErrorError =
+  (typeof MessagingErrorError)[keyof typeof MessagingErrorError];
+
+export const MessagingErrorError = {
+  messaging_not_configured: "messaging_not_configured",
+  patient_not_found: "patient_not_found",
+  patient_not_active: "patient_not_active",
+  patient_missing_phone: "patient_missing_phone",
+  patient_missing_email: "patient_missing_email",
+  patient_phone_unnormalizable: "patient_phone_unnormalizable",
+  episode_not_found: "episode_not_found",
+  episode_patient_mismatch: "episode_patient_mismatch",
+  no_episode_for_patient: "no_episode_for_patient",
+  conversation_create_failed: "conversation_create_failed",
+  twilio_config_error: "twilio_config_error",
+  twilio_api_error: "twilio_api_error",
+  sendgrid_config_error: "sendgrid_config_error",
+  sendgrid_api_error: "sendgrid_api_error",
+} as const;
+
+/**
+ * Error body returned by SMS+Email endpoints. Carries a stable
+machine-readable `error` code and an optional human-readable
+`message`. NEVER carries vendor error text or PHI.
+
+ */
+export interface MessagingError {
+  /** Stable error code. */
+  error: MessagingErrorError;
+  message?: string;
+  twilioStatus?: number;
+  twilioCode?: string;
+  sendgridStatus?: number;
+}
+
+export type MessagingValidationErrorError =
+  (typeof MessagingValidationErrorError)[keyof typeof MessagingValidationErrorError];
+
+export const MessagingValidationErrorError = {
+  invalid_body: "invalid_body",
+} as const;
+
+export type MessagingValidationErrorIssuesItem = {
+  path: string;
+  message: string;
+};
+
+/**
+ * Returned when an SMS+Email request body fails zod validation.
+
+ */
+export interface MessagingValidationError {
+  error: MessagingValidationErrorError;
+  issues: MessagingValidationErrorIssuesItem[];
+}
+
 export type ReadinessStatusStatus =
   (typeof ReadinessStatusStatus)[keyof typeof ReadinessStatusStatus];
 
@@ -225,6 +345,13 @@ whose check failed.
  */
   errors?: ReadinessStatusErrors;
 }
+
+export type HandleEmailClickParams = {
+  /**
+   * HMAC-signed link token. Carries `{conversationId, action, exp}`.
+   */
+  t: string;
+};
 
 export type VoiceStatusCallbackParams = {
   /**

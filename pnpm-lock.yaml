@@ -717,6 +717,15 @@ importers:
       '@workspace/resupply-domain':
         specifier: workspace:*
         version: link:../../lib/resupply-domain
+      '@workspace/resupply-email':
+        specifier: workspace:*
+        version: link:../../lib/resupply-email
+      '@workspace/resupply-messaging':
+        specifier: workspace:*
+        version: link:../../lib/resupply-messaging
+      '@workspace/resupply-reminders':
+        specifier: workspace:*
+        version: link:../../lib/resupply-reminders
       '@workspace/resupply-telecom':
         specifier: workspace:*
         version: link:../../lib/resupply-telecom
@@ -866,6 +875,15 @@ importers:
       '@workspace/resupply-domain':
         specifier: workspace:*
         version: link:../../lib/resupply-domain
+      '@workspace/resupply-email':
+        specifier: workspace:*
+        version: link:../../lib/resupply-email
+      '@workspace/resupply-messaging':
+        specifier: workspace:*
+        version: link:../../lib/resupply-messaging
+      '@workspace/resupply-reminders':
+        specifier: workspace:*
+        version: link:../../lib/resupply-reminders
       '@workspace/resupply-telecom':
         specifier: workspace:*
         version: link:../../lib/resupply-telecom
@@ -1044,6 +1062,69 @@ importers:
       fast-check:
         specifier: ^3.23.2
         version: 3.23.2
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.31.1)
+
+  lib/resupply-email:
+    dependencies:
+      '@sendgrid/mail':
+        specifier: ^8.1.4
+        version: 8.1.6
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.31.1)
+
+  lib/resupply-messaging:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.31.1)
+
+  lib/resupply-reminders:
+    dependencies:
+      '@workspace/resupply-audit':
+        specifier: workspace:*
+        version: link:../resupply-audit
+      '@workspace/resupply-db':
+        specifier: workspace:*
+        version: link:../resupply-db
+      '@workspace/resupply-email':
+        specifier: workspace:*
+        version: link:../resupply-email
+      '@workspace/resupply-messaging':
+        specifier: workspace:*
+        version: link:../resupply-messaging
+      '@workspace/resupply-telecom':
+        specifier: workspace:*
+        version: link:../resupply-telecom
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      '@types/pg':
+        specifier: ^8.18.0
+        version: 8.18.0
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.31.1)
@@ -2238,6 +2319,18 @@ packages:
   '@sec-ant/readable-stream@0.4.1':
     resolution: {integrity: sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==}
 
+  '@sendgrid/client@8.1.6':
+    resolution: {integrity: sha512-/BHu0hqwXNHr2aLhcXU7RmmlVqrdfrbY9KpaNj00KZHlVOVoRxRVrpOCabIB+91ISXJ6+mLM9vpaVUhK6TwBWA==}
+    engines: {node: '>=12.*'}
+
+  '@sendgrid/helpers@8.0.0':
+    resolution: {integrity: sha512-Ze7WuW2Xzy5GT5WRx+yEv89fsg/pgy3T1E3FS0QEx0/VvRmigMZ5qyVGhJz4SxomegDkzXv/i0aFPpHKN8qdAA==}
+    engines: {node: '>= 12.0.0'}
+
+  '@sendgrid/mail@8.1.6':
+    resolution: {integrity: sha512-/ZqxUvKeEztU9drOoPC/8opEPOk+jLlB2q4+xpx6HVLq6aFu3pMpalkTpAQz8XfRfpLp8O25bh6pGPcHDCYpqg==}
+    engines: {node: '>=12.*'}
+
   '@shikijs/engine-oniguruma@3.23.0':
     resolution: {integrity: sha512-1nWINwKXxKKLqPibT5f4pAFLej9oZzQTsby8942OTlsJzOBZ0MWKiwzMsd+jhzu8YPCHAswGnnN1YtQfirL35g==}
 
@@ -2917,6 +3010,10 @@ packages:
 
   deep-is@0.1.4:
     resolution: {integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==}
+
+  deepmerge@4.3.1:
+    resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
+    engines: {node: '>=0.10.0'}
 
   delayed-stream@1.0.0:
     resolution: {integrity: sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==}
@@ -6187,6 +6284,24 @@ snapshots:
 
   '@sec-ant/readable-stream@0.4.1': {}
 
+  '@sendgrid/client@8.1.6':
+    dependencies:
+      '@sendgrid/helpers': 8.0.0
+      axios: 1.15.2
+    transitivePeerDependencies:
+      - debug
+
+  '@sendgrid/helpers@8.0.0':
+    dependencies:
+      deepmerge: 4.3.1
+
+  '@sendgrid/mail@8.1.6':
+    dependencies:
+      '@sendgrid/client': 8.1.6
+      '@sendgrid/helpers': 8.0.0
+    transitivePeerDependencies:
+      - debug
+
   '@shikijs/engine-oniguruma@3.23.0':
     dependencies:
       '@shikijs/types': 3.23.0
@@ -6902,6 +7017,8 @@ snapshots:
   deep-eql@5.0.2: {}
 
   deep-is@0.1.4: {}
+
+  deepmerge@4.3.1: {}
 
   delayed-stream@1.0.0: {}
 

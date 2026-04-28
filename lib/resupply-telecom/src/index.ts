@@ -46,3 +46,18 @@ export {
   type PlaceCallResult,
   type RawTwilioSdk,
 } from "./client";
+
+export {
+  createTwilioSmsClient,
+  parseInboundSmsParams,
+  parseSmsStatusCallbackParams,
+  inboundSmsParamsSchema,
+  smsStatusCallbackParamsSchema,
+  type SendSmsInput,
+  type SendSmsResult,
+  type CreateTwilioSmsClientOptions,
+  type TwilioSmsClient,
+  type RawTwilioMessagingSdk,
+  type InboundSmsParams,
+  type SmsStatusCallbackParams,
+} from "./sms";

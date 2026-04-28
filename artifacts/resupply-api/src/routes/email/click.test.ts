@@ -1,0 +1,257 @@
+// Route tests for GET /email/click.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import express, { type Express } from "express";
+import request from "supertest";
+
+function fluent(result: unknown) {
+  const obj: Record<string, unknown> = {
+    from: () => obj,
+    where: () => obj,
+    set: () => obj,
+    values: () => obj,
+    limit: () => Promise.resolve(result),
+    returning: () => Promise.resolve(result),
+    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+      Promise.resolve(result).then(resolve, reject),
+  };
+  return obj;
+}
+const selectQueue: unknown[] = [];
+const updateQueue: unknown[] = [];
+const dbStub = {
+  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
+  insert: vi.fn(() => fluent([])),
+  update: vi.fn(() => fluent(updateQueue.shift() ?? undefined)),
+};
+vi.mock("drizzle-orm/node-postgres", () => ({
+  drizzle: () => dbStub,
+}));
+
+vi.mock("@workspace/resupply-db", async () => {
+  const actual =
+    await vi.importActual<typeof import("@workspace/resupply-db")>(
+      "@workspace/resupply-db",
+    );
+  return {
+    ...actual,
+    getDbPool: () => ({}) as never,
+  };
+});
+
+const logAuditMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@workspace/resupply-audit", () => ({
+  logAudit: (...a: unknown[]) => logAuditMock(...a),
+}));
+
+const placeOrderMock = vi.fn();
+const pausePatientMock = vi.fn();
+vi.mock("../../lib/messaging/order-flow", () => ({
+  placeResupplyOrderForConversation: (...a: unknown[]) => placeOrderMock(...a),
+  pausePatient: (...a: unknown[]) => pausePatientMock(...a),
+}));
+
+import clickRouter from "./click";
+import { signLinkToken } from "@workspace/resupply-messaging";
+
+const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
+const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
+const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
+
+function makeApp(): Express {
+  const app = express();
+  app.use("/resupply-api", clickRouter);
+  return app;
+}
+
+const ENV_KEYS = [
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_PHONE_NUMBER",
+  "SENDGRID_API_KEY",
+  "SENDGRID_FROM_EMAIL",
+  "SENDGRID_FROM_NAME",
+  "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY",
+  "RESUPPLY_PHONE_HMAC_KEY",
+  "RESUPPLY_LINK_HMAC_KEY",
+  "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+] as const;
+type EnvKey = (typeof ENV_KEYS)[number];
+const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
+
+function setMessagingEnv(): void {
+  process.env.TWILIO_ACCOUNT_SID = "ACtest";
+  process.env.TWILIO_AUTH_TOKEN = "test-twilio-token";
+  process.env.TWILIO_PHONE_NUMBER = "+12158675309";
+  process.env.SENDGRID_API_KEY = "SG.testkey";
+  process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
+  process.env.SENDGRID_FROM_NAME = "Penn Sleep";
+  process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
+  process.env.RESUPPLY_PHONE_HMAC_KEY = "phone-hmac-test-key-32bytesXXXXXX";
+  process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
+  process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
+}
+
+describe("GET /email/click", () => {
+  beforeEach(() => {
+    for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
+    for (const k of ENV_KEYS) delete process.env[k];
+    selectQueue.length = 0;
+    updateQueue.length = 0;
+    logAuditMock.mockReset().mockResolvedValue(undefined);
+    placeOrderMock.mockReset();
+    pausePatientMock.mockReset().mockResolvedValue(undefined);
+    dbStub.select.mockClear();
+    dbStub.insert.mockClear();
+    dbStub.update.mockClear();
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (originalEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = originalEnv[k];
+    }
+  });
+
+  it("returns 503 when messaging is not configured", async () => {
+    const res = await request(makeApp()).get(
+      "/resupply-api/email/click?t=anything",
+    );
+    expect(res.status).toBe(503);
+    expect(res.headers["content-type"]).toContain("text/html");
+  });
+
+  it("returns 400 on missing token", async () => {
+    setMessagingEnv();
+    const res = await request(makeApp()).get("/resupply-api/email/click");
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 on tampered token (signature mismatch)", async () => {
+    setMessagingEnv();
+    const good = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "confirm",
+    });
+    // Mutate one char of the signature segment.
+    const [payload, sig] = good.split(".");
+    const bad =
+      payload + "." + (sig.charAt(0) === "A" ? "B" : "A") + sig.slice(1);
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/email/click?t=${encodeURIComponent(bad)}`,
+    );
+    expect(res.status).toBe(400);
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 on expired token without leaking the conversation", async () => {
+    setMessagingEnv();
+    const expiredToken = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "confirm",
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    const res = await request(makeApp()).get(
+      `/resupply-api/email/click?t=${encodeURIComponent(expiredToken)}`,
+    );
+    expect(res.status).toBe(400);
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("renders generic error if conversation not found (no leak)", async () => {
+    setMessagingEnv();
+    const token = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "confirm",
+    });
+    selectQueue.push([]); // conversation lookup miss
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(400);
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("confirm: places order, closes conversation, audits, returns 200", async () => {
+    setMessagingEnv();
+    const token = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "confirm",
+    });
+    selectQueue.push([
+      { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
+    ]);
+    placeOrderMock.mockResolvedValue({
+      status: "ok",
+      episodeId: EPISODE_ID,
+      patientId: PATIENT_ID,
+      fulfillmentIds: ["f1"],
+    });
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    expect(placeOrderMock).toHaveBeenCalledWith({
+      conversationId: CONVERSATION_ID,
+    });
+    const audits = logAuditMock.mock.calls.map((c) => c[0]);
+    expect(audits.find((a) => a.action === "email.link.clicked")).toBeDefined();
+    expect(
+      audits.find((a) => a.action === "messaging.order.confirmed"),
+    ).toBeDefined();
+  });
+
+  it("stop: pauses patient, closes conversation, audits", async () => {
+    setMessagingEnv();
+    const token = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "stop",
+    });
+    selectQueue.push([
+      { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
+    ]);
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    expect(pausePatientMock).toHaveBeenCalledWith(PATIENT_ID);
+    const handoffAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find(
+        (a) =>
+          a.action === "messaging.handoff.escalated" &&
+          a.metadata.reason === "stop_link",
+      );
+    expect(handoffAudit).toBeDefined();
+  });
+
+  it("edit: parks conversation in awaiting_operator, audits", async () => {
+    setMessagingEnv();
+    const token = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "edit",
+    });
+    selectQueue.push([
+      { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
+    ]);
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
+    );
+    expect(res.status).toBe(200);
+    const handoffAudit = logAuditMock.mock.calls
+      .map((c) => c[0])
+      .find(
+        (a) =>
+          a.action === "messaging.handoff.escalated" &&
+          a.metadata.reason === "edit_address_link",
+      );
+    expect(handoffAudit).toBeDefined();
+    expect(placeOrderMock).not.toHaveBeenCalled();
+    expect(pausePatientMock).not.toHaveBeenCalled();
+  });
+});

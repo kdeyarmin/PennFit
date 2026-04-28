@@ -309,6 +309,58 @@ for noaudit in artifacts/resupply-api/src artifacts/resupply-worker/src \
   fi
 done
 
+# Rule 11: lib/resupply-messaging is a PURE semantic layer. It owns
+# the keyword router, intent enum, link-token signing, and email
+# templates — all of which are vendor-agnostic by design. Pulling in
+# `pg`, `@workspace/resupply-db`, `twilio`, `@sendgrid/mail`, `openai`,
+# `@anthropic-ai/sdk`, or `ws` from this layer would couple semantic
+# parsing to a specific vendor and re-create the exact "rendering
+# shouldn't know how it ships" mistake we've avoided in the API.
+# Quote-anchored so a comment mentioning a package name doesn't trip.
+forbid_imports_in lib/resupply-messaging/src \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer (keep it a pure semantic layer)" \
+  "@workspace/resupply-db['\"]" \
+  "['\"]pg['\"]" \
+  "['\"]twilio['\"]" \
+  "@sendgrid/mail['\"]" \
+  "['\"]openai['\"]" \
+  "@anthropic-ai/sdk['\"]" \
+  "['\"]ws['\"]"
+
+# Rule 12: lib/resupply-email is the pure SendGrid adapter. Symmetric
+# with Rule 10 (telecom) — it OWNS `@sendgrid/mail` (only sanctioned
+# place to import it) but must NEVER reach into the DB layer or any
+# AI/telecom vendor SDK. PHI lives encrypted in resupply.* and
+# arrives at this lib already-decrypted as plain strings; the lib
+# itself does not — and must not — know about pg/drizzle. Same
+# blast-radius reasoning as Rule 10.
+forbid_imports_in lib/resupply-email/src \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs (keep it a pure SendGrid adapter)" \
+  "@workspace/resupply-db['\"]" \
+  "['\"]pg['\"]" \
+  "['\"]twilio['\"]" \
+  "['\"]openai['\"]" \
+  "@anthropic-ai/sdk['\"]" \
+  "['\"]ws['\"]"
+
+# Rule 13: lib/resupply-reminders is the SHARED outbound-reminder code
+# path, called by both the operator-facing API routes and the worker's
+# pg-boss handlers. It IS allowed to import db/telecom/email/messaging/
+# audit (that is its entire job — composing them into a send pipeline)
+# and it IS allowed to import `pg` directly because the helpers receive
+# a Pool and need its TYPE in their signatures. It must NOT reach for
+# vendor SDKs directly — Twilio goes through resupply-telecom,
+# SendGrid goes through resupply-email, never inline. Inlining a
+# vendor SDK here would re-create the exact split-import problem the
+# resupply-{telecom,email} libs were built to prevent.
+forbid_imports_in lib/resupply-reminders/src \
+  "lib/resupply-reminders must not import vendor SDKs directly (use resupply-telecom / resupply-email wrappers)" \
+  "['\"]twilio['\"]" \
+  "@sendgrid/mail['\"]" \
+  "['\"]openai['\"]" \
+  "@anthropic-ai/sdk['\"]" \
+  "['\"]ws['\"]"
+
 if [[ "$errors" -gt 0 ]]; then
   echo "" >&2
   echo "$errors architecture rule violation(s). See docs/resupply/ARCHITECTURE.md for the full ruleset." >&2

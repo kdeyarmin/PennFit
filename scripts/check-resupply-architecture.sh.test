@@ -28,6 +28,9 @@ mkdir -p "$WORK"/lib/resupply-telecom/src
 mkdir -p "$WORK"/lib/resupply-ai/src
 mkdir -p "$WORK"/lib/resupply-audit/src
 mkdir -p "$WORK"/lib/resupply-testing/src
+mkdir -p "$WORK"/lib/resupply-messaging/src
+mkdir -p "$WORK"/lib/resupply-email/src
+mkdir -p "$WORK"/lib/resupply-reminders/src
 mkdir -p "$WORK"/artifacts/resupply-api/src
 mkdir -p "$WORK"/artifacts/resupply-worker/src
 mkdir -p "$WORK"/artifacts/resupply-dashboard/src
@@ -40,6 +43,9 @@ echo 'export {};' > "$WORK"/lib/resupply-telecom/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-ai/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-audit/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-testing/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-messaging/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-email/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-reminders/src/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-api/src/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-worker/src/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-dashboard/src/index.ts
@@ -518,6 +524,117 @@ await pool.query(
 EOF
 assert_pass "testing comment with INSERT word + legal DELETE FROM audit_log"
 rm "$WORK"/lib/resupply-testing/src/ok.ts
+
+# --- Rule 11: lib/resupply-messaging is a pure semantic layer --------
+echo "[self-test] Rule 11: messaging may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing @workspace/resupply-db" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import 'pg'"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing pg" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import 'twilio'"
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing twilio" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import '@sendgrid/mail'"
+echo 'import sg from "@sendgrid/mail";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing @sendgrid/mail" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import 'openai'"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing openai" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging importing 'zod' is allowed"
+echo 'import { z } from "zod";' > "$WORK"/lib/resupply-messaging/src/ok.ts
+assert_pass "messaging importing zod (allowed pure dep)"
+rm "$WORK"/lib/resupply-messaging/src/ok.ts
+
+# --- Rule 12: lib/resupply-email is the SendGrid adapter -------------
+echo "[self-test] Rule 12: email may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing @workspace/resupply-db" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email may not import 'pg'"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing pg" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email may not import 'twilio'"
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing twilio" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email may not import 'openai'"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing openai" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email importing '@sendgrid/mail' is allowed"
+# This is the WHOLE point of the lib — symmetric with Rule 10's
+# "telecom may import twilio" carve-out.
+echo 'import sg from "@sendgrid/mail";' > "$WORK"/lib/resupply-email/src/ok.ts
+assert_pass "email importing @sendgrid/mail (its own vendor)"
+rm "$WORK"/lib/resupply-email/src/ok.ts
+
+# --- Rule 13: lib/resupply-reminders composes through wrappers -------
+echo "[self-test] Rule 13: reminders may not import 'twilio' directly"
+# Twilio MUST go through resupply-telecom — inlining the SDK here
+# would re-create the split-import problem.
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-reminders/src/bad.ts
+assert_fail_with "reminders importing twilio directly" \
+  "lib/resupply-reminders must not import vendor SDKs directly"
+rm "$WORK"/lib/resupply-reminders/src/bad.ts
+
+echo "[self-test] Rule 13: reminders may not import '@sendgrid/mail' directly"
+echo 'import sg from "@sendgrid/mail";' > "$WORK"/lib/resupply-reminders/src/bad.ts
+assert_fail_with "reminders importing @sendgrid/mail directly" \
+  "lib/resupply-reminders must not import vendor SDKs directly"
+rm "$WORK"/lib/resupply-reminders/src/bad.ts
+
+echo "[self-test] Rule 13: reminders may not import 'openai' directly"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-reminders/src/bad.ts
+assert_fail_with "reminders importing openai directly" \
+  "lib/resupply-reminders must not import vendor SDKs directly"
+rm "$WORK"/lib/resupply-reminders/src/bad.ts
+
+echo "[self-test] Rule 13: reminders importing resupply-telecom is allowed"
+# This is the entire purpose of the package — composing the wrappers.
+echo 'import { createTwilioSmsClient } from "@workspace/resupply-telecom";' \
+  > "$WORK"/lib/resupply-reminders/src/ok.ts
+assert_pass "reminders importing resupply-telecom (wrapper, not raw SDK)"
+rm "$WORK"/lib/resupply-reminders/src/ok.ts
+
+echo "[self-test] Rule 13: reminders importing resupply-email is allowed"
+echo 'import { createSendgridClient } from "@workspace/resupply-email";' \
+  > "$WORK"/lib/resupply-reminders/src/ok.ts
+assert_pass "reminders importing resupply-email (wrapper, not raw SDK)"
+rm "$WORK"/lib/resupply-reminders/src/ok.ts
+
+echo "[self-test] Rule 13: reminders importing 'pg' is allowed"
+# Reminders helpers receive a Pool from the caller and need the type.
+# This is the ONLY non-test consumer outside resupply-db that may
+# import pg directly — Rule 7 explicitly excludes lib/resupply-reminders/
+# from its sweep (it's not in the Rule 7 dir list).
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-reminders/src/ok.ts
+assert_pass "reminders importing pg (Pool type for helper signatures)"
+rm "$WORK"/lib/resupply-reminders/src/ok.ts
 
 echo "[self-test] Final clean-tree check"
 assert_pass "post-test cleanup"

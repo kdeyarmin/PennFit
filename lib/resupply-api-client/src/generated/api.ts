@@ -21,11 +21,18 @@ import type {
 
 import type {
   AuthError,
+  HandleEmailClickParams,
   HealthStatus,
+  MessagingError,
+  MessagingValidationError,
   OperatorIdentity,
   PlaceVoiceCallRequest,
   PlaceVoiceCallResponse,
   ReadinessStatus,
+  SendEmailReminderRequest,
+  SendEmailReminderResponse,
+  SendSmsReminderRequest,
+  SendSmsReminderResponse,
   TwilioStatusCallbackBody,
   VoiceError,
   VoiceStatusCallbackParams,
@@ -384,6 +391,314 @@ export const usePlaceVoiceCall = <
 > => {
   return useMutation(getPlaceVoiceCallMutationOptions(options));
 };
+
+/**
+ * Operator-initiated outbound SMS reminder. Looks up the patient
++ episode, opens a conversations row (channel=sms,
+status=open), upserts the inbound-lookup row in
+`phone_lookup`, and dispatches the message via Twilio
+Programmable Messaging.
+
+On success returns `{conversationId, messageSid}` — the
+patient phone number is NEVER returned to the dashboard.
+
+Returns 503 when SMS+Email is not configured (any of
+TWILIO_*, SENDGRID_*, RESUPPLY_PHONE_HMAC_KEY,
+RESUPPLY_LINK_HMAC_KEY missing). Feature-flagged on env
+presence — published behaviour.
+
+ * @summary Operator-initiated outbound SMS resupply reminder
+ */
+export const getSendSmsReminderUrl = () => {
+  return `/resupply-api/sms/send-reminder`;
+};
+
+export const sendSmsReminder = async (
+  sendSmsReminderRequest: SendSmsReminderRequest,
+  options?: RequestInit,
+): Promise<SendSmsReminderResponse> => {
+  return customFetch<SendSmsReminderResponse>(getSendSmsReminderUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendSmsReminderRequest),
+  });
+};
+
+export const getSendSmsReminderMutationOptions = <
+  TError = ErrorType<MessagingValidationError | AuthError | MessagingError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendSmsReminder>>,
+    TError,
+    { data: BodyType<SendSmsReminderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendSmsReminder>>,
+  TError,
+  { data: BodyType<SendSmsReminderRequest> },
+  TContext
+> => {
+  const mutationKey = ["sendSmsReminder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendSmsReminder>>,
+    { data: BodyType<SendSmsReminderRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return sendSmsReminder(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendSmsReminderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendSmsReminder>>
+>;
+export type SendSmsReminderMutationBody = BodyType<SendSmsReminderRequest>;
+export type SendSmsReminderMutationError = ErrorType<
+  MessagingValidationError | AuthError | MessagingError
+>;
+
+/**
+ * @summary Operator-initiated outbound SMS resupply reminder
+ */
+export const useSendSmsReminder = <
+  TError = ErrorType<MessagingValidationError | AuthError | MessagingError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendSmsReminder>>,
+    TError,
+    { data: BodyType<SendSmsReminderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendSmsReminder>>,
+  TError,
+  { data: BodyType<SendSmsReminderRequest> },
+  TContext
+> => {
+  return useMutation(getSendSmsReminderMutationOptions(options));
+};
+
+/**
+ * Operator-initiated outbound email reminder. Same shape as
+/sms/send-reminder: opens a conversation, signs three short-
+TTL link tokens (confirm/edit/stop), renders the templated
+email, and dispatches via SendGrid.
+
+On success returns `{conversationId, messageId}` — the
+patient email address is NEVER returned to the dashboard.
+
+Returns 503 when SMS+Email is not configured.
+
+ * @summary Operator-initiated outbound email resupply reminder
+ */
+export const getSendEmailReminderUrl = () => {
+  return `/resupply-api/email/send-reminder`;
+};
+
+export const sendEmailReminder = async (
+  sendEmailReminderRequest: SendEmailReminderRequest,
+  options?: RequestInit,
+): Promise<SendEmailReminderResponse> => {
+  return customFetch<SendEmailReminderResponse>(getSendEmailReminderUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendEmailReminderRequest),
+  });
+};
+
+export const getSendEmailReminderMutationOptions = <
+  TError = ErrorType<MessagingValidationError | AuthError | MessagingError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendEmailReminder>>,
+    TError,
+    { data: BodyType<SendEmailReminderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendEmailReminder>>,
+  TError,
+  { data: BodyType<SendEmailReminderRequest> },
+  TContext
+> => {
+  const mutationKey = ["sendEmailReminder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendEmailReminder>>,
+    { data: BodyType<SendEmailReminderRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return sendEmailReminder(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendEmailReminderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendEmailReminder>>
+>;
+export type SendEmailReminderMutationBody = BodyType<SendEmailReminderRequest>;
+export type SendEmailReminderMutationError = ErrorType<
+  MessagingValidationError | AuthError | MessagingError
+>;
+
+/**
+ * @summary Operator-initiated outbound email resupply reminder
+ */
+export const useSendEmailReminder = <
+  TError = ErrorType<MessagingValidationError | AuthError | MessagingError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendEmailReminder>>,
+    TError,
+    { data: BodyType<SendEmailReminderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendEmailReminder>>,
+  TError,
+  { data: BodyType<SendEmailReminderRequest> },
+  TContext
+> => {
+  return useMutation(getSendEmailReminderMutationOptions(options));
+};
+
+/**
+ * Public endpoint hit by patients clicking the Confirm /
+Change-address / Stop links inside an outbound reminder
+email. Authenticated by HMAC-signed token (NOT Clerk). The
+dashboard MUST NOT call this — it's published only so
+consumers of the spec can see it exists.
+
+Always returns plain HTML (text/html) so the patient sees a
+confirmation page in their browser. The action is idempotent:
+confirm-twice = one fulfillment row, stop-twice = still
+paused, edit-twice = still awaiting_operator.
+
+ * @summary Public link-click handler for signed email reminder links
+ */
+export const getHandleEmailClickUrl = (params: HandleEmailClickParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/email/click?${stringifiedParams}`
+    : `/resupply-api/email/click`;
+};
+
+export const handleEmailClick = async (
+  params: HandleEmailClickParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getHandleEmailClickUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getHandleEmailClickQueryKey = (
+  params?: HandleEmailClickParams,
+) => {
+  return [`/resupply-api/email/click`, ...(params ? [params] : [])] as const;
+};
+
+export const getHandleEmailClickQueryOptions = <
+  TData = Awaited<ReturnType<typeof handleEmailClick>>,
+  TError = ErrorType<string>,
+>(
+  params: HandleEmailClickParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleEmailClick>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getHandleEmailClickQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof handleEmailClick>>
+  > = ({ signal }) => handleEmailClick(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof handleEmailClick>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type HandleEmailClickQueryResult = NonNullable<
+  Awaited<ReturnType<typeof handleEmailClick>>
+>;
+export type HandleEmailClickQueryError = ErrorType<string>;
+
+/**
+ * @summary Public link-click handler for signed email reminder links
+ */
+
+export function useHandleEmailClick<
+  TData = Awaited<ReturnType<typeof handleEmailClick>>,
+  TError = ErrorType<string>,
+>(
+  params: HandleEmailClickParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleEmailClick>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getHandleEmailClickQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Webhook called BY TWILIO (never by the dashboard) on every call

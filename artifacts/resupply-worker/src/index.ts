@@ -5,6 +5,7 @@ import {
 } from "@workspace/resupply-db";
 import PgBoss from "pg-boss";
 import { logger } from "./logger.js";
+import { registerReminderJobs } from "./jobs/reminders.js";
 
 // The resupply worker hosts pg-boss against the same Postgres instance the
 // api uses (see ADR 002). Phase 0 only proves the wiring — we boot
@@ -57,9 +58,22 @@ async function main(): Promise<void> {
   });
 
   await boss.start();
-  logger.info("resupply-worker ready (pg-boss started)");
 
-  // Keep the process alive. Job handlers will be wired in Phase 2.
+  // Register reminder jobs + hourly scan schedule. The handlers
+  // tolerate a partially-configured messaging surface (they log+exit
+  // 0 instead of failing the job) so a half-configured deploy doesn't
+  // fill the pg-boss retry queue with permanent failures. See
+  // jobs/reminders.ts for the full rationale.
+  try {
+    await registerReminderJobs(boss);
+  } catch (err) {
+    logger.fatal({ err }, "fatal: failed to register reminder jobs");
+    await flushLogsAndExit(1);
+  }
+
+  logger.info("resupply-worker ready (pg-boss started, reminders scheduled)");
+
+  // Keep the process alive.
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "shutting down resupply-worker");

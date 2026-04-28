@@ -6,3 +6,4 @@ export * from "./conversations";
 export * from "./messages";
 export * from "./fulfillments";
 export * from "./audit-log";
+export * from "./phone-lookup";

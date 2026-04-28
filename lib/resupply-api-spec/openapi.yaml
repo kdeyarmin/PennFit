@@ -200,6 +200,218 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceError"
+  /sms/send-reminder:
+    post:
+      operationId: sendSmsReminder
+      tags: [messaging]
+      summary: Operator-initiated outbound SMS resupply reminder
+      description: |
+        Operator-initiated outbound SMS reminder. Looks up the patient
+        + episode, opens a conversations row (channel=sms,
+        status=open), upserts the inbound-lookup row in
+        `phone_lookup`, and dispatches the message via Twilio
+        Programmable Messaging.
+
+        On success returns `{conversationId, messageSid}` — the
+        patient phone number is NEVER returned to the dashboard.
+
+        Returns 503 when SMS+Email is not configured (any of
+        TWILIO_*, SENDGRID_*, RESUPPLY_PHONE_HMAC_KEY,
+        RESUPPLY_LINK_HMAC_KEY missing). Feature-flagged on env
+        presence — published behaviour.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendSmsReminderRequest"
+      responses:
+        "201":
+          description: Reminder dispatched; Twilio is sending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendSmsReminderResponse"
+        "400":
+          description: Body failed zod validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingValidationError"
+        "401":
+          description: No valid Clerk session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "404":
+          description: Patient or episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "409":
+          description: Patient is not in `active` status (paused, closed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "422":
+          description: |
+            Patient cannot be messaged — e.g. no phone on file, or
+            episode does not belong to this patient, or phone is not
+            a valid E.164 number.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "502":
+          description: Twilio rejected the send.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "503":
+          description: |
+            SMS+Email subsystem is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+  /email/send-reminder:
+    post:
+      operationId: sendEmailReminder
+      tags: [messaging]
+      summary: Operator-initiated outbound email resupply reminder
+      description: |
+        Operator-initiated outbound email reminder. Same shape as
+        /sms/send-reminder: opens a conversation, signs three short-
+        TTL link tokens (confirm/edit/stop), renders the templated
+        email, and dispatches via SendGrid.
+
+        On success returns `{conversationId, messageId}` — the
+        patient email address is NEVER returned to the dashboard.
+
+        Returns 503 when SMS+Email is not configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendEmailReminderRequest"
+      responses:
+        "201":
+          description: Reminder dispatched; SendGrid is sending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendEmailReminderResponse"
+        "400":
+          description: Body failed zod validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingValidationError"
+        "401":
+          description: No valid Clerk session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the operator allowlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "404":
+          description: Patient or episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "409":
+          description: Patient is not in `active` status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "422":
+          description: Patient missing email, or episode mismatch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "502":
+          description: SendGrid rejected the send.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+        "503":
+          description: SMS+Email subsystem is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
+  /email/click:
+    get:
+      operationId: handleEmailClick
+      tags: [messaging]
+      summary: Public link-click handler for signed email reminder links
+      description: |
+        Public endpoint hit by patients clicking the Confirm /
+        Change-address / Stop links inside an outbound reminder
+        email. Authenticated by HMAC-signed token (NOT Clerk). The
+        dashboard MUST NOT call this — it's published only so
+        consumers of the spec can see it exists.
+
+        Always returns plain HTML (text/html) so the patient sees a
+        confirmation page in their browser. The action is idempotent:
+        confirm-twice = one fulfillment row, stop-twice = still
+        paused, edit-twice = still awaiting_operator.
+      parameters:
+        - in: query
+          name: t
+          required: true
+          schema:
+            type: string
+          description: HMAC-signed link token. Carries `{conversationId, action, exp}`.
+      responses:
+        "200":
+          description: Action dispatched; renders confirmation page.
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: |
+            Token missing, malformed, expired, signature mismatch, or
+            the conversation no longer exists. Renders a generic
+            "link no longer valid" page (does NOT distinguish failure
+            modes to the patient — leak prevention).
+          content:
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: Action dispatch crashed; renders generic error page.
+          content:
+            text/html:
+              schema:
+                type: string
+        "503":
+          description: SMS+Email subsystem is not configured on this server.
+          content:
+            text/html:
+              schema:
+                type: string
   /voice/status-callback:
     post:
       operationId: voiceStatusCallback
@@ -434,6 +646,140 @@ components:
       required:
         - CallSid
         - CallStatus
+    SendSmsReminderRequest:
+      type: object
+      description: |
+        Operator instruction to send an outbound SMS reminder.
+      properties:
+        patientId:
+          type: string
+          format: uuid
+          description: Patient row to message.
+        episodeId:
+          type: string
+          format: uuid
+          description: |
+            Episode the reminder is associated with. Optional — if
+            omitted, the most recent episode for this patient is
+            used. When provided, must belong to patientId.
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1600
+          description: |
+            Optional override for the SMS body. When omitted, the
+            server renders the default reminder template using the
+            patient's first name.
+      required:
+        - patientId
+      additionalProperties: false
+    SendSmsReminderResponse:
+      type: object
+      description: |
+        Returned on a successful SMS reminder dispatch. Contains only
+        opaque identifiers — never the patient phone number.
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+          description: New conversations row id.
+        messageSid:
+          type: string
+          description: Twilio MessageSid for cross-referencing with Twilio logs.
+      required:
+        - conversationId
+        - messageSid
+    SendEmailReminderRequest:
+      type: object
+      description: |
+        Operator instruction to send an outbound email reminder.
+      properties:
+        patientId:
+          type: string
+          format: uuid
+          description: Patient row to message.
+        episodeId:
+          type: string
+          format: uuid
+          description: |
+            Episode the reminder is associated with. Optional — if
+            omitted, the most recent episode for this patient is
+            used. When provided, must belong to patientId.
+      required:
+        - patientId
+      additionalProperties: false
+    SendEmailReminderResponse:
+      type: object
+      description: |
+        Returned on a successful email reminder dispatch. Contains
+        only opaque identifiers — never the patient email address.
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+          description: New conversations row id.
+        messageId:
+          type: string
+          description: SendGrid X-Message-Id for cross-referencing in SendGrid.
+      required:
+        - conversationId
+        - messageId
+    MessagingError:
+      type: object
+      description: |
+        Error body returned by SMS+Email endpoints. Carries a stable
+        machine-readable `error` code and an optional human-readable
+        `message`. NEVER carries vendor error text or PHI.
+      properties:
+        error:
+          type: string
+          description: Stable error code.
+          enum:
+            - messaging_not_configured
+            - patient_not_found
+            - patient_not_active
+            - patient_missing_phone
+            - patient_missing_email
+            - patient_phone_unnormalizable
+            - episode_not_found
+            - episode_patient_mismatch
+            - no_episode_for_patient
+            - conversation_create_failed
+            - twilio_config_error
+            - twilio_api_error
+            - sendgrid_config_error
+            - sendgrid_api_error
+        message:
+          type: string
+        twilioStatus:
+          type: integer
+        twilioCode:
+          type: string
+        sendgridStatus:
+          type: integer
+      required:
+        - error
+    MessagingValidationError:
+      type: object
+      description: |
+        Returned when an SMS+Email request body fails zod validation.
+      properties:
+        error:
+          type: string
+          enum: [invalid_body]
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+            required: [path, message]
+      required:
+        - error
+        - issues
     ReadinessStatus:
       type: object
       properties:

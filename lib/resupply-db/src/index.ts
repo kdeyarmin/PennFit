@@ -32,3 +32,4 @@ export {
   assertPgcryptoEnabled,
   ensurePgcryptoEnabled,
 } from "./preflight";
+export { normalizeE164, hmacPhone } from "./phone-hash";
