@@ -1,20 +1,13 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { ScanFace, ClipboardList, Zap, Shield, PlayCircle, ArrowRight, Sparkles, BookOpen, HelpCircle, Compass } from "lucide-react";
+import { ScanFace, ClipboardList, Zap, PlayCircle, ArrowRight, Sparkles, BookOpen, HelpCircle, Compass } from "lucide-react";
 
 export function Home() {
   return (
     <div className="flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-16 md:py-28">
       {/* Hero */}
       <div className="text-center max-w-4xl mb-20 animate-shimmer-in">
-        <div className="flex justify-center mb-6">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel pulse-soft text-primary text-sm font-medium shadow-sm">
-            <Shield className="w-4 h-4" />
-            <span>100% Private On-Device Processing</span>
-          </div>
-        </div>
-
         <div className="flex justify-center mb-5">
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
