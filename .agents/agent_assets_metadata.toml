@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "QAlpLPmgNNkL1Y4JHDyJL"
@@ -36,3 +35,9 @@ id = "su5mOQ48j4-SJpGvmyrPA"
 uri = "file://artifacts/penn-fit-tutorial/public/images/face-mesh.png"
 type = "image"
 title = "face wireframe tech graphic"
+
+[[outputs]]
+id = "OmkCtAOdVa_94M3hMseui"
+uri = "file://outputs/pennpaps-twilio-tfv-answers.pdf"
+type = "pdf"
+title = "PennPaps — Twilio TFV Step 2 Answer Sheet"
