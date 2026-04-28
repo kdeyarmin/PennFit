@@ -166,53 +166,55 @@
   body {
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
-    /* Layered ambient atmosphere — editorial, high-end, with real depth.
-       Order, from back to front:
-         1. Soft cool plinth at the bottom (cool atmospheric haze).
-         2. Warm gold "sun" concentrated top-right (the headline accent).
-         3. Wide gold sunrise glow that washes top-right area.
-         4. Top-left navy bloom (anchors the heading).
-         5. Mid-right deep navy depth bloom.
-         6. Bottom navy plinth (grounds the page).
-         7. Lower-left soft gold whisper (warmth balance).
-         8. Diagonal sheen — a faint angular highlight band that gives
-            the surface a sense of being a polished material rather than
-            flat paper. Last so it sits on top of the color blooms.
-       All blobs use large radii + carefully tuned alpha so they fuse
-       into a continuous wash instead of reading as discrete circles. */
+    /* Premium layered atmosphere — Linear / Stripe / Apple-grade depth.
+       The previous version used opacities so low (0.10–0.32) the page
+       read as flat paper. Bumped substantially so the navy + gold brand
+       blooms are immediately visible, while still soft enough to never
+       compete with content. Order back-to-front:
+         1. Cool mist plinth across the lower half.
+         2. Warm gold "sun" at top-right (brand accent).
+         3. Wide gold sunrise wash bleeding from the top edge.
+         4. Top-left navy bloom — anchors the heading area.
+         5. Mid-right deep navy depth (gives the surface dimension).
+         6. Bottom navy plinth (grounds the entire page).
+         7. Lower-left gold whisper for warmth balance.
+         8. Diagonal sheen across the middle for a polished, lacquered feel. */
     background-image:
-      radial-gradient(ellipse 90% 50% at 50% 110%, hsl(var(--penn-mist) / 0.55), transparent 70%),
-      radial-gradient(circle 30% at 92% -2%, hsl(var(--penn-gold) / 0.32), transparent 65%),
-      radial-gradient(ellipse 75% 55% at 100% -5%, hsl(var(--penn-gold) / 0.20), transparent 60%),
-      radial-gradient(ellipse 95% 65% at 8% -12%, hsl(var(--penn-navy) / 0.20), transparent 65%),
-      radial-gradient(ellipse 55% 45% at 115% 45%, hsl(var(--penn-navy) / 0.10), transparent 60%),
-      radial-gradient(ellipse 70% 55% at 50% 118%, hsl(var(--penn-navy) / 0.16), transparent 62%),
-      radial-gradient(ellipse 50% 40% at -5% 95%, hsl(var(--penn-gold) / 0.12), transparent 65%),
-      linear-gradient(125deg, transparent 35%, hsl(var(--penn-gold) / 0.05) 50%, transparent 65%);
+      /* Center-stage mesh blooms — positioned IN viewport, not at corners,
+         so they actually paint visible color across the page rather than
+         hiding off-screen. */
+      radial-gradient(ellipse 70% 55% at 22% 18%, hsl(var(--penn-navy) / 0.55), transparent 60%),
+      radial-gradient(ellipse 60% 50% at 82% 12%, hsl(var(--penn-gold) / 0.70), transparent 62%),
+      radial-gradient(ellipse 75% 55% at 90% 62%, hsl(var(--penn-navy) / 0.40), transparent 60%),
+      radial-gradient(ellipse 65% 50% at 12% 78%, hsl(var(--penn-gold) / 0.42), transparent 60%),
+      radial-gradient(ellipse 90% 60% at 50% 115%, hsl(var(--penn-mist) / 1.0), transparent 70%),
+      radial-gradient(ellipse 85% 55% at 50% -8%, hsl(var(--penn-gold) / 0.30), transparent 65%),
+      /* Diagonal lacquer sheen */
+      linear-gradient(125deg, transparent 25%, hsl(0 0% 100% / 0.35) 50%, transparent 75%);
     background-attachment: fixed;
   }
 
-  /* Dot grid overlay — anchored to the viewport so it never tiles weirdly.
-     Slightly more present than before so the page reads as a designed
-     surface, not a flat color. Still masked into a center bloom so it
-     fades softly at the edges. */
+  /* Dot grid overlay — visible enough to read as a designed surface.
+     Doubled the dot color alpha (0.11 → 0.22) and the layer opacity
+     (0.6 → 0.85) so the grid actually shows through. Still feathered
+     at the edges via mask so it doesn't fight the corner blooms. */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.11) 1px, transparent 0);
+    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.22) 1px, transparent 0);
     background-size: 28px 28px;
-    mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
-    -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
-    opacity: 0.6;
+    mask-image: radial-gradient(ellipse 100% 90% at 50% 38%, black 28%, transparent 88%);
+    -webkit-mask-image: radial-gradient(ellipse 100% 90% at 50% 38%, black 28%, transparent 88%);
+    opacity: 0.85;
   }
 
-  /* Premium grain — a hair of texture so the page never reads as flat
-     digital gradient. Very low opacity SVG noise, viewport-fixed so it
-     doesn't tile-shift on scroll. Keeps the surface feeling tactile,
-     like premium printed material. */
+  /* Premium grain — subtle paper-like texture. Slightly stronger than
+     before so the surface actually reads as tactile material rather
+     than flat digital gradient, but still low enough that text on top
+     stays crisp. */
   body::after {
     content: "";
     position: fixed;
@@ -221,7 +223,7 @@
     z-index: 0;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.18  0 0 0 0 0.30  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
     background-size: 240px 240px;
-    opacity: 0.06;
+    opacity: 0.10;
     mix-blend-mode: multiply;
   }
 
