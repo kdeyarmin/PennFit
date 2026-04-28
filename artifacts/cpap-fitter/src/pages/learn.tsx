@@ -323,6 +323,25 @@ export function Learn() {
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
         </Link>
         <Link
+          href="/learn/replacement-schedule"
+          className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
+          data-testid="learn-link-replacement-schedule"
+        >
+          <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
+            <CalendarClock className="w-5 h-5" />
+          </div>
+          <div className="space-y-1 flex-1">
+            <h3 className="font-semibold tracking-tight group-hover:text-primary transition-colors">
+              Full replacement schedule
+            </h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Per-item cadences for cushions, tubing, filters, headgear,
+              and chambers — plus the warning signs you're overdue.
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
+        </Link>
+        <Link
           href="/how-it-works"
           className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
           data-testid="learn-link-how-it-works"

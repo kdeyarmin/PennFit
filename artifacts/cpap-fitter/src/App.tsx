@@ -20,6 +20,7 @@ import { Terms } from "@/pages/terms";
 import { HowItWorks } from "@/pages/how-it-works";
 import { Faq } from "@/pages/faq";
 import { Learn } from "@/pages/learn";
+import { ReplacementSchedule } from "@/pages/replacement-schedule";
 import { SignInPage } from "@/pages/sign-in";
 import { SignUpPage } from "@/pages/sign-up";
 import { AdminShell } from "@/pages/admin/admin-shell";
@@ -114,6 +115,7 @@ function PatientRouter() {
         <Route path="/how-it-works" component={HowItWorks} />
         <Route path="/faq" component={Faq} />
         <Route path="/learn" component={Learn} />
+        <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
         <Route path="/privacy" component={Privacy} />
         <Route path="/terms" component={Terms} />
 
