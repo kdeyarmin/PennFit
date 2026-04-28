@@ -350,7 +350,7 @@ export function ReplacementSchedule() {
               Best for: routine resupply on the standard cycle.
             </p>
           </article>
-          <article className="glass-card rounded-2xl p-6 space-y-3">
+          <article className="glass-card rounded-2xl p-6 space-y-3 flex flex-col">
             <div className="flex items-center gap-3">
               <div className="h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
                 <Wallet className="w-5 h-5" />
@@ -361,14 +361,25 @@ export function ReplacementSchedule() {
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
               Need a replacement before your insurance cycle resets? Ran
-              out on a trip? Want extras your plan won't cover? We'll soon
-              offer card checkout for masks, cushions, tubing, filters,
-              and curated bundles — shipped without insurance paperwork.
+              out on a trip? Want extras your plan won't cover? Pay by
+              card and we'll ship — no prescription, no insurance
+              paperwork.
             </p>
             <p className="text-xs text-muted-foreground/80 italic">
               Best for: mid-cycle replacements, accessories, and travel
-              kits. Coming soon.
+              kits.
             </p>
+            <div className="pt-2 mt-auto">
+              <Link href="/shop">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="schedule-shop-cta"
+                >
+                  Browse the shop <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+              </Link>
+            </div>
           </article>
         </div>
       </section>

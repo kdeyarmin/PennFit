@@ -21,6 +21,10 @@ import { HowItWorks } from "@/pages/how-it-works";
 import { Faq } from "@/pages/faq";
 import { Learn } from "@/pages/learn";
 import { ReplacementSchedule } from "@/pages/replacement-schedule";
+import { Shop } from "@/pages/shop";
+import { ShopCart } from "@/pages/shop-cart";
+import { ShopCheckoutSuccess } from "@/pages/shop-checkout-success";
+import { ShopCheckoutCancel } from "@/pages/shop-checkout-cancel";
 import { SignInPage } from "@/pages/sign-in";
 import { SignUpPage } from "@/pages/sign-up";
 import { AdminShell } from "@/pages/admin/admin-shell";
@@ -116,6 +120,10 @@ function PatientRouter() {
         <Route path="/faq" component={Faq} />
         <Route path="/learn" component={Learn} />
         <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
+        <Route path="/shop" component={Shop} />
+        <Route path="/shop/cart" component={ShopCart} />
+        <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
+        <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
         <Route path="/privacy" component={Privacy} />
         <Route path="/terms" component={Terms} />
 

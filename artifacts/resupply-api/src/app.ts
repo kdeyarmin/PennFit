@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
 const app: Express = express();
 
@@ -88,6 +89,18 @@ app.use(
     },
   }),
 );
+// Stripe webhook is registered BEFORE express.json() because Stripe's
+// signature verification is computed over the exact bytes Stripe sent
+// — express.json() would mutate `req.body` to a parsed object that we
+// can't re-serialize byte-identically. Mounting it directly on `app`
+// (rather than inside the /resupply-api router tree) keeps the body
+// parser order honest no matter how the router is reorganized later.
+app.post(
+  "/resupply-api/stripe/webhook",
+  express.raw({ type: "application/json", limit: "256kb" }),
+  stripeWebhookHandler,
+);
+
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 

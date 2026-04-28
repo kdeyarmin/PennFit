@@ -9,12 +9,18 @@ import meRouter from "./me.js";
 import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
 import smsRouter from "./sms/index.js";
+import shopRouter from "./shop/index.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(meRouter);
+// Public shop routes (no auth) — patient-facing cash-pay catalog,
+// Stripe Hosted Checkout, and order summary lookup. Mounted before
+// the admin-gated routes so the literal /shop/* paths can never be
+// shadowed by a future param route.
+router.use(shopRouter);
 // Voice + SMS + Email routes are mounted unconditionally; each handler
 // does its own feature-flag check so a missing env var becomes a clean
 // 503 (or TwiML 503 for vendor-only paths) rather than a generic 404.

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ShieldCheck, Menu, X } from "lucide-react";
+import { ShieldCheck, Menu, X, ShoppingCart } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
+import { useCart } from "@/hooks/use-cart";
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -19,9 +20,36 @@ function ScrollToTop() {
 const navLinks = [
   { href: "/how-it-works", label: "How It Works" },
   { href: "/masks", label: "Mask Catalog" },
+  { href: "/shop", label: "Shop" },
   { href: "/learn", label: "Learn" },
   { href: "/faq", label: "FAQ" },
 ];
+
+// CartNavIcon — small cart link with a count badge for the header.
+// Lives in this file because it's a layout concern (header chrome) and
+// the only consumer is the Layout itself; extracting to its own file
+// would just be indirection for a 20-line component.
+function CartNavIcon() {
+  const { count } = useCart();
+  return (
+    <Link
+      href="/shop/cart"
+      className="relative inline-flex items-center justify-center h-10 w-10 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/40 transition-colors"
+      aria-label={`Cart (${count} item${count === 1 ? "" : "s"})`}
+      data-testid="nav-cart-icon"
+    >
+      <ShoppingCart className="h-5 w-5" />
+      {count > 0 && (
+        <span
+          className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] text-[10px] font-bold flex items-center justify-center tabular-nums"
+          data-testid="nav-cart-count"
+        >
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </Link>
+  );
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -65,20 +93,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   {l.label}
                 </Link>
               ))}
+              <CartNavIcon />
             </nav>
 
-            {/* Mobile hamburger */}
-            <button
-              type="button"
-              onClick={() => setMobileOpen((v) => !v)}
-              className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-lg glass-panel border-0 text-primary hover:opacity-80 transition-opacity"
-              aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
-              aria-expanded={mobileOpen}
-              aria-controls="mobile-nav-panel"
-              data-testid="button-mobile-menu"
-            >
-              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
+            {/* Mobile actions: cart icon + hamburger */}
+            <div className="md:hidden flex items-center gap-2">
+              <CartNavIcon />
+              <button
+                type="button"
+                onClick={() => setMobileOpen((v) => !v)}
+                className="inline-flex items-center justify-center h-10 w-10 rounded-lg glass-panel border-0 text-primary hover:opacity-80 transition-opacity"
+                aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+                aria-expanded={mobileOpen}
+                aria-controls="mobile-nav-panel"
+                data-testid="button-mobile-menu"
+              >
+                {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
 
           {/* Mobile dropdown panel */}
@@ -122,6 +154,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/learn" className="hover:text-primary transition-colors">Learn</Link>
               <Link href="/faq" className="hover:text-primary transition-colors">FAQ</Link>
               <Link href="/how-it-works" className="hover:text-primary transition-colors">How It Works</Link>
+              <Link href="/shop" className="hover:text-primary transition-colors">Shop</Link>
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
               {/*
