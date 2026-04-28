@@ -123,10 +123,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/faq" className="hover:text-primary transition-colors">FAQ</Link>
               <Link href="/how-it-works" className="hover:text-primary transition-colors">How It Works</Link>
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
               {/*
-                /consent is the in-flow data-use consent screen, NOT a Terms
-                of Service. Mislabelling it as "Terms of Service" was a
-                liability — relabel to match what the page actually is.
+                /consent is the in-flow data-use consent screen for camera /
+                biometric processing, distinct from the Terms of Service.
               */}
               <Link href="/consent" className="hover:text-primary transition-colors">Data Use & Consent</Link>
             </div>

@@ -495,14 +495,27 @@ export function Order() {
                   setValue("consentToContact", c === true, { shouldValidate: true })
                 }
               />
-              <div className="flex-1 -mt-0.5">
-                <Label htmlFor="consent" className="cursor-pointer font-normal text-sm leading-relaxed">
-                  I authorize PennPaps to <strong>contact me</strong> by phone, email, or SMS
-                  regarding this order, my insurance verification, and shipping updates, and to{" "}
+              <div className="flex-1 -mt-0.5 space-y-2">
+                <Label htmlFor="consent" className="cursor-pointer font-normal text-sm leading-relaxed block">
+                  I authorize PennPaps to <strong>contact me</strong> by phone, email, and SMS
+                  text message at the number and email above regarding this order, insurance
+                  verification, shipping updates, and ongoing CPAP resupply reminders, and to{" "}
                   <strong>store the order details I've entered above</strong> (including my contact, shipping,
                   insurance, and prescription information) in PennPaps's secure system for fulfillment and
                   recordkeeping.
                 </Label>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong>SMS terms:</strong> By providing your mobile number you consent to
+                  receive transactional text messages from PennPaps at that number, including via
+                  automated systems. Approximately 1–2 messages per resupply cycle (typically
+                  every 30–90 days). No marketing texts. <strong>Message and data rates may
+                  apply.</strong> Reply <strong>HELP</strong> for help, <strong>STOP</strong> to
+                  unsubscribe at any time. See our{" "}
+                  <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
+                  and{" "}
+                  <Link href="/terms" className="underline hover:text-primary">Terms of Service</Link>{" "}
+                  for full SMS program details.
+                </p>
                 {isSubmitted && errors.consentToContact && (
                   <p className="text-xs text-destructive mt-1">{errors.consentToContact.message}</p>
                 )}
@@ -517,7 +530,9 @@ export function Order() {
                 above plus the numeric facial measurements that were used to recommend your mask. Your
                 camera image and video stream were never uploaded — only the measurement numbers leave your
                 device. By submitting, you agree to our{" "}
-                <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>.
+                <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
+                and{" "}
+                <Link href="/terms" className="underline hover:text-primary">Terms of Service</Link>.
               </p>
             </div>
           </CardContent>

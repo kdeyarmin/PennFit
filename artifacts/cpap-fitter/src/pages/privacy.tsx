@@ -100,14 +100,56 @@ export function Privacy() {
           <section className="space-y-2">
             <h3 className="text-lg font-semibold text-foreground tracking-tight">
               <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">05</span>
+              SMS / Text Messaging Notifications
+            </h3>
+            <p>
+              When you place an order and consent to be contacted, PennPaps may send you SMS text
+              messages from our toll-free number for the following purposes:
+            </p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>Order confirmation and shipping updates;</li>
+              <li>Insurance verification follow-ups and prescription requests;</li>
+              <li>Resupply reminders when you are due for new CPAP supplies (typically every
+                30 to 90 days, per your insurance benefit and prescribed replacement schedule);</li>
+              <li>Replies to questions you send us by text.</li>
+            </ul>
+            <p className="mt-2">
+              <strong>Frequency:</strong> Approximately 1 to 2 messages per resupply cycle, plus
+              transactional confirmations and any follow-ups if you do not respond. You will not
+              receive marketing or promotional texts.
+            </p>
+            <p className="mt-2">
+              <strong>Help and opt-out:</strong> Reply <strong>HELP</strong> at any time for assistance,
+              or <strong>STOP</strong> to unsubscribe from all PennPaps text messages. After you
+              reply STOP we will send one final confirmation and then no further texts; reply
+              <strong> START</strong> to resume.
+            </p>
+            <p className="mt-2">
+              <strong>Carrier charges:</strong> <em>Message and data rates may apply.</em> Carriers
+              are not liable for delayed or undelivered messages.
+            </p>
+            <p className="mt-2">
+              <strong>No third-party sharing for marketing:</strong> PennPaps will not sell, rent,
+              or share your mobile phone number or SMS opt-in consent with any third party for
+              their marketing purposes. We share your phone number only with the
+              telecommunications providers required to deliver the messages you have asked us to
+              send (currently Twilio, our SMS carrier).
+            </p>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-lg font-semibold text-foreground tracking-tight">
+              <span className="text-[hsl(var(--penn-gold))] mr-2 font-mono text-sm align-middle">06</span>
               Your Rights
             </h3>
             <p>
               Camera images and biometric measurements are never stored beyond the immediate browser
               session — closing the browser or clicking "Start Over" clears them. For data you submitted
               with an order (contact, shipping, insurance, prescription), you may contact PennPaps
-              directly to request a copy, correction, or deletion subject to applicable
-              recordkeeping requirements.
+              directly at <a href="mailto:info@pennpaps.com" className="underline hover:text-primary">info@pennpaps.com</a>{" "}
+              to request a copy, correction, or deletion subject to applicable
+              recordkeeping requirements. To stop receiving texts at any time, reply STOP to any
+              message from PennPaps.
             </p>
           </section>
         </CardContent>

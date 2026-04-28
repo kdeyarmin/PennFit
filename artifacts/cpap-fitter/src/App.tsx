@@ -16,6 +16,7 @@ import { Order } from "@/pages/order";
 import { OrderSuccess } from "@/pages/order-success";
 import { Masks } from "@/pages/masks";
 import { Privacy } from "@/pages/privacy";
+import { Terms } from "@/pages/terms";
 import { HowItWorks } from "@/pages/how-it-works";
 import { Faq } from "@/pages/faq";
 import { Learn } from "@/pages/learn";
@@ -114,6 +115,7 @@ function PatientRouter() {
         <Route path="/faq" component={Faq} />
         <Route path="/learn" component={Learn} />
         <Route path="/privacy" component={Privacy} />
+        <Route path="/terms" component={Terms} />
 
         {/* Guarded routes — see GuardedXxx components above. */}
         <Route path="/measure" component={GuardedMeasure} />
