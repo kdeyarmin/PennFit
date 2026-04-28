@@ -97,7 +97,16 @@ function OperatorHeaderChip({ email }: { email: string }) {
       </span>
       <button
         type="button"
-        onClick={() => signOut()}
+        // Pass an explicit redirectUrl. Without it, signOut() leaves
+        // the browser on the current path (e.g. /resupply/), and the
+        // Show-when="signed-out" gate in ConsoleRoute redirects to
+        // /sign-in on the next render — works, but adds an extra
+        // render frame where the page briefly looks "stuck". Passing
+        // the redirect target up front matches NotAuthorizedPage's
+        // sign-out behavior and lands on the sign-in URL in one step.
+        onClick={() =>
+          void signOut({ redirectUrl: `${basePath}/sign-in` })
+        }
         className="text-xs font-semibold px-3 py-1.5 rounded border"
         style={{
           color: "#0a1f44",

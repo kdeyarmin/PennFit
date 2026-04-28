@@ -39,19 +39,36 @@ if (!CLERK_PUBLISHABLE_KEY) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // The /me probe is the only call so far. Refetch on focus is
-      // useful for it (a returning operator should re-confirm their
-      // session is still valid) but cache for a minute so quick tab
-      // switches don't hammer the API.
+      // Cache /me for a minute so quick tab switches don't hammer the
+      // API. We deliberately disable refetchOnWindowFocus: every focus
+      // refetch of /me runs requireOperator, which today calls
+      // clerkClient.users.getUser per request — a Clerk Backend API
+      // round-trip we don't want to pay on every tab return. The
+      // operator's session validity is already enforced by Clerk
+      // itself; on token expiry the next API call (or page nav) will
+      // fail closed and re-route through sign-in.
       staleTime: 60_000,
+      refetchOnWindowFocus: false,
       retry: (failureCount, err: unknown) => {
-        // Don't retry 4xx — those are deterministic auth/authorization
-        // outcomes, not transient failures. Retrying a 403 on /me
-        // would just thrash and make the "not authorized" screen
-        // take longer to appear.
         const status =
           (err as { status?: number } | null | undefined)?.status ?? 0;
+
+        // 401 ONLY: retry exactly once. There is a narrow race where
+        // the very first /me request can ship without a Bearer token
+        // — Clerk rotates the session token roughly every minute and
+        // the SDK's `getToken()` returns null mid-rotation. Without
+        // this single retry, that blip routes a perfectly-valid
+        // operator to the "Not authorized" screen and the only fix
+        // is a manual page reload. One retry gives the SDK time to
+        // refresh; if it's still 401 after that, the user really is
+        // not signed in and the gate handles it.
+        if (status === 401) return failureCount < 1;
+
+        // All other 4xx — deterministic auth/authorization outcomes.
+        // Retrying a 403 on /me would just thrash and make the
+        // "not authorized" screen take longer to appear.
         if (status >= 400 && status < 500) return false;
+
         return failureCount < 2;
       },
     },

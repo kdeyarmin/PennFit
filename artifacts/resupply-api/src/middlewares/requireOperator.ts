@@ -130,13 +130,43 @@ export async function requireOperator(
       email = primary.emailAddress?.toLowerCase();
       primaryEmailVerified = primary.verification?.status === "verified";
     }
-  } catch {
-    // Don't surface the underlying Clerk error — it can include the
-    // user id and other identifiers that don't belong in an HTTP body
-    // returned to an unauthenticated caller.
-    res
-      .status(401)
-      .json({ error: "Could not verify your identity. Please sign in again." });
+  } catch (err) {
+    // Distinguish "Clerk says you have no session" (already handled by
+    // the !userId guard above) from "Clerk Backend API errored mid-
+    // request" (this branch). The user's session is fine; it's our
+    // upstream call to Clerk that failed — a 5xx, throttle, or
+    // network blip. Returning 401 here would tell a perfectly-valid
+    // operator to "sign in again", which is wrong AND confusing —
+    // they're already signed in and signing in again won't fix
+    // anything when Clerk itself is unhealthy.
+    //
+    // We use 502 Bad Gateway: an upstream service we depend on is
+    // unhealthy. We deliberately do NOT use 503 here because the
+    // dashboard reserves 503 for the "operator allowlist not
+    // configured" case (a deploy-side problem with a different
+    // remediation). The dashboard maps any non-503 5xx to a
+    // "transient — please retry" screen, which is exactly what an
+    // operator should see during a Clerk Backend API blip.
+    //
+    // The log line emits the error CLASS name and Clerk's HTTP
+    // status (when available) — never the raw message. Clerk's
+    // error strings can echo the userId we just queried with, and
+    // we treat every log line as world-readable.
+    const errName = err instanceof Error ? err.name : "unknown";
+    const clerkStatus = (err as { status?: number } | null | undefined)
+      ?.status;
+    logger.warn(
+      {
+        event: "resupply_operator_clerk_lookup_failed",
+        errName,
+        clerkStatus,
+      },
+      "requireOperator: Clerk Backend API lookup failed",
+    );
+    res.status(502).json({
+      error:
+        "Could not verify your identity right now. Please try again in a moment.",
+    });
     return;
   }
 

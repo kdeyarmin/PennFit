@@ -237,7 +237,15 @@ describe("requireOperator middleware", () => {
     expect(res.body.operatorClerkId).toBe("user_no_email");
   });
 
-  it("returns 401 if Clerk lookup throws", async () => {
+  it("returns 502 if Clerk lookup throws (upstream failure, not an auth failure)", async () => {
+    // A failure to *reach* Clerk is fundamentally different from a
+    // failure to authenticate. Returning 401 here would tell the
+    // dashboard "your session is bad — sign out and try again",
+    // which is misleading: the user's session is fine, our
+    // dependency is down. 502 Bad Gateway communicates the right
+    // thing — an upstream we depend on failed — and the dashboard
+    // maps non-503 5xx responses to the "transient" not-authorized
+    // screen, which suggests retrying rather than re-auth.
     process.env.RESUPPLY_OPERATOR_EMAILS = ALLOWED_EMAIL;
     getAuthMock.mockReturnValue({ userId: "user_abc123" });
     getUserMock.mockRejectedValue(
@@ -246,11 +254,14 @@ describe("requireOperator middleware", () => {
 
     const res = await request(makeApp()).get("/protected");
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(502);
     expect(res.body).toEqual({
-      error: "Could not verify your identity. Please sign in again.",
+      error:
+        "Could not verify your identity right now. Please try again in a moment.",
     });
-    // The underlying Clerk error must NOT leak into the response.
+    // The underlying Clerk error must NOT leak into the response —
+    // not the user id, not the failure reason. Treat every byte we
+    // hand back as world-readable.
     expect(JSON.stringify(res.body)).not.toMatch(/user_abc123/);
     expect(JSON.stringify(res.body)).not.toMatch(/locked out/);
   });

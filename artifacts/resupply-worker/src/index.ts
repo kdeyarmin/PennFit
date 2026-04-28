@@ -11,6 +11,15 @@ import { logger } from "./logger.js";
 // pg-boss, log "ready", and stay alive. Real job handlers register here
 // in Phase 2+.
 
+// Sleep briefly before exit so pino's transport worker can flush the
+// fatal line. Without this, a bare `process.exit(1)` immediately after
+// `logger.fatal(...)` can drop the line we most need to see — the
+// reason the process died. Mirrors the API process's flushLogsAndExit.
+async function flushLogsAndExit(code: number): Promise<never> {
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  process.exit(code);
+}
+
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -33,7 +42,7 @@ async function main(): Promise<void> {
         "fatal: resupply-worker could not run pgcrypto preflight",
       );
     }
-    process.exit(1);
+    await flushLogsAndExit(1);
   }
 
   const boss = new PgBoss({
@@ -72,6 +81,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error({ err }, "fatal: resupply-worker failed to start");
-  process.exit(1);
+  // Use the same flush helper as the in-main preflight path so the
+  // fatal line isn't dropped by pino's transport worker buffer.
+  // Without an awaited delay before exit, this terminal log can
+  // vanish, leaving operators with a process that died for no
+  // visible reason.
+  logger.fatal({ err }, "fatal: resupply-worker failed to start");
+  void flushLogsAndExit(1);
 });

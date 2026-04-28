@@ -49,6 +49,16 @@ const allowedOrigins = (() => {
   return dev;
 })();
 
+// `credentials` is intentionally OFF: the dashboard authenticates with
+// `Authorization: Bearer <clerk_token>`, never cookies. Setting
+// `credentials: true` would oblige us to keep an exact-match Origin
+// allowlist forever (browsers refuse `Access-Control-Allow-Origin: *`
+// when credentials are enabled) AND would unlock cookie-based CSRF
+// attack surface that we don't actually use. Bearer tokens are
+// immune to classic CSRF because the browser does not auto-attach
+// them — JS code must read and send them deliberately. Leaving
+// credentials off is the simpler, safer default for a Bearer-only
+// API.
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -56,7 +66,6 @@ app.use(
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
     },
-    credentials: true,
   }),
 );
 
