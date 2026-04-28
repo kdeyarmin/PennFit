@@ -51,7 +51,7 @@ export function Terms() {
               Mask Recommendation Tool
             </h3>
             <p>
-              The PennPaps mask fitter uses on-device facial measurements and your questionnaire
+              Penn Home Medical Supply uses on-device facial measurements and your questionnaire
               responses to suggest a CPAP mask. Recommendations are informational only and do not
               constitute medical advice or a prescription. Final mask selection, sizing, and
               fitting are subject to your prescriber's orders and PennPaps's clinical review.

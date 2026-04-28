@@ -1,4 +1,4 @@
-# PennPaps — CPAP Mask Fitter
+# PennPaps — Penn Home Medical Supply
 
 ## Overview
 
