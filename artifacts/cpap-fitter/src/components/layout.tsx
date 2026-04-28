@@ -44,12 +44,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <div className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-navy)/0.10)] to-[hsl(var(--penn-gold)/0.20)] blur-md" aria-hidden="true" />
                 <img
                   src={pennLogo}
-                  alt="Penn Home Medical Supply"
+                  alt="PennPaps"
                   className="relative h-12 md:h-14 w-auto rounded-md"
                 />
               </div>
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
-                <span className="font-semibold tracking-tight text-base text-primary">Penn Fit</span>
+                <span className="font-semibold tracking-tight text-base text-primary">PennPaps</span>
                 <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">CPAP Mask Fitting</span>
               </div>
             </Link>
@@ -112,7 +112,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="glass-panel border-x-0 border-b-0">
           <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4 py-6 px-4 md:px-6 text-xs text-muted-foreground">
             <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">
-              <span className="font-semibold tracking-tight text-foreground">Penn Home Medical Supply, LLC</span>
+              <span className="font-semibold tracking-tight text-foreground">PennPaps</span>
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-primary" />
                 <span>Secure & private. Images never leave your device.</span>

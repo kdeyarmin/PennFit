@@ -51,7 +51,7 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
   // Set <title> for admin pages so it's clear in the tab bar.
   useEffect(() => {
     const prev = document.title;
-    document.title = "Penn Fit · Admin";
+    document.title = "PennPaps · Admin";
     return () => {
       document.title = prev;
     };
@@ -105,11 +105,11 @@ function NotAuthorized({ status, message }: { status: number; message: string })
         <CardContent className="space-y-4 text-center">
           <p className="text-muted-foreground">{message}</p>
           <p className="text-sm text-muted-foreground">
-            If you should have access, ask your Penn Home Medical Supply administrator to add
+            If you should have access, ask your PennPaps administrator to add
             your email to the <code className="font-mono">PENN_ADMIN_EMAILS</code> allowlist.
           </p>
           <Link href="/">
-            <Button variant="outline">Back to Penn Fit</Button>
+            <Button variant="outline">Back to PennPaps</Button>
           </Link>
         </CardContent>
       </Card>

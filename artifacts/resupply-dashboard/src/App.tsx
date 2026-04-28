@@ -17,7 +17,7 @@ import { EpisodesPage } from "./pages/episodes";
 import { RulesPage } from "./pages/rules";
 import { AuditPage } from "./pages/audit";
 
-// Penn Resupply Admin Console.
+// PennPaps Admin Console.
 //
 // Three routing layers, in order:
 //

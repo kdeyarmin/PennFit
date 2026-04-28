@@ -5,9 +5,9 @@ import { logger } from "../lib/logger";
 /**
  * requireAdmin — gate for the resupply admin API.
  *
- * This is the resupply equivalent of Penn Fit's `requireAdmin`. The two
+ * This is the resupply equivalent of PennPaps's `requireAdmin`. The two
  * products run on the same Clerk instance but use disjoint allowlists,
- * so a Penn Fit admin is NOT automatically a resupply admin and vice
+ * so a PennPaps admin is NOT automatically a resupply admin and vice
  * versa. Keeping the two env vars separate means rotating one product's
  * staff list cannot accidentally grant access to the other product's
  * console.
@@ -20,7 +20,7 @@ import { logger } from "../lib/logger";
  *      RESUPPLY_ADMIN_EMAILS allowlist.
  *
  * The allowlist is a comma-separated env var, e.g.
- *   RESUPPLY_ADMIN_EMAILS="rt-coordinator@pennhomemedical.com,billing@pennhomemedical.com"
+ *   RESUPPLY_ADMIN_EMAILS="info@pennpaps.com,billing@pennpaps.com"
  *
  * Behavior when RESUPPLY_ADMIN_EMAILS is unset:
  *   - In `NODE_ENV=development` we allow any signed-in user — verified

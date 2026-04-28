@@ -58,7 +58,7 @@ export function AdminOrders() {
             Orders
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            All orders submitted through Penn Fit. Click a row to view full patient detail.
+            All orders submitted through PennPaps. Click a row to view full patient detail.
           </p>
         </div>
       </div>

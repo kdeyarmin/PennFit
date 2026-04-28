@@ -153,7 +153,7 @@ export function Capture() {
           Position Your Face
         </h1>
         <p className="text-muted-foreground leading-relaxed">
-          Center your face in the oval and look straight at the camera. Penn Fit
+          Center your face in the oval and look straight at the camera. PennPaps
           uses your eye's iris (a known size) to calibrate the measurement scale —
           no rulers or cards needed.
         </p>

@@ -155,7 +155,7 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
   } | null;
   hmacKeysReady: boolean;
 } {
-  const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "Penn Sleep Center";
+  const practiceName = env.RESUPPLY_PRACTICE_NAME ?? "PennPaps";
   const publicBaseUrl = stripTrailingSlash(
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
       (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : ""),

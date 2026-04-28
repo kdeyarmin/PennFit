@@ -56,7 +56,7 @@ const sections: FaqSection[] = [
             at home) confirms obstructive sleep apnea. If you snore loudly,
             wake gasping for air, fall asleep during the day, or your bed
             partner has noticed you stop breathing, ask your primary care
-            provider about a sleep study. Penn Fit is for patients who already
+            provider about a sleep study. PennPaps is for patients who already
             have a prescription — we don't diagnose sleep apnea.
           </>
         ),
@@ -82,7 +82,7 @@ const sections: FaqSection[] = [
             often feel strange — slightly claustrophobic, mildly noisy, or like
             too much air. The mask matters more than anything else here:
             switching to a better-fitting mask is the single most common fix
-            for early CPAP frustration, which is exactly what Penn Fit is built
+            for early CPAP frustration, which is exactly what PennPaps is built
             to help with.
           </>
         ),
@@ -106,7 +106,7 @@ const sections: FaqSection[] = [
     id: "choosing-a-mask",
     title: "Choosing the Right Mask",
     blurb:
-      "How to think about mask styles, fit, and what Penn Fit recommends for your face shape.",
+      "How to think about mask styles, fit, and what PennPaps recommends for your face shape.",
     Icon: Glasses,
     items: [
       {
@@ -118,7 +118,7 @@ const sections: FaqSection[] = [
             and stomach sleepers), <strong>nasal masks</strong> (a triangular
             cushion over the nose — a good middle ground), and{" "}
             <strong>full-face masks</strong> (covering nose and mouth — best
-            for mouth breathers, higher pressures, or congestion). Penn Fit
+            for mouth breathers, higher pressures, or congestion). PennPaps
             considers all three and ranks the best matches for your face and
             sleep style.
           </>
@@ -131,7 +131,7 @@ const sections: FaqSection[] = [
             The biggest factors are: do you breathe through your mouth at
             night, what pressure has your provider prescribed, do you sleep on
             your side, and do you have facial hair, claustrophobia, or skin
-            sensitivities. The Penn Fit questionnaire walks you through all of
+            sensitivities. The PennPaps questionnaire walks you through all of
             these and weights the recommendations accordingly.
           </>
         ),
@@ -154,7 +154,7 @@ const sections: FaqSection[] = [
           <>
             Significant weight loss or gain, dental work, or facial surgery can
             change how a mask seals. If your mask suddenly leaks more or feels
-            wrong, retake the Penn Fit scan — your measurements may have
+            wrong, retake the PennPaps scan — your measurements may have
             shifted enough that a different size or style is now a better
             match.
           </>
@@ -200,7 +200,7 @@ const sections: FaqSection[] = [
             Most US insurance plans (Medicare, Medicaid, and most commercial
             insurers) cover CPAP supplies on a regular replacement schedule —
             typically a new mask every three months and replacement cushions
-            and headgear monthly. Penn Home Medical Supply will verify your
+            and headgear monthly. PennPaps will verify your
             coverage and let you know your out-of-pocket cost before shipping.
           </>
         ),
@@ -216,13 +216,13 @@ const sections: FaqSection[] = [
         ),
       },
       {
-        q: "Can I order replacement supplies through Penn Fit?",
+        q: "Can I order replacement supplies through PennPaps?",
         a: (
           <>
-            Resupply is handled separately by Penn Home Medical Supply's
+            Resupply is handled separately by PennPaps's
             resupply program — once you're an established patient, we'll reach
             out by SMS, email, or phone when you're due for new cushions,
-            headgear, filters, and tubing. You don't need to re-run Penn Fit
+            headgear, filters, and tubing. You don't need to re-run PennPaps
             for resupply orders unless your fit has changed.
           </>
         ),
@@ -268,7 +268,7 @@ const sections: FaqSection[] = [
             <strong>headgear every 6 months</strong> (elastic stretches),{" "}
             <strong>tubing every 3 months</strong>, and{" "}
             <strong>filters monthly</strong>. Insurance typically covers this
-            cadence — Penn Home Medical Supply's resupply program tracks it
+            cadence — PennPaps's resupply program tracks it
             for you automatically.
           </>
         ),
@@ -305,7 +305,7 @@ const sections: FaqSection[] = [
             Mask marks usually mean the headgear is too tight or the cushion
             is the wrong size. Loosen the straps until you hear a slight leak,
             then tighten in tiny increments until it stops. If marks persist,
-            it's a fit issue — retake the Penn Fit scan or contact us for an
+            it's a fit issue — retake the PennPaps scan or contact us for an
             exchange.
           </>
         ),
@@ -373,14 +373,14 @@ const sections: FaqSection[] = [
           <>
             This is almost always a comfort issue — the mask is too tight, the
             cushion is wrong, or the pressure feels too high. Don't push
-            through it. Retake the Penn Fit scan and contact us; we'll help
+            through it. Retake the PennPaps scan and contact us; we'll help
             you switch to a better-tolerated style at no extra charge during
             your first 30 days.
           </>
         ),
       },
       {
-        q: "When should I stop and call Penn Home Medical Supply?",
+        q: "When should I stop and call PennPaps?",
         a: (
           <>
             Stop using the mask and contact us if you develop persistent skin
@@ -404,7 +404,7 @@ export function Faq() {
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
             <HelpCircle className="w-4 h-4" />
-            <span>Answers from Penn Home Medical Supply</span>
+            <span>Answers from PennPaps</span>
           </div>
         </div>
         <div className="flex justify-center">
@@ -504,7 +504,7 @@ export function Faq() {
                 Still have questions?
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Penn Home Medical Supply's care team is available to help with
+                PennPaps's care team is available to help with
                 clinical fit, insurance, prescriptions, and resupply timing.
                 Anything you don't see here, we're happy to answer one-on-one.
               </p>
@@ -517,7 +517,7 @@ export function Faq() {
                 </Link>
                 <Link href="/how-it-works">
                   <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-primary gap-2">
-                    See how Penn Fit works
+                    See how PennPaps works
                   </Button>
                 </Link>
               </div>
@@ -532,7 +532,7 @@ export function Faq() {
           Ready to find your mask?
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Penn Fit takes about three minutes. Your photo never leaves your
+          PennPaps takes about three minutes. Your photo never leaves your
           device.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">

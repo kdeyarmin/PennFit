@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 
-// Penn Resupply Admin Console entry point.
+// PennPaps Admin Console entry point.
 //
 // Two providers wrap the app, in this exact order:
 //

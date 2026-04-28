@@ -117,7 +117,7 @@ export async function handleVoiceWsConnection(
   const client = new RealtimeClient({
     apiKey: config.openaiApiKey,
     instructions: buildSystemPrompt({
-      practiceName: config.practiceName ?? "Penn Home Medical",
+      practiceName: config.practiceName ?? "PennPaps",
       callContext:
         "Outbound CPAP resupply check-in. Verify identity by date of birth, " +
         "review supplies due, confirm shipping address, and place the order.",

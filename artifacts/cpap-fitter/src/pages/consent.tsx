@@ -32,7 +32,7 @@ export function Consent() {
           </div>
           <CardTitle className="text-display text-3xl md:text-4xl text-center font-bold tracking-tight text-gradient-brand">Privacy & Consent</CardTitle>
           <CardDescription className="text-center text-lg max-w-xl mx-auto">
-            At Penn Home Medical Supply, your privacy is our absolute priority. Before we begin, please review how Penn Fit protects your data.
+            At PennPaps, your privacy is our absolute priority. Before we begin, please review how PennPaps protects your data.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
@@ -67,7 +67,7 @@ export function Consent() {
             commit. The image / measurement story above is unchanged (still
             on-device only). Order details are different: once a patient
             chooses to place an order, name/DOB/address/insurance/Rx ARE
-            stored on Penn's servers so staff can fulfill it. Be explicit so
+            stored on PennPaps's servers so staff can fulfill it. Be explicit so
             consent is informed.
           */}
           <div className="flex gap-4 p-5 rounded-xl glass-panel border border-[hsl(var(--penn-gold)/0.4)]">
@@ -79,7 +79,7 @@ export function Consent() {
               <p className="text-sm text-muted-foreground">
                 Camera measurements stay on your device. <strong>However, when you submit an order</strong>,
                 the contact, shipping, insurance, and prescription details you enter are stored
-                in Penn Home Medical Supply's secure database so our fulfillment team can ship
+                in PennPaps's secure database so our fulfillment team can ship
                 your mask and bill your insurance. You'll re-confirm this at checkout. See our{" "}
                 <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
                 for full details.
@@ -99,11 +99,11 @@ export function Consent() {
               <div className="space-y-3">
                 <p className="font-medium text-primary tracking-tight">Biometric Information Privacy Disclosure</p>
                 <p className="text-foreground/80 leading-relaxed">
-                  To provide mask recommendations, Penn Fit uses facial recognition technology to extract numerical measurements (such as the distance between your nose and chin).
-                  <strong> No images or biometric identifiers are stored, recorded, or transmitted to Penn Home Medical Supply or any third party.</strong>
+                  To provide mask recommendations, PennPaps uses facial recognition technology to extract numerical measurements (such as the distance between your nose and chin).
+                  <strong> No images or biometric identifiers are stored, recorded, or transmitted to PennPaps or any third party.</strong>
                 </p>
                 <p className="text-foreground/80 leading-relaxed">
-                  Only the extracted numerical values (in millimeters) and your questionnaire answers are sent securely to the Penn Fit recommendation engine.
+                  Only the extracted numerical values (in millimeters) and your questionnaire answers are sent securely to the PennPaps recommendation engine.
                 </p>
               </div>
             </div>

@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 // Brand-aligned button. Three intents:
-//   - "primary": Penn navy, used for the page's main CTA.
+//   - "primary": PennPaps navy, used for the page's main CTA.
 //   - "secondary": white with gold border, used inline next to a primary.
 //   - "ghost": no background; used for table-row inline actions.
 //

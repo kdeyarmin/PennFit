@@ -57,7 +57,7 @@ export function Measure() {
 
         // Self-hosted MediaPipe — see scripts/setup-mediapipe.mjs. Loading
         // these from our own origin (instead of jsdelivr/Google Storage)
-        // is what backs Penn Fit's "100% private" claim end-to-end and
+        // is what backs PennPaps's "100% private" claim end-to-end and
         // also lets the app pass a strict same-origin CSP.
         const base = import.meta.env.BASE_URL; // includes trailing slash
         const vision = await FilesetResolver.forVisionTasks(`${base}mediapipe/wasm`);

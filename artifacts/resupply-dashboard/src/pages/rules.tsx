@@ -21,7 +21,7 @@ import { Button } from "../components/Button";
 import { Input, Label, Select } from "../components/Input";
 import { formatDateTime } from "../lib/format";
 
-// Penn Resupply — Global frequency rules.
+// PennPaps — Global frequency rules.
 //
 // Rules are consulted by the eligibility engine when a patient has
 // no per-patient override. Resolution order is:

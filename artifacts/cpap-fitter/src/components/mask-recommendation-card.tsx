@@ -119,7 +119,7 @@ export function MaskRecommendationCard({
                     </ul>
                     <p className="text-xs text-muted-foreground italic pt-1">
                       Penalties apply for contraindications and pressure mismatches. The score is
-                      guidance — the final fitting confirmation happens with Penn Home Medical Supply.
+                      guidance — the final fitting confirmation happens with PennPaps.
                     </p>
                   </PopoverContent>
                 </Popover>
@@ -233,7 +233,7 @@ export function MaskRecommendationCard({
               Order This Mask
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-2">
-              We'll collect your insurance and shipping info, then send your order to Penn Home Medical Supply.
+              We'll collect your insurance and shipping info, then send your order to PennPaps.
             </p>
           </div>
         </div>

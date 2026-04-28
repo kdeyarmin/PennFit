@@ -10,7 +10,7 @@ export function Scene1() {
     // (logo → title → tagline) before the next one slides in.
     const timers = [
       setTimeout(() => setPhase(1), 400),   // Logo lands
-      setTimeout(() => setPhase(2), 1500),  // "Penn Fit" title
+      setTimeout(() => setPhase(2), 1500),  // "PennPaps" title
       setTimeout(() => setPhase(3), 2600),  // "How to Use" badge
       setTimeout(() => setPhase(4), 5200),  // Elements start exiting
     ];
@@ -39,7 +39,7 @@ export function Scene1() {
         >
           <img 
             src={logoSrc} 
-            alt="Penn Home Medical Supply Logo" 
+            alt="PennPaps Logo" 
             className="w-32 sm:w-40 md:w-56 lg:w-64 object-contain"
           />
         </motion.div>
@@ -52,7 +52,7 @@ export function Scene1() {
           animate={phase >= 2 ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
         >
-          Penn Fit
+          PennPaps
         </motion.h1>
 
         {/* Subtitle */}

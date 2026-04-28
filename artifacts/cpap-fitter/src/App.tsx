@@ -184,7 +184,7 @@ function App() {
       signInFallbackRedirectUrl={`${basePath}/admin`}
       signUpFallbackRedirectUrl={`${basePath}/admin`}
       appearance={{
-        // Penn brand: navy primary + gold accent. The CSS @layer order in
+        // PennPaps brand: navy primary + gold accent. The CSS @layer order in
         // index.css ensures Tailwind's utilities don't clobber Clerk's
         // internal styles.
         variables: {

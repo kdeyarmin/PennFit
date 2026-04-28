@@ -38,7 +38,7 @@ export function AdminDashboard() {
           Dashboard
         </h1>
         <p className="text-muted-foreground mt-1">
-          Recent activity and order metrics across Penn Fit.
+          Recent activity and order metrics across PennPaps.
         </p>
       </div>
 
@@ -50,7 +50,7 @@ export function AdminDashboard() {
           icon={<Package className="w-5 h-5" />}
         />
         <StatCard
-          title="Delivered to Penn"
+          title="Delivered to PennPaps"
           value={analytics.isLoading ? null : totalsBy("sent")}
           icon={<CheckCircle2 className="w-5 h-5" />}
           tone="success"

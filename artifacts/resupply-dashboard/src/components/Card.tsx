@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// Penn-branded card surface. Used for KPI tiles, detail panels, and
+// PennPaps-branded card surface. Used for KPI tiles, detail panels, and
 // table containers. Inline styles for the brand-tinted border so the
 // brand tokens stay in lockstep with App.tsx; layout-only utilities
 // stay in Tailwind classNames.

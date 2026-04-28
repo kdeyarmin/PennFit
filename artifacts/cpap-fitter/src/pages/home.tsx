@@ -19,7 +19,7 @@ export function Home() {
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              Penn Fit
+              PennPaps
             </span>
             <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>
@@ -32,7 +32,7 @@ export function Home() {
         </h1>
 
         <p className="text-lg md:text-xl text-muted-foreground leading-relaxed mb-10 max-w-2xl mx-auto">
-          From the team at Penn Home Medical Supply. Our clinical-grade fitting tool uses your
+          From the team at PennPaps. Our clinical-grade fitting tool uses your
           device's camera to measure your facial structure securely, then matches you with the
           ideal mask from our catalog based on your unique needs.
         </p>
@@ -168,7 +168,7 @@ export function Home() {
             {
               href: "/how-it-works",
               Icon: Compass,
-              title: "How Penn Fit works",
+              title: "How PennPaps works",
               body: "A walkthrough of the three-minute fitting flow, plus tips for the most accurate face capture.",
               cta: "See the walkthrough",
               testid: "home-resource-how-it-works",

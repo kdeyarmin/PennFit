@@ -59,13 +59,13 @@ export interface MessagingConfig {
   hasLinkHmacKey: boolean;
   /**
    * Practice name baked into outbound SMS + email templates. Falls
-   * back to "Penn Sleep Center" when unset so dev surfaces something
+   * back to "PennPaps" when unset so dev surfaces something
    * presentable; production should always set this.
    */
   practiceName: string;
 }
 
-const DEFAULT_PRACTICE_NAME = "Penn Sleep Center";
+const DEFAULT_PRACTICE_NAME = "PennPaps";
 
 export function readSmsConfigOrNull(
   env: NodeJS.ProcessEnv = process.env,

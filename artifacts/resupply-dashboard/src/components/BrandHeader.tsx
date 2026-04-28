@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// Reusable Penn-branded top bar. Lifted out of App.tsx so AppShell
+// Reusable PennPaps-branded top bar. Lifted out of App.tsx so AppShell
 // can mount the same chrome on every console screen without forcing
 // every page to redeclare brand tokens.
 
@@ -20,7 +20,7 @@ export function BrandHeader({ rightSlot }: { rightSlot?: ReactNode }) {
         </div>
         <div className="leading-tight">
           <div className="text-white font-semibold tracking-tight">
-            Penn Resupply Console
+            PennPaps
           </div>
           <div className="text-xs" style={{ color: "#c9a24a" }}>
             Admin workstation
@@ -44,7 +44,7 @@ export function BrandFooter() {
         borderColor: "#e5e7eb",
       }}
     >
-      Penn Home Medical Supply · Internal tooling · Not for patient use
+      PennPaps · Internal tooling · Not for patient use
     </footer>
   );
 }

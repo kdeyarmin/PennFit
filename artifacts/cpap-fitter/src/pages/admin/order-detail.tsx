@@ -10,7 +10,7 @@ import { ArrowLeft, AlertCircle, ClipboardCheck } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending send",
-  sent: "Delivered to Penn",
+  sent: "Delivered to PennPaps",
   failed: "Delivery failed",
   skipped: "Skipped (email not configured)",
 };
@@ -178,7 +178,7 @@ export function AdminOrderDetail() {
         <Section title="Prescription">
           <Field
             label="Existing CPAP Rx on file"
-            value={prescription.hasExistingPrescription ? "Yes" : "No — Penn must obtain Rx before shipping"}
+            value={prescription.hasExistingPrescription ? "Yes" : "No — PennPaps must obtain Rx before shipping"}
           />
           {prescription.physicianName && <Field label="Physician" value={prescription.physicianName} />}
           {prescription.physicianPhone && <Field label="Physician phone" value={prescription.physicianPhone} />}

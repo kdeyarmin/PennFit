@@ -14,19 +14,19 @@ export function Privacy() {
             <div className="inline-flex items-center gap-3">
               <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-                Penn Fit · Privacy
+                PennPaps · Privacy
               </span>
               <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
             </div>
             <CardTitle className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
               Privacy Policy
             </CardTitle>
-            <p className="text-sm text-muted-foreground">A service of Penn Home Medical Supply, LLC</p>
+            <p className="text-sm text-muted-foreground">A service of PennPaps</p>
           </div>
         </CardHeader>
         <CardContent className="space-y-6 text-sm text-foreground/90 leading-relaxed pt-6">
           <p>
-            This Privacy Policy describes how Penn Home Medical Supply, LLC ("Penn Home Medical Supply," "we," "us," or "our") handles information you provide while using the Penn Fit CPAP mask fitting tool ("Penn Fit").
+            This Privacy Policy describes how PennPaps ("PennPaps," "we," "us," or "our") handles information you provide while using the PennPaps CPAP mask fitting tool ("PennPaps").
           </p>
 
           <section className="space-y-2">
@@ -35,8 +35,8 @@ export function Privacy() {
               Data Processing and Camera Use
             </h3>
             <p>
-              Penn Fit uses your device's camera to perform real-time facial measurements required for CPAP mask fitting.
-              <strong> All image and video processing occurs locally on your device.</strong> Penn Home Medical Supply does not capture, record, store, or transmit photographs, video streams, or biometric identifiers to our servers.
+              PennPaps uses your device's camera to perform real-time facial measurements required for CPAP mask fitting.
+              <strong> All image and video processing occurs locally on your device.</strong> PennPaps does not capture, record, store, or transmit photographs, video streams, or biometric identifiers to our servers.
             </p>
           </section>
 
@@ -46,7 +46,7 @@ export function Privacy() {
               Data Transmitted
             </h3>
             <p>
-              The only data transmitted from your device to Penn Home Medical Supply's servers are:
+              The only data transmitted from your device to PennPaps's servers are:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>Numerical facial measurements (e.g., nose width in millimeters).</li>
@@ -67,8 +67,8 @@ export function Privacy() {
             <p>
               <strong>If you submit an order</strong>, the contact, shipping, insurance, prescription, and notes
               fields you enter — together with the chosen mask, on-device measurements, and an anonymized
-              order reference — are stored in Penn Home Medical Supply's secure HIPAA-aware fulfillment
-              database. This information is used by Penn staff to:
+              order reference — are stored in PennPaps's secure HIPAA-aware fulfillment
+              database. This information is used by PennPaps staff to:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>Ship the mask to your address;</li>
@@ -78,9 +78,9 @@ export function Privacy() {
             </ul>
             <p className="mt-2">
               You re-confirm this storage at checkout via a required consent checkbox. Access to stored
-              orders is limited to Penn Home Medical Supply staff who have signed in with an authorized
+              orders is limited to PennPaps staff who have signed in with an authorized
               email and is recorded in an internal audit log. To request a copy or deletion of your stored
-              order information, contact Penn Home Medical Supply directly.
+              order information, contact PennPaps directly.
             </p>
           </section>
 
@@ -90,9 +90,9 @@ export function Privacy() {
               Third-Party Services
             </h3>
             <p>
-              Penn Fit uses Google's MediaPipe technology for on-device landmark detection. This operates
-              entirely within your browser environment. Order emails are delivered to Penn Home Medical
-              Supply through SendGrid, our transactional email provider. Authentication for Penn staff
+              PennPaps uses Google's MediaPipe technology for on-device landmark detection. This operates
+              entirely within your browser environment. Order emails are delivered to PennPaps
+              through SendGrid, our transactional email provider. Authentication for PennPaps staff
               is provided by Clerk.
             </p>
           </section>
@@ -105,8 +105,8 @@ export function Privacy() {
             <p>
               Camera images and biometric measurements are never stored beyond the immediate browser
               session — closing the browser or clicking "Start Over" clears them. For data you submitted
-              with an order (contact, shipping, insurance, prescription), you may contact Penn Home
-              Medical Supply directly to request a copy, correction, or deletion subject to applicable
+              with an order (contact, shipping, insurance, prescription), you may contact PennPaps
+              directly to request a copy, correction, or deletion subject to applicable
               recordkeeping requirements.
             </p>
           </section>

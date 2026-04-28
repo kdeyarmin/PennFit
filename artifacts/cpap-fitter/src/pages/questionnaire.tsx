@@ -145,7 +145,7 @@ export function Questionnaire() {
           </Button>
           <div className="flex-1 flex items-baseline justify-between gap-3">
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              Penn Fit · Questionnaire
+              PennPaps · Questionnaire
             </span>
             <span className="text-xs font-mono text-muted-foreground tabular-nums">
               <span className="text-[hsl(var(--penn-gold))] font-bold">

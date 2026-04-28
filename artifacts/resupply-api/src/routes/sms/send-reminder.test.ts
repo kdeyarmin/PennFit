@@ -290,7 +290,7 @@ describe("POST /sms/send-reminder", () => {
     expect(sendSmsMock).toHaveBeenCalledTimes(1);
     const call = sendSmsMock.mock.calls[0][0];
     expect(call.to).toBe("+12155551212");
-    expect(call.body).toContain("Penn Sleep Center");
+    expect(call.body).toContain("PennPaps");
     expect(call.statusCallbackUrl).toContain(
       `/resupply-api/sms/status-callback?conversationId=${CONVERSATION_ID}`,
     );

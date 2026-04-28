@@ -43,11 +43,11 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 // Admin-facing contact address. Override per environment with
 // VITE_RESUPPLY_CONTACT_EMAIL so a production cutover (mailbox
 // rename, distribution list change, etc.) doesn't require shipping
-// a code change. Default is the current Penn Home Medical operations
-// inbox, which is also the production value in dev/staging.
+// a code change. Default is the PennPaps operations inbox, which
+// is also the production value in dev/staging.
 const DEFAULT_CONTACT_EMAIL =
   (import.meta.env.VITE_RESUPPLY_CONTACT_EMAIL as string | undefined) ??
-  "rt-coordinator@pennhomemedical.com";
+  "info@pennpaps.com";
 
 export function NotAuthorizedPage({
   reason,
@@ -96,7 +96,7 @@ export function NotAuthorizedPage({
           </div>
           <div className="leading-tight">
             <div className="text-white font-semibold tracking-tight">
-              Penn Resupply Console
+              PennPaps Console
             </div>
             <div className="text-xs" style={{ color: "#c9a24a" }}>
               {isTransient ? "Access pending" : "Access denied"}
@@ -143,7 +143,7 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-2"
                 style={{ color: "#374151" }}
               >
-                Please contact your Penn Home Medical Supply IT
+                Please contact your PennPaps IT
                 administrator and reference{" "}
                 <code className="text-xs px-1 py-0.5 bg-gray-100 rounded">
                   RESUPPLY_ADMIN_EMAILS
@@ -249,7 +249,7 @@ export function NotAuthorizedPage({
           borderColor: "#e5e7eb",
         }}
       >
-        Penn Home Medical Supply · Internal tooling · Not for patient use
+        PennPaps · Internal tooling · Not for patient use
       </footer>
     </div>
   );

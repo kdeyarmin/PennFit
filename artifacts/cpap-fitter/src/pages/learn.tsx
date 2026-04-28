@@ -100,7 +100,7 @@ const articles: Article[] = [
         cushion — a comfortable middle ground for most patients.{" "}
         <strong>Full-face masks</strong> cover both nose and mouth — the
         right call if you're a mouth-breather, run high pressures, or
-        struggle with chronic congestion. Penn Fit weighs all three
+        struggle with chronic congestion. PennPaps weighs all three
         against your face shape and questionnaire answers before
         recommending.
       </>
@@ -120,7 +120,7 @@ const articles: Article[] = [
         sleepers face the same constraint and benefit from minimal-contact
         styles. Back sleepers can wear any mask comfortably, so the
         decision comes down to whether you mouth-breathe and what
-        pressure you're prescribed. Penn Fit's questionnaire asks about
+        pressure you're prescribed. PennPaps's questionnaire asks about
         position so we don't recommend a mask that'll fight your
         favorite sleeping pose.
       </>
@@ -139,7 +139,7 @@ const articles: Article[] = [
         tubing collects mineral deposits, and filters trap dust. Most US
         insurance plans cover replacements on a roughly: <em>cushions
         every 2–4 weeks, headgear every 6 months, tubing every 3 months,
-        filters monthly</em> cadence. Penn Home Medical Supply's resupply
+        filters monthly</em> cadence. PennPaps's resupply
         program tracks your schedule and reaches out when you're due —
         you don't have to remember.
       </>
@@ -191,7 +191,7 @@ const articles: Article[] = [
     tone: "gold",
     body: (
       <>
-        Penn Home Medical Supply handles the equipment side: mask
+        PennPaps handles the equipment side: mask
         fitting, ordering, insurance verification, and resupply. Your
         sleep medicine provider handles the clinical side: diagnosing
         apnea, prescribing CPAP, setting your pressure, and adjusting
@@ -217,7 +217,7 @@ export function Learn() {
         <div className="flex justify-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-sm font-medium shadow-sm">
             <BookOpen className="w-4 h-4" />
-            <span>Patient Education from Penn Home Medical Supply</span>
+            <span>Patient Education from PennPaps</span>
           </div>
         </div>
         <div className="flex justify-center">
@@ -289,7 +289,7 @@ export function Learn() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 These articles are general patient education from the team at
-                Penn Home Medical Supply. They aren't a substitute for
+                PennPaps. They aren't a substitute for
                 personalized advice from your sleep medicine provider. If
                 you're experiencing new or worsening symptoms — daytime
                 sleepiness, choking episodes, persistent skin breakdown, or
@@ -332,7 +332,7 @@ export function Learn() {
           </div>
           <div className="space-y-1 flex-1">
             <h3 className="font-semibold tracking-tight group-hover:text-primary transition-colors">
-              How Penn Fit works
+              How PennPaps works
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
               A walkthrough of the three-minute fitting flow, with capture
@@ -349,7 +349,7 @@ export function Learn() {
           When you're ready, we'll fit you in minutes.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Penn Fit uses your camera on-device to recommend the right mask. No
+          PennPaps uses your camera on-device to recommend the right mask. No
           uploads, no waiting on a callback.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">

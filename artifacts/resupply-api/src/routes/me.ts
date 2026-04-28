@@ -10,7 +10,7 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 //     - Whether to show the admin UI at all (200 = show, 403 =
 //       render the friendly "not authorized" screen — see #13).
 //     - What email to display in the dashboard chrome ("Signed in as
-//       rt-coordinator@pennhomemedical.com").
+//       info@pennpaps.com").
 //
 //   We deliberately do NOT echo the Clerk session token, the full
 //   Clerk user object, or the admin allowlist — only the two

@@ -32,12 +32,12 @@ export function Masks() {
           <div className="inline-flex items-center gap-3 mb-3">
             <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              Penn Fit · Catalog
+              PennPaps · Catalog
             </span>
           </div>
           <h1 className="text-display text-4xl md:text-5xl font-bold tracking-tight mb-2 text-gradient-brand">Mask Catalog</h1>
           <p className="text-muted-foreground">
-            Browse all CPAP masks available through Penn Home Medical Supply.
+            Browse all CPAP masks available through PennPaps.
           </p>
         </div>
 

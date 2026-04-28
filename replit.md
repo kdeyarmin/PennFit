@@ -1,16 +1,22 @@
-# Penn Fit — CPAP Mask Fitter
+# PennPaps — CPAP Mask Fitter
 
 ## Overview
 
-Penn Fit is a web application designed for Penn Home Medical Supply, LLC, to assist patients in selecting the most suitable CPAP mask. The application prioritizes user privacy through on-device facial measurements and combines this with a clinical questionnaire to provide personalized, justified mask recommendations from Penn's product catalog. It also facilitates order placement and adheres to Penn's brand guidelines, including an animated tutorial for user guidance.
+PennPaps is a web application that helps patients select the most suitable CPAP mask. The application prioritizes user privacy through on-device facial measurements and combines this with a clinical questionnaire to provide personalized, justified mask recommendations from the PennPaps product catalog. It also facilitates order placement and adheres to PennPaps brand guidelines, including an animated tutorial for user guidance.
+
+**Brand & Contact**
+
+The site is branded as **PennPaps**. The universal contact email used throughout all user-facing surfaces is `info@pennpaps.com` (overridable in the dashboard via `VITE_RESUPPLY_CONTACT_EMAIL`). Default practice name baked into outbound SMS, email, and voice templates is **PennPaps** (overridable via `RESUPPLY_PRACTICE_NAME`). The Clerk-hosted sign-in screen title (currently "Mask Fit Assistant") is configured in the Clerk Dashboard, not in code, and must be updated there to complete the rebrand on that surface.
+
+Internal package directory names (`@workspace/resupply-*`, `@workspace/penn-fit-tutorial`, `RESUPPLY_*` env vars, `resupply.*` Postgres schema) are intentionally retained — those are stable identifiers, not user-facing brand surfaces.
 
 **Key Capabilities:**
 
 *   **Privacy-First Facial Measurement:** On-device processing of facial images for measurements, without transmitting or storing sensitive image data.
 *   **Clinical Questionnaire:** Gathers patient data for refined mask recommendations.
 *   **Personalized Mask Recommendations:** Delivers a ranked list of masks with justifications based on facial fit and clinical needs.
-*   **Order Placement:** Securely submits orders to Penn Home Medical Supply via a stateless API.
-*   **Brand Alignment:** Incorporates Penn's distinct visual design system.
+*   **Order Placement:** Securely submits orders to PennPaps via a stateless API.
+*   **Brand Alignment:** Incorporates the PennPaps visual design system.
 *   **Tutorial:** Guides users through the fitting process with an animated video.
 
 ## User Preferences
@@ -23,7 +29,7 @@ Do not log order request bodies in the application logger (treat every log line 
 
 ## System Architecture
 
-The Penn Fit application employs a privacy-first, stateless architecture, emphasizing on-device processing for sensitive data and secure handling of persistent information.
+The PennPaps application employs a privacy-first, stateless architecture, emphasizing on-device processing for sensitive data and secure handling of persistent information.
 
 ### Privacy and Data Handling
 

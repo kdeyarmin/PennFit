@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --color-primary: #1F3A5C; /* Penn Navy */
+  --color-primary: #1F3A5C; /* PennPaps Navy */
   --color-secondary: #0F1C2D; /* Darker Navy */
-  --color-accent: #F4B942; /* Penn Gold */
+  --color-accent: #F4B942; /* PennPaps Gold */
 
   --color-bg-light: #F8FAFC;
   --color-bg-dark: #1F3A5C;
