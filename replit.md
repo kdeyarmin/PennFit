@@ -58,7 +58,9 @@ A separate, internal CPAP Resupply Automation system manages automated patient o
 
 ### Patient Education
 
-A dedicated `/learn/replacement-schedule` page provides information on CPAP supply replacement schedules and a self-check for overdue gear.
+The `/learn` hub links to longer-form, single-purpose sub-pages:
+- `/learn/replacement-schedule` — full per-item cadences for cushions, tubing, filters, headgear, and chambers, with overdue self-check.
+- `/learn/device-setup` — new-patient step-by-step guide for setting up a CPAP or BiPAP: 7-step initial setup, first-night expectations, daily/weekly/monthly care, troubleshooting (leaks, dry mouth, aerophagia, claustrophobia, pressure intolerance), BiPAP-specific notes, and "when to call us vs. your doctor". Surfaced from `/learn` and from `/order-success` so newly-purchased customers see it immediately after checkout.
 
 ### Cash-Pay Shop
 

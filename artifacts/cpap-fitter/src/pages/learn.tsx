@@ -14,6 +14,7 @@ import {
   Stethoscope,
   Sparkles,
   ArrowRight,
+  Settings2,
 } from "lucide-react";
 
 type Article = {
@@ -318,6 +319,25 @@ export function Learn() {
             <p className="text-sm text-muted-foreground leading-relaxed">
               Quick answers to specific questions on ordering, insurance,
               cleaning, and troubleshooting.
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
+        </Link>
+        <Link
+          href="/learn/device-setup"
+          className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
+          data-testid="learn-link-device-setup"
+        >
+          <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
+            <Settings2 className="w-5 h-5" />
+          </div>
+          <div className="space-y-1 flex-1">
+            <h3 className="font-semibold tracking-tight group-hover:text-primary transition-colors">
+              Set up your CPAP or BiPAP
+            </h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Step-by-step new-patient guide — unboxing, first night,
+              daily care, and fixes for the most common first-week issues.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />

@@ -21,6 +21,7 @@ import { HowItWorks } from "@/pages/how-it-works";
 import { Faq } from "@/pages/faq";
 import { Learn } from "@/pages/learn";
 import { ReplacementSchedule } from "@/pages/replacement-schedule";
+import { DeviceSetup } from "@/pages/device-setup";
 import { Shop } from "@/pages/shop";
 import { ShopCart } from "@/pages/shop-cart";
 import { ShopCheckoutSuccess } from "@/pages/shop-checkout-success";
@@ -121,6 +122,7 @@ function PatientRouter() {
         <Route path="/faq" component={Faq} />
         <Route path="/learn" component={Learn} />
         <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
+        <Route path="/learn/device-setup" component={DeviceSetup} />
         <Route path="/shop" component={Shop} />
         <Route path="/shop/cart" component={ShopCart} />
         <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
