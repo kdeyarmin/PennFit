@@ -197,6 +197,25 @@ function App() {
       signUpUrl={`${basePath}/sign-up`}
       signInFallbackRedirectUrl={`${basePath}/admin`}
       signUpFallbackRedirectUrl={`${basePath}/admin`}
+      localization={{
+        // Override Clerk's "{{applicationName}}" interpolation so the
+        // hosted sign-in / sign-up cards display our real brand name
+        // instead of whatever is set in the Clerk dashboard. Updating the
+        // dashboard is the canonical fix (and would also affect emails),
+        // but this guarantees the in-app text is always on-brand.
+        signIn: {
+          start: {
+            title: "Sign in to Penn Home Medical Supply",
+            subtitle: "Welcome back! Please sign in to continue",
+          },
+        },
+        signUp: {
+          start: {
+            title: "Create your Penn Home Medical Supply account",
+            subtitle: "Welcome! Please fill in the details to get started.",
+          },
+        },
+      }}
       appearance={{
         // PennPaps brand: navy primary + gold accent. The CSS @layer order in
         // index.css ensures Tailwind's utilities don't clobber Clerk's
