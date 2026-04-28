@@ -37,6 +37,13 @@ export interface ShopProductView {
 }
 
 export interface ShopProductsResponse {
+  /**
+   * `true` when the API is serving the built-in preview catalog
+   * because Stripe isn't configured in this environment. The shop UI
+   * renders normally but checkout is disabled. See
+   * resupply-api/src/lib/stripe/preview-catalog.ts.
+   */
+  previewMode: boolean;
   categories: readonly ShopProductView["category"][];
   products: ShopProductView[];
   byCategory: Record<ShopProductView["category"], ShopProductView[]>;
@@ -67,7 +74,18 @@ export async function fetchShopProducts(): Promise<ShopProductsResult> {
   if (!res.ok) {
     throw new Error(`Failed to load shop products (${res.status})`);
   }
-  return (await res.json()) as ShopProductsResponse;
+  // Older API versions didn't include `previewMode`; default to false
+  // so the cart never falsely disables checkout when talking to a
+  // legacy server.
+  const json = (await res.json()) as Partial<ShopProductsResponse>;
+  return {
+    previewMode: json.previewMode ?? false,
+    categories: json.categories ?? [],
+    products: json.products ?? [],
+    byCategory:
+      json.byCategory ??
+      ({} as Record<ShopProductView["category"], ShopProductView[]>),
+  };
 }
 
 export interface CheckoutItem {

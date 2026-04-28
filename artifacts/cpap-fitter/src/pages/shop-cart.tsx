@@ -10,10 +10,11 @@
 // happens only on the success page after a confirmed paid status, so
 // a user who closes the Stripe tab still has their cart intact.
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
 import {
   ArrowRight,
+  Info,
   Lock,
   Minus,
   Plus,
@@ -25,15 +26,53 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/hooks/use-cart";
-import { formatMoneyCents, startCheckout } from "@/lib/shop-api";
+import {
+  fetchShopProducts,
+  formatMoneyCents,
+  startCheckout,
+} from "@/lib/shop-api";
 
 export function ShopCart() {
   const { items, totalCents, setQuantity, removeItem } = useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tri-state preview probe: `null` until the products fetch resolves,
+  // then `true`/`false`. Keeping it tri-state lets us disable Checkout
+  // during the probe so a fast click can't beat the response and POST
+  // to /shop/checkout (the server would 503 anyway, but disabling
+  // avoids a flash-of-error). The /shop/products endpoint is cached
+  // server-side for 60s, so this single GET is cheap.
+  const [previewMode, setPreviewMode] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchShopProducts()
+      .then((r) => {
+        if (!active) return;
+        if ("unavailable" in r) {
+          // Treat hard-503 as preview-equivalent for the cart: no
+          // checkout possible either way.
+          setPreviewMode(true);
+          return;
+        }
+        setPreviewMode(r.previewMode);
+      })
+      .catch(() => {
+        // Fail open to "live" so a transient products fetch failure
+        // doesn't block a real customer's checkout. The button click
+        // path still surfaces the real error if checkout itself fails.
+        if (active) setPreviewMode(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const probing = previewMode === null;
 
   async function handleCheckout() {
     if (items.length === 0) return;
+    if (previewMode !== false) return;
     setError(null);
     setCheckingOut(true);
     try {
@@ -158,13 +197,39 @@ export function ShopCart() {
                   {error}
                 </p>
               )}
+              {previewMode === true && (
+                <div
+                  className="rounded-xl border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 px-3 py-3 mb-3 flex items-start gap-2"
+                  data-testid="cart-preview-banner"
+                  role="status"
+                >
+                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-[hsl(var(--penn-navy))]" />
+                  <p className="text-xs leading-relaxed text-foreground/85">
+                    <span className="font-semibold text-[hsl(var(--penn-navy))]">
+                      Preview mode.
+                    </span>{" "}
+                    Card checkout opens once Stripe is connected — no charge
+                    will be made today.
+                  </p>
+                </div>
+              )}
               <Button
                 onClick={handleCheckout}
-                disabled={checkingOut}
+                disabled={checkingOut || probing || previewMode === true}
                 className="w-full"
                 data-testid="cart-checkout"
               >
-                {checkingOut ? (
+                {previewMode === true ? (
+                  <>
+                    <Lock className="w-4 h-4 mr-2" /> Checkout disabled in
+                    preview
+                  </>
+                ) : probing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Preparing checkout…
+                  </>
+                ) : checkingOut ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Redirecting…
@@ -176,8 +241,9 @@ export function ShopCart() {
                 )}
               </Button>
               <p className="text-[11px] text-muted-foreground mt-3 text-center leading-relaxed">
-                Secure payment processed by Stripe. We never see your card
-                details.
+                {previewMode === true
+                  ? "Use the insurance flow below — it's $0 with a prescription and fully live today."
+                  : "Secure payment processed by Stripe. We never see your card details."}
               </p>
 
               <div className="border-t border-border/40 mt-5 pt-4 text-center">

@@ -14,10 +14,10 @@
 import { Router, type IRouter } from "express";
 
 import {
-  SHOP_UNAVAILABLE_BODY,
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { getPreviewCatalog } from "../../lib/stripe/preview-catalog";
 import {
   type ShopCategory,
   SHOP_CATEGORIES,
@@ -45,32 +45,44 @@ const router: IRouter = Router();
 
 router.get("/shop/products", async (req, res) => {
   const config = readStripeConfigOrNull();
+
+  // Preview-mode fallback: when Stripe isn't configured, serve a
+  // built-in fixture catalog (mirroring the seed script) so the
+  // storefront UX renders end-to-end. The `previewMode: true` flag
+  // tells the frontend to show a banner and disable Checkout —
+  // /shop/checkout itself still 503s, so no real money path is
+  // unintentionally opened. See lib/stripe/preview-catalog.ts.
+  let previewMode = false;
+  let products: ShopProductView[];
+
   if (!config) {
-    res.status(503).json(SHOP_UNAVAILABLE_BODY);
-    return;
-  }
+    previewMode = true;
+    products = getPreviewCatalog();
+  } else {
+    // Use just the first 8 chars of the secret as the cache key prefix
+    // so we invalidate on key rotation without writing a key (or a
+    // hash of one) into a long-lived in-process variable.
+    const keyPrefix = config.secretKey.slice(0, 8);
 
-  // Use just the first 8 chars of the secret as the cache key prefix
-  // so we invalidate on key rotation without writing a key (or a
-  // hash of one) into a long-lived in-process variable.
-  const keyPrefix = config.secretKey.slice(0, 8);
-
-  let products = cacheFresh(keyPrefix);
-  if (!products) {
-    const stripe = getStripeClient(config);
-    // expand default_price so projectProduct can read price.unit_amount
-    // without a second round-trip. Stripe's pagination caps at 100;
-    // we don't expect more than 100 active shop products in the
-    // foreseeable future, but if we ever do, switch to autoPagingEach.
-    const list = await stripe.products.list({
-      active: true,
-      limit: 100,
-      expand: ["data.default_price"],
-    });
-    products = list.data
-      .map(projectProduct)
-      .filter((p): p is ShopProductView => p !== null);
-    cache = { keyPrefix, fetchedAt: Date.now(), products };
+    const cached = cacheFresh(keyPrefix);
+    if (cached) {
+      products = cached;
+    } else {
+      const stripe = getStripeClient(config);
+      // expand default_price so projectProduct can read price.unit_amount
+      // without a second round-trip. Stripe's pagination caps at 100;
+      // we don't expect more than 100 active shop products in the
+      // foreseeable future, but if we ever do, switch to autoPagingEach.
+      const list = await stripe.products.list({
+        active: true,
+        limit: 100,
+        expand: ["data.default_price"],
+      });
+      products = list.data
+        .map(projectProduct)
+        .filter((p): p is ShopProductView => p !== null);
+      cache = { keyPrefix, fetchedAt: Date.now(), products };
+    }
   }
 
   // Group by category for the frontend's section bar. Bundles are
@@ -102,6 +114,7 @@ router.get("/shop/products", async (req, res) => {
   }
 
   res.json({
+    previewMode,
     categories: SHOP_CATEGORIES,
     products,
     byCategory,
