@@ -23,6 +23,8 @@ import type {
   AdminIdentity,
   AuditPage,
   AuthError,
+  BulkPatientStatusRequest,
+  BulkPatientStatusResponse,
   ConsoleValidationError,
   ConversationDetail,
   ConversationListPage,
@@ -39,6 +41,7 @@ import type {
   DashboardSummary,
   DuplicatePacwareIdError,
   EpisodeListPage,
+  ExportPatientsCsvParams,
   FrequencyRule,
   FrequencyRuleCreate,
   FrequencyRuleList,
@@ -70,6 +73,7 @@ import type {
   SendEmailReminderResponse,
   SendSmsReminderRequest,
   SendSmsReminderResponse,
+  StalePatientError,
   TwilioStatusCallbackBody,
   UpdatePrescriptionStatusRequest,
   UpdatePrescriptionStatusResponse,
@@ -1269,6 +1273,11 @@ sending `null` explicitly clears the field, omitting it leaves
 the column unchanged. PHI columns (name, phone, email) are
 NOT writable through this endpoint.
 
+Supports optional optimistic-concurrency via the
+`expectedUpdatedAt` body field. When supplied, a stale write
+returns 409 `stale_patient` instead of clobbering changes
+made by another admin.
+
  * @summary Update admin-editable patient settings
  */
 export const getUpdatePatientUrl = (id: string) => {
@@ -1289,7 +1298,9 @@ export const updatePatient = async (
 };
 
 export const getUpdatePatientMutationOptions = <
-  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TError = ErrorType<
+    ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+  >,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1331,14 +1342,16 @@ export type UpdatePatientMutationResult = NonNullable<
 >;
 export type UpdatePatientMutationBody = BodyType<PatientUpdate>;
 export type UpdatePatientMutationError = ErrorType<
-  ConsoleValidationError | AuthError | NotFoundError
+  ConsoleValidationError | AuthError | NotFoundError | StalePatientError
 >;
 
 /**
  * @summary Update admin-editable patient settings
  */
 export const useUpdatePatient = <
-  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TError = ErrorType<
+    ConsoleValidationError | AuthError | NotFoundError | StalePatientError
+  >,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2692,6 +2705,217 @@ export const useUpdatePrescriptionStatus = <
 > => {
   return useMutation(getUpdatePrescriptionStatusMutationOptions(options));
 };
+
+/**
+ * Admin-driven bulk lifecycle change. Accepts up to 100 patient
+uuids and a target status; the server runs a single
+UPDATE...RETURNING and reports which rows matched. Per-row
+`patient.update` audit entries are written alongside one
+summary `patient.bulk_status_change` row so a future auditor
+can tell bulk actions apart from individual edits.
+
+ * @summary Apply a status change to up to 100 patients in one call
+ */
+export const getBulkUpdatePatientStatusUrl = () => {
+  return `/resupply-api/patients/bulk-status`;
+};
+
+export const bulkUpdatePatientStatus = async (
+  bulkPatientStatusRequest: BulkPatientStatusRequest,
+  options?: RequestInit,
+): Promise<BulkPatientStatusResponse> => {
+  return customFetch<BulkPatientStatusResponse>(
+    getBulkUpdatePatientStatusUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkPatientStatusRequest),
+    },
+  );
+};
+
+export const getBulkUpdatePatientStatusMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdatePatientStatus>>,
+    TError,
+    { data: BodyType<BulkPatientStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkUpdatePatientStatus>>,
+  TError,
+  { data: BodyType<BulkPatientStatusRequest> },
+  TContext
+> => {
+  const mutationKey = ["bulkUpdatePatientStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkUpdatePatientStatus>>,
+    { data: BodyType<BulkPatientStatusRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkUpdatePatientStatus(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkUpdatePatientStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkUpdatePatientStatus>>
+>;
+export type BulkUpdatePatientStatusMutationBody =
+  BodyType<BulkPatientStatusRequest>;
+export type BulkUpdatePatientStatusMutationError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Apply a status change to up to 100 patients in one call
+ */
+export const useBulkUpdatePatientStatus = <
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkUpdatePatientStatus>>,
+    TError,
+    { data: BodyType<BulkPatientStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkUpdatePatientStatus>>,
+  TError,
+  { data: BodyType<BulkPatientStatusRequest> },
+  TContext
+> => {
+  return useMutation(getBulkUpdatePatientStatusMutationOptions(options));
+};
+
+/**
+ * Streams a CSV with the same column shape as
+POST /patients/import-csv: pacware_id, legal_first_name,
+legal_last_name, date_of_birth, phone_e164, email, status,
+created_at, updated_at. Supports the same `status` and
+`search` query filters as GET /patients. Capped at 5000 rows
+per call; truncation is signalled via the response header
+`X-Truncated: true`. Each call writes one
+`patient.export.csv` audit row with row count + filter
+shape (never the search string itself).
+
+ * @summary Download the (optionally-filtered) patient roster as CSV
+ */
+export const getExportPatientsCsvUrl = (params?: ExportPatientsCsvParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/patients/export.csv?${stringifiedParams}`
+    : `/resupply-api/patients/export.csv`;
+};
+
+export const exportPatientsCsv = async (
+  params?: ExportPatientsCsvParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportPatientsCsvUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportPatientsCsvQueryKey = (
+  params?: ExportPatientsCsvParams,
+) => {
+  return [
+    `/resupply-api/patients/export.csv`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getExportPatientsCsvQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportPatientsCsv>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ExportPatientsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportPatientsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getExportPatientsCsvQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof exportPatientsCsv>>
+  > = ({ signal }) => exportPatientsCsv(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportPatientsCsv>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportPatientsCsvQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportPatientsCsv>>
+>;
+export type ExportPatientsCsvQueryError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Download the (optionally-filtered) patient roster as CSV
+ */
+
+export function useExportPatientsCsv<
+  TData = Awaited<ReturnType<typeof exportPatientsCsv>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ExportPatientsCsvParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportPatientsCsv>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportPatientsCsvQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Accepts a JSON array of up to 500 already-parsed CSV rows.

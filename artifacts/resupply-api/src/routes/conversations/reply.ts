@@ -30,6 +30,7 @@ import { EmailConfigError } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
+import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -46,7 +47,11 @@ const bodySchema = z
 
 const router: IRouter = Router();
 
-router.post("/conversations/:id/reply", requireAdmin, async (req, res) => {
+router.post(
+  "/conversations/:id/reply",
+  requireAdmin,
+  withIdempotency("POST /conversations/:id/reply"),
+  async (req, res) => {
   const idParsed = idParam.safeParse(req.params);
   if (!idParsed.success) {
     res.status(404).json({ error: "not_found" });

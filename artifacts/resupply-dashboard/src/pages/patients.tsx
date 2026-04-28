@@ -6,11 +6,13 @@ import {
   ApiError,
   getListPatientsQueryKey,
   ListPatientsStatus,
+  useBulkUpdatePatientStatus,
   useCreatePatient,
   useImportPatientsCsv,
   useListPatients,
 } from "@workspace/resupply-api-client";
 import type {
+  BulkPatientStatusRequestStatus,
   CreatePatientRequest,
   ImportPatientRow,
   ImportPatientRowError,
@@ -47,6 +49,7 @@ type PatientRow = {
 
 export function PatientsPage() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [searchInput, setSearchInput] = useState<string>("");
@@ -57,6 +60,21 @@ export function PatientsPage() {
   const [offset, setOffset] = useState<number>(0);
   const [creating, setCreating] = useState<boolean>(false);
   const [importing, setImporting] = useState<boolean>(false);
+  // Bulk-action selection. We hold patient ids in a Set so toggle
+  // is O(1); React state cycles a fresh Set instance on every change
+  // so the components see new identities and re-render. Selection
+  // intentionally does NOT persist across pagination — the action
+  // bar always shows "N selected" reflecting only what's currently
+  // visible-and-checked.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkFeedback, setBulkFeedback] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [bulkExporting, setBulkExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const bulkMut = useBulkUpdatePatientStatus();
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -86,7 +104,214 @@ export function PatientsPage() {
       },
     });
 
+  // Whenever the visible page changes (filter / paginate / refetch
+  // success), drop any selected ids that are no longer on screen.
+  // This keeps the bulk action bar honest — clicking "Pause 12" must
+  // pause the 12 the admin can see, not 12 ghosts from a prior page.
+  useEffect(() => {
+    if (!data) return;
+    const visible = new Set(data.items.map((r) => r.id));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [data]);
+
+  const allVisibleSelected =
+    !!data && data.items.length > 0 && data.items.every((r) => selectedIds.has(r.id));
+  const someVisibleSelected =
+    !!data && data.items.some((r) => selectedIds.has(r.id));
+
+  function toggleOne(id: string): void {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllVisible(): void {
+    if (!data) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allOn = data.items.every((r) => next.has(r.id));
+      if (allOn) {
+        for (const r of data.items) next.delete(r.id);
+      } else {
+        for (const r of data.items) next.add(r.id);
+      }
+      return next;
+    });
+  }
+  function clearSelection(): void {
+    setSelectedIds(new Set());
+  }
+
+  async function runBulk(targetStatus: BulkPatientStatusRequestStatus): Promise<void> {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const verb =
+      targetStatus === "active"
+        ? "Resume"
+        : targetStatus === "paused"
+          ? "Pause"
+          : "Close";
+    const confirmMsg =
+      targetStatus === "closed"
+        ? `Close ${ids.length} patient${ids.length === 1 ? "" : "s"}? Closed patients are removed from outreach permanently.`
+        : `${verb} ${ids.length} patient${ids.length === 1 ? "" : "s"}?`;
+    if (!window.confirm(confirmMsg)) return;
+    setBulkFeedback(null);
+    try {
+      const res = await bulkMut.mutateAsync({
+        data: { ids, status: targetStatus },
+      });
+      const updatedCount = res.updated.length;
+      const failedCount = res.failed.length;
+      // Group failures by reason for the toast — currently the only
+      // reason the server emits is "not_found", but the breakdown is
+      // forward-compatible with future codes (stale, forbidden, …).
+      const reasonCounts = new Map<string, number>();
+      for (const f of res.failed) {
+        reasonCounts.set(f.error, (reasonCounts.get(f.error) ?? 0) + 1);
+      }
+      const reasonStr = Array.from(reasonCounts.entries())
+        .map(([reason, n]) => `${n} ${reason.replace("_", " ")}`)
+        .join(", ");
+      const text =
+        failedCount === 0
+          ? `Updated ${updatedCount} patient${updatedCount === 1 ? "" : "s"}.`
+          : `Updated ${updatedCount}, ${failedCount} failed (${reasonStr}).`;
+      setBulkFeedback({
+        kind: failedCount === 0 ? "success" : "error",
+        text,
+      });
+      // Refresh the page so updated rows show their new status badge.
+      await queryClient.invalidateQueries({
+        queryKey: getListPatientsQueryKey(params),
+      });
+      // Clear selection only on full success — partial failures
+      // leave the failed ids checked so the admin can see what
+      // didn't go through.
+      if (failedCount === 0) clearSelection();
+      else {
+        const failedSet = new Set(res.failed.map((f) => f.id));
+        setSelectedIds(failedSet);
+      }
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? ((err.data as { message?: string; error?: string } | undefined)
+              ?.message ??
+            (err.data as { error?: string } | undefined)?.error ??
+            err.message)
+          : err instanceof Error
+            ? err.message
+            : "Bulk action failed.";
+      setBulkFeedback({ kind: "error", text: msg });
+    }
+  }
+
+  // Export CSV. The dashboard talks to the API with a Bearer token
+  // (Clerk session), not cookies, so a plain anchor wouldn't carry
+  // auth. We replicate the auth-bearing fetch the orval client
+  // uses — pulling the token off `window.Clerk.session` — and
+  // trigger a browser download from the resulting blob.
+  async function downloadCsv(): Promise<void> {
+    setExportError(null);
+    setBulkExporting(true);
+    try {
+      const url = new URL(
+        "/resupply-api/patients/export.csv",
+        window.location.origin,
+      );
+      if (statusFilter) url.searchParams.set("status", statusFilter);
+      if (search) url.searchParams.set("search", search);
+
+      const headers: Record<string, string> = { Accept: "text/csv" };
+      const clerk = (
+        globalThis as unknown as {
+          Clerk?: { session?: { getToken: () => Promise<string | null> } | null };
+        }
+      ).Clerk;
+      const token = clerk?.session ? await clerk.session.getToken() : null;
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch(url.toString(), { headers });
+      if (!res.ok) {
+        throw new Error(
+          res.status === 401
+            ? "Your session expired. Please refresh and try again."
+            : `Export failed (${res.status}).`,
+        );
+      }
+      const truncated = res.headers.get("X-Truncated") === "true";
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `patients-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoke the object URL after a short delay — some browsers
+      // require it to live until the download initiates. 1s is
+      // safely past click-handler completion.
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      if (truncated) {
+        setBulkFeedback({
+          kind: "error",
+          text:
+            "Export was capped at 5,000 rows. Narrow your filters to export the rest.",
+        });
+      }
+    } catch (err) {
+      setExportError(
+        err instanceof Error ? err.message : "Export failed.",
+      );
+    } finally {
+      setBulkExporting(false);
+    }
+  }
+
   const columns: Column<PatientRow>[] = [
+    {
+      key: "select",
+      // The header checkbox toggles selection across the visible
+      // page; an indeterminate state communicates partial selection.
+      header: (
+        <input
+          type="checkbox"
+          aria-label="Select all on this page"
+          checked={allVisibleSelected}
+          // The DOM `indeterminate` property isn't a React prop, so we
+          // set it via a ref callback.
+          ref={(el) => {
+            if (el)
+              el.indeterminate = !allVisibleSelected && someVisibleSelected;
+          }}
+          onChange={() => toggleAllVisible()}
+          onClick={(e) => e.stopPropagation()}
+          style={{ cursor: "pointer" }}
+        />
+      ),
+      className: "w-10",
+      render: (r) => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${r.pacwareId}`}
+          checked={selectedIds.has(r.id)}
+          onChange={() => toggleOne(r.id)}
+          onClick={(e) => e.stopPropagation()}
+          style={{ cursor: "pointer" }}
+        />
+      ),
+    },
     {
       key: "name",
       header: "Patient",
@@ -148,12 +373,26 @@ export function PatientsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            intent="secondary"
+            onClick={() => void downloadCsv()}
+            isLoading={bulkExporting}
+          >
+            Export CSV
+          </Button>
           <Button intent="secondary" onClick={() => setImporting(true)}>
             Import CSV
           </Button>
           <Button onClick={() => setCreating(true)}>+ New customer</Button>
         </div>
       </header>
+
+      {exportError && (
+        <ErrorPanel
+          error={new Error(exportError)}
+          onRetry={() => void downloadCsv()}
+        />
+      )}
 
       <Card>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -196,6 +435,87 @@ export function PatientsPage() {
           </div>
         </div>
       </Card>
+
+      {(selectedIds.size > 0 || bulkFeedback) && (
+        <div
+          className="rounded-md border px-4 py-3 flex items-center justify-between gap-4 sticky top-0 z-10"
+          style={{
+            borderColor: bulkFeedback?.kind === "error" ? "#fca5a5" : "#c9a24a",
+            backgroundColor:
+              bulkFeedback?.kind === "error" ? "#fef2f2" : "#fffaf0",
+          }}
+          role="region"
+          aria-label="Bulk patient actions"
+        >
+          <div className="flex items-center gap-3">
+            <span className="font-semibold" style={{ color: "#0a1f44" }}>
+              {selectedIds.size > 0
+                ? `${selectedIds.size} selected on this page`
+                : "Bulk action result"}
+            </span>
+            {bulkFeedback && (
+              <span
+                className="text-sm"
+                style={{
+                  color: bulkFeedback.kind === "error" ? "#991b1b" : "#374151",
+                }}
+              >
+                {bulkFeedback.text}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <>
+                <Button
+                  size="sm"
+                  intent="secondary"
+                  onClick={() => void runBulk("active")}
+                  isLoading={bulkMut.isPending}
+                  disabled={bulkMut.isPending}
+                >
+                  Resume {selectedIds.size}
+                </Button>
+                <Button
+                  size="sm"
+                  intent="secondary"
+                  onClick={() => void runBulk("paused")}
+                  isLoading={bulkMut.isPending}
+                  disabled={bulkMut.isPending}
+                >
+                  Pause {selectedIds.size}
+                </Button>
+                <Button
+                  size="sm"
+                  intent="secondary"
+                  onClick={() => void runBulk("closed")}
+                  isLoading={bulkMut.isPending}
+                  disabled={bulkMut.isPending}
+                >
+                  Close {selectedIds.size}
+                </Button>
+                <Button
+                  size="sm"
+                  intent="ghost"
+                  onClick={clearSelection}
+                  disabled={bulkMut.isPending}
+                >
+                  Clear selection
+                </Button>
+              </>
+            )}
+            {selectedIds.size === 0 && bulkFeedback && (
+              <Button
+                size="sm"
+                intent="ghost"
+                onClick={() => setBulkFeedback(null)}
+              >
+                Dismiss
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {isError ? (
         <ErrorPanel error={error} onRetry={() => void refetch()} />

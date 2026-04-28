@@ -990,6 +990,14 @@ optional; sending `null` explicitly clears the field, omitting
 it leaves the column unchanged. PHI columns (name, phone,
 email) are NOT writable via this endpoint.
 
+`expectedUpdatedAt` is an OPTIONAL optimistic-concurrency
+precondition. When supplied, the server gates the UPDATE on
+`updated_at = $expected`; if the row moved underneath the
+client a 409 `stale_patient` is returned so the dashboard
+can refetch and prompt the admin to re-confirm. Omit the
+field to disable the check (admin-override semantics for
+bulk tooling).
+
  */
 export interface PatientUpdate {
   /** @maxLength 120 */
@@ -1007,14 +1015,108 @@ episode state, so this is the canonical pause/resume
 knob.
  */
   status?: PatientUpdateStatus;
+  /** ISO-8601 timestamp of the patient row the client last
+saw. Echo back the `updatedAt` field returned by
+GET /patients/{id} or a prior PATCH response.
+ */
+  expectedUpdatedAt?: string;
 }
 
 /**
- * Echoes the patient id and the list of column names changed.
+ * Echoes the patient id, the list of column names changed,
+and the row's new `updatedAt` so callers can keep their
+optimistic-concurrency token current.
+
  */
 export interface PatientUpdateResponse {
   id: string;
   changed: string[];
+  updatedAt: string;
+}
+
+export type StalePatientErrorError =
+  (typeof StalePatientErrorError)[keyof typeof StalePatientErrorError];
+
+export const StalePatientErrorError = {
+  stale_patient: "stale_patient",
+} as const;
+
+/**
+ * Returned by PATCH /patients/{id} when an `expectedUpdatedAt`
+precondition was supplied and did not match the live row.
+The dashboard should refetch the patient and prompt the
+admin to re-apply their edit.
+
+ */
+export interface StalePatientError {
+  error: StalePatientErrorError;
+  message: string;
+}
+
+export type BulkPatientStatusRequestStatus =
+  (typeof BulkPatientStatusRequestStatus)[keyof typeof BulkPatientStatusRequestStatus];
+
+export const BulkPatientStatusRequestStatus = {
+  active: "active",
+  paused: "paused",
+  closed: "closed",
+} as const;
+
+/**
+ * Body for POST /patients/bulk-status. `ids` accepts up to 100
+patient uuids; duplicates are silently deduped. `status` is
+applied to every matched row; ids that don't match are
+returned in `failed[]`. Bulk action does NOT honor
+per-patient optimistic-concurrency — admins use this when
+they want a definitive override.
+
+ */
+export interface BulkPatientStatusRequest {
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  ids: string[];
+  status: BulkPatientStatusRequestStatus;
+}
+
+export type BulkPatientStatusResponseUpdatedItemStatus =
+  (typeof BulkPatientStatusResponseUpdatedItemStatus)[keyof typeof BulkPatientStatusResponseUpdatedItemStatus];
+
+export const BulkPatientStatusResponseUpdatedItemStatus = {
+  active: "active",
+  paused: "paused",
+  closed: "closed",
+} as const;
+
+export type BulkPatientStatusResponseUpdatedItem = {
+  id: string;
+  status: BulkPatientStatusResponseUpdatedItemStatus;
+  updatedAt: string;
+};
+
+export type BulkPatientStatusResponseFailedItemError =
+  (typeof BulkPatientStatusResponseFailedItemError)[keyof typeof BulkPatientStatusResponseFailedItemError];
+
+export const BulkPatientStatusResponseFailedItemError = {
+  not_found: "not_found",
+} as const;
+
+export type BulkPatientStatusResponseFailedItem = {
+  id: string;
+  error: BulkPatientStatusResponseFailedItemError;
+};
+
+/**
+ * Outcome of POST /patients/bulk-status. `updated[]` is the rows
+that succeeded (with their post-update `updatedAt` token);
+`failed[]` is the rows that didn't match. The dashboard
+renders both counts in the success toast.
+
+ */
+export interface BulkPatientStatusResponse {
+  updated: BulkPatientStatusResponseUpdatedItem[];
+  failed: BulkPatientStatusResponseFailedItem[];
 }
 
 export type PatientTimelineEventKind =
@@ -1672,3 +1774,20 @@ export type ListAuditParams = {
    */
   offset?: number;
 };
+
+export type ExportPatientsCsvParams = {
+  status?: ExportPatientsCsvStatus;
+  /**
+   * @maxLength 64
+   */
+  search?: string;
+};
+
+export type ExportPatientsCsvStatus =
+  (typeof ExportPatientsCsvStatus)[keyof typeof ExportPatientsCsvStatus];
+
+export const ExportPatientsCsvStatus = {
+  active: "active",
+  paused: "paused",
+  closed: "closed",
+} as const;

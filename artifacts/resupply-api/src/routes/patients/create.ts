@@ -43,6 +43,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 // E.164: leading "+" then 8-15 digits. Loose enough to accept any
@@ -101,7 +102,11 @@ const bodySchema = z
 
 const router: IRouter = Router();
 
-router.post("/patients", requireAdmin, async (req, res) => {
+router.post(
+  "/patients",
+  requireAdmin,
+  withIdempotency("POST /patients"),
+  async (req, res) => {
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({

@@ -40,6 +40,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { withIdempotency } from "../../middlewares/idempotency";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const E164 = /^\+[1-9]\d{7,14}$/;
@@ -88,7 +89,11 @@ interface RowError {
 
 const router: IRouter = Router();
 
-router.post("/patients/import-csv", requireAdmin, async (req, res) => {
+router.post(
+  "/patients/import-csv",
+  requireAdmin,
+  withIdempotency("POST /patients/import-csv"),
+  async (req, res) => {
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({

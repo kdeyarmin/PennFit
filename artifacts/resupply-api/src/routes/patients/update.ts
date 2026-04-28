@@ -23,7 +23,7 @@
 // edits are auditable as activity, but the values themselves are
 // dashboard-visible and don't need to be re-keyed into the audit log.
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -35,6 +35,13 @@ import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const idParam = z.object({ id: z.string().uuid() });
+
+// ISO-8601 timestamp matcher used to validate `expectedUpdatedAt`.
+// We accept both "Z" and "+HH:MM" suffixes — the dashboard echoes
+// the value the API itself returned, which is whatever Postgres
+// rendered for `updated_at`.
+const ISO_TIMESTAMP_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
 // Body schema. `.strict()` so unknown keys fail loudly during
 // dashboard development — easier to catch typos than to silently
@@ -60,6 +67,17 @@ const bodySchema = z
       .nullable()
       .optional(),
     status: z.enum(["active", "paused", "closed"]).optional(),
+    // Optional optimistic-concurrency precondition. When present,
+    // the UPDATE is gated on `updated_at = $expected`; if the row
+    // moved underneath us we return 409 `stale_patient` so the
+    // dashboard can refetch and prompt the admin to re-confirm.
+    // Validation is deliberately string-only (not z.string().datetime())
+    // so we can echo the exact format Postgres uses without
+    // round-tripping through a Date.
+    expectedUpdatedAt: z
+      .string()
+      .regex(ISO_TIMESTAMP_RE, "must be an ISO-8601 timestamp")
+      .optional(),
   })
   .strict();
 
@@ -89,6 +107,8 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
 
   // Build the set of columns to update. Only keys actually present
   // in the body are touched; absent keys leave the column alone.
+  // `expectedUpdatedAt` is a precondition, not a column — it never
+  // lands in `updates`.
   const updates: Record<string, unknown> = {};
   if ("insurancePayer" in body) updates.insurancePayer = body.insurancePayer ?? null;
   if ("cadenceOverrideDays" in body)
@@ -97,25 +117,78 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
     updates.channelPreference = body.channelPreference ?? null;
   if ("status" in body && body.status) updates.status = body.status;
 
+  const db = drizzle(getDbPool());
+
   if (Object.keys(updates).length === 0) {
     // Empty body is a no-op rather than an error so dashboards don't
     // have to special-case "user clicked save without changing
-    // anything".
-    res.status(200).json({ id, changed: [] });
+    // anything". We still need to return a current `updatedAt` so
+    // the client's optimistic-concurrency token stays usable.
+    const current = await db
+      .select({ id: patients.id, updatedAt: patients.updatedAt })
+      .from(patients)
+      .where(eq(patients.id, id))
+      .limit(1);
+    if (current.length === 0) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    res.status(200).json({
+      id,
+      changed: [],
+      updatedAt: current[0].updatedAt.toISOString(),
+    });
     return;
   }
 
-  updates.updatedAt = sql`now()`;
+  // Truncate to millisecond precision: Postgres `timestamptz` is
+  // microsecond, but `pg` parses it back into a JS `Date` (ms).
+  // Without truncation, a precondition value of `…123Z` (read by
+  // the dashboard) would never `=` a stored value of `…123456+00`,
+  // and every concurrent PATCH would 409 spuriously.
+  updates.updatedAt = sql`date_trunc('milliseconds', now())`;
 
-  const db = drizzle(getDbPool());
+  // If a precondition was supplied, gate the UPDATE on
+  // `updated_at = $expected`. We `date_trunc('milliseconds', ...)`
+  // the column too so legacy rows written before this guard (which
+  // may carry microseconds) still match values the dashboard
+  // round-trips at JS `Date` precision.
+  const expectedUpdatedAt = body.expectedUpdatedAt;
+  const whereClause = expectedUpdatedAt
+    ? and(
+        eq(patients.id, id),
+        sql`date_trunc('milliseconds', ${patients.updatedAt}) = ${new Date(expectedUpdatedAt)}`,
+      )
+    : eq(patients.id, id);
 
   const result = await db
     .update(patients)
     .set(updates)
-    .where(eq(patients.id, id))
-    .returning({ id: patients.id });
+    .where(whereClause)
+    .returning({ id: patients.id, updatedAt: patients.updatedAt });
 
   if (result.length === 0) {
+    if (expectedUpdatedAt) {
+      // The UPDATE matched nothing — either the patient was deleted
+      // or its `updated_at` moved. Re-SELECT to disambiguate so the
+      // dashboard knows whether to refetch (409) or navigate away
+      // (404). Without this disambiguation we'd punish a stale write
+      // with the same response as a missing row, and the admin
+      // would think the patient vanished.
+      const exists = await db
+        .select({ id: patients.id })
+        .from(patients)
+        .where(eq(patients.id, id))
+        .limit(1);
+      if (exists.length > 0) {
+        res.status(409).json({
+          error: "stale_patient",
+          message:
+            "This patient was changed by someone else since you opened it. Please refresh and re-apply your edit.",
+        });
+        return;
+      }
+    }
     res.status(404).json({ error: "not_found" });
     return;
   }
@@ -142,7 +215,11 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
     );
   }
 
-  res.status(200).json({ id, changed: changedColumns });
+  res.status(200).json({
+    id,
+    changed: changedColumns,
+    updatedAt: result[0].updatedAt.toISOString(),
+  });
 });
 
 export default router;

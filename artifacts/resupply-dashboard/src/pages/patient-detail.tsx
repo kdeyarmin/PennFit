@@ -643,6 +643,12 @@ function SettingsCard({
       setStatusMsg("No changes to save.");
       return;
     }
+    // Optimistic-concurrency precondition. We echo the `updatedAt`
+    // we last saw so the server can refuse to clobber a parallel
+    // edit; on 409 we surface the conflict and trigger a refetch
+    // (via onSaved()) so the admin sees the latest data and can
+    // re-apply.
+    body.expectedUpdatedAt = patient.updatedAt;
     try {
       const res = await mutation.mutateAsync({ id: patient.id, data: body });
       setStatusMsg(
@@ -652,6 +658,13 @@ function SettingsCard({
       );
       onSaved();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          "This patient was changed by someone else since you opened it. Refreshing — please re-apply your edits.",
+        );
+        onSaved();
+        return;
+      }
       setError(describeError(err));
     }
   }
@@ -667,11 +680,19 @@ function SettingsCard({
       setStatusMsg("Nothing to reset — already on defaults.");
       return;
     }
+    body.expectedUpdatedAt = patient.updatedAt;
     try {
       await mutation.mutateAsync({ id: patient.id, data: body });
       setStatusMsg("Reset to defaults — eligibility engine will use rules.");
       onSaved();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError(
+          "This patient was changed by someone else since you opened it. Refreshing — please re-apply your reset.",
+        );
+        onSaved();
+        return;
+      }
       setError(describeError(err));
     }
   }
@@ -1027,7 +1048,10 @@ function PatientActionBar({
     }
     setFeedback(null);
     try {
-      await update.mutateAsync({ id: patient.id, data: { status: next } });
+      await update.mutateAsync({
+        id: patient.id,
+        data: { status: next, expectedUpdatedAt: patient.updatedAt },
+      });
       await queryClient.invalidateQueries({
         queryKey: getGetPatientQueryKey(patient.id),
       });
@@ -1048,6 +1072,17 @@ function PatientActionBar({
         });
       }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setFeedback({
+          kind: "error",
+          text: "Patient was changed elsewhere — refreshing. Please re-apply the status change.",
+        });
+        await queryClient.invalidateQueries({
+          queryKey: getGetPatientQueryKey(patient.id),
+        });
+        onAfterAction();
+        return;
+      }
       setFeedback({ kind: "error", text: describe(err) });
     }
   }
@@ -1055,14 +1090,11 @@ function PatientActionBar({
   async function undoClose() {
     setClosedAt(null);
     setFeedback(null);
-    // Race guard: if another admin (or this admin from another tab)
-    // mutated the patient's status during the 8-second undo window,
-    // refuse to overwrite that newer state. The PATCH endpoint
-    // doesn't support optimistic concurrency yet (Batch B work),
-    // so we do the check client-side against the latest invalidated
-    // patient prop. This is best-effort — between this check and
-    // the PATCH landing there is still a tiny window. The full
-    // server-side If-Match guard belongs with the idempotency work.
+    // Defense-in-depth: if another admin (or this admin from another
+    // tab) mutated the patient's status during the 8-second undo
+    // window, the client-side guard catches the obvious case
+    // immediately. The server-side `expectedUpdatedAt` precondition
+    // catches the race that survives this check.
     if (patient.status !== "closed") {
       setFeedback({
         kind: "error",
@@ -1074,7 +1106,7 @@ function PatientActionBar({
     try {
       await update.mutateAsync({
         id: patient.id,
-        data: { status: "active" },
+        data: { status: "active", expectedUpdatedAt: patient.updatedAt },
       });
       await queryClient.invalidateQueries({
         queryKey: getGetPatientQueryKey(patient.id),
@@ -1085,6 +1117,17 @@ function PatientActionBar({
         text: "Close undone — patient is active again.",
       });
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setFeedback({
+          kind: "error",
+          text: "Patient was changed elsewhere during undo — refreshing.",
+        });
+        await queryClient.invalidateQueries({
+          queryKey: getGetPatientQueryKey(patient.id),
+        });
+        onAfterAction();
+        return;
+      }
       setFeedback({ kind: "error", text: `Undo failed: ${describe(err)}` });
     }
   }
