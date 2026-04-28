@@ -1,34 +1,41 @@
 {
-	"version": "7",
-	"dialect": "postgresql",
-	"entries": [
-		{
-			"idx": 0,
-			"version": "7",
-			"when": 1777297087004,
-			"tag": "0000_plain_bloodstorm",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "7",
-			"when": 1777384344952,
-			"tag": "0001_wandering_kat_farrell",
-			"breakpoints": true
-		},
-		{
-			"idx": 2,
-			"version": "7",
-			"when": 1777396226583,
-			"tag": "0002_burly_amphibian",
-			"breakpoints": true
-		},
-		{
-			"idx": 3,
-			"version": "7",
-			"when": 1777398516454,
-			"tag": "0003_admin_rename",
-			"breakpoints": true
-		}
-	]
+        "version": "7",
+        "dialect": "postgresql",
+        "entries": [
+                {
+                        "idx": 0,
+                        "version": "7",
+                        "when": 1777297087004,
+                        "tag": "0000_plain_bloodstorm",
+                        "breakpoints": true
+                },
+                {
+                        "idx": 1,
+                        "version": "7",
+                        "when": 1777384344952,
+                        "tag": "0001_wandering_kat_farrell",
+                        "breakpoints": true
+                },
+                {
+                        "idx": 2,
+                        "version": "7",
+                        "when": 1777396226583,
+                        "tag": "0002_burly_amphibian",
+                        "breakpoints": true
+                },
+                {
+                        "idx": 3,
+                        "version": "7",
+                        "when": 1777398516454,
+                        "tag": "0003_admin_rename",
+                        "breakpoints": true
+                },
+                {
+                        "idx": 4,
+                        "version": "7",
+                        "when": 1777485000000,
+                        "tag": "0004_patient_notes",
+                        "breakpoints": true
+                }
+        ]
 }

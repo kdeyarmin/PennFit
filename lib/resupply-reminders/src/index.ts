@@ -22,6 +22,11 @@ export { sendReminderSms } from "./send-sms";
 export type { SendReminderSmsInput } from "./send-sms";
 export { sendReminderEmail } from "./send-email";
 export type { SendReminderEmailInput } from "./send-email";
+export { replyInConversation } from "./reply";
+export type {
+  ReplyInConversationInput,
+  ReplyInConversationOutcome,
+} from "./reply";
 export type {
   EmailSendConfig,
   SendActor,

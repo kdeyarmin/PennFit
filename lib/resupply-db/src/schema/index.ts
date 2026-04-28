@@ -1,5 +1,6 @@
 export { resupplySchema } from "./_schema";
 export * from "./patients";
+export * from "./patient-notes";
 export * from "./prescriptions";
 export * from "./episodes";
 export * from "./conversations";

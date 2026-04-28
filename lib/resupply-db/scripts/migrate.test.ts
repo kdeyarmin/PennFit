@@ -42,24 +42,32 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
     });
   }
 
-  it("applies migrations against the live DB and is idempotent on re-run", async () => {
-    const first = await runMigrate();
-    expect(first.stdout).toMatch(/migrations applied/);
+  // Each migrate run shells out a Node process and connects to the
+  // live DB; running it twice + two count queries comfortably blows
+  // past Vitest's 5s default once enough migrations stack up. 30s is
+  // plenty of headroom while still failing fast on a real hang.
+  it(
+    "applies migrations against the live DB and is idempotent on re-run",
+    async () => {
+      const first = await runMigrate();
+      expect(first.stdout).toMatch(/migrations applied/);
 
-    const before = await pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
-    );
-    const beforeCount = Number(before.rows[0]!.count);
-    expect(beforeCount).toBeGreaterThan(0);
+      const before = await pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
+      );
+      const beforeCount = Number(before.rows[0]!.count);
+      expect(beforeCount).toBeGreaterThan(0);
 
-    const second = await runMigrate();
-    expect(second.stdout).toMatch(/migrations applied/);
+      const second = await runMigrate();
+      expect(second.stdout).toMatch(/migrations applied/);
 
-    const after = await pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
-    );
-    expect(Number(after.rows[0]!.count)).toBe(beforeCount);
-  });
+      const after = await pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
+      );
+      expect(Number(after.rows[0]!.count)).toBe(beforeCount);
+    },
+    30_000,
+  );
 
   it("leaves the pgcrypto extension installed", async () => {
     const result = await pool.query<{ exists: boolean }>(

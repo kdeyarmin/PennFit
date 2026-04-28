@@ -1,11 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
+  getGetPatientQueryKey,
+  getListPatientNotesQueryKey,
+  useCreatePatientNote,
+  useCreatePrescription,
   useGetPatient,
   useGetPatientTimeline,
+  useListPatientNotes,
+  usePlaceVoiceCall,
+  useSendEmailReminder,
+  useSendSmsReminder,
   useUpdatePatient,
+  useUpdatePrescriptionStatus,
   type PatientDetail,
+  type PatientNote,
   type PatientTimelineEvent,
 } from "@workspace/resupply-api-client";
 import { Card } from "../components/Card";
@@ -31,7 +42,8 @@ type Tab =
   | "episodes"
   | "conversations"
   | "fulfillments"
-  | "prescriptions";
+  | "prescriptions"
+  | "notes";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -111,6 +123,8 @@ export function PatientDetailPage({ id }: { id: string }) {
         </div>
       </Card>
 
+      <PatientActionBar patient={data} onAfterAction={() => void refetch()} />
+
       <SettingsCard patient={data} onSaved={() => void refetch()} />
 
       <div
@@ -142,6 +156,9 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Prescriptions ({data.prescriptions.length})
         </TabButton>
+        <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>
+          Notes
+        </TabButton>
       </div>
 
       <Card>
@@ -162,8 +179,13 @@ export function PatientDetailPage({ id }: { id: string }) {
           <FulfillmentsTab fulfillments={data.fulfillments} />
         )}
         {tab === "prescriptions" && (
-          <PrescriptionsTab prescriptions={data.prescriptions} />
+          <PrescriptionsTab
+            patientId={id}
+            prescriptions={data.prescriptions}
+            onChanged={() => void refetch()}
+          />
         )}
+        {tab === "notes" && <NotesTab patientId={id} />}
       </Card>
     </div>
   );
@@ -369,7 +391,50 @@ type Prescription = {
   createdAt: string;
 };
 
-function PrescriptionsTab({ prescriptions }: { prescriptions: Prescription[] }) {
+function PrescriptionsTab({
+  patientId,
+  prescriptions,
+  onChanged,
+}: {
+  patientId: string;
+  prescriptions: Prescription[];
+  onChanged: () => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const updateStatus = useUpdatePrescriptionStatus();
+
+  // Single shared mutation for all rows. Tracking which row is busy
+  // prevents the "every button spins at once" UX bug.
+  const [busyRxId, setBusyRxId] = useState<string | null>(null);
+
+  async function changeStatus(
+    rxId: string,
+    nextStatus: "expired" | "revoked",
+  ) {
+    const verb = nextStatus === "revoked" ? "revoke" : "mark expired";
+    if (!window.confirm(`Are you sure you want to ${verb} this prescription?`)) {
+      return;
+    }
+    setActionError(null);
+    setBusyRxId(rxId);
+    try {
+      await updateStatus.mutateAsync({
+        rxId,
+        data: { status: nextStatus },
+      });
+      onChanged();
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : "Couldn't update prescription.";
+      setActionError(msg);
+    } finally {
+      setBusyRxId(null);
+    }
+  }
+
   const cols: Column<Prescription>[] = [
     { key: "sku", header: "Item", render: (r) => r.itemSku },
     {
@@ -392,14 +457,64 @@ function PrescriptionsTab({ prescriptions }: { prescriptions: Prescription[] }) 
         </Badge>
       ),
     },
+    {
+      key: "actions",
+      header: "",
+      render: (r) =>
+        r.status === "active" ? (
+          <div className="flex gap-2 justify-end">
+            <Button
+              intent="secondary"
+              isLoading={busyRxId === r.id}
+              disabled={busyRxId !== null && busyRxId !== r.id}
+              onClick={() => void changeStatus(r.id, "expired")}
+            >
+              Mark expired
+            </Button>
+            <Button
+              intent="secondary"
+              isLoading={busyRxId === r.id}
+              disabled={busyRxId !== null && busyRxId !== r.id}
+              onClick={() => void changeStatus(r.id, "revoked")}
+            >
+              Revoke
+            </Button>
+          </div>
+        ) : null,
+    },
   ];
+
   return (
-    <Table
-      columns={cols}
-      rows={prescriptions}
-      rowKey={(r) => r.id}
-      emptyState={<EmptyState title="No prescriptions on file." />}
-    />
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs" style={{ color: "#6b7280" }}>
+          Clinical fields are immutable after creation — to edit, add a
+          new prescription and mark the old one expired.
+        </p>
+        <Button onClick={() => setShowAdd(true)}>+ Add prescription</Button>
+      </div>
+      {actionError && (
+        <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
+          {actionError}
+        </p>
+      )}
+      <Table
+        columns={cols}
+        rows={prescriptions}
+        rowKey={(r) => r.id}
+        emptyState={<EmptyState title="No prescriptions on file." />}
+      />
+      {showAdd && (
+        <AddPrescriptionModal
+          patientId={patientId}
+          onClose={() => setShowAdd(false)}
+          onCreated={() => {
+            setShowAdd(false);
+            onChanged();
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -799,5 +914,647 @@ function TimelineRow({
         </button>
       )}
     </li>
+  );
+}
+
+// ----------------------
+// Patient action bar
+// ----------------------
+//
+// Sits between the header card and the settings card. Two clusters
+// of actions:
+//
+//   1. Outreach: send-now SMS/email/voice. Reuses the existing
+//      send-reminder + place-call mutations and aims them at the
+//      most-recent open episode (the dashboard shouldn't have to
+//      pick which episode to reach the patient about — the engine
+//      already picked one). Disabled when no usable episode exists
+//      or when the patient is not active (paused/closed shouldn't
+//      get reminders).
+//
+//   2. Lifecycle: pause / resume / close. Closing is destructive
+//      enough that we confirm; pause/resume are one-click — the
+//      eligibility scan already suppresses paused/closed patients,
+//      so flipping the bit is the canonical knob.
+
+function PatientActionBar({
+  patient,
+  onAfterAction,
+}: {
+  patient: PatientDetail;
+  onAfterAction: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const sms = useSendSmsReminder();
+  const email = useSendEmailReminder();
+  const voice = usePlaceVoiceCall();
+  const update = useUpdatePatient();
+  const [feedback, setFeedback] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  // Pick the "current" episode for send-now actions. We prefer
+  // anything in active outreach (outreach_pending / awaiting_response)
+  // over confirmed/declined so reminders go to the patient's
+  // currently-pending order, not the historic one. Falls back to the
+  // newest episode otherwise so the buttons aren't dead when the
+  // engine hasn't scheduled anything.
+  const targetEpisode = useMemo(() => {
+    const eps = patient.episodes;
+    if (eps.length === 0) return null;
+    const live = eps.find(
+      (e) => e.status === "outreach_pending" || e.status === "awaiting_response",
+    );
+    if (live) return live;
+    // newest by createdAt
+    return [...eps].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  }, [patient.episodes]);
+
+  const isMutating =
+    sms.isPending || email.isPending || voice.isPending || update.isPending;
+
+  function describe(err: unknown): string {
+    if (err instanceof ApiError) {
+      const data = err.data as
+        | { error?: string; message?: string }
+        | undefined;
+      return data?.message ?? data?.error ?? "Request failed.";
+    }
+    return err instanceof Error ? err.message : "Request failed.";
+  }
+
+  function fire(label: string, p: Promise<unknown>) {
+    setFeedback(null);
+    p.then(() => {
+      setFeedback({ kind: "success", text: `${label} sent.` });
+      onAfterAction();
+    }).catch((err: unknown) => {
+      setFeedback({ kind: "error", text: `${label} failed: ${describe(err)}` });
+    });
+  }
+
+  async function changeStatus(next: "active" | "paused" | "closed") {
+    if (next === patient.status) return;
+    if (next === "closed") {
+      if (
+        !window.confirm(
+          "Close this patient? Closed patients are removed from outreach permanently. Proceed?",
+        )
+      ) {
+        return;
+      }
+    }
+    setFeedback(null);
+    try {
+      await update.mutateAsync({ id: patient.id, data: { status: next } });
+      await queryClient.invalidateQueries({
+        queryKey: getGetPatientQueryKey(patient.id),
+      });
+      onAfterAction();
+      setFeedback({
+        kind: "success",
+        text:
+          next === "active"
+            ? "Patient resumed. Outreach scan will pick them up again."
+            : next === "paused"
+              ? "Patient paused. Outreach scan will skip them."
+              : "Patient closed. They will no longer receive reminders.",
+      });
+    } catch (err) {
+      setFeedback({ kind: "error", text: describe(err) });
+    }
+  }
+
+  const noEpisode = !targetEpisode;
+  const isActive = patient.status === "active";
+  const sendDisabled = !isActive || noEpisode;
+  const sendDisabledHint = !isActive
+    ? `Patient is ${patient.status} — resume to send reminders.`
+    : noEpisode
+      ? "No episode available — create a prescription first."
+      : null;
+
+  return (
+    <Card title="Quick actions" subtitle="Every action writes to the audit log.">
+      <div className="space-y-3">
+        <div>
+          <p
+            className="text-xs uppercase tracking-wider font-semibold mb-2"
+            style={{ color: "#c9a24a" }}
+          >
+            Reach the patient now
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              isLoading={sms.isPending}
+              disabled={sendDisabled || (isMutating && !sms.isPending) || !patient.hasPhone}
+              onClick={() =>
+                targetEpisode &&
+                fire(
+                  "SMS reminder",
+                  sms.mutateAsync({
+                    data: { patientId: patient.id, episodeId: targetEpisode.id },
+                  }),
+                )
+              }
+            >
+              Send SMS reminder
+            </Button>
+            <Button
+              intent="secondary"
+              isLoading={email.isPending}
+              disabled={sendDisabled || (isMutating && !email.isPending) || !patient.hasEmail}
+              onClick={() =>
+                targetEpisode &&
+                fire(
+                  "Email reminder",
+                  email.mutateAsync({
+                    data: { patientId: patient.id, episodeId: targetEpisode.id },
+                  }),
+                )
+              }
+            >
+              Send email reminder
+            </Button>
+            <Button
+              intent="secondary"
+              isLoading={voice.isPending}
+              disabled={sendDisabled || (isMutating && !voice.isPending) || !patient.hasPhone}
+              onClick={() =>
+                targetEpisode &&
+                fire(
+                  "Voice call",
+                  voice.mutateAsync({
+                    data: { patientId: patient.id, episodeId: targetEpisode.id },
+                  }),
+                )
+              }
+            >
+              Place voice call
+            </Button>
+          </div>
+          {sendDisabledHint && (
+            <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
+              {sendDisabledHint}
+            </p>
+          )}
+          {!sendDisabled && !patient.hasPhone && (
+            <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
+              No phone on file — SMS / voice disabled.
+            </p>
+          )}
+          {!sendDisabled && !patient.hasEmail && (
+            <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
+              No email on file — email disabled.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <p
+            className="text-xs uppercase tracking-wider font-semibold mb-2"
+            style={{ color: "#c9a24a" }}
+          >
+            Lifecycle
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {patient.status === "paused" && (
+              <Button
+                isLoading={update.isPending}
+                disabled={isMutating && !update.isPending}
+                onClick={() => void changeStatus("active")}
+              >
+                Resume patient
+              </Button>
+            )}
+            {patient.status === "active" && (
+              <Button
+                intent="secondary"
+                isLoading={update.isPending}
+                disabled={isMutating && !update.isPending}
+                onClick={() => void changeStatus("paused")}
+              >
+                Pause patient
+              </Button>
+            )}
+            {patient.status !== "closed" && (
+              <Button
+                intent="secondary"
+                isLoading={update.isPending}
+                disabled={isMutating && !update.isPending}
+                onClick={() => void changeStatus("closed")}
+              >
+                Close patient
+              </Button>
+            )}
+            {patient.status === "closed" && (
+              <Button
+                intent="secondary"
+                isLoading={update.isPending}
+                disabled={isMutating && !update.isPending}
+                onClick={() => void changeStatus("active")}
+              >
+                Reopen patient
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {feedback && (
+        <p
+          className="mt-3 text-sm"
+          style={{ color: feedback.kind === "success" ? "#166534" : "#991b1b" }}
+          role="status"
+        >
+          {feedback.text}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+// ----------------------
+// Notes tab
+// ----------------------
+//
+// Append-only admin case-notes. Composer at the top, newest-first
+// list below. The empty state nudges admins to leave a note for the
+// next person picking up the patient — the goal is to make handoff
+// context discoverable.
+
+function NotesTab({ patientId }: { patientId: string }) {
+  const queryClient = useQueryClient();
+  const { data, isPending, isError, error, refetch } =
+    useListPatientNotes(patientId);
+  const create = useCreatePatientNote();
+  const [body, setBody] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const trimmed = body.trim();
+  const tooLong = trimmed.length > 4000;
+  const canSubmit = trimmed.length > 0 && !tooLong && !create.isPending;
+
+  async function onAdd() {
+    if (!canSubmit) return;
+    setSubmitError(null);
+    try {
+      await create.mutateAsync({ id: patientId, data: { body: trimmed } });
+      setBody("");
+      // Force the list to refetch — invalidating by query key is the
+      // safest way to make sure we don't have a stale cached page.
+      await queryClient.invalidateQueries({
+        queryKey: getListPatientNotesQueryKey(patientId),
+      });
+      void refetch();
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? ((err.data as { message?: string } | undefined)?.message ??
+            "Couldn't save note.")
+          : err instanceof Error
+            ? err.message
+            : "Couldn't save note.";
+      setSubmitError(msg);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label htmlFor="note-body">Add a note</Label>
+        <textarea
+          id="note-body"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={3}
+          maxLength={4100}
+          placeholder="Patient is recovering from minor surgery; pause reminders for 2 weeks…"
+          disabled={create.isPending}
+          className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
+          style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+        />
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <span
+            className="text-xs"
+            style={{ color: tooLong ? "#b91c1c" : "#6b7280" }}
+          >
+            {trimmed.length} / 4000 · stored encrypted at rest
+          </span>
+          <Button
+            onClick={() => void onAdd()}
+            isLoading={create.isPending}
+            disabled={!canSubmit}
+          >
+            Add note
+          </Button>
+        </div>
+        {submitError && (
+          <p className="mt-2 text-sm" style={{ color: "#b91c1c" }} role="alert">
+            {submitError}
+          </p>
+        )}
+      </div>
+
+      {isError ? (
+        <ErrorPanel
+          error={error}
+          onRetry={() => void refetch()}
+          title="Couldn't load notes"
+        />
+      ) : isPending || !data ? (
+        <Spinner label="Loading notes…" />
+      ) : data.items.length === 0 ? (
+        <EmptyState
+          title="No notes yet."
+          hint="Add the first one to leave context for the next admin."
+        />
+      ) : (
+        <ol className="space-y-3">
+          {data.items.map((n) => (
+            <NoteRow key={n.id} note={n} />
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function NoteRow({ note }: { note: PatientNote }) {
+  return (
+    <li
+      className="rounded border px-3 py-2"
+      style={{ borderColor: "#e5e7eb", backgroundColor: "#fafafa" }}
+    >
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <span
+          className="text-xs font-semibold"
+          style={{ color: "#0a1f44" }}
+        >
+          {note.authorEmail}
+        </span>
+        <span className="text-xs" style={{ color: "#6b7280" }}>
+          {formatDateTime(note.createdAt)}
+        </span>
+      </div>
+      <p
+        className="text-sm whitespace-pre-wrap break-words"
+        style={{ color: "#374151" }}
+      >
+        {note.body}
+      </p>
+    </li>
+  );
+}
+
+// ----------------------
+// Add-prescription modal
+// ----------------------
+//
+// Used by PrescriptionsTab. Mirrors NewCustomerModal's UX: dimmed
+// backdrop, click-outside / Escape closes, single Save button. The
+// optional clinical narrative fields (prescriber, NPI, diagnosis,
+// notes) are bundled into the encrypted `details` JSON server-side
+// — we just pass them through as plain fields on the request.
+
+function AddPrescriptionModal({
+  patientId,
+  onClose,
+  onCreated,
+}: {
+  patientId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const create = useCreatePrescription();
+  const [itemSku, setItemSku] = useState("");
+  const [cadenceDays, setCadenceDays] = useState("90");
+  const [validFrom, setValidFrom] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [validUntil, setValidUntil] = useState("");
+  const [prescriberName, setPrescriberName] = useState("");
+  const [prescriberNpi, setPrescriberNpi] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const isPending = create.isPending;
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !isPending) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, isPending]);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const sku = itemSku.trim();
+    if (sku.length === 0) {
+      setError("Item SKU is required.");
+      return;
+    }
+    const cadence = Number(cadenceDays);
+    if (!Number.isInteger(cadence) || cadence < 1 || cadence > 365) {
+      setError("Cadence must be a whole number between 1 and 365.");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom)) {
+      setError("Valid-from must be a date.");
+      return;
+    }
+    if (validUntil && !/^\d{4}-\d{2}-\d{2}$/.test(validUntil)) {
+      setError("Valid-until must be a date.");
+      return;
+    }
+    if (validUntil && validUntil < validFrom) {
+      setError("Valid-until must be on or after valid-from.");
+      return;
+    }
+
+    const body: {
+      itemSku: string;
+      cadenceDays: number;
+      validFrom: string;
+      validUntil?: string | null;
+      prescriberName?: string | null;
+      prescriberNpi?: string | null;
+      diagnosis?: string | null;
+      notes?: string | null;
+    } = {
+      itemSku: sku,
+      cadenceDays: cadence,
+      validFrom,
+    };
+    if (validUntil) body.validUntil = validUntil;
+    if (prescriberName.trim()) body.prescriberName = prescriberName.trim();
+    if (prescriberNpi.trim()) body.prescriberNpi = prescriberNpi.trim();
+    if (diagnosis.trim()) body.diagnosis = diagnosis.trim();
+    if (notes.trim()) body.notes = notes.trim();
+
+    try {
+      await create.mutateAsync({ id: patientId, data: body });
+      onCreated();
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? ((err.data as { message?: string } | undefined)?.message ??
+            "Couldn't create prescription.")
+          : err instanceof Error
+            ? err.message
+            : "Couldn't create prescription.";
+      setError(msg);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
+      onClick={() => !isPending && onClose()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="add-rx-title"
+    >
+      <div
+        className="w-full max-w-2xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
+        style={{ backgroundColor: "#ffffff" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <form onSubmit={(e) => void onSubmit(e)} className="p-6 space-y-4">
+          <h2
+            id="add-rx-title"
+            className="text-lg font-semibold"
+            style={{ color: "#0a1f44" }}
+          >
+            New prescription
+          </h2>
+          <p className="text-xs" style={{ color: "#6b7280" }}>
+            Clinical fields are immutable after save. To "edit" later,
+            add a new prescription and mark this one expired.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="rx-sku">Item SKU</Label>
+              <Input
+                id="rx-sku"
+                value={itemSku}
+                maxLength={64}
+                onChange={(e) => setItemSku(e.target.value)}
+                required
+                disabled={isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rx-cadence">Cadence (days)</Label>
+              <Input
+                id="rx-cadence"
+                type="number"
+                min={1}
+                max={365}
+                value={cadenceDays}
+                onChange={(e) => setCadenceDays(e.target.value)}
+                required
+                disabled={isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rx-from">Valid from</Label>
+              <Input
+                id="rx-from"
+                type="date"
+                value={validFrom}
+                onChange={(e) => setValidFrom(e.target.value)}
+                required
+                disabled={isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rx-until">Valid until (optional)</Label>
+              <Input
+                id="rx-until"
+                type="date"
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+                disabled={isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rx-prescriber">Prescriber name</Label>
+              <Input
+                id="rx-prescriber"
+                value={prescriberName}
+                maxLength={160}
+                onChange={(e) => setPrescriberName(e.target.value)}
+                disabled={isPending}
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <Label htmlFor="rx-npi">Prescriber NPI</Label>
+              <Input
+                id="rx-npi"
+                value={prescriberNpi}
+                maxLength={20}
+                onChange={(e) => setPrescriberNpi(e.target.value)}
+                disabled={isPending}
+                autoComplete="off"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <Label htmlFor="rx-diag">Diagnosis</Label>
+              <textarea
+                id="rx-diag"
+                value={diagnosis}
+                onChange={(e) => setDiagnosis(e.target.value)}
+                maxLength={2000}
+                rows={2}
+                disabled={isPending}
+                className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
+                style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <Label htmlFor="rx-notes">Notes</Label>
+              <textarea
+                id="rx-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                maxLength={2000}
+                rows={2}
+                disabled={isPending}
+                className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
+                style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+              />
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
+              {error}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              intent="secondary"
+              onClick={onClose}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={isPending} disabled={isPending}>
+              Save prescription
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

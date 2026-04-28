@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import {
+  ApiError,
   useGetConversation,
   useSendSmsReminder,
   useSendEmailReminder,
   usePlaceVoiceCall,
+  useReplyInConversation,
 } from "@workspace/resupply-api-client";
 import { Card } from "../components/Card";
 import {
@@ -142,12 +144,161 @@ export function ConversationDetailPage({ id }: { id: string }) {
         )}
       </Card>
 
+      <ReplyComposer
+        conversationId={data.id}
+        channel={data.channel}
+        status={data.status}
+        onAfterSend={() => void refetch()}
+      />
+
       <ActionBar
         patientId={data.patientId}
         episodeId={data.episodeId}
         onAfterAction={() => void refetch()}
       />
     </div>
+  );
+}
+
+// In-thread reply composer. Posts to /conversations/{id}/reply, which
+// reuses the patient's existing channel + thread (Twilio sender or
+// SendGrid threading). Hidden / disabled when the conversation is
+// closed (the API would 409 anyway) or when the channel is voice
+// (text replies on a voice call don't make sense; admins should use
+// "Place voice call" in the action bar below to call back).
+function ReplyComposer({
+  conversationId,
+  channel,
+  status,
+  onAfterSend,
+}: {
+  conversationId: string;
+  channel: string;
+  status: string;
+  onAfterSend: () => void;
+}) {
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const reply = useReplyInConversation();
+
+  const isClosed = status === "closed";
+  const isVoice = channel === "voice";
+  const trimmed = body.trim();
+  const tooLong = trimmed.length > 1600;
+  const canSend = !isClosed && !isVoice && trimmed.length > 0 && !tooLong;
+
+  if (isVoice) {
+    return (
+      <Card title="Reply">
+        <p className="text-sm" style={{ color: "#6b7280" }}>
+          Voice conversations don't support typed replies. Use{" "}
+          <span className="font-semibold" style={{ color: "#0a1f44" }}>
+            Place voice call
+          </span>{" "}
+          below to call the patient back.
+        </p>
+      </Card>
+    );
+  }
+
+  function describeError(err: unknown): string {
+    if (err instanceof ApiError) {
+      const data = err.data as
+        | { error?: string; message?: string }
+        | undefined;
+      // 503 messaging-not-configured is the most actionable case for
+      // an operator — surface the deployer-facing hint as-is.
+      if (err.status === 503) {
+        return (
+          data?.message ??
+          "Reply is disabled — messaging is not configured on this server."
+        );
+      }
+      if (err.status === 409) {
+        return data?.message ?? "Cannot reply on this conversation.";
+      }
+      return data?.message ?? data?.error ?? "Couldn't send reply.";
+    }
+    return err instanceof Error ? err.message : "Couldn't send reply.";
+  }
+
+  async function onSend() {
+    setError(null);
+    setStatusMsg(null);
+    if (!canSend) return;
+    try {
+      await reply.mutateAsync({ id: conversationId, data: { body: trimmed } });
+      setBody("");
+      setStatusMsg("Reply sent.");
+      onAfterSend();
+    } catch (err) {
+      setError(describeError(err));
+    }
+  }
+
+  return (
+    <Card
+      title="Reply on this thread"
+      subtitle={
+        isClosed
+          ? "This conversation is closed — start a new reminder from the patient page."
+          : "Sends on the channel the patient is already using. Audited."
+      }
+    >
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        disabled={isClosed || reply.isPending}
+        placeholder={
+          isClosed
+            ? "Conversation is closed."
+            : channel === "sms"
+              ? "Type a reply (will be sent via SMS)…"
+              : "Type a reply (will be sent via email)…"
+        }
+        rows={3}
+        maxLength={1700}
+        className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
+        style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+      />
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <span
+          className="text-xs"
+          style={{ color: tooLong ? "#b91c1c" : "#6b7280" }}
+        >
+          {trimmed.length} / 1600
+          {channel === "sms" && trimmed.length > 160
+            ? " · will send as multi-part SMS"
+            : ""}
+        </span>
+        <Button
+          onClick={() => void onSend()}
+          isLoading={reply.isPending}
+          disabled={!canSend || reply.isPending}
+        >
+          Send reply
+        </Button>
+      </div>
+      {error && (
+        <p
+          className="mt-3 text-sm"
+          style={{ color: "#b91c1c" }}
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
+      {statusMsg && !error && (
+        <p
+          className="mt-3 text-sm"
+          style={{ color: "#166534" }}
+          role="status"
+        >
+          {statusMsg}
+        </p>
+      )}
+    </Card>
   );
 }
 

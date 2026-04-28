@@ -1,16 +1,22 @@
 // PATCH /patients/:id — admin-editable settings.
 //
-// Today this only updates the three "outreach plan" fields:
+// Updates these admin-managed fields:
 //   - insurance_payer        (free text, ≤ 120 chars)
 //   - cadence_override_days  (positive integer, or null to clear)
 //   - channel_preference     (sms | email | voice, or null to clear)
+//   - status                 (active | paused | closed) — drives the
+//                            eligibility scan suppression. `paused`
+//                            removes the patient from outreach until
+//                            an admin transitions back to `active`.
+//                            `closed` is the lifecycle-terminal value
+//                            (moved off program / declined / deceased).
 //
-// All three fields accept `null` to explicitly clear an override; a
-// missing key in the request body leaves the column unchanged. We
-// model that with `.optional()` for "leave alone" and an explicit
-// `.nullable()` for "set to NULL". This is the standard PATCH-with-
-// nullable-clears idiom and matches what the dashboard's "reset to
-// default" button needs.
+// All non-status fields accept `null` to explicitly clear an override;
+// `status` does not — there is no "no status" state. A missing key in
+// the request body leaves the column unchanged. We model "leave alone"
+// with `.optional()` and "set to NULL" with `.nullable()` — the
+// standard PATCH-with-nullable-clears idiom matches what the
+// dashboard's "reset to default" button needs.
 //
 // PHI handling: none of these columns hold PHI. The audit log entry
 // records *which* columns changed but never the new values — admin
@@ -53,6 +59,7 @@ const bodySchema = z
       .enum(["sms", "email", "voice"])
       .nullable()
       .optional(),
+    status: z.enum(["active", "paused", "closed"]).optional(),
   })
   .strict();
 
@@ -88,6 +95,7 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
     updates.cadenceOverrideDays = body.cadenceOverrideDays ?? null;
   if ("channelPreference" in body)
     updates.channelPreference = body.channelPreference ?? null;
+  if ("status" in body && body.status) updates.status = body.status;
 
   if (Object.keys(updates).length === 0) {
     // Empty body is a no-op rather than an error so dashboards don't

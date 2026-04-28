@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
+import Papa from "papaparse";
 import {
   ApiError,
   getListPatientsQueryKey,
   ListPatientsStatus,
   useCreatePatient,
+  useImportPatientsCsv,
   useListPatients,
 } from "@workspace/resupply-api-client";
 import type {
   CreatePatientRequest,
+  ImportPatientRow,
+  ImportPatientRowError,
   ListPatientsParams,
 } from "@workspace/resupply-api-client";
 import { Card } from "../components/Card";
@@ -52,6 +56,7 @@ export function PatientsPage() {
   const [search, setSearch] = useState<string>("");
   const [offset, setOffset] = useState<number>(0);
   const [creating, setCreating] = useState<boolean>(false);
+  const [importing, setImporting] = useState<boolean>(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -142,7 +147,12 @@ export function PatientsPage() {
             phone and email are only shown as channel availability.
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>+ New customer</Button>
+        <div className="flex gap-2">
+          <Button intent="secondary" onClick={() => setImporting(true)}>
+            Import CSV
+          </Button>
+          <Button onClick={() => setCreating(true)}>+ New customer</Button>
+        </div>
       </header>
 
       <Card>
@@ -225,6 +235,16 @@ export function PatientsPage() {
           onCreated={(id) => {
             setCreating(false);
             setLocation(`/patients/${id}`);
+          }}
+        />
+      )}
+
+      {importing && (
+        <ImportCsvModal
+          onClose={() => setImporting(false)}
+          onComplete={() => {
+            // Don't auto-close — admin should see the summary first.
+            void refetch();
           }}
         />
       )}
@@ -732,6 +752,554 @@ function NewCustomerModal({
             </Button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CSV import modal
+// ---------------------------------------------------------------------------
+//
+// Two-stage flow:
+//
+//   1. File picked → parse client-side with papaparse, normalize the
+//      headers, validate every row. The preview table shows the first
+//      handful of rows AND every row with a validation error so the
+//      admin can fix the source file before sending PHI over the wire.
+//
+//   2. Submit → chunk into batches of 250 (server caps at 500 per
+//      request, but smaller batches keep the per-request audit row
+//      readable and let the progress counter advance more often) and
+//      call the import hook once per batch. We aggregate `created`,
+//      `skippedDuplicates`, and `errors[]` across batches; on error
+//      rows we offer a downloadable error CSV so the admin can patch
+//      and re-import only the failed rows.
+//
+// We deliberately do NOT auto-close on success — the admin needs to
+// see the summary, especially the duplicate / error counts.
+
+const CSV_BATCH_SIZE = 250;
+const CSV_PREVIEW_ROWS = 8;
+
+// Loose mapping: papaparse normalizes header strings exactly as
+// they appear in the CSV; we lower-case + strip non-alphanumerics so
+// `Pacware ID`, `pacware_id`, `pacwareId` all map to the same field.
+const HEADER_ALIASES: Record<string, keyof ImportPatientRow> = {
+  pacwareid: "pacwareId",
+  legalfirstname: "legalFirstName",
+  firstname: "legalFirstName",
+  legallastname: "legalLastName",
+  lastname: "legalLastName",
+  dateofbirth: "dateOfBirth",
+  dob: "dateOfBirth",
+  phone: "phoneE164",
+  phonee164: "phoneE164",
+  email: "email",
+  addressline1: "addressLine1",
+  address1: "addressLine1",
+  addressline2: "addressLine2",
+  address2: "addressLine2",
+  city: "city",
+  state: "state",
+  postalcode: "postalCode",
+  zip: "postalCode",
+  country: "country",
+};
+
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+type ParsedRow = {
+  rowIndex: number; // 1-based for display ("Row 1" = the first data row)
+  raw: Record<string, string>;
+  parsed: ImportPatientRow | null;
+  error: string | null;
+};
+
+function buildRowFromCsv(
+  raw: Record<string, string>,
+): { row: ImportPatientRow | null; error: string | null } {
+  const trimmed: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    trimmed[k] = (v ?? "").trim();
+  }
+
+  const pacwareId = trimmed.pacwareId;
+  const legalFirstName = trimmed.legalFirstName;
+  const legalLastName = trimmed.legalLastName;
+  const dateOfBirth = trimmed.dateOfBirth;
+
+  if (!pacwareId) return { row: null, error: "Pacware ID is required." };
+  if (!legalFirstName)
+    return { row: null, error: "Legal first name is required." };
+  if (!legalLastName)
+    return { row: null, error: "Legal last name is required." };
+  if (!dateOfBirth)
+    return { row: null, error: "Date of birth is required." };
+
+  // Server enforces YYYY-MM-DD; we surface a friendly error early so
+  // the admin doesn't blast 500 rows of MM/DD/YYYY at us.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+    return {
+      row: null,
+      error: `Date of birth must be YYYY-MM-DD (got "${dateOfBirth}").`,
+    };
+  }
+
+  const row: ImportPatientRow = {
+    pacwareId,
+    legalFirstName,
+    legalLastName,
+    dateOfBirth,
+  };
+  if (trimmed.phoneE164) row.phoneE164 = trimmed.phoneE164;
+  if (trimmed.email) row.email = trimmed.email;
+  if (trimmed.addressLine1) row.addressLine1 = trimmed.addressLine1;
+  if (trimmed.addressLine2) row.addressLine2 = trimmed.addressLine2;
+  if (trimmed.city) row.city = trimmed.city;
+  if (trimmed.state) row.state = trimmed.state;
+  if (trimmed.postalCode) row.postalCode = trimmed.postalCode;
+  if (trimmed.country) row.country = trimmed.country;
+  return { row, error: null };
+}
+
+type ImportSummary = {
+  created: number;
+  skippedDuplicates: number;
+  serverErrors: ImportPatientRowError[];
+};
+
+function ImportCsvModal({
+  onClose,
+  onComplete,
+}: {
+  onClose: () => void;
+  onComplete: () => void;
+}) {
+  const importMut = useImportPatientsCsv();
+  const [parsing, setParsing] = useState(false);
+  const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState<{
+    sentBatches: number;
+    totalBatches: number;
+  } | null>(null);
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Block closing while a batch is in flight — bailing mid-import
+  // would leave a half-finished bulk_create audit trail.
+  const lockClose = parsing || submitting;
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !lockClose) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, lockClose]);
+
+  function reset() {
+    setRows([]);
+    setParseError(null);
+    setSummary(null);
+    setSubmitError(null);
+    setProgress(null);
+  }
+
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    reset();
+    setParsing(true);
+
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      // Re-key parsed rows from the CSV's header → our canonical
+      // ImportPatientRow field name. Unknown headers are dropped.
+      transformHeader: (h) => {
+        const norm = normalizeHeader(h);
+        return HEADER_ALIASES[norm] ?? "";
+      },
+      complete: (results) => {
+        setParsing(false);
+        if (results.errors.length > 0) {
+          setParseError(
+            `CSV parse error on line ${results.errors[0].row ?? "?"}: ${results.errors[0].message}`,
+          );
+          return;
+        }
+        const data = results.data.filter(
+          (r) => r && Object.values(r).some((v) => (v ?? "").trim() !== ""),
+        );
+        if (data.length === 0) {
+          setParseError("CSV had no data rows.");
+          return;
+        }
+        const parsed: ParsedRow[] = data.map((raw, i) => {
+          const { row, error } = buildRowFromCsv(raw);
+          return { rowIndex: i + 1, raw, parsed: row, error };
+        });
+        setRows(parsed);
+      },
+      error: (err) => {
+        setParsing(false);
+        setParseError(err.message);
+      },
+    });
+
+    // Allow re-selecting the same file after a reset.
+    e.target.value = "";
+  }
+
+  const validRows = rows.filter((r) => r.parsed !== null);
+  const invalidRows = rows.filter((r) => r.error !== null);
+
+  async function onSubmit() {
+    if (validRows.length === 0) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    setSummary(null);
+
+    const batches: ImportPatientRow[][] = [];
+    for (let i = 0; i < validRows.length; i += CSV_BATCH_SIZE) {
+      batches.push(
+        validRows.slice(i, i + CSV_BATCH_SIZE).map((r) => r.parsed!),
+      );
+    }
+
+    const agg: ImportSummary = {
+      created: 0,
+      skippedDuplicates: 0,
+      serverErrors: [],
+    };
+    setProgress({ sentBatches: 0, totalBatches: batches.length });
+
+    for (let i = 0; i < batches.length; i += 1) {
+      try {
+        const res = await importMut.mutateAsync({
+          data: { rows: batches[i] },
+        });
+        agg.created += res.created;
+        agg.skippedDuplicates += res.skippedDuplicates;
+        // Re-base server's row indexes to the original CSV row number
+        // so the admin can find the offending row in their source file.
+        const offset = i * CSV_BATCH_SIZE;
+        for (const e of res.errors) {
+          agg.serverErrors.push({ ...e, rowIndex: e.rowIndex + offset });
+        }
+      } catch (err) {
+        const msg =
+          err instanceof ApiError
+            ? ((err.data as { message?: string } | undefined)?.message ??
+              "Batch failed.")
+            : err instanceof Error
+              ? err.message
+              : "Batch failed.";
+        setSubmitError(`Batch ${i + 1} of ${batches.length} failed: ${msg}`);
+        // Stop on first batch failure — partial imports are confusing
+        // for the admin and we already have a summary of what
+        // succeeded so far.
+        setProgress({ sentBatches: i, totalBatches: batches.length });
+        setSummary(agg);
+        setSubmitting(false);
+        onComplete();
+        return;
+      }
+      setProgress({ sentBatches: i + 1, totalBatches: batches.length });
+    }
+
+    setSummary(agg);
+    setSubmitting(false);
+    onComplete();
+  }
+
+  function downloadErrorsCsv() {
+    if (!summary) return;
+    // Combine client-side validation failures with server-reported
+    // errors. Both share the same shape: rowIndex + message.
+    const lines: string[] = ["rowIndex,field,message"];
+    for (const r of invalidRows) {
+      lines.push(
+        `${r.rowIndex},,"${(r.error ?? "").replace(/"/g, '""')}"`,
+      );
+    }
+    for (const e of summary.serverErrors) {
+      lines.push(
+        `${e.rowIndex + 1},${e.field ?? ""},"${e.message.replace(/"/g, '""')}"`,
+      );
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "import-errors.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
+      onClick={() => !lockClose && onClose()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-csv-title"
+    >
+      <div
+        className="w-full max-w-4xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
+        style={{ backgroundColor: "#ffffff" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2
+                id="import-csv-title"
+                className="text-lg font-semibold"
+                style={{ color: "#0a1f44" }}
+              >
+                Import patients from CSV
+              </h2>
+              <p
+                className="text-xs mt-1"
+                style={{ color: "#6b7280" }}
+              >
+                Required columns: <code>pacwareId</code>,{" "}
+                <code>legalFirstName</code>, <code>legalLastName</code>,{" "}
+                <code>dateOfBirth</code> (YYYY-MM-DD). Optional:{" "}
+                <code>phoneE164</code>, <code>email</code>, address fields.
+                Duplicates by Pacware ID are skipped — they don't fail the import.
+              </p>
+            </div>
+            <Button
+              intent="ghost"
+              size="sm"
+              onClick={onClose}
+              disabled={lockClose}
+            >
+              Close
+            </Button>
+          </div>
+
+          {!summary && (
+            <div>
+              <Label htmlFor="csv-file">CSV file</Label>
+              <input
+                id="csv-file"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={onFile}
+                disabled={parsing || submitting}
+                className="block w-full text-sm"
+              />
+            </div>
+          )}
+
+          {parsing && <Spinner label="Parsing CSV…" />}
+
+          {parseError && (
+            <p
+              className="text-sm"
+              style={{ color: "#b91c1c" }}
+              role="alert"
+            >
+              {parseError}
+            </p>
+          )}
+
+          {rows.length > 0 && !summary && (
+            <div className="space-y-3">
+              <div
+                className="rounded border px-3 py-2 text-sm"
+                style={{
+                  borderColor: "#e5e7eb",
+                  backgroundColor: "#fafafa",
+                  color: "#374151",
+                }}
+              >
+                <strong>{validRows.length}</strong> valid row
+                {validRows.length === 1 ? "" : "s"} ready to import,{" "}
+                <strong style={{ color: invalidRows.length > 0 ? "#b91c1c" : "#374151" }}>
+                  {invalidRows.length}
+                </strong>{" "}
+                with validation errors.
+              </div>
+
+              {invalidRows.length > 0 && (
+                <div>
+                  <p
+                    className="text-xs uppercase tracking-wider font-semibold mb-1"
+                    style={{ color: "#b91c1c" }}
+                  >
+                    Validation errors
+                  </p>
+                  <ul className="text-xs space-y-1" style={{ color: "#374151" }}>
+                    {invalidRows.slice(0, 10).map((r) => (
+                      <li key={r.rowIndex}>
+                        <strong>Row {r.rowIndex}</strong>: {r.error}
+                      </li>
+                    ))}
+                    {invalidRows.length > 10 && (
+                      <li style={{ color: "#6b7280" }}>
+                        …and {invalidRows.length - 10} more.
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              <div>
+                <p
+                  className="text-xs uppercase tracking-wider font-semibold mb-1"
+                  style={{ color: "#c9a24a" }}
+                >
+                  Preview (first {Math.min(CSV_PREVIEW_ROWS, validRows.length)} rows)
+                </p>
+                <div
+                  className="overflow-x-auto rounded border"
+                  style={{ borderColor: "#e5e7eb" }}
+                >
+                  <table className="w-full text-xs">
+                    <thead style={{ backgroundColor: "#f3f4f6" }}>
+                      <tr>
+                        <th className="text-left px-2 py-1">#</th>
+                        <th className="text-left px-2 py-1">Pacware</th>
+                        <th className="text-left px-2 py-1">Name</th>
+                        <th className="text-left px-2 py-1">DOB</th>
+                        <th className="text-left px-2 py-1">Phone</th>
+                        <th className="text-left px-2 py-1">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {validRows.slice(0, CSV_PREVIEW_ROWS).map((r) => (
+                        <tr key={r.rowIndex}>
+                          <td className="px-2 py-1" style={{ color: "#6b7280" }}>
+                            {r.rowIndex}
+                          </td>
+                          <td className="px-2 py-1">{r.parsed!.pacwareId}</td>
+                          <td className="px-2 py-1">
+                            {r.parsed!.legalFirstName} {r.parsed!.legalLastName}
+                          </td>
+                          <td className="px-2 py-1">{r.parsed!.dateOfBirth}</td>
+                          <td className="px-2 py-1">
+                            {r.parsed!.phoneE164 ?? "—"}
+                          </td>
+                          <td className="px-2 py-1">{r.parsed!.email ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {progress && (
+                <p className="text-xs" style={{ color: "#6b7280" }}>
+                  Sending batch {progress.sentBatches} of{" "}
+                  {progress.totalBatches}…
+                </p>
+              )}
+
+              {submitError && (
+                <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
+                  {submitError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  intent="ghost"
+                  onClick={reset}
+                  disabled={submitting}
+                >
+                  Pick a different file
+                </Button>
+                <Button
+                  isLoading={submitting}
+                  disabled={submitting || validRows.length === 0}
+                  onClick={() => void onSubmit()}
+                >
+                  Import {validRows.length} patient
+                  {validRows.length === 1 ? "" : "s"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {summary && (
+            <div className="space-y-3">
+              <div
+                className="rounded border px-4 py-3"
+                style={{
+                  borderColor: "#e5e7eb",
+                  backgroundColor: "#fafafa",
+                  color: "#374151",
+                }}
+              >
+                <p className="text-sm">
+                  <strong style={{ color: "#166534" }}>
+                    {summary.created}
+                  </strong>{" "}
+                  created ·{" "}
+                  <strong>{summary.skippedDuplicates}</strong> duplicate
+                  {summary.skippedDuplicates === 1 ? "" : "s"} skipped ·{" "}
+                  <strong
+                    style={{
+                      color:
+                        summary.serverErrors.length + invalidRows.length > 0
+                          ? "#b91c1c"
+                          : "#374151",
+                    }}
+                  >
+                    {summary.serverErrors.length + invalidRows.length}
+                  </strong>{" "}
+                  error
+                  {summary.serverErrors.length + invalidRows.length === 1
+                    ? ""
+                    : "s"}
+                </p>
+              </div>
+
+              {summary.serverErrors.length > 0 && (
+                <div>
+                  <p
+                    className="text-xs uppercase tracking-wider font-semibold mb-1"
+                    style={{ color: "#b91c1c" }}
+                  >
+                    Server-reported errors
+                  </p>
+                  <ul className="text-xs space-y-1" style={{ color: "#374151" }}>
+                    {summary.serverErrors.slice(0, 10).map((e, i) => (
+                      <li key={`${e.rowIndex}-${i}`}>
+                        <strong>Row {e.rowIndex + 1}</strong>
+                        {e.field ? ` (${e.field})` : ""}: {e.message}
+                      </li>
+                    ))}
+                    {summary.serverErrors.length > 10 && (
+                      <li style={{ color: "#6b7280" }}>
+                        …and {summary.serverErrors.length - 10} more.
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                {(summary.serverErrors.length > 0 || invalidRows.length > 0) && (
+                  <Button intent="secondary" onClick={downloadErrorsCsv}>
+                    Download errors CSV
+                  </Button>
+                )}
+                <Button onClick={onClose}>Done</Button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

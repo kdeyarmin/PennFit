@@ -26,8 +26,16 @@ import type {
   ConsoleValidationError,
   ConversationDetail,
   ConversationListPage,
+  ConversationReplyConflict,
+  ConversationReplyRequest,
+  ConversationReplyResponse,
+  ConversationReplyUnsupported,
+  ConversationReplyVendorError,
+  CreatePatientNoteRequest,
   CreatePatientRequest,
   CreatePatientResponse,
+  CreatePrescriptionRequest,
+  CreatePrescriptionResponse,
   DashboardSummary,
   DuplicatePacwareIdError,
   EpisodeListPage,
@@ -38,15 +46,20 @@ import type {
   FrequencyRuleUpdateResponse,
   HandleEmailClickParams,
   HealthStatus,
+  ImportPatientsCsvRequest,
+  ImportPatientsCsvResponse,
   ListAuditParams,
   ListConversationsParams,
   ListEpisodesParams,
   ListPatientsParams,
   MessagingError,
+  MessagingUnavailableError,
   MessagingValidationError,
   NotFoundError,
   PatientDetail,
   PatientListPage,
+  PatientNote,
+  PatientNotesPage,
   PatientTimeline,
   PatientUpdate,
   PatientUpdateResponse,
@@ -58,6 +71,8 @@ import type {
   SendSmsReminderRequest,
   SendSmsReminderResponse,
   TwilioStatusCallbackBody,
+  UpdatePrescriptionStatusRequest,
+  UpdatePrescriptionStatusResponse,
   VoiceError,
   VoiceStatusCallbackParams,
   VoiceValidationError,
@@ -2170,3 +2185,606 @@ export function useListAudit<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Posts an admin-authored reply on the in-flight conversation
+(SMS or email), reusing the original channel and vendor
+thread (Twilio sender, SendGrid threading headers). Unlike
+`POST /sms/send-reminder` and `POST /email/send-reminder` —
+which spin up a NEW conversation row keyed to the next
+outreach episode — this endpoint never creates a conversation.
+
+Refuses with 409 when the conversation is `closed`, since
+responding on a closed thread would silently re-open it
+without going through the normal reopening audit. Refuses
+with 422 when the conversation channel is `voice`; voice
+replies are not text-message-shaped and would silently
+fall back to nothing.
+
+ * @summary Send a reply on an existing conversation thread
+ */
+export const getReplyInConversationUrl = (id: string) => {
+  return `/resupply-api/conversations/${id}/reply`;
+};
+
+export const replyInConversation = async (
+  id: string,
+  conversationReplyRequest: ConversationReplyRequest,
+  options?: RequestInit,
+): Promise<ConversationReplyResponse> => {
+  return customFetch<ConversationReplyResponse>(getReplyInConversationUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(conversationReplyRequest),
+  });
+};
+
+export const getReplyInConversationMutationOptions = <
+  TError = ErrorType<
+    | ConsoleValidationError
+    | AuthError
+    | NotFoundError
+    | ConversationReplyConflict
+    | ConversationReplyUnsupported
+    | ConversationReplyVendorError
+    | MessagingUnavailableError
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replyInConversation>>,
+    TError,
+    { id: string; data: BodyType<ConversationReplyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replyInConversation>>,
+  TError,
+  { id: string; data: BodyType<ConversationReplyRequest> },
+  TContext
+> => {
+  const mutationKey = ["replyInConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replyInConversation>>,
+    { id: string; data: BodyType<ConversationReplyRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return replyInConversation(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReplyInConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof replyInConversation>>
+>;
+export type ReplyInConversationMutationBody =
+  BodyType<ConversationReplyRequest>;
+export type ReplyInConversationMutationError = ErrorType<
+  | ConsoleValidationError
+  | AuthError
+  | NotFoundError
+  | ConversationReplyConflict
+  | ConversationReplyUnsupported
+  | ConversationReplyVendorError
+  | MessagingUnavailableError
+>;
+
+/**
+ * @summary Send a reply on an existing conversation thread
+ */
+export const useReplyInConversation = <
+  TError = ErrorType<
+    | ConsoleValidationError
+    | AuthError
+    | NotFoundError
+    | ConversationReplyConflict
+    | ConversationReplyUnsupported
+    | ConversationReplyVendorError
+    | MessagingUnavailableError
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof replyInConversation>>,
+    TError,
+    { id: string; data: BodyType<ConversationReplyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof replyInConversation>>,
+  TError,
+  { id: string; data: BodyType<ConversationReplyRequest> },
+  TContext
+> => {
+  return useMutation(getReplyInConversationMutationOptions(options));
+};
+
+/**
+ * Returns up to the 50 most-recent notes for the patient,
+decrypted server-side. Notes are append-only by design —
+there is no PATCH or DELETE endpoint, since rewriting
+history defeats their purpose as an admin-handoff log.
+
+ * @summary Recent admin case-notes for a patient
+ */
+export const getListPatientNotesUrl = (id: string) => {
+  return `/resupply-api/patients/${id}/notes`;
+};
+
+export const listPatientNotes = async (
+  id: string,
+  options?: RequestInit,
+): Promise<PatientNotesPage> => {
+  return customFetch<PatientNotesPage>(getListPatientNotesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPatientNotesQueryKey = (id: string) => {
+  return [`/resupply-api/patients/${id}/notes`] as const;
+};
+
+export const getListPatientNotesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPatientNotes>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPatientNotes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPatientNotesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPatientNotes>>
+  > = ({ signal }) => listPatientNotes(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPatientNotes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPatientNotesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPatientNotes>>
+>;
+export type ListPatientNotesQueryError = ErrorType<AuthError | NotFoundError>;
+
+/**
+ * @summary Recent admin case-notes for a patient
+ */
+
+export function useListPatientNotes<
+  TData = Awaited<ReturnType<typeof listPatientNotes>>,
+  TError = ErrorType<AuthError | NotFoundError>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPatientNotes>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPatientNotesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Appends a free-text note to the patient. Body is encrypted
+at the SQL site via pgcrypto. Audit row records the body
+length only, never the contents.
+
+ * @summary Append a case-note to the patient record
+ */
+export const getCreatePatientNoteUrl = (id: string) => {
+  return `/resupply-api/patients/${id}/notes`;
+};
+
+export const createPatientNote = async (
+  id: string,
+  createPatientNoteRequest: CreatePatientNoteRequest,
+  options?: RequestInit,
+): Promise<PatientNote> => {
+  return customFetch<PatientNote>(getCreatePatientNoteUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPatientNoteRequest),
+  });
+};
+
+export const getCreatePatientNoteMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPatientNote>>,
+    TError,
+    { id: string; data: BodyType<CreatePatientNoteRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPatientNote>>,
+  TError,
+  { id: string; data: BodyType<CreatePatientNoteRequest> },
+  TContext
+> => {
+  const mutationKey = ["createPatientNote"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPatientNote>>,
+    { id: string; data: BodyType<CreatePatientNoteRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createPatientNote(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePatientNoteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPatientNote>>
+>;
+export type CreatePatientNoteMutationBody = BodyType<CreatePatientNoteRequest>;
+export type CreatePatientNoteMutationError = ErrorType<
+  ConsoleValidationError | AuthError | NotFoundError
+>;
+
+/**
+ * @summary Append a case-note to the patient record
+ */
+export const useCreatePatientNote = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPatientNote>>,
+    TError,
+    { id: string; data: BodyType<CreatePatientNoteRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPatientNote>>,
+  TError,
+  { id: string; data: BodyType<CreatePatientNoteRequest> },
+  TContext
+> => {
+  return useMutation(getCreatePatientNoteMutationOptions(options));
+};
+
+/**
+ * Creates a new prescription row, encrypting the optional
+`details` JSON (prescriber name/NPI, diagnosis, free-text
+notes) at the SQL site. The prescription starts in
+`active` status. Once recorded, clinical fields are
+immutable — the only legal mutation is a status transition
+via `PATCH /prescriptions/{rxId}`.
+
+ * @summary Record a new prescription for a patient
+ */
+export const getCreatePrescriptionUrl = (id: string) => {
+  return `/resupply-api/patients/${id}/prescriptions`;
+};
+
+export const createPrescription = async (
+  id: string,
+  createPrescriptionRequest: CreatePrescriptionRequest,
+  options?: RequestInit,
+): Promise<CreatePrescriptionResponse> => {
+  return customFetch<CreatePrescriptionResponse>(getCreatePrescriptionUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPrescriptionRequest),
+  });
+};
+
+export const getCreatePrescriptionMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPrescription>>,
+    TError,
+    { id: string; data: BodyType<CreatePrescriptionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPrescription>>,
+  TError,
+  { id: string; data: BodyType<CreatePrescriptionRequest> },
+  TContext
+> => {
+  const mutationKey = ["createPrescription"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPrescription>>,
+    { id: string; data: BodyType<CreatePrescriptionRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createPrescription(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePrescriptionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPrescription>>
+>;
+export type CreatePrescriptionMutationBody =
+  BodyType<CreatePrescriptionRequest>;
+export type CreatePrescriptionMutationError = ErrorType<
+  ConsoleValidationError | AuthError | NotFoundError
+>;
+
+/**
+ * @summary Record a new prescription for a patient
+ */
+export const useCreatePrescription = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPrescription>>,
+    TError,
+    { id: string; data: BodyType<CreatePrescriptionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPrescription>>,
+  TError,
+  { id: string; data: BodyType<CreatePrescriptionRequest> },
+  TContext
+> => {
+  return useMutation(getCreatePrescriptionMutationOptions(options));
+};
+
+/**
+ * The only mutation allowed on a prescription after creation.
+Accepts `status: active | expired | revoked` and writes
+nothing else. Clinical fields are immutable to keep the
+provenance honest — to "edit" a prescription, create a new
+one and mark the prior one expired.
+
+ * @summary Transition a prescription's lifecycle status
+ */
+export const getUpdatePrescriptionStatusUrl = (rxId: string) => {
+  return `/resupply-api/prescriptions/${rxId}`;
+};
+
+export const updatePrescriptionStatus = async (
+  rxId: string,
+  updatePrescriptionStatusRequest: UpdatePrescriptionStatusRequest,
+  options?: RequestInit,
+): Promise<UpdatePrescriptionStatusResponse> => {
+  return customFetch<UpdatePrescriptionStatusResponse>(
+    getUpdatePrescriptionStatusUrl(rxId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updatePrescriptionStatusRequest),
+    },
+  );
+};
+
+export const getUpdatePrescriptionStatusMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePrescriptionStatus>>,
+    TError,
+    { rxId: string; data: BodyType<UpdatePrescriptionStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePrescriptionStatus>>,
+  TError,
+  { rxId: string; data: BodyType<UpdatePrescriptionStatusRequest> },
+  TContext
+> => {
+  const mutationKey = ["updatePrescriptionStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePrescriptionStatus>>,
+    { rxId: string; data: BodyType<UpdatePrescriptionStatusRequest> }
+  > = (props) => {
+    const { rxId, data } = props ?? {};
+
+    return updatePrescriptionStatus(rxId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePrescriptionStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePrescriptionStatus>>
+>;
+export type UpdatePrescriptionStatusMutationBody =
+  BodyType<UpdatePrescriptionStatusRequest>;
+export type UpdatePrescriptionStatusMutationError = ErrorType<
+  ConsoleValidationError | AuthError | NotFoundError
+>;
+
+/**
+ * @summary Transition a prescription's lifecycle status
+ */
+export const useUpdatePrescriptionStatus = <
+  TError = ErrorType<ConsoleValidationError | AuthError | NotFoundError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePrescriptionStatus>>,
+    TError,
+    { rxId: string; data: BodyType<UpdatePrescriptionStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePrescriptionStatus>>,
+  TError,
+  { rxId: string; data: BodyType<UpdatePrescriptionStatusRequest> },
+  TContext
+> => {
+  return useMutation(getUpdatePrescriptionStatusMutationOptions(options));
+};
+
+/**
+ * Accepts a JSON array of up to 500 already-parsed CSV rows.
+The dashboard parses the file client-side (papaparse),
+validates per-row, and POSTs JSON. Each row is encrypted
+and inserted in its own try/catch so a single bad row
+cannot tank the batch. Duplicates on `pacware_id` are
+counted as `skippedDuplicates`, not errors. ONE audit row
+per call records structural counts only — no PHI.
+
+ * @summary Bulk-create patients from a parsed Pacware-style export
+ */
+export const getImportPatientsCsvUrl = () => {
+  return `/resupply-api/patients/import-csv`;
+};
+
+export const importPatientsCsv = async (
+  importPatientsCsvRequest: ImportPatientsCsvRequest,
+  options?: RequestInit,
+): Promise<ImportPatientsCsvResponse> => {
+  return customFetch<ImportPatientsCsvResponse>(getImportPatientsCsvUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(importPatientsCsvRequest),
+  });
+};
+
+export const getImportPatientsCsvMutationOptions = <
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importPatientsCsv>>,
+    TError,
+    { data: BodyType<ImportPatientsCsvRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importPatientsCsv>>,
+  TError,
+  { data: BodyType<ImportPatientsCsvRequest> },
+  TContext
+> => {
+  const mutationKey = ["importPatientsCsv"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importPatientsCsv>>,
+    { data: BodyType<ImportPatientsCsvRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return importPatientsCsv(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportPatientsCsvMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importPatientsCsv>>
+>;
+export type ImportPatientsCsvMutationBody = BodyType<ImportPatientsCsvRequest>;
+export type ImportPatientsCsvMutationError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Bulk-create patients from a parsed Pacware-style export
+ */
+export const useImportPatientsCsv = <
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importPatientsCsv>>,
+    TError,
+    { data: BodyType<ImportPatientsCsvRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof importPatientsCsv>>,
+  TError,
+  { data: BodyType<ImportPatientsCsvRequest> },
+  TContext
+> => {
+  return useMutation(getImportPatientsCsvMutationOptions(options));
+};

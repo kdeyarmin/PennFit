@@ -968,6 +968,23 @@ export const PatientUpdateChannelPreference = {
 } as const;
 
 /**
+ * Lifecycle status. `paused` removes the patient from the
+outreach scan; `closed` is terminal (off program). The
+scan suppresses paused/closed patients regardless of
+episode state, so this is the canonical pause/resume
+knob.
+
+ */
+export type PatientUpdateStatus =
+  (typeof PatientUpdateStatus)[keyof typeof PatientUpdateStatus];
+
+export const PatientUpdateStatus = {
+  active: "active",
+  paused: "paused",
+  closed: "closed",
+} as const;
+
+/**
  * Body for PATCH /patients/{id}. All fields are independently
 optional; sending `null` explicitly clears the field, omitting
 it leaves the column unchanged. PHI columns (name, phone,
@@ -983,6 +1000,13 @@ export interface PatientUpdate {
    */
   cadenceOverrideDays?: number | null;
   channelPreference?: PatientUpdateChannelPreference;
+  /** Lifecycle status. `paused` removes the patient from the
+outreach scan; `closed` is terminal (off program). The
+scan suppresses paused/closed patients regardless of
+episode state, so this is the canonical pause/resume
+knob.
+ */
+  status?: PatientUpdateStatus;
 }
 
 /**
@@ -1182,6 +1206,335 @@ export interface FrequencyRuleUpdate {
 export interface FrequencyRuleUpdateResponse {
   id: string;
   changed: string[];
+}
+
+/**
+ * Body for POST /conversations/{id}/reply. The text is sent on
+whichever channel the conversation already uses; admins do
+not pick a channel here. Trimmed and length-bounded server-
+side; SMS-channel replies above 160 chars will be sent as
+multi-part by the carrier.
+
+ */
+export interface ConversationReplyRequest {
+  /**
+   * Reply text. Trimmed; must be non-empty after trim.
+   * @minLength 1
+   * @maxLength 1600
+   */
+  body: string;
+}
+
+/**
+ * Echoes the new outbound message id, the conversation id the
+reply was appended to, and the vendor's send reference
+(Twilio MessageSid or SendGrid X-Message-Id). Vendor refs
+let admins cross-reference webhook delivery events later.
+
+ */
+export interface ConversationReplyResponse {
+  messageId: string;
+  conversationId: string;
+  vendorRef: string | null;
+}
+
+export type ConversationReplyConflictError =
+  (typeof ConversationReplyConflictError)[keyof typeof ConversationReplyConflictError];
+
+export const ConversationReplyConflictError = {
+  conversation_closed: "conversation_closed",
+  patient_missing_contact: "patient_missing_contact",
+} as const;
+
+/**
+ * Present only on patient_missing_contact.
+ */
+export type ConversationReplyConflictChannel =
+  | (typeof ConversationReplyConflictChannel)[keyof typeof ConversationReplyConflictChannel]
+  | null;
+
+export const ConversationReplyConflictChannel = {
+  sms: "sms",
+  voice: "voice",
+  email: "email",
+} as const;
+
+/**
+ * Returned when the conversation is closed, or the patient
+has no usable contact for this channel (no phone for SMS,
+no email for email, voice channel where text replies are
+not supported).
+
+ */
+export interface ConversationReplyConflict {
+  error: ConversationReplyConflictError;
+  /** Present only on patient_missing_contact. */
+  channel?: ConversationReplyConflictChannel;
+  message: string;
+}
+
+export type ConversationReplyUnsupportedError =
+  (typeof ConversationReplyUnsupportedError)[keyof typeof ConversationReplyUnsupportedError];
+
+export const ConversationReplyUnsupportedError = {
+  patient_phone_unnormalizable: "patient_phone_unnormalizable",
+} as const;
+
+/**
+ * Returned when the patient's phone could not be parsed as E.164.
+ */
+export interface ConversationReplyUnsupported {
+  error: ConversationReplyUnsupportedError;
+  message: string;
+}
+
+export type ConversationReplyVendorErrorError =
+  (typeof ConversationReplyVendorErrorError)[keyof typeof ConversationReplyVendorErrorError];
+
+export const ConversationReplyVendorErrorError = {
+  vendor_api_error: "vendor_api_error",
+} as const;
+
+export type ConversationReplyVendorErrorVendor =
+  (typeof ConversationReplyVendorErrorVendor)[keyof typeof ConversationReplyVendorErrorVendor];
+
+export const ConversationReplyVendorErrorVendor = {
+  twilio: "twilio",
+  sendgrid: "sendgrid",
+} as const;
+
+/**
+ * Returned when the SMS/email vendor accepted the request but
+rejected the send. The audit log row records vendor + status
++ code; the dashboard can show the operator a hint while the
+message itself is not retried automatically.
+
+ */
+export interface ConversationReplyVendorError {
+  error: ConversationReplyVendorErrorError;
+  vendor: ConversationReplyVendorErrorVendor;
+  vendorStatus?: number | null;
+  vendorCode?: string | null;
+  message: string;
+}
+
+export type MessagingUnavailableErrorError =
+  (typeof MessagingUnavailableErrorError)[keyof typeof MessagingUnavailableErrorError];
+
+export const MessagingUnavailableErrorError = {
+  messaging_not_configured: "messaging_not_configured",
+  vendor_config_error: "vendor_config_error",
+} as const;
+
+/**
+ * Returned with HTTP 503 when one or more of the messaging-
+subsystem env vars are missing. Lists the required vars in
+the message so the deployer knows what to set.
+
+ */
+export interface MessagingUnavailableError {
+  error: MessagingUnavailableErrorError;
+  message: string;
+}
+
+/**
+ * A single admin case-note. Body is decrypted server-side
+before serialization; the wire format is plaintext but
+the column is encrypted at rest.
+
+ */
+export interface PatientNote {
+  id: string;
+  body: string;
+  authorEmail: string;
+  authorClerkId?: string | null;
+  createdAt: string;
+}
+
+/**
+ * The list response is wrapped (rather than a bare array) so we
+can add filters / pagination later without a breaking change.
+
+ */
+export interface PatientNotesPage {
+  items: PatientNote[];
+  /**
+   * Length of items[] (max 50, newest first).
+   * @minimum 0
+   */
+  count: number;
+}
+
+/**
+ * Body for POST /patients/{id}/notes. Free-text; the column is
+encrypted at the SQL site via pgcrypto so the body never lands
+in plaintext on disk or in the audit metadata.
+
+ */
+export interface CreatePatientNoteRequest {
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  body: string;
+}
+
+/**
+ * Body for POST /patients/{id}/prescriptions. The optional
+`details` fields (prescriberName, prescriberNpi, diagnosis,
+notes) are stitched into the encrypted `details` JSON column;
+encrypt happens server-side.
+
+ */
+export interface CreatePrescriptionRequest {
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  itemSku: string;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  cadenceDays: number;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  validFrom: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  validUntil?: string | null;
+  /** @maxLength 160 */
+  prescriberName?: string | null;
+  /** @maxLength 20 */
+  prescriberNpi?: string | null;
+  /** @maxLength 2000 */
+  diagnosis?: string | null;
+  /** @maxLength 2000 */
+  notes?: string | null;
+}
+
+export interface CreatePrescriptionResponse {
+  id: string;
+}
+
+export type UpdatePrescriptionStatusRequestStatus =
+  (typeof UpdatePrescriptionStatusRequestStatus)[keyof typeof UpdatePrescriptionStatusRequestStatus];
+
+export const UpdatePrescriptionStatusRequestStatus = {
+  active: "active",
+  expired: "expired",
+  revoked: "revoked",
+} as const;
+
+/**
+ * Body for PATCH /prescriptions/{rxId}. Only the lifecycle
+status is mutable — clinical fields are immutable on
+purpose to keep provenance honest.
+
+ */
+export interface UpdatePrescriptionStatusRequest {
+  status: UpdatePrescriptionStatusRequestStatus;
+}
+
+export type UpdatePrescriptionStatusResponseStatus =
+  (typeof UpdatePrescriptionStatusResponseStatus)[keyof typeof UpdatePrescriptionStatusResponseStatus];
+
+export const UpdatePrescriptionStatusResponseStatus = {
+  active: "active",
+  expired: "expired",
+  revoked: "revoked",
+} as const;
+
+/**
+ * Echoes the prescription id and the resulting status.
+`changed` is false when the requested status equals the
+current one (no-op idempotency for double-clicks).
+
+ */
+export interface UpdatePrescriptionStatusResponse {
+  id: string;
+  status: UpdatePrescriptionStatusResponseStatus;
+  changed: boolean;
+}
+
+/**
+ * One CSV row, post-parse. Must satisfy the same per-field
+rules as POST /patients (E.164 phone, ISO date of birth,
+all-or-none address). Address line2 / country are optional
+even when the rest of the address is provided.
+
+ */
+export interface ImportPatientRow {
+  /**
+   * @minLength 1
+   * @maxLength 64
+   */
+  pacwareId: string;
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  legalFirstName: string;
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  legalLastName: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  dateOfBirth: string;
+  /** @pattern ^\+[1-9]\d{7,14}$ */
+  phoneE164?: string;
+  /** @maxLength 254 */
+  email?: string;
+  /** @maxLength 160 */
+  addressLine1?: string;
+  /** @maxLength 160 */
+  addressLine2?: string;
+  /** @maxLength 80 */
+  city?: string;
+  /** @maxLength 40 */
+  state?: string;
+  /** @maxLength 20 */
+  postalCode?: string;
+  /** @maxLength 40 */
+  country?: string;
+  /** @maxLength 120 */
+  insurancePayer?: string;
+}
+
+/**
+ * Wrapped row array. Server caps batch size at 500 to keep
+the request well under the body-parser timeout; the
+dashboard chunks larger imports into multiple requests.
+
+ */
+export interface ImportPatientsCsvRequest {
+  /**
+   * @minItems 1
+   * @maxItems 500
+   */
+  rows: ImportPatientRow[];
+}
+
+export interface ImportPatientRowError {
+  /** @minimum 0 */
+  rowIndex: number;
+  field?: string;
+  message: string;
+}
+
+/**
+ * Per-call import result. `errors[]` lets the dashboard render
+a downloadable error CSV; `createdIds[]` is empty for
+skipped/error rows so the dashboard can compute "I
+successfully created N patients in this batch".
+
+ */
+export interface ImportPatientsCsvResponse {
+  /** @minimum 0 */
+  created: number;
+  /** @minimum 0 */
+  skippedDuplicates: number;
+  errors: ImportPatientRowError[];
+  createdIds: string[];
 }
 
 export type HandleEmailClickParams = {

@@ -1174,6 +1174,350 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthError"
 
+  /conversations/{id}/reply:
+    post:
+      operationId: replyInConversation
+      tags: [conversations]
+      summary: Send a reply on an existing conversation thread
+      description: |
+        Posts an admin-authored reply on the in-flight conversation
+        (SMS or email), reusing the original channel and vendor
+        thread (Twilio sender, SendGrid threading headers). Unlike
+        `POST /sms/send-reminder` and `POST /email/send-reminder` —
+        which spin up a NEW conversation row keyed to the next
+        outreach episode — this endpoint never creates a conversation.
+
+        Refuses with 409 when the conversation is `closed`, since
+        responding on a closed thread would silently re-open it
+        without going through the normal reopening audit. Refuses
+        with 422 when the conversation channel is `voice`; voice
+        replies are not text-message-shaped and would silently
+        fall back to nothing.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationReplyRequest"
+      responses:
+        "201":
+          description: Reply queued/sent and persisted as an outbound message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationReplyResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "404":
+          description: No conversation with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "409":
+          description: |
+            Conversation is closed, or the patient has no usable
+            contact for this channel (no phone for SMS / no email
+            for email; voice conversations also surface here).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationReplyConflict"
+        "422":
+          description: Patient phone could not be parsed as E.164.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationReplyUnsupported"
+        "502":
+          description: SMS/email vendor rejected the send (audit row written).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationReplyVendorError"
+        "503":
+          description: Messaging subsystem not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingUnavailableError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+
+  /patients/{id}/notes:
+    get:
+      operationId: listPatientNotes
+      tags: [patients]
+      summary: Recent admin case-notes for a patient
+      description: |
+        Returns up to the 50 most-recent notes for the patient,
+        decrypted server-side. Notes are append-only by design —
+        there is no PATCH or DELETE endpoint, since rewriting
+        history defeats their purpose as an admin-handoff log.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Notes (newest first, max 50).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientNotesPage"
+        "404":
+          description: No patient with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+    post:
+      operationId: createPatientNote
+      tags: [patients]
+      summary: Append a case-note to the patient record
+      description: |
+        Appends a free-text note to the patient. Body is encrypted
+        at the SQL site via pgcrypto. Audit row records the body
+        length only, never the contents.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePatientNoteRequest"
+      responses:
+        "201":
+          description: Note created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PatientNote"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "404":
+          description: No patient with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+
+  /patients/{id}/prescriptions:
+    post:
+      operationId: createPrescription
+      tags: [patients]
+      summary: Record a new prescription for a patient
+      description: |
+        Creates a new prescription row, encrypting the optional
+        `details` JSON (prescriber name/NPI, diagnosis, free-text
+        notes) at the SQL site. The prescription starts in
+        `active` status. Once recorded, clinical fields are
+        immutable — the only legal mutation is a status transition
+        via `PATCH /prescriptions/{rxId}`.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePrescriptionRequest"
+      responses:
+        "201":
+          description: Prescription created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePrescriptionResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "404":
+          description: No patient with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+
+  /prescriptions/{rxId}:
+    patch:
+      operationId: updatePrescriptionStatus
+      tags: [patients]
+      summary: Transition a prescription's lifecycle status
+      description: |
+        The only mutation allowed on a prescription after creation.
+        Accepts `status: active | expired | revoked` and writes
+        nothing else. Clinical fields are immutable to keep the
+        provenance honest — to "edit" a prescription, create a new
+        one and mark the prior one expired.
+      parameters:
+        - in: path
+          name: rxId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePrescriptionStatusRequest"
+      responses:
+        "200":
+          description: Status updated (or no-op if unchanged).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdatePrescriptionStatusResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "404":
+          description: No prescription with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+
+  /patients/import-csv:
+    post:
+      operationId: importPatientsCsv
+      tags: [patients]
+      summary: Bulk-create patients from a parsed Pacware-style export
+      description: |
+        Accepts a JSON array of up to 500 already-parsed CSV rows.
+        The dashboard parses the file client-side (papaparse),
+        validates per-row, and POSTs JSON. Each row is encrypted
+        and inserted in its own try/catch so a single bad row
+        cannot tank the batch. Duplicates on `pacware_id` are
+        counted as `skippedDuplicates`, not errors. ONE audit row
+        per call records structural counts only — no PHI.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportPatientsCsvRequest"
+      responses:
+        "200":
+          description: Batch processed; per-row outcomes returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportPatientsCsvResponse"
+        "400":
+          description: Body failed validation (e.g. > 500 rows).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+
 components:
   schemas:
     HealthStatus:
@@ -2268,6 +2612,15 @@ components:
           type: string
           nullable: true
           enum: [sms, email, voice]
+        status:
+          type: string
+          enum: [active, paused, closed]
+          description: |
+            Lifecycle status. `paused` removes the patient from the
+            outreach scan; `closed` is terminal (off program). The
+            scan suppresses paused/closed patients regardless of
+            episode state, so this is the canonical pause/resume
+            knob.
       additionalProperties: false
     PatientUpdateResponse:
       type: object
@@ -2531,3 +2884,369 @@ components:
       required:
         - id
         - changed
+    ConversationReplyRequest:
+      type: object
+      description: |
+        Body for POST /conversations/{id}/reply. The text is sent on
+        whichever channel the conversation already uses; admins do
+        not pick a channel here. Trimmed and length-bounded server-
+        side; SMS-channel replies above 160 chars will be sent as
+        multi-part by the carrier.
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1600
+          description: Reply text. Trimmed; must be non-empty after trim.
+      required:
+        - body
+      additionalProperties: false
+    ConversationReplyResponse:
+      type: object
+      description: |
+        Echoes the new outbound message id, the conversation id the
+        reply was appended to, and the vendor's send reference
+        (Twilio MessageSid or SendGrid X-Message-Id). Vendor refs
+        let admins cross-reference webhook delivery events later.
+      properties:
+        messageId:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        vendorRef:
+          type: string
+          nullable: true
+      required:
+        - messageId
+        - conversationId
+        - vendorRef
+    ConversationReplyConflict:
+      type: object
+      description: |
+        Returned when the conversation is closed, or the patient
+        has no usable contact for this channel (no phone for SMS,
+        no email for email, voice channel where text replies are
+        not supported).
+      properties:
+        error:
+          type: string
+          enum: [conversation_closed, patient_missing_contact]
+        channel:
+          type: string
+          enum: [sms, voice, email]
+          nullable: true
+          description: Present only on patient_missing_contact.
+        message:
+          type: string
+      required:
+        - error
+        - message
+    ConversationReplyUnsupported:
+      type: object
+      description: Returned when the patient's phone could not be parsed as E.164.
+      properties:
+        error:
+          type: string
+          enum: [patient_phone_unnormalizable]
+        message:
+          type: string
+      required:
+        - error
+        - message
+    ConversationReplyVendorError:
+      type: object
+      description: |
+        Returned when the SMS/email vendor accepted the request but
+        rejected the send. The audit log row records vendor + status
+        + code; the dashboard can show the operator a hint while the
+        message itself is not retried automatically.
+      properties:
+        error:
+          type: string
+          enum: [vendor_api_error]
+        vendor:
+          type: string
+          enum: [twilio, sendgrid]
+        vendorStatus:
+          type: integer
+          nullable: true
+        vendorCode:
+          type: string
+          nullable: true
+        message:
+          type: string
+      required:
+        - error
+        - vendor
+        - message
+    MessagingUnavailableError:
+      type: object
+      description: |
+        Returned with HTTP 503 when one or more of the messaging-
+        subsystem env vars are missing. Lists the required vars in
+        the message so the deployer knows what to set.
+      properties:
+        error:
+          type: string
+          enum: [messaging_not_configured, vendor_config_error]
+        message:
+          type: string
+      required:
+        - error
+        - message
+    PatientNote:
+      type: object
+      description: |
+        A single admin case-note. Body is decrypted server-side
+        before serialization; the wire format is plaintext but
+        the column is encrypted at rest.
+      properties:
+        id:
+          type: string
+          format: uuid
+        body:
+          type: string
+        authorEmail:
+          type: string
+        authorClerkId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - body
+        - authorEmail
+        - createdAt
+    PatientNotesPage:
+      type: object
+      description: |
+        The list response is wrapped (rather than a bare array) so we
+        can add filters / pagination later without a breaking change.
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatientNote"
+        count:
+          type: integer
+          minimum: 0
+          description: Length of items[] (max 50, newest first).
+      required:
+        - items
+        - count
+    CreatePatientNoteRequest:
+      type: object
+      description: |
+        Body for POST /patients/{id}/notes. Free-text; the column is
+        encrypted at the SQL site via pgcrypto so the body never lands
+        in plaintext on disk or in the audit metadata.
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required:
+        - body
+      additionalProperties: false
+    CreatePrescriptionRequest:
+      type: object
+      description: |
+        Body for POST /patients/{id}/prescriptions. The optional
+        `details` fields (prescriberName, prescriberNpi, diagnosis,
+        notes) are stitched into the encrypted `details` JSON column;
+        encrypt happens server-side.
+      properties:
+        itemSku:
+          type: string
+          minLength: 1
+          maxLength: 64
+        cadenceDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+        validFrom:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        validUntil:
+          type: string
+          nullable: true
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        prescriberName:
+          type: string
+          nullable: true
+          maxLength: 160
+        prescriberNpi:
+          type: string
+          nullable: true
+          maxLength: 20
+        diagnosis:
+          type: string
+          nullable: true
+          maxLength: 2000
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+      required:
+        - itemSku
+        - cadenceDays
+        - validFrom
+      additionalProperties: false
+    CreatePrescriptionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+      required:
+        - id
+    UpdatePrescriptionStatusRequest:
+      type: object
+      description: |
+        Body for PATCH /prescriptions/{rxId}. Only the lifecycle
+        status is mutable — clinical fields are immutable on
+        purpose to keep provenance honest.
+      properties:
+        status:
+          type: string
+          enum: [active, expired, revoked]
+      required:
+        - status
+      additionalProperties: false
+    UpdatePrescriptionStatusResponse:
+      type: object
+      description: |
+        Echoes the prescription id and the resulting status.
+        `changed` is false when the requested status equals the
+        current one (no-op idempotency for double-clicks).
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, expired, revoked]
+        changed:
+          type: boolean
+      required:
+        - id
+        - status
+        - changed
+    ImportPatientRow:
+      type: object
+      description: |
+        One CSV row, post-parse. Must satisfy the same per-field
+        rules as POST /patients (E.164 phone, ISO date of birth,
+        all-or-none address). Address line2 / country are optional
+        even when the rest of the address is provided.
+      properties:
+        pacwareId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        legalFirstName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        legalLastName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        dateOfBirth:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        phoneE164:
+          type: string
+          pattern: "^\\+[1-9]\\d{7,14}$"
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        addressLine1:
+          type: string
+          maxLength: 160
+        addressLine2:
+          type: string
+          maxLength: 160
+        city:
+          type: string
+          maxLength: 80
+        state:
+          type: string
+          maxLength: 40
+        postalCode:
+          type: string
+          maxLength: 20
+        country:
+          type: string
+          maxLength: 40
+        insurancePayer:
+          type: string
+          maxLength: 120
+      required:
+        - pacwareId
+        - legalFirstName
+        - legalLastName
+        - dateOfBirth
+      additionalProperties: false
+    ImportPatientsCsvRequest:
+      type: object
+      description: |
+        Wrapped row array. Server caps batch size at 500 to keep
+        the request well under the body-parser timeout; the
+        dashboard chunks larger imports into multiple requests.
+      properties:
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/ImportPatientRow"
+      required:
+        - rows
+      additionalProperties: false
+    ImportPatientRowError:
+      type: object
+      properties:
+        rowIndex:
+          type: integer
+          minimum: 0
+        field:
+          type: string
+        message:
+          type: string
+      required:
+        - rowIndex
+        - message
+    ImportPatientsCsvResponse:
+      type: object
+      description: |
+        Per-call import result. `errors[]` lets the dashboard render
+        a downloadable error CSV; `createdIds[]` is empty for
+        skipped/error rows so the dashboard can compute "I
+        successfully created N patients in this batch".
+      properties:
+        created:
+          type: integer
+          minimum: 0
+        skippedDuplicates:
+          type: integer
+          minimum: 0
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportPatientRowError"
+        createdIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - created
+        - skippedDuplicates
+        - errors
+        - createdIds
