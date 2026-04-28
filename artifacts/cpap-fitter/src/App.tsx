@@ -27,6 +27,7 @@ import { ShopCheckoutSuccess } from "@/pages/shop-checkout-success";
 import { ShopCheckoutCancel } from "@/pages/shop-checkout-cancel";
 import { SignInPage } from "@/pages/sign-in";
 import { SignUpPage } from "@/pages/sign-up";
+import { AccountPage } from "@/pages/account";
 import { AdminShell } from "@/pages/admin/admin-shell";
 import { AdminDashboard } from "@/pages/admin/dashboard";
 import { AdminOrders } from "@/pages/admin/orders";
@@ -124,6 +125,7 @@ function PatientRouter() {
         <Route path="/shop/cart" component={ShopCart} />
         <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
         <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
+        <Route path="/account" component={AccountPage} />
         <Route path="/privacy" component={Privacy} />
         <Route path="/terms" component={Terms} />
 

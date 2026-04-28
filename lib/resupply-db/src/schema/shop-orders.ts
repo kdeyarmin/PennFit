@@ -56,6 +56,17 @@ export const shopOrders = resupplySchema.table(
      * line items themselves.
      */
     cartHash: text("cart_hash"),
+    /**
+     * Clerk user ID of the buyer when the checkout was initiated by
+     * a signed-in user. Nullable because guest checkout is still
+     * supported. Indexed for the order-history query
+     * (`/shop/me/orders` filters by this column ordered by
+     * created_at DESC). Populated at Session-create time AND
+     * re-confirmed by the webhook from Session.metadata.clerk_user_id
+     * — defence-in-depth in case the create-time write loses to a
+     * crash before commit.
+     */
+    clerkUserId: text("clerk_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -67,6 +78,7 @@ export const shopOrders = resupplySchema.table(
   (t) => ({
     statusIdx: index("shop_orders_status_idx").on(t.status),
     createdAtIdx: index("shop_orders_created_at_idx").on(t.createdAt),
+    clerkUserIdx: index("shop_orders_clerk_user_id_idx").on(t.clerkUserId),
   }),
 );
 

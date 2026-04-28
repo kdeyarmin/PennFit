@@ -33,9 +33,10 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
-import { getDbPool, shopOrders } from "@workspace/resupply-db";
+import { getDbPool, shopCustomers, shopOrders } from "@workspace/resupply-db";
 
-import { getStripeClient, readStripeConfigOrNull } from "./config";
+import { getStripeClient, readStripeConfigOrNull, type StripeConfig } from "./config";
+import { readDefaultPaymentMethod } from "./customer";
 
 export const stripeWebhookHandler: RequestHandler = async (
   req: Request,
@@ -98,6 +99,18 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
         await markPaid(session, log);
+        // Best-effort sync of saved customer info. Failures here MUST
+        // NOT throw out of the webhook — the order is paid; failing
+        // to refresh "saved card last4" is recoverable on the next
+        // /shop/me hit (which will re-pull from Stripe).
+        try {
+          await syncCustomerAfterCheckout(config, session, log);
+        } catch (syncErr) {
+          log?.warn?.(
+            { err: syncErr instanceof Error ? syncErr.message : String(syncErr) },
+            "stripe webhook: customer sync failed (non-fatal)",
+          );
+        }
         break;
       }
       case "checkout.session.expired": {
@@ -154,6 +167,15 @@ async function markPaid(
       ? session.payment_intent
       : session.payment_intent?.id ?? null;
 
+  // Re-stamp clerk_user_id from session metadata. The route that
+  // created this Session also wrote it locally — this is belt-and-
+  // suspenders in case the local write was lost (crash mid-request,
+  // sequencing issue, etc.).
+  const clerkUserId =
+    (typeof session.metadata?.clerk_user_id === "string" &&
+      session.metadata.clerk_user_id) ||
+    null;
+
   await db
     .update(shopOrders)
     .set({
@@ -161,6 +183,7 @@ async function markPaid(
       stripePaymentIntentId: paymentIntentId,
       amountTotalCents: session.amount_total ?? null,
       currency: session.currency ?? null,
+      ...(clerkUserId ? { clerkUserId } : {}),
       paidAt: sql`now()`,
       updatedAt: sql`now()`,
     })
@@ -169,6 +192,130 @@ async function markPaid(
   log?.info?.(
     { amountCents: session.amount_total },
     "shop order marked paid",
+  );
+}
+
+/**
+ * Sync the buyer's saved card + shipping address back to
+ * shop_customers so the next /shop/me render includes the freshly
+ * saved details. Runs only when the Session has both a
+ * `clerk_user_id` in metadata AND a `customer` attached.
+ *
+ * Order of operations:
+ *   1. Best-effort: read the Customer's default payment method and
+ *      persist its display crumbs (brand/last4/exp).
+ *   2. Best-effort: persist Stripe's collected shipping_details as
+ *      our default address — but only if the user doesn't already
+ *      have one (don't clobber an explicit /shop/me edit with an
+ *      auto-collected one).
+ */
+async function syncCustomerAfterCheckout(
+  config: StripeConfig,
+  session: Stripe.Checkout.Session,
+  log: { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void } | undefined,
+): Promise<void> {
+  const clerkUserId =
+    typeof session.metadata?.clerk_user_id === "string"
+      ? session.metadata.clerk_user_id
+      : null;
+  const stripeCustomerId =
+    typeof session.customer === "string"
+      ? session.customer
+      : session.customer?.id ?? null;
+  if (!clerkUserId || !stripeCustomerId) return;
+
+  const db = drizzle(getDbPool());
+
+  const dpm = await readDefaultPaymentMethod(config, stripeCustomerId);
+  const shipping =
+    session.collected_information?.shipping_details ??
+    (
+      session as unknown as {
+        shipping_details?: {
+          address?: {
+            line1?: string | null;
+            line2?: string | null;
+            city?: string | null;
+            state?: string | null;
+            postal_code?: string | null;
+            country?: string | null;
+          };
+        };
+      }
+    ).shipping_details ??
+    null;
+
+  // Read existing row to decide whether to backfill the shipping
+  // address (only when empty — never overwrite a deliberate edit).
+  const existingRows = await db
+    .select({
+      shippingAddress: shopCustomers.shippingAddress,
+      stripeCustomerId: shopCustomers.stripeCustomerId,
+    })
+    .from(shopCustomers)
+    .where(eq(shopCustomers.clerkUserId, clerkUserId))
+    .limit(1);
+  const existing = existingRows[0];
+
+  const shouldSetShipping =
+    !!shipping?.address?.line1 &&
+    !!shipping.address.city &&
+    !!shipping.address.state &&
+    !!shipping.address.postal_code &&
+    (existing?.shippingAddress ?? null) === null;
+
+  const updates: Partial<typeof shopCustomers.$inferInsert> & {
+    updatedAt: Date;
+  } = { updatedAt: new Date() };
+
+  if (!existing?.stripeCustomerId) {
+    updates.stripeCustomerId = stripeCustomerId;
+  }
+  if (dpm) {
+    updates.defaultPaymentMethodId = dpm.id;
+    updates.defaultPaymentMethodBrand = dpm.brand;
+    updates.defaultPaymentMethodLast4 = dpm.last4;
+    updates.defaultPaymentMethodExpMonth = dpm.expMonth;
+    updates.defaultPaymentMethodExpYear = dpm.expYear;
+  }
+  if (shouldSetShipping && shipping?.address) {
+    updates.shippingAddress = {
+      line1: shipping.address.line1!,
+      line2: shipping.address.line2 ?? null,
+      city: shipping.address.city!,
+      state: shipping.address.state!,
+      postalCode: shipping.address.postal_code!,
+      country: "US",
+    };
+  }
+
+  // Upsert: handle the (rare) case where the row doesn't exist yet
+  // because this user is checking out for the first time without
+  // ever having loaded /shop/me.
+  await db
+    .insert(shopCustomers)
+    .values({
+      clerkUserId,
+      stripeCustomerId,
+      defaultPaymentMethodId: updates.defaultPaymentMethodId ?? null,
+      defaultPaymentMethodBrand: updates.defaultPaymentMethodBrand ?? null,
+      defaultPaymentMethodLast4: updates.defaultPaymentMethodLast4 ?? null,
+      defaultPaymentMethodExpMonth: updates.defaultPaymentMethodExpMonth ?? null,
+      defaultPaymentMethodExpYear: updates.defaultPaymentMethodExpYear ?? null,
+      shippingAddress: updates.shippingAddress ?? null,
+    })
+    .onConflictDoUpdate({
+      target: shopCustomers.clerkUserId,
+      set: updates,
+    });
+
+  log?.info?.(
+    {
+      clerkUserId,
+      hasCard: !!dpm,
+      savedShipping: shouldSetShipping,
+    },
+    "shop customer synced after checkout",
   );
 }
 

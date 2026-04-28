@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { ShieldCheck, Menu, X, ShoppingCart } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { useCart } from "@/hooks/use-cart";
+import { UserMenu } from "@/components/user-menu";
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -94,10 +95,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
               <CartNavIcon />
+              <UserMenu />
             </nav>
 
             {/* Mobile actions: cart icon + hamburger */}
             <div className="md:hidden flex items-center gap-2">
+              <UserMenu />
               <CartNavIcon />
               <button
                 type="button"

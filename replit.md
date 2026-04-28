@@ -68,6 +68,18 @@ A customer-facing `/shop` offers CPAP supplies for direct purchase via Stripe Ho
 *   **Frontend:** Manages category-grouped product display, a localStorage-backed cart with cross-tab sync, and checkout success/cancel pages.
 *   **Backend:** Handles product retrieval (cached), Stripe Checkout session creation, and Stripe webhook processing. Rate limiting is implemented for abuse mitigation.
 
+### Customer Accounts (Shop)
+
+Signed-in shoppers can save shipping info, see their saved card crumbs, and reorder past purchases — coexisting with anonymous guest checkout.
+
+*   **Identity:** Clerk (the same provider used for admin). Patient sign-in uses `?redirect=` to round-trip back to wherever the user came from (e.g. `/shop/cart` → sign-in → `/shop/cart`); admin links keep redirecting to `/admin` for backward compatibility.
+*   **Storage:** New `resupply.shop_customers` table keyed by `clerk_user_id` holds the Stripe Customer ID, default shipping address (jsonb), and saved card display crumbs (brand/last4/exp). Card data itself stays in Stripe — we never see PANs. `shop_orders` gained a `clerk_user_id` column linking each order to the buyer (NULL for guests).
+*   **Stripe Customer mapping:** `getOrCreateStripeCustomer` lazily creates a Stripe Customer on first checkout, with an idempotency key scoped to the Clerk user ID to prevent duplicates under race conditions.
+*   **Account page (`/account`):** Editable name + shipping address (works in preview mode without Stripe), saved card display, recent orders with one-click "Reorder" buttons that POST to `/shop/me/quick-checkout` and bounce to a fresh Stripe Hosted Checkout session pre-attached to the Customer.
+*   **Express checkout:** When a signed-in user with a saved card opens the cart, a prominent "Express checkout — pay with Visa ••••4242" button appears above the standard checkout button. Powered by Stripe's `payment_method_collection: 'if_required'` — the user sees a single tap on the Stripe page.
+*   **Checkout integration:** The standard `/shop/checkout` is now auth-aware: signed-in users get their Customer attached automatically, with `setup_future_usage: 'off_session'` so the card from this purchase becomes saved-on-file for next time. Guests still check out anonymously.
+*   **Webhook sync:** `checkout.session.completed` fans out to a `syncCustomerAfterCheckout` step that re-stamps `clerk_user_id` on the order, refreshes the saved card crumbs from the Customer's default payment method, and backfills the saved shipping address only if the user hasn't set one explicitly (never clobbers a deliberate edit).
+
 ## External Dependencies
 
 *   **SendGrid:** For order fulfillment emails and resupply email reminders.

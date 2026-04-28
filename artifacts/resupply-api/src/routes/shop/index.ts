@@ -8,12 +8,22 @@
 import { Router, type IRouter } from "express";
 
 import checkoutRouter from "./checkout";
+import meRouter from "./me";
+import myOrdersRouter from "./my-orders";
 import orderRouter from "./order";
 import productsRouter from "./products";
+import quickCheckoutRouter from "./quick-checkout";
 
 const router: IRouter = Router();
 router.use(productsRouter);
 router.use(checkoutRouter);
 router.use(orderRouter);
+// /shop/me/* — auth-aware patient account endpoints. Mounted
+// alongside the public catalog so the frontend can reach both with
+// the same base path. The handlers themselves apply Clerk gating
+// (requireSignedIn / attachSignedIn) per-endpoint.
+router.use(meRouter);
+router.use(myOrdersRouter);
+router.use(quickCheckoutRouter);
 
 export default router;

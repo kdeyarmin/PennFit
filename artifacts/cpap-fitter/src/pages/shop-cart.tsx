@@ -31,6 +31,12 @@ import {
   formatMoneyCents,
   startCheckout,
 } from "@/lib/shop-api";
+import {
+  AccountApiError,
+  fetchShopMe,
+  startQuickCheckout,
+  type SavedCard,
+} from "@/lib/account-api";
 
 export function ShopCart() {
   const { items, totalCents, setQuantity, removeItem } = useCart();
@@ -43,6 +49,42 @@ export function ShopCart() {
   // avoids a flash-of-error). The /shop/products endpoint is cached
   // server-side for 60s, so this single GET is cheap.
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
+  // Auth + saved-card probe for the Express Checkout button. Same
+  // tri-state pattern as previewMode: `null` means "still finding out"
+  // and we hide the Express button until we know — flashing a button
+  // and then yanking it would feel jankier than waiting one tick.
+  const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [expressCheckingOut, setExpressCheckingOut] = useState(false);
+
+  useEffect(() => {
+    // Only probe /shop/me if there are items in the cart — there's
+    // no point asking the server about the user when nothing is being
+    // checked out.
+    if (items.length === 0) {
+      setSignedIn(false);
+      setSavedCard(null);
+      return;
+    }
+    let active = true;
+    fetchShopMe()
+      .then((me) => {
+        if (!active) return;
+        setSignedIn(me.signedIn);
+        setSavedCard(me.savedCard ?? null);
+      })
+      .catch(() => {
+        // Express checkout is a progressive enhancement; failures
+        // here just mean the user sees only the standard checkout.
+        if (active) {
+          setSignedIn(false);
+          setSavedCard(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [items.length]);
 
   useEffect(() => {
     let active = true;
@@ -85,6 +127,39 @@ export function ShopCart() {
       setCheckingOut(false);
     }
   }
+
+  // Express checkout for signed-in users with a saved card. Same
+  // payload shape as standard checkout, but lands on
+  // /shop/me/quick-checkout which attaches the Stripe Customer and
+  // sets payment_method_collection: 'if_required' — the user sees
+  // a one-tap "Pay $X.XX" button on the Stripe page.
+  async function handleExpressCheckout() {
+    if (items.length === 0) return;
+    if (previewMode !== false) return;
+    setError(null);
+    setExpressCheckingOut(true);
+    try {
+      const { url } = await startQuickCheckout({
+        items: items.map((i) => ({ priceId: i.priceId, quantity: i.quantity })),
+      });
+      window.location.assign(url);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof AccountApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      setError(msg);
+      setExpressCheckingOut(false);
+    }
+  }
+
+  const showExpressCheckout =
+    signedIn === true &&
+    savedCard !== null &&
+    savedCard.last4 !== null &&
+    previewMode === false;
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-4xl">
@@ -211,6 +286,34 @@ export function ShopCart() {
                     Card checkout opens once Stripe is connected — no charge
                     will be made today.
                   </p>
+                </div>
+              )}
+              {showExpressCheckout && (
+                <div className="mb-3" data-testid="cart-express-block">
+                  <Button
+                    onClick={handleExpressCheckout}
+                    disabled={expressCheckingOut || checkingOut}
+                    className="w-full bg-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-navy)/0.9)] text-white"
+                    data-testid="cart-express-checkout"
+                  >
+                    {expressCheckingOut ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Redirecting…
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4 mr-2" />
+                        Express checkout — pay with{" "}
+                        {savedCard?.brand ?? "card"} ••••{savedCard?.last4}
+                      </>
+                    )}
+                  </Button>
+                  <div className="my-3 flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <div className="flex-1 h-px bg-border/50" />
+                    <span>or</span>
+                    <div className="flex-1 h-px bg-border/50" />
+                  </div>
                 </div>
               )}
               <Button

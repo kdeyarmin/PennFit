@@ -32,12 +32,16 @@ import { z } from "zod";
 
 import { getDbPool, shopOrders } from "@workspace/resupply-db";
 
+import { clerkClient } from "@clerk/express";
+
 import {
   SHOP_UNAVAILABLE_BODY,
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { attachSignedIn } from "../../middlewares/requireSignedIn";
 
 const checkoutBody = z
   .object({
@@ -103,7 +107,7 @@ const checkoutLimiter = rateLimit({
   name: "shop_checkout",
 });
 
-router.post("/shop/checkout", checkoutLimiter, async (req, res) => {
+router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) => {
   const config = readStripeConfigOrNull();
   if (!config) {
     res.status(503).json(SHOP_UNAVAILABLE_BODY);
@@ -134,11 +138,66 @@ router.post("/shop/checkout", checkoutLimiter, async (req, res) => {
 
   const stripe = getStripeClient(config);
 
+  // If the user is signed in, attach (or create) their Stripe Customer
+  // so the saved card + address pre-fill on the Stripe page AND so the
+  // card from this checkout becomes saved-on-file for next time. We
+  // do this best-effort: if customer creation fails, fall through to
+  // anonymous checkout rather than blocking the order — guest mode
+  // is the documented fallback.
+  let stripeCustomerId: string | null = null;
+  let customerEmail: string | null = null;
+  if (req.userClerkId) {
+    try {
+      const user = await clerkClient.users.getUser(req.userClerkId);
+      const primaryId = user.primaryEmailAddressId;
+      const primary =
+        user.emailAddresses.find((e) => e.id === primaryId) ??
+        user.emailAddresses[0];
+      customerEmail = primary?.emailAddress ?? null;
+      const fullName = [user.firstName, user.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      const mapping = await getOrCreateStripeCustomer(config, {
+        clerkUserId: req.userClerkId,
+        email: customerEmail,
+        displayName: fullName.length > 0 ? fullName : null,
+      });
+      stripeCustomerId = mapping.stripeCustomerId;
+    } catch (err) {
+      req.log?.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "shop checkout: signed-in customer attachment failed; continuing as guest",
+      );
+    }
+  }
+
   let session;
   try {
     session = await stripe.checkout.sessions.create(
       {
         mode: "payment",
+        ...(stripeCustomerId
+          ? {
+              customer: stripeCustomerId,
+              // setup_future_usage saves the card to the Customer for
+              // one-click reorder. Only set when we have a customer
+              // attached — Stripe rejects it otherwise.
+              payment_intent_data: {
+                setup_future_usage: "off_session",
+              },
+              // Sync collected shipping/name back to the Customer so
+              // /shop/me reflects the latest. customer_update requires
+              // `customer` to be set.
+              customer_update: {
+                shipping: "auto",
+                address: "auto",
+                name: "auto",
+              },
+            }
+          : customerEmail
+            ? { customer_email: customerEmail }
+            : {}),
         line_items: items.map((it) => ({
           price: it.priceId,
           quantity: it.quantity,
@@ -155,10 +214,13 @@ router.post("/shop/checkout", checkoutLimiter, async (req, res) => {
         phone_number_collection: { enabled: true },
         // Surface the cart hash on metadata so ops can match a
         // Stripe event back to a row in shop_orders without joining
-        // through session_id.
+        // through session_id. clerk_user_id (when signed in) is the
+        // backstop for the webhook to re-stamp the order owner.
         metadata: {
           source: "pennpaps-shop",
           cart_hash: cartHash,
+          flow: "standard",
+          ...(req.userClerkId ? { clerk_user_id: req.userClerkId } : {}),
         },
         // PennPaps cash-pay shop never collects sales tax in v1 —
         // CPAP supplies are usually tax-exempt as durable medical
@@ -200,6 +262,7 @@ router.post("/shop/checkout", checkoutLimiter, async (req, res) => {
       stripeSessionId: session.id,
       status: "pending",
       cartHash,
+      ...(req.userClerkId ? { clerkUserId: req.userClerkId } : {}),
     })
     .onConflictDoUpdate({
       target: shopOrders.stripeSessionId,

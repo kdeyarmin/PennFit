@@ -11,3 +11,4 @@ export * from "./phone-lookup";
 export * from "./frequency-rules";
 export * from "./idempotency-keys";
 export * from "./shop-orders";
+export * from "./shop-customers";
