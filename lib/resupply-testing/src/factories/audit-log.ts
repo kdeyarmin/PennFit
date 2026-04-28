@@ -1,8 +1,28 @@
+// Audit-log fixture factory.
+//
+// Produces an `AuditEvent` payload (the public input to
+// `logAudit()` from `@workspace/resupply-audit`), NOT a Drizzle
+// `PgInsertValue<typeof auditLog>`. Every audit-log INSERT must
+// flow through the helper so the metadata sanitizer (PHI denylist
+// + size + depth caps) cannot be bypassed; producing the helper's
+// input type rather than Drizzle's row type makes the supported
+// usage obvious:
+//
+//     await logAudit(makeAuditLog({ action: "patient.view" }));
+//
+// (See architecture-check Rule 8 in
+// `scripts/check-resupply-architecture.sh` for the matching ban
+// on direct Drizzle audit-log inserts outside the helper.)
+//
+// `targetTable` and `targetId` are deliberately defaulted as a
+// pair to a patients-shaped row — most realistic audit verbs touch
+// patients, so most fixtures want that default. Pass either field
+// explicitly (including `null`) to override; the
+// `undefined`-vs-key-present distinction is preserved so callers
+// can write `targetId: null` to assert the schema's nullable
+// column.
 import { faker } from "@faker-js/faker";
-import type { PgInsertValue } from "drizzle-orm/pg-core";
-import { auditLog } from "@workspace/resupply-db";
-
-type AuditLogInsertValue = PgInsertValue<typeof auditLog>;
+import type { AuditEvent } from "@workspace/resupply-audit";
 
 export interface AuditLogFixtureSpec {
   operatorEmail: string | null;
@@ -13,12 +33,11 @@ export interface AuditLogFixtureSpec {
   metadata: Record<string, unknown>;
   ip: string | null;
   userAgent: string | null;
-  occurredAt: Date;
 }
 
 export function makeAuditLog(
   overrides: Partial<AuditLogFixtureSpec> = {},
-): AuditLogInsertValue {
+): AuditEvent {
   return {
     operatorEmail:
       overrides.operatorEmail === undefined
@@ -36,7 +55,9 @@ export function makeAuditLog(
         ? faker.string.uuid()
         : overrides.targetId,
     // Per audit-log.ts schema comment: NEVER PHI. Default metadata is
-    // intentionally request-shaped, not patient-shaped.
+    // intentionally request-shaped, not patient-shaped — and the
+    // sanitizer in @workspace/resupply-audit will throw on any
+    // PHI-shaped key here as a backstop.
     metadata:
       overrides.metadata ??
       {
@@ -48,6 +69,5 @@ export function makeAuditLog(
       overrides.userAgent === undefined
         ? faker.internet.userAgent()
         : overrides.userAgent,
-    occurredAt: overrides.occurredAt ?? new Date(),
   };
 }

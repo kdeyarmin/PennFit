@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { faker } from "@faker-js/faker";
 import pg from "pg";
 
+import { logAudit } from "@workspace/resupply-audit";
 import {
-  auditLog,
+  __resetDbPoolForTests,
   conversations,
   decrypt,
   decryptJson,
@@ -60,7 +62,11 @@ const describeIfDb = canRun ? describe : describe.skip;
 describeIfDb("resupply fixture factories — DB round-trip", () => {
   let pool: pg.Pool;
   let db: ReturnType<typeof drizzle>;
-  const auditIdsToCleanup: string[] = [];
+  // Tag every audit row this suite writes so cleanup is surgical and
+  // we never DELETE a row some other parallel test (or a previous
+  // crashed run) inserted. The tag is unique per process so two
+  // concurrent CI runners against the same DB also don't collide.
+  const auditCleanupTag = `factories-test-${faker.string.uuid()}`;
   const patientIdsToCleanup: string[] = [];
 
   beforeAll(async () => {
@@ -76,12 +82,28 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
         await db.delete(patients).where(eq(patients.id, id));
       }
     }
-    if (auditIdsToCleanup.length > 0) {
-      for (const id of auditIdsToCleanup) {
-        await db.delete(auditLog).where(eq(auditLog.id, id));
-      }
-    }
+    // Surgical audit-log cleanup via the metadata tag rather than
+    // tracked ids. logAudit() doesn't return an id (intentional —
+    // most callers don't need one), so we tag the row at write time
+    // and delete by tag here. SELECT/DELETE against audit_log are
+    // explicitly allowed under architecture-check Rule 8; only
+    // INSERT is restricted to the helper.
+    await pool.query(
+      "DELETE FROM resupply.audit_log WHERE metadata->>'_factoriesTag' = $1",
+      [auditCleanupTag],
+    );
     await pool.end();
+    // logAudit() uses the shared singleton pool from
+    // @workspace/resupply-db; end it too so vitest doesn't hang on
+    // an open socket and so the next test file gets a fresh pool.
+    const sharedPool = (await import("@workspace/resupply-db")).getDbPool();
+    await sharedPool.end().catch(() => {
+      // If the shared pool was never lazily constructed (e.g. the
+      // logAudit assertion was skipped), getDbPool() will throw or
+      // return a fresh pool. Either way, swallow — the goal is
+      // best-effort teardown.
+    });
+    __resetDbPoolForTests();
   });
 
   it("inserts and decrypts the full patient -> message -> fulfillment tree", async () => {
@@ -243,34 +265,47 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
     expect(byId.get(insertedInbound!.id)?.direction).toBe("inbound");
   });
 
-  it("inserts an audit-log row independently of any FK", async () => {
-    const [inserted] = await db
-      .insert(auditLog)
-      .values(
-        makeAuditLog({
-          action: "patient.view",
-          targetTable: "patients",
-          targetId: null, // schema allows null; factory honours the override
-          metadata: { requestId: "req-test", filters: {} },
-        }),
-      )
-      .returning({ id: auditLog.id });
-    expect(inserted).toBeDefined();
-    auditIdsToCleanup.push(inserted!.id);
+  it("inserts an audit-log row via logAudit() independently of any FK", async () => {
+    // Per architecture-check Rule 8, every audit_log INSERT — even
+    // in tests — must flow through logAudit() so the metadata
+    // sanitizer (PHI denylist + size + depth caps) cannot be
+    // bypassed. The factory `makeAuditLog` returns the helper's
+    // input shape (`AuditEvent`), which is what makes this idiom
+    // ergonomic.
+    //
+    // We tag the row with a process-unique `_factoriesTag` so
+    // afterAll can clean up surgically by metadata tag — logAudit()
+    // intentionally does not return the inserted row's id (most
+    // production callers don't need one).
+    const requestId = `req-test-${faker.string.uuid()}`;
+    await logAudit(
+      makeAuditLog({
+        action: "patient.view",
+        targetTable: "patients",
+        targetId: null, // schema allows null; factory honours the override
+        metadata: {
+          _factoriesTag: auditCleanupTag,
+          requestId,
+          filters: {},
+        },
+      }),
+    );
 
-    const [row] = await db
-      .select({
-        action: auditLog.action,
-        targetTable: auditLog.targetTable,
-        targetId: auditLog.targetId,
-        metadata: auditLog.metadata,
-      })
-      .from(auditLog)
-      .where(eq(auditLog.id, inserted!.id));
-    expect(row?.action).toBe("patient.view");
-    expect(row?.targetTable).toBe("patients");
-    expect(row?.targetId).toBeNull();
-    expect(row?.metadata).toMatchObject({ requestId: "req-test" });
+    // Verify via SELECT keyed on the unique requestId. Drizzle's
+    // jsonb querying for `metadata->>'requestId'` is awkward
+    // without the `sql` helper, and a raw pool query is clearer for
+    // a single-row read.
+    const result = await pool.query(
+      "SELECT action, target_table, target_id, metadata " +
+        "FROM resupply.audit_log WHERE metadata->>'requestId' = $1",
+      [requestId],
+    );
+    expect(result.rows).toHaveLength(1);
+    const row = result.rows[0];
+    expect(row.action).toBe("patient.view");
+    expect(row.target_table).toBe("patients");
+    expect(row.target_id).toBeNull();
+    expect(row.metadata).toMatchObject({ requestId });
   });
 
   it("honours explicit null overrides on nullable PHI fields", async () => {

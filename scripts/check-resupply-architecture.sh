@@ -184,6 +184,99 @@ for nopool in artifacts/resupply-api/src artifacts/resupply-worker/src \
   fi
 done
 
+# Rule 8: every audit_log INSERT must go through @workspace/resupply-audit.
+# logAudit() in lib/resupply-audit/src/ is the only allowed write site;
+# direct Drizzle `.insert(auditLog)` and raw `INSERT INTO ... audit_log`
+# from anywhere else are forbidden so the metadata sanitizer (PHI
+# denylist + size + depth caps in lib/resupply-audit/src/sanitize.ts)
+# cannot be bypassed. A bypassed audit row that contains PHI is a
+# HIPAA-reportable event, so this gate is worth its own architecture
+# rule.
+#
+# Scope is INSERTS ONLY. SELECT / UPDATE / DELETE against audit_log
+# remain allowed — audit-log reads are legitimate, and integration
+# tests need DELETE to clean up after themselves.
+#
+# Allowed location: lib/resupply-audit/src/ (the helper and its tests).
+# Test files elsewhere are NOT exempt — a test that needs an audit row
+# should call logAudit(), not bypass it. Bypassing in tests would
+# defeat the "logAudit is the only path" invariant the moment a future
+# refactor copy/pastes the test fixture into production code.
+for noaudit in artifacts/resupply-api/src artifacts/resupply-worker/src \
+               artifacts/resupply-dashboard/src \
+               lib/resupply-contracts/src lib/resupply-domain/src \
+               lib/resupply-db/src lib/resupply-telecom/src \
+               lib/resupply-ai/src lib/resupply-testing/src \
+               lib/resupply-api-client/src; do
+  if [[ -d "$noaudit" ]]; then
+    # Patterns (multi-line `-U` mode so a regex can span newlines —
+    # without it, a developer can split `import { auditLog,\n} from`
+    # or `db.insert(\n  schema.auditLog\n)` across lines and slip
+    # past every line-oriented pattern we write):
+    #
+    #   1. `.insert(<anyIdent>?.audit*)` — Drizzle insert call.
+    #      Matches the bare `.insert(auditLog)` form AND the
+    #      namespaced `.insert(schema.auditLog)` /
+    #      `.insert(tables.AuditLog)` form. The identifier-name
+    #      capture is permissive on case so a custom alias like
+    #      `MyAuditLog` is also caught. With `-U` the whitespace
+    #      after `(` may include newlines.
+    #   2. `import { ... auditLog ... }` — ANY import that brings
+    #      the `auditLog` schema symbol into scope, whether bare
+    #      (`import { auditLog }`), aliased (`import { auditLog as
+    #      al }`), or wrapped in a multi-line braced clause. By
+    #      banning the import itself we also kill the indirect
+    #      two-step alias bypass `import { auditLog }; const al =
+    #      auditLog; db.insert(al)` — without an import, `auditLog`
+    #      simply isn't in scope. `[^}]*` already crosses newlines
+    #      under `-U` because newlines aren't `}`.
+    #   3. `INSERT ... audit_log` (case-insensitive) — catches every
+    #      raw SQL writer including template-literal interpolations
+    #      like `INSERT INTO ${schema}.audit_log`. The gap matcher
+    #      excludes `;` (SQL statement terminator) AND string-literal
+    #      boundaries (backtick, `"`, `'`). Excluding the quotes is
+    #      what stops the previous version's false positive: a code
+    #      comment like `// INSERT is restricted to the helper.`
+    #      followed by a legal `await pool.query("DELETE FROM
+    #      audit_log…")` had no `;` between the comment-INSERT and
+    #      the DELETE's audit_log token, so under `-U` the match
+    #      bridged the gap. With `"` excluded, the matcher stops at
+    #      the DELETE's opening quote and the false positive
+    #      vanishes. Real raw-SQL violations stay caught because the
+    #      INSERT and `audit_log` token live INSIDE the same string
+    #      literal — no quote between them.
+    #
+    # KNOWN LIMITATION (regex-only static check): an attacker who
+    # actively wants to evade Rule 8 can assemble the SQL across
+    # string-literal boundaries, e.g.
+    #   await pool.query("INSERT INTO " + "resupply.audit_log …")
+    # The gap-character exclusion that fixes the comment-INSERT
+    # false positive also breaks this case — the closing `"` of the
+    # first literal stops the matcher before it reaches `audit_log`.
+    # Tightening the regex to catch this would require giving up
+    # the false-positive fix, which has higher day-to-day value
+    # (legitimate code commonly puts the word "INSERT" near
+    # legitimate `audit_log` SELECT/DELETE; legitimate code rarely
+    # if ever splits the same SQL statement across string
+    # boundaries). The proper fix for adversarial resistance is an
+    # AST-based check on raw SQL sinks; until that lands, the
+    # `lib/resupply-audit/src/` chokepoint plus code review for any
+    # added `pool.query`/`db.execute` call site remains the
+    # mitigating control. See `scripts/check-resupply-architecture.sh.test`
+    # for the self-test that pins this expected gap so it cannot
+    # silently widen.
+    bad="$(rg --no-messages -n -U "${RG_TYPES[@]}" \
+      -e '\.insert\(\s*([A-Za-z_$][\w$]*\.)?[Aa]udit[A-Za-z]*\b' \
+      -e 'import\s*\{[^}]*\bauditLog\b[^}]*\}\s*from\s*["'\''](@workspace/resupply-db|\.\.?/)' \
+      -e '(?i)\bINSERT\b[^;`"'\'']*\baudit_log\b' \
+      "$noaudit" 2>/dev/null || true)"
+    if [[ -n "$bad" ]]; then
+      fail "$noaudit: must not write to audit_log directly — call logAudit() from @workspace/resupply-audit"
+      echo "$bad" | sed 's/^/    /' >&2
+    fi
+  fi
+done
+
 if [[ "$errors" -gt 0 ]]; then
   echo "" >&2
   echo "$errors architecture rule violation(s). See docs/resupply/ARCHITECTURE.md for the full ruleset." >&2
