@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk } from "@clerk/react";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
+import { clearAllDrafts } from "../lib/use-draft-autosave";
 
 // Console chrome: brand header + sidebar nav + footer + content slot.
 // Used by every signed-in admin screen so layout, brand chrome,
@@ -81,7 +82,14 @@ export function AdminHeaderChip({ email }: { email: string }) {
       </span>
       <button
         type="button"
-        onClick={() => void signOut({ redirectUrl: `${basePath}/sign-in` })}
+        onClick={() => {
+          // Drop any half-typed reply drafts before sign-out so PHI
+          // doesn't survive across admin sessions on a shared
+          // workstation. Must happen BEFORE signOut: once Clerk
+          // navigates away we lose the chance to run cleanup.
+          clearAllDrafts();
+          void signOut({ redirectUrl: `${basePath}/sign-in` });
+        }}
         className="text-xs font-semibold px-3 py-1.5 rounded border"
         style={{
           color: "#0a1f44",

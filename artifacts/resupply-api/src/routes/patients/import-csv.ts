@@ -33,7 +33,10 @@ import {
   encrypt,
   encryptJson,
   getDbPool,
+  hmacPhone,
+  normalizeE164,
   patients,
+  phoneLookup,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -169,6 +172,32 @@ router.post("/patients/import-csv", requireAdmin, async (req, res) => {
       if (newId) {
         created += 1;
         createdIds.push(newId);
+
+        // Backfill phone_lookup so admins can search by phone right
+        // after import (without waiting for the first SMS to lazily
+        // populate it). Failure is non-fatal — we log a warn and
+        // move on; phone search will be unavailable for this row
+        // until the next outbound SMS.
+        if (row.phoneE164) {
+          const normalized = normalizeE164(row.phoneE164);
+          if (normalized) {
+            try {
+              const hash = hmacPhone(normalized);
+              await db
+                .insert(phoneLookup)
+                .values({ patientId: newId, hmacPhone: hash })
+                .onConflictDoUpdate({
+                  target: phoneLookup.patientId,
+                  set: { hmacPhone: hash, updatedAt: new Date() },
+                });
+            } catch (lookupErr) {
+              logger.warn(
+                { err: lookupErr, row_index: i, patient_id: newId },
+                "patients/import-csv: phone_lookup backfill failed",
+              );
+            }
+          }
+        }
       }
     } catch (err) {
       // Mirror the create.ts duplicate-detection: 23505 + the

@@ -36,7 +36,10 @@ import {
   encrypt,
   encryptJson,
   getDbPool,
+  hmacPhone,
+  normalizeE164,
   patients,
+  phoneLookup,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -147,6 +150,38 @@ router.post("/patients", requireAdmin, async (req, res) => {
       // yields one row. Fail loudly rather than respond with a
       // half-shaped success.
       throw new Error("INSERT returned no rows");
+    }
+
+    // Backfill phone_lookup so the admin can search by phone
+    // immediately after intake (before any outbound SMS goes out
+    // and lazily populates the index). Failure here is loud-but-
+    // non-fatal: the patient row exists; phone search will just
+    // be unavailable until the first SMS lazily upserts it.
+    if (body.phoneE164) {
+      const normalized = normalizeE164(body.phoneE164);
+      if (normalized) {
+        try {
+          const hash = hmacPhone(normalized);
+          await db
+            .insert(phoneLookup)
+            .values({ patientId: id, hmacPhone: hash })
+            .onConflictDoUpdate({
+              target: phoneLookup.patientId,
+              set: { hmacPhone: hash, updatedAt: new Date() },
+            });
+        } catch (err) {
+          // Two real-world causes:
+          //   1. RESUPPLY_PHONE_HMAC_KEY isn't set (dev environment).
+          //   2. Another patient already owns this hmac (data quality
+          //      issue surfaced by the unique index — admin will need
+          //      to triage). Either way, we don't want to fail the
+          //      whole create.
+          logger.warn(
+            { err, patient_id: id },
+            "patients.create: phone_lookup backfill failed",
+          );
+        }
+      }
     }
 
     // Audit: list of fields the admin actually populated. NO PHI

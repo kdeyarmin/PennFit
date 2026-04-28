@@ -1,4 +1,5 @@
 import { useClerk, useUser } from "@clerk/react";
+import { clearAllDrafts } from "../lib/use-draft-autosave";
 
 // Friendly "you can't see the admin console" screen.
 //
@@ -221,9 +222,14 @@ export function NotAuthorizedPage({
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() =>
-                    void signOut({ redirectUrl: `${basePath}/sign-in` })
-                  }
+                  onClick={() => {
+                    // Drop any persisted reply drafts before sign-out so
+                    // PHI doesn't survive across admin sessions.
+                    clearAllDrafts();
+                    void signOut({
+                      redirectUrl: `${basePath}/sign-in`,
+                    });
+                  }}
                   className="text-sm font-semibold px-4 py-2 rounded text-white"
                   style={{ backgroundColor: "#0a1f44" }}
                 >

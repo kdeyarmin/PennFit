@@ -953,6 +953,26 @@ function PatientActionBar({
     kind: "success" | "error";
     text: string;
   } | null>(null);
+  // Undo-close UI state. When the admin successfully closes a
+  // patient we surface an inline "Undo" affordance with an
+  // 8-second countdown. Clicking Undo reopens (status → active).
+  // Letting the timer expire dismisses the affordance silently —
+  // the close itself already took effect server-side at the moment
+  // the PATCH succeeded; "Undo" is purely a follow-up reverse PATCH.
+  const [closedAt, setClosedAt] = useState<number | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  useEffect(() => {
+    if (closedAt === null) return;
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - closedAt) / 1000);
+      const remaining = Math.max(0, 8 - elapsed);
+      setSecondsLeft(remaining);
+      if (remaining === 0) setClosedAt(null);
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [closedAt]);
 
   // Pick the "current" episode for send-now actions. We prefer
   // anything in active outreach (outreach_pending / awaiting_response)
@@ -1012,17 +1032,60 @@ function PatientActionBar({
         queryKey: getGetPatientQueryKey(patient.id),
       });
       onAfterAction();
-      setFeedback({
-        kind: "success",
-        text:
-          next === "active"
-            ? "Patient resumed. Outreach scan will pick them up again."
-            : next === "paused"
-              ? "Patient paused. Outreach scan will skip them."
-              : "Patient closed. They will no longer receive reminders.",
-      });
+      if (next === "closed") {
+        // Surface the undo affordance INSTEAD of the regular feedback
+        // banner. The undo banner replaces the success line so we
+        // don't double-stack messages on top of each other.
+        setClosedAt(Date.now());
+      } else {
+        setClosedAt(null);
+        setFeedback({
+          kind: "success",
+          text:
+            next === "active"
+              ? "Patient resumed. Outreach scan will pick them up again."
+              : "Patient paused. Outreach scan will skip them.",
+        });
+      }
     } catch (err) {
       setFeedback({ kind: "error", text: describe(err) });
+    }
+  }
+
+  async function undoClose() {
+    setClosedAt(null);
+    setFeedback(null);
+    // Race guard: if another admin (or this admin from another tab)
+    // mutated the patient's status during the 8-second undo window,
+    // refuse to overwrite that newer state. The PATCH endpoint
+    // doesn't support optimistic concurrency yet (Batch B work),
+    // so we do the check client-side against the latest invalidated
+    // patient prop. This is best-effort — between this check and
+    // the PATCH landing there is still a tiny window. The full
+    // server-side If-Match guard belongs with the idempotency work.
+    if (patient.status !== "closed") {
+      setFeedback({
+        kind: "error",
+        text:
+          "Patient was already updated elsewhere — undo skipped to avoid clobbering a newer change.",
+      });
+      return;
+    }
+    try {
+      await update.mutateAsync({
+        id: patient.id,
+        data: { status: "active" },
+      });
+      await queryClient.invalidateQueries({
+        queryKey: getGetPatientQueryKey(patient.id),
+      });
+      onAfterAction();
+      setFeedback({
+        kind: "success",
+        text: "Close undone — patient is active again.",
+      });
+    } catch (err) {
+      setFeedback({ kind: "error", text: `Undo failed: ${describe(err)}` });
     }
   }
 
@@ -1162,6 +1225,26 @@ function PatientActionBar({
         </div>
       </div>
 
+      {closedAt !== null && (
+        <div
+          className="mt-3 flex items-center justify-between gap-3 rounded border px-3 py-2"
+          style={{ borderColor: "#c9a24a", backgroundColor: "#fff8e7" }}
+          role="status"
+        >
+          <span className="text-sm" style={{ color: "#0a1f44" }}>
+            Patient closed. Reopen?{" "}
+            <span style={{ color: "#6b7280" }}>({secondsLeft}s)</span>
+          </span>
+          <Button
+            intent="secondary"
+            isLoading={update.isPending}
+            disabled={update.isPending}
+            onClick={() => void undoClose()}
+          >
+            Undo
+          </Button>
+        </div>
+      )}
       {feedback && (
         <p
           className="mt-3 text-sm"
@@ -1191,10 +1274,24 @@ function NotesTab({ patientId }: { patientId: string }) {
   const create = useCreatePatientNote();
   const [body, setBody] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Client-side filter. Notes are paginated to 50 server-side, so
+  // an in-memory substring filter is more than fast enough for the
+  // admin search-as-you-type use case. If we later add deeper
+  // history, the filter input becomes the natural place to plumb a
+  // server-side `?search=` query.
+  const [filter, setFilter] = useState("");
 
   const trimmed = body.trim();
   const tooLong = trimmed.length > 4000;
   const canSubmit = trimmed.length > 0 && !tooLong && !create.isPending;
+
+  const filterTrimmed = filter.trim().toLowerCase();
+  const filteredItems =
+    data && filterTrimmed
+      ? data.items.filter((n) =>
+          (n.body ?? "").toLowerCase().includes(filterTrimmed),
+        )
+      : (data?.items ?? []);
 
   async function onAdd() {
     if (!canSubmit) return;
@@ -1271,11 +1368,36 @@ function NotesTab({ patientId }: { patientId: string }) {
           hint="Add the first one to leave context for the next admin."
         />
       ) : (
-        <ol className="space-y-3">
-          {data.items.map((n) => (
-            <NoteRow key={n.id} note={n} />
-          ))}
-        </ol>
+        <>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter notes…"
+              className="flex-1 rounded border px-3 py-2 text-sm"
+              style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+              aria-label="Filter notes"
+            />
+            <span className="text-xs" style={{ color: "#6b7280" }}>
+              {filterTrimmed
+                ? `${filteredItems.length} of ${data.items.length}`
+                : `${data.items.length} ${data.items.length === 1 ? "note" : "notes"}`}
+            </span>
+          </div>
+          {filteredItems.length === 0 ? (
+            <EmptyState
+              title="No notes match your filter."
+              hint="Clear the filter to see all notes again."
+            />
+          ) : (
+            <ol className="space-y-3">
+              {filteredItems.map((n) => (
+                <NoteRow key={n.id} note={n} />
+              ))}
+            </ol>
+          )}
+        </>
       )}
     </div>
   );

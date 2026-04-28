@@ -20,6 +20,8 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorPanel } from "../components/ErrorPanel";
 import { Button } from "../components/Button";
 import { fullName, formatDateTime } from "../lib/format";
+import { applyTemplate, templatesForChannel } from "../lib/reply-templates";
+import { useDraftAutosave } from "../lib/use-draft-autosave";
 
 // Conversation viewer. Renders the chronological message timeline as
 // channel-aware bubbles (admin/agent on the right, patient on the
@@ -148,6 +150,7 @@ export function ConversationDetailPage({ id }: { id: string }) {
         conversationId={data.id}
         channel={data.channel}
         status={data.status}
+        patientFirstName={data.patientFirstName}
         onAfterSend={() => void refetch()}
       />
 
@@ -170,17 +173,30 @@ function ReplyComposer({
   conversationId,
   channel,
   status,
+  patientFirstName,
   onAfterSend,
 }: {
   conversationId: string;
   channel: string;
   status: string;
+  patientFirstName: string;
   onAfterSend: () => void;
 }) {
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const reply = useReplyInConversation();
+
+  // Drafts persist across navigation/refresh per-conversation.
+  // Hydrating from localStorage means a patient call mid-typing
+  // (admin tabs to dial pad) doesn't lose context.
+  const draft = useDraftAutosave(
+    `reply-draft:${conversationId}`,
+    body,
+    (restored) => setBody(restored),
+  );
+
+  const templates = templatesForChannel(channel);
 
   const isClosed = status === "closed";
   const isVoice = channel === "voice";
@@ -230,11 +246,29 @@ function ReplyComposer({
     try {
       await reply.mutateAsync({ id: conversationId, data: { body: trimmed } });
       setBody("");
+      // Drop the persisted draft now that we've sent it; otherwise
+      // the next visit to this conversation would re-hydrate the
+      // exact text we just sent and tempt a duplicate send.
+      draft.clear();
       setStatusMsg("Reply sent.");
       onAfterSend();
     } catch (err) {
       setError(describeError(err));
     }
+  }
+
+  function onInsertTemplate(templateId: string) {
+    const tpl = templates.find((t) => t.id === templateId);
+    if (!tpl) return;
+    const rendered = applyTemplate(tpl.body, patientFirstName);
+    // If the textarea is empty, replace; otherwise append on a new
+    // paragraph so admins who half-typed something don't lose it.
+    setBody((prev) => {
+      const trimmedPrev = prev.trim();
+      return trimmedPrev.length === 0 ? rendered : `${prev.trimEnd()}\n\n${rendered}`;
+    });
+    setStatusMsg(null);
+    setError(null);
   }
 
   return (
@@ -246,6 +280,38 @@ function ReplyComposer({
           : "Sends on the channel the patient is already using. Audited."
       }
     >
+      {!isClosed && templates.length > 0 && (
+        <div className="mb-3 flex items-center gap-2">
+          <label
+            htmlFor="reply-template"
+            className="text-xs font-semibold"
+            style={{ color: "#6b7280" }}
+          >
+            Insert template:
+          </label>
+          {/* Use a controlled-but-resetting select: we set value="" so
+              after every selection the dropdown returns to the
+              placeholder, encouraging a fresh choice for the next
+              insert. */}
+          <select
+            id="reply-template"
+            value=""
+            disabled={reply.isPending}
+            onChange={(e) => {
+              if (e.target.value) onInsertTemplate(e.target.value);
+            }}
+            className="rounded border px-2 py-1 text-xs"
+            style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+          >
+            <option value="">Choose a template…</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -271,6 +337,7 @@ function ReplyComposer({
           {channel === "sms" && trimmed.length > 160
             ? " · will send as multi-part SMS"
             : ""}
+          {draft.restored && trimmed.length > 0 ? " · draft restored" : ""}
         </span>
         <Button
           onClick={() => void onSend()}

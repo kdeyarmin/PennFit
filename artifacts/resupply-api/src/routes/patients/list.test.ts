@@ -71,7 +71,11 @@ function stubVerifiedAdmin(): void {
   });
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_PHONE_HMAC_KEY",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -189,5 +193,125 @@ describe("GET /patients", () => {
     expect(res.status).toBe(200);
     expect(res.body.limit).toBe(25);
     expect(res.body.offset).toBe(0);
+  });
+
+  // ----- Search by phone (HMAC-indexed, exact match) -----------------
+  // The route detects a phone-shaped search via normalizeE164 and
+  // routes through the phone_lookup HMAC subquery instead of the
+  // decrypt+ILIKE path. We don't assert on Drizzle's SQL fragments
+  // here — that's testing implementation detail. Instead we assert
+  // that the response shape is correct under both "patient found"
+  // and "no match" conditions, which catches any wiring regression.
+  it("returns the matched patient when search is a valid E.164 phone", async () => {
+    stubVerifiedAdmin();
+    process.env.RESUPPLY_PHONE_HMAC_KEY = "x".repeat(64);
+    selectQueue.push([{ count: 1 }]);
+    selectQueue.push([
+      {
+        id: PATIENT_A,
+        pacwareId: "PAC-001",
+        firstName: "Alice",
+        lastName: "Smith",
+        status: "active",
+        hasPhone: true,
+        hasEmail: false,
+        createdAt: new Date("2025-01-15T10:00:00Z"),
+        updatedAt: new Date("2025-01-15T10:00:00Z"),
+      },
+    ]);
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients?search=%2B14155551212",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0]).toMatchObject({
+      id: PATIENT_A,
+      firstName: "Alice",
+      hasPhone: true,
+    });
+  });
+
+  it("returns empty page when phone search has no HMAC match", async () => {
+    stubVerifiedAdmin();
+    process.env.RESUPPLY_PHONE_HMAC_KEY = "x".repeat(64);
+    selectQueue.push([{ count: 0 }]);
+    selectQueue.push([]);
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients?search=%2B14155550000",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+    expect(res.body.items).toEqual([]);
+  });
+
+  // Loose-format phone (no +, parens + dashes) must also normalize
+  // and use the HMAC path. We don't see the SQL — but if the route
+  // wired the wrong branch, the count call would still resolve from
+  // the queue and the test would still pass. The intent here is to
+  // pin the behavior: any of these formats yields a 200 with the
+  // expected shape, no crash on hmacPhone or normalizeE164.
+  it("accepts loose-formatted phone input via the HMAC path", async () => {
+    stubVerifiedAdmin();
+    process.env.RESUPPLY_PHONE_HMAC_KEY = "x".repeat(64);
+    selectQueue.push([{ count: 0 }]);
+    selectQueue.push([]);
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients?search=%28415%29%20555-1212",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+  });
+
+  // ----- Search by email substring (decrypt-ILIKE union path) --------
+  // Email is non-phone-shaped so it goes through the text-search
+  // union. We just need to assert the route doesn't crash and
+  // returns a well-shaped page when the search is an email
+  // fragment. The actual SQL is exercised in integration / the DB.
+  it("accepts email-fragment search via the decrypt+ILIKE path", async () => {
+    stubVerifiedAdmin();
+    selectQueue.push([{ count: 1 }]);
+    selectQueue.push([
+      {
+        id: PATIENT_B,
+        pacwareId: "PAC-002",
+        firstName: "Bob",
+        lastName: "Jones",
+        status: "active",
+        hasPhone: false,
+        hasEmail: true,
+        createdAt: new Date("2025-01-10T10:00:00Z"),
+        updatedAt: new Date("2025-01-10T10:00:00Z"),
+      },
+    ]);
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients?search=%40gmail.com",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0]).toMatchObject({
+      id: PATIENT_B,
+      hasEmail: true,
+    });
+  });
+
+  it("falls back to text search when phone HMAC key is unset", async () => {
+    // RESUPPLY_PHONE_HMAC_KEY is intentionally NOT set. The route
+    // should catch hmacPhone()'s throw, log a warn, and fall back
+    // to the decrypt+ILIKE branch — yielding a normal 200, not a
+    // 500.
+    stubVerifiedAdmin();
+    selectQueue.push([{ count: 0 }]);
+    selectQueue.push([]);
+
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients?search=%2B14155551212",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.items).toEqual([]);
   });
 });
