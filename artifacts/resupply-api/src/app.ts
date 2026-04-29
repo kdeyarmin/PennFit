@@ -13,31 +13,55 @@ const app: Express = express();
 // audit-log IP capture.
 app.set("trust proxy", 1);
 
-// CORS allowlist. In dev (no RESUPPLY_ALLOWED_ORIGINS set) we allow the
-// Replit dev domain + localhost so the admin dashboard preview iframe
-// can call the API. In production, only explicitly-listed origins
-// (comma-separated env var) are allowed — admins should only access
-// the dashboard from a vetted URL.
+// CORS allowlist resolution, in priority order:
+//   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Use this
+//      for custom domains or multi-tenant deployments where the runtime
+//      hostnames don't match the public-facing URL (e.g. fronted by a
+//      CDN or vanity domain).
+//   2. REPLIT_DOMAINS (production only) — Replit's runtime sets this to
+//      the exact hostnames the deployment is serving on. It is NOT
+//      attacker-controlled (no inbound HTTP can mutate it), so falling
+//      back to it preserves the same safety property as the explicit
+//      allowlist while removing a foot-gun where every deploy needs a
+//      manual env var.
+//   3. Dev fallback (non-production only) — Replit dev domain +
+//      localhost ports so preview iframes and curl can hit the API.
 //
-// Production fails CLOSED: if NODE_ENV=production and the env var is
-// missing or empty, the process exits at boot rather than silently
-// inheriting the dev allowlist. Misconfigured CORS in prod could
-// expose the admin API to attacker-controlled origins, and that
-// risk grows as soon as Phase 1 lands real PHI-touching endpoints —
-// catching it at boot is cheaper than catching it after a leak.
+// Production fails CLOSED: if NODE_ENV=production and BOTH the explicit
+// env var and REPLIT_DOMAINS are missing or empty, the process exits at
+// boot rather than silently inheriting the dev allowlist. That would
+// expose the admin API to unintended origins, and the risk grows as
+// soon as PHI-touching endpoints land — catching it at boot is cheaper
+// than catching it after a leak.
 const allowedOrigins = (() => {
   const fromEnv = (process.env.RESUPPLY_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
   if (fromEnv.length > 0) return fromEnv;
+
   if (process.env.NODE_ENV === "production") {
+    // REPLIT_DOMAINS is comma-separated and bare-host (no scheme).
+    // Production deployments are always HTTPS, so prepend `https://`.
+    const fromReplit = (process.env.REPLIT_DOMAINS ?? "")
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => `https://${d}`);
+    if (fromReplit.length > 0) {
+      logger.info(
+        { origins: fromReplit, source: "REPLIT_DOMAINS" },
+        "CORS allowlist derived from REPLIT_DOMAINS",
+      );
+      return fromReplit;
+    }
     throw new Error(
-      "RESUPPLY_ALLOWED_ORIGINS must be set in production. Refusing to " +
-        "fall back to the dev allowlist (localhost + Replit dev domain) — " +
-        "that would expose the admin API to unintended origins.",
+      "Refusing to start: in production we require either " +
+        "RESUPPLY_ALLOWED_ORIGINS or REPLIT_DOMAINS to be set so the " +
+        "CORS allowlist is bound to vetted hostnames. Both are empty.",
     );
   }
+
   const dev: string[] = [];
   if (process.env.REPLIT_DEV_DOMAIN) {
     dev.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
