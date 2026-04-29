@@ -255,6 +255,7 @@ function ProfileSection({
             placeholder="Jane Doe"
             className="form-input"
             data-testid="account-name"
+            autoComplete="name"
           />
         </Field>
 
@@ -271,6 +272,7 @@ function ProfileSection({
                 placeholder="123 Main St"
                 className="form-input"
                 data-testid="account-addr-line1"
+                autoComplete="address-line1"
               />
             </Field>
             <Field label="Apt, suite, etc. (optional)">
@@ -281,6 +283,7 @@ function ProfileSection({
                 placeholder="Apt 4B"
                 className="form-input"
                 data-testid="account-addr-line2"
+                autoComplete="address-line2"
               />
             </Field>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -291,6 +294,7 @@ function ProfileSection({
                   onChange={(e) => setAddr({ ...addr, city: e.target.value })}
                   className="form-input"
                   data-testid="account-addr-city"
+                  autoComplete="address-level2"
                 />
               </Field>
               <Field label="State">
@@ -307,6 +311,7 @@ function ProfileSection({
                   placeholder="CA"
                   className="form-input"
                   data-testid="account-addr-state"
+                  autoComplete="address-level1"
                 />
               </Field>
               <Field label="ZIP">
@@ -319,6 +324,7 @@ function ProfileSection({
                   inputMode="numeric"
                   className="form-input"
                   data-testid="account-addr-zip"
+                  autoComplete="postal-code"
                 />
               </Field>
             </div>

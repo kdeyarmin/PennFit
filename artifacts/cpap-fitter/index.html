@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <!--
+      Allow user-scalable zoom (no maximum-scale, no user-scalable=no) so
+      low-vision patients can pinch to zoom into product photos, label
+      copy, and form fields. WCAG 2.1 SC 1.4.4 (Resize text).
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PennPaps.com — CPAP Fitter, Shop & Resupply by Penn Home Medical Supply</title>
     <meta name="description" content="PennPaps.com is the online CPAP storefront from Penn Home Medical Supply: get fitted for a mask in minutes, shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting." />
 
@@ -26,22 +31,65 @@
         - Scripts/styles/images: same-origin only (+ inline for Vite's
           dev runtime and Tailwind, +blob/data for the captured image
           and MediaPipe's WASM glue).
+        - Fonts: same-origin only. Inter is self-hosted under /fonts so
+          the page makes zero third-party requests for typography.
         - WASM + AI model: same-origin only — we vendor MediaPipe locally
           (see scripts/setup-mediapipe.mjs) instead of fetching from CDNs.
         - Network calls: same-origin only — no third-party analytics,
           no remote model downloads, no telemetry.
         - Frame ancestors: 'self' so the Replit preview iframe still works
           but external sites cannot frame the app.
+
+      Clerk hosts (auth UI + image avatars + WS sessions) are the only
+      cross-origin allowances. 'unsafe-inline'/'unsafe-eval' on script-src
+      are required by the Clerk SDK and Vite's dev runtime; they cannot
+      currently be removed without breaking auth, so we keep the rest of
+      the policy as tight as possible.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.clerk.accounts.dev https://*.clerk.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://img.clerk.com https://*.clerk.com; media-src 'self' blob:; connect-src 'self' blob: https://*.clerk.accounts.dev https://*.clerk.com wss://*.clerk.accounts.dev; worker-src 'self' blob:; frame-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; object-src 'none'; base-uri 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.com; font-src 'self' data:; img-src 'self' data: blob: https://img.clerk.com https://*.clerk.com; media-src 'self' blob:; connect-src 'self' blob: https://*.clerk.accounts.dev https://*.clerk.com wss://*.clerk.accounts.dev; worker-src 'self' blob:; frame-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; object-src 'none'; base-uri 'self';"
     />
 
+    <!-- Favicons + PWA install metadata -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#1F3A5C" />
+    <meta name="apple-mobile-web-app-title" content="PennPaps" />
+
+    <!-- Preload the most-used Inter weights so the first paint upgrades from
+         the system fallback to Inter quickly without an extra round-trip. -->
+    <link rel="preload" href="/fonts/Inter-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/Inter-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
+
+    <!--
+      JSON-LD structured data. Tells search engines that pennpaps.com is the
+      online storefront for a real local medical-equipment supplier in PA, so
+      the brand can show up in Google's knowledge panels and local pack.
+    -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "MedicalBusiness",
+      "name": "Penn Home Medical Supply",
+      "alternateName": "PennPaps",
+      "url": "https://pennpaps.com",
+      "logo": "https://pennpaps.com/logo.svg",
+      "image": "https://pennpaps.com/opengraph.jpg",
+      "description": "Online CPAP storefront from Penn Home Medical Supply. Get fitted for a mask in minutes, shop cushions, filters, tubing, and headgear, and stay on schedule with resupply.",
+      "areaServed": "US",
+      "medicalSpecialty": "Pulmonary",
+      "priceRange": "$$",
+      "paymentAccepted": "Cash, Credit Card, Insurance",
+      "potentialAction": {
+        "@type": "ReserveAction",
+        "name": "Start virtual mask fitting",
+        "target": "https://pennpaps.com/capture"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>

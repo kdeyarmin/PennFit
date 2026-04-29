@@ -339,7 +339,7 @@ export function Order() {
                 onValueChange={(v) => setValue("shippingAddress.state", v, { shouldValidate: true })}
               >
                 <SelectTrigger data-testid="select-state">
-                  <SelectValue placeholder="--" />
+                  <SelectValue placeholder="Select state" />
                 </SelectTrigger>
                 <SelectContent>
                   {US_STATES.map((s) => (

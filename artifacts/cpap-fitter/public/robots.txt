@@ -1,0 +1,23 @@
+# PennPaps.com — robots.txt
+# Allow public crawl of the storefront and informational pages.
+# Block guarded fitter steps, admin, auth, and shop API surfaces.
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /sign-in
+Disallow: /sign-up
+Disallow: /account
+Disallow: /capture
+Disallow: /measure
+Disallow: /questionnaire
+Disallow: /results
+Disallow: /order
+Disallow: /order-success
+Disallow: /shop/cart
+Disallow: /shop/checkout-success
+Disallow: /shop/checkout-cancel
+Disallow: /resupply-api/
+
+Sitemap: https://pennpaps.com/sitemap.xml

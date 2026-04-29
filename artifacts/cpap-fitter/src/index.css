@@ -3,6 +3,44 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+/*
+ * Self-hosted Inter (rsms/inter v4, SIL Open Font License). Hosting the
+ * font files locally — instead of pulling from fonts.googleapis.com —
+ * keeps the storefront fully same-origin (matching the privacy posture
+ * we already enforce in the page CSP) and avoids a third-party network
+ * call on first paint. `font-display: swap` mirrors what the prior
+ * Google Fonts URL did, so initial render still uses the system fallback
+ * stack instead of blocking on the woff2 download.
+ */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Inter-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/Inter-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/Inter-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Inter-Bold.woff2") format("woff2");
+}
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));

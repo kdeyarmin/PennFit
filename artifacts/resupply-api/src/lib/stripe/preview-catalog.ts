@@ -101,7 +101,7 @@ const SEED: PreviewSeed[] = [
     unitAmountCents: 3500,
     manufacturer: "ResMed",
     modelNumber: "63551",
-    imageUrl: "/products/cushion-n20.png",
+    imageUrl: "/products/cushion-n20.webp",
   },
   {
     sku: "cushion-nasal-pillows-pair",
@@ -183,7 +183,7 @@ const SEED: PreviewSeed[] = [
     unitAmountCents: 1200,
     manufacturer: "ResMed",
     modelNumber: "36830",
-    imageUrl: "/products/filter-reusable.png",
+    imageUrl: "/products/filter-reusable.webp",
   },
 
   // ── Headgear & straps ────────────────────────────────────────────
@@ -256,7 +256,7 @@ const SEED: PreviewSeed[] = [
     unitAmountCents: 8900,
     manufacturer: "PennPaps Curated Kit",
     modelNumber: "BUNDLE-Q",
-    imageUrl: "/products/cushion-n20.png",
+    imageUrl: "/products/cushion-n20.webp",
     bundleContents: [
       "1× ResMed AirFit N20 cushion · medium (#63551)",
       "1× ResMed SlimLine tubing — 6ft (#36995)",
