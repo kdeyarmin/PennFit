@@ -8,7 +8,6 @@ import {
   Zap,
   PlayCircle,
   ArrowRight,
-  Sparkles,
   BookOpen,
   HelpCircle,
   Compass,
@@ -82,11 +81,6 @@ export function Home() {
           </Button>
         </div>
 
-        {/* Trust line */}
-        <div className="mt-10 flex items-center justify-center gap-3 text-xs text-muted-foreground">
-          <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--penn-gold))]" />
-          <span>Cash-pay or insurance · ~3-minute fitting · On-device face capture</span>
-        </div>
       </div>
 
       {/* Three ways to use PennPaps — surfaces shop + accounts alongside the fitter */}
