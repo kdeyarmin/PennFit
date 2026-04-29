@@ -1,8 +1,13 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShieldCheck } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function Privacy() {
+  useDocumentTitle(
+    "Privacy policy",
+    "Penn Home Medical Supply privacy policy. How PennPaps handles your personal information, on-device face capture, and order data.",
+  );
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
       <Card className="border-0 glass-card rounded-2xl">

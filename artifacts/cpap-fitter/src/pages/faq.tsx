@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   Accordion,
   AccordionContent,
@@ -419,6 +420,10 @@ const sections: FaqSection[] = [
 ];
 
 export function Faq() {
+  useDocumentTitle(
+    "Frequently asked questions",
+    "Answers about CPAP fitting, supplies, prescriptions, insurance, and resupply from Penn Home Medical Supply.",
+  );
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
       {/* Hero */}

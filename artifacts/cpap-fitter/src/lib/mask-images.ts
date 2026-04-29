@@ -1,7 +1,7 @@
-import fullFaceImg from "@/assets/masks/full-face.png";
-import nasalImg from "@/assets/masks/nasal.png";
-import nasalPillowImg from "@/assets/masks/nasal-pillow.png";
-import hybridImg from "@/assets/masks/hybrid.png";
+import fullFaceImg from "@/assets/masks/full-face.webp";
+import nasalImg from "@/assets/masks/nasal.webp";
+import nasalPillowImg from "@/assets/masks/nasal-pillow.webp";
+import hybridImg from "@/assets/masks/hybrid.webp";
 
 export const maskTypeImages: Record<string, string> = {
   fullFace: fullFaceImg,

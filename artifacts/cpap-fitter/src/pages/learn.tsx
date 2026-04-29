@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   BookOpen,
   Moon,
@@ -211,6 +212,10 @@ const tones = {
 } as const;
 
 export function Learn() {
+  useDocumentTitle(
+    "Learn — CPAP guides",
+    "Plain-English CPAP guides from Penn Home Medical Supply: replacement schedules, device setup, troubleshooting, travel, and what to expect on therapy.",
+  );
   return (
     <div className="container max-w-5xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
       {/* Hero */}

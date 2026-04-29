@@ -2,8 +2,13 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Compass, Home as HomeIcon } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export default function NotFound() {
+  useDocumentTitle(
+    "Page not found",
+    "We couldn't find that page on PennPaps. Try the home page, the shop, or the mask catalog.",
+  );
   return (
     <div className="container max-w-2xl mx-auto px-4 py-20 animate-shimmer-in">
       <Card className="border-0 glass-card rounded-2xl">

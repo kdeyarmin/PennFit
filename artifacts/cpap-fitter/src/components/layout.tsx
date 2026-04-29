@@ -74,6 +74,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-[100dvh] flex flex-col text-foreground">
       <ScrollToTop />
+      {/*
+        Skip-to-content link. Hidden visually until a keyboard user focuses it
+        with the very first Tab press, at which point it becomes a clearly
+        labelled bypass-block per WCAG 2.1 SC 2.4.1. Targets the <main>
+        landmark below, which has tabIndex={-1} so the browser will move focus
+        into it (not just scroll) when the link fires.
+      */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:ring-2 focus:ring-primary focus:ring-offset-2"
+      >
+        Skip to main content
+      </a>
       <header className="sticky top-0 z-50 w-full">
         <div className="glass-panel border-x-0 border-t-0 border-b border-border/40">
           <div className="container mx-auto flex h-16 md:h-20 items-center justify-between px-4 md:px-6">
@@ -149,7 +162,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="aurora-divider" aria-hidden="true" />
       </header>
 
-      <main className="flex-1 flex flex-col relative">{children}</main>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        /*
+         * `tabIndex={-1}` lets the skip-link move focus into the main
+         * landmark. We hide the *default* focus outline (which would also
+         * show on programmatic focus from things like ScrollToTop) but
+         * keep an explicit focus-visible ring so keyboard users actually
+         * see where focus landed when they activate the skip link.
+         */
+        className="flex-1 flex flex-col relative focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      >
+        {children}
+      </main>
 
       <footer className="relative mt-16">
         <div className="aurora-divider" aria-hidden="true" />

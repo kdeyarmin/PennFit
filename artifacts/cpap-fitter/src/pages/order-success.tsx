@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, Mail, Phone, Tag, Home, RefreshCcw, ShieldCheck, BookOpen } from "lucide-react";
@@ -17,6 +18,7 @@ interface OrderConfirmation {
 }
 
 export function OrderSuccess() {
+  useDocumentTitle("Order confirmed");
   const [, setLocation] = useLocation();
   const { reset } = useFitterStore();
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);

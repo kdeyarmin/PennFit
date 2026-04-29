@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   CalendarClock,
   Sparkles,
@@ -136,6 +137,10 @@ const tones: Record<Reason["tone"], string> = {
 };
 
 export function ReplacementSchedule() {
+  useDocumentTitle(
+    "CPAP replacement schedule",
+    "When to replace CPAP cushions, headgear, tubing, filters, and humidifier chambers — Medicare and ResMed/Philips manufacturer guidance in plain English.",
+  );
   return (
     <main className="container mx-auto max-w-5xl px-4 md:px-6 py-12 md:py-16 space-y-12">
       {/* Hero */}

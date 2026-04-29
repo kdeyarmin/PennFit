@@ -1,8 +1,13 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollText } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function Terms() {
+  useDocumentTitle(
+    "Terms of service",
+    "Terms of service for PennPaps and Penn Home Medical Supply.",
+  );
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
       <Card className="border-0 glass-card rounded-2xl">

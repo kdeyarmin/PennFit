@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   BookOpen,
   Package,
@@ -221,6 +222,10 @@ const troubleshooting: Issue[] = [
 ];
 
 export function DeviceSetup() {
+  useDocumentTitle(
+    "Setting up your CPAP",
+    "Step-by-step CPAP setup guide: unbox, fill the humidifier, fit your mask, set ramp/pressure, and start your first night of therapy.",
+  );
   return (
     <div className="container max-w-5xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
       {/* Hero */}

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   Card,
   CardContent,
@@ -113,6 +114,10 @@ const faqs = [
 ];
 
 export function HowItWorks() {
+  useDocumentTitle(
+    "Virtual Mask Fitter",
+    "How the PennPaps Virtual Mask Fitter works: a 3-minute on-device face capture matches you to the right CPAP mask. Your face image never leaves your phone.",
+  );
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
       {/* Hero */}

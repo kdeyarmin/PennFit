@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Filter, Wind, Weight, Ruler, Activity, Tag } from "lucide-react";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const priceTierLabel: Record<string, string> = {
   budget: "Budget",
@@ -20,6 +21,10 @@ const priceTierColor: Record<string, string> = {
 };
 
 export function Masks() {
+  useDocumentTitle(
+    "Mask catalog",
+    "Browse the full PennPaps CPAP mask catalog: nasal, nasal pillow, full face, and hybrid masks with sizing, weight, noise level, and price tier.",
+  );
   const { data, isLoading } = useListMasks();
   const [filter, setFilter] = useState<MaskEntryType | "all">("all");
 

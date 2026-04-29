@@ -12,6 +12,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   ArrowRight,
   Info,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/account-api";
 
 export function ShopCart() {
+  useDocumentTitle("Your cart");
   const { items, totalCents, setQuantity, removeItem } = useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);

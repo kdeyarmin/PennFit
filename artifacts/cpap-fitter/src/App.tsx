@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { Home } from "@/pages/home";
 import { Consent } from "@/pages/consent";
 import { Capture } from "@/pages/capture";
@@ -240,9 +241,19 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <FitterProvider>
-            <WouterRouter base={basePath}>
-              <TopRouter />
-            </WouterRouter>
+            {/*
+              ErrorBoundary wraps the router so any thrown render error in a
+              page falls back to a recoverable on-brand screen instead of a
+              blank white page. Sits inside ClerkProvider/QueryClient so the
+              fallback can still navigate (the <a href="/"> in the fallback
+              triggers a real reload, which is intentional — it gives the
+              shop a clean React tree on recovery).
+            */}
+            <ErrorBoundary>
+              <WouterRouter base={basePath}>
+                <TopRouter />
+              </WouterRouter>
+            </ErrorBoundary>
             <Toaster />
           </FitterProvider>
         </TooltipProvider>

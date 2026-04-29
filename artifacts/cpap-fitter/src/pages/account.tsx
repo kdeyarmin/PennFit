@@ -18,6 +18,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, Redirect } from "wouter";
 import { Show, useUser } from "@clerk/react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   AlertCircle,
   CheckCircle2,
@@ -46,6 +47,7 @@ import { fetchShopProducts, formatMoneyCents } from "@/lib/shop-api";
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function AccountPage() {
+  useDocumentTitle("My account");
   // <Show> renders fallback for the signed-out branch AND while Clerk
   // is still booting; that's fine here — the redirect target is the
   // sign-in page, which Clerk handles cleanly even mid-load.

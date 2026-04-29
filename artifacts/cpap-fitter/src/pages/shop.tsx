@@ -15,6 +15,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   ArrowRight,
   CheckCircle2,
@@ -104,6 +105,10 @@ const SECTION_ORDER: Category[] = [
 ];
 
 export function Shop() {
+  useDocumentTitle(
+    "Shop CPAP supplies",
+    "Shop fresh CPAP cushions, filters, tubing, headgear, and bundles direct from Penn Home Medical Supply. Cash-pay shipping or use insurance for $0 with prescription.",
+  );
   const [data, setData] = useState<ShopProductsResponse | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
