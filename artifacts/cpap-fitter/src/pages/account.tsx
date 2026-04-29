@@ -177,8 +177,29 @@ function AccountInner() {
     );
   }
 
+  // Defensive guard: the backend currently always returns `profile`
+  // when signedIn=true, but the response shape declares it optional.
+  // Rather than relying on `data.profile!` (a non-null assertion that
+  // would crash the whole tree if the contract drifts), surface a
+  // recoverable inline state so the user can retry instead of hitting
+  // the global error boundary.
+  if (!data.profile) {
+    return (
+      <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">
+        <div className="glass-card rounded-2xl p-6 text-center">
+          <AlertCircle className="h-6 w-6 mx-auto mb-2 text-destructive" />
+          <p className="text-sm text-muted-foreground mb-4">
+            Your account info couldn't load. This is usually a momentary
+            hiccup — try again in a few seconds.
+          </p>
+          <Button onClick={() => void reload()}>Try again</Button>
+        </div>
+      </div>
+    );
+  }
+
   const greeting =
-    user?.firstName ?? data.profile?.displayName?.split(" ")[0] ?? "there";
+    user?.firstName ?? data.profile.displayName?.split(" ")[0] ?? "there";
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-4xl">

@@ -63,6 +63,22 @@ export class ErrorBoundary extends React.Component<Props, State> {
             this keeps happening, please call us at Penn Home Medical Supply
             and we'll help you finish what you were doing.
           </p>
+          {/*
+            Development-only diagnostic. We print the thrown error's message
+            inline so a developer reproducing the bug doesn't have to dig
+            into DevTools to find the cause. Kept out of production builds
+            because raw stack messages are confusing to patients and may
+            inadvertently leak internal details.
+          */}
+          {import.meta.env.DEV && this.state.error && (
+            <pre
+              className="mb-6 text-left text-xs text-destructive bg-destructive/5 rounded-lg p-3 overflow-auto max-h-48 whitespace-pre-wrap break-words"
+              data-testid="error-boundary-debug"
+            >
+              {this.state.error.message}
+              {this.state.error.stack ? `\n\n${this.state.error.stack}` : ""}
+            </pre>
+          )}
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button onClick={this.handleReload} data-testid="error-reload-btn">
               Reload page
