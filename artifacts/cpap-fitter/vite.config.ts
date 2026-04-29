@@ -31,8 +31,11 @@ export default defineConfig({
   plugins: [
     react(),
     // optimize:false prevents lightningcss from reordering @layer imports
-    // (e.g. from @clerk/themes) in production builds. Without it, Clerk UI
-    // renders correctly in dev and breaks in prod.
+    // in production builds, which kept Clerk's injected styles intact when
+    // we previously used @clerk/themes. The @clerk/themes dep has since
+    // been removed (Clerk UI is themed inline via the appearance prop on
+    // <ClerkProvider>), but we keep optimize:false as cheap insurance
+    // against any future @layer-using third-party widget.
     tailwindcss({ optimize: false }),
     runtimeErrorOverlay(),
     ...(process.env.NODE_ENV !== "production" &&
