@@ -385,7 +385,7 @@ export function ShopCart() {
           Your cart
         </h1>
         <p className="text-muted-foreground">
-          Review your items, then check out securely with Stripe.
+          Review your items, then continue to secure checkout.
         </p>
       </div>
 
