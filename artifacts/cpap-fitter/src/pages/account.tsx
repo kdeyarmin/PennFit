@@ -22,7 +22,7 @@
 // /sign-in?redirect=/account when not signed in.
 
 import React, { useEffect, useState } from "react";
-import { Link, Redirect, useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Show, useUser } from "@clerk/react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
@@ -37,6 +37,7 @@ import {
   Repeat,
   ShoppingBag,
   User as UserIcon,
+  UserCircle2,
   XCircle,
 } from "lucide-react";
 
@@ -69,16 +70,50 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function AccountPage() {
   useDocumentTitle("My account");
-  // <Show> renders fallback for the signed-out branch AND while Clerk
-  // is still booting; that's fine here — the redirect target is the
-  // sign-in page, which Clerk handles cleanly even mid-load.
+  // We render an inline sign-in prompt for signed-out visitors instead
+  // of <Redirect to="/sign-in?…">. Wouter's <Redirect> wrapped inside
+  // Clerk's <Show fallback> renders during the brief Clerk-boot window
+  // and then again on the signed-out branch; the double-mount caused
+  // the page to render blank instead of navigating. Mirroring the
+  // /shop/orders pattern (inline CTA + ?redirect=/account round-trip)
+  // is more graceful UX anyway — the customer sees *why* they're being
+  // asked to sign in instead of a jarring auto-bounce.
   return (
-    <Show
-      when="signed-in"
-      fallback={<Redirect to="/sign-in?redirect=/account" />}
-    >
+    <Show when="signed-in" fallback={<SignedOutAccountPrompt />}>
       <AccountInner />
     </Show>
+  );
+}
+
+function SignedOutAccountPrompt() {
+  // Keep the ?redirect= convention in sync with sign-in.tsx
+  // readRedirect() — it reads ONLY ?redirect=, NOT ?redirect_url=.
+  return (
+    <div className="container mx-auto px-4 md:px-6 py-12 md:py-20 max-w-2xl">
+      <div
+        className="glass-card rounded-2xl p-8 md:p-10 text-center"
+        data-testid="account-signin-prompt"
+      >
+        <UserCircle2 className="w-12 h-12 text-[hsl(var(--penn-navy))]/60 mx-auto mb-4" />
+        <h1 className="text-display text-2xl md:text-3xl font-bold tracking-tight mb-2">
+          Sign in to your account
+        </h1>
+        <p className="text-sm md:text-base text-muted-foreground max-w-md mx-auto mb-6">
+          Your saved shipping address, card on file, and order history live
+          here. Sign in or create an account to continue.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Link href="/sign-in?redirect=/account">
+            <Button data-testid="account-signin-btn">Sign in</Button>
+          </Link>
+          <Link href="/sign-up?redirect=/account">
+            <Button variant="outline" data-testid="account-signup-btn">
+              Create account
+            </Button>
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }
 

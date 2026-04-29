@@ -115,6 +115,15 @@ Findings explicitly **rejected as false-positives or out-of-scope** during the s
 
 `resupply-check` remains green: 31 files / 207 tests on the API, plus all lib/dashboard suites.
 
+### Publish-readiness sweep (April 2026)
+
+Final whole-site visual review across every customer-facing route (~22 pages) before going live. Every page screenshot-checked at desktop width. Two real bugs surfaced and fixed; the rest of the funnel was clean.
+
+- **`/account` blank-page bug:** The page wrapped its content in `<Show when="signed-in" fallback={<Redirect to="/sign-in?redirect=/account" />}>`. Wouter's `<Redirect>` mounted inside Clerk's `<Show fallback>` rendered during the brief Clerk-boot window AND again on the signed-out branch; the double-mount caused the route to render an empty `<div>` instead of navigating. Fix: replaced the JSX-driven redirect with an inline `<SignedOutAccountPrompt />` that mirrors the `/shop/orders` pattern — a centered card with both "Sign in" and "Create account" buttons, both pointing at `/sign-in?redirect=/account` and `/sign-up?redirect=/account`. Better UX too: the customer sees *why* they're being asked to sign in instead of a jarring auto-bounce.
+- **api-server CORS allowlist gap:** Every page load fires `track.ts` → `POST /api/usage-events` (api-server). Behind Replit's reverse proxy the browser sends `Origin: http://localhost` (no port), but the dev fallback allowlist only had `http://localhost:80`, `:3000`, `:5173` — so the bare-host form was rejected with `Origin http://localhost not allowed by CORS policy`, surfacing as a `Failed to load resource: the server responded with a status of 500` in the browser console of EVERY page. Fixed by adding `"http://localhost"` (no port) to the dev allowlist alongside the explicit-port forms. Production allowlist (`PENN_ALLOWED_ORIGINS` env var) is unaffected.
+
+**Convention recap (locked in):** every cpap-fitter sign-in/sign-up link uses `?redirect=` (NOT `?redirect_url=`) because that's what `readRedirect()` in `sign-in.tsx`/`sign-up.tsx` parses. `redirect_url` is Clerk's native param name but is silently dropped by the local helper.
+
 ### Customer-Facing Reminder Subscriptions
 
 A self-serve, opt-in reminder system at `/reminders` lets customers (no account required) sign up to be emailed when each CPAP supply is due for replacement. The flow is intentionally separate from the internal Resupply Automation system, which is admin/CSV driven and manages full insurance episodes — this storefront feature is a lightweight email-only nudge.
