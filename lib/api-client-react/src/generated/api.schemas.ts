@@ -332,6 +332,126 @@ export interface OrderRequest {
   consentToContact: boolean;
 }
 
+export type ReminderItemSku =
+  (typeof ReminderItemSku)[keyof typeof ReminderItemSku];
+
+export const ReminderItemSku = {
+  maskCushion: "maskCushion",
+  maskFrameHeadgear: "maskFrameHeadgear",
+  headgear: "headgear",
+  tubing: "tubing",
+  disposableFilter: "disposableFilter",
+  reusableFilter: "reusableFilter",
+  waterChamber: "waterChamber",
+} as const;
+
+/**
+ * One supply line on a subscription. `sku` is the canonical SKU
+(one of: maskCushion, maskFrameHeadgear, headgear, tubing,
+disposableFilter, reusableFilter, waterChamber). `intervalDays`
+is how often we should remind. `lastReplacedAt` is the date the
+customer last swapped this item in (used to compute next due).
+
+ */
+export interface ReminderItem {
+  sku: ReminderItemSku;
+  /**
+   * YYYY-MM-DD
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  lastReplacedAt: string;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  intervalDays: number;
+}
+
+export type ReminderItemView = ReminderItem & {
+  /**
+   * YYYY-MM-DD computed by the server
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  nextDueAt: string;
+};
+
+export interface SubscribeReminderRequest {
+  /** @maxLength 200 */
+  email: string;
+  /**
+   * @minItems 1
+   * @maxItems 10
+   */
+  items: ReminderItem[];
+  /**
+   * Anti-spam honeypot. Must be empty.
+   * @maxLength 200
+   */
+  website?: string;
+}
+
+/**
+ * Whether a confirmation / manage email was sent
+ */
+export type SubscribeReminderResponseEmailStatus =
+  (typeof SubscribeReminderResponseEmailStatus)[keyof typeof SubscribeReminderResponseEmailStatus];
+
+export const SubscribeReminderResponseEmailStatus = {
+  sent: "sent",
+  skipped: "skipped",
+  failed: "failed",
+} as const;
+
+export interface SubscribeReminderResponse {
+  success: boolean;
+  /** Capability token for the /reminders/manage endpoints. ONLY
+returned for newly-created subscriptions. For requests against
+an already-existing email we deliberately omit this field — the
+existing manage link is sent only to the registered owner's
+inbox, so an attacker who guesses an email cannot escalate to
+full subscription control via this endpoint.
+ */
+  manageToken?: string;
+  /** True when the email was already on file. The response is
+otherwise indistinguishable from a fresh subscribe (no items
+disclosed, no token disclosed) — the caller should display a
+generic "check your email for a manage link" message.
+ */
+  alreadySubscribed?: boolean;
+  /** Whether a confirmation / manage email was sent */
+  emailStatus: SubscribeReminderResponseEmailStatus;
+  message: string;
+}
+
+export type ReminderSubscriptionViewStatus =
+  (typeof ReminderSubscriptionViewStatus)[keyof typeof ReminderSubscriptionViewStatus];
+
+export const ReminderSubscriptionViewStatus = {
+  active: "active",
+  unsubscribed: "unsubscribed",
+} as const;
+
+export interface ReminderSubscriptionView {
+  email: string;
+  status: ReminderSubscriptionViewStatus;
+  items: ReminderItemView[];
+  /** ISO-8601 timestamp */
+  createdAt: string;
+}
+
+export interface UpdateReminderRequest {
+  /**
+   * @minItems 1
+   * @maxItems 10
+   */
+  items: ReminderItem[];
+}
+
+export interface UnsubscribeResponse {
+  success: boolean;
+  message: string;
+}
+
 export interface OrderResponse {
   success: boolean;
   /** Short reference number the patient can use when calling Penn */
@@ -340,3 +460,15 @@ export interface OrderResponse {
   deliveredAt: string;
   message: string;
 }
+
+export type GetReminderSubscriptionParams = {
+  token: string;
+};
+
+export type UpdateReminderSubscriptionParams = {
+  token: string;
+};
+
+export type UnsubscribeFromRemindersParams = {
+  token: string;
+};

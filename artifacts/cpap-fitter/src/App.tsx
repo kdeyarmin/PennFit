@@ -99,6 +99,19 @@ const AdminOrderDetail = lazy(() =>
 const AdminAuditLog = lazy(() =>
   import("@/pages/admin/audit").then((m) => ({ default: m.AdminAuditLog })),
 );
+const AdminReminders = lazy(() =>
+  import("@/pages/admin/reminders").then((m) => ({
+    default: m.AdminReminders,
+  })),
+);
+const Reminders = lazy(() =>
+  import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
+);
+const RemindersManage = lazy(() =>
+  import("@/pages/reminders-manage").then((m) => ({
+    default: m.RemindersManage,
+  })),
+);
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 
@@ -218,6 +231,8 @@ function PatientRouter() {
           <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
           <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
           <Route path="/account" component={AccountPage} />
+          <Route path="/reminders" component={Reminders} />
+          <Route path="/reminders/manage" component={RemindersManage} />
           <Route path="/privacy" component={Privacy} />
           <Route path="/terms" component={Terms} />
 
@@ -278,6 +293,11 @@ function TopRouter() {
         <Route path="/admin/audit">
           <AdminShell>
             <AdminAuditLog />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/reminders">
+          <AdminShell>
+            <AdminReminders />
           </AdminShell>
         </Route>
 

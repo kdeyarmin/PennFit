@@ -2,7 +2,7 @@
 
 ## Overview
 
-PennPaps is a web application designed to help patients select the most suitable CPAP mask. It offers a privacy-first approach by utilizing on-device facial measurements, combined with a clinical questionnaire, to provide personalized and justified mask recommendations from the PennPaps product catalog. The application also facilitates order placement, adheres to PennPaps brand guidelines, and includes an animated tutorial for user guidance. The project aims to streamline the CPAP mask selection process, improve patient adherence, and offer a robust solution for both insurance-based and cash-pay customers.
+PennPaps is a privacy-first web application designed to simplify CPAP mask selection and ordering. It uses on-device facial measurements and a clinical questionnaire to provide personalized mask recommendations from its product catalog. The application supports both insurance-based and cash-pay customers, aims to improve patient adherence, and includes an internal CPAP Resupply Automation system for patient outreach and management. The project envisions PennPaps as a full storefront for CPAP supplies, encompassing fitting, shopping, and resupply services.
 
 ## User Preferences
 
@@ -14,103 +14,49 @@ Do not log order request bodies in the application logger (treat every log line 
 
 ## System Architecture
 
-The PennPaps application operates on a privacy-first, stateless architecture, prioritizing on-device processing for sensitive data and secure handling of persistent information.
+The PennPaps application employs a privacy-first, stateless architecture, prioritizing on-device processing for sensitive data and secure handling of persistent information.
 
 ### Privacy and Data Handling
 
-Facial image processing is performed entirely on-device using MediaPipe Face Mesh, with only numeric measurements transmitted to the backend. Sensitive data like camera images and video streams are never uploaded or stored. Order data, including PHI, is securely persisted in PostgreSQL.
+Facial image processing occurs entirely on-device using MediaPipe Face Mesh; only numeric measurements are transmitted to the backend. Camera images and video streams are never uploaded or stored. Order data, including PHI, is securely persisted in PostgreSQL.
 
 ### Technical Stack
 
-*   **Monorepo Tool:** pnpm workspaces
-*   **Node.js:** v24
-*   **Package Manager:** pnpm
-*   **TypeScript:** v5.9
-*   **API Framework:** Express 5
-*   **Validation:** Zod (from OpenAPI spec)
-*   **API Codegen:** Orval
-*   **On-device AI:** MediaPipe Face Mesh (`@mediapipe/tasks-vision`)
-*   **Frontend:** React, Vite, Tailwind CSS, Wouter
-*   **Database:** Drizzle ORM + node-postgres for `orders`, `usage_events`, `admin_audit_log`, and `resupply` schema tables.
-*   **Authentication:** Clerk for admin authentication.
+The project utilizes a monorepo with `pnpm workspaces`, `Node.js v24`, `TypeScript v5.9`. The API is built with `Express 5` and `Zod` for validation. The frontend uses `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` manages database interactions. `Clerk` handles admin and customer authentication.
 
 ### Application Flow
 
-The user journey encompasses Home, Consent, Capture (facial scan), Measure (on-device processing), Questionnaire, Results (mask recommendations), Order (intake form), Order Success, Masks (catalog browser), and Privacy policy.
-
-### Recommendation Scoring
-
-Mask recommendations are generated using a combined score: `(typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier`.
+The user journey includes Home, Consent, Capture (facial scan), Measure (on-device processing), Questionnaire, Results (mask recommendations), Order (intake form), Order Success, Masks (catalog browser), and Privacy policy. Mask recommendations are generated using a weighted scoring formula: `(typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier`.
 
 ### Visual Design System
 
-The application features a professional, high-end aesthetic, utilizing Penn's navy and gold brand palette, a light-mode only design, custom CSS brand tokens, and a layered "ambient atmosphere" background. An animated tutorial guides users through the fitting process.
+The application features a professional aesthetic with Penn's navy and gold brand palette, a light-mode only design, custom CSS brand tokens, and a layered "ambient atmosphere" background. An animated tutorial guides users. Mobile responsiveness is a key design consideration, with careful attention to small screen layouts and touch targets. The site is optimized for performance, SEO, and PWA capabilities, including self-hosted fonts and optimized image assets.
 
 ### CPAP Resupply Automation System
 
-A separate, internal CPAP Resupply Automation system manages automated patient outreach, including:
+A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema with encrypted PHI columns and `Clerk` for admin authentication. Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
 
-*   **Components:** Express API, pg-boss background worker, React admin console.
-*   **Database:** `resupply` schema with PHI columns encrypted using `pgcrypto`.
-*   **Admin Authentication:** Clerk with an email allowlist.
-*   **Outreach:** Integrates Twilio Voice for automated calls (with OpenAI's Realtime API for real-time conversation) and two-way SMS, and SendGrid for email.
-*   **Admin Dashboard:** Provides comprehensive tools for patient, conversation, episode, and audit log management, including in-thread replies, send-now outreach, patient case notes, prescription management, patient status actions (pause/resume/close), and CSV bulk import/export. Key features include patient search by phone or email, reply templates, draft autosave, and optimistic concurrency for updates.
+### Cash-Pay Shop & Customer Accounts
 
-### Patient Education
+A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Hosted Checkout`. `Stripe` is the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend handles `Stripe` integration for checkout sessions and webhooks. Signed-in customers can save shipping information, view saved card crumbs, and reorder past purchases. `Clerk` provides customer identity, linking to `Stripe` customer IDs.
 
-The `/learn` hub links to longer-form, single-purpose sub-pages:
-- `/learn/replacement-schedule` — full per-item cadences for cushions, tubing, filters, headgear, and chambers, with overdue self-check.
-- `/learn/device-setup` — new-patient step-by-step guide for setting up a CPAP or BiPAP: 7-step initial setup, first-night expectations, daily/weekly/monthly care, troubleshooting (leaks, dry mouth, aerophagia, claustrophobia, pressure intolerance), BiPAP-specific notes, and "when to call us vs. your doctor". Surfaced from `/learn` and from `/order-success` so newly-purchased customers see it immediately after checkout.
+### Customer-Facing Reminder Subscriptions
 
-### Site-Wide Editorial Voice (Storefront Reframe)
+A self-serve, opt-in reminder system at `/reminders` lets customers (no account required) sign up to be emailed when each CPAP supply is due for replacement. The flow is intentionally separate from the internal Resupply Automation system, which is admin/CSV driven and manages full insurance episodes — this storefront feature is a lightweight email-only nudge.
 
-The user-facing copy treats PennPaps as a full storefront, not just a mask fitter. Three canonical entry points are surfaced everywhere — **Get fitted for a mask** (`/consent`), **Shop CPAP supplies** (`/shop`), **My account** (`/account`) — with a unified CTA lexicon used across `home.tsx`, `learn.tsx`, `faq.tsx`, `not-found.tsx`, and `order-success.tsx`. Hero framing is *"Your CPAP, made simple. Fit. Shop. Resupply."* and the home page leads with a "Three ways to start" 3-card section before the legacy fitter feature grid (now scoped under a "The Mask Fitter" heading). The "How It Works" page and nav label are surfaced as **Virtual Mask Fitter** (URL preserved at `/how-it-works`). Trust claims stay factual (e.g., "~3-minute fitting", "On-device face capture") and avoid plan-dependent guarantees like "$0 out of pocket". `index.html` title/OG describe the full fitter + shop + resupply scope.
-
-### Mobile Responsiveness
-
-Most patients reach the store from a phone, so every customer-facing surface is verified at 320–390px widths. Notable patterns: `layout.tsx` provides a sticky header (`h-16 md:h-20`) with a hamburger drawer below `md` and includes the cart icon + user menu inline on mobile; long-form pages (e.g. `/learn/replacement-schedule`) ship a desktop `<table>` and a parallel mobile `<dl>` card list rather than horizontally scrolling tables; the home hero scales `text-4xl → sm:text-5xl → md:text-6xl → lg:text-7xl` and decorative eyebrow rails are hidden below `sm` to keep the four-line headline + CTAs above the fold on iPhone-class screens. Customer-facing CTAs use full-width tap targets (≥48px) on mobile via the standard `Button size="lg"` class. Admin pages intentionally keep their `overflow-x-auto` data tables — they are internal-only. The viewport meta tag deliberately omits `maximum-scale` / `user-scalable=no` so low-vision patients can pinch-zoom (WCAG 2.1 SC 1.4.4).
-
-### Site Quality (SEO, PWA, Performance)
-
-The cpap-fitter `public/` directory ships the production-grade asset bundle expected of a real storefront: `robots.txt` (allows public pages, disallows admin/auth/funnel paths, points at the sitemap), `sitemap.xml` (canonical pages with `https://pennpaps.com` URLs and per-section change frequencies), `manifest.webmanifest` + brand PNG icons (`apple-touch-icon.png` 180×180, `icon-192.png`, `icon-512.png`, `favicon-32.png`) so the site installs as a PWA, and a JSON-LD `MedicalBusiness` block in `index.html <head>` so search engines understand PennPaps is the online storefront for Penn Home Medical Supply. Inter is **self-hosted** under `public/fonts/` (rsms/inter v4 woff2, weights 400/500/600/700, ~115KB each) with `@font-face` declarations in `index.css` and `font-display: swap`; the most-used weights (Regular, SemiBold) are `<link rel="preload">`-ed. There are no third-party network requests for typography. Heaviest product images are stored as 800×800 WebP under `public/products/` (~22–58KB each); both `scripts/seed-stripe-products.ts` and `resupply-api/lib/stripe/preview-catalog.ts` reference the canonical filenames. Account address fields use proper `autoComplete` tokens (`name`, `address-line1/2`, `address-level1/2`, `postal-code`) so iOS/Android contact autofill works.
-
-The page-level CSP (`<meta http-equiv>` in `index.html`) is same-origin for everything except the Clerk auth domains; fonts are now `font-src 'self' data:` (no Google hosts). `'unsafe-inline'`/`'unsafe-eval'` remain on `script-src` because the Clerk SDK and Vite both require them — documented inline. Note: meta-tag CSP cannot reliably enforce `frame-ancestors`; if clickjacking protection becomes a hard requirement, move CSP to an HTTP response header on the production deploy.
-
-Round-2 polish (April 2026): The four mask category illustrations in `src/assets/masks/` were re-encoded from ~1MB PNGs to 1000×700 WebP (~25–50KB each, 96% smaller); Vite hashes them into the masks-page bundle. A `useDocumentTitle()` hook in `src/hooks/use-document-title.tsx` sets per-page `<title>` (with " — PennPaps by Penn Home Medical Supply" suffix) and an optional meta description override, restoring the previous values on unmount; it's wired into every public page including the home page (which calls it with an empty title to retain the static landing-page title). Layout now ships a WCAG-2.4.1 skip-to-content link (`sr-only` until focused, jumps to `<main id="main-content" tabIndex={-1}>`) and the `<main>` landmark uses `focus-visible:ring-2` so keyboard users can see where the skip target lands. A top-level `ErrorBoundary` in `src/components/error-boundary.tsx` wraps the router inside `ClerkProvider`/`QueryClientProvider`/`FitterProvider`, rendering a recoverable on-brand "Something went wrong" card with Reload + Back-to-home buttons (the home button uses `import.meta.env.BASE_URL` so recovery works under both root and sub-path mounts).
-
-Round-4 polish (April 2026): `public/icon-512.png` was previously a 16-bit/color RGBA PNG weighing 435 KB; re-encoded to 8-bit RGBA (PIL `optimize=True, compress_level=9`) → 45 KB, an 89.6% reduction with no visual change. This is the icon mobile browsers download when users install the PennPaps PWA. A static `<meta property="og:url" content="https://pennpaps.com/" />` was added to `index.html` so social-share previews from preview/staging deploys still resolve to the production homepage (social bots don't run JS, so a per-page dynamic value would not help). The `useDocumentTitle` hook is now wired into every remaining page that lacked it — auth (`sign-in`, `sign-up`), funnel (`consent`, `capture`, `measure`, `questionnaire`, `results`, `order`), checkout result pages (`shop-checkout-success`, `shop-checkout-cancel`), and admin (`dashboard`, `orders`, `order-detail`, `audit`) — so every tab is now distinguishable. The admin shell does NOT set its own title; instead, three tiny subcomponents (`AdminLoadingShell`, `AdminErrorShell`, `NotAuthorized`) each own the `"Admin"` title for their state, and child admin pages own their more-specific titles. This avoids the React useEffect ordering hazard where a parent's title hook would otherwise mount-clobber a child's (effects mount child-before-parent).
-
-Round-3 polish (April 2026): The single 957 KB / 277 KB-gzipped JS bundle was split into route-level chunks via `React.lazy()` + `<Suspense>` in `App.tsx`. Eagerly loaded: the small public landing pages (Home, Shop, Masks, HowItWorks, Faq, Learn, Privacy, Terms). Lazy-loaded with their own chunks: the entire fitting funnel (Consent, Capture, **Measure** with `@mediapipe/tasks-vision` ~133 KB, Questionnaire, Results, **Order** ~104 KB, OrderSuccess), shop checkout flows, account, sign-in/sign-up, the deep learn pages, and all admin pages (Shell, Dashboard, Orders, OrderDetail, AuditLog). Initial JS dropped to ~544 KB / 162 KB gzipped (~42% smaller); MediaPipe is no longer downloaded by shoppers who never start a fitting. Two `<Suspense>` boundaries wrap the `<Switch>` in `PatientRouter` and `TopRouter` so chunk loads keep the layout chrome and show a tiny on-brand spinner. The `useDocumentTitle` hook was extended to manage a route-aware `<link rel="canonical">` pointing at `https://pennpaps.com{pathname}` (basePath stripped, trailing slashes trimmed) — the static root canonical that previously lived in `index.html` was removed because it was telling search engines that every SPA route was a duplicate of the homepage. Mask catalog `<img>` tags now also carry `decoding="async"` to avoid blocking the main thread while bitmap decode runs.
-
-### Cash-Pay Shop
-
-A customer-facing `/shop` offers CPAP supplies for direct purchase via Stripe Hosted Checkout, designed to coexist with the insurance flow and provide an "Use insurance" escape hatch.
-
-*   **Architecture:** Stripe acts as the source of truth for products and prices, with the API caching product lists. A local `resupply.shop_orders` table tracks session status without storing PHI.
-*   **Frontend:** Manages category-grouped product display, a localStorage-backed cart with cross-tab sync, and checkout success/cancel pages.
-*   **Backend:** Handles product retrieval (cached), Stripe Checkout session creation, and Stripe webhook processing. Rate limiting is implemented for abuse mitigation.
-*   **Product catalog:** Each SKU carries a real manufacturer name, exact manufacturer model number (e.g. ResMed AirFit P10 Mask = `#62932`), a product photo, and a long description. The Stripe seed script (`pnpm --filter @workspace/scripts run seed:shop`) writes `metadata.manufacturer` / `metadata.model_number` to each Stripe Product and uploads image URLs from `SHOP_PUBLIC_BASE_URL` so production cards render the same imagery as preview mode. Bundle cards reference component model numbers in their contents list (e.g. "1× ResMed AirFit N20 cushion · medium (#63551)") so patients can verify exactly what they're buying.
-*   **Image resolution:** Product `imageUrl` is either an absolute Stripe-CDN URL (production) or a path under `cpap-fitter/public/products/` (preview mode). The `resolveProductImage()` helper in `shop-api.ts` handles both cases by prepending `import.meta.env.BASE_URL` when the path is relative, so images work whether the cpap-fitter is mounted at `/` or under a path prefix.
-
-### Customer Accounts (Shop)
-
-Signed-in shoppers can save shipping info, see their saved card crumbs, and reorder past purchases — coexisting with anonymous guest checkout.
-
-*   **Identity:** Clerk (the same provider used for admin). Patient sign-in uses `?redirect=` to round-trip back to wherever the user came from (e.g. `/shop/cart` → sign-in → `/shop/cart`); admin links keep redirecting to `/admin` for backward compatibility.
-*   **Storage:** New `resupply.shop_customers` table keyed by `clerk_user_id` holds the Stripe Customer ID, default shipping address (jsonb), and saved card display crumbs (brand/last4/exp). Card data itself stays in Stripe — we never see PANs. `shop_orders` gained a `clerk_user_id` column linking each order to the buyer (NULL for guests).
-*   **Stripe Customer mapping:** `getOrCreateStripeCustomer` lazily creates a Stripe Customer on first checkout, with an idempotency key scoped to the Clerk user ID to prevent duplicates under race conditions.
-*   **Account page (`/account`):** Editable name + shipping address (works in preview mode without Stripe), saved card display, recent orders with one-click "Reorder" buttons that POST to `/shop/me/quick-checkout` and bounce to a fresh Stripe Hosted Checkout session pre-attached to the Customer.
-*   **Express checkout:** When a signed-in user with a saved card opens the cart, a prominent "Express checkout — pay with Visa ••••4242" button appears above the standard checkout button. Powered by Stripe's `payment_method_collection: 'if_required'` — the user sees a single tap on the Stripe page.
-*   **Checkout integration:** The standard `/shop/checkout` is now auth-aware: signed-in users get their Customer attached automatically, with `setup_future_usage: 'off_session'` so the card from this purchase becomes saved-on-file for next time. Guests still check out anonymously.
-*   **Webhook sync:** `checkout.session.completed` fans out to a `syncCustomerAfterCheckout` step that re-stamps `clerk_user_id` on the order, refreshes the saved card crumbs from the Customer's default payment method, and backfills the saved shipping address only if the user hasn't set one explicitly (never clobbers a deliberate edit).
+- **Storage:** A single `reminder_subscriptions` table in the main schema holds email, status (`active`/`unsubscribed`), a JSONB `items` array of `{sku, lastReplacedAt, intervalDays, nextDueAt}`, a 32-byte hex `manage_token`, and a `last_sent_at` timestamp. Email is unique-indexed (case-insensitive via lowercased writes); the manage token is the authentication mechanism for unauthenticated edits.
+- **API:** Public routes under `/api/reminders` (POST to subscribe with honeypot `website` field; GET/PATCH/POST manage by `?token=`). Admin routes under `/api/admin/reminders` (list view + `send-due` dispatcher).
+- **Dispatcher policy:** `POST /api/admin/reminders/send-due` finds active subscribers with at least one item whose `nextDueAt <= today`, respects a 7-day quiet period per subscriber (no spam), and does NOT auto-advance `lastReplacedAt` (sending a reminder is not evidence of replacement — the customer updates dates themselves from the manage page after they swap). Returns counts (`sent`, `skippedQuiet`, `skippedNoneDue`, `failed`) and a `sendgridConfigured` flag so the admin UI can warn when delivery is not actually wired up.
+- **Email:** `reminderEmail.ts` mirrors `orderEmail.ts` — graceful skip when SendGrid is unconfigured. Confirmation on subscribe + due-reminder on dispatch, both with one-click manage links.
+- **Frontend:** `/reminders` (signup form with per-SKU last-replaced/interval inputs and honeypot), `/reminders/manage?token=…` (edit/unsubscribe), and a `<SubscribeRemindersCta>` card placed on `/learn/replacement-schedule` (primary) and `/shop/checkout-success` (post-purchase nudge). Admin console gets a `/admin/reminders` page with a manual "Send due reminders now" button (cron wiring is future work).
 
 ## External Dependencies
 
-*   **SendGrid:** For order fulfillment emails and resupply email reminders.
-*   **MediaPipe Face Mesh:** Google's on-device facial landmark detection for privacy-first measurements.
-*   **AWS:** Deployment target providing HIPAA-compliant infrastructure.
-*   **PostgreSQL:** Primary database for all application and resupply system data.
-*   **Clerk:** Authentication service for admin access and control.
-*   **Twilio:** For CPAP Resupply Automation outbound voice calls and two-way SMS messaging.
-*   **OpenAI:** Utilized by the CPAP Resupply Automation system for Realtime API (voice conversation) and chat completions (SMS intent classification).
+*   **SendGrid:** For emails (order fulfillment, resupply reminders).
+*   **MediaPipe Face Mesh:** Google's on-device facial landmark detection.
+*   **AWS:** Provides HIPAA-compliant deployment infrastructure.
+*   **PostgreSQL:** Primary database.
+*   **Clerk:** Authentication service for admins and customers.
+*   **Twilio:** For outbound voice calls and two-way SMS messaging in resupply.
+*   **OpenAI:** Used by Resupply Automation for Realtime API (voice) and chat completions (SMS intent).
 *   **Stripe:** For payment processing and managing the cash-pay shop.

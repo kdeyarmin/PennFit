@@ -4,6 +4,7 @@ import recommendRouter from "./recommend.js";
 import ordersRouter from "./orders.js";
 import adminRouter from "./admin.js";
 import usageEventsRouter from "./usage-events.js";
+import remindersRouter from "./reminders.js";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(recommendRouter);
 router.use(ordersRouter);
 router.use(adminRouter);
 router.use(usageEventsRouter);
+router.use(remindersRouter);
 
 export default router;

@@ -18,12 +18,20 @@ import type {
 
 import type {
   ErrorResponse,
+  GetReminderSubscriptionParams,
   HealthStatus,
   MaskCatalogResponse,
   OrderRequest,
   OrderResponse,
   RecommendationRequest,
   RecommendationResponse,
+  ReminderSubscriptionView,
+  SubscribeReminderRequest,
+  SubscribeReminderResponse,
+  UnsubscribeFromRemindersParams,
+  UnsubscribeResponse,
+  UpdateReminderRequest,
+  UpdateReminderSubscriptionParams,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -200,6 +208,436 @@ export const useSubmitOrder = <
   TContext
 > => {
   return useMutation(getSubmitOrderMutationOptions(options));
+};
+
+/**
+ * Public endpoint. Behavior depends on whether the email is already
+on file:
+
+- **New email:** the subscription is created. The response includes
+  `manageToken` so the client can deep-link to the manage page
+  immediately (this also makes the dev-mode flow usable when
+  email delivery isn't configured). A confirmation email is sent
+  containing the same manage link.
+- **Existing email:** the response is `alreadySubscribed: true`
+  with NO `manageToken` — to prevent email-enumeration takeover
+  of an existing subscription, the manage link is only sent to
+  the registered owner's inbox. The submitter's items are not
+  applied to the existing row; the registered owner can update
+  items via the manage page.
+
+Honeypot: a hidden `website` field. If non-empty, the request is
+silently accepted (fake `manageToken: "honeypot"`) and no DB
+write or email send occurs.
+
+ * @summary Subscribe to supply replacement reminders
+ */
+export const getSubscribeToRemindersUrl = () => {
+  return `/api/reminders`;
+};
+
+export const subscribeToReminders = async (
+  subscribeReminderRequest: SubscribeReminderRequest,
+  options?: RequestInit,
+): Promise<SubscribeReminderResponse> => {
+  return customFetch<SubscribeReminderResponse>(getSubscribeToRemindersUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(subscribeReminderRequest),
+  });
+};
+
+export const getSubscribeToRemindersMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof subscribeToReminders>>,
+    TError,
+    { data: BodyType<SubscribeReminderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof subscribeToReminders>>,
+  TError,
+  { data: BodyType<SubscribeReminderRequest> },
+  TContext
+> => {
+  const mutationKey = ["subscribeToReminders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof subscribeToReminders>>,
+    { data: BodyType<SubscribeReminderRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return subscribeToReminders(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubscribeToRemindersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof subscribeToReminders>>
+>;
+export type SubscribeToRemindersMutationBody =
+  BodyType<SubscribeReminderRequest>;
+export type SubscribeToRemindersMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Subscribe to supply replacement reminders
+ */
+export const useSubscribeToReminders = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof subscribeToReminders>>,
+    TError,
+    { data: BodyType<SubscribeReminderRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof subscribeToReminders>>,
+  TError,
+  { data: BodyType<SubscribeReminderRequest> },
+  TContext
+> => {
+  return useMutation(getSubscribeToRemindersMutationOptions(options));
+};
+
+/**
+ * @summary Get a subscription by manage token
+ */
+export const getGetReminderSubscriptionUrl = (
+  params: GetReminderSubscriptionParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reminders/manage?${stringifiedParams}`
+    : `/api/reminders/manage`;
+};
+
+export const getReminderSubscription = async (
+  params: GetReminderSubscriptionParams,
+  options?: RequestInit,
+): Promise<ReminderSubscriptionView> => {
+  return customFetch<ReminderSubscriptionView>(
+    getGetReminderSubscriptionUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetReminderSubscriptionQueryKey = (
+  params?: GetReminderSubscriptionParams,
+) => {
+  return [`/api/reminders/manage`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetReminderSubscriptionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getReminderSubscription>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetReminderSubscriptionParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getReminderSubscription>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetReminderSubscriptionQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getReminderSubscription>>
+  > = ({ signal }) =>
+    getReminderSubscription(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getReminderSubscription>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetReminderSubscriptionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getReminderSubscription>>
+>;
+export type GetReminderSubscriptionQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a subscription by manage token
+ */
+
+export function useGetReminderSubscription<
+  TData = Awaited<ReturnType<typeof getReminderSubscription>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: GetReminderSubscriptionParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getReminderSubscription>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetReminderSubscriptionQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update items on a subscription
+ */
+export const getUpdateReminderSubscriptionUrl = (
+  params: UpdateReminderSubscriptionParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reminders/manage?${stringifiedParams}`
+    : `/api/reminders/manage`;
+};
+
+export const updateReminderSubscription = async (
+  updateReminderRequest: UpdateReminderRequest,
+  params: UpdateReminderSubscriptionParams,
+  options?: RequestInit,
+): Promise<ReminderSubscriptionView> => {
+  return customFetch<ReminderSubscriptionView>(
+    getUpdateReminderSubscriptionUrl(params),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateReminderRequest),
+    },
+  );
+};
+
+export const getUpdateReminderSubscriptionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateReminderSubscription>>,
+    TError,
+    {
+      data: BodyType<UpdateReminderRequest>;
+      params: UpdateReminderSubscriptionParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateReminderSubscription>>,
+  TError,
+  {
+    data: BodyType<UpdateReminderRequest>;
+    params: UpdateReminderSubscriptionParams;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateReminderSubscription"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateReminderSubscription>>,
+    {
+      data: BodyType<UpdateReminderRequest>;
+      params: UpdateReminderSubscriptionParams;
+    }
+  > = (props) => {
+    const { data, params } = props ?? {};
+
+    return updateReminderSubscription(data, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateReminderSubscriptionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateReminderSubscription>>
+>;
+export type UpdateReminderSubscriptionMutationBody =
+  BodyType<UpdateReminderRequest>;
+export type UpdateReminderSubscriptionMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update items on a subscription
+ */
+export const useUpdateReminderSubscription = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateReminderSubscription>>,
+    TError,
+    {
+      data: BodyType<UpdateReminderRequest>;
+      params: UpdateReminderSubscriptionParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateReminderSubscription>>,
+  TError,
+  {
+    data: BodyType<UpdateReminderRequest>;
+    params: UpdateReminderSubscriptionParams;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateReminderSubscriptionMutationOptions(options));
+};
+
+/**
+ * @summary Unsubscribe from all reminders
+ */
+export const getUnsubscribeFromRemindersUrl = (
+  params: UnsubscribeFromRemindersParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reminders/manage/unsubscribe?${stringifiedParams}`
+    : `/api/reminders/manage/unsubscribe`;
+};
+
+export const unsubscribeFromReminders = async (
+  params: UnsubscribeFromRemindersParams,
+  options?: RequestInit,
+): Promise<UnsubscribeResponse> => {
+  return customFetch<UnsubscribeResponse>(
+    getUnsubscribeFromRemindersUrl(params),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getUnsubscribeFromRemindersMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unsubscribeFromReminders>>,
+    TError,
+    { params: UnsubscribeFromRemindersParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unsubscribeFromReminders>>,
+  TError,
+  { params: UnsubscribeFromRemindersParams },
+  TContext
+> => {
+  const mutationKey = ["unsubscribeFromReminders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unsubscribeFromReminders>>,
+    { params: UnsubscribeFromRemindersParams }
+  > = (props) => {
+    const { params } = props ?? {};
+
+    return unsubscribeFromReminders(params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnsubscribeFromRemindersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unsubscribeFromReminders>>
+>;
+
+export type UnsubscribeFromRemindersMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Unsubscribe from all reminders
+ */
+export const useUnsubscribeFromReminders = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unsubscribeFromReminders>>,
+    TError,
+    { params: UnsubscribeFromRemindersParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unsubscribeFromReminders>>,
+  TError,
+  { params: UnsubscribeFromRemindersParams },
+  TContext
+> => {
+  return useMutation(getUnsubscribeFromRemindersMutationOptions(options));
 };
 
 /**

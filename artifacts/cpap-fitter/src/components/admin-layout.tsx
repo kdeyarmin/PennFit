@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk, useUser } from "@clerk/react";
-import { LayoutDashboard, ListOrdered, ScrollText, LogOut, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, ListOrdered, ScrollText, LogOut, ShieldCheck, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -9,6 +9,7 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/orders", label: "Orders", icon: ListOrdered, exact: false },
+  { href: "/admin/reminders", label: "Reminders", icon: Bell, exact: false },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText, exact: false },
 ];
 

@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
 import {
   CalendarClock,
   Sparkles,
@@ -421,14 +422,21 @@ export function ReplacementSchedule() {
         </div>
       </section>
 
-      {/* CTA */}
+      {/* Reminder signup CTA — primary placement, since users on this
+          page are already thinking about replacement cadence. */}
+      <section className="pt-2">
+        <SubscribeRemindersCta />
+      </section>
+
+      {/* Secondary CTA */}
       <section className="text-center space-y-5 pt-2">
         <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-gradient-brand">
           Stop tracking it yourself.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          Sign up once and Penn Home Medical Supply will text or email you when each item
-          is due — no calendar reminders, no guessing, no stale supplies.
+          Penn Home Medical Supply makes resupply easy — pick a mask, place an
+          order, and we handle delivery on a cadence that matches your insurance
+          allowance.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
@@ -438,7 +446,7 @@ export function ReplacementSchedule() {
               data-testid="schedule-cta-order"
             >
               <Bell className="w-4 h-4" />
-              Set up resupply reminders
+              Find my mask
             </Button>
           </Link>
           <Link href="/learn">
