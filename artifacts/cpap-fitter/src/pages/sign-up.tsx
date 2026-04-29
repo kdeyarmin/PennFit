@@ -1,4 +1,5 @@
 import { SignUp } from "@clerk/react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -15,6 +16,7 @@ function readRedirect(): string {
 }
 
 export function SignUpPage() {
+  useDocumentTitle("Create your account");
   const redirectUrl = readRedirect();
   return (
     <div className="flex min-h-[calc(100dvh-5rem)] items-center justify-center px-4 py-12">

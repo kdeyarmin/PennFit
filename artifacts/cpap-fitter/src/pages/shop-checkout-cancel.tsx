@@ -7,8 +7,10 @@ import { Link } from "wouter";
 import { ArrowLeft, ShieldCheck, ShoppingCart } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function ShopCheckoutCancel() {
+  useDocumentTitle("Checkout canceled");
   return (
     <div className="container mx-auto px-4 md:px-6 py-16 md:py-24 max-w-xl">
       <div className="glass-card rounded-2xl p-8 md:p-10 text-center" data-testid="cancel-card">

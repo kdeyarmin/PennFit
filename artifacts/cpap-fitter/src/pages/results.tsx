@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   useGetRecommendation,
   useListMasks,
@@ -28,6 +29,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 
 export function Results() {
+  useDocumentTitle("Your mask matches");
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `measurements` is non-null by the time Results mounts — no local

@@ -2,11 +2,14 @@ import React, { useState } from "react";
 import { useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { track } from "@/lib/track";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, CheckCircle2, Lightbulb } from "lucide-react";
 import type { QuestionnaireAnswers } from "@workspace/api-client-react";
+
+const PAGE_TITLE = "A few quick questions";
 
 type Question = {
   id: keyof QuestionnaireAnswers;
@@ -103,6 +106,7 @@ const questions: Question[] = [
 ];
 
 export function Questionnaire() {
+  useDocumentTitle(PAGE_TITLE);
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `measurements` is non-null by the time this component mounts — no

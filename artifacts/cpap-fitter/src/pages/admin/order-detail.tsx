@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fetchAdminOrder, AdminApiError } from "@/lib/admin-api";
 import { ArrowLeft, AlertCircle, ClipboardCheck } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending send",
@@ -51,6 +52,7 @@ interface ShippingField {
 }
 
 export function AdminOrderDetail() {
+  useDocumentTitle("Admin · Order details");
   const params = useParams<{ id: string }>();
   const id = params.id;
 

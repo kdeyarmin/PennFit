@@ -6,8 +6,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { fetchAdminAuditLog } from "@/lib/admin-api";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function AdminAuditLog() {
+  useDocumentTitle("Admin · Audit log");
   const [page, setPage] = useState(1);
   const pageSize = 50;
 

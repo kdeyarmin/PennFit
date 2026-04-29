@@ -5,8 +5,10 @@ import { Camera, AlertCircle, RefreshCw, Eye, Sun, ScanFace } from "lucide-react
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { track } from "@/lib/track";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function Capture() {
+  useDocumentTitle("Take a photo");
   const [, setLocation] = useLocation();
   const { setCapturedImage } = useFitterStore();
   useEffect(() => {

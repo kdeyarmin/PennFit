@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 import type { FacialMeasurements } from "@workspace/api-client-react";
 import { track } from "@/lib/track";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function Measure() {
+  useDocumentTitle("Analyzing your measurements");
   const [, setLocation] = useLocation();
   const { capturedImage, setMeasurements, setCapturedImage } = useFitterStore();
   const [progress, setProgress] = useState(0);

@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useSubmitOrder, ApiError } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -71,6 +72,7 @@ const US_STATES = [
 ];
 
 export function Order() {
+  useDocumentTitle("Confirm your order");
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `chosenMask` is non-null by the time Order mounts.

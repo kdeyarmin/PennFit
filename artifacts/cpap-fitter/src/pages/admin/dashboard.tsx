@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchAdminAnalytics, fetchAdminOrders } from "@/lib/admin-api";
 import { Package, CheckCircle2, AlertCircle, TrendingUp, ArrowRight } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending send",
@@ -21,6 +22,7 @@ const STATUS_TONE: Record<string, "default" | "secondary" | "destructive" | "out
 };
 
 export function AdminDashboard() {
+  useDocumentTitle("Admin · Dashboard");
   const analytics = useQuery({ queryKey: ["admin-analytics"], queryFn: fetchAdminAnalytics });
   const recentOrders = useQuery({
     queryKey: ["admin-orders", { page: 1, pageSize: 8 }],

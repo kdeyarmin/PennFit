@@ -26,6 +26,13 @@
     <meta property="og:title" content="PennPaps.com — by Penn Home Medical Supply" />
     <meta property="og:description" content="Your CPAP, made simple. Get fitted for a mask, shop supplies, and stay on schedule with resupply — direct from Penn Home Medical Supply. Your face image never leaves your device." />
     <meta property="og:image" content="/opengraph.jpg" />
+    <!--
+      og:url is read by social bots at share time. Bots typically do
+      NOT execute JS, so a static value here is the right call for an
+      SPA without SSR. Pointing every share preview at the production
+      homepage avoids share cards that show preview/staging hostnames.
+    -->
+    <meta property="og:url" content="https://pennpaps.com/" />
     <meta property="og:site_name" content="Penn Home Medical Supply" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="PennPaps.com — by Penn Home Medical Supply" />

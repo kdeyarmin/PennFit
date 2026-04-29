@@ -5,8 +5,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Checkbox } from "@/components/ui/checkbox";
 import { ShieldCheck, Camera, ServerOff, AlertCircle, Database } from "lucide-react";
 import { track } from "@/lib/track";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function Consent() {
+  useDocumentTitle("Privacy consent");
   const [, setLocation] = useLocation();
   const [agreed, setAgreed] = useState(false);
 

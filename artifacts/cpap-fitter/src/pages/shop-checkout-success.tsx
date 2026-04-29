@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useCart } from "@/hooks/use-cart";
 import {
   fetchOrderSummary,
@@ -33,6 +34,7 @@ function getSessionIdFromQuery(): string | null {
 }
 
 export function ShopCheckoutSuccess() {
+  useDocumentTitle("Order confirmed");
   const sessionId = getSessionIdFromQuery();
   const { clear } = useCart();
   const [order, setOrder] = useState<OrderSummaryResponse | null>(null);
