@@ -40,7 +40,10 @@ import type {
   CreatePrescriptionResponse,
   DashboardSummary,
   DuplicatePacwareIdError,
+  EpisodeCounts,
   EpisodeListPage,
+  EpisodesBulkSendRequest,
+  EpisodesBulkSendResponse,
   ExportPatientsCsvParams,
   FrequencyRule,
   FrequencyRuleCreate,
@@ -53,6 +56,7 @@ import type {
   ImportPatientsCsvResponse,
   ListAuditParams,
   ListConversationsParams,
+  ListEpisodeCountsParams,
   ListEpisodesParams,
   ListPatientsParams,
   MessagingError,
@@ -2097,6 +2101,215 @@ export function useListEpisodes<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Returns one count per status, plus the synthetic `overdue`
+bucket (outreach_pending|awaiting_response with dueAt in
+the past) and an `all` total. Powers the count chips on the
+Episodes page so dispatchers see the size of each queue
+before clicking in. Counts respect the same `q` filter as
+the list endpoint so the chips reflect the current search.
+
+ * @summary Per-status episode counts for the dispatcher strip
+ */
+export const getListEpisodeCountsUrl = (params?: ListEpisodeCountsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/resupply-api/episodes/counts?${stringifiedParams}`
+    : `/resupply-api/episodes/counts`;
+};
+
+export const listEpisodeCounts = async (
+  params?: ListEpisodeCountsParams,
+  options?: RequestInit,
+): Promise<EpisodeCounts> => {
+  return customFetch<EpisodeCounts>(getListEpisodeCountsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEpisodeCountsQueryKey = (
+  params?: ListEpisodeCountsParams,
+) => {
+  return [
+    `/resupply-api/episodes/counts`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListEpisodeCountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEpisodeCounts>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListEpisodeCountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEpisodeCounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListEpisodeCountsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEpisodeCounts>>
+  > = ({ signal }) => listEpisodeCounts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEpisodeCounts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEpisodeCountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEpisodeCounts>>
+>;
+export type ListEpisodeCountsQueryError = ErrorType<
+  ConsoleValidationError | AuthError
+>;
+
+/**
+ * @summary Per-status episode counts for the dispatcher strip
+ */
+
+export function useListEpisodeCounts<
+  TData = Awaited<ReturnType<typeof listEpisodeCounts>>,
+  TError = ErrorType<ConsoleValidationError | AuthError>,
+>(
+  params?: ListEpisodeCountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEpisodeCounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEpisodeCountsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Admin bulk action: for each supplied episode id, look up the
+owning patient and dispatch a reminder on the chosen channel
+(`sms` or `email`). Each item is processed independently —
+partial failure is the EXPECTED outcome, not an error — and
+the response carries a per-id `status` so the dashboard can
+show "23 sent, 4 skipped, 3 failed" with row-level reasons.
+
+Capped at 50 ids per request. Returns 503 when SMS+Email is
+not configured at all (any fan-out would fail with the same
+reason). Caller-side rate-limiting is the dashboard's
+responsibility.
+
+ * @summary Fan-out send a reminder for many episodes at once
+ */
+export const getBulkSendEpisodesUrl = () => {
+  return `/resupply-api/episodes/bulk-send`;
+};
+
+export const bulkSendEpisodes = async (
+  episodesBulkSendRequest: EpisodesBulkSendRequest,
+  options?: RequestInit,
+): Promise<EpisodesBulkSendResponse> => {
+  return customFetch<EpisodesBulkSendResponse>(getBulkSendEpisodesUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(episodesBulkSendRequest),
+  });
+};
+
+export const getBulkSendEpisodesMutationOptions = <
+  TError = ErrorType<MessagingValidationError | AuthError | MessagingError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkSendEpisodes>>,
+    TError,
+    { data: BodyType<EpisodesBulkSendRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkSendEpisodes>>,
+  TError,
+  { data: BodyType<EpisodesBulkSendRequest> },
+  TContext
+> => {
+  const mutationKey = ["bulkSendEpisodes"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkSendEpisodes>>,
+    { data: BodyType<EpisodesBulkSendRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkSendEpisodes(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkSendEpisodesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkSendEpisodes>>
+>;
+export type BulkSendEpisodesMutationBody = BodyType<EpisodesBulkSendRequest>;
+export type BulkSendEpisodesMutationError = ErrorType<
+  MessagingValidationError | AuthError | MessagingError
+>;
+
+/**
+ * @summary Fan-out send a reminder for many episodes at once
+ */
+export const useBulkSendEpisodes = <
+  TError = ErrorType<MessagingValidationError | AuthError | MessagingError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkSendEpisodes>>,
+    TError,
+    { data: BodyType<EpisodesBulkSendRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkSendEpisodes>>,
+  TError,
+  { data: BodyType<EpisodesBulkSendRequest> },
+  TContext
+> => {
+  return useMutation(getBulkSendEpisodesMutationOptions(options));
+};
 
 /**
  * Paginated audit-log viewer. Filters: action prefix, targetTable,

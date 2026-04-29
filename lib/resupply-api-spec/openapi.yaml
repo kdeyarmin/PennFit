@@ -1092,6 +1092,18 @@ paths:
             type: integer
             minimum: 0
             default: 0
+        - in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 64
+          description: |
+            Free-text filter that matches against the patient's
+            decrypted legal name (case-insensitive substring) OR an
+            exact patient id ("pat_…") OR an exact episode id
+            ("ep_…"). Trimmed; blank values are ignored. The 64-char
+            cap mirrors the longest plausible "first last" string
+            and prevents pathological LIKE patterns.
       responses:
         "200":
           description: Paginated page of episodes.
@@ -1117,6 +1129,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthError"
+  /episodes/counts:
+    get:
+      operationId: listEpisodeCounts
+      tags: [episodes]
+      summary: Per-status episode counts for the dispatcher strip
+      description: |
+        Returns one count per status, plus the synthetic `overdue`
+        bucket (outreach_pending|awaiting_response with dueAt in
+        the past) and an `all` total. Powers the count chips on the
+        Episodes page so dispatchers see the size of each queue
+        before clicking in. Counts respect the same `q` filter as
+        the list endpoint so the chips reflect the current search.
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 64
+          description: |
+            Same free-text filter as `/episodes`. When provided, all
+            returned counts are filtered to matching rows.
+      responses:
+        "200":
+          description: Per-status counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EpisodeCounts"
+        "400":
+          description: Query string failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /episodes/bulk-send:
+    post:
+      operationId: bulkSendEpisodes
+      tags: [episodes, messaging]
+      summary: Fan-out send a reminder for many episodes at once
+      description: |
+        Admin bulk action: for each supplied episode id, look up the
+        owning patient and dispatch a reminder on the chosen channel
+        (`sms` or `email`). Each item is processed independently —
+        partial failure is the EXPECTED outcome, not an error — and
+        the response carries a per-id `status` so the dashboard can
+        show "23 sent, 4 skipped, 3 failed" with row-level reasons.
+
+        Capped at 50 ids per request. Returns 503 when SMS+Email is
+        not configured at all (any fan-out would fail with the same
+        reason). Caller-side rate-limiting is the dashboard's
+        responsibility.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EpisodesBulkSendRequest"
+      responses:
+        "200":
+          description: Per-id outcome map. May contain a mix of ok+error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EpisodesBulkSendResponse"
+        "400":
+          description: Body failed validation (empty list, >50 ids, bad uuid, …).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingValidationError"
+        "401":
+          description: No Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "403":
+          description: Caller is not on the admin allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "503":
+          description: SMS+Email subsystem is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagingError"
   /audit:
     get:
       operationId: listAudit
@@ -2641,6 +2753,147 @@ components:
         - total
         - limit
         - offset
+    EpisodeCounts:
+      type: object
+      description: |
+        Per-status episode counts surfaced as chips on the Episodes
+        page. `overdue` is a synthetic bucket (outreach_pending +
+        awaiting_response with dueAt in the past) and is NOT a sum
+        of any of the other fields. `all` is the unfiltered total
+        ignoring status.
+      properties:
+        overdue:
+          type: integer
+          minimum: 0
+        outreach_pending:
+          type: integer
+          minimum: 0
+        awaiting_response:
+          type: integer
+          minimum: 0
+        confirmed:
+          type: integer
+          minimum: 0
+        declined:
+          type: integer
+          minimum: 0
+        expired:
+          type: integer
+          minimum: 0
+        fulfilled:
+          type: integer
+          minimum: 0
+        canceled:
+          type: integer
+          minimum: 0
+        all:
+          type: integer
+          minimum: 0
+      required:
+        - overdue
+        - outreach_pending
+        - awaiting_response
+        - confirmed
+        - declined
+        - expired
+        - fulfilled
+        - canceled
+        - all
+    EpisodesBulkSendRequest:
+      type: object
+      description: |
+        Bulk-send request. `episodeIds` is the list of episodes to
+        message (1..50). `channel` selects the dispatch fan-out:
+        either every reminder goes by SMS or every reminder goes by
+        email. We do NOT support per-id channel selection because
+        dispatchers asking for "send the queue" expect uniform
+        channel behaviour.
+      properties:
+        episodeIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+        channel:
+          type: string
+          enum:
+            - sms
+            - email
+      required:
+        - episodeIds
+        - channel
+      additionalProperties: false
+    EpisodesBulkSendItemResult:
+      type: object
+      description: |
+        Per-id outcome from a bulk send. `status="ok"` carries the new
+        conversationId + vendor reference. Any other status is a
+        skip/failure with a stable `error` code mirroring the single-
+        send endpoint's MessagingError vocabulary.
+      properties:
+        episodeId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - ok
+            - error
+        conversationId:
+          type: string
+          format: uuid
+          nullable: true
+        vendorRef:
+          type: string
+          nullable: true
+          description: |
+            Twilio MessageSid (sms) or SendGrid X-Message-Id (email)
+            for cross-referencing in vendor logs.
+        error:
+          type: string
+          nullable: true
+          description: |
+            Stable error code mirroring MessagingError.error when
+            status is "error".
+        message:
+          type: string
+          nullable: true
+          description: Human-readable detail for the dashboard. Never PHI.
+      required:
+        - episodeId
+        - status
+    EpisodesBulkSendResponse:
+      type: object
+      description: |
+        Bulk-send response. `summary` is the aggregate counters; each
+        item in `results` is keyed by its episodeId so the dashboard
+        can patch row state without a list re-fetch.
+      properties:
+        summary:
+          type: object
+          properties:
+            total:
+              type: integer
+              minimum: 0
+            sent:
+              type: integer
+              minimum: 0
+            failed:
+              type: integer
+              minimum: 0
+          required:
+            - total
+            - sent
+            - failed
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EpisodesBulkSendItemResult"
+      required:
+        - summary
+        - results
     AuditListItem:
       type: object
       description: |

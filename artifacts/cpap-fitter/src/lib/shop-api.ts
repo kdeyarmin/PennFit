@@ -56,14 +56,27 @@ export interface ShopProductView {
    * Stripe-tracked stock count for one-time purchases.
    *   * `null` → SKU is **not** stock-tracked. Treat as available.
    *   * `0`    → out of stock; one-time purchase disabled.
-   *   * `1..5` → "Only N left" hint near the price.
-   *   * `>5`   → no UI affordance; treat as plenty.
+   *   * `1..N` → "Only N left" hint, where N = `lowStockThreshold`.
+   *   * `>N`   → no UI affordance; treat as plenty.
    * Subscriptions ignore this — auto-ship inventory is reconciled
    * by the fulfilment workflow weekly, not at the storefront.
    * Source of truth: Stripe `product.metadata.stock_count`.
    */
   stockCount: number | null;
+  /**
+   * Per-SKU "low stock" threshold. The "Only N left" badge fires
+   * when `stockCount > 0 && stockCount <= lowStockThreshold`. When
+   * `null`, the storefront falls back to a default of 5 — preserving
+   * v1 behavior for SKUs the admin hasn't customized.
+   * Source of truth: Stripe `product.metadata.low_stock_threshold`.
+   */
+  lowStockThreshold: number | null;
 }
+
+// Default threshold used when a SKU has no per-product
+// `lowStockThreshold` set. Mirrors the v1 hardcoded behavior so
+// existing SKUs render identically to before A15.
+export const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 
 /**
  * Resolve a product `imageUrl` returned by the API into something the
@@ -444,6 +457,48 @@ export async function fetchMyOrders(opts?: {
     throw new Error(`Failed to load your orders (${res.status})`);
   }
   return (await res.json()) as OrderHistoryResponse;
+}
+
+/**
+ * Re-send the Stripe email receipt for an order to the original
+ * purchaser (C8). Returns the masked destination email so the UI
+ * can confirm "we just sent it to a***@example.com".
+ *
+ * Server enforces:
+ *   - ownership (caller must be the Clerk user that paid)
+ *   - status === 'paid'
+ *   - per-session rate limit (5 sends / 10 min)
+ *
+ * Throws an Error whose `code` field is the server's error string
+ * (rate_limited / not_payable / stripe_error / etc) so the caller
+ * can render targeted UX messages.
+ */
+export async function resendOrderReceipt(
+  sessionId: string,
+): Promise<{ sent: true; email: string }> {
+  const headers = {
+    Accept: "application/json",
+    ...(await authHeader()),
+  };
+  const res = await fetch(
+    `/resupply-api/shop/me/orders/${encodeURIComponent(sessionId)}/resend-receipt`,
+    { method: "POST", headers },
+  );
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      // Body wasn't JSON — keep the http_<status> fallback.
+    }
+    const err = new Error(`Failed to re-send receipt (${code})`) as Error & {
+      code: string;
+    };
+    err.code = code;
+    throw err;
+  }
+  return (await res.json()) as { sent: true; email: string };
 }
 
 export function formatMoneyCents(cents: number, currency = "usd"): string {

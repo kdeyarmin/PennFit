@@ -23,7 +23,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Show } from "@clerk/react";
-import { Loader2, Package, ShieldCheck, ShoppingBag } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  Mail,
+  Package,
+  ShieldCheck,
+  ShoppingBag,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +39,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   fetchMyOrders,
   formatMoneyCents,
+  resendOrderReceipt,
   type OrderHistoryItem,
 } from "@/lib/shop-api";
 
@@ -185,12 +194,29 @@ function SignedInOrders() {
         <h2 className="text-lg font-semibold tracking-tight">
           No orders yet
         </h2>
-        <p className="text-sm text-muted-foreground mt-2">
-          When you place an order in the shop, it will appear here.
+        <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
+          When you place an order in the shop, it shows up here so you
+          can track shipping and re-order in one tap.
         </p>
-        <Link href="/shop" className="inline-block mt-5">
-          <Button variant="outline">Browse the shop</Button>
-        </Link>
+        <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
+          <Link href="/shop">
+            <Button data-testid="orders-empty-shop-cta">
+              Browse the shop
+            </Button>
+          </Link>
+          <Link href="/">
+            <Button
+              variant="outline"
+              data-testid="orders-empty-fitter-cta"
+            >
+              Get a mask recommendation first
+            </Button>
+          </Link>
+        </div>
+        <p className="text-xs text-muted-foreground/80 mt-5 max-w-md mx-auto">
+          Not sure which mask is right? Our 60-second fitter measures
+          your face and recommends the top 3 — no card or ruler needed.
+        </p>
       </div>
     );
   }
@@ -300,8 +326,127 @@ function OrderCard({ order }: { order: OrderHistoryItem }) {
           </li>
         ))}
       </ul>
+      <ResendReceiptControl sessionId={order.sessionId} orderId={order.id} />
     </li>
   );
+}
+
+// Re-send receipt control (C8). Lives BELOW the line items so the
+// primary content (what you bought) is the visual emphasis and the
+// secondary action ("email me again") is a quiet utility.
+//
+// State machine: idle → sending → (sent | error). After "sent",
+// the button stays disabled for 30s with a confirmation pill so the
+// customer can see the result without ambiguity. The 30s lockout
+// also discourages accidental double-tap re-sends; the server still
+// rate-limits to 5/10min as the hard ceiling.
+function ResendReceiptControl({
+  sessionId,
+  orderId,
+}: {
+  sessionId: string;
+  orderId: string;
+}) {
+  const [phase, setPhase] = useState<"idle" | "sending" | "sent" | "error">(
+    "idle",
+  );
+  const [info, setInfo] = useState<string | null>(null);
+
+  // Auto-revert "sent" -> "idle" after 30s so the button becomes
+  // tappable again without a page refresh (some customers will want
+  // to re-send to a different inbox after fixing forwarding rules).
+  useEffect(() => {
+    if (phase !== "sent") return;
+    const t = setTimeout(() => {
+      setPhase("idle");
+      setInfo(null);
+    }, 30_000);
+    return () => clearTimeout(t);
+  }, [phase]);
+
+  const onClick = async () => {
+    setPhase("sending");
+    setInfo(null);
+    try {
+      const result = await resendOrderReceipt(sessionId);
+      setInfo(result.email);
+      setPhase("sent");
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? "unknown";
+      setInfo(messageForCode(code));
+      setPhase("error");
+    }
+  };
+
+  return (
+    <div
+      className="mt-4 pt-3 border-t border-border/40 flex flex-wrap items-center gap-3"
+      data-testid={`order-${orderId}-receipt-controls`}
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onClick}
+        disabled={phase === "sending" || phase === "sent"}
+        data-testid={`order-${orderId}-resend-receipt`}
+        aria-describedby={
+          phase === "sent" || phase === "error"
+            ? `order-${orderId}-resend-status`
+            : undefined
+        }
+      >
+        {phase === "sending" ? (
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        ) : phase === "sent" ? (
+          <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-600" />
+        ) : (
+          <Mail className="w-4 h-4 mr-2" />
+        )}
+        {phase === "sent" ? "Receipt sent" : "Email me the receipt"}
+      </Button>
+      {phase === "sent" && info && (
+        <span
+          id={`order-${orderId}-resend-status`}
+          role="status"
+          className="text-xs text-emerald-700 inline-flex items-center gap-1"
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Sent to {info}
+        </span>
+      )}
+      {phase === "error" && info && (
+        <span
+          id={`order-${orderId}-resend-status`}
+          role="alert"
+          className="text-xs text-rose-700 inline-flex items-center gap-1"
+        >
+          <AlertCircle className="w-3.5 h-3.5" />
+          {info}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Map the server's machine-readable error codes to short, customer-
+// friendly phrases. We deliberately don't show "stripe_error" verbatim
+// — non-technical customers find it confusing and it leaks our
+// payment processor.
+function messageForCode(code: string): string {
+  switch (code) {
+    case "rate_limited":
+      return "Too many resend attempts. Try again in a few minutes.";
+    case "not_payable":
+      return "We couldn't find an email on file for this order. Contact support.";
+    case "stripe_unavailable":
+    case "stripe_error":
+      return "Receipt service temporarily unavailable. Try again shortly.";
+    case "not_found":
+      return "Order not found.";
+    default:
+      return "Something went wrong. Please try again.";
+  }
 }
 
 ShopOrders.displayName = "ShopOrders";

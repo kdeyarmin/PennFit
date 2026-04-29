@@ -629,12 +629,52 @@ export function ShopCart() {
                 </span>
               </div>
               {error && (
-                <p
-                  className="text-sm text-destructive mb-3"
+                <div
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 mb-3 flex items-start gap-2"
                   data-testid="cart-error"
+                  role="alert"
                 >
-                  {error}
-                </p>
+                  <Info className="w-4 h-4 mt-0.5 shrink-0 text-rose-700" />
+                  <div className="flex-1 min-w-0">
+                    {/*
+                      Detect the Stripe-session-expired family of errors
+                      (the customer left the Stripe tab open too long
+                      and came back to retry). Show a friendlier "your
+                      previous checkout window expired" message + an
+                      explicit Try again button so they don't have to
+                      hunt for the Checkout button below. For any other
+                      error, surface the original message verbatim.
+                    */}
+                    {/expired|session.*not.*found|410|timed? ?out/i.test(
+                      error,
+                    ) ? (
+                      <>
+                        <p className="text-sm font-semibold text-rose-800">
+                          Your previous checkout window expired.
+                        </p>
+                        <p className="text-xs text-rose-700 mt-0.5 leading-relaxed">
+                          Stripe checkout pages time out after about
+                          24 hours. Your cart is still here — just
+                          tap Try again to start a fresh checkout.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-rose-800">{error}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError(null);
+                        void handleCheckout();
+                      }}
+                      disabled={checkingOut || probing || previewMode === true}
+                      className="mt-2 text-xs font-semibold underline text-rose-800 hover:text-rose-900 disabled:opacity-50 disabled:no-underline inline-flex items-center gap-1"
+                      data-testid="cart-error-retry"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Try again
+                    </button>
+                  </div>
+                </div>
               )}
               {previewMode === true && (
                 <div

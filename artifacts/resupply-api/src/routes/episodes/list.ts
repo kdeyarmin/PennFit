@@ -42,8 +42,37 @@ const listQuery = z
       .optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
+    // Free-text filter (A8). Substring match against patient legal
+    // name OR exact match against patient/episode id. The 64-char
+    // cap mirrors the longest plausible "first last" string and
+    // bounds LIKE pattern complexity. We trim BEFORE validating so
+    // an all-whitespace query is treated as "no filter" — the page
+    // sends the input box value directly without trimming so the
+    // single-source-of-truth lives here.
+    q: z
+      .string()
+      .max(64)
+      .optional()
+      .transform((v) => {
+        const t = v?.trim() ?? "";
+        return t === "" ? undefined : t;
+      }),
   })
   .strict();
+
+// Build the search clause for the free-text `q` filter, used by
+// both the list endpoint and the counts endpoint so the chips
+// reflect the same row-set as the table. The clause is an
+// OR-union of: exact episode-id (cheap PK lookup), exact
+// patient-id, OR case-insensitive substring against the decrypted
+// first OR last name. Decrypted ILIKE is a full-table scan but
+// admin-only / small dataset keeps it acceptable.
+export function episodesSearchClause(needle: string): SQL {
+  const pattern = `%${needle}%`;
+  return sql`(${episodes.id} = ${needle} OR ${episodes.patientId} = ${needle} OR ${decrypt(
+    patients.legalFirstName,
+  )} ILIKE ${pattern} OR ${decrypt(patients.legalLastName)} ILIKE ${pattern})`;
+}
 
 const router: IRouter = Router();
 
@@ -59,7 +88,7 @@ router.get("/episodes", requireAdmin, async (req, res) => {
     });
     return;
   }
-  const { status, limit, offset } = parsed.data;
+  const { status, limit, offset, q } = parsed.data;
   const isOverdue = status === "overdue";
 
   const filters: SQL[] = [];
@@ -71,14 +100,28 @@ router.get("/episodes", requireAdmin, async (req, res) => {
   } else if (status) {
     filters.push(eq(episodes.status, status));
   }
+  if (q) filters.push(episodesSearchClause(q));
   const whereClause = filters.length ? and(...filters) : undefined;
 
   const db = drizzle(getDbPool());
 
-  const [totalRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(episodes)
-    .where(whereClause);
+  // The count query needs the same patient join when `q` is in
+  // play because the search clause references decrypted patient
+  // columns. Without the join the COUNT query would 500 with
+  // "missing FROM-clause entry for table patients". We only pay
+  // the join cost when q is set so the common no-search case stays
+  // a single-table count.
+  const totalQuery = q
+    ? db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(episodes)
+        .leftJoin(patients, eq(patients.id, episodes.patientId))
+        .where(whereClause)
+    : db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(episodes)
+        .where(whereClause);
+  const [totalRow] = await totalQuery;
 
   const orderBy = isOverdue
     ? [asc(episodes.dueAt)]

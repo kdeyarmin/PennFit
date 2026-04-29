@@ -921,6 +921,112 @@ export interface EpisodeListPage {
   offset: number;
 }
 
+/**
+ * Per-status episode counts surfaced as chips on the Episodes
+page. `overdue` is a synthetic bucket (outreach_pending +
+awaiting_response with dueAt in the past) and is NOT a sum
+of any of the other fields. `all` is the unfiltered total
+ignoring status.
+
+ */
+export interface EpisodeCounts {
+  /** @minimum 0 */
+  overdue: number;
+  /** @minimum 0 */
+  outreach_pending: number;
+  /** @minimum 0 */
+  awaiting_response: number;
+  /** @minimum 0 */
+  confirmed: number;
+  /** @minimum 0 */
+  declined: number;
+  /** @minimum 0 */
+  expired: number;
+  /** @minimum 0 */
+  fulfilled: number;
+  /** @minimum 0 */
+  canceled: number;
+  /** @minimum 0 */
+  all: number;
+}
+
+export type EpisodesBulkSendRequestChannel =
+  (typeof EpisodesBulkSendRequestChannel)[keyof typeof EpisodesBulkSendRequestChannel];
+
+export const EpisodesBulkSendRequestChannel = {
+  sms: "sms",
+  email: "email",
+} as const;
+
+/**
+ * Bulk-send request. `episodeIds` is the list of episodes to
+message (1..50). `channel` selects the dispatch fan-out:
+either every reminder goes by SMS or every reminder goes by
+email. We do NOT support per-id channel selection because
+dispatchers asking for "send the queue" expect uniform
+channel behaviour.
+
+ */
+export interface EpisodesBulkSendRequest {
+  /**
+   * @minItems 1
+   * @maxItems 50
+   */
+  episodeIds: string[];
+  channel: EpisodesBulkSendRequestChannel;
+}
+
+export type EpisodesBulkSendItemResultStatus =
+  (typeof EpisodesBulkSendItemResultStatus)[keyof typeof EpisodesBulkSendItemResultStatus];
+
+export const EpisodesBulkSendItemResultStatus = {
+  ok: "ok",
+  error: "error",
+} as const;
+
+/**
+ * Per-id outcome from a bulk send. `status="ok"` carries the new
+conversationId + vendor reference. Any other status is a
+skip/failure with a stable `error` code mirroring the single-
+send endpoint's MessagingError vocabulary.
+
+ */
+export interface EpisodesBulkSendItemResult {
+  episodeId: string;
+  status: EpisodesBulkSendItemResultStatus;
+  conversationId?: string | null;
+  /** Twilio MessageSid (sms) or SendGrid X-Message-Id (email)
+for cross-referencing in vendor logs.
+ */
+  vendorRef?: string | null;
+  /** Stable error code mirroring MessagingError.error when
+status is "error".
+ */
+  error?: string | null;
+  /** Human-readable detail for the dashboard. Never PHI. */
+  message?: string | null;
+}
+
+export type EpisodesBulkSendResponseSummary = {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  sent: number;
+  /** @minimum 0 */
+  failed: number;
+};
+
+/**
+ * Bulk-send response. `summary` is the aggregate counters; each
+item in `results` is keyed by its episodeId so the dashboard
+can patch row state without a list re-fetch.
+
+ */
+export interface EpisodesBulkSendResponse {
+  summary: EpisodesBulkSendResponseSummary;
+  results: EpisodesBulkSendItemResult[];
+}
+
 export type AuditListItemMetadata = { [key: string]: unknown };
 
 /**
@@ -1733,6 +1839,17 @@ export type ListEpisodesParams = {
    * @minimum 0
    */
   offset?: number;
+  /**
+ * Free-text filter that matches against the patient's
+decrypted legal name (case-insensitive substring) OR an
+exact patient id ("pat_…") OR an exact episode id
+("ep_…"). Trimmed; blank values are ignored. The 64-char
+cap mirrors the longest plausible "first last" string
+and prevents pathological LIKE patterns.
+
+ * @maxLength 64
+ */
+  q?: string;
 };
 
 export type ListEpisodesStatus =
@@ -1748,6 +1865,16 @@ export const ListEpisodesStatus = {
   fulfilled: "fulfilled",
   canceled: "canceled",
 } as const;
+
+export type ListEpisodeCountsParams = {
+  /**
+ * Same free-text filter as `/episodes`. When provided, all
+returned counts are filtered to matching rows.
+
+ * @maxLength 64
+ */
+  q?: string;
+};
 
 export type ListAuditParams = {
   /**

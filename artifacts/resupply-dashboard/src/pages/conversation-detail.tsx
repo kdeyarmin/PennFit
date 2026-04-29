@@ -320,13 +320,26 @@ function ReplyComposer({
           isClosed
             ? "Conversation is closed."
             : channel === "sms"
-              ? "Type a reply (will be sent via SMS)…"
-              : "Type a reply (will be sent via email)…"
+              ? "Type a reply (will be sent via SMS)…  ·  ⌘/Ctrl + Enter to send"
+              : "Type a reply (will be sent via email)…  ·  ⌘/Ctrl + Enter to send"
         }
         rows={3}
         maxLength={1700}
+        // Keyboard shortcut — Cmd/Ctrl+Enter to send. Mirrors Slack /
+        // Linear / GitHub conventions. Plain Enter still inserts a
+        // newline so the admin can keep formatting multi-paragraph
+        // replies. We stop propagation so a parent shortcut listener
+        // (none today, but defensively) can't double-fire.
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (canSend) void onSend();
+          }
+        }}
         className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
         style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+        data-testid="conv-reply-textarea"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <span

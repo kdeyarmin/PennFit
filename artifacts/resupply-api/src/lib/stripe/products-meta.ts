@@ -101,6 +101,29 @@ export interface ShopProductView {
    * offline.
    */
   stockCount: number | null;
+  /**
+   * Per-SKU "low stock" threshold. The storefront renders the
+   * "Only N left" badge when `stockCount > 0 && stockCount <=
+   * lowStockThreshold`. When `null`, the storefront falls back to
+   * a hardcoded default of 5 — preserving v1 behavior for SKUs
+   * the admin hasn't customized.
+   *
+   * Source of truth: Stripe `metadata.low_stock_threshold`. Same
+   * Stripe-as-truth philosophy as `stockCount` — admins can edit it
+   * from the resupply-dashboard inventory editor or directly from
+   * the Stripe Dashboard.
+   *
+   * Semantics:
+   *   * `null`  — not set; storefront uses default of 5.
+   *   * `0`     — never show the "low" badge. Useful for SKUs where
+   *               the merchant doesn't want to surface stock anxiety.
+   *   * `>0`    — explicit threshold.
+   *
+   * Negative or non-numeric metadata values normalise to `null` —
+   * a typo in the Stripe Dashboard never silently changes the
+   * threshold.
+   */
+  lowStockThreshold: number | null;
   price: {
     id: string;
     /** In whole-dollar cents (Stripe's `unit_amount`). */
@@ -209,6 +232,7 @@ export function projectProduct(p: Stripe.Product): ShopProductView | null {
     manufacturer: meta.manufacturer ?? null,
     modelNumber: meta.model_number ?? null,
     stockCount: parseStockCount(meta.stock_count),
+    lowStockThreshold: parseLowStockThreshold(meta.low_stock_threshold),
     price: {
       id: defaultPrice.id,
       unitAmount: defaultPrice.unit_amount,
@@ -232,6 +256,28 @@ export function parseStockCount(raw: string | undefined): number | null {
   // overflow a downstream `integer` column. The cap is generous —
   // anything above 1m is operationally indistinguishable from "lots".
   return Math.min(n, 1_000_000);
+}
+
+/**
+ * Parse a Stripe metadata `low_stock_threshold` value. Returns
+ * `null` for any unset / non-integer / negative input — the
+ * storefront treats `null` as "use the default of 5". See the doc
+ * on `ShopProductView.lowStockThreshold` for full semantics.
+ *
+ * Why a separate parser (vs reusing parseStockCount): these two
+ * fields share the "non-negative int or null" contract, but I want
+ * the option to evolve them separately (e.g. a future cap of 50 on
+ * threshold) without breaking the stock_count parser.
+ */
+export function parseLowStockThreshold(raw: string | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return null;
+  // Cap at 1000 — anything above is operationally indistinguishable
+  // from "always show low" and a typo of 1000000 would be confusing
+  // in the admin UI. The storefront just won't render anything
+  // useful at extreme values anyway.
+  return Math.min(n, 1000);
 }
 
 function parseBundleContents(raw: string | undefined): string[] {

@@ -107,3 +107,63 @@ export async function rejectAdminShopReview(
   }
   return (await res.json()) as AdminReview;
 }
+
+// Un-reject endpoint: flips a rejected review back to pending so it
+// re-enters the moderation queue. The server clears the moderation
+// note + moderatedAt server-side; we don't need to send anything
+// other than the id. Returns the trimmed status response (the
+// review is no longer visible to the customer until a new
+// approve/reject lands).
+export interface UnrejectResponse {
+  id: string;
+  status: ReviewStatus;
+  moderatedAt: string | null;
+}
+
+export async function unrejectAdminShopReview(
+  id: string,
+): Promise<UnrejectResponse> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/unreject`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json", ...(await authHeaders()) },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Un-reject failed (${res.status})`);
+  }
+  return (await res.json()) as UnrejectResponse;
+}
+
+// PATCH the rejection note on an already-rejected review. Empty
+// string / null → clears the note. Server enforces the same 500 char
+// cap as the original reject body.
+export interface NotePatchResponse {
+  id: string;
+  status: ReviewStatus;
+  moderationNote: string | null;
+  moderatedAt: string | null;
+}
+
+export async function updateAdminShopReviewNote(
+  id: string,
+  note: string | null,
+): Promise<NotePatchResponse> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/note`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ note: note && note.trim() !== "" ? note : null }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Note update failed (${res.status})`);
+  }
+  return (await res.json()) as NotePatchResponse;
+}

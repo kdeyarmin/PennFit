@@ -6,9 +6,62 @@ import { ErrorPanel } from "../components/ErrorPanel";
 // Admin landing page. Six KPI tiles + four "filtered queue" deep
 // links. Numbers come from /dashboard/summary which is a single
 // COUNT(*)-only query — no PHI crosses the API boundary.
+//
+// Each KPI tile is wrapped in a Link to a pre-filtered queue view —
+// admins can click "Awaiting admin" and land directly on the filtered
+// conversations list rather than re-typing the filter. The destination
+// always honours an existing query string the page understands; if a
+// page doesn't take that exact filter today, the link still navigates
+// to the page so the admin can refine from there.
+
+type KpiLink = {
+  label: string;
+  value: number | "—";
+  hint: string;
+  href: string;
+  testId: string;
+};
 
 export function DashboardPage() {
   const { data, isPending, isError, error, refetch } = useGetDashboardSummary();
+
+  const kpis: KpiLink[] = [
+    {
+      label: "Active conversations",
+      value: data?.activeConversations ?? "—",
+      hint: "open · awaiting_patient · awaiting_admin",
+      href: "/conversations?status=open",
+      testId: "kpi-active-conversations",
+    },
+    {
+      label: "Awaiting admin",
+      value: data?.awaitingAdmin ?? "—",
+      hint: "parked for human attention",
+      href: "/conversations?status=awaiting_admin",
+      testId: "kpi-awaiting-admin",
+    },
+    {
+      label: "Overdue episodes",
+      value: data?.overdueEpisodes ?? "—",
+      hint: "due_at ≤ now & status pending or awaiting",
+      href: "/episodes?status=overdue",
+      testId: "kpi-overdue-episodes",
+    },
+    {
+      label: "Fulfillments this week",
+      value: data?.fulfillmentsThisWeek ?? "—",
+      hint: "created in last 7 days",
+      href: "/episodes?status=fulfilled",
+      testId: "kpi-fulfillments-week",
+    },
+    {
+      label: "Paused patients",
+      value: data?.pausedPatients ?? "—",
+      hint: "status = paused",
+      href: "/patients?status=paused",
+      testId: "kpi-paused-patients",
+    },
+  ];
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -20,43 +73,29 @@ export function DashboardPage() {
           Dashboard
         </h1>
         <p className="text-sm" style={{ color: "#374151" }}>
-          Live counters across the resupply pipeline.
+          Live counters across the resupply pipeline. Each tile links to
+          its filtered queue.
         </p>
       </header>
 
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <KpiCard
-          label="Active conversations"
-          value={data?.activeConversations ?? "—"}
-          isLoading={isPending}
-          hint="open · awaiting_patient · awaiting_admin"
-        />
-        <KpiCard
-          label="Awaiting admin"
-          value={data?.awaitingAdmin ?? "—"}
-          isLoading={isPending}
-          hint="parked for human attention"
-        />
-        <KpiCard
-          label="Overdue episodes"
-          value={data?.overdueEpisodes ?? "—"}
-          isLoading={isPending}
-          hint="due_at ≤ now & status pending or awaiting"
-        />
-        <KpiCard
-          label="Fulfillments this week"
-          value={data?.fulfillmentsThisWeek ?? "—"}
-          isLoading={isPending}
-          hint="created in last 7 days"
-        />
-        <KpiCard
-          label="Paused patients"
-          value={data?.pausedPatients ?? "—"}
-          isLoading={isPending}
-          hint="status = paused"
-        />
+        {kpis.map((k) => (
+          <Link
+            key={k.testId}
+            href={k.href}
+            className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a24a] focus-visible:ring-offset-2 transition-shadow hover:shadow-md"
+            data-testid={k.testId}
+          >
+            <KpiCard
+              label={k.label}
+              value={k.value}
+              isLoading={isPending}
+              hint={k.hint}
+            />
+          </Link>
+        ))}
       </div>
 
       <section
@@ -95,6 +134,15 @@ export function DashboardPage() {
               style={{ color: "#0a1f44" }}
             >
               Active patients →
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/admin/shop/abandoned-carts"
+              className="underline"
+              style={{ color: "#0a1f44" }}
+            >
+              Abandoned shop carts →
             </Link>
           </li>
           <li>

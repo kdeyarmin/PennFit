@@ -49,6 +49,16 @@ const patchBodySchema = z.object({
     .describe("Integer ≥0, or null to clear the metadata key."),
 });
 
+// Per-SKU "Only N left" threshold. Same null-as-untrack semantics
+// as the stock count, capped at 1000 to match the projection layer's
+// cap (anything above is operationally meaningless and would let a
+// typo blow up the admin UI display).
+const patchThresholdBodySchema = z.object({
+  lowStockThreshold: z
+    .union([z.number().int().min(0).max(1000), z.null()])
+    .describe("Integer ≥0, or null to clear the threshold (storefront uses default of 5)."),
+});
+
 router.patch(
   "/admin/shop/products/:productId/stock",
   requireAdmin,
@@ -186,6 +196,122 @@ router.patch(
     req.log?.info?.(
       { productId, stockCount },
       "shop/admin/products: stock count updated",
+    );
+    res.json({ product: projected });
+  },
+);
+
+// PATCH /admin/shop/products/:productId/threshold — sets the
+// per-SKU low-stock threshold via Stripe metadata
+// (`low_stock_threshold`). Storefront badge logic: when stockCount
+// is between 1 and threshold (inclusive), render "Only N left".
+// `null` clears the metadata key, falling back to the default of 5.
+//
+// Same shape as the stock-count handler: catalog-membership guard,
+// metadata patch, re-projection. We deliberately keep this as a
+// SEPARATE endpoint (not a combined PATCH on the product) so:
+//   - the audit log makes it obvious which field changed
+//   - a stock-count save can't accidentally clobber the threshold
+//   - the existing /stock endpoint contract + tests stay untouched.
+router.patch(
+  "/admin/shop/products/:productId/threshold",
+  requireAdmin,
+  async (req, res) => {
+    const productId = String(req.params.productId ?? "");
+    if (!productId.startsWith("prod_")) {
+      res.status(400).json({ error: "invalid_product_id" });
+      return;
+    }
+    const parsed = patchThresholdBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { lowStockThreshold } = parsed.data;
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    let existing;
+    try {
+      existing = await stripe.products.retrieve(productId, {
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      if (status === 404) {
+        res.status(404).json({ error: "product_not_found" });
+        return;
+      }
+      req.log?.warn?.(
+        {
+          productId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: stripe retrieve failed (threshold)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_retrieve_failed",
+      });
+      return;
+    }
+    const existingProjected: ShopProductView | null = projectProduct(existing);
+    if (!existingProjected) {
+      res.status(404).json({ error: "product_not_in_catalog" });
+      return;
+    }
+
+    const metadataPatch: Record<string, string> =
+      lowStockThreshold === null
+        ? { low_stock_threshold: "" }
+        : { low_stock_threshold: String(lowStockThreshold) };
+
+    let updated;
+    try {
+      updated = await stripe.products.update(productId, {
+        metadata: metadataPatch,
+        expand: ["default_price"],
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        {
+          productId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: stripe update failed (threshold)",
+      );
+      res.status(status >= 400 && status < 600 ? status : 502).json({
+        error: "stripe_update_failed",
+      });
+      return;
+    }
+
+    const projected: ShopProductView | null = projectProduct(updated);
+    if (!projected) {
+      res.status(422).json({ error: "unprojectable_product" });
+      return;
+    }
+
+    req.log?.info?.(
+      { productId, lowStockThreshold },
+      "shop/admin/products: low-stock threshold updated",
     );
     res.json({ product: projected });
   },

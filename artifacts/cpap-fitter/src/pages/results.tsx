@@ -209,7 +209,23 @@ export function Results() {
       </Collapsible>
 
       <div className="space-y-6 mb-12">
-        <h2 className="text-xl font-semibold px-2 tracking-tight">Top Recommendations</h2>
+        <div className="px-2">
+          <h2 className="text-xl font-semibold tracking-tight">
+            Top Recommendations
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1 leading-relaxed max-w-2xl">
+            Ranked by fit confidence. Each card explains exactly{" "}
+            <span className="font-medium text-foreground/80">
+              why it matched
+            </span>{" "}
+            — your sleep style, breathing, and how your measurements
+            line up against each mask's documented size range. Tap{" "}
+            <span className="font-medium text-foreground/80">
+              Match confidence
+            </span>{" "}
+            on any card to see the breakdown.
+          </p>
+        </div>
         {data.topRecommendations.map((mask, idx) => (
           <MaskRecommendationCard
             key={mask.maskId}

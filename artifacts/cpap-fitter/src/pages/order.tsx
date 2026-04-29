@@ -557,6 +557,34 @@ export function Order() {
           />
         </div>
 
+        {/*
+          Reassurance card directly above the submit button. Insurance-
+          path orders never carry a surprise charge — the patient owes
+          $0 if the prescription + benefit verify, and Penn Home
+          Medical Supply contacts them BEFORE shipping if anything
+          would change that. Surfaces the no-surprise commitment at
+          the exact moment the patient is deciding whether to submit.
+        */}
+        <div
+          className="glass-card rounded-2xl p-5 flex items-start gap-3 border-l-4 border-l-[hsl(var(--penn-gold))]"
+          data-testid="order-no-surprise-card"
+        >
+          <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-[hsl(var(--penn-gold))]" />
+          <div className="text-sm leading-relaxed">
+            <p className="font-semibold text-[hsl(var(--penn-navy))]">
+              No surprise bills.
+            </p>
+            <p className="text-muted-foreground mt-0.5">
+              Submitting this form does not charge your card. Penn Home
+              Medical Supply will verify your insurance benefit and
+              prescription first, then contact you to confirm before
+              anything ships. You'll know your out-of-pocket — usually
+              <span className="font-semibold"> $0 with prescription</span> —
+              before they fulfill the order.
+            </p>
+          </div>
+        </div>
+
         <div className="flex flex-col-reverse md:flex-row md:justify-between gap-3 pt-2">
           <Link href="/results">
             <Button

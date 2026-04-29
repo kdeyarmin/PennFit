@@ -378,6 +378,12 @@ export function getPreviewCatalog(): ShopProductView[] {
       manufacturer: s.manufacturer,
       modelNumber: s.modelNumber,
       stockCount: s.stockCount ?? null,
+      // Preview catalog doesn't model per-SKU thresholds — falling
+      // back to `null` means the storefront uses the default of 5,
+      // which is the same behavior production SKUs get before an
+      // admin customizes the threshold. Lets dev mode exercise the
+      // "low stock" path with the default threshold.
+      lowStockThreshold: null,
       price: {
         id: `price_preview_${s.sku}`,
         unitAmount: s.unitAmountCents,

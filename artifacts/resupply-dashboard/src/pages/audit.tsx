@@ -14,6 +14,7 @@ import { Pagination } from "../components/Pagination";
 import { Input, Label, Select } from "../components/Input";
 import { Button } from "../components/Button";
 import { formatDateTime } from "../lib/format";
+import { downloadAuditExport } from "../lib/audit-export";
 
 const PAGE_SIZE = 25;
 
@@ -71,12 +72,53 @@ type Row = {
   metadata: { [key: string]: unknown };
 };
 
+// Categorise an audit row by its action prefix so the renderer can
+// visually distinguish PHI-touching rows ("patient.view",
+// "conversation.read", anything that surfaced PHI to a human) from
+// system events (cron dispatchers, message-status callbacks,
+// inventory mutations, etc).
+//
+// PHI rows get a left rule + slightly tinted background so a
+// reviewer sweeping the log can scan for "who looked at what" at a
+// glance without reading every action name.
+//
+// Anything that doesn't match the PHI prefix list is treated as
+// "system" — we err toward NOT decorating rather than mis-flagging
+// a system action as PHI. Add to PHI_PREFIXES as new PHI-touching
+// actions ship.
+const PHI_PREFIXES: ReadonlyArray<string> = [
+  "patient.",
+  "patients.",
+  "conversation.",
+  "conversations.",
+  "episode.",
+  "episodes.",
+  "prescription.",
+  "prescriptions.",
+  "fulfillment.",
+  "fulfillments.",
+  "message.",
+  "messages.",
+];
+
+function isPhiAction(action: string): boolean {
+  const a = action.toLowerCase();
+  return PHI_PREFIXES.some((p) => a.startsWith(p));
+}
+
+type ExportPhase =
+  | { kind: "idle" }
+  | { kind: "downloading" }
+  | { kind: "done"; filename: string }
+  | { kind: "error"; message: string };
+
 export function AuditPage() {
   const [actionInput, setActionInput] = useState<string>("");
   const [action, setAction] = useState<string>("");
   const [targetTable, setTargetTable] = useState<string>("");
   const [since, setSince] = useState<string>("");
   const [offset, setOffset] = useState<number>(0);
+  const [exportPhase, setExportPhase] = useState<ExportPhase>({ kind: "idle" });
 
   // Debounce the action substring so live-typing doesn't re-issue
   // the query after every keystroke.
@@ -133,14 +175,37 @@ export function AuditPage() {
     {
       key: "action",
       header: "Action",
-      render: (r) => (
-        <code
-          className="text-xs px-1.5 py-0.5 rounded"
-          style={{ backgroundColor: "#f1f5f9", color: "#0a1f44" }}
-        >
-          {r.action}
-        </code>
-      ),
+      render: (r) => {
+        const phi = isPhiAction(r.action);
+        return (
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            {phi && (
+              <span
+                className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
+                style={{
+                  backgroundColor: "#fef3c7",
+                  color: "#854d0e",
+                  border: "1px solid #fde68a",
+                }}
+                title="This action read or wrote patient information"
+                data-testid={`audit-phi-tag-${r.id}`}
+              >
+                PHI
+              </span>
+            )}
+            <code
+              className="text-xs px-1.5 py-0.5 rounded"
+              style={{
+                backgroundColor: phi ? "#fffbeb" : "#f1f5f9",
+                color: "#0a1f44",
+                border: phi ? "1px solid #fde68a" : "1px solid transparent",
+              }}
+            >
+              {r.action}
+            </code>
+          </div>
+        );
+      },
     },
     {
       key: "target",
@@ -214,7 +279,7 @@ export function AuditPage() {
               onChange={(e) => setSince(e.target.value)}
             />
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             <Button
               intent="ghost"
               size="sm"
@@ -227,8 +292,52 @@ export function AuditPage() {
             >
               Clear filters
             </Button>
+            <Button
+              intent="secondary"
+              size="sm"
+              data-testid="audit-export-csv-button"
+              disabled={exportPhase.kind === "downloading"}
+              onClick={async () => {
+                setExportPhase({ kind: "downloading" });
+                try {
+                  const r = await downloadAuditExport({
+                    ...(action ? { action } : {}),
+                    ...(targetTable ? { targetTable } : {}),
+                    ...(since ? { since: toIso(since) ?? since } : {}),
+                  });
+                  setExportPhase({ kind: "done", filename: r.filename });
+                  // Auto-clear the success state after a few seconds
+                  // so the button reverts to its idle label.
+                  setTimeout(() => setExportPhase({ kind: "idle" }), 4000);
+                } catch (err) {
+                  setExportPhase({
+                    kind: "error",
+                    message: err instanceof Error ? err.message : String(err),
+                  });
+                }
+              }}
+            >
+              {exportPhase.kind === "downloading"
+                ? "Preparing CSV…"
+                : exportPhase.kind === "done"
+                  ? "Downloaded ✓"
+                  : "Export CSV"}
+            </Button>
           </div>
         </div>
+        {exportPhase.kind === "error" && (
+          <div
+            className="mt-3 text-xs px-3 py-2 rounded"
+            style={{
+              backgroundColor: "#fef2f2",
+              color: "#991b1b",
+              border: "1px solid #fecaca",
+            }}
+            data-testid="audit-export-error"
+          >
+            Couldn't download: {exportPhase.message}
+          </div>
+        )}
       </Card>
 
       {isError ? (

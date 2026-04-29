@@ -15,6 +15,7 @@ import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
 import productsRouter from "./products";
 import quickCheckoutRouter from "./quick-checkout";
+import resendReceiptRouter from "./resend-receipt";
 import reviewsRouter from "./reviews";
 
 const router: IRouter = Router();
@@ -27,6 +28,11 @@ router.use(orderRouter);
 // (requireSignedIn / attachSignedIn) per-endpoint.
 router.use(meRouter);
 router.use(myOrdersRouter);
+// Mounted after myOrdersRouter so the more-specific
+// `/shop/me/orders/:sessionId/resend-receipt` POST sits next to
+// the GET it complements. Keeps grep / "where do I find the
+// receipt re-send route" answerable.
+router.use(resendReceiptRouter);
 router.use(mySubscriptionsRouter);
 router.use(quickCheckoutRouter);
 router.use(cartSnapshotRouter);

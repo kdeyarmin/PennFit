@@ -41,6 +41,12 @@ export interface InventoryProductRow {
   priceCents: number | null;
   currency: string | null;
   stockCount: number | null;
+  /**
+   * Per-SKU "Only N left" threshold (null → storefront uses default
+   * of 5). Editable from the admin inventory page; written via
+   * PATCH /admin/shop/products/:id/threshold.
+   */
+  lowStockThreshold: number | null;
 }
 
 export interface ListShopInventoryResponse {
@@ -76,6 +82,7 @@ export async function listShopInventory(): Promise<ListShopInventoryResponse> {
         currency: string | null;
       };
       stockCount?: number | null;
+      lowStockThreshold?: number | null;
     }>;
   };
   return {
@@ -87,6 +94,7 @@ export async function listShopInventory(): Promise<ListShopInventoryResponse> {
       priceCents: p.price?.unitAmount ?? p.price?.amount ?? null,
       currency: p.price?.currency ?? null,
       stockCount: p.stockCount ?? null,
+      lowStockThreshold: p.lowStockThreshold ?? null,
     })),
   };
 }
@@ -133,6 +141,7 @@ export async function patchShopProductStock(
         currency: string | null;
       };
       stockCount?: number | null;
+      lowStockThreshold?: number | null;
     };
   };
   return {
@@ -143,7 +152,99 @@ export async function patchShopProductStock(
       json.product.price?.unitAmount ?? json.product.price?.amount ?? null,
     currency: json.product.price?.currency ?? null,
     stockCount: json.product.stockCount ?? null,
+    lowStockThreshold: json.product.lowStockThreshold ?? null,
   };
+}
+
+// PATCH the per-SKU low-stock threshold via Stripe metadata (A15).
+// Mirrors `patchShopProductStock` exactly: same auth bridge, same
+// 503 handling, same row-shape contract. Threshold of `null` clears
+// the metadata key; the storefront then falls back to the default 5.
+export async function patchShopProductThreshold(
+  productId: string,
+  lowStockThreshold: number | null,
+): Promise<InventoryProductRow> {
+  const res = await fetch(
+    `/resupply-api/admin/shop/products/${encodeURIComponent(productId)}/threshold`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ lowStockThreshold }),
+    },
+  );
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (!res.ok) {
+    throw new Error(`Save failed (${res.status})`);
+  }
+  const json = (await res.json()) as {
+    product: {
+      id: string;
+      name: string;
+      category: string;
+      price?: {
+        unitAmount?: number | null;
+        amount?: number | null;
+        currency: string | null;
+      };
+      stockCount?: number | null;
+      lowStockThreshold?: number | null;
+    };
+  };
+  return {
+    id: json.product.id,
+    name: json.product.name,
+    category: json.product.category,
+    priceCents:
+      json.product.price?.unitAmount ?? json.product.price?.amount ?? null,
+    currency: json.product.price?.currency ?? null,
+    stockCount: json.product.stockCount ?? null,
+    lowStockThreshold: json.product.lowStockThreshold ?? null,
+  };
+}
+
+// Bulk stock-count save (A4). Implemented as parallel PATCH calls
+// against the existing single-SKU endpoint — Stripe's API is the
+// rate-limit ceiling, and at ~30 SKUs the worst case is well under
+// any per-second cap. We deliberately don't batch on the server:
+// the existing PATCH already does the catalog-membership guard
+// per-call, an audit log line lands per save, and a single failure
+// doesn't roll back the others (we surface a per-row result).
+export interface BulkStockResultItem {
+  productId: string;
+  ok: boolean;
+  product?: InventoryProductRow;
+  error?: string;
+}
+
+export async function bulkPatchShopProductStock(
+  updates: ReadonlyArray<{ productId: string; stockCount: number | null }>,
+): Promise<BulkStockResultItem[]> {
+  const results = await Promise.all(
+    updates.map(async (u): Promise<BulkStockResultItem> => {
+      try {
+        const product = await patchShopProductStock(u.productId, u.stockCount);
+        return { productId: u.productId, ok: true, product };
+      } catch (err) {
+        return {
+          productId: u.productId,
+          ok: false,
+          error:
+            err instanceof InventoryUnavailableError
+              ? "Stripe is not configured."
+              : err instanceof Error
+                ? err.message
+                : "Save failed",
+        };
+      }
+    }),
+  );
+  return results;
 }
 
 export class InventoryUnavailableError extends Error {

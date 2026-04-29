@@ -25,6 +25,8 @@ import {
   approveAdminShopReview,
   listAdminShopReviews,
   rejectAdminShopReview,
+  unrejectAdminShopReview,
+  updateAdminShopReviewNote,
 } from "../lib/shop-reviews-api";
 
 type Tab = ReviewStatus | "all";
@@ -148,6 +150,42 @@ function ReviewsList({ tab }: { tab: Tab }) {
     },
   });
 
+  // Un-reject (rejected → pending). On the "rejected" tab, the row
+  // drops out (it's no longer rejected). On the "all" tab we leave
+  // it in place but the status badge will refresh on next refetch;
+  // we trigger an invalidation so the badge updates promptly.
+  const unrejectMutation = useMutation({
+    mutationFn: (id: string) => unrejectAdminShopReview(id),
+    onSuccess: (_, id) => {
+      if (tab === "rejected") removeRowFromCache(id);
+      else void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
+  // PATCH the rejection note on an already-rejected review. We
+  // optimistically rewrite the note in the cache so the form closes
+  // immediately + the new text is visible without a refetch.
+  const noteMutation = useMutation({
+    mutationFn: ({ id, note }: { id: string; note: string | null }) =>
+      updateAdminShopReviewNote(id, note),
+    onSuccess: (resp) => {
+      queryClient.setQueryData<typeof query.data>(queryKey, (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          pages: prev.pages.map((p) => ({
+            ...p,
+            items: p.items.map((it) =>
+              it.id === resp.id
+                ? { ...it, moderationNote: resp.moderationNote }
+                : it,
+            ),
+          })),
+        };
+      });
+    },
+  });
+
   if (query.isPending) {
     return (
       <div className="text-sm text-slate-500 py-12 text-center">
@@ -186,11 +224,19 @@ function ReviewsList({ tab }: { tab: Tab }) {
           review={r}
           onApprove={() => approveMutation.mutate(r.id)}
           onReject={(note) => rejectMutation.mutate({ id: r.id, note })}
+          onUnreject={() => unrejectMutation.mutate(r.id)}
+          onSaveNote={(note) => noteMutation.mutate({ id: r.id, note })}
           approving={
             approveMutation.isPending && approveMutation.variables === r.id
           }
           rejecting={
             rejectMutation.isPending && rejectMutation.variables?.id === r.id
+          }
+          unrejecting={
+            unrejectMutation.isPending && unrejectMutation.variables === r.id
+          }
+          savingNote={
+            noteMutation.isPending && noteMutation.variables?.id === r.id
           }
         />
       ))}
@@ -215,18 +261,30 @@ function ReviewRow({
   review,
   onApprove,
   onReject,
+  onUnreject,
+  onSaveNote,
   approving,
   rejecting,
+  unrejecting,
+  savingNote,
 }: {
   review: AdminReview;
   onApprove: () => void;
   onReject: (note: string | null) => void;
+  onUnreject: () => void;
+  onSaveNote: (note: string | null) => void;
   approving: boolean;
   rejecting: boolean;
+  unrejecting: boolean;
+  savingNote: boolean;
 }) {
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [note, setNote] = useState("");
-  const busy = approving || rejecting;
+  // Edit-note form state (only opens for rejected reviews). Seeded
+  // with the existing moderationNote so admins iterate, not retype.
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const busy = approving || rejecting || unrejecting || savingNote;
 
   return (
     <article
@@ -264,11 +322,94 @@ function ReviewRow({
       <p className="text-sm text-slate-700 leading-relaxed mt-3 whitespace-pre-wrap">
         {review.body}
       </p>
-      {review.status === "rejected" && review.moderationNote && (
-        <p className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">
-          <span className="font-semibold">Previous moderator note:</span>{" "}
-          {review.moderationNote}
-        </p>
+      {review.status === "rejected" && !editingNote && (
+        <div className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+          {review.moderationNote ? (
+            <p>
+              <span className="font-semibold">
+                Customer-visible note:
+              </span>{" "}
+              {review.moderationNote}
+            </p>
+          ) : (
+            <p className="italic text-slate-500">
+              No customer-visible note. Add one if context would help.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingNote(true);
+                setNoteDraft(review.moderationNote ?? "");
+              }}
+              disabled={busy}
+              data-testid={`shop-review-edit-note-open-${review.id}`}
+              className="text-xs font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900 disabled:opacity-50"
+            >
+              Edit note
+            </button>
+            <button
+              type="button"
+              onClick={onUnreject}
+              disabled={busy}
+              data-testid={`shop-review-unreject-${review.id}`}
+              className="text-xs font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-900 disabled:opacity-50"
+            >
+              {unrejecting ? "Re-opening…" : "Un-reject (back to queue)"}
+            </button>
+          </div>
+        </div>
+      )}
+      {review.status === "rejected" && editingNote && (
+        <div
+          className="mt-3 space-y-2"
+          data-testid={`shop-review-edit-note-form-${review.id}`}
+        >
+          <label className="block text-xs font-semibold text-slate-700">
+            Customer-visible note (≤500 chars). Saving doesn&apos;t
+            re-send the rejection email — that already went out.
+          </label>
+          <textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            maxLength={500}
+            rows={3}
+            className="w-full text-sm rounded-lg border border-slate-300 p-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            data-testid={`shop-review-edit-note-input-${review.id}`}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-500">
+              {noteDraft.length} / 500
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingNote(false);
+                  setNoteDraft("");
+                }}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onSaveNote(noteDraft.trim() || null);
+                  setEditingNote(false);
+                }}
+                disabled={busy}
+                data-testid={`shop-review-edit-note-save-${review.id}`}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg text-white shadow-sm disabled:opacity-50"
+                style={{ backgroundColor: "#0a1f44" }}
+              >
+                {savingNote ? "Saving…" : "Save note"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {review.status === "pending" && !showRejectForm && (
         <div className="mt-4 flex gap-2">

@@ -39,6 +39,7 @@ import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
 import {
+  DEFAULT_LOW_STOCK_THRESHOLD,
   fetchProductReviews,
   fetchShopProducts,
   fetchMyReview,
@@ -349,10 +350,16 @@ function Hero({
   // replenishment pipeline, not the storefront stock count.
   const oneTimeOutOfStock =
     typeof product.stockCount === "number" && product.stockCount <= 0;
+  // Per-SKU low-stock threshold (A15). Falls back to the legacy
+  // hardcoded 5 when the admin hasn't customized it. A threshold of
+  // 0 means "never show the low-stock badge" (admin opt-out).
+  const lowThreshold =
+    product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
   const lowStockHint =
     typeof product.stockCount === "number" &&
     product.stockCount > 0 &&
-    product.stockCount <= 5
+    lowThreshold > 0 &&
+    product.stockCount <= lowThreshold
       ? product.stockCount
       : null;
   const isSubscriptionMode =
@@ -432,12 +439,17 @@ function Hero({
               Out of stock
             </Badge>
           ) : lowStockHint !== null ? (
-            <span
-              className="text-sm font-semibold text-[hsl(var(--penn-navy))]/80"
+            <Badge
+              variant="outline"
+              className={`font-semibold ${
+                lowStockHint <= 3
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 text-[hsl(var(--penn-navy))]"
+              }`}
               data-testid="pdp-stock-low"
             >
               Only {lowStockHint} left
-            </span>
+            </Badge>
           ) : null}
         </div>
         {product.recurringPrice && (
@@ -775,6 +787,16 @@ function MyReviewPanel({
             <StarRating value={review.rating} size="md" hideCount />
             <ReviewStatusBadge status={review.status} />
           </div>
+          {review.status === "pending" && (
+            <p
+              className="mt-2 text-xs text-[hsl(var(--penn-navy))]/75 leading-relaxed max-w-md"
+              data-testid="pdp-my-review-pending-hint"
+            >
+              Awaiting moderation — usually within one business day.
+              You can still edit or delete it until it's approved, and
+              your changes will be re-reviewed.
+            </p>
+          )}
           {review.title && (
             <h3 className="font-semibold tracking-tight mt-3">
               {review.title}

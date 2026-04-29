@@ -27,6 +27,7 @@ import {
   Sparkles,
   Wind,
   Package,
+  Repeat,
   ShieldCheck,
   ShoppingCart,
   Loader2,
@@ -38,6 +39,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  DEFAULT_LOW_STOCK_THRESHOLD,
   fetchReviewAggregates,
   fetchShopProducts,
   formatMoneyCents,
@@ -329,10 +331,17 @@ function ProductCard({
   // managed separately — see use-cart's defense-in-depth comment).
   const oneTimeOutOfStock =
     typeof product.stockCount === "number" && product.stockCount <= 0;
+  // Per-SKU low-stock threshold (A15). Falls back to the legacy
+  // hardcoded 5 when the admin hasn't customized it. A threshold of
+  // 0 means "never show the low-stock badge" (admin opt-out for SKUs
+  // where stock anxiety isn't a useful signal).
+  const lowThreshold =
+    product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
   const lowStockHint =
     typeof product.stockCount === "number" &&
     product.stockCount > 0 &&
-    product.stockCount <= 5
+    lowThreshold > 0 &&
+    product.stockCount <= lowThreshold
       ? product.stockCount
       : null;
   const isSubscriptionMode =
@@ -455,12 +464,17 @@ function ProductCard({
               Out of stock
             </Badge>
           ) : lowStockHint !== null ? (
-            <span
-              className="text-xs font-semibold text-[hsl(var(--penn-navy))]/80"
+            <Badge
+              variant="outline"
+              className={`font-semibold ${
+                lowStockHint <= 3
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 text-[hsl(var(--penn-navy))]"
+              }`}
               data-testid={`shop-stock-low-${product.id}`}
             >
               Only {lowStockHint} left
-            </span>
+            </Badge>
           ) : null}
         </div>
         {product.isBundle && product.bundleContents.length > 0 && (
@@ -516,12 +530,29 @@ function ProductCard({
           </div>
         )}
         {product.recurringPrice && mode === "subscription" && (
-          <p
-            className="text-[11px] text-[hsl(var(--penn-navy))]/75 mb-3 leading-snug"
+          <div
+            className="rounded-lg border border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 px-3 py-2 mb-3 flex items-start gap-2"
             data-testid={`shop-mode-cadence-${product.id}`}
           >
-            Auto-ships every {product.recurringPrice.intervalLabel}. Same price.
-            Cancel anytime.
+            <Repeat className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[hsl(var(--penn-navy))]" />
+            <p className="text-[11px] text-[hsl(var(--penn-navy))] leading-snug">
+              <span className="font-semibold">
+                Auto-ships every {product.recurringPrice.intervalLabel}.
+              </span>{" "}
+              Never run out · same price · skip or cancel anytime from
+              your account.
+            </p>
+          </div>
+        )}
+        {product.recurringPrice && mode !== "subscription" && (
+          <p
+            className="text-[11px] text-[hsl(var(--penn-navy))]/65 mb-3 leading-snug flex items-center gap-1.5"
+            data-testid={`shop-mode-onetime-hint-${product.id}`}
+          >
+            <Repeat className="w-3 h-3 shrink-0" />
+            Or subscribe to auto-ship every{" "}
+            {product.recurringPrice.intervalLabel} — same price, cancel
+            anytime.
           </p>
         )}
         <div className="mt-auto space-y-2">

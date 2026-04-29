@@ -41,6 +41,11 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Shop Inventory",
     matchPrefix: "/admin/shop/inventory",
   },
+  {
+    href: "/admin/shop/abandoned-carts",
+    label: "Abandoned Carts",
+    matchPrefix: "/admin/shop/abandoned-carts",
+  },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");

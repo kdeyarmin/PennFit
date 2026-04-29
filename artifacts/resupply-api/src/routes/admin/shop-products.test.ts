@@ -74,6 +74,7 @@ function defaultProjection(raw: {
   category: string;
   price: { unitAmount: number; currency: string };
   stockCount: number | null;
+  lowStockThreshold: number | null;
 } {
   return {
     id: raw.id,
@@ -84,6 +85,12 @@ function defaultProjection(raw: {
     price: { unitAmount: 1999, currency: "usd" },
     stockCount: raw.metadata?.stock_count
       ? parseInt(raw.metadata.stock_count, 10)
+      : null,
+    // Mirror the real projection's null-on-missing semantics. A
+    // value of `null` means "use the storefront default" and is the
+    // expected output for SKUs that don't carry the metadata key.
+    lowStockThreshold: raw.metadata?.low_stock_threshold
+      ? parseInt(raw.metadata.low_stock_threshold, 10)
       : null,
   };
 }
