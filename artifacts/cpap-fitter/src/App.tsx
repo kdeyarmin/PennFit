@@ -19,6 +19,7 @@ import { Faq } from "@/pages/faq";
 import { Learn } from "@/pages/learn";
 import { Privacy } from "@/pages/privacy";
 import { Terms } from "@/pages/terms";
+import { Insurance } from "@/pages/insurance";
 
 // Lazy-loaded pages. Each is its own webpack/Rollup chunk so the
 // heavy dependencies they pull in (e.g. @mediapipe/tasks-vision in
@@ -226,6 +227,7 @@ function PatientRouter() {
           <Route path="/learn" component={Learn} />
           <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
           <Route path="/learn/device-setup" component={DeviceSetup} />
+          <Route path="/insurance" component={Insurance} />
           <Route path="/shop" component={Shop} />
           <Route path="/shop/cart" component={ShopCart} />
           <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />

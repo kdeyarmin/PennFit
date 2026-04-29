@@ -393,9 +393,9 @@ function EmptyCart() {
             Browse the shop <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
         </Link>
-        <Link href="/consent">
+        <Link href="/insurance">
           <Button variant="outline" data-testid="cart-empty-insurance">
-            Use insurance ($0)
+            See how insurance works
           </Button>
         </Link>
       </div>

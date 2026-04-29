@@ -203,14 +203,14 @@ function ShopHero() {
       </h1>
       <p className="text-lg text-muted-foreground leading-relaxed">
         No prescription? No insurance? No problem. Order direct, ship to
-        your door. Already covered? Use the{" "}
+        your door. Already covered?{" "}
         <Link
-          href="/consent"
+          href="/insurance"
           className="text-primary font-medium underline-offset-4 hover:underline"
         >
-          insurance flow
+          See how insurance works
         </Link>{" "}
-        instead — it&apos;s $0 out of pocket.
+        — most patients pay $0 out of pocket.
       </p>
     </div>
   );
@@ -384,13 +384,13 @@ function InsuranceFooter() {
           out of pocket.
         </p>
       </div>
-      <Link href="/consent">
+      <Link href="/insurance">
         <Button
           variant="outline"
           className="whitespace-nowrap"
           data-testid="shop-footer-insurance-cta"
         >
-          Use insurance instead <ArrowRight className="w-4 h-4 ml-2" />
+          See how insurance works <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
       </Link>
     </div>
@@ -413,12 +413,12 @@ function PreviewModeBanner() {
         </p>
         <p className="text-foreground/80 mt-0.5">
           You&apos;re browsing a demo of the PennPaps storefront. Card
-          checkout will be enabled as soon as Stripe is connected. The{" "}
+          checkout will be enabled as soon as Stripe is connected.{" "}
           <Link
-            href="/consent"
+            href="/insurance"
             className="text-primary font-medium underline-offset-4 hover:underline"
           >
-            insurance flow
+            Insurance billing
           </Link>{" "}
           is fully live and {" "}
           <span className="font-medium">$0 with prescription.</span>

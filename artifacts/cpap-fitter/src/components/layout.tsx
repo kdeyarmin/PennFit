@@ -225,7 +225,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <li><Link href="/how-it-works" className="text-muted-foreground hover:text-primary transition-colors">Virtual Mask Fitter</Link></li>
                   <li><Link href="/masks" className="text-muted-foreground hover:text-primary transition-colors">Mask Catalog</Link></li>
                   <li><Link href="/shop" className="text-muted-foreground hover:text-primary transition-colors">Shop Supplies</Link></li>
-                  <li><Link href="/consent" className="text-muted-foreground hover:text-primary transition-colors">Order with Insurance</Link></li>
+                  <li><Link href="/insurance" className="text-muted-foreground hover:text-primary transition-colors">How insurance works</Link></li>
                   <li><Link href="/account" className="text-muted-foreground hover:text-primary transition-colors">My Account</Link></li>
                   <li><Link href="/learn" className="text-muted-foreground hover:text-primary transition-colors">Learn</Link></li>
                   <li><Link href="/faq" className="text-muted-foreground hover:text-primary transition-colors">FAQ</Link></li>
