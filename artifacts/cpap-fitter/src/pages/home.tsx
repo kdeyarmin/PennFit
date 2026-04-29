@@ -18,26 +18,26 @@ import {
 
 export function Home() {
   return (
-    <div className="flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-16 md:py-28">
+    <div className="flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-28">
       {/* Hero */}
-      <div className="text-center max-w-4xl mb-16 animate-shimmer-in">
+      <div className="text-center max-w-4xl mb-12 md:mb-16 animate-shimmer-in">
         <div className="flex justify-center mb-5">
           <div className="inline-flex items-center gap-3">
-            <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
+            <div className="hidden sm:block h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+            <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
               Penn Home Medical Supply · PennPaps.com
             </span>
-            <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
+            <div className="hidden sm:block h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>
         </div>
 
-        <h1 className="text-display text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.05]">
+        <h1 className="text-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-5 md:mb-6 leading-[1.08] sm:leading-[1.05]">
           <span className="text-gradient-brand">Your CPAP, made simple.</span>
           <br />
           <span className="text-foreground/90">Fit. Shop. Resupply.</span>
         </h1>
 
-        <p className="text-lg md:text-xl text-muted-foreground leading-relaxed mb-10 max-w-2xl mx-auto">
+        <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-8 md:mb-10 max-w-2xl mx-auto">
           <span className="font-semibold text-foreground">PennPaps.com</span> is the
           online CPAP storefront from{" "}
           <span className="font-semibold text-foreground">Penn Home Medical Supply</span>{" "}
