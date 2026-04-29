@@ -42,6 +42,10 @@ A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Ho
 
 The shop's product fetch is resilient to transient hiccups: on the very first failure of `/resupply-api/shop/products` it silently auto-retries once after ~1.2s before surfacing the friendly `<ShopLoadError>` card, which itself offers an in-place "Try again" button (no full reload required) plus a secondary "See how insurance works" escape hatch to `/insurance`. The 503/preview-mode "shop coming soon" branch is unchanged.
 
+### Visual identity & ambient motion
+
+Every customer-facing page shares the same warm cream + navy + gold mesh background defined in `src/index.css` (six radial blooms over the `--penn-mist`/`--penn-navy`/`--penn-gold` palette, plus a navy dot-grid and tinted film grain). The whole stack breathes via two slow `background-position` animations — `body-bloom-drift` (60s alternate) and `body-grid-drift` (48s linear) — that are GPU-cheap because the background is `position: fixed`. The `<TechBackdrop>` component (mounted on `/reminders` and `/reminders/manage`) is an **additive** brand-aligned motion layer using the same navy + gold palette and the same drift cadences — it does not replace or darken the global background, so reminders pages read as the same product as the rest of the site, with just a touch more living motion. All ambient animations are gated by the global `prefers-reduced-motion` rule plus an explicit guard inside `tech-backdrop.css`.
+
 ### Customer-Facing Reminder Subscriptions
 
 A self-serve, opt-in reminder system at `/reminders` lets customers (no account required) sign up to be emailed when each CPAP supply is due for replacement. The flow is intentionally separate from the internal Resupply Automation system, which is admin/CSV driven and manages full insurance episodes — this storefront feature is a lightweight email-only nudge.

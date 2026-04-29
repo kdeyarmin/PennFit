@@ -2,15 +2,19 @@ import { useEffect } from "react";
 import "./tech-backdrop.css";
 
 /**
- * Animated, high-tech background for customer-facing reminder pages.
- * Mounts a class on <body> while active so the global dot-grid /
- * film-grain pseudo-elements don't compound with the new layers, and
- * renders fixed-positioned blobs + grid + sweep + noise behind the
- * page content. Page content should sit in a `position: relative;
- * z-index: 1` wrapper so it stacks above the backdrop.
+ * Brand-aligned ambient motion layer for customer-facing reminder
+ * pages. Renders fixed-positioned navy/gold blobs + a faint perspective
+ * grid + a slow lacquer sheen on top of the global background — it does
+ * NOT replace the site-wide background (the cream/navy/gold mesh and
+ * dot grid defined in index.css remain visible underneath), so the
+ * reminders pages read as the same product as the rest of the site,
+ * just with a touch more living motion.
  *
- * Animations are GPU-friendly (transform/opacity) and disabled under
- * `prefers-reduced-motion`.
+ * Page content should sit in a `position: relative; z-index: 1`
+ * wrapper so it stacks above this layer.
+ *
+ * Animations are GPU-friendly (transform/opacity, background-position)
+ * and disabled under `prefers-reduced-motion`.
  */
 export function TechBackdrop() {
   useEffect(() => {

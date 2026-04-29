@@ -205,10 +205,8 @@
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
     /* Premium layered atmosphere — Linear / Stripe / Apple-grade depth.
-       The previous version used opacities so low (0.10–0.32) the page
-       read as flat paper. Bumped substantially so the navy + gold brand
-       blooms are immediately visible, while still soft enough to never
-       compete with content. Order back-to-front:
+       Navy + gold brand blooms paint visible color across the page,
+       soft enough to never compete with content. Order back-to-front:
          1. Cool mist plinth across the lower half.
          2. Warm gold "sun" at top-right (brand accent).
          3. Wide gold sunrise wash bleeding from the top edge.
@@ -216,26 +214,45 @@
          5. Mid-right deep navy depth (gives the surface dimension).
          6. Bottom navy plinth (grounds the entire page).
          7. Lower-left gold whisper for warmth balance.
-         8. Diagonal sheen across the middle for a polished, lacquered feel. */
+         8. Diagonal sheen across the middle for a polished, lacquered feel.
+
+       The whole stack also breathes via `body-bloom-drift` (see below)
+       so the home page shares the same gentle living motion as the
+       <TechBackdrop> mounted on /reminders — the site reads as one
+       continuous designed surface, not "static everywhere except one
+       page." Background-position drift is GPU-cheap (no layout, no
+       paint outside the fixed background bitmap). */
     background-image:
-      /* Center-stage mesh blooms — positioned IN viewport, not at corners,
-         so they actually paint visible color across the page rather than
-         hiding off-screen. */
       radial-gradient(ellipse 70% 55% at 22% 18%, hsl(var(--penn-navy) / 0.55), transparent 60%),
       radial-gradient(ellipse 60% 50% at 82% 12%, hsl(var(--penn-gold) / 0.70), transparent 62%),
       radial-gradient(ellipse 75% 55% at 90% 62%, hsl(var(--penn-navy) / 0.40), transparent 60%),
       radial-gradient(ellipse 65% 50% at 12% 78%, hsl(var(--penn-gold) / 0.42), transparent 60%),
       radial-gradient(ellipse 90% 60% at 50% 115%, hsl(var(--penn-mist) / 1.0), transparent 70%),
       radial-gradient(ellipse 85% 55% at 50% -8%, hsl(var(--penn-gold) / 0.30), transparent 65%),
-      /* Diagonal lacquer sheen */
       linear-gradient(125deg, transparent 25%, hsl(0 0% 100% / 0.35) 50%, transparent 75%);
     background-attachment: fixed;
+    background-size: 110% 110%;
+    animation: body-bloom-drift 60s ease-in-out infinite alternate;
   }
 
-  /* Dot grid overlay — visible enough to read as a designed surface.
-     Doubled the dot color alpha (0.11 → 0.22) and the layer opacity
-     (0.6 → 0.85) so the grid actually shows through. Still feathered
-     at the edges via mask so it doesn't fight the corner blooms. */
+  /* Slow ambient drift on the body mesh blooms — same character as the
+     <TechBackdrop> blob animation, just much gentler. 60s alternate
+     means a one-minute breath in each direction; you don't notice it
+     when reading, you only notice that the page feels alive. */
+  @keyframes body-bloom-drift {
+    0% {
+      background-position: 0% 0%;
+    }
+    100% {
+      background-position: 100% 100%;
+    }
+  }
+
+  /* Dot grid overlay — visible enough to read as a designed surface,
+     feathered at the edges via mask so it doesn't fight the corner
+     blooms. The grid itself drifts on the same cadence as the
+     <TechBackdrop>'s perspective grid (28px / 48s) so the two layers
+     share one motion language site-wide. */
   body::before {
     content: "";
     position: fixed;
@@ -247,6 +264,16 @@
     mask-image: radial-gradient(ellipse 100% 90% at 50% 38%, black 28%, transparent 88%);
     -webkit-mask-image: radial-gradient(ellipse 100% 90% at 50% 38%, black 28%, transparent 88%);
     opacity: 0.85;
+    animation: body-grid-drift 48s linear infinite;
+  }
+
+  @keyframes body-grid-drift {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 28px 28px;
+    }
   }
 
   /* Premium grain — subtle paper-like texture. Slightly stronger than
