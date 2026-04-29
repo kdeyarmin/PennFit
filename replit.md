@@ -40,6 +40,8 @@ A separate internal system automates patient outreach using an `Express API`, `p
 
 A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Hosted Checkout`. `Stripe` is the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend handles `Stripe` integration for checkout sessions and webhooks. Signed-in customers can save shipping information, view saved card crumbs, and reorder past purchases. `Clerk` provides customer identity, linking to `Stripe` customer IDs.
 
+The shop's product fetch is resilient to transient hiccups: on the very first failure of `/resupply-api/shop/products` it silently auto-retries once after ~1.2s before surfacing the friendly `<ShopLoadError>` card, which itself offers an in-place "Try again" button (no full reload required) plus a secondary "See how insurance works" escape hatch to `/insurance`. The 503/preview-mode "shop coming soon" branch is unchanged.
+
 ### Customer-Facing Reminder Subscriptions
 
 A self-serve, opt-in reminder system at `/reminders` lets customers (no account required) sign up to be emailed when each CPAP supply is due for replacement. The flow is intentionally separate from the internal Resupply Automation system, which is admin/CSV driven and manages full insurance episodes — this storefront feature is a lightweight email-only nudge.

@@ -13,7 +13,7 @@
 // render a friendly "shop coming soon" hero instead of an error card.
 // That keeps the page presentable in fresh dev environments.
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
@@ -31,6 +31,8 @@ import {
   ShoppingCart,
   Loader2,
   Info,
+  RefreshCcw,
+  WifiOff,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -113,10 +115,22 @@ export function Shop() {
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumping `attempt` re-runs the load effect — used by the manual
+  // "Try again" button on the error card and by the one-shot
+  // automatic retry below. Without this, a transient server hiccup
+  // (e.g. a dev workflow restart or a brief proxy blip) leaves the
+  // shop stuck on the error state until a full page reload.
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
+    let autoRetryTimer: ReturnType<typeof setTimeout> | null = null;
     setLoading(true);
+    setError(null);
     fetchShopProducts()
       .then((r) => {
         if (!active) return;
@@ -128,15 +142,27 @@ export function Shop() {
       })
       .catch((err: unknown) => {
         if (!active) return;
-        setError(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        // First failure on the very first mount: try once more after a
+        // short delay before showing the error card. Catches the most
+        // common cause (a dev-server restart or a one-off network blip)
+        // without needing the patient to refresh.
+        if (attempt === 0) {
+          autoRetryTimer = setTimeout(() => {
+            if (active) setAttempt(1);
+          }, 1200);
+          return;
+        }
+        setError(message);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active && !autoRetryTimer) setLoading(false);
       });
     return () => {
       active = false;
+      if (autoRetryTimer) clearTimeout(autoRetryTimer);
     };
-  }, []);
+  }, [attempt]);
 
   const sections = useMemo(() => {
     if (!data) return [] as Array<{ category: Category; items: ShopProductView[] }>;
@@ -159,12 +185,7 @@ export function Shop() {
       ) : unavailable ? (
         <ShopComingSoon message={unavailable} />
       ) : error ? (
-        <div
-          className="glass-card rounded-2xl p-8 text-center text-muted-foreground"
-          data-testid="shop-error"
-        >
-          <p>We couldn&apos;t load the shop right now. Please refresh.</p>
-        </div>
+        <ShopLoadError message={error} onRetry={retry} />
       ) : sections.length === 0 ? (
         <ShopComingSoon message="No products are available right now." />
       ) : (
@@ -424,6 +445,60 @@ function PreviewModeBanner() {
           <span className="font-medium">$0 with prescription.</span>
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Friendly error card with a one-tap retry. Shown only after the
+ * one-shot automatic retry inside <Shop> has also failed — so by the
+ * time a patient sees this, the issue is more than a transient blip.
+ * The retry button re-runs the fetch in place; we fall back to a
+ * full reload only as the last-resort path.
+ */
+function ShopLoadError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className="glass-card rounded-2xl p-8 md:p-10 mt-12 max-w-2xl mx-auto text-center"
+      data-testid="shop-error"
+      role="alert"
+    >
+      <div className="flex justify-center mb-4">
+        <div className="h-12 w-12 rounded-xl icon-halo-navy flex items-center justify-center">
+          <WifiOff className="w-6 h-6" />
+        </div>
+      </div>
+      <h2 className="text-xl font-semibold tracking-tight mb-2">
+        We couldn&apos;t load the shop right now.
+      </h2>
+      <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-md mx-auto">
+        It&apos;s usually a quick connection hiccup. Try again — if it
+        keeps happening, your insurance order is fully live and you can
+        place one in a few minutes.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <Button onClick={onRetry} data-testid="shop-error-retry">
+          <RefreshCcw className="w-4 h-4 mr-2" />
+          Try again
+        </Button>
+        <Link href="/insurance">
+          <Button variant="outline" data-testid="shop-error-insurance">
+            See how insurance works
+          </Button>
+        </Link>
+      </div>
+      {/* Quietly surface the technical reason for users who care; most
+          patients won't, but it helps when they describe the issue to
+          our team. */}
+      <p className="text-[11px] text-muted-foreground/70 mt-5 font-mono">
+        {message}
+      </p>
     </div>
   );
 }
