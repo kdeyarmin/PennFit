@@ -36,6 +36,7 @@ import type Stripe from "stripe";
 import {
   getDbPool,
   shopCustomers,
+  shopAbandonedCarts,
   shopOrders,
   shopSubscriptions,
   type ShopSubscriptionItemSnapshot,
@@ -116,6 +117,18 @@ export const stripeWebhookHandler: RequestHandler = async (
           log?.warn?.(
             { err: syncErr instanceof Error ? syncErr.message : String(syncErr) },
             "stripe webhook: customer sync failed (non-fatal)",
+          );
+        }
+        // Best-effort: mark the matching abandoned-cart row as
+        // recovered so the dispatcher never nudges someone who
+        // already converted. Failures here MUST NOT throw out of
+        // the webhook — the order is paid and that's what matters.
+        try {
+          await markCartRecovered(session, log);
+        } catch (recErr) {
+          log?.warn?.(
+            { err: recErr instanceof Error ? recErr.message : String(recErr) },
+            "stripe webhook: cart recovery mark failed (non-fatal)",
           );
         }
         break;
@@ -340,6 +353,54 @@ async function syncCustomerAfterCheckout(
     },
     "shop customer synced after checkout",
   );
+}
+
+/**
+ * Mark the abandoned-cart row for this Clerk user as recovered so the
+ * dispatcher never nudges a customer who already converted. Called
+ * from `checkout.session.completed`.
+ *
+ * Idempotent and safe to call when no row exists — the WHERE clause
+ * filters on `recovered_at IS NULL` so a double-fire from Stripe (the
+ * "completed" + "async_payment_succeeded" pair both flow through the
+ * same case) is a no-op the second time. We zero out items and
+ * subtotal so a stale items list cannot leak into a future "we
+ * restored your cart from the email" rehydration after the purchase.
+ *
+ * Guest checkouts (no `clerk_user_id` in session metadata) are a
+ * no-op — there's no abandoned-cart row to update because guests
+ * never write one.
+ */
+export async function markCartRecovered(
+  session: Stripe.Checkout.Session,
+  log:
+    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | undefined,
+): Promise<void> {
+  const clerkUserId =
+    typeof session.metadata?.clerk_user_id === "string"
+      ? session.metadata.clerk_user_id
+      : null;
+  if (!clerkUserId) return;
+  const db = drizzle(getDbPool());
+  const updated = await db
+    .update(shopAbandonedCarts)
+    .set({
+      recoveredAt: new Date(),
+      items: [],
+      subtotalCents: 0,
+      updatedAt: new Date(),
+    })
+    .where(
+      sql`${shopAbandonedCarts.clerkUserId} = ${clerkUserId} AND ${shopAbandonedCarts.recoveredAt} IS NULL`,
+    )
+    .returning({ id: shopAbandonedCarts.id });
+  if (updated.length > 0) {
+    log?.info?.(
+      { clerkUserId, rowId: updated[0]!.id },
+      "abandoned cart marked recovered",
+    );
+  }
 }
 
 async function markStatus(

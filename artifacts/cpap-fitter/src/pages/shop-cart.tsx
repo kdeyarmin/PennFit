@@ -10,7 +10,7 @@
 // happens only on the success page after a confirmed paid status, so
 // a user who closes the Stripe tab still has their cart intact.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
@@ -46,6 +46,22 @@ import {
 // between the two pages — keeps the contract narrow.
 const REORDER_FROM_KEY = "pennpaps_reorder_from";
 
+// Snapshot row shape returned by GET /shop/me/cart-snapshot. Mirrors
+// what the server stores; we only consume `items` here.
+interface CartSnapshotItem {
+  priceId: string;
+  productId: string;
+  name: string;
+  quantity: number;
+  unitAmountCents: number;
+  currency: string;
+  mode: "one_time" | "subscription";
+  recurringPriceId: string | null;
+  recurringIntervalLabel: string | null;
+  imageUrl: string | null;
+  isBundle: boolean;
+}
+
 interface ReorderSource {
   sessionId: string;
   createdAt: string;
@@ -57,9 +73,19 @@ interface ReorderSource {
   droppedCount?: number;
 }
 
+/**
+ * Tri-state result of the ?resume=1 rehydration probe:
+ *   "rehydrated"      — items merged from the server snapshot
+ *   "needs_signin"    — visitor hit the link signed-out
+ *   "nothing_to_do"   — server had no items / local cart already richer
+ *   null              — no ?resume=1 in URL, or probe still in flight
+ */
+type ResumeState = "rehydrated" | "needs_signin" | "nothing_to_do" | null;
+
 export function ShopCart() {
   useDocumentTitle("Your cart");
-  const { items, totalCents, setQuantity, removeItem, setItemMode } = useCart();
+  const { items, totalCents, setQuantity, removeItem, setItemMode, replaceItems } =
+    useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Reorder breadcrumb — populated from sessionStorage on mount if the
@@ -70,6 +96,110 @@ export function ShopCart() {
   const [reorderSource, setReorderSource] = useState<ReorderSource | null>(
     null,
   );
+  // Cart-abandonment ?resume=1 rehydration. Tri-state — null until we
+  // know whether the URL had the marker; one of three terminal states
+  // after the probe completes. The banner UI keys off this.
+  const [resumeState, setResumeState] = useState<ResumeState>(null);
+  // Live mirror of `items.length` so the resume probe — which fires
+  // exactly once on mount — reads the *current* cart length when the
+  // snapshot fetch resolves, not the snapshot it captured at mount.
+  // Without this ref, a user who lands at /shop/cart?resume=1 and
+  // adds an item before the network roundtrip completes can have the
+  // newly-added item silently overwritten by `replaceItems(...)`. We
+  // update on every render so the value the effect reads is always
+  // fresh at decision time.
+  const itemsLenRef = useRef(items.length);
+  itemsLenRef.current = items.length;
+  useEffect(() => {
+    // Run the resume probe at most once per mount. Detect ?resume=1
+    // BEFORE we strip it from the URL so a back-button hit doesn't
+    // re-trigger us (we strip immediately).
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("resume") !== "1") return;
+    // Strip ?resume=1 from the address bar straight away — don't want
+    // the marker to leak into shareable URLs or to re-trigger on a
+    // browser refresh.
+    try {
+      params.delete("resume");
+      const qs = params.toString();
+      const next =
+        window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+      window.history.replaceState(null, "", next);
+    } catch {
+      // History API not available (very old browser): no-op.
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/resupply-api/shop/me/cart-snapshot", {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        if (cancelled) return;
+        if (res.status === 401) {
+          setResumeState("needs_signin");
+          return;
+        }
+        if (!res.ok) {
+          setResumeState("nothing_to_do");
+          return;
+        }
+        const data = (await res.json()) as {
+          items?: CartSnapshotItem[];
+        };
+        const serverItems = Array.isArray(data.items) ? data.items : [];
+        if (serverItems.length === 0) {
+          setResumeState("nothing_to_do");
+          return;
+        }
+        // Merge policy: only overwrite the local cart when the server
+        // snapshot is "more complete" than what's in this browser.
+        // Concretely: local empty (the common cross-device case) OR
+        // local strictly fewer line items than the server. Avoids
+        // clobbering an in-progress cart that the user already started
+        // adding to in this browser before clicking the email link.
+        //
+        // CRITICAL: read from itemsLenRef.current, NOT from the
+        // captured `items` closure — the user may have added or
+        // removed items between mount (when this effect started) and
+        // now (when the network fetch resolved). Using the ref makes
+        // the merge decision against the live cart state.
+        const localLen = itemsLenRef.current;
+        const serverLen = serverItems.length;
+        if (localLen > 0 && localLen >= serverLen) {
+          setResumeState("nothing_to_do");
+          return;
+        }
+        replaceItems(
+          serverItems.map((it) => ({
+            productId: it.productId,
+            priceId: it.priceId,
+            name: it.name,
+            unitAmountCents: it.unitAmountCents,
+            currency: it.currency,
+            quantity: it.quantity,
+            imageUrl: it.imageUrl,
+            isBundle: it.isBundle,
+            mode: it.mode,
+            recurringPriceId: it.recurringPriceId,
+            recurringIntervalLabel: it.recurringIntervalLabel,
+          })),
+        );
+        setResumeState("rehydrated");
+      } catch {
+        if (!cancelled) setResumeState("nothing_to_do");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Run once on mount only — items/replaceItems are intentionally
+    // omitted to avoid re-running after we just called replaceItems.
+    // The ref above keeps us in sync with the live cart length without
+    // re-firing the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     try {
       const raw = window.sessionStorage.getItem(REORDER_FROM_KEY);
@@ -252,11 +382,70 @@ export function ShopCart() {
         </p>
       </div>
 
+      {/*
+        Resume-from-email banners. Rendered ABOVE the EmptyCart fork so
+        a signed-out visitor who clicked the email link sees a
+        sign-in prompt instead of the generic empty cart. The
+        "rehydrated" variant only renders alongside actual items.
+      */}
+      {resumeState === "needs_signin" && (
+        <div
+          className="glass-card rounded-2xl p-4 mb-6 border-l-4 border-l-[hsl(var(--penn-gold))] flex items-start gap-3"
+          data-testid="cart-resume-needs-signin"
+        >
+          <RefreshCw className="h-5 w-5 text-[hsl(var(--penn-navy))] shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 text-sm">
+            <p className="font-semibold text-[hsl(var(--penn-navy))]">
+              Sign in to restore your cart
+            </p>
+            <p className="text-muted-foreground mt-0.5">
+              You came from a saved-cart email. Sign in with the email
+              that received it and we'll bring your items back.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setResumeState(null)}
+            className="shrink-0 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors"
+            aria-label="Dismiss restore-cart prompt"
+            data-testid="cart-resume-dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {items.length === 0 ? (
         <EmptyCart />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-3">
+            {resumeState === "rehydrated" && (
+              <div
+                className="glass-card rounded-2xl p-4 border-l-4 border-l-[hsl(var(--penn-gold))] flex items-start gap-3"
+                data-testid="cart-resume-rehydrated"
+              >
+                <RefreshCw className="h-5 w-5 text-[hsl(var(--penn-navy))] shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 text-sm">
+                  <p className="font-semibold text-[hsl(var(--penn-navy))]">
+                    We restored your cart from the email reminder
+                  </p>
+                  <p className="text-muted-foreground mt-0.5">
+                    Adjust quantities or remove anything you don't need
+                    before checking out.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setResumeState(null)}
+                  className="shrink-0 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors"
+                  aria-label="Dismiss restored-cart banner"
+                  data-testid="cart-resume-rehydrated-dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             {reorderSource && (
               <div
                 className="glass-card rounded-2xl p-4 border-l-4 border-l-[hsl(var(--penn-gold))] flex items-start gap-3"

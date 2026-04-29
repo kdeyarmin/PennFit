@@ -7,6 +7,7 @@
 
 import { Router, type IRouter } from "express";
 
+import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import meRouter from "./me";
 import myOrdersRouter from "./my-orders";
@@ -27,5 +28,6 @@ router.use(meRouter);
 router.use(myOrdersRouter);
 router.use(mySubscriptionsRouter);
 router.use(quickCheckoutRouter);
+router.use(cartSnapshotRouter);
 
 export default router;

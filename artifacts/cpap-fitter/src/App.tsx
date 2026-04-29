@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
 
 // Eagerly imported pages — small, public, and likely entry points.
 // Splitting them out of the initial chunk would only add latency to
@@ -210,6 +211,14 @@ function GuardedOrderSuccess() {
 function PatientRouter() {
   return (
     <Layout>
+      {/*
+        Render-nothing component that mirrors a signed-in user's cart
+        to the server (debounced, best-effort) so the cart-abandonment
+        nudge dispatcher has something to scan. Mounted here so it runs
+        on every patient page where the cart can change. No-op for
+        signed-out visitors.
+      */}
+      <CartSnapshotSync />
       {/*
         Single Suspense boundary above the Switch. Wouter swaps the
         active <Route>'s component on navigation; if the new component

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -37,5 +38,9 @@ router.use(rulesRouter);
 router.use(conversationsRouter);
 router.use(episodesRouter);
 router.use(auditRouter);
+// /admin/shop/abandoned-carts/* — operator tooling for the cart-
+// abandonment SendGrid nudge (list + manual dispatcher trigger).
+// requireAdmin gate is on the router itself.
+router.use(abandonedCartsRouter);
 
 export default router;

@@ -57,6 +57,13 @@
                         "when": 1777744800000,
                         "tag": "0007_shop_subscriptions_event_ordering",
                         "breakpoints": true
+                },
+                {
+                        "idx": 8,
+                        "version": "7",
+                        "when": 1777831200000,
+                        "tag": "0008_shop_abandoned_carts",
+                        "breakpoints": true
                 }
         ]
 }
