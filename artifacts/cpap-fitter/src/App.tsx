@@ -339,8 +339,14 @@ function App() {
       publishableKey={CLERK_PUBLISHABLE_KEY!}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
-      signInFallbackRedirectUrl={`${basePath}/admin`}
-      signUpFallbackRedirectUrl={`${basePath}/admin`}
+      // Fallback only — used when no explicit ?redirect_url= is given.
+      // Shop customers are the dominant audience here; admin links
+      // already supply their own redirect, so defaulting unauthenticated
+      // visitors to /account is correct (admins land in /admin via the
+      // admin-link redirect_url, while shoppers don't get dumped into a
+      // 403'd /admin shell after signing in to view their orders).
+      signInFallbackRedirectUrl={`${basePath}/account`}
+      signUpFallbackRedirectUrl={`${basePath}/account`}
       localization={{
         // Override Clerk's "{{applicationName}}" interpolation so the
         // hosted sign-in / sign-up cards display our real brand name

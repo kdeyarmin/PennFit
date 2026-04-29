@@ -166,7 +166,13 @@ export function Questionnaire() {
       <div className="animate-in slide-in-from-right-4 fade-in duration-300" key={currentIndex}>
         <Card className="border-0 glass-card rounded-2xl min-h-[420px] flex flex-col">
           <CardHeader className="pb-4">
-            <CardTitle className="text-display text-2xl md:text-3xl leading-tight tracking-tight font-bold">
+            <CardTitle
+              // id is referenced by aria-labelledby on the radiogroup
+              // below so screen readers announce the question text as
+              // the group label when entering the choices.
+              id={`question-${currentQ.id}-label`}
+              className="text-display text-2xl md:text-3xl leading-tight tracking-tight font-bold"
+            >
               {currentQ.question}
             </CardTitle>
             {currentQ.description && (
@@ -184,9 +190,19 @@ export function Questionnaire() {
           </CardHeader>
           <CardContent className="flex-1 flex flex-col justify-center gap-4">
             {currentQ.type === "boolean" ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              // Single-select choice → radiogroup semantics. role=radio +
+              // aria-checked is the canonical pattern for "pick exactly one";
+              // aria-labelledby points at the question heading so a screen
+              // reader announces the question as the group's accessible name.
+              <div
+                role="radiogroup"
+                aria-labelledby={`question-${currentQ.id}-label`}
+                className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"
+              >
                 <button
                   type="button"
+                  role="radio"
+                  aria-checked={answers[currentQ.id] === true}
                   className={`option-tile ${
                     answers[currentQ.id] === true ? "option-tile-selected" : ""
                   } h-20 text-lg font-semibold tracking-tight rounded-xl px-5 flex items-center justify-center text-foreground`}
@@ -197,6 +213,8 @@ export function Questionnaire() {
                 </button>
                 <button
                   type="button"
+                  role="radio"
+                  aria-checked={answers[currentQ.id] === false}
                   className={`option-tile ${
                     answers[currentQ.id] === false ? "option-tile-selected" : ""
                   } h-20 text-lg font-semibold tracking-tight rounded-xl px-5 flex items-center justify-center text-foreground`}
@@ -207,13 +225,22 @@ export function Questionnaire() {
                 </button>
               </div>
             ) : (
-              <div className="flex flex-col gap-3 mt-4">
+              // Same radiogroup pattern as the boolean branch — these
+              // tiles are visually a card list but semantically a
+              // single-select group, so radio semantics are correct.
+              <div
+                role="radiogroup"
+                aria-labelledby={`question-${currentQ.id}-label`}
+                className="flex flex-col gap-3 mt-4"
+              >
                 {currentQ.options?.map((opt) => {
                   const selected = answers[currentQ.id] === opt.value;
                   return (
                     <button
                       key={opt.value}
                       type="button"
+                      role="radio"
+                      aria-checked={selected}
                       className={`option-tile ${
                         selected ? "option-tile-selected" : ""
                       } py-4 px-5 text-left whitespace-normal rounded-xl text-foreground`}

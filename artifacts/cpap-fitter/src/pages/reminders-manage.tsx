@@ -76,6 +76,10 @@ export function RemindersManage() {
   const [items, setItems] = useState<Record<ReminderSku, ItemState> | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [unsubscribed, setUnsubscribed] = useState(false);
+  // Inline validation message — used when the user tries to Save with
+  // every box unchecked. Previously that was a silent no-op; now we
+  // explain the choice (keep ≥1 item OR use Unsubscribe).
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Re-seed local state whenever the server data changes (e.g. after a save).
   useEffect(() => {
@@ -185,9 +189,19 @@ export function RemindersManage() {
   if (!items || !data) return null;
 
   function toggleItem(sku: ReminderSku, checked: boolean) {
+    // Clear the "pick at least one" warning the moment the user does
+    // anything corrective, otherwise the alert lingers stale.
+    if (checked && validationError) setValidationError(null);
+    // Clear "Saved <time> ago" the moment the user edits anything —
+    // otherwise a stale "Saved" banner reappears next to unsaved
+    // edits and falsely implies the new changes are persisted.
+    if (savedAt) setSavedAt(null);
     setItems((prev) => (prev ? { ...prev, [sku]: { ...prev[sku], enabled: checked } } : prev));
   }
   function updateItemField(sku: ReminderSku, patch: Partial<ItemState>) {
+    // Same rationale as toggleItem — any field edit invalidates the
+    // post-save confirmation banner.
+    if (savedAt) setSavedAt(null);
     setItems((prev) => (prev ? { ...prev, [sku]: { ...prev[sku], ...patch } } : prev));
   }
 
@@ -198,7 +212,16 @@ export function RemindersManage() {
       lastReplacedAt: items[d.sku].lastReplacedAt,
       intervalDays: items[d.sku].intervalDays,
     }));
-    if (enabled.length === 0) return;
+    if (enabled.length === 0) {
+      // Surface this rather than silently swallowing the click — a user
+      // who unchecked everything and pressed Save would otherwise see no
+      // feedback at all and assume something was broken.
+      setValidationError(
+        "Pick at least one supply to keep reminders for, or use Unsubscribe below if you want to stop all reminders.",
+      );
+      return;
+    }
+    setValidationError(null);
     update.mutate(
       { params: { token }, data: { items: enabled } },
       { onSuccess: () => setSavedAt(Date.now()) },
@@ -222,11 +245,19 @@ export function RemindersManage() {
         </p>
       </div>
 
-      {savedAt && (
+      {savedAt && !validationError && (
         <Alert>
           <CheckCircle2 className="w-4 h-4" />
           <AlertTitle>Saved</AlertTitle>
           <AlertDescription>Your reminders are up to date.</AlertDescription>
+        </Alert>
+      )}
+
+      {validationError && (
+        <Alert variant="destructive" data-testid="reminders-validation-error">
+          <ShieldOff className="w-4 h-4" />
+          <AlertTitle>Pick at least one supply</AlertTitle>
+          <AlertDescription>{validationError}</AlertDescription>
         </Alert>
       )}
 

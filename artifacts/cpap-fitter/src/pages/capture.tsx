@@ -180,8 +180,15 @@ export function Capture() {
         {/* Hidden canvas for extraction */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Overlay Guides */}
-        <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+        {/* Overlay Guides — purely decorative scan-frame chrome.
+            aria-hidden because screen readers should not announce the
+            empty face oval / corner-bracket divs; the actual guidance
+            lives in the visible "Quick reminders" list below + the
+            countdown live region further down. */}
+        <div
+          className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center"
+          aria-hidden="true"
+        >
           {/* Face Oval — softer, premium "scanner" feel */}
           <div className="w-3/5 md:w-2/5 aspect-[3/4] border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
 

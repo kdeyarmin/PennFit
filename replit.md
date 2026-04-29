@@ -89,6 +89,32 @@ Every customer-facing page shares the same restrained, premium background define
 
 **Layout-wrapping convention:** `App.tsx` wraps the entire `<Switch>` in a single `<Layout>`, so individual page components must NOT also wrap their return in `<Layout>` — doing so renders the global header twice. (Bug observed and fixed on `/shop/orders`; pattern enforced by inline comments on the affected page.)
 
+### Deep-review polish sweep (post-Phase 2)
+
+After Phase 2 shipped, a full-site review uncovered six small but real issues that have all been corrected:
+
+- **Clerk fallback redirect:** `signInFallbackRedirectUrl` / `signUpFallbackRedirectUrl` were defaulting to `/admin`, which would 403 a shop customer who signed in without an explicit `?redirect_url=`. Now defaults to `/account`. Admin links continue to work because they always supply their own `redirect_url=/admin/...`.
+- **Cart quantity hardening:** `useCart.setQuantity` now `Math.floor`s and guards against `NaN`/`Infinity` before clamping to `[0, 20]`. Defends against fractional inputs from number-input change handlers (Stripe rejects fractional quantities at checkout).
+- **Reminders `/manage` validation:** Saving with zero supplies enabled was a silent no-op — now surfaces a destructive Alert ("Pick at least one supply…") that auto-clears when the user re-checks a box. Customers who genuinely want to disable everything are pointed to the Unsubscribe button.
+- **Measurement type safety:** `pages/measure.tsx` replaced `any`-typed MediaPipe landmarks with a `Landmark = {x, y, z?}` type and converted `catch (err: any)` → `catch (err: unknown)` with a proper `instanceof Error` narrowing.
+- **Questionnaire a11y:** All selection tiles upgraded from `aria-pressed` to proper radiogroup semantics — each question wraps its tiles in `role="radiogroup"` with `aria-labelledby` pointing at the question heading, and each tile uses `role="radio"` + `aria-checked`. (Initial pass used `aria-pressed`, which is for toggle buttons; radio semantics are the correct ARIA pattern for "pick exactly one" UIs.)
+- **Capture overlay a11y:** Decorative scan-frame chrome (face oval + corner brackets) marked `aria-hidden="true"` so SR users aren't told about empty containers; the visible "Quick reminders" list and the existing `aria-live="assertive"` countdown region remain the canonical guidance channels.
+
+A second pass on architect MEDIUM advisories (round 2) caught and fixed three more:
+
+- **`/shop/orders` sign-in redirect:** The signed-out CTA was linking to `/sign-in?redirect_url=/shop/orders` while every other caller (and the `readRedirect()` helper in `sign-in.tsx`/`sign-up.tsx`) uses `?redirect=`. The mismatch silently dropped the return target and dumped customers at the global Clerk fallback. Fixed by normalizing the link to `?redirect=/shop/orders`. **Convention going forward: use `?redirect=` (never `?redirect_url=`) on every sign-in link in cpap-fitter — `redirect_url` is Clerk's native param name but is NOT what `readRedirect()` parses.**
+- **Reminders `/manage` "Saved" banner staleness:** After a successful save, any subsequent edit (toggle or field change) used to leave the green "Saved" banner up next to the unsaved edits, falsely implying the new changes were persisted. Both `toggleItem` and `updateItemField` now clear `savedAt` the moment the user mutates anything, so the banner only shows immediately after save and disappears the instant the user starts editing again.
+- **App.tsx Clerk fallback:** `signInFallbackRedirectUrl` / `signUpFallbackRedirectUrl` flipped from `/admin` to `/account` (round 1, kept here for completeness) — admin entry points always supply their own `?redirect=` so admin flow is unaffected.
+
+Findings explicitly **rejected as false-positives or out-of-scope** during the same sweep (documented here so they don't get re-raised):
+
+- *Pending-payment cart-clear* on `/shop/checkout-success` — the existing behavior (clear only when `paymentStatus === "paid"`) is intentional and the user-facing copy explicitly says "your cart is still saved" if the charge fails.
+- *N+1 product fetch* on the product detail page — small catalog, browser-cached; refactor would need a backend change.
+- *Mobile menu focus trap* — would require swapping the bespoke dropdown for Radix Sheet; deferred as polish, not a regression.
+- *`globalThis.Clerk` auth header* in `lib/shop-api.ts` — works correctly today; refactor risk > reward.
+
+`resupply-check` remains green: 31 files / 207 tests on the API, plus all lib/dashboard suites.
+
 ### Customer-Facing Reminder Subscriptions
 
 A self-serve, opt-in reminder system at `/reminders` lets customers (no account required) sign up to be emailed when each CPAP supply is due for replacement. The flow is intentionally separate from the internal Resupply Automation system, which is admin/CSV driven and manages full insurance episodes — this storefront feature is a lightweight email-only nudge.

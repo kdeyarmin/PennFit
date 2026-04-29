@@ -9,9 +9,10 @@
 //
 // Auth model:
 //   The page is gated client-side: signed-out visitors see a
-//   sign-in prompt with a redirect_url back to this page. The API
-//   endpoint itself returns 401 if called without a Clerk session,
-//   so even a curl-style probe doesn't leak.
+//   sign-in prompt that round-trips through ?redirect=/shop/orders
+//   so they land back here after auth. The API endpoint itself
+//   returns 401 if called without a Clerk session, so even a
+//   curl-style probe doesn't leak.
 //
 // Pagination:
 //   Cursor pagination via the API's composite `paidAt|id` cursor.
@@ -72,9 +73,12 @@ export function ShopOrders() {
 }
 
 function SignedOutPrompt() {
-  // We use ?redirect_url so Clerk's sign-in page sends them back here
-  // after a successful sign-in. Same param name our other shop links
-  // use (matches the cart prompt) for muscle-memory consistency.
+  // We use ?redirect= (the convention the rest of the app uses —
+  // see sign-in.tsx readRedirect()). An earlier version of this
+  // page used ?redirect_url= which silently fell through to the
+  // global fallback redirect after sign-in instead of returning
+  // the customer to /shop/orders. Keep this in sync with every
+  // other caller in the codebase: ?redirect=, never ?redirect_url=.
   return (
     <div
       className="glass-card rounded-2xl p-8 text-center"
@@ -88,7 +92,7 @@ function SignedOutPrompt() {
         Order history is tied to your PennPaps account so we can match it
         to your prescription on file.
       </p>
-      <Link href="/sign-in?redirect_url=/shop/orders" className="inline-block mt-5">
+      <Link href="/sign-in?redirect=/shop/orders" className="inline-block mt-5">
         <Button>Sign in</Button>
       </Link>
     </div>

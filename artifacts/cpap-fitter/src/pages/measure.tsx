@@ -128,7 +128,12 @@ export function Measure() {
             Left iris boundary (left): 469, Left iris boundary (right): 471
           */
 
-          const dist = (p1: any, p2: any) => {
+          // MediaPipe normalized landmark — has at least x/y in [0..1].
+          // Typing this explicitly (vs `any`) lets the compiler catch
+          // typos in the index lookups below and protects us if
+          // MediaPipe ever returns null/undefined for a missing point.
+          type Landmark = { x: number; y: number; z?: number };
+          const dist = (p1: Landmark, p2: Landmark) => {
             const dx = (p1.x - p2.x) * img.width;
             const dy = (p1.y - p2.y) * img.height;
             return Math.sqrt(dx * dx + dy * dy);
@@ -176,9 +181,10 @@ export function Measure() {
         } else {
           throw new Error("No face detected in the image. Please try the capture again.");
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Measurement error:", err);
-        if (isMountedRef.current) setError(err.message || "An error occurred during measurement extraction.");
+        const msg = err instanceof Error ? err.message : String(err);
+        if (isMountedRef.current) setError(msg || "An error occurred during measurement extraction.");
       } finally {
         // Release the WASM-backed landmarker eagerly — both on success
         // (we've already extracted what we need) and on error (so a retry

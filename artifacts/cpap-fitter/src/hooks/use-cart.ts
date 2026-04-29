@@ -211,12 +211,16 @@ export function useCart(): {
   );
 
   const setQuantity = useCallback((priceId: string, quantity: number) => {
+    // Clamp + integerize. Math.floor guards against any caller that
+    // forwards a fractional input (e.g. a number-input change handler
+    // that briefly emits 1.5 mid-keystroke) — Stripe rejects fractional
+    // line-item quantities, so it's worth catching here on entry rather
+    // than failing at checkout.
+    const safeQty = Math.floor(Math.max(0, Math.min(20, Number.isFinite(quantity) ? quantity : 0)));
     setItems((current) => {
       const next = current
         .map((i) =>
-          i.priceId === priceId
-            ? { ...i, quantity: Math.max(0, Math.min(20, quantity)) }
-            : i,
+          i.priceId === priceId ? { ...i, quantity: safeQty } : i,
         )
         .filter((i) => i.quantity > 0);
       writeStorage(next);
