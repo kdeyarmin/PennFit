@@ -127,13 +127,13 @@ export function HowItWorks() {
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              How It Works
+              Virtual Mask Fitter
             </span>
             <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>
         </div>
         <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-gradient-brand leading-[1.05]">
-          How PennPaps Works
+          Virtual Mask Fitter
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
           A short guide to everything PennPaps does — the on-device mask fitter,

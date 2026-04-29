@@ -19,7 +19,7 @@ function ScrollToTop() {
 }
 
 const navLinks = [
-  { href: "/how-it-works", label: "How It Works" },
+  { href: "/how-it-works", label: "Virtual Mask Fitter" },
   { href: "/masks", label: "Mask Catalog" },
   { href: "/shop", label: "Shop" },
   { href: "/learn", label: "Learn" },
@@ -196,7 +196,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   Patient Services
                 </div>
                 <ul className="space-y-2 text-sm">
-                  <li><Link href="/how-it-works" className="text-muted-foreground hover:text-primary transition-colors">How It Works</Link></li>
+                  <li><Link href="/how-it-works" className="text-muted-foreground hover:text-primary transition-colors">Virtual Mask Fitter</Link></li>
                   <li><Link href="/masks" className="text-muted-foreground hover:text-primary transition-colors">Mask Catalog</Link></li>
                   <li><Link href="/shop" className="text-muted-foreground hover:text-primary transition-colors">Shop Supplies</Link></li>
                   <li><Link href="/consent" className="text-muted-foreground hover:text-primary transition-colors">Order with Insurance</Link></li>
