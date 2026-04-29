@@ -24,7 +24,6 @@ import { Link } from "wouter";
 import { Show } from "@clerk/react";
 import { Loader2, Package, ShieldCheck, ShoppingBag } from "lucide-react";
 
-import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDocumentTitle } from "@/hooks/use-document-title";
@@ -45,29 +44,30 @@ export function ShopOrders() {
     "Your orders — PennPaps shop",
     "Your past PennPaps shop orders.",
   );
+  // App.tsx already wraps every route in <Layout>, so this page
+  // returns ONLY its content — wrapping in <Layout> here would
+  // double-render the global header.
   return (
-    <Layout>
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="container mx-auto max-w-3xl px-4 md:px-6 py-10 md:py-14"
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="container mx-auto max-w-3xl px-4 md:px-6 py-10 md:py-14"
+    >
+      <header className="mb-8">
+        <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight">
+          Your orders
+        </h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          Past purchases from the PennPaps cash-pay shop.
+        </p>
+      </header>
+      <Show
+        when="signed-in"
+        fallback={<SignedOutPrompt />}
       >
-        <header className="mb-8">
-          <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight">
-            Your orders
-          </h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            Past purchases from the PennPaps cash-pay shop.
-          </p>
-        </header>
-        <Show
-          when="signed-in"
-          fallback={<SignedOutPrompt />}
-        >
-          <SignedInOrders />
-        </Show>
-      </main>
-    </Layout>
+        <SignedInOrders />
+      </Show>
+    </main>
   );
 }
 

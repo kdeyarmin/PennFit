@@ -184,6 +184,13 @@ export function ShopCart() {
             mode: it.mode,
             recurringPriceId: it.recurringPriceId,
             recurringIntervalLabel: it.recurringIntervalLabel,
+            // Server-side cart-resume snapshots predate the
+            // inventory feature and don't carry stock counts.
+            // Same convention as the localStorage hydrate path
+            // in use-cart.ts: null = "not tracked here, the live
+            // product fetch + checkout validation will catch
+            // out-of-stock before the user can pay."
+            stockCount: null,
           })),
         );
         setResumeState("rehydrated");

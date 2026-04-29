@@ -110,7 +110,7 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 210 30% 98%;
+  --background: 210 25% 99%;
   --foreground: 213 45% 15%;
   --card: 0 0% 100%;
   --card-foreground: 222.2 84% 4.9%;
@@ -204,35 +204,29 @@
   body {
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
-    /* Premium layered atmosphere — Linear / Stripe / Apple-grade depth.
-       Navy + gold brand blooms paint visible color across the page,
-       soft enough to never compete with content. Order back-to-front:
-         1. Cool mist plinth across the lower half.
-         2. Warm gold "sun" at top-right (brand accent).
-         3. Wide gold sunrise wash bleeding from the top edge.
-         4. Top-left navy bloom — anchors the heading area.
-         5. Mid-right deep navy depth (gives the surface dimension).
-         6. Bottom navy plinth (grounds the entire page).
-         7. Lower-left gold whisper for warmth balance.
-         8. Diagonal sheen across the middle for a polished, lacquered feel.
+    /* Cutting-edge premium atmosphere — pulled back to whisper-quiet.
+       The page reads as a clean off-white sheet with two faint brand
+       aurorae tucked into opposite corners (well outside the reading
+       column) and a soft cool plinth grounding the very bottom. The
+       brand should announce itself in interactions (buttons, hover
+       states, accents) — not in giant atmospheric color washes that
+       fight content for attention.
 
-       The whole stack also breathes via `body-bloom-drift` (see below)
-       so the home page shares the same gentle living motion as the
-       <TechBackdrop> mounted on /reminders — the site reads as one
-       continuous designed surface, not "static everywhere except one
-       page." Background-position drift is GPU-cheap (no layout, no
-       paint outside the fixed background bitmap). */
+       Order back-to-front:
+         1. Top-right: warm gold aurora (10% opacity, in the corner).
+         2. Bottom-left: cool navy aurora (8% opacity, in the corner).
+         3. Bottom plinth: faint mist anchors the page floor.
+
+       The whole stack still breathes via `body-bloom-drift` (90s now,
+       slower than before — feels more sophisticated than the 60s
+       cadence), so the surface remains alive without distracting. */
     background-image:
-      radial-gradient(ellipse 70% 55% at 22% 18%, hsl(var(--penn-navy) / 0.55), transparent 60%),
-      radial-gradient(ellipse 60% 50% at 82% 12%, hsl(var(--penn-gold) / 0.70), transparent 62%),
-      radial-gradient(ellipse 75% 55% at 90% 62%, hsl(var(--penn-navy) / 0.40), transparent 60%),
-      radial-gradient(ellipse 65% 50% at 12% 78%, hsl(var(--penn-gold) / 0.42), transparent 60%),
-      radial-gradient(ellipse 90% 60% at 50% 115%, hsl(var(--penn-mist) / 1.0), transparent 70%),
-      radial-gradient(ellipse 85% 55% at 50% -8%, hsl(var(--penn-gold) / 0.30), transparent 65%),
-      linear-gradient(125deg, transparent 25%, hsl(0 0% 100% / 0.35) 50%, transparent 75%);
+      radial-gradient(ellipse 55% 45% at 95% 5%, hsl(var(--penn-gold) / 0.10), transparent 70%),
+      radial-gradient(ellipse 55% 45% at 5% 95%, hsl(var(--penn-navy) / 0.08), transparent 70%),
+      radial-gradient(ellipse 100% 40% at 50% 110%, hsl(var(--penn-mist) / 0.55), transparent 70%);
     background-attachment: fixed;
     background-size: 110% 110%;
-    animation: body-bloom-drift 60s ease-in-out infinite alternate;
+    animation: body-bloom-drift 90s ease-in-out infinite alternate;
   }
 
   /* Slow ambient drift on the body mesh blooms — same character as the
@@ -259,12 +253,15 @@
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.22) 1px, transparent 0);
-    background-size: 28px 28px;
-    mask-image: radial-gradient(ellipse 100% 90% at 50% 38%, black 28%, transparent 88%);
-    -webkit-mask-image: radial-gradient(ellipse 100% 90% at 50% 38%, black 28%, transparent 88%);
-    opacity: 0.85;
-    animation: body-grid-drift 48s linear infinite;
+    /* Whisper-quiet grid: half a percent navy per dot, feathered
+       aggressively at the edges so it disappears entirely behind any
+       content card. You should sense the texture, not see the dots. */
+    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.07) 1px, transparent 0);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, black 10%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, black 10%, transparent 75%);
+    opacity: 0.55;
+    animation: body-grid-drift 72s linear infinite;
   }
 
   @keyframes body-grid-drift {
@@ -272,14 +269,12 @@
       background-position: 0 0;
     }
     100% {
-      background-position: 28px 28px;
+      background-position: 32px 32px;
     }
   }
 
-  /* Premium grain — subtle paper-like texture. Slightly stronger than
-     before so the surface actually reads as tactile material rather
-     than flat digital gradient, but still low enough that text on top
-     stays crisp. */
+  /* Whisper grain — keep just enough to break up flat digital
+     gradients (matte-paper feel) without competing with content. */
   body::after {
     content: "";
     position: fixed;
@@ -288,7 +283,7 @@
     z-index: 0;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.18  0 0 0 0 0.30  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
     background-size: 240px 240px;
-    opacity: 0.10;
+    opacity: 0.04;
     mix-blend-mode: multiply;
   }
 

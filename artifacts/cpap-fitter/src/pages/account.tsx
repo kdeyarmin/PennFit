@@ -557,6 +557,11 @@ function OrdersSection({
           // a curated bundle vs an individual product. Default to
           // false; the cart UI handles both shapes the same way.
           isBundle: false,
+          // Stripe line items don't carry our inventory metadata.
+          // Same convention as cart-resume + localStorage hydrate:
+          // null = "not tracked here, the live product fetch +
+          // checkout validation will catch out-of-stock before pay."
+          stockCount: null,
         }));
 
       if (reorderable.length === 0) {
