@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { CheckCircle2, ShieldOff, BellOff } from "lucide-react";
+import { TechBackdrop } from "@/components/tech-backdrop";
 import {
   REMINDER_ITEMS,
   todayIso,
@@ -83,7 +84,9 @@ export function RemindersManage() {
 
   if (!token) {
     return (
-      <main id="main-content" tabIndex={-1} className="container max-w-xl mx-auto px-4 py-16">
+      <>
+        <TechBackdrop />
+        <main id="main-content" tabIndex={-1} className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
@@ -103,16 +106,20 @@ export function RemindersManage() {
           </CardContent>
         </Card>
       </main>
+    </>
     );
   }
 
   if (isLoading) {
     return (
-      <main id="main-content" tabIndex={-1} className="container max-w-3xl mx-auto px-4 py-10 space-y-4">
+      <>
+        <TechBackdrop />
+        <main id="main-content" tabIndex={-1} className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-4">
         <Skeleton className="h-10 w-72" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
       </main>
+    </>
     );
   }
 
@@ -120,7 +127,9 @@ export function RemindersManage() {
     const apiError = error as ApiError | null;
     const status = apiError?.status ?? 0;
     return (
-      <main id="main-content" tabIndex={-1} className="container max-w-xl mx-auto px-4 py-16">
+      <>
+        <TechBackdrop />
+        <main id="main-content" tabIndex={-1} className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
@@ -142,12 +151,15 @@ export function RemindersManage() {
           </CardContent>
         </Card>
       </main>
+    </>
     );
   }
 
   if (unsubscribed) {
     return (
-      <main id="main-content" tabIndex={-1} className="container max-w-xl mx-auto px-4 py-16">
+      <>
+        <TechBackdrop />
+        <main id="main-content" tabIndex={-1} className="relative z-10 container max-w-xl mx-auto px-4 py-16">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
@@ -166,6 +178,7 @@ export function RemindersManage() {
           </CardContent>
         </Card>
       </main>
+    </>
     );
   }
 
@@ -197,7 +210,9 @@ export function RemindersManage() {
   }
 
   return (
-    <main id="main-content" tabIndex={-1} className="container max-w-3xl mx-auto px-4 py-10 space-y-6">
+    <>
+        <TechBackdrop />
+        <main id="main-content" tabIndex={-1} className="relative z-10 container max-w-3xl mx-auto px-4 py-10 space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Manage reminders</h1>
         <p className="text-muted-foreground mt-2">
@@ -320,5 +335,6 @@ export function RemindersManage() {
         </CardContent>
       </Card>
     </main>
-  );
+  </>
+    );
 }

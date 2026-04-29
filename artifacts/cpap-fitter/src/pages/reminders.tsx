@@ -13,6 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { Bell, CheckCircle2, MailCheck, Sparkles } from "lucide-react";
 import { REMINDER_ITEMS, todayIso, type ReminderSku } from "@/lib/reminder-defaults";
+import { TechBackdrop } from "@/components/tech-backdrop";
 
 const PAGE_TITLE = "Supply replacement reminders";
 
@@ -112,8 +113,14 @@ export function Reminders() {
       : null;
 
     return (
-      <main id="main-content" tabIndex={-1} className="container max-w-2xl mx-auto px-4 py-12">
-        <Card className="border-0 glass-card rounded-2xl">
+      <>
+        <TechBackdrop />
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="relative z-10 container max-w-2xl mx-auto px-4 py-12"
+        >
+          <Card className="border-0 glass-card rounded-2xl">
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
@@ -174,8 +181,9 @@ export function Reminders() {
               </Link>
             </div>
           </CardContent>
-        </Card>
-      </main>
+          </Card>
+        </main>
+      </>
     );
   }
 
@@ -187,20 +195,26 @@ export function Reminders() {
     : null;
 
   return (
-    <main id="main-content" tabIndex={-1} className="container max-w-3xl mx-auto px-4 py-10">
-      <div className="text-center space-y-3 mb-8">
-        <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-gold flex items-center justify-center">
-          <Bell className="w-6 h-6" />
+    <>
+      <TechBackdrop />
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="relative z-10 container max-w-3xl mx-auto px-4 py-10"
+      >
+        <div className="text-center space-y-3 mb-8">
+          <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-gold flex items-center justify-center">
+            <Bell className="w-6 h-6" />
+          </div>
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight tech-backdrop-heading">
+            Never miss a CPAP refill again
+          </h1>
+          <p className="tech-backdrop-subtle max-w-xl mx-auto">
+            Pick which supplies you want reminders for and when you last replaced
+            them. We'll email you the moment each item is due — no app to install,
+            no account to create.
+          </p>
         </div>
-        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-          Never miss a CPAP refill again
-        </h1>
-        <p className="text-muted-foreground max-w-xl mx-auto">
-          Pick which supplies you want reminders for and when you last replaced
-          them. We'll email you the moment each item is due — no app to install,
-          no account to create.
-        </p>
-      </div>
 
       <Card className="border-0 glass-card rounded-2xl">
         <CardHeader>
@@ -355,6 +369,7 @@ export function Reminders() {
           </form>
         </CardContent>
       </Card>
-    </main>
+      </main>
+    </>
   );
 }

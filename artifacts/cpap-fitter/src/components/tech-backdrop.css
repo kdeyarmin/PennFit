@@ -1,0 +1,208 @@
+/*
+ * TechBackdrop — animated, high-tech background used on the customer
+ * reminders pages. Pure CSS, GPU-friendly transforms only, respects
+ * prefers-reduced-motion. Sits fixed behind everything else; the
+ * sibling `.tech-backdrop-on` class on <body> suppresses the global
+ * dot grid + film-grain so layers don't compound.
+ */
+
+body.tech-backdrop-on {
+  background-color: #06091a;
+  background-image: none;
+}
+
+body.tech-backdrop-on::before,
+body.tech-backdrop-on::after {
+  display: none !important;
+}
+
+.tech-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.tech-backdrop__base {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, #142153 0%, transparent 60%),
+    linear-gradient(180deg, #0a1230 0%, #070b22 60%, #05071a 100%);
+}
+
+.tech-backdrop__blob {
+  position: absolute;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+
+.tech-backdrop__blob--a {
+  background: radial-gradient(
+    circle,
+    hsla(220, 95%, 60%, 0.75),
+    transparent 70%
+  );
+  top: -20vmax;
+  left: -15vmax;
+  animation: tech-blob-a 32s ease-in-out infinite alternate;
+}
+
+.tech-backdrop__blob--b {
+  background: radial-gradient(
+    circle,
+    hsla(190, 95%, 55%, 0.65),
+    transparent 70%
+  );
+  top: 15vh;
+  right: -20vmax;
+  animation: tech-blob-b 38s ease-in-out infinite alternate;
+}
+
+.tech-backdrop__blob--c {
+  background: radial-gradient(
+    circle,
+    hsla(41, 90%, 60%, 0.45),
+    transparent 70%
+  );
+  bottom: -25vmax;
+  left: 25vmax;
+  width: 55vmax;
+  height: 55vmax;
+  animation: tech-blob-c 44s ease-in-out infinite alternate;
+}
+
+@keyframes tech-blob-a {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(15vw, 12vh, 0) scale(1.18);
+  }
+}
+
+@keyframes tech-blob-b {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  100% {
+    transform: translate3d(-14vw, -10vh, 0) scale(0.9);
+  }
+}
+
+@keyframes tech-blob-c {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.95);
+  }
+  100% {
+    transform: translate3d(10vw, -16vh, 0) scale(1.12);
+  }
+}
+
+/* Subtle perspective grid drifting upward — the "high-tech" cue. */
+.tech-backdrop__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, hsla(210, 80%, 75%, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, hsla(210, 80%, 75%, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 85% 70% at 50% 40%,
+    #000 35%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 85% 70% at 50% 40%,
+    #000 35%,
+    transparent 100%
+  );
+  animation: tech-grid-drift 22s linear infinite;
+  opacity: 0.7;
+}
+
+@keyframes tech-grid-drift {
+  0% {
+    background-position:
+      0 0,
+      0 0;
+  }
+  100% {
+    background-position:
+      56px 56px,
+      56px 56px;
+  }
+}
+
+/* A faint slow scanline / sweep light across the top. */
+.tech-backdrop__sweep {
+  position: absolute;
+  top: -30vh;
+  left: -30vw;
+  width: 160vw;
+  height: 60vh;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    hsla(200, 100%, 80%, 0.06) 48%,
+    hsla(200, 100%, 80%, 0.12) 50%,
+    hsla(200, 100%, 80%, 0.06) 52%,
+    transparent 70%
+  );
+  filter: blur(8px);
+  animation: tech-sweep 18s linear infinite;
+}
+
+@keyframes tech-sweep {
+  0% {
+    transform: translate3d(-20%, 0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(20%, 0, 0);
+    opacity: 0;
+  }
+}
+
+/* Fine-grain film noise so the gradients don't band on cheap displays. */
+.tech-backdrop__noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.85  0 0 0 0 0.92  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+  mix-blend-mode: overlay;
+}
+
+/*
+ * Helper text classes for headers/body text that sit DIRECTLY on the
+ * dark backdrop (i.e. NOT inside a .glass-card). Keep contrast high.
+ */
+.tech-backdrop-heading {
+  color: #ffffff;
+  text-shadow: 0 2px 24px hsla(220, 100%, 50%, 0.18);
+}
+.tech-backdrop-subtle {
+  color: hsla(210, 50%, 92%, 0.82);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tech-backdrop__blob,
+  .tech-backdrop__grid,
+  .tech-backdrop__sweep {
+    animation: none !important;
+  }
+}
