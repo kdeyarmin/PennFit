@@ -618,3 +618,5 @@ export const ListMasksResponse = zod.object({
   ),
   total: zod.number(),
 });
+
+// SELF-TEST DRIFT MARKER (zod) — must be preserved on failure

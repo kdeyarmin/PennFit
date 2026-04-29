@@ -92,14 +92,30 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
     currency: session.currency,
     lineItems: lineItems.map((li) => {
       const product = li.price?.product;
-      const productName =
+      const productExpanded =
         product && typeof product !== "string" && !product.deleted
-          ? product.name
-          : (li.description ?? "Item");
+          ? product
+          : null;
+      const productName = productExpanded
+        ? productExpanded.name
+        : (li.description ?? "Item");
+      // Reorder-friendly fields: expose the price+product identifiers so
+      // the client can drop these directly back into the cart for
+      // "Buy this again". `imageUrl` is best-effort — not every product
+      // in Stripe has images attached, in which case we send null and
+      // the cart will fall back to its placeholder.
+      const productImage =
+        productExpanded?.images && productExpanded.images.length > 0
+          ? productExpanded.images[0]
+          : null;
       return {
         name: productName,
         quantity: li.quantity ?? 1,
         amountSubtotalCents: li.amount_subtotal,
+        priceId: li.price?.id ?? null,
+        productId: productExpanded?.id ?? null,
+        unitAmountCents: li.price?.unit_amount ?? null,
+        imageUrl: productImage,
       };
     }),
     shippingCity: shipping?.address?.city ?? null,

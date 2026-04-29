@@ -158,6 +158,14 @@ export interface OrderSummaryResponse {
     name: string;
     quantity: number;
     amountSubtotalCents: number | null;
+    // Reorder fields — needed so the /account "Buy this again" flow
+    // can rebuild a cart from a past order. `priceId` is null for
+    // historical edge cases (e.g. one-off custom prices); the client
+    // filters those out before populating the cart.
+    priceId: string | null;
+    productId: string | null;
+    unitAmountCents: number | null;
+    imageUrl: string | null;
   }>;
   shippingCity: string | null;
   shippingState: string | null;

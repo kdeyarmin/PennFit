@@ -19,9 +19,11 @@ import {
   Lock,
   Minus,
   Plus,
+  RefreshCw,
   ShieldCheck,
   ShoppingBag,
   Trash2,
+  X,
   Loader2,
 } from "lucide-react";
 
@@ -39,11 +41,63 @@ import {
   type SavedCard,
 } from "@/lib/account-api";
 
+// sessionStorage key written by /account when the user clicks
+// "Buy this again". Reading + clearing it here is the only handshake
+// between the two pages — keeps the contract narrow.
+const REORDER_FROM_KEY = "pennpaps_reorder_from";
+
+interface ReorderSource {
+  sessionId: string;
+  createdAt: string;
+  // How many line items from the original order COULDN'T be loaded
+  // (archived Stripe prices, missing priceId, etc). Surfaced in the
+  // banner so customers don't wonder why their cart is shorter than
+  // they remember. Optional for forward-compat with older flag
+  // payloads sitting in sessionStorage.
+  droppedCount?: number;
+}
+
 export function ShopCart() {
   useDocumentTitle("Your cart");
   const { items, totalCents, setQuantity, removeItem } = useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Reorder breadcrumb — populated from sessionStorage on mount if the
+  // user just came from /account's "Buy this again". We read it once
+  // and hold it in component state so dismissing the banner survives
+  // re-renders without us having to write back to sessionStorage on
+  // every keystroke.
+  const [reorderSource, setReorderSource] = useState<ReorderSource | null>(
+    null,
+  );
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(REORDER_FROM_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<ReorderSource>;
+      if (
+        parsed &&
+        typeof parsed.sessionId === "string" &&
+        typeof parsed.createdAt === "string"
+      ) {
+        setReorderSource({
+          sessionId: parsed.sessionId,
+          createdAt: parsed.createdAt,
+          droppedCount:
+            typeof parsed.droppedCount === "number"
+              ? parsed.droppedCount
+              : undefined,
+        });
+      }
+      // Clear the storage flag immediately — if the user closes the
+      // banner, navigates away, and returns to /shop/cart later, the
+      // banner should NOT reappear. Component state still keeps the
+      // banner visible for this mount.
+      window.sessionStorage.removeItem(REORDER_FROM_KEY);
+    } catch {
+      // Malformed JSON or storage blocked — silently no banner.
+    }
+  }, []);
   // Tri-state preview probe: `null` until the products fetch resolves,
   // then `true`/`false`. Keeping it tri-state lets us disable Checkout
   // during the probe so a fast click can't beat the response and POST
@@ -179,6 +233,49 @@ export function ShopCart() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-3">
+            {reorderSource && (
+              <div
+                className="glass-card rounded-2xl p-4 border-l-4 border-l-[hsl(var(--penn-gold))] flex items-start gap-3"
+                data-testid="cart-reorder-banner"
+              >
+                <RefreshCw className="h-5 w-5 text-[hsl(var(--penn-navy))] shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 text-sm">
+                  <p className="font-semibold text-[hsl(var(--penn-navy))]">
+                    Loaded from your order on{" "}
+                    {new Date(reorderSource.createdAt).toLocaleDateString(
+                      undefined,
+                      { year: "numeric", month: "short", day: "numeric" },
+                    )}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5">
+                    Adjust quantities or remove anything you don't need
+                    before checking out.
+                  </p>
+                  {(reorderSource.droppedCount ?? 0) > 0 && (
+                      <p
+                        className="text-amber-700 mt-1.5 flex items-start gap-1.5"
+                        data-testid="cart-reorder-banner-dropped"
+                      >
+                        <Info className="h-4 w-4 shrink-0 mt-0.5" />
+                        <span>
+                          {reorderSource.droppedCount === 1
+                            ? "1 item from that order is no longer available and was skipped."
+                            : `${reorderSource.droppedCount} items from that order are no longer available and were skipped.`}
+                        </span>
+                      </p>
+                    )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReorderSource(null)}
+                  className="shrink-0 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors"
+                  aria-label="Dismiss reorder banner"
+                  data-testid="cart-reorder-banner-dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             {items.map((it) => (
               <div
                 key={it.priceId}

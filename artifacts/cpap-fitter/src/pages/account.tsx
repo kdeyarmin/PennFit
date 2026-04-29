@@ -8,15 +8,21 @@
 //     into the standard checkout to update card on next purchase.
 //     We surface the message instead of pretending an "Update card"
 //     button works in isolation.
-//   * Order history — last N orders with "Reorder" buttons that POST
-//     /shop/me/quick-checkout with reorderSessionId and bounce to
-//     Stripe Hosted Checkout.
+//   * Order history — last N orders with "Buy this again" buttons.
+//     The button fetches the past order's line items via
+//     /shop/orders/:sessionId, drops them into the local cart with
+//     useCart().replaceItems, and navigates to /shop/cart so the
+//     customer can review (and adjust) before paying. The cart page
+//     reads a `pennpaps_reorder_from` sessionStorage flag to render
+//     a "Loaded from your order on …" banner. We deliberately do
+//     NOT bounce straight to Stripe — older patients want to see
+//     what they're buying before a card form appears.
 //
 // Auth gating: rendered behind <SignedIn>. Wouter-level redirect to
 // /sign-in?redirect=/account when not signed in.
 
 import React, { useEffect, useState } from "react";
-import { Link, Redirect } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
 import { Show, useUser } from "@clerk/react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
@@ -35,14 +41,23 @@ import { Button } from "@/components/ui/button";
 import {
   AccountApiError,
   fetchShopMe,
-  startQuickCheckout,
   updateShopMe,
   type SavedShippingAddress,
   type ShopMeResponse,
   type ShopRecentOrder,
   type SavedCard,
 } from "@/lib/account-api";
-import { fetchShopProducts, formatMoneyCents } from "@/lib/shop-api";
+import {
+  fetchOrderSummary,
+  fetchShopProducts,
+  formatMoneyCents,
+} from "@/lib/shop-api";
+import { useCart, type CartItem } from "@/hooks/use-cart";
+
+// sessionStorage key picked up by /shop/cart to render the "Loaded
+// from your order on …" banner. Stored as a JSON object so we can
+// extend it later (e.g. orderId) without a schema bump.
+const REORDER_FROM_KEY = "pennpaps_reorder_from";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -495,14 +510,79 @@ function OrdersSection({
 }) {
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const { replaceItems } = useCart();
+  const [, navigate] = useLocation();
 
-  async function handleReorder(sessionId: string) {
+  async function handleBuyAgain(order: ShopRecentOrder) {
+    // Preview mode: /shop/orders/:sessionId would 503 (no Stripe).
+    // The button is also visually disabled in this branch, but guard
+    // here too in case of a stale click.
     if (previewMode) return;
     setReorderError(null);
-    setReorderingId(sessionId);
+    setReorderingId(order.sessionId);
     try {
-      const { url } = await startQuickCheckout({ reorderSessionId: sessionId });
-      window.location.assign(url);
+      const summary = await fetchOrderSummary(order.sessionId);
+      // Filter line items down to ones we can actually put back in
+      // the cart. A null priceId or unitAmountCents means the item
+      // can't round-trip through /shop/checkout (which validates by
+      // priceId), so silently dropping it is the safest default.
+      const reorderable: CartItem[] = summary.lineItems
+        .filter(
+          (li): li is typeof li & { priceId: string; unitAmountCents: number } =>
+            !!li.priceId && typeof li.unitAmountCents === "number",
+        )
+        .map((li) => ({
+          productId: li.productId ?? li.priceId,
+          priceId: li.priceId,
+          name: li.name,
+          unitAmountCents: li.unitAmountCents,
+          currency: summary.currency ?? "usd",
+          quantity: li.quantity,
+          imageUrl: li.imageUrl,
+          // No reliable way to know from a Stripe line item if it was
+          // a curated bundle vs an individual product. Default to
+          // false; the cart UI handles both shapes the same way.
+          isBundle: false,
+        }));
+
+      if (reorderable.length === 0) {
+        setReorderError(
+          "We couldn't load this order back into your cart. Try browsing the shop instead.",
+        );
+        setReorderingId(null);
+        return;
+      }
+
+      // Track partial-reorder cases so the cart banner can be honest
+      // about what got dropped. The most common cause is a price
+      // that's since been archived in Stripe — checkout would have
+      // rejected it anyway, but failing here (with a count) instead
+      // of at the payment step is meaningfully friendlier UX.
+      const droppedCount = summary.lineItems.length - reorderable.length;
+
+      replaceItems(reorderable);
+
+      // Drop a sessionStorage breadcrumb so /shop/cart can render the
+      // "Loaded from your order on …" banner. sessionStorage (not
+      // localStorage) means the flag dies when the tab closes, so a
+      // user who reorders, closes the tab, then revisits the cart
+      // doesn't see a stale banner. Stored as JSON so we can extend
+      // the payload later (e.g. orderId) without a key bump.
+      try {
+        window.sessionStorage.setItem(
+          REORDER_FROM_KEY,
+          JSON.stringify({
+            sessionId: order.sessionId,
+            createdAt: order.createdAt,
+            droppedCount,
+          }),
+        );
+      } catch {
+        // Quota exceeded / private mode — banner won't show, cart
+        // still works. Not worth surfacing to the user.
+      }
+
+      navigate("/shop/cart");
     } catch (err) {
       const msg =
         err instanceof AccountApiError
@@ -564,16 +644,24 @@ function OrdersSection({
                 {o.status === "paid" && (
                   <Button
                     size="sm"
-                    variant="outline"
                     disabled={previewMode || reorderingId === o.sessionId}
-                    onClick={() => handleReorder(o.sessionId)}
+                    onClick={() => void handleBuyAgain(o)}
                     data-testid={`account-reorder-${o.sessionId}`}
+                    title={
+                      previewMode
+                        ? "Reordering will enable as soon as Stripe is connected."
+                        : undefined
+                    }
                   >
                     {reorderingId === o.sessionId ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Loading…
+                      </>
                     ) : (
                       <>
-                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Reorder
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        Buy this again
                       </>
                     )}
                   </Button>
