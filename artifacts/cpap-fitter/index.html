@@ -11,6 +11,16 @@
     <title>PennPaps.com — CPAP Fitter, Shop & Resupply by Penn Home Medical Supply</title>
     <meta name="description" content="PennPaps.com is the online CPAP storefront from Penn Home Medical Supply: get fitted for a mask in minutes, shop cushions, filters, and tubing direct, and let us handle insurance and resupply. Privacy-first, on-device fitting." />
 
+    <!--
+      Per-page canonical URLs are managed at runtime by the
+      useDocumentTitle hook (see src/hooks/use-document-title.tsx),
+      which points each route at its production-shaped URL on
+      pennpaps.com. We deliberately do NOT ship a static
+      <link rel="canonical"> here because a single hardcoded
+      canonical would tell search engines that every SPA route is
+      the same as the homepage and collapse indexation.
+    -->
+
     <!-- Open Graph / social preview -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="PennPaps.com — by Penn Home Medical Supply" />

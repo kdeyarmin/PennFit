@@ -87,6 +87,7 @@ export function Masks() {
                   alt={`${mask.manufacturer} ${mask.name}`}
                   className="w-full h-full object-contain p-4"
                   loading="lazy"
+                  decoding="async"
                 />
                 <Badge
                   className="absolute top-3 left-3 glass-panel text-foreground border-0 font-medium"

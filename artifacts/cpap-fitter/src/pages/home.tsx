@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   ScanFace,
   ClipboardList,
@@ -17,6 +18,10 @@ import {
 } from "lucide-react";
 
 export function Home() {
+  // Empty title keeps the static index.html title (already optimal
+  // for the landing page); the hook is still called so the canonical
+  // gets stamped at https://pennpaps.com/.
+  useDocumentTitle("");
   return (
     <div className="flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-28">
       {/* Hero */}
