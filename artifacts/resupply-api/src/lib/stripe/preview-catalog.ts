@@ -45,6 +45,14 @@ interface PreviewSeed {
   modelNumber: string;
   imageUrl: string;
   bundleContents?: string[];
+  /**
+   * Optional preview-only stock count. `undefined` mirrors the
+   * production "not tracked" path (renders without any stock badge).
+   * A small number (e.g. 3) lets the dev exercise the "Only N left"
+   * UI; `0` exercises the "Out of stock" UI without touching real
+   * Stripe data.
+   */
+  stockCount?: number;
 }
 
 /**
@@ -177,6 +185,10 @@ const SEED: PreviewSeed[] = [
     manufacturer: "ResMed",
     modelNumber: "37296",
     imageUrl: "/products/tubing-climateline.webp",
+    // Preview-only: low-stock state, drives the "Only N left" UI in
+    // dev / when STRIPE_SECRET_KEY is unset. Production reads
+    // Stripe metadata.
+    stockCount: 3,
   },
 
   // ── Filters ──────────────────────────────────────────────────────
@@ -192,6 +204,9 @@ const SEED: PreviewSeed[] = [
     manufacturer: "ResMed",
     modelNumber: "36850",
     imageUrl: "/products/filter-disposable.png",
+    // Preview-only: zero-stock state, drives the "Out of stock" UI
+    // (one-time disabled, subscribe & ship still available).
+    stockCount: 0,
   },
   {
     sku: "filter-reusable-2pack",
@@ -362,6 +377,7 @@ export function getPreviewCatalog(): ShopProductView[] {
       imageUrl: s.imageUrl,
       manufacturer: s.manufacturer,
       modelNumber: s.modelNumber,
+      stockCount: s.stockCount ?? null,
       price: {
         id: `price_preview_${s.sku}`,
         unitAmount: s.unitAmountCents,

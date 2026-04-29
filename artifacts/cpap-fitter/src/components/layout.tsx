@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ShieldCheck, Menu, X, ShoppingCart } from "lucide-react";
+import { ShieldCheck, Menu, X, ShoppingCart, Package } from "lucide-react";
+import { Show } from "@clerk/react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { useCart } from "@/hooks/use-cart";
 import { UserMenu } from "@/components/user-menu";
@@ -30,6 +31,25 @@ const navLinks = [
 // Lives in this file because it's a layout concern (header chrome) and
 // the only consumer is the Layout itself; extracting to its own file
 // would just be indirection for a 20-line component.
+// "Your orders" header link — only rendered for signed-in visitors.
+// Lives next to the cart icon so the two shop affordances are
+// grouped. Hidden for signed-out visitors so the header stays
+// uncluttered for first-time browsers.
+function YourOrdersNavLink() {
+  return (
+    <Show when="signed-in">
+      <Link
+        href="/shop/orders"
+        className="hidden md:inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-primary hover:bg-secondary/40 transition-colors"
+        data-testid="nav-your-orders"
+      >
+        <Package className="h-4 w-4" aria-hidden="true" />
+        Your orders
+      </Link>
+    </Show>
+  );
+}
+
 function CartNavIcon() {
   const { count } = useCart();
   const hasItems = count > 0;
@@ -116,6 +136,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   {l.label}
                 </Link>
               ))}
+              <YourOrdersNavLink />
               <CartNavIcon />
               <UserMenu />
             </nav>

@@ -111,7 +111,13 @@ describe("POST /admin/shop/reviews/:id/approve", () => {
     stubVerifiedAdmin();
     const moderatedAt = new Date("2026-04-29T13:00:00Z");
     updateQueue.push([
-      { id: "rev_1", status: "approved", moderatedAt },
+      {
+        id: "rev_1",
+        status: "approved",
+        moderatedAt,
+        productId: "prod_AirFitP10",
+        authorEmail: "alice@example.com",
+      },
     ]);
     const res = await request(makeApp()).post(
       "/resupply-api/admin/shop/reviews/rev_1/approve",
@@ -122,6 +128,27 @@ describe("POST /admin/shop/reviews/:id/approve", () => {
     expect(lastUpdateSet?.moderatedBy).toBe("user_admin");
     expect(lastUpdateSet?.moderationNote).toBeNull();
     expect(lastUpdateSet?.moderatedAt).toBeInstanceOf(Date);
+  });
+
+  it("returns 200 even when the moderation email cannot be sent (fail-soft)", async () => {
+    // SENDGRID_API_KEY is unset in this test env so the helper takes
+    // the `email_not_configured` no-op path. The handler must not
+    // surface that as an error to the admin.
+    stubVerifiedAdmin();
+    updateQueue.push([
+      {
+        id: "rev_5",
+        status: "approved",
+        moderatedAt: new Date(),
+        productId: "prod_x",
+        authorEmail: "noone@example.com",
+      },
+    ]);
+    const res = await request(makeApp()).post(
+      "/resupply-api/admin/shop/reviews/rev_5/approve",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("approved");
   });
 
   it("returns 404 when the row id doesn't match", async () => {
@@ -138,7 +165,14 @@ describe("POST /admin/shop/reviews/:id/reject", () => {
   it("flips status to rejected and persists the moderator note", async () => {
     stubVerifiedAdmin();
     updateQueue.push([
-      { id: "rev_2", status: "rejected", moderatedAt: new Date() },
+      {
+        id: "rev_2",
+        status: "rejected",
+        moderatedAt: new Date(),
+        moderationNote: "Off-topic; not about the product.",
+        productId: "prod_x",
+        authorEmail: "alice@example.com",
+      },
     ]);
     const res = await request(makeApp())
       .post("/resupply-api/admin/shop/reviews/rev_2/reject")
@@ -155,7 +189,14 @@ describe("POST /admin/shop/reviews/:id/reject", () => {
   it("accepts an empty body (no note required)", async () => {
     stubVerifiedAdmin();
     updateQueue.push([
-      { id: "rev_3", status: "rejected", moderatedAt: new Date() },
+      {
+        id: "rev_3",
+        status: "rejected",
+        moderatedAt: new Date(),
+        moderationNote: null,
+        productId: "prod_x",
+        authorEmail: "alice@example.com",
+      },
     ]);
     const res = await request(makeApp())
       .post("/resupply-api/admin/shop/reviews/rev_3/reject")

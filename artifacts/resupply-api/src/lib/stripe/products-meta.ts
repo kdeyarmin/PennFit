@@ -78,6 +78,29 @@ export interface ShopProductView {
   manufacturer: string | null;
   /** Manufacturer model / part number, e.g. "62932". From metadata.model_number. */
   modelNumber: string | null;
+  /**
+   * Available stock for the one-time-purchase path. Stripe is the
+   * source of truth — we read `metadata.stock_count` (parsed as int)
+   * so an admin can edit it from the resupply-dashboard inventory
+   * editor without us shipping a separate inventory table.
+   *
+   * Semantics:
+   *   * `null`  — not tracked. Treat as "available". This is the
+   *               default state for products created before the
+   *               admin set a stock number.
+   *   * `0`     — out of stock. UI shows "Out of stock" and disables
+   *               the one-time add-to-cart. Subscribe & ship stays
+   *               available because subscription replenishment runs
+   *               on a separate cadence and pulls from a different
+   *               warehouse pool in practice.
+   *   * `>0`    — available; the UI may show "Only N left" when the
+   *               number is small.
+   *
+   * Negative or non-numeric metadata values normalise to `null` so a
+   * typo in the Stripe Dashboard never accidentally takes a SKU
+   * offline.
+   */
+  stockCount: number | null;
   price: {
     id: string;
     /** In whole-dollar cents (Stripe's `unit_amount`). */
@@ -185,6 +208,7 @@ export function projectProduct(p: Stripe.Product): ShopProductView | null {
     imageUrl: p.images?.[0] ?? null,
     manufacturer: meta.manufacturer ?? null,
     modelNumber: meta.model_number ?? null,
+    stockCount: parseStockCount(meta.stock_count),
     price: {
       id: defaultPrice.id,
       unitAmount: defaultPrice.unit_amount,
@@ -192,6 +216,22 @@ export function projectProduct(p: Stripe.Product): ShopProductView | null {
     },
     recurringPrice: null,
   };
+}
+
+/**
+ * Parse a Stripe metadata `stock_count` value. Returns `null` for any
+ * unset / non-integer / negative input — we never want a typo in the
+ * Stripe Dashboard to silently take a SKU off the storefront. See the
+ * doc on `ShopProductView.stockCount` for the semantics.
+ */
+export function parseStockCount(raw: string | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return null;
+  // Cap at a sane upper bound so an accidental "9999999999" doesn't
+  // overflow a downstream `integer` column. The cap is generous —
+  // anything above 1m is operationally indistinguishable from "lots".
+  return Math.min(n, 1_000_000);
 }
 
 function parseBundleContents(raw: string | undefined): string[] {

@@ -36,6 +36,11 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Shop Reviews",
     matchPrefix: "/admin/shop/reviews",
   },
+  {
+    href: "/admin/shop/inventory",
+    label: "Shop Inventory",
+    matchPrefix: "/admin/shop/inventory",
+  },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");

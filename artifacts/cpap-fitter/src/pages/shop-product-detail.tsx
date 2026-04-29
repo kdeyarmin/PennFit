@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
 import {
@@ -78,6 +79,81 @@ export function ShopProductDetail({ productId }: { productId: string }) {
     product ? `${product.name} — PennPaps shop` : "Product — PennPaps shop",
     product?.tagline ?? product?.description ?? undefined,
   );
+
+  // OpenGraph + JSON-LD product schema. We compute these together so a
+  // single useEffect inside the hook handles both inserts and the
+  // unmount cleanup. Memoized on the inputs we actually read so a
+  // re-render of unrelated state (e.g. typing in the review form)
+  // doesn't re-stringify the JSON-LD payload every keystroke.
+  //
+  // Aggregate-rating tie-in: only emitted when the public reviews
+  // endpoint reports `count > 0` — Google's structured-data validator
+  // rejects `aggregateRating` with a zero ratingCount.
+  const seoMeta = useMemo(() => {
+    if (!product) return { openGraph: null, jsonLd: null };
+    const description = (
+      product.description ??
+      product.tagline ??
+      product.name
+    ).slice(0, 160);
+    const absoluteImage =
+      product.imageUrl && /^https?:\/\//i.test(product.imageUrl)
+        ? product.imageUrl
+        : product.imageUrl
+          ? `${window.location.origin}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`
+          : undefined;
+    const url = `${window.location.origin}/shop/p/${encodeURIComponent(product.id)}`;
+
+    // availability mirrors the in-page UI rule: explicit zero =
+    // OutOfStock; null (untracked) or any positive integer = InStock.
+    const availability =
+      typeof product.stockCount === "number" && product.stockCount <= 0
+        ? "https://schema.org/OutOfStock"
+        : "https://schema.org/InStock";
+
+    const aggregate = reviewPages?.aggregate;
+    const jsonLd: Record<string, unknown> = {
+      "@context": "https://schema.org/",
+      "@type": "Product",
+      name: product.name,
+      description,
+      image: absoluteImage,
+      brand: product.manufacturer
+        ? { "@type": "Brand", name: product.manufacturer }
+        : undefined,
+      mpn: product.modelNumber ?? undefined,
+      offers: {
+        "@type": "Offer",
+        url,
+        priceCurrency: product.price.currency.toUpperCase(),
+        price: (product.price.unitAmount / 100).toFixed(2),
+        availability,
+      },
+    };
+    if (aggregate && aggregate.count > 0) {
+      jsonLd.aggregateRating = {
+        "@type": "AggregateRating",
+        ratingValue: aggregate.averageRating.toFixed(2),
+        reviewCount: aggregate.count,
+      };
+    }
+    return {
+      openGraph: {
+        title: `${product.name} — Penn Home Medical Supply`,
+        description,
+        type: "product",
+        url,
+        siteName: "Penn Home Medical Supply",
+        image: absoluteImage,
+      } as const,
+      jsonLd,
+    };
+  }, [product, reviewPages?.aggregate]);
+
+  useDocumentMeta({
+    openGraph: seoMeta.openGraph,
+    jsonLd: seoMeta.jsonLd,
+  });
 
   // Load the product (from the catalog) + its reviews on mount.
   useEffect(() => {
@@ -266,8 +342,26 @@ function Hero({
     product.recurringPrice ? "subscription" : "one_time",
   );
   const resolved = resolveProductImage(product.imageUrl);
+
+  // Inventory affordances. Subscription mode is exempt: the
+  // Subscribe & ship toggle stays available even when the one-time
+  // pool has hit zero — auto-ship inventory is a separate weekly
+  // replenishment pipeline, not the storefront stock count.
+  const oneTimeOutOfStock =
+    typeof product.stockCount === "number" && product.stockCount <= 0;
+  const lowStockHint =
+    typeof product.stockCount === "number" &&
+    product.stockCount > 0 &&
+    product.stockCount <= 5
+      ? product.stockCount
+      : null;
+  const isSubscriptionMode =
+    !!product.recurringPrice && mode === "subscription";
+  const addDisabled =
+    previewMode || (!isSubscriptionMode && oneTimeOutOfStock);
+
   const handleAdd = () => {
-    addItem({
+    const result = addItem({
       productId: product.id,
       priceId: product.price.id,
       name: product.name,
@@ -275,13 +369,12 @@ function Hero({
       currency: product.price.currency,
       imageUrl: resolved,
       isBundle: product.isBundle,
-      mode:
-        product.recurringPrice && mode === "subscription"
-          ? "subscription"
-          : "one_time",
+      mode: isSubscriptionMode ? "subscription" : "one_time",
       recurringPriceId: product.recurringPrice?.id ?? null,
       recurringIntervalLabel: product.recurringPrice?.intervalLabel ?? null,
+      stockCount: product.stockCount,
     });
+    if (!result.ok) return;
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), 1800);
   };
@@ -326,10 +419,26 @@ function Hero({
             {product.description}
           </p>
         )}
-        <div className="mt-6">
+        <div className="mt-6 flex items-baseline gap-3 flex-wrap">
           <span className="text-4xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
             {formatMoneyCents(product.price.unitAmount, product.price.currency)}
           </span>
+          {oneTimeOutOfStock ? (
+            <Badge
+              variant="outline"
+              className="border-slate-300 text-slate-500 bg-slate-100 font-semibold"
+              data-testid="pdp-stock-out"
+            >
+              Out of stock
+            </Badge>
+          ) : lowStockHint !== null ? (
+            <span
+              className="text-sm font-semibold text-[hsl(var(--penn-navy))]/80"
+              data-testid="pdp-stock-low"
+            >
+              Only {lowStockHint} left
+            </span>
+          ) : null}
         </div>
         {product.recurringPrice && (
           <div
@@ -369,19 +478,20 @@ function Hero({
         <Button
           onClick={handleAdd}
           className="mt-6 max-w-sm"
-          disabled={previewMode}
+          disabled={addDisabled}
+          aria-disabled={addDisabled}
           data-testid="pdp-add-to-cart"
         >
           {justAdded ? (
             <>
               <CheckCircle2 className="w-4 h-4 mr-2" /> Added to cart
             </>
+          ) : !isSubscriptionMode && oneTimeOutOfStock ? (
+            <>Out of stock</>
           ) : (
             <>
               <ShoppingCart className="w-4 h-4 mr-2" />{" "}
-              {mode === "subscription" && product.recurringPrice
-                ? "Subscribe & add"
-                : "Add to cart"}
+              {isSubscriptionMode ? "Subscribe & add" : "Add to cart"}
             </>
           )}
         </Button>
@@ -580,7 +690,22 @@ function ReviewList({ items }: { items: ReviewItem[] }) {
               <div className="font-medium text-foreground/80">
                 {r.authorDisplayName}
               </div>
-              <time dateTime={r.createdAt}>
+              {/*
+                Verified-purchaser pill. Server flag — the client never
+                computes it. Soft-gold to match the existing brand
+                affordances (cart count, gold underline) and stays
+                small so it doesn't compete with the star rating.
+              */}
+              {r.verifiedPurchaser && (
+                <Badge
+                  variant="outline"
+                  className="mt-1 border-[hsl(var(--penn-gold))]/60 bg-[hsl(var(--penn-gold))]/10 text-[hsl(var(--penn-navy))] font-semibold text-[10px] tracking-wide"
+                  data-testid={`pdp-review-verified-${r.id}`}
+                >
+                  Verified purchaser
+                </Badge>
+              )}
+              <time dateTime={r.createdAt} className="block mt-1">
                 {new Date(r.createdAt).toLocaleDateString(undefined, {
                   year: "numeric",
                   month: "short",

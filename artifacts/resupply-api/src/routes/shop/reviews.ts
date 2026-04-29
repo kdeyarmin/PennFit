@@ -33,7 +33,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { clerkClient } from "@clerk/express";
 import { z } from "zod";
 
-import { getDbPool, shopReviews } from "@workspace/resupply-db";
+import { getDbPool, shopOrderItems, shopReviews } from "@workspace/resupply-db";
 import type { InsertShopReviewRow } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -250,6 +250,10 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   const items = await db
     .select({
       id: shopReviews.id,
+      // clerkUserId is selected only to drive the verified-purchaser
+      // join below — we MUST NOT echo it back in the public response
+      // (it would let any visitor scrape per-review identity).
+      clerkUserId: shopReviews.clerkUserId,
       rating: shopReviews.rating,
       title: shopReviews.title,
       body: shopReviews.body,
@@ -268,6 +272,36 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
     hasMore && lastItem
       ? encodeCompositeCursor(lastItem.createdAt, lastItem.id)
       : null;
+
+  // Verified-purchaser join. One indexed lookup per page (NOT per
+  // row) against shop_order_items: ask Postgres for the distinct
+  // clerk_user_ids on the page that have at least one paid item for
+  // this product. We don't care about quantities or order ids — only
+  // membership. Anonymous reviewers (clerkUserId === null) are never
+  // verified by definition. If the table has no rows yet (fresh
+  // install) the IN list yields an empty set and every flag is false.
+  const reviewerIds = Array.from(
+    new Set(
+      trimmed
+        .map((it) => it.clerkUserId)
+        .filter((v): v is string => typeof v === "string" && v.length > 0),
+    ),
+  );
+  const verifiedSet = new Set<string>();
+  if (reviewerIds.length > 0) {
+    const verifiedRows = await db
+      .selectDistinct({ clerkUserId: shopOrderItems.clerkUserId })
+      .from(shopOrderItems)
+      .where(
+        and(
+          eq(shopOrderItems.productId, productId),
+          inArray(shopOrderItems.clerkUserId, reviewerIds),
+        ),
+      );
+    for (const row of verifiedRows) {
+      if (row.clerkUserId) verifiedSet.add(row.clerkUserId);
+    }
+  }
 
   // Aggregate is computed in a separate query but in the same
   // request so the product detail page renders the rating header
@@ -290,6 +324,8 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
       title: it.title,
       body: it.body,
       authorDisplayName: it.authorDisplayName,
+      verifiedPurchaser:
+        it.clerkUserId != null && verifiedSet.has(it.clerkUserId),
       createdAt: it.createdAt.toISOString(),
     })),
     nextCursor,

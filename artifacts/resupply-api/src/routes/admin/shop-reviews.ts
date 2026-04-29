@@ -29,6 +29,15 @@ import {
   encodeCompositeCursor,
   parseCompositeCursor,
 } from "../../lib/cursor";
+import {
+  sendReviewApprovedEmail,
+  sendReviewRejectedEmail,
+} from "../../lib/messaging/review-moderation-email";
+import {
+  getStripeClient,
+  readStripeConfigOrNull,
+} from "../../lib/stripe/config";
+import type Stripe from "stripe";
 
 const router: IRouter = Router();
 
@@ -182,6 +191,8 @@ router.post(
         id: shopReviews.id,
         status: shopReviews.status,
         moderatedAt: shopReviews.moderatedAt,
+        productId: shopReviews.productId,
+        authorEmail: shopReviews.authorEmail,
       });
     const row = updated[0];
     if (!row) {
@@ -192,6 +203,31 @@ router.post(
       { reviewId: row.id, decision: "approved" },
       "shop/admin/reviews: review approved",
     );
+    // FAIL-SOFT: never block the moderation 200 on email infra. The
+    // helper wraps every error path; we only log the outcome.
+    try {
+      const productName = await resolveProductDisplayName(row.productId);
+      const productUrl = buildProductUrl(req, row.productId);
+      const result = await sendReviewApprovedEmail({
+        to: row.authorEmail,
+        productName,
+        productUrl,
+      });
+      if (!result.sent) {
+        req.log?.warn?.(
+          { reviewId: row.id, reason: result.reason },
+          "shop/admin/reviews: approval email not sent",
+        );
+      }
+    } catch (mailErr) {
+      req.log?.warn?.(
+        {
+          reviewId: row.id,
+          err: mailErr instanceof Error ? mailErr.message : String(mailErr),
+        },
+        "shop/admin/reviews: approval email threw (swallowed)",
+      );
+    }
     res.json({
       id: row.id,
       status: row.status,
@@ -230,6 +266,9 @@ router.post(
         id: shopReviews.id,
         status: shopReviews.status,
         moderatedAt: shopReviews.moderatedAt,
+        moderationNote: shopReviews.moderationNote,
+        productId: shopReviews.productId,
+        authorEmail: shopReviews.authorEmail,
       });
     const row = updated[0];
     if (!row) {
@@ -240,6 +279,31 @@ router.post(
       { reviewId: row.id, decision: "rejected" },
       "shop/admin/reviews: review rejected",
     );
+    // FAIL-SOFT: rejection notice. Same contract as the approve path.
+    try {
+      const productName = await resolveProductDisplayName(row.productId);
+      const editUrl = buildProductUrl(req, row.productId);
+      const result = await sendReviewRejectedEmail({
+        to: row.authorEmail,
+        productName,
+        moderationNote: row.moderationNote,
+        editUrl,
+      });
+      if (!result.sent) {
+        req.log?.warn?.(
+          { reviewId: row.id, reason: result.reason },
+          "shop/admin/reviews: rejection email not sent",
+        );
+      }
+    } catch (mailErr) {
+      req.log?.warn?.(
+        {
+          reviewId: row.id,
+          err: mailErr instanceof Error ? mailErr.message : String(mailErr),
+        },
+        "shop/admin/reviews: rejection email threw (swallowed)",
+      );
+    }
     res.json({
       id: row.id,
       status: row.status,
@@ -247,5 +311,42 @@ router.post(
     });
   },
 );
+
+/**
+ * Look up a product's display name from Stripe. Wrapped in
+ * try/catch + null fallback so a Stripe outage cannot escalate
+ * into a moderation 500 — the email path always falls back to
+ * "your review" / "this product" copy.
+ */
+async function resolveProductDisplayName(productId: string): Promise<string> {
+  const config = readStripeConfigOrNull();
+  if (!config) return "your review";
+  try {
+    const stripe = getStripeClient(config);
+    const product: Stripe.Product = await stripe.products.retrieve(productId);
+    return product.name || "your review";
+  } catch {
+    return "your review";
+  }
+}
+
+/**
+ * Build the absolute URL of the product detail page for inclusion
+ * in moderation emails. The shop is mounted at the cpap-fitter
+ * artifact root, NOT at the resupply-api base path — we use the
+ * request origin (set by the same proxy that serves the dashboard)
+ * so dev (https://<repl>.replit.dev/shop/p/...) and production
+ * (https://pennpaps.com/shop/p/...) both render the right link
+ * without a separate config.
+ */
+function buildProductUrl(
+  req: { protocol?: string; get?: (h: string) => string | undefined },
+  productId: string,
+): string {
+  const host = req.get?.("host") ?? "";
+  const protocol = req.protocol ?? "https";
+  const base = host ? `${protocol}://${host}` : "";
+  return `${base}/shop/p/${encodeURIComponent(productId)}`;
+}
 
 export default router;

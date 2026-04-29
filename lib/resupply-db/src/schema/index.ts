@@ -15,3 +15,4 @@ export * from "./shop-customers";
 export * from "./shop-subscriptions";
 export * from "./shop-abandoned-carts";
 export * from "./shop-reviews";
+export * from "./shop-order-items";

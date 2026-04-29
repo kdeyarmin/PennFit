@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
+import shopProductsAdminRouter from "./admin/shop-products.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
@@ -48,5 +49,9 @@ router.use(abandonedCartsRouter);
 // publicly visible after an admin approves them. requireAdmin gate
 // is on the router itself.
 router.use(shopReviewsAdminRouter);
+// /admin/shop/products/* — operator tooling for the cash-pay catalog
+// itself. Today: PATCH stock_count metadata on a Stripe Product.
+// requireAdmin gate is on the router itself.
+router.use(shopProductsAdminRouter);
 
 export default router;

@@ -53,6 +53,16 @@ export interface CartItem {
   recurringPriceId: string | null;
   /** Pre-rendered cadence label like "month" or "3 months". */
   recurringIntervalLabel: string | null;
+  /**
+   * Snapshot of the SKU's stock count at add-to-cart time. Used by
+   * `addItem` for a defense-in-depth check (the storefront should
+   * already have hidden the button at zero stock, but admins can
+   * change inventory between page load and add-click).
+   *   * `null` → not tracked, treat as available.
+   *   * `0`    → reject the add.
+   * Subscriptions are exempt — see comment in `addItem`.
+   */
+  stockCount: number | null;
 }
 
 function readStorage(): CartItem[] {
@@ -103,6 +113,11 @@ function readStorage(): CartItem[] {
             typeof it.recurringIntervalLabel === "string"
               ? it.recurringIntervalLabel
               : null,
+          // Backwards-compat: legacy rows have no `stockCount`. Treat
+          // them as untracked (null) which preserves prior behaviour
+          // — addItem only blocks at literal 0.
+          stockCount:
+            typeof it.stockCount === "number" ? it.stockCount : null,
         }),
       );
   } catch {
@@ -123,7 +138,20 @@ export function useCart(): {
   items: CartItem[];
   count: number;
   totalCents: number;
-  addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
+  /**
+   * Add a SKU to the cart.
+   *
+   * Returns a discriminated result so the caller can surface the
+   * "out of stock" outcome inline. Existing call sites that ignore
+   * the return value remain valid — a successful add is still a
+   * silent state mutation.
+   */
+  addItem: (
+    item: Omit<CartItem, "quantity">,
+    quantity?: number,
+  ) =>
+    | { ok: true }
+    | { ok: false; reason: "out_of_stock" };
   setQuantity: (priceId: string, quantity: number) => void;
   setItemMode: (priceId: string, mode: "one_time" | "subscription") => void;
   removeItem: (priceId: string) => void;
@@ -150,6 +178,18 @@ export function useCart(): {
 
   const addItem = useCallback(
     (item: Omit<CartItem, "quantity">, quantity = 1) => {
+      // Defense in depth: the storefront cards / detail page should
+      // already hide the Add button at zero stock, but inventory can
+      // change between page load and click. Subscription mode is
+      // exempt — auto-ship inventory is replenished separately
+      // (per the project lock note in the session plan).
+      if (
+        item.mode !== "subscription" &&
+        typeof item.stockCount === "number" &&
+        item.stockCount <= 0
+      ) {
+        return { ok: false as const, reason: "out_of_stock" as const };
+      }
       setItems((current) => {
         const idx = current.findIndex((i) => i.priceId === item.priceId);
         let next: CartItem[];
@@ -165,6 +205,7 @@ export function useCart(): {
         writeStorage(next);
         return next;
       });
+      return { ok: true as const };
     },
     [],
   );

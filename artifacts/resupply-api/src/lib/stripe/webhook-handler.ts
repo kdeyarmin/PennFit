@@ -38,7 +38,9 @@ import {
   shopCustomers,
   shopAbandonedCarts,
   shopOrders,
+  shopOrderItems,
   shopSubscriptions,
+  type InsertShopOrderItemRow,
   type ShopSubscriptionItemSnapshot,
 } from "@workspace/resupply-db";
 
@@ -106,7 +108,32 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
-        await markPaid(session, log);
+        const paidRow = await markPaid(session, log);
+        // Best-effort: mirror the session's line items into
+        // shop_order_items so the verified-purchaser badge and the
+        // /shop/me/orders history page can render without a per-row
+        // Stripe round-trip. Idempotent via the
+        // (stripe_session_id, product_id, price_id) UNIQUE — a Stripe
+        // re-delivery (or the async_payment_succeeded shadow on the
+        // same session) inserts zero new rows. Failures MUST NOT
+        // throw out of the webhook — the parent order is already
+        // paid; the badge degrades gracefully if the items are
+        // missing (one re-delivery later it'll fill in).
+        if (paidRow) {
+          try {
+            await upsertOrderItemsFromSession(config, session, paidRow, log);
+          } catch (itemsErr) {
+            log?.warn?.(
+              {
+                err:
+                  itemsErr instanceof Error
+                    ? itemsErr.message
+                    : String(itemsErr),
+              },
+              "stripe webhook: shop_order_items upsert failed (non-fatal)",
+            );
+          }
+        }
         // Best-effort sync of saved customer info. Failures here MUST
         // NOT throw out of the webhook — the order is paid; failing
         // to refresh "saved card last4" is recoverable on the next
@@ -193,10 +220,16 @@ export const stripeWebhookHandler: RequestHandler = async (
   res.status(200).json({ received: true });
 };
 
+interface PaidOrderRow {
+  id: string;
+  clerkUserId: string | null;
+  paidAt: Date;
+}
+
 async function markPaid(
   session: Stripe.Checkout.Session,
   log: { info?: (...args: unknown[]) => void } | undefined,
-): Promise<void> {
+): Promise<PaidOrderRow | null> {
   const db = drizzle(getDbPool());
   const paymentIntentId =
     typeof session.payment_intent === "string"
@@ -212,7 +245,9 @@ async function markPaid(
       session.metadata.clerk_user_id) ||
     null;
 
-  await db
+  // Returning the row so the line-item upsert downstream can copy
+  // (orderId, clerkUserId, paidAt) without a second SELECT.
+  const updated = await db
     .update(shopOrders)
     .set({
       status: "paid",
@@ -223,11 +258,117 @@ async function markPaid(
       paidAt: sql`now()`,
       updatedAt: sql`now()`,
     })
-    .where(eq(shopOrders.stripeSessionId, session.id));
+    .where(eq(shopOrders.stripeSessionId, session.id))
+    .returning({
+      id: shopOrders.id,
+      clerkUserId: shopOrders.clerkUserId,
+      paidAt: shopOrders.paidAt,
+    });
 
   log?.info?.(
     { amountCents: session.amount_total },
     "shop order marked paid",
+  );
+
+  const row = updated[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    clerkUserId: row.clerkUserId,
+    // paidAt was just set to now() above and is non-null on the
+    // returned row.
+    paidAt: row.paidAt ?? new Date(),
+  };
+}
+
+/**
+ * Mirror the line items on a paid Checkout Session into
+ * shop_order_items so the verified-purchaser badge and the
+ * /shop/me/orders history page can answer "did this user buy this
+ * product?" with one indexed lookup instead of N Stripe round-trips.
+ *
+ * One Stripe API call per webhook invocation (listLineItems with
+ * expand=data.price.product). The parent shop_orders row already has
+ * status='paid' by the time we run, so even if this fails the order
+ * is fully recognised; missing items just cause the verified pill
+ * not to show until a Stripe re-delivery (or a manual replay) fills
+ * them in.
+ *
+ * Idempotent: the (stripe_session_id, product_id, price_id) UNIQUE
+ * + onConflictDoNothing absorbs both Stripe re-deliveries AND the
+ * checkout.session.completed/async_payment_succeeded twin firing
+ * for the same session.
+ */
+async function upsertOrderItemsFromSession(
+  config: StripeConfig,
+  session: Stripe.Checkout.Session,
+  order: PaidOrderRow,
+  log:
+    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | undefined,
+): Promise<void> {
+  const stripe = getStripeClient(config);
+  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
+    limit: 100,
+    expand: ["data.price.product"],
+  });
+
+  const rows: InsertShopOrderItemRow[] = [];
+  for (const li of lineItems.data) {
+    const price = li.price ?? null;
+    const product = price?.product ?? null;
+    const productId =
+      typeof product === "string"
+        ? product
+        : product && !product.deleted
+          ? product.id
+          : null;
+    if (!productId) {
+      // No way to attribute this row to a product — skip rather than
+      // insert an opaque entry that the verified-purchaser join can't
+      // use. Recoverable: a future enrichment job can backfill.
+      continue;
+    }
+    rows.push({
+      orderId: order.id,
+      stripeSessionId: session.id,
+      clerkUserId: order.clerkUserId,
+      productId,
+      // Use '' (not null) so the (stripe_session_id, product_id,
+      // price_id) UNIQUE actually dedupes redeliveries — Postgres
+      // UNIQUE treats NULLs as distinct. Schema enforces NOT NULL
+      // with default '' (migration 0011).
+      priceId: price?.id ?? "",
+      quantity: li.quantity ?? 1,
+      unitAmountCents: price?.unit_amount ?? null,
+      currency: price?.currency ?? null,
+      paidAt: order.paidAt,
+    });
+  }
+
+  if (rows.length === 0) {
+    log?.info?.(
+      { sessionId: session.id },
+      "stripe webhook: no insertable line items for session",
+    );
+    return;
+  }
+
+  const db = drizzle(getDbPool());
+  await db.insert(shopOrderItems).values(rows).onConflictDoNothing({
+    // Match the UNIQUE we declared in the migration. We name the
+    // target columns rather than the index so a future index rename
+    // doesn't silently disable the dedupe.
+    target: [
+      shopOrderItems.stripeSessionId,
+      shopOrderItems.productId,
+      shopOrderItems.priceId,
+    ],
+  });
+
+  log?.info?.(
+    { sessionId: session.id, count: rows.length },
+    "shop_order_items upserted",
   );
 }
 

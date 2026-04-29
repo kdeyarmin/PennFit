@@ -52,6 +52,17 @@ export interface ShopProductView {
     /** Pre-rendered label like "month" or "3 months". */
     intervalLabel: string;
   } | null;
+  /**
+   * Stripe-tracked stock count for one-time purchases.
+   *   * `null` → SKU is **not** stock-tracked. Treat as available.
+   *   * `0`    → out of stock; one-time purchase disabled.
+   *   * `1..5` → "Only N left" hint near the price.
+   *   * `>5`   → no UI affordance; treat as plenty.
+   * Subscriptions ignore this — auto-ship inventory is reconciled
+   * by the fulfilment workflow weekly, not at the storefront.
+   * Source of truth: Stripe `product.metadata.stock_count`.
+   */
+  stockCount: number | null;
 }
 
 /**
@@ -214,6 +225,14 @@ export interface ReviewItem {
   body: string;
   authorDisplayName: string;
   createdAt: string;
+  /**
+   * True iff the API found a paid `shop_order_items` row matching
+   * this review's clerkUserId + productId. Server-computed — the
+   * client can render a "Verified purchaser" pill but never decide
+   * the bit on its own. Older API versions may omit the field;
+   * absent is treated as `false` by the UI.
+   */
+  verifiedPurchaser?: boolean;
 }
 
 export interface ReviewAggregate {
@@ -372,6 +391,59 @@ export async function deleteMyReview(productId: string): Promise<void> {
     { method: "DELETE", headers },
   );
   if (!res.ok) throw new Error(`Failed to delete review (${res.status})`);
+}
+
+// ──────────────────────────────────────────────────────────── order history
+
+export interface OrderHistoryLineItem {
+  productId: string;
+  /**
+   * Display name. Server tries Stripe in bulk and falls back to
+   * `Product <id-prefix>` when Stripe is offline or the SKU has been
+   * retired. Always populated.
+   */
+  productName: string;
+  quantity: number;
+  unitAmountCents: number | null;
+  currency: string | null;
+}
+
+export interface OrderHistoryItem {
+  id: string;
+  sessionId: string;
+  status: "paid";
+  amountTotalCents: number | null;
+  currency: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  items: OrderHistoryLineItem[];
+}
+
+export interface OrderHistoryResponse {
+  orders: OrderHistoryItem[];
+  /** Composite `paidAt|id` cursor; null when there are no more pages. */
+  nextCursor: string | null;
+}
+
+/**
+ * Paginated order history for the signed-in caller. Newest first.
+ * Throws on 401 — the caller is expected to gate the page behind a
+ * Clerk `<SignedIn>` so this only fires for authenticated sessions.
+ */
+export async function fetchMyOrders(opts?: {
+  cursor?: string;
+  limit?: number;
+}): Promise<OrderHistoryResponse> {
+  const params = new URLSearchParams();
+  if (opts?.cursor) params.set("cursor", opts.cursor);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const headers = { Accept: "application/json", ...(await authHeader()) };
+  const res = await fetch(`/resupply-api/shop/me/orders${qs}`, { headers });
+  if (!res.ok) {
+    throw new Error(`Failed to load your orders (${res.status})`);
+  }
+  return (await res.json()) as OrderHistoryResponse;
 }
 
 export function formatMoneyCents(cents: number, currency = "usd"): string {

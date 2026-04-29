@@ -1,76 +1,90 @@
 {
-        "version": "7",
-        "dialect": "postgresql",
-        "entries": [
-                {
-                        "idx": 0,
-                        "version": "7",
-                        "when": 1777297087004,
-                        "tag": "0000_plain_bloodstorm",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 1,
-                        "version": "7",
-                        "when": 1777384344952,
-                        "tag": "0001_wandering_kat_farrell",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 2,
-                        "version": "7",
-                        "when": 1777396226583,
-                        "tag": "0002_burly_amphibian",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 3,
-                        "version": "7",
-                        "when": 1777398516454,
-                        "tag": "0003_admin_rename",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 4,
-                        "version": "7",
-                        "when": 1777485000000,
-                        "tag": "0004_patient_notes",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 5,
-                        "version": "7",
-                        "when": 1777572000000,
-                        "tag": "0005_idempotency_keys",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 6,
-                        "version": "7",
-                        "when": 1777658400000,
-                        "tag": "0006_shop_subscriptions",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 7,
-                        "version": "7",
-                        "when": 1777744800000,
-                        "tag": "0007_shop_subscriptions_event_ordering",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 8,
-                        "version": "7",
-                        "when": 1777831200000,
-                        "tag": "0008_shop_abandoned_carts",
-                        "breakpoints": true
-                },
-                {
-                        "idx": 9,
-                        "version": "7",
-                        "when": 1777917600000,
-                        "tag": "0009_shop_reviews",
-                        "breakpoints": true
-                }
-        ]
+    "version": "7",
+    "dialect": "postgresql",
+    "entries": [
+        {
+            "idx": 0,
+            "version": "7",
+            "when": 1777297087004,
+            "tag": "0000_plain_bloodstorm",
+            "breakpoints": true
+        },
+        {
+            "idx": 1,
+            "version": "7",
+            "when": 1777384344952,
+            "tag": "0001_wandering_kat_farrell",
+            "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1777396226583,
+            "tag": "0002_burly_amphibian",
+            "breakpoints": true
+        },
+        {
+            "idx": 3,
+            "version": "7",
+            "when": 1777398516454,
+            "tag": "0003_admin_rename",
+            "breakpoints": true
+        },
+        {
+            "idx": 4,
+            "version": "7",
+            "when": 1777485000000,
+            "tag": "0004_patient_notes",
+            "breakpoints": true
+        },
+        {
+            "idx": 5,
+            "version": "7",
+            "when": 1777572000000,
+            "tag": "0005_idempotency_keys",
+            "breakpoints": true
+        },
+        {
+            "idx": 6,
+            "version": "7",
+            "when": 1777658400000,
+            "tag": "0006_shop_subscriptions",
+            "breakpoints": true
+        },
+        {
+            "idx": 7,
+            "version": "7",
+            "when": 1777744800000,
+            "tag": "0007_shop_subscriptions_event_ordering",
+            "breakpoints": true
+        },
+        {
+            "idx": 8,
+            "version": "7",
+            "when": 1777831200000,
+            "tag": "0008_shop_abandoned_carts",
+            "breakpoints": true
+        },
+        {
+            "idx": 9,
+            "version": "7",
+            "when": 1777917600000,
+            "tag": "0009_shop_reviews",
+            "breakpoints": true
+        },
+        {
+            "idx": 10,
+            "version": "7",
+            "when": 1778004000000,
+            "tag": "0010_shop_order_items",
+            "breakpoints": true
+        },
+        {
+            "idx": 11,
+            "version": "7",
+            "when": 1778090400000,
+            "tag": "0011_shop_order_items_price_id_not_null",
+            "breakpoints": true
+        }
+    ]
 }

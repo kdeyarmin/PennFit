@@ -49,8 +49,15 @@ const insertErrorQueue: Array<Error | null> = [];
 let lastInsertValues: unknown = null;
 let lastUpdateSet: Record<string, unknown> | null = null;
 
+const selectDistinctQueue: unknown[] = [];
+
 const dbStub = {
   select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
+  // selectDistinct is used by the public reviews list to compute the
+  // verified-purchaser flag — one query per page that returns the
+  // distinct clerk_user_ids on the page that have a paid order item
+  // for the requested product. Same fluent shape as `select`.
+  selectDistinct: vi.fn(() => fluent(selectDistinctQueue.shift() ?? [])),
   insert: vi.fn(() => {
     const obj: Record<string, unknown> = {
       values: (v: unknown) => {
@@ -116,6 +123,7 @@ function stubSignedIn(userId = "user_alice"): void {
 
 beforeEach(() => {
   selectQueue.length = 0;
+  selectDistinctQueue.length = 0;
   insertQueue.length = 0;
   updateQueue.length = 0;
   deleteQueue.length = 0;
@@ -125,6 +133,7 @@ beforeEach(() => {
   getAuthMock.mockReset();
   getUserMock.mockReset();
   dbStub.select.mockClear();
+  dbStub.selectDistinct.mockClear();
   dbStub.insert.mockClear();
   dbStub.update.mockClear();
   dbStub.delete.mockClear();
@@ -312,6 +321,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     selectQueue.push([
       {
         id: "rev_1",
+        clerkUserId: "user_bob",
         rating: 5,
         title: "Great",
         body: "Loved it. Five stars from me on this one.",
@@ -319,6 +329,9 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
         createdAt,
       },
     ]);
+    // Verified-purchaser query: bob has bought this product so the
+    // verified pill should light up.
+    selectDistinctQueue.push([{ clerkUserId: "user_bob" }]);
     selectQueue.push([
       { rating: 5, n: 4 },
       { rating: 4, n: 1 },
@@ -329,11 +342,52 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     expect(res.status).toBe(200);
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0].authorDisplayName).toBe("Bob R.");
-    // Public reads never expose the author's email
+    // Public reads never expose the author's email or clerk id
     expect(res.body.items[0].authorEmail).toBeUndefined();
+    expect(res.body.items[0].clerkUserId).toBeUndefined();
+    expect(res.body.items[0].verifiedPurchaser).toBe(true);
     expect(res.body.aggregate.count).toBe(5);
     expect(res.body.aggregate.averageRating).toBe(4.8);
     expect(res.body.aggregate.distribution[5]).toBe(4);
+  });
+
+  it("marks verifiedPurchaser=false when the reviewer has not bought the product", async () => {
+    getAuthMock.mockReturnValue({ userId: null });
+    selectQueue.push([
+      {
+        id: "rev_2",
+        clerkUserId: "user_charlie",
+        rating: 4,
+        title: "Decent",
+        body: "Fine for the price, took a couple nights to get used to.",
+        authorDisplayName: "Charlie K.",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    ]);
+    // No matching buyer rows.
+    selectDistinctQueue.push([]);
+    selectQueue.push([{ rating: 4, n: 1 }]);
+    const res = await request(makeApp()).get(
+      "/resupply-api/shop/products/prod_1/reviews",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.items[0].verifiedPurchaser).toBe(false);
+  });
+
+  it("does not crash when there are no reviews on the page (empty IN list)", async () => {
+    getAuthMock.mockReturnValue({ userId: null });
+    selectQueue.push([]); // no reviews
+    // selectDistinct is NOT called when the page is empty (route
+    // short-circuits the IN lookup) but we push a sentinel anyway so
+    // a regression that does call it doesn't blow up the test.
+    selectDistinctQueue.push([]);
+    selectQueue.push([]); // empty aggregate
+    const res = await request(makeApp()).get(
+      "/resupply-api/shop/products/prod_1/reviews",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.items).toEqual([]);
+    expect(res.body.aggregate.count).toBe(0);
   });
 });
 

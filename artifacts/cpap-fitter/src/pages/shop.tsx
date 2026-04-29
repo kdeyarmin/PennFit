@@ -324,8 +324,23 @@ function ProductCard({
   );
   const resolvedImage = resolveProductImage(product.imageUrl);
 
+  // One-time purchase is blocked iff Stripe metadata says so AND the
+  // shopper is not in subscription mode (auto-ship inventory is
+  // managed separately — see use-cart's defense-in-depth comment).
+  const oneTimeOutOfStock =
+    typeof product.stockCount === "number" && product.stockCount <= 0;
+  const lowStockHint =
+    typeof product.stockCount === "number" &&
+    product.stockCount > 0 &&
+    product.stockCount <= 5
+      ? product.stockCount
+      : null;
+  const isSubscriptionMode =
+    !!product.recurringPrice && mode === "subscription";
+  const addDisabled = !isSubscriptionMode && oneTimeOutOfStock;
+
   const handleAdd = () => {
-    addItem({
+    const result = addItem({
       productId: product.id,
       priceId: product.price.id,
       name: product.name,
@@ -333,10 +348,17 @@ function ProductCard({
       currency: product.price.currency,
       imageUrl: resolvedImage,
       isBundle: product.isBundle,
-      mode: product.recurringPrice && mode === "subscription" ? "subscription" : "one_time",
+      mode: isSubscriptionMode ? "subscription" : "one_time",
       recurringPriceId: product.recurringPrice?.id ?? null,
       recurringIntervalLabel: product.recurringPrice?.intervalLabel ?? null,
+      stockCount: product.stockCount,
     });
+    if (!result.ok) {
+      // The button should already be disabled at zero stock, but if
+      // an admin flipped inventory while the page was open the cart
+      // hook is the last-line check. Render the same pill state.
+      return;
+    }
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), 1800);
   };
@@ -415,10 +437,31 @@ function ProductCard({
             {product.description}
           </p>
         )}
-        <div className="mt-4 mb-4">
+        <div className="mt-4 mb-4 flex items-baseline gap-3 flex-wrap">
           <span className="text-3xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
             {formatMoneyCents(product.price.unitAmount, product.price.currency)}
           </span>
+          {/*
+            Inventory affordances. We render exactly one of these at a
+            time so the price line stays scannable. The "Out of stock"
+            chip wins over "Only N left" when N hits 0.
+          */}
+          {oneTimeOutOfStock ? (
+            <Badge
+              variant="outline"
+              className="border-slate-300 text-slate-500 bg-slate-100 font-semibold"
+              data-testid={`shop-stock-out-${product.id}`}
+            >
+              Out of stock
+            </Badge>
+          ) : lowStockHint !== null ? (
+            <span
+              className="text-xs font-semibold text-[hsl(var(--penn-navy))]/80"
+              data-testid={`shop-stock-low-${product.id}`}
+            >
+              Only {lowStockHint} left
+            </span>
+          ) : null}
         </div>
         {product.isBundle && product.bundleContents.length > 0 && (
           <ul className="text-sm text-foreground/80 space-y-1.5 mb-4">
@@ -485,18 +528,20 @@ function ProductCard({
           <Button
             onClick={handleAdd}
             className="w-full"
+            disabled={addDisabled}
+            aria-disabled={addDisabled}
             data-testid={`shop-add-${product.id}`}
           >
             {justAdded ? (
               <>
                 <CheckCircle2 className="w-4 h-4 mr-2" /> Added to cart
               </>
+            ) : addDisabled ? (
+              <>Out of stock</>
             ) : (
               <>
                 <ShoppingCart className="w-4 h-4 mr-2" />{" "}
-                {mode === "subscription" && product.recurringPrice
-                  ? "Subscribe & add"
-                  : "Add to cart"}
+                {isSubscriptionMode ? "Subscribe & add" : "Add to cart"}
               </>
             )}
           </Button>
