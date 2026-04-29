@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { Bell, CheckCircle2, MailCheck, Sparkles } from "lucide-react";
+import { Bell, CheckCircle2, MailCheck, Repeat, Sparkles, Truck } from "lucide-react";
 import { REMINDER_ITEMS, todayIso, type ReminderSku } from "@/lib/reminder-defaults";
 import { TechBackdrop } from "@/components/tech-backdrop";
 
@@ -204,19 +204,86 @@ export function Reminders() {
       >
         <div className="text-center space-y-3 mb-8">
           <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-gold flex items-center justify-center">
-            <Bell className="w-6 h-6" />
+            <Truck className="w-6 h-6" />
           </div>
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight tech-backdrop-heading">
-            Never miss a CPAP refill again
+            Never run out of CPAP supplies
           </h1>
           <p className="tech-backdrop-subtle max-w-xl mx-auto">
-            Pick which supplies you want reminders for and when you last replaced
-            them. We'll email you the moment each item is due — no app to install,
-            no account to create.
+            Subscribe and we'll auto-ship the right replacements on your
+            schedule. Same price as one-time. Pause or cancel anytime — no
+            phone calls, no insurance hoops.
           </p>
         </div>
 
-      <Card className="border-0 glass-card rounded-2xl">
+        {/*
+          Primary CTA — Subscribe & ship. Per the /reminders restructure
+          (item #5), auto-ship is the hero. The link sends the patient
+          to /shop with a fragment so the shop page can scroll to or
+          surface the subscribe-default consumables (filters, cushions,
+          tubing). The fragment is non-blocking: /shop renders identically
+          if it's missing, and the toggles default to subscribe on
+          consumables anyway.
+        */}
+        <div
+          className="glass-card rounded-2xl p-6 mb-6 border-l-4 border-l-[hsl(var(--penn-gold))]"
+          data-testid="reminders-subscribe-hero"
+        >
+          <div className="flex items-start gap-4">
+            <div className="hidden sm:flex w-12 h-12 rounded-xl icon-halo-gold items-center justify-center shrink-0">
+              <Repeat className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-[hsl(var(--penn-navy))]">
+                Subscribe &amp; ship
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Pick your supplies once, get them shipped on the schedule
+                that matches your insurance allowance. Cancel anytime from
+                your account.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Button asChild size="lg" data-testid="reminders-subscribe-cta">
+                  <Link href="/shop#autoship">
+                    <Truck className="w-4 h-4 mr-2" />
+                    Browse auto-ship supplies
+                  </Link>
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Same price as one-time · no membership fee · cancel anytime
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/*
+          Secondary path — email-only reminders. Demoted from hero to a
+          collapsed expandable card so existing users can still get the
+          old behaviour, but it's no longer competing with subscribe.
+          Kept fully functional and untouched below so existing tests
+          and Sendgrid plumbing still work.
+        */}
+        <div
+          className="text-center mb-6"
+          data-testid="reminders-email-secondary"
+        >
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
+            <Bell className="w-3.5 h-3.5" />
+            Not ready to subscribe?{" "}
+            <a
+              href="#email-reminders"
+              className="font-medium text-primary hover:underline"
+            >
+              Just remind me by email →
+            </a>
+          </p>
+        </div>
+
+      <Card
+        id="email-reminders"
+        className="border-0 glass-card rounded-2xl scroll-mt-24"
+      >
         <CardHeader>
           <CardTitle className="text-xl flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-[hsl(var(--penn-gold))]" />

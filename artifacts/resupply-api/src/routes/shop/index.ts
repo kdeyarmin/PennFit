@@ -10,6 +10,7 @@ import { Router, type IRouter } from "express";
 import checkoutRouter from "./checkout";
 import meRouter from "./me";
 import myOrdersRouter from "./my-orders";
+import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
 import productsRouter from "./products";
 import quickCheckoutRouter from "./quick-checkout";
@@ -24,6 +25,7 @@ router.use(orderRouter);
 // (requireSignedIn / attachSignedIn) per-endpoint.
 router.use(meRouter);
 router.use(myOrdersRouter);
+router.use(mySubscriptionsRouter);
 router.use(quickCheckoutRouter);
 
 export default router;

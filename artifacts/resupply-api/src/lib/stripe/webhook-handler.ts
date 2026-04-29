@@ -33,10 +33,17 @@ import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
-import { getDbPool, shopCustomers, shopOrders } from "@workspace/resupply-db";
+import {
+  getDbPool,
+  shopCustomers,
+  shopOrders,
+  shopSubscriptions,
+  type ShopSubscriptionItemSnapshot,
+} from "@workspace/resupply-db";
 
 import { getStripeClient, readStripeConfigOrNull, type StripeConfig } from "./config";
 import { readDefaultPaymentMethod } from "./customer";
+import { formatIntervalLabel } from "./products-meta";
 
 export const stripeWebhookHandler: RequestHandler = async (
   req: Request,
@@ -121,6 +128,22 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "checkout.session.async_payment_failed": {
         const session = event.data.object as Stripe.Checkout.Session;
         await markStatus(session.id, "failed", log);
+        break;
+      }
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        // Subscribe & Save mirror. The patient-facing /account UI
+        // reads from shop_subscriptions; Stripe stays the billing
+        // source of truth. We upsert on stripe_subscription_id so
+        // out-of-order delivery (created arriving after updated)
+        // doesn't double-insert. The upsert is gated on
+        // last_stripe_event_at so a replayed/late event can never
+        // overwrite newer state — see upsertSubscription for the
+        // ordering guard.
+        const subscription = event.data.object as Stripe.Subscription;
+        const eventCreatedAt = new Date(event.created * 1000);
+        await upsertSubscription(subscription, eventCreatedAt, log);
         break;
       }
       case "charge.refunded": {
@@ -330,6 +353,160 @@ async function markStatus(
     .set({ status, updatedAt: sql`now()` })
     .where(eq(shopOrders.stripeSessionId, sessionId));
   log?.info?.({ status }, "shop order status updated");
+}
+
+/**
+ * Upsert one customer.subscription.* event into shop_subscriptions.
+ *
+ * `clerk_user_id` is recovered from the subscription's metadata
+ * (stamped at Session creation time in checkout.ts). If it's
+ * missing — which can happen for legacy subscriptions or for events
+ * Stripe emits without our prior context — we still insert the row
+ * with a synthetic placeholder so we don't lose the Stripe-side
+ * source of truth, but log a warning. The /shop/me/subscriptions
+ * endpoint filters by clerk_user_id, so an unowned row won't
+ * accidentally surface to the wrong patient.
+ */
+async function upsertSubscription(
+  subscription: Stripe.Subscription,
+  eventCreatedAt: Date,
+  log: { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void } | undefined,
+): Promise<void> {
+  const db = drizzle(getDbPool());
+
+  const clerkUserId =
+    typeof subscription.metadata?.clerk_user_id === "string" &&
+    subscription.metadata.clerk_user_id.length > 0
+      ? subscription.metadata.clerk_user_id
+      : null;
+  if (!clerkUserId) {
+    log?.warn?.(
+      { subscriptionId: subscription.id },
+      "stripe subscription event missing clerk_user_id metadata; storing with __unknown placeholder",
+    );
+  }
+
+  const stripeCustomerId =
+    typeof subscription.customer === "string"
+      ? subscription.customer
+      : subscription.customer?.id ?? null;
+
+  // Snapshot line items for offline rendering on /account.
+  const items: ShopSubscriptionItemSnapshot[] = subscription.items.data.map(
+    (it) => {
+      const price = it.price;
+      const product = price.product;
+      const productId = typeof product === "string" ? product : product?.id ?? null;
+      const productName =
+        typeof product === "object" && product && !product.deleted
+          ? product.name
+          : null;
+      const interval = price.recurring?.interval ?? null;
+      const intervalCount = price.recurring?.interval_count ?? null;
+      return {
+        priceId: price.id,
+        productId,
+        quantity: it.quantity ?? 1,
+        name: productName,
+        unitAmountCents: price.unit_amount ?? null,
+        currency: price.currency ?? null,
+        intervalLabel:
+          interval && intervalCount
+            ? formatIntervalLabel(
+                interval as "day" | "week" | "month" | "year",
+                intervalCount,
+              )
+            : null,
+      };
+    },
+  );
+
+  // Stripe stores billing-period boundaries on each subscription
+  // item (since 2025-11-05 the top-level current_period_end was
+  // moved to per-item). Take the earliest item period_end so the
+  // /account UI can render "next ship" honestly when an item ships
+  // sooner than its siblings.
+  const periodEndUnix = subscription.items.data.reduce<number | null>(
+    (acc, it) => {
+      const value = (it as unknown as { current_period_end?: number | null })
+        .current_period_end;
+      if (typeof value !== "number") return acc;
+      if (acc === null) return value;
+      return Math.min(acc, value);
+    },
+    null,
+  );
+  const currentPeriodEnd =
+    periodEndUnix !== null ? new Date(periodEndUnix * 1000) : null;
+
+  const canceledAt =
+    typeof subscription.canceled_at === "number"
+      ? new Date(subscription.canceled_at * 1000)
+      : null;
+
+  // Out-of-order / replay protection: only update when the incoming
+  // event is at least as new as the last one we applied. Stripe can
+  // legally re-deliver any event for up to 30 days, so a stale
+  // `created` arriving after a real `deleted` would otherwise revive
+  // a canceled subscription in our mirror. The first event for a
+  // given subscription always wins (last_stripe_event_at IS NULL).
+  // We compare on `event.created` (seconds-resolution Unix time);
+  // ties allow the write through so a same-second cluster updates
+  // monotonically.
+  const result = await db
+    .insert(shopSubscriptions)
+    .values({
+      clerkUserId: clerkUserId ?? "__unknown",
+      stripeSubscriptionId: subscription.id,
+      stripeCustomerId,
+      status: subscription.status,
+      items,
+      currentPeriodEnd,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+      canceledAt,
+      initialAmountTotalCents: null,
+      lastStripeEventAt: eventCreatedAt,
+    })
+    .onConflictDoUpdate({
+      target: shopSubscriptions.stripeSubscriptionId,
+      set: {
+        // Don't overwrite a known clerk_user_id with __unknown — the
+        // creation event always carries it; later updates may come
+        // from system events (e.g. invoice retry) that may not.
+        ...(clerkUserId ? { clerkUserId } : {}),
+        stripeCustomerId,
+        status: subscription.status,
+        items,
+        currentPeriodEnd,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+        canceledAt,
+        lastStripeEventAt: eventCreatedAt,
+        updatedAt: sql`now()`,
+      },
+      where: sql`${shopSubscriptions.lastStripeEventAt} IS NULL OR ${shopSubscriptions.lastStripeEventAt} <= ${eventCreatedAt}`,
+    })
+    .returning({ id: shopSubscriptions.id });
+
+  if (result.length === 0) {
+    log?.warn?.(
+      {
+        subscriptionId: subscription.id,
+        status: subscription.status,
+        eventCreatedAt: eventCreatedAt.toISOString(),
+      },
+      "shop_subscriptions upsert skipped — stale or replayed event",
+    );
+    return;
+  }
+
+  log?.info?.(
+    {
+      subscriptionId: subscription.id,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    },
+    "shop_subscriptions upserted",
+  );
 }
 
 async function markStatusByPaymentIntent(

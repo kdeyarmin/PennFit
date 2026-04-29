@@ -16,6 +16,16 @@
 //   - chamber        (humidifier water chambers)
 //   - accessory      (wipes, travel cases)
 //   - bundle         (curated multi-item kits)
+//
+// Subscribe & Save:
+//   In addition to the one-time `price`, every product MAY surface a
+//   `recurringPrice` derived from a separate active recurring Stripe
+//   Price on the same product (cheapest match wins). The shop UI
+//   shows the toggle only when `recurringPrice` is non-null. v1
+//   policy: subscribe price is the SAME unit_amount as one-time —
+//   we don't model a discount. Auto-ship is sold as convenience, not
+//   savings, so the merchant simply creates a recurring Price with
+//   matching `unit_amount`.
 
 import type Stripe from "stripe";
 
@@ -31,6 +41,23 @@ export const SHOP_CATEGORIES = [
 ] as const;
 
 export type ShopCategory = (typeof SHOP_CATEGORIES)[number];
+
+export interface ShopRecurringPriceView {
+  id: string;
+  /** In whole-dollar cents. */
+  unitAmount: number;
+  currency: string;
+  /** Stripe interval ('day' | 'week' | 'month' | 'year'). */
+  interval: "day" | "week" | "month" | "year";
+  /** Stripe interval_count (e.g. 3 for "every 3 months"). */
+  intervalCount: number;
+  /**
+   * Pre-rendered human label for UI ("month", "3 months", "year").
+   * Computed server-side so the toggle, cart, and account page all
+   * say the same thing without duplicating the formatting rule.
+   */
+  intervalLabel: string;
+}
 
 export interface ShopProductView {
   id: string;
@@ -57,10 +84,56 @@ export interface ShopProductView {
     unitAmount: number;
     currency: string;
   };
+  /**
+   * Optional recurring (subscription) price for this product. When
+   * present, the shop UI surfaces a "Subscribe & ship" toggle.
+   * v1: same unit_amount as one-time price; we don't display a
+   * discount and don't enforce one server-side.
+   */
+  recurringPrice: ShopRecurringPriceView | null;
 }
 
 function isShopCategory(v: string | undefined): v is ShopCategory {
   return !!v && (SHOP_CATEGORIES as readonly string[]).includes(v);
+}
+
+/**
+ * Render a Stripe interval + count into a human-friendly label.
+ * Examples: ("month", 1) → "month"; ("month", 3) → "3 months";
+ * ("week", 2) → "2 weeks"; ("year", 1) → "year".
+ */
+export function formatIntervalLabel(
+  interval: "day" | "week" | "month" | "year",
+  intervalCount: number,
+): string {
+  if (intervalCount === 1) return interval;
+  return `${intervalCount} ${interval}s`;
+}
+
+/**
+ * Convert a Stripe recurring Price into the client-facing shape.
+ * Returns null for prices missing required fields.
+ */
+export function projectRecurringPrice(
+  price: Stripe.Price,
+): ShopRecurringPriceView | null {
+  if (!price.active) return null;
+  if (price.unit_amount == null) return null;
+  if (price.type !== "recurring") return null;
+  const recurring = price.recurring;
+  if (!recurring) return null;
+  // Stripe constrains interval to one of these four values; the cast
+  // is safe because it comes off the live Stripe API.
+  const interval = recurring.interval as "day" | "week" | "month" | "year";
+  const intervalCount = recurring.interval_count ?? 1;
+  return {
+    id: price.id,
+    unitAmount: price.unit_amount,
+    currency: price.currency,
+    interval,
+    intervalCount,
+    intervalLabel: formatIntervalLabel(interval, intervalCount),
+  };
 }
 
 /**
@@ -69,6 +142,10 @@ function isShopCategory(v: string | undefined): v is ShopCategory {
  * that don't carry a valid `category` metadata key — that's the fence
  * that keeps non-shop products (e.g. legacy or test products in the
  * same Stripe account) from leaking into the patient-facing catalog.
+ *
+ * `recurringPrice` is attached separately by the products endpoint
+ * (see routes/shop/products.ts), since it requires a second Stripe
+ * call to enumerate non-default prices on the product.
  */
 export function projectProduct(p: Stripe.Product): ShopProductView | null {
   if (!p.active) return null;
@@ -81,6 +158,10 @@ export function projectProduct(p: Stripe.Product): ShopProductView | null {
   // We require `default_price` to be expanded into a Price object
   // (the seed script always sets a default price). If a product
   // exists without one, skip rather than render a "Free" item.
+  //
+  // The default_price is required to be one_time — that's the price
+  // the cart adds when the user clicks "Add to cart" in default mode.
+  // Subscribe mode uses the separately-attached recurringPrice.
   const defaultPrice = p.default_price;
   if (!defaultPrice || typeof defaultPrice === "string") return null;
   if (!defaultPrice.active) return null;
@@ -109,6 +190,7 @@ export function projectProduct(p: Stripe.Product): ShopProductView | null {
       unitAmount: defaultPrice.unit_amount,
       currency: defaultPrice.currency,
     },
+    recurringPrice: null,
   };
 }
 

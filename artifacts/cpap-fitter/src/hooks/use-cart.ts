@@ -20,13 +20,39 @@ const STORAGE_KEY = "pennpaps_cart_v1";
 
 export interface CartItem {
   productId: string;
+  /**
+   * One-time Stripe price ID for this SKU. This stays the cart's
+   * stable key even when the user toggles "Subscribe & ship" — we
+   * keep one logical line per SKU and only swap which price is
+   * actually sent to checkout.
+   */
   priceId: string;
   name: string;
+  /**
+   * Display unit amount, in cents. For v1 the subscribe price equals
+   * the one-time price, so this is correct in both modes; if v2 ever
+   * adds a discount, the cart will need a `recurringUnitAmountCents`
+   * field too.
+   */
   unitAmountCents: number;
   currency: string;
   quantity: number;
   imageUrl: string | null;
   isBundle: boolean;
+  /**
+   * "one_time" → checkout sends `priceId`. "subscription" → checkout
+   * sends `recurringPriceId`. Defaults to "one_time" for legacy
+   * localStorage rows that pre-date Subscribe & Save.
+   */
+  mode: "one_time" | "subscription";
+  /**
+   * Recurring (Stripe) price ID. Null when the SKU has no recurring
+   * counterpart (e.g. masks). When null, the subscribe toggle is
+   * hidden and `mode` is forced to "one_time" by setItemMode.
+   */
+  recurringPriceId: string | null;
+  /** Pre-rendered cadence label like "month" or "3 months". */
+  recurringIntervalLabel: string | null;
 }
 
 function readStorage(): CartItem[] {
@@ -38,16 +64,47 @@ function readStorage(): CartItem[] {
     if (!Array.isArray(parsed)) return [];
     // Defensive shape check — discard entries that don't look right
     // rather than crashing the app on a malformed legacy entry.
-    return parsed.filter(
-      (it): it is CartItem =>
-        !!it &&
-        typeof it.productId === "string" &&
-        typeof it.priceId === "string" &&
-        typeof it.name === "string" &&
-        typeof it.unitAmountCents === "number" &&
-        typeof it.quantity === "number" &&
-        it.quantity > 0,
-    );
+    return parsed
+      .filter(
+        (it): it is Partial<CartItem> & {
+          productId: string;
+          priceId: string;
+          name: string;
+          unitAmountCents: number;
+          quantity: number;
+        } =>
+          !!it &&
+          typeof it.productId === "string" &&
+          typeof it.priceId === "string" &&
+          typeof it.name === "string" &&
+          typeof it.unitAmountCents === "number" &&
+          typeof it.quantity === "number" &&
+          it.quantity > 0,
+      )
+      .map(
+        (it): CartItem => ({
+          productId: it.productId,
+          priceId: it.priceId,
+          name: it.name,
+          unitAmountCents: it.unitAmountCents,
+          currency: typeof it.currency === "string" ? it.currency : "usd",
+          quantity: it.quantity,
+          imageUrl: typeof it.imageUrl === "string" ? it.imageUrl : null,
+          isBundle: it.isBundle === true,
+          // Backwards-compat: older localStorage rows have no `mode`
+          // — treat them as one_time so existing carts don't surprise
+          // anyone with a subscription on the next checkout.
+          mode: it.mode === "subscription" ? "subscription" : "one_time",
+          recurringPriceId:
+            typeof it.recurringPriceId === "string"
+              ? it.recurringPriceId
+              : null,
+          recurringIntervalLabel:
+            typeof it.recurringIntervalLabel === "string"
+              ? it.recurringIntervalLabel
+              : null,
+        }),
+      );
   } catch {
     return [];
   }
@@ -68,6 +125,7 @@ export function useCart(): {
   totalCents: number;
   addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
   setQuantity: (priceId: string, quantity: number) => void;
+  setItemMode: (priceId: string, mode: "one_time" | "subscription") => void;
   removeItem: (priceId: string) => void;
   replaceItems: (items: CartItem[]) => void;
   clear: () => void;
@@ -125,6 +183,28 @@ export function useCart(): {
     });
   }, []);
 
+  // Toggle one cart line between one-time and subscription. We only
+  // honor "subscription" if the line actually carries a
+  // recurringPriceId — silently coercing a non-recurring SKU back to
+  // "one_time" keeps the checkout payload always valid.
+  const setItemMode = useCallback(
+    (priceId: string, mode: "one_time" | "subscription") => {
+      setItems((current) => {
+        const next: CartItem[] = current.map((i) => {
+          if (i.priceId !== priceId) return i;
+          const nextMode: CartItem["mode"] =
+            mode === "subscription" && i.recurringPriceId
+              ? "subscription"
+              : "one_time";
+          return { ...i, mode: nextMode };
+        });
+        writeStorage(next);
+        return next;
+      });
+    },
+    [],
+  );
+
   const removeItem = useCallback((priceId: string) => {
     setItems((current) => {
       const next = current.filter((i) => i.priceId !== priceId);
@@ -176,6 +256,7 @@ export function useCart(): {
     totalCents,
     addItem,
     setQuantity,
+    setItemMode,
     removeItem,
     replaceItems,
     clear,

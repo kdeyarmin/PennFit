@@ -58,6 +58,16 @@ const checkoutBody = z
               // as a clean 400 instead of a Stripe API error.
               .regex(/^price_/, "priceId must start with price_"),
             quantity: z.number().int().min(1).max(20),
+            /**
+             * Subscribe & Save: per-item flag. "one_time" → invoice
+             * line; "subscription" → recurring line. When ANY item
+             * carries "subscription" the whole Session is created
+             * with mode: "subscription" (Stripe supports mixed
+             * recurring + one-time line items in subscription mode;
+             * one-time lines are charged on the first invoice and
+             * not renewed).
+             */
+            mode: z.enum(["one_time", "subscription"]).default("one_time"),
           })
           .strict(),
       )
@@ -82,7 +92,7 @@ const checkoutBody = z
   .strict();
 
 function hashCart(
-  items: Array<{ priceId: string; quantity: number }>,
+  items: Array<{ priceId: string; quantity: number; mode?: string }>,
 ): string {
   // Stable hash: sort by priceId so [{a,1},{b,2}] and [{b,2},{a,1}]
   // collapse to the same hash.
@@ -127,6 +137,21 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
   }
   const { items, successPath, cancelPath } = parsed.data;
 
+  // Subscription mode is enabled if ANY item carries mode:
+  // "subscription". Stripe will charge any sibling one-time items on
+  // the first invoice. Subscription mode requires a Customer (not
+  // just customer_email) so we can manage / cancel later — gate the
+  // whole flow on the user being signed-in.
+  const isSubscription = items.some((it) => it.mode === "subscription");
+  if (isSubscription && !req.userClerkId) {
+    res.status(401).json({
+      error: "sign_in_required",
+      message:
+        "You'll need to sign in before subscribing — auto-ship is tied to your PennPaps account so you can pause or cancel anytime.",
+    });
+    return;
+  }
+
   const idempotencyKey =
     typeof req.headers["idempotency-key"] === "string"
       ? req.headers["idempotency-key"]
@@ -134,7 +159,15 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
 
   const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
-  const cartHash = hashCart(items);
+  // Hash uses priceId+qty+mode so two identical-priced carts with
+  // different mode mixes don't collapse to the same hash.
+  const cartHash = hashCart(
+    items.map((it) => ({
+      priceId: it.priceId,
+      quantity: it.quantity,
+      mode: it.mode,
+    })),
+  );
 
   const stripe = getStripeClient(config);
 
@@ -172,64 +205,109 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
     }
   }
 
+  // Common metadata for both payment + subscription flows.
+  const sessionMetadata: Record<string, string> = {
+    source: "pennpaps-shop",
+    cart_hash: cartHash,
+    flow: isSubscription ? "subscription" : "standard",
+    ...(req.userClerkId ? { clerk_user_id: req.userClerkId } : {}),
+  };
+
   let session;
   try {
-    session = await stripe.checkout.sessions.create(
-      {
-        mode: "payment",
-        ...(stripeCustomerId
-          ? {
-              customer: stripeCustomerId,
-              // setup_future_usage saves the card to the Customer for
-              // one-click reorder. Only set when we have a customer
-              // attached — Stripe rejects it otherwise.
-              payment_intent_data: {
-                setup_future_usage: "off_session",
-              },
-              // Sync collected shipping/name back to the Customer so
-              // /shop/me reflects the latest. customer_update requires
-              // `customer` to be set.
-              customer_update: {
-                shipping: "auto",
-                address: "auto",
-                name: "auto",
-              },
-            }
-          : customerEmail
-            ? { customer_email: customerEmail }
-            : {}),
-        line_items: items.map((it) => ({
-          price: it.priceId,
-          quantity: it.quantity,
-        })),
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        // Collect shipping address — we ship physical CPAP supplies.
-        // Stripe's allowed_countries gate stops the form from
-        // accepting addresses we can't ship to.
-        shipping_address_collection: {
-          allowed_countries: ["US"],
+    if (isSubscription) {
+      // Subscription mode. Mixed line_items (recurring + one-time)
+      // are valid — one-time SKUs are charged on the first invoice
+      // and not renewed. We MUST attach `customer` (we already
+      // gated on req.userClerkId above so stripeCustomerId is
+      // populated unless the customer-create best-effort failed —
+      // in which case we have to refuse rather than silently
+      // anonymise a recurring billing relationship).
+      if (!stripeCustomerId) {
+        res.status(503).json({
+          error: "stripe_customer_unavailable",
+          message:
+            "We couldn't link your account to billing right now. Please try again in a moment, or use one-time checkout.",
+        });
+        return;
+      }
+      session = await stripe.checkout.sessions.create(
+        {
+          mode: "subscription",
+          customer: stripeCustomerId,
+          customer_update: {
+            shipping: "auto",
+            address: "auto",
+            name: "auto",
+          },
+          line_items: items.map((it) => ({
+            price: it.priceId,
+            quantity: it.quantity,
+          })),
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          shipping_address_collection: { allowed_countries: ["US"] },
+          phone_number_collection: { enabled: true },
+          metadata: sessionMetadata,
+          // Stamp metadata onto the subscription itself so the
+          // customer.subscription.* webhook can recover the buyer's
+          // clerk_user_id without having to look up the originating
+          // Session.
+          subscription_data: {
+            metadata: {
+              clerk_user_id: req.userClerkId!,
+              source: "pennpaps-shop",
+            },
+          },
+          automatic_tax: { enabled: false },
         },
-        // Collect phone for shipping carrier coordination.
-        phone_number_collection: { enabled: true },
-        // Surface the cart hash on metadata so ops can match a
-        // Stripe event back to a row in shop_orders without joining
-        // through session_id. clerk_user_id (when signed in) is the
-        // backstop for the webhook to re-stamp the order owner.
-        metadata: {
-          source: "pennpaps-shop",
-          cart_hash: cartHash,
-          flow: "standard",
-          ...(req.userClerkId ? { clerk_user_id: req.userClerkId } : {}),
+        { idempotencyKey },
+      );
+    } else {
+      session = await stripe.checkout.sessions.create(
+        {
+          mode: "payment",
+          ...(stripeCustomerId
+            ? {
+                customer: stripeCustomerId,
+                // setup_future_usage saves the card to the Customer
+                // for one-click reorder. Only set when we have a
+                // customer attached — Stripe rejects it otherwise.
+                payment_intent_data: {
+                  setup_future_usage: "off_session",
+                },
+                // Sync collected shipping/name back to the Customer
+                // so /shop/me reflects the latest. customer_update
+                // requires `customer` to be set.
+                customer_update: {
+                  shipping: "auto",
+                  address: "auto",
+                  name: "auto",
+                },
+              }
+            : customerEmail
+              ? { customer_email: customerEmail }
+              : {}),
+          line_items: items.map((it) => ({
+            price: it.priceId,
+            quantity: it.quantity,
+          })),
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          shipping_address_collection: {
+            allowed_countries: ["US"],
+          },
+          phone_number_collection: { enabled: true },
+          metadata: sessionMetadata,
+          // PennPaps cash-pay shop never collects sales tax in v1 —
+          // CPAP supplies are usually tax-exempt as durable medical
+          // equipment, and Stripe Tax can be enabled later in the
+          // dashboard without code changes.
+          automatic_tax: { enabled: false },
         },
-        // PennPaps cash-pay shop never collects sales tax in v1 —
-        // CPAP supplies are usually tax-exempt as durable medical
-        // equipment, and Stripe Tax can be enabled later in the
-        // dashboard without code changes.
-        automatic_tax: { enabled: false },
-      },
-      { idempotencyKey },
-    );
+        { idempotencyKey },
+      );
+    }
   } catch (err) {
     req.log?.error(
       { err: err instanceof Error ? err.message : String(err) },

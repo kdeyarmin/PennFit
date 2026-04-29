@@ -27,24 +27,30 @@ import { Show, useUser } from "@clerk/react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   AlertCircle,
+  CalendarClock,
   CheckCircle2,
   CreditCard,
   Loader2,
   MapPin,
   Package,
   RefreshCw,
+  Repeat,
   ShoppingBag,
   User as UserIcon,
+  XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   AccountApiError,
+  cancelShopSubscription,
   fetchShopMe,
+  fetchShopMySubscriptions,
   updateShopMe,
   type SavedShippingAddress,
   type ShopMeResponse,
   type ShopRecentOrder,
+  type ShopSubscriptionView,
   type SavedCard,
 } from "@/lib/account-api";
 import {
@@ -161,6 +167,7 @@ function AccountInner() {
             profile={data.profile!}
             onSaved={() => void reload()}
           />
+          <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection
             orders={data.recentOrders ?? []}
             previewMode={previewMode === true}
@@ -536,6 +543,13 @@ function OrdersSection({
           priceId: li.priceId,
           name: li.name,
           unitAmountCents: li.unitAmountCents,
+          // Reorders always go back as one-time. If the patient
+          // wants auto-ship for a reordered SKU they can toggle it
+          // on the cart row before paying — we never silently
+          // promote a one-time receipt into a subscription.
+          mode: "one_time" as const,
+          recurringPriceId: null,
+          recurringIntervalLabel: null,
           currency: summary.currency ?? "usd",
           quantity: li.quantity,
           imageUrl: li.imageUrl,
@@ -677,6 +691,203 @@ function OrdersSection({
           data-testid="account-reorder-error"
         >
           {reorderError}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Subscriptions section — patient-managed Subscribe & Save lines.
+// Self-fetches on mount because subscriptions live on a separate
+// endpoint from /shop/me and we don't want to widen ShopMeResponse
+// (subscriptions are a 0..N collection that warrants its own loading
+// state, including a "Cancel auto-ship" pending state per row).
+//
+// Hidden when the user has zero subscriptions — the section's whole
+// point is to be a quiet management surface, not to advertise the
+// feature on accounts that haven't tried it. Discovery happens on
+// /shop and /reminders; this section only manages.
+// ---------------------------------------------------------------------------
+function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
+  const [subs, setSubs] = useState<ShopSubscriptionView[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  async function load() {
+    setLoadError(null);
+    try {
+      const r = await fetchShopMySubscriptions();
+      setSubs(r.subscriptions);
+    } catch (err: unknown) {
+      // Treat 404 (route absent — preview mode without Stripe) and
+      // every other read error the same: show nothing rather than a
+      // scary banner. The section is opt-in surface; failing closed
+      // is the right call.
+      setSubs([]);
+      setLoadError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function handleCancel(sub: ShopSubscriptionView) {
+    if (cancellingId) return;
+    // Double-confirm — auto-ship is irreversible from the patient
+    // side once stopped (they'd have to re-subscribe), and older
+    // patients are particularly likely to misclick.
+    if (
+      !window.confirm(
+        "Cancel auto-ship? Your supplies will keep shipping until the end of " +
+          "the current period, then stop. You can re-subscribe anytime.",
+      )
+    ) {
+      return;
+    }
+    setCancellingId(sub.id);
+    setCancelError(null);
+    try {
+      await cancelShopSubscription(sub.id);
+      await load();
+    } catch (err: unknown) {
+      setCancelError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
+  // While loading, render nothing — avoids flicker for the common
+  // case of "this user has no subscriptions" which is the empty-state
+  // we hide entirely.
+  if (subs === null) return null;
+  if (subs.length === 0) {
+    // Hide the section entirely when empty (per spec). The load
+    // error, if any, surfaces only on next mount — accept that as a
+    // tradeoff to keep the empty-state silent.
+    if (loadError) {
+      // dev-mode breadcrumb; never user-visible.
+      // eslint-disable-next-line no-console
+      console.debug("[account] subscriptions load skipped:", loadError);
+    }
+    return null;
+  }
+
+  return (
+    <section
+      className="glass-card rounded-2xl p-6"
+      data-testid="account-subscriptions-section"
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <Repeat className="h-5 w-5 text-muted-foreground" />
+        <h2 className="font-semibold">Auto-ship subscriptions</h2>
+      </div>
+      <ul className="divide-y divide-border/40">
+        {subs.map((sub) => {
+          const isActive = sub.status === "active" || sub.status === "trialing";
+          const isPastDue = sub.status === "past_due" || sub.status === "unpaid";
+          const isCanceled =
+            sub.status === "canceled" || sub.status === "incomplete_expired";
+          const nextShip = sub.currentPeriodEnd
+            ? new Date(sub.currentPeriodEnd)
+            : null;
+          return (
+            <li
+              key={sub.id}
+              className="py-4 first:pt-0 last:pb-0"
+              data-testid={`account-subscription-${sub.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <ul className="space-y-1">
+                    {sub.items.map((item) => (
+                      <li
+                        key={item.priceId}
+                        className="text-sm font-medium tabular-nums"
+                      >
+                        {item.quantity > 1 ? `${item.quantity}× ` : ""}
+                        {item.name ?? item.priceId}
+                        {item.intervalLabel && (
+                          <span className="text-xs text-muted-foreground ml-2 font-normal">
+                            every {item.intervalLabel}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {nextShip && isActive && !sub.cancelAtPeriodEnd && (
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarClock className="h-3 w-3" />
+                        Next ship{" "}
+                        {nextShip.toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                    )}
+                    {sub.cancelAtPeriodEnd && nextShip && (
+                      <span className="inline-flex items-center gap-1 text-[hsl(var(--penn-navy))]">
+                        <XCircle className="h-3 w-3" />
+                        Stops after{" "}
+                        {nextShip.toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                    )}
+                    {isPastDue && (
+                      <span className="inline-flex items-center gap-1 text-destructive">
+                        <AlertCircle className="h-3 w-3" />
+                        Payment past due — update card on file
+                      </span>
+                    )}
+                    {isCanceled && (
+                      <span className="inline-flex items-center gap-1">
+                        <XCircle className="h-3 w-3" />
+                        Canceled
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {!isCanceled && !sub.cancelAtPeriodEnd && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={previewMode || cancellingId === sub.id}
+                    onClick={() => void handleCancel(sub)}
+                    data-testid={`account-subscription-cancel-${sub.id}`}
+                    title={
+                      previewMode
+                        ? "Auto-ship will be cancellable as soon as Stripe is connected."
+                        : undefined
+                    }
+                  >
+                    {cancellingId === sub.id ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Cancelling…
+                      </>
+                    ) : (
+                      "Cancel auto-ship"
+                    )}
+                  </Button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {cancelError && (
+        <p
+          className="mt-3 text-sm text-destructive"
+          data-testid="account-subscription-cancel-error"
+        >
+          {cancelError}
         </p>
       )}
     </section>

@@ -31,7 +31,7 @@
 //   Product `images` array, so the frontend handles both cases by
 //   sniffing for `^https?://`.
 
-import type { ShopProductView } from "./products-meta";
+import { formatIntervalLabel, type ShopProductView } from "./products-meta";
 
 interface PreviewSeed {
   sku: string;
@@ -46,6 +46,27 @@ interface PreviewSeed {
   imageUrl: string;
   bundleContents?: string[];
 }
+
+/**
+ * Default recurring cadence per category for the preview catalog.
+ * Categories not in this map (only `mask` today) don't get a
+ * synthesized recurring price — masks are infrequent enough that
+ * subscribing them invites unwanted boxes more than convenience.
+ */
+const PREVIEW_RECURRING_CADENCE: Partial<
+  Record<
+    ShopProductView["category"],
+    { interval: "day" | "week" | "month" | "year"; intervalCount: number }
+  >
+> = {
+  cushion: { interval: "month", intervalCount: 1 },
+  filter: { interval: "month", intervalCount: 1 },
+  tubing: { interval: "month", intervalCount: 3 },
+  headgear: { interval: "month", intervalCount: 3 },
+  chamber: { interval: "month", intervalCount: 6 },
+  accessory: { interval: "month", intervalCount: 1 },
+  bundle: { interval: "month", intervalCount: 3 },
+};
 
 const SEED: PreviewSeed[] = [
   // ── Masks ────────────────────────────────────────────────────────
@@ -327,22 +348,38 @@ const SEED: PreviewSeed[] = [
  * `.map(...)` is a few microseconds.
  */
 export function getPreviewCatalog(): ShopProductView[] {
-  return SEED.map((s) => ({
-    id: `prod_preview_${s.sku}`,
-    name: s.name,
-    description: s.description,
-    category: s.category,
-    tagline: s.tagline,
-    isBundle: s.category === "bundle" || (s.bundleContents?.length ?? 0) > 0,
-    bundleContents: s.bundleContents ?? [],
-    replacementHint: s.replacementHint,
-    imageUrl: s.imageUrl,
-    manufacturer: s.manufacturer,
-    modelNumber: s.modelNumber,
-    price: {
-      id: `price_preview_${s.sku}`,
-      unitAmount: s.unitAmountCents,
-      currency: "usd",
-    },
-  }));
+  return SEED.map((s) => {
+    const cadence = PREVIEW_RECURRING_CADENCE[s.category];
+    return {
+      id: `prod_preview_${s.sku}`,
+      name: s.name,
+      description: s.description,
+      category: s.category,
+      tagline: s.tagline,
+      isBundle: s.category === "bundle" || (s.bundleContents?.length ?? 0) > 0,
+      bundleContents: s.bundleContents ?? [],
+      replacementHint: s.replacementHint,
+      imageUrl: s.imageUrl,
+      manufacturer: s.manufacturer,
+      modelNumber: s.modelNumber,
+      price: {
+        id: `price_preview_${s.sku}`,
+        unitAmount: s.unitAmountCents,
+        currency: "usd",
+      },
+      recurringPrice: cadence
+        ? {
+            id: `price_preview_recurring_${s.sku}`,
+            unitAmount: s.unitAmountCents,
+            currency: "usd",
+            interval: cadence.interval,
+            intervalCount: cadence.intervalCount,
+            intervalLabel: formatIntervalLabel(
+              cadence.interval,
+              cadence.intervalCount,
+            ),
+          }
+        : null,
+    };
+  });
 }

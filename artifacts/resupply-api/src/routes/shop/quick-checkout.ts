@@ -54,6 +54,16 @@ const itemSchema = z.object({
     .max(100)
     .regex(/^price_/, "priceId must start with price_"),
   quantity: z.number().int().min(1).max(20),
+  /**
+   * "subscription" routes the line through Stripe Subscriptions —
+   * the priceId here MUST be the recurring price (the cart swaps
+   * priceId↔recurringPriceId before sending). When ANY line carries
+   * "subscription" the whole Session is created with mode:
+   * "subscription" (Stripe permits mixed recurring + one-time line
+   * items in subscription mode). Default "one_time" preserves the
+   * historical express-checkout payload shape.
+   */
+  mode: z.enum(["one_time", "subscription"]).default("one_time"),
 });
 
 const body = z
@@ -134,8 +144,14 @@ router.post(
     const stripe = getStripeClient(config);
 
     // Resolve the basket: either passed-in items or pulled from a
-    // historical Session.
-    let basket: Array<{ priceId: string; quantity: number }>;
+    // historical Session. Reorders are always one-time — historical
+    // line items intentionally lose their original mode (the v1 UX
+    // is "buy this again", not "subscribe to this").
+    let basket: Array<{
+      priceId: string;
+      quantity: number;
+      mode: "one_time" | "subscription";
+    }>;
     if (items) {
       basket = items;
     } else {
@@ -178,9 +194,16 @@ router.post(
               ? line.price
               : (line.price?.id ?? null),
           quantity: line.quantity ?? 1,
+          mode: "one_time" as const,
         }))
         .filter(
-          (b): b is { priceId: string; quantity: number } => b.priceId !== null,
+          (
+            b,
+          ): b is {
+            priceId: string;
+            quantity: number;
+            mode: "one_time";
+          } => b.priceId !== null,
         );
       if (basket.length === 0) {
         res.status(409).json({ error: "reorder_basket_empty" });
@@ -202,49 +225,91 @@ router.post(
     const successUrl = `${config.publicBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${config.publicBaseUrl}${cancelPath}`;
 
+    // Subscription mode is enabled if ANY basket line is "subscription".
+    // Stripe permits mixed recurring + one-time line items in
+    // subscription mode (the one-time SKU is charged on the first
+    // invoice and not renewed). Reorder baskets are always one-time
+    // (set above), so this branch only triggers for fresh "Subscribe
+    // & ship" express checkouts. We MUST drop
+    // payment_intent_data.setup_future_usage in subscription mode
+    // (Stripe rejects it) and stamp clerk_user_id onto
+    // subscription_data.metadata so the customer.subscription.*
+    // webhook can recover the buyer without a Session lookup.
+    const isSubscription = basket.some((b) => b.mode === "subscription");
+
+    const sharedMetadata: Record<string, string> = {
+      source: "pennpaps-shop",
+      flow: isSubscription
+        ? "express-subscription"
+        : reorderSessionId
+          ? "reorder"
+          : "express",
+      clerk_user_id: req.userClerkId!,
+      ...(reorderSessionId ? { reorder_of_session: reorderSessionId } : {}),
+    };
+
     let session: Stripe.Checkout.Session;
     try {
-      session = await stripe.checkout.sessions.create(
-        {
-          mode: "payment",
-          customer: stripeCustomerId,
-          // 'if_required' lets Stripe skip the card form when the
-          // customer's saved default works for this purchase amount.
-          // Combined with shipping_address_collection below, a
-          // returning user with a saved card + saved address sees
-          // ONE button: "Pay $X.XX".
-          payment_method_collection: "if_required",
-          line_items: basket.map((it) => ({
-            price: it.priceId,
-            quantity: it.quantity,
-          })),
-          success_url: successUrl,
-          cancel_url: cancelUrl,
-          shipping_address_collection: { allowed_countries: ["US"] },
-          phone_number_collection: { enabled: true },
-          // Save any new card to the customer for next time.
-          payment_intent_data: {
-            setup_future_usage: "off_session",
-          },
-          // Sync newest shipping/name back to the Customer so our
-          // saved-info display stays fresh.
-          customer_update: {
-            shipping: "auto",
-            address: "auto",
-            name: "auto",
-          },
-          metadata: {
-            source: "pennpaps-shop",
-            flow: reorderSessionId ? "reorder" : "express",
-            clerk_user_id: req.userClerkId!,
-            ...(reorderSessionId
-              ? { reorder_of_session: reorderSessionId }
-              : {}),
-          },
-          automatic_tax: { enabled: false },
+      const baseParams: Omit<
+        Stripe.Checkout.SessionCreateParams,
+        "mode" | "payment_intent_data" | "subscription_data" | "payment_method_collection"
+      > = {
+        customer: stripeCustomerId,
+        line_items: basket.map((it) => ({
+          price: it.priceId,
+          quantity: it.quantity,
+        })),
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        shipping_address_collection: { allowed_countries: ["US"] },
+        phone_number_collection: { enabled: true },
+        // Sync newest shipping/name back to the Customer so our
+        // saved-info display stays fresh.
+        customer_update: {
+          shipping: "auto",
+          address: "auto",
+          name: "auto",
         },
-        { idempotencyKey },
-      );
+        metadata: sharedMetadata,
+        automatic_tax: { enabled: false },
+      };
+
+      if (isSubscription) {
+        session = await stripe.checkout.sessions.create(
+          {
+            ...baseParams,
+            mode: "subscription",
+            // Stripe forbids payment_method_collection: 'if_required'
+            // in subscription mode — a recurring billing relationship
+            // always needs a saved payment method.
+            subscription_data: {
+              metadata: {
+                clerk_user_id: req.userClerkId!,
+                source: "pennpaps-shop",
+              },
+            },
+          },
+          { idempotencyKey },
+        );
+      } else {
+        session = await stripe.checkout.sessions.create(
+          {
+            ...baseParams,
+            mode: "payment",
+            // 'if_required' lets Stripe skip the card form when the
+            // customer's saved default works for this purchase amount.
+            // Combined with shipping_address_collection below, a
+            // returning user with a saved card + saved address sees
+            // ONE button: "Pay $X.XX".
+            payment_method_collection: "if_required",
+            // Save any new card to the customer for next time.
+            payment_intent_data: {
+              setup_future_usage: "off_session",
+            },
+          },
+          { idempotencyKey },
+        );
+      }
     } catch (err) {
       req.log?.error(
         { err: err instanceof Error ? err.message : String(err) },

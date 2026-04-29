@@ -59,7 +59,7 @@ interface ReorderSource {
 
 export function ShopCart() {
   useDocumentTitle("Your cart");
-  const { items, totalCents, setQuantity, removeItem } = useCart();
+  const { items, totalCents, setQuantity, removeItem, setItemMode } = useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Reorder breadcrumb — populated from sessionStorage on mount if the
@@ -175,7 +175,21 @@ export function ShopCart() {
     setCheckingOut(true);
     try {
       const { url } = await startCheckout(
-        items.map((i) => ({ priceId: i.priceId, quantity: i.quantity })),
+        items.map((i) => ({
+          // Subscribe & Save: when this line is in subscription mode,
+          // send the recurring priceId so Stripe builds a recurring
+          // line item. The cart's stable key remains the one-time
+          // priceId regardless of mode.
+          priceId:
+            i.mode === "subscription" && i.recurringPriceId
+              ? i.recurringPriceId
+              : i.priceId,
+          quantity: i.quantity,
+          mode:
+            i.mode === "subscription" && i.recurringPriceId
+              ? "subscription"
+              : "one_time",
+        })),
       );
       window.location.assign(url);
     } catch (err: unknown) {
@@ -196,7 +210,17 @@ export function ShopCart() {
     setExpressCheckingOut(true);
     try {
       const { url } = await startQuickCheckout({
-        items: items.map((i) => ({ priceId: i.priceId, quantity: i.quantity })),
+        items: items.map((i) => ({
+          priceId:
+            i.mode === "subscription" && i.recurringPriceId
+              ? i.recurringPriceId
+              : i.priceId,
+          quantity: i.quantity,
+          mode:
+            i.mode === "subscription" && i.recurringPriceId
+              ? "subscription"
+              : "one_time",
+        })),
       });
       window.location.assign(url);
     } catch (err: unknown) {
@@ -326,6 +350,51 @@ export function ShopCart() {
                       <Trash2 className="w-3.5 h-3.5" /> Remove
                     </button>
                   </div>
+                  {it.recurringPriceId && (
+                    <div
+                      className="mt-3 inline-flex items-center rounded-lg border border-border/60 overflow-hidden bg-secondary/20"
+                      role="radiogroup"
+                      aria-label={`Choose one-time or subscribe for ${it.name}`}
+                      data-testid={`cart-mode-toggle-${it.priceId}`}
+                    >
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={it.mode === "one_time"}
+                        onClick={() => setItemMode(it.priceId, "one_time")}
+                        className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                          it.mode === "one_time"
+                            ? "bg-white text-[hsl(var(--penn-navy))] shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        data-testid={`cart-mode-onetime-${it.priceId}`}
+                      >
+                        One-time
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={it.mode === "subscription"}
+                        onClick={() => setItemMode(it.priceId, "subscription")}
+                        className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                          it.mode === "subscription"
+                            ? "bg-white text-[hsl(var(--penn-navy))] shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        data-testid={`cart-mode-subscribe-${it.priceId}`}
+                      >
+                        Subscribe
+                      </button>
+                    </div>
+                  )}
+                  {it.mode === "subscription" && it.recurringIntervalLabel && (
+                    <p
+                      className="text-[11px] text-[hsl(var(--penn-navy))]/75 mt-1.5"
+                      data-testid={`cart-mode-cadence-${it.priceId}`}
+                    >
+                      Auto-ships every {it.recurringIntervalLabel}.
+                    </p>
+                  )}
                 </div>
                 <div className="text-right shrink-0">
                   <p className="font-semibold tabular-nums">

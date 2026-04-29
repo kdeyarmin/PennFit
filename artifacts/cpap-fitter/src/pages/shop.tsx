@@ -271,6 +271,16 @@ function ProductCard({ product }: { product: ShopProductView }) {
   const { addItem } = useCart();
   const [justAdded, setJustAdded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  // Per-card mode toggle. We keep this in component state rather than
+  // in the cart hook because the user may be browsing multiple
+  // products and toggling each one before committing to "Add to cart".
+  // Default to "subscription" when a recurring price exists — that's
+  // the conversion-optimised default for the consumables that carry
+  // one (cushions, filters, tubing, etc). Non-recurring SKUs (masks)
+  // always behave as one-time.
+  const [mode, setMode] = useState<"one_time" | "subscription">(
+    product.recurringPrice ? "subscription" : "one_time",
+  );
   const resolvedImage = resolveProductImage(product.imageUrl);
 
   const handleAdd = () => {
@@ -282,6 +292,9 @@ function ProductCard({ product }: { product: ShopProductView }) {
       currency: product.price.currency,
       imageUrl: resolvedImage,
       isBundle: product.isBundle,
+      mode: product.recurringPrice && mode === "subscription" ? "subscription" : "one_time",
+      recurringPriceId: product.recurringPrice?.id ?? null,
+      recurringIntervalLabel: product.recurringPrice?.intervalLabel ?? null,
     });
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), 1800);
@@ -361,6 +374,52 @@ function ProductCard({ product }: { product: ShopProductView }) {
             {product.replacementHint}
           </p>
         )}
+        {product.recurringPrice && (
+          <div
+            className="mb-4 rounded-xl border border-border/60 p-1 grid grid-cols-2 gap-1 bg-secondary/30"
+            role="radiogroup"
+            aria-label="Choose one-time or subscribe"
+            data-testid={`shop-mode-toggle-${product.id}`}
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === "one_time"}
+              onClick={() => setMode("one_time")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                mode === "one_time"
+                  ? "bg-white text-[hsl(var(--penn-navy))] shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid={`shop-mode-onetime-${product.id}`}
+            >
+              One-time
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === "subscription"}
+              onClick={() => setMode("subscription")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                mode === "subscription"
+                  ? "bg-white text-[hsl(var(--penn-navy))] shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid={`shop-mode-subscribe-${product.id}`}
+            >
+              Subscribe & ship
+            </button>
+          </div>
+        )}
+        {product.recurringPrice && mode === "subscription" && (
+          <p
+            className="text-[11px] text-[hsl(var(--penn-navy))]/75 mb-3 leading-snug"
+            data-testid={`shop-mode-cadence-${product.id}`}
+          >
+            Auto-ships every {product.recurringPrice.intervalLabel}. Same price.
+            Cancel anytime.
+          </p>
+        )}
         <div className="mt-auto space-y-2">
           <Button
             onClick={handleAdd}
@@ -373,7 +432,10 @@ function ProductCard({ product }: { product: ShopProductView }) {
               </>
             ) : (
               <>
-                <ShoppingCart className="w-4 h-4 mr-2" /> Add to cart
+                <ShoppingCart className="w-4 h-4 mr-2" />{" "}
+                {mode === "subscription" && product.recurringPrice
+                  ? "Subscribe & add"
+                  : "Add to cart"}
               </>
             )}
           </Button>

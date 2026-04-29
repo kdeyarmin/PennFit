@@ -23,6 +23,7 @@ import {
   SHOP_CATEGORIES,
   type ShopProductView,
   projectProduct,
+  projectRecurringPrice,
 } from "../../lib/stripe/products-meta";
 
 interface CacheEntry {
@@ -81,6 +82,44 @@ router.get("/shop/products", async (req, res) => {
       products = list.data
         .map(projectProduct)
         .filter((p): p is ShopProductView => p !== null);
+
+      // Subscribe & Save: enumerate active recurring prices in one
+      // pass and attach the cheapest match per product. Doing this as
+      // a single list call avoids N+1 (one per product) without
+      // bloating the products.list expand path. Stripe's prices.list
+      // pagination caps at 100; we don't expect to exceed that until
+      // the catalog is much larger than today (ten-ish active SKUs).
+      try {
+        const priceList = await stripe.prices.list({
+          active: true,
+          type: "recurring",
+          limit: 100,
+        });
+        const cheapestByProduct = new Map<string, ReturnType<typeof projectRecurringPrice>>();
+        for (const price of priceList.data) {
+          const productId =
+            typeof price.product === "string" ? price.product : price.product?.id;
+          if (!productId) continue;
+          const projected = projectRecurringPrice(price);
+          if (!projected) continue;
+          const existing = cheapestByProduct.get(productId);
+          if (!existing || projected.unitAmount < existing.unitAmount) {
+            cheapestByProduct.set(productId, projected);
+          }
+        }
+        for (const product of products) {
+          const recurring = cheapestByProduct.get(product.id);
+          if (recurring) product.recurringPrice = recurring;
+        }
+      } catch (err) {
+        // Non-fatal — products still render with one-time prices, the
+        // subscribe toggle simply won't appear.
+        req.log?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "stripe prices.list failed; subscribe toggle disabled this request",
+        );
+      }
+
       cache = { keyPrefix, fetchedAt: Date.now(), products };
     }
   }

@@ -38,6 +38,20 @@ export interface ShopProductView {
     unitAmount: number;
     currency: string;
   };
+  /**
+   * Optional recurring (subscription) price for this product. When
+   * present, the shop UI surfaces a "Subscribe & ship" toggle. v1
+   * policy: same unit_amount as one-time — convenience, not savings.
+   */
+  recurringPrice: {
+    id: string;
+    unitAmount: number;
+    currency: string;
+    interval: "day" | "week" | "month" | "year";
+    intervalCount: number;
+    /** Pre-rendered label like "month" or "3 months". */
+    intervalLabel: string;
+  } | null;
 }
 
 /**
@@ -117,6 +131,13 @@ export async function fetchShopProducts(): Promise<ShopProductsResult> {
 export interface CheckoutItem {
   priceId: string;
   quantity: number;
+  /**
+   * "subscription" → recurring line item; "one_time" (default) →
+   * invoice line. When ANY item carries "subscription", the API
+   * builds the Session in subscription mode (Stripe supports mixed
+   * recurring + one-time line items in subscription mode).
+   */
+  mode?: "one_time" | "subscription";
 }
 
 export async function startCheckout(

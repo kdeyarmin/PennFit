@@ -1791,3 +1791,5 @@ export const ExportPatientsCsvStatus = {
   paused: "paused",
   closed: "closed",
 } as const;
+
+// SELF-TEST DRIFT MARKER (resupply) — must be preserved on failure

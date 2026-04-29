@@ -99,11 +99,57 @@ export const fetchShopMyOrders = () =>
   meFetch<ShopMyOrdersResponse>("/shop/me/orders");
 
 export interface QuickCheckoutInput {
-  items?: Array<{ priceId: string; quantity: number }>;
+  items?: Array<{
+    priceId: string;
+    quantity: number;
+    /** "subscription" routes the line through Stripe Subscriptions. */
+    mode?: "one_time" | "subscription";
+  }>;
   reorderSessionId?: string;
   successPath?: string;
   cancelPath?: string;
 }
+
+/**
+ * Subscribe & Save — patient-managed auto-ship subscriptions.
+ * Mirror of the Stripe-backed shop_subscriptions table.
+ */
+export interface ShopSubscriptionItemView {
+  priceId: string;
+  productId: string | null;
+  quantity: number;
+  name: string | null;
+  unitAmountCents: number | null;
+  currency: string | null;
+  intervalLabel: string | null;
+}
+export interface ShopSubscriptionView {
+  id: string;
+  stripeSubscriptionId: string;
+  /**
+   * Mirrors Stripe's subscription status: active, past_due, unpaid,
+   * canceled, incomplete, incomplete_expired, trialing, paused.
+   */
+  status: string;
+  items: ShopSubscriptionItemView[];
+  /** ISO 8601 string. */
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  /** ISO 8601 string. */
+  canceledAt: string | null;
+  createdAt: string;
+}
+export interface ShopSubscriptionsResponse {
+  subscriptions: ShopSubscriptionView[];
+}
+export const fetchShopMySubscriptions = () =>
+  meFetch<ShopSubscriptionsResponse>("/shop/me/subscriptions");
+
+export const cancelShopSubscription = (id: string) =>
+  meFetch<{ ok: true; alreadyCanceled?: boolean }>(
+    `/shop/me/subscriptions/${encodeURIComponent(id)}/cancel`,
+    { method: "POST" },
+  );
 
 export const startQuickCheckout = (input: QuickCheckoutInput) =>
   meFetch<{ url: string; sessionId: string }>("/shop/me/quick-checkout", {
