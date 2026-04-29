@@ -64,6 +64,13 @@
                         "when": 1777831200000,
                         "tag": "0008_shop_abandoned_carts",
                         "breakpoints": true
+                },
+                {
+                        "idx": 9,
+                        "version": "7",
+                        "when": 1777917600000,
+                        "tag": "0009_shop_reviews",
+                        "breakpoints": true
                 }
         ]
 }

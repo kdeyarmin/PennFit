@@ -16,6 +16,7 @@ import { ConversationDetailPage } from "./pages/conversation-detail";
 import { EpisodesPage } from "./pages/episodes";
 import { RulesPage } from "./pages/rules";
 import { AuditPage } from "./pages/audit";
+import { AdminShopReviewsPage } from "./pages/admin-shop-reviews";
 
 // PennPaps Admin Console.
 //
@@ -82,6 +83,10 @@ function AdminConsole() {
         <Route path="/episodes" component={EpisodesPage} />
         <Route path="/rules" component={RulesPage} />
         <Route path="/audit" component={AuditPage} />
+        <Route
+          path="/admin/shop/reviews"
+          component={AdminShopReviewsPage}
+        />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

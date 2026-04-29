@@ -31,6 +31,11 @@ const NAV_LINKS: ReadonlyArray<{
   { href: "/episodes", label: "Episodes", matchPrefix: "/episodes" },
   { href: "/rules", label: "Rules", matchPrefix: "/rules" },
   { href: "/audit", label: "Audit", matchPrefix: "/audit" },
+  {
+    href: "/admin/shop/reviews",
+    label: "Shop Reviews",
+    matchPrefix: "/admin/shop/reviews",
+  },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");

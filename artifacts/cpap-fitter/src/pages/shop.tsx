@@ -38,6 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  fetchReviewAggregates,
   fetchShopProducts,
   formatMoneyCents,
   resolveProductImage,
@@ -45,6 +46,10 @@ import {
   type ShopProductsResponse,
 } from "@/lib/shop-api";
 import { useCart } from "@/hooks/use-cart";
+import { StarRating } from "@/components/star-rating";
+
+/** Bulk aggregate map keyed by Stripe productId. Empty until loaded. */
+type AggregateMap = Record<string, { count: number; averageRating: number }>;
 
 type Category = ShopProductView["category"];
 
@@ -171,6 +176,29 @@ export function Shop() {
     );
   }, [data]);
 
+  // After products land, fetch aggregate review stats for every visible
+  // SKU in a single round trip. We deliberately decouple this from the
+  // primary products fetch so a flaky reviews endpoint never blanks
+  // the entire storefront — `aggregates` simply stays empty and the
+  // cards render with no rating block (the existing zero-state).
+  const [aggregates, setAggregates] = useState<AggregateMap>({});
+  useEffect(() => {
+    if (!data || data.products.length === 0) return;
+    let active = true;
+    const ids = data.products.map((p) => p.id);
+    fetchReviewAggregates(ids)
+      .then((r) => {
+        if (!active) return;
+        setAggregates(r.aggregates);
+      })
+      .catch(() => {
+        // Silent: leave aggregates empty so cards just hide stars.
+      });
+    return () => {
+      active = false;
+    };
+  }, [data]);
+
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-6xl">
       <ShopHero />
@@ -197,6 +225,7 @@ export function Shop() {
                 key={s.category}
                 category={s.category}
                 items={s.items}
+                aggregates={aggregates}
               />
             ))}
           </div>
@@ -240,9 +269,11 @@ function ShopHero() {
 function CategorySection({
   category,
   items,
+  aggregates,
 }: {
   category: Category;
   items: ShopProductView[];
+  aggregates: AggregateMap;
 }) {
   const meta = CATEGORY_META[category];
   return (
@@ -260,14 +291,24 @@ function CategorySection({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {items.map((p) => (
-          <ProductCard key={p.id} product={p} />
+          <ProductCard
+            key={p.id}
+            product={p}
+            aggregate={aggregates[p.id] ?? null}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function ProductCard({ product }: { product: ShopProductView }) {
+function ProductCard({
+  product,
+  aggregate,
+}: {
+  product: ShopProductView;
+  aggregate: { count: number; averageRating: number } | null;
+}) {
   const { addItem } = useCart();
   const [justAdded, setJustAdded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
@@ -343,9 +384,29 @@ function ProductCard({ product }: { product: ShopProductView }) {
             {modelLine}
           </p>
         )}
-        <h3 className="text-lg font-semibold tracking-tight leading-snug">
-          {product.name}
-        </h3>
+        <Link
+          href={`/shop/p/${encodeURIComponent(product.id)}`}
+          className="block group"
+          data-testid={`shop-card-link-${product.id}`}
+        >
+          <h3 className="text-lg font-semibold tracking-tight leading-snug group-hover:text-[hsl(var(--penn-navy))] group-hover:underline underline-offset-4 decoration-[hsl(var(--penn-gold))]/60 transition-colors">
+            {product.name}
+          </h3>
+        </Link>
+        {aggregate && aggregate.count > 0 && (
+          <Link
+            href={`/shop/p/${encodeURIComponent(product.id)}`}
+            className="mt-2 inline-flex"
+            aria-label={`See ${aggregate.count} reviews — ${aggregate.averageRating.toFixed(1)} out of 5 stars`}
+          >
+            <StarRating
+              value={aggregate.averageRating}
+              count={aggregate.count}
+              size="sm"
+              testId={`shop-rating-${product.id}`}
+            />
+          </Link>
+        )}
         {product.tagline && (
           <p className="text-sm text-muted-foreground mt-1">{product.tagline}</p>
         )}

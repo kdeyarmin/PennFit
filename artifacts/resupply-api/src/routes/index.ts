@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
+import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -42,5 +43,10 @@ router.use(auditRouter);
 // abandonment SendGrid nudge (list + manual dispatcher trigger).
 // requireAdmin gate is on the router itself.
 router.use(abandonedCartsRouter);
+// /admin/shop/reviews/* — moderation queue for customer-submitted
+// product reviews. Reviews are pending by default and only become
+// publicly visible after an admin approves them. requireAdmin gate
+// is on the router itself.
+router.use(shopReviewsAdminRouter);
 
 export default router;

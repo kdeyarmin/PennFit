@@ -205,6 +205,175 @@ export async function fetchOrderSummary(
   return (await res.json()) as OrderSummaryResponse;
 }
 
+// ───────────────────────────────────────────────────────────────── reviews
+
+export interface ReviewItem {
+  id: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  title: string | null;
+  body: string;
+  authorDisplayName: string;
+  createdAt: string;
+}
+
+export interface ReviewAggregate {
+  count: number;
+  averageRating: number;
+  distribution: Record<"1" | "2" | "3" | "4" | "5", number>;
+}
+
+export interface ReviewListResponse {
+  items: ReviewItem[];
+  nextCursor: string | null;
+  aggregate: ReviewAggregate;
+}
+
+export interface ReviewBulkAggregateResponse {
+  /** Always populated for every requested productId (zeros if none). */
+  aggregates: Record<string, { count: number; averageRating: number }>;
+}
+
+export interface MyReview {
+  id: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  title: string | null;
+  body: string;
+  status: "pending" | "approved" | "rejected";
+  moderationNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewWritePayload {
+  rating: 1 | 2 | 3 | 4 | 5;
+  title: string | null;
+  body: string;
+}
+
+/**
+ * Build the Authorization header from Clerk's global session, when
+ * the SDK has loaded. Returns an empty object when signed-out so
+ * public reads still work.
+ */
+async function authHeader(): Promise<Record<string, string>> {
+  const clerk = (
+    globalThis as unknown as {
+      Clerk?: { session?: { getToken?: () => Promise<string | null> } | null };
+    }
+  ).Clerk;
+  if (!clerk?.session?.getToken) return {};
+  try {
+    const token = await clerk.session.getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function fetchProductReviews(
+  productId: string,
+  opts?: { cursor?: string; limit?: number },
+): Promise<ReviewListResponse> {
+  const params = new URLSearchParams();
+  if (opts?.cursor) params.set("cursor", opts.cursor);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(
+    `/resupply-api/shop/products/${encodeURIComponent(productId)}/reviews${qs}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`Failed to load reviews (${res.status})`);
+  return (await res.json()) as ReviewListResponse;
+}
+
+export async function fetchReviewAggregates(
+  productIds: string[],
+): Promise<ReviewBulkAggregateResponse> {
+  if (productIds.length === 0) return { aggregates: {} };
+  // Endpoint caps at 50 ids per call. Slice the request just in case
+  // a future shop page exceeds that — the caller can chunk further.
+  const capped = productIds.slice(0, 50);
+  const res = await fetch(
+    `/resupply-api/shop/products/reviews/aggregates?productIds=${encodeURIComponent(capped.join(","))}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`Failed to load aggregates (${res.status})`);
+  return (await res.json()) as ReviewBulkAggregateResponse;
+}
+
+export async function fetchMyReview(
+  productId: string,
+): Promise<MyReview | null> {
+  const headers = { Accept: "application/json", ...(await authHeader()) };
+  const res = await fetch(
+    `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
+    { headers },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to load your review (${res.status})`);
+  return (await res.json()) as MyReview;
+}
+
+/**
+ * Result of a write-review POST. Distinguishes "you already have one"
+ * from a generic failure so the form can swap into edit mode.
+ */
+export type WriteReviewResult =
+  | { ok: true; review: MyReview }
+  | { ok: false; alreadyReviewed: true }
+  | { ok: false; error: string };
+
+export async function submitReview(
+  productId: string,
+  payload: ReviewWritePayload,
+): Promise<WriteReviewResult> {
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(await authHeader()),
+  };
+  const res = await fetch(
+    `/resupply-api/shop/products/${encodeURIComponent(productId)}/reviews`,
+    { method: "POST", headers, body: JSON.stringify(payload) },
+  );
+  if (res.status === 409) return { ok: false, alreadyReviewed: true };
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return {
+      ok: false,
+      error: body.error ?? `Couldn't post review (${res.status})`,
+    };
+  }
+  const created = (await res.json()) as MyReview;
+  return { ok: true, review: created };
+}
+
+export async function updateMyReview(
+  productId: string,
+  payload: ReviewWritePayload,
+): Promise<MyReview> {
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(await authHeader()),
+  };
+  const res = await fetch(
+    `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
+    { method: "PATCH", headers, body: JSON.stringify(payload) },
+  );
+  if (!res.ok) throw new Error(`Failed to update review (${res.status})`);
+  return (await res.json()) as MyReview;
+}
+
+export async function deleteMyReview(productId: string): Promise<void> {
+  const headers = { Accept: "application/json", ...(await authHeader()) };
+  const res = await fetch(
+    `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
+    { method: "DELETE", headers },
+  );
+  if (!res.ok) throw new Error(`Failed to delete review (${res.status})`);
+}
+
 export function formatMoneyCents(cents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

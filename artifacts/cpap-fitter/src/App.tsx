@@ -63,6 +63,11 @@ const DeviceSetup = lazy(() =>
 const ShopCart = lazy(() =>
   import("@/pages/shop-cart").then((m) => ({ default: m.ShopCart })),
 );
+const ShopProductDetail = lazy(() =>
+  import("@/pages/shop-product-detail").then((m) => ({
+    default: m.ShopProductDetail,
+  })),
+);
 const ShopCheckoutSuccess = lazy(() =>
   import("@/pages/shop-checkout-success").then((m) => ({
     default: m.ShopCheckoutSuccess,
@@ -238,6 +243,9 @@ function PatientRouter() {
           <Route path="/learn/device-setup" component={DeviceSetup} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/shop" component={Shop} />
+          <Route path="/shop/p/:productId">
+            {(params) => <ShopProductDetail productId={params.productId} />}
+          </Route>
           <Route path="/shop/cart" component={ShopCart} />
           <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
           <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />

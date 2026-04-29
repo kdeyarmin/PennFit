@@ -15,6 +15,7 @@ import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
 import productsRouter from "./products";
 import quickCheckoutRouter from "./quick-checkout";
+import reviewsRouter from "./reviews";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -29,5 +30,10 @@ router.use(myOrdersRouter);
 router.use(mySubscriptionsRouter);
 router.use(quickCheckoutRouter);
 router.use(cartSnapshotRouter);
+// Customer-submitted product reviews. Public reads + author writes
+// here; admin moderation queue lives at routes/admin/shop-reviews.ts
+// and is mounted from routes/index.ts alongside the other admin
+// surfaces.
+router.use(reviewsRouter);
 
 export default router;
