@@ -1383,7 +1383,7 @@ function PatientActionBar({
   const isActive = patient.status === "active";
   const sendDisabled = !isActive || noEpisode;
   const sendDisabledHint = !isActive
-    ? `Patient is ${patient.status} — resume to send reminders.`
+    ? `Patient is ${humanizeStatus(patient.status).toLowerCase()} — resume to send reminders.`
     : noEpisode
       ? "No episode available — create a prescription first."
       : null;

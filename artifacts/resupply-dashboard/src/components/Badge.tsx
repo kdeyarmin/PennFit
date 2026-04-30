@@ -123,3 +123,73 @@ export function humanizeStatus(s: string | null | undefined): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 }
+
+// Acronyms we keep in their canonical uppercase form when humanising
+// action / metadata strings. "Sid" is the Twilio resource-identifier
+// suffix (callSid, messageSid). "Id" is the generic database
+// identifier suffix (patientId, episodeId). The rest are common
+// industry acronyms that show up in audit metadata.
+const HUMANIZE_ACRONYMS = new Set([
+  "ID",
+  "SID",
+  "CSV",
+  "SMS",
+  "MMS",
+  "URL",
+  "API",
+  "HTTP",
+  "JSON",
+  "PHI",
+  "IVR",
+  "DTMF",
+  "CRM",
+  "EHR",
+]);
+
+function titleCaseWord(word: string): string {
+  if (word.length === 0) return word;
+  const upper = word.toUpperCase();
+  if (HUMANIZE_ACRONYMS.has(upper)) return upper;
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+// Humanise an audit-log action code, target table name, or metadata
+// key into a readable label the operator can scan. Examples:
+//   "patient.prescription.status_changed" → "Patient Prescription Status Changed"
+//   "voice.call.placed"                   → "Voice Call Placed"
+//   "messaging.handoff.escalated"         → "Messaging Handoff Escalated"
+//   "messageSid"                          → "Message SID"
+//   "patientId"                           → "Patient ID"
+//   "audit.export.csv"                    → "Audit Export CSV"
+//
+// Splits on three boundaries: "." (namespace separator), "_" (snake_
+// case word break), and camelCase transitions (e.g. messageCount →
+// "Message Count"). Strips any trailing key=value args because those
+// belong in a metadata chip, not in the headline. Preserves a small
+// set of well-known acronyms (see HUMANIZE_ACRONYMS). The raw
+// machine code should still be surfaced via a `title` tooltip on the
+// rendered element so engineers and auditors can grep / cross-
+// reference the original key.
+export function humanizeAction(action: string | null | undefined): string {
+  if (!action) return "—";
+  const trimmed = action.trim();
+  if (trimmed.length === 0) return "—";
+  // Strip trailing key=value args (used by cpap-fitter admin_audit_log
+  // entries for context).
+  const head = trimmed.split(/\s+/)[0] ?? trimmed;
+  return head
+    .split(/[._]/)
+    .filter(Boolean)
+    .flatMap((segment) =>
+      // Split camelCase: insert spaces at lower→upper and ACR→Word
+      // boundaries so "messageSid" → ["message", "Sid"] and
+      // "HTTPRequest" → ["HTTP", "Request"].
+      segment
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+        .split(/\s+/)
+        .filter(Boolean),
+    )
+    .map(titleCaseWord)
+    .join(" ");
+}
