@@ -827,6 +827,10 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
   const [cancelInterceptSub, setCancelInterceptSub] =
     useState<ShopSubscriptionView | null>(null);
 
+  // Travel-mode bulk pause/resume in-flight flag.
+  const [travelModeBusy, setTravelModeBusy] = useState(false);
+  const [travelModeError, setTravelModeError] = useState<string | null>(null);
+
   async function load() {
     setLoadError(null);
     try {
@@ -931,6 +935,56 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
     }
   }
 
+  // Travel mode — bulk-pause or bulk-resume every applicable
+  // subscription with one click. Sequential rather than Promise.all so
+  // we surface partial-failure state (Stripe rate limits + retry).
+  // We don't store a "travel mode active" flag locally; the truth is
+  // the subscriptions' actual paused/active state, which the next
+  // load() reflects.
+  async function bulkPauseAll(targets: ShopSubscriptionView[]) {
+    if (travelModeBusy || pending) return;
+    setTravelModeBusy(true);
+    setTravelModeError(null);
+    let failed = 0;
+    for (const sub of targets) {
+      try {
+        await pauseShopSubscription(sub.id);
+      } catch {
+        failed += 1;
+      }
+    }
+    await load();
+    setTravelModeBusy(false);
+    if (failed > 0) {
+      setTravelModeError(
+        `${failed} subscription${failed === 1 ? "" : "s"} couldn't be paused. ` +
+          "Try the per-row Pause button.",
+      );
+    }
+  }
+
+  async function bulkResumeAll(targets: ShopSubscriptionView[]) {
+    if (travelModeBusy || pending) return;
+    setTravelModeBusy(true);
+    setTravelModeError(null);
+    let failed = 0;
+    for (const sub of targets) {
+      try {
+        await resumeShopSubscription(sub.id);
+      } catch {
+        failed += 1;
+      }
+    }
+    await load();
+    setTravelModeBusy(false);
+    if (failed > 0) {
+      setTravelModeError(
+        `${failed} subscription${failed === 1 ? "" : "s"} couldn't be resumed. ` +
+          "Try the per-row Resume button.",
+      );
+    }
+  }
+
   // Cadence dialog — opened by clicking "Change cadence" on a row.
   // We fetch the option list lazily on open (Stripe round-trip) so
   // the patient pays the latency only when they actually want it.
@@ -1011,10 +1065,75 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
       className="glass-card rounded-2xl p-6"
       data-testid="account-subscriptions-section"
     >
-      <div className="flex items-center gap-2 mb-4">
-        <Repeat className="h-5 w-5 text-muted-foreground" />
-        <h2 className="font-semibold">Auto-ship subscriptions</h2>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Repeat className="h-5 w-5 text-muted-foreground" />
+          <h2 className="font-semibold">Auto-ship subscriptions</h2>
+        </div>
+        {(() => {
+          // Bulk pause-everything is only useful when there's at least one
+          // subscription that could meaningfully change. We show "Pause
+          // all" if anything is active and "Resume all" if every active
+          // subscription is paused (Stripe `paused` status). When the
+          // collection is mixed we render Pause All — pausing what's
+          // active is the higher-leverage action.
+          const pauseTargets = subs.filter(
+            (s) => s.status === "active" || s.status === "trialing",
+          );
+          const pausedTargets = subs.filter((s) => s.status === "paused");
+          if (pauseTargets.length > 0) {
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void bulkPauseAll(pauseTargets)}
+                disabled={travelModeBusy || pending !== null}
+                data-testid="account-travel-mode-pause-all"
+                title="Pause every active auto-ship — useful for travel or hospital stays."
+              >
+                {travelModeBusy ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    Pausing all…
+                  </>
+                ) : (
+                  <>Pause all (travel mode)</>
+                )}
+              </Button>
+            );
+          }
+          if (pausedTargets.length > 1) {
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void bulkResumeAll(pausedTargets)}
+                disabled={travelModeBusy || pending !== null}
+                data-testid="account-travel-mode-resume-all"
+              >
+                {travelModeBusy ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    Resuming all…
+                  </>
+                ) : (
+                  <>Resume all</>
+                )}
+              </Button>
+            );
+          }
+          return null;
+        })()}
       </div>
+      {travelModeError && (
+        <p
+          className="text-xs text-rose-700 mb-3"
+          role="alert"
+          data-testid="account-travel-mode-error"
+        >
+          {travelModeError}
+        </p>
+      )}
       <ul className="divide-y divide-border/40">
         {subs.map((sub) => {
           const isActive = sub.status === "active" || sub.status === "trialing";
