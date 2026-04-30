@@ -78,6 +78,8 @@ import {
   formatMoneyCents,
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
+import { CommPrefsSection } from "@/components/comm-prefs-section";
+import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
 // from your order on …" banner. Stored as a JSON object so we can
@@ -195,19 +197,54 @@ function AccountInner() {
     );
   }
 
-  // Defensive guard: the backend currently always returns `profile`
-  // when signedIn=true, but the response shape declares it optional.
-  // Rather than relying on `data.profile!` (a non-null assertion that
-  // would crash the whole tree if the contract drifts), surface a
-  // recoverable inline state so the user can retry instead of hitting
-  // the global error boundary.
+  // Two distinct failure modes funnel into the no-profile branch:
+  //
+  //   data.signedIn === false  → the API can't see our session at all.
+  //     This usually means the auth provider session cookie isn't
+  //     reaching /resupply-api (cross-origin / SameSite issue or a
+  //     proxy that strips cookies). Retrying won't fix it; the user
+  //     needs to sign in again so a fresh cookie gets attached on
+  //     the same origin as the API.
+  //
+  //   data.signedIn === true && !data.profile  → the API saw the
+  //     session but couldn't materialize a profile row. This IS
+  //     usually a momentary hiccup — Clerk Backend API blip,
+  //     transient DB error during ensureShopCustomerRow, etc.
+  //     "Try again" is the right call here.
+  //
+  // The two need different copy + actions because retry-first vs
+  // sign-in-first matters: telling someone whose session cookie is
+  // gone to "try again in a few seconds" leaves them stuck.
+  if (!data.signedIn) {
+    return (
+      <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">
+        <div className="glass-card rounded-2xl p-6 text-center">
+          <AlertCircle className="h-6 w-6 mx-auto mb-2 text-destructive" />
+          <p
+            className="text-sm font-semibold mb-1"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            Your session expired
+          </p>
+          <p className="text-sm text-muted-foreground mb-4">
+            We can&apos;t see your sign-in anymore — sign back in and
+            you&apos;ll land right back here.
+          </p>
+          <Link href="/sign-in?redirect=/account">
+            <Button>Sign in</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!data.profile) {
     return (
       <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">
         <div className="glass-card rounded-2xl p-6 text-center">
           <AlertCircle className="h-6 w-6 mx-auto mb-2 text-destructive" />
           <p className="text-sm text-muted-foreground mb-4">
-            Your account info couldn't load. This is usually a momentary
+            Your account info couldn&apos;t load. This is usually a momentary
             hiccup — try again in a few seconds.
           </p>
           <Button onClick={() => void reload()}>Try again</Button>
@@ -241,11 +278,14 @@ function AccountInner() {
             profile={data.profile!}
             onSaved={() => void reload()}
           />
+          <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection
             orders={data.recentOrders ?? []}
             previewMode={previewMode === true}
           />
+          <CommPrefsSection />
+          <DataExportSection />
         </div>
         <aside className="space-y-6">
           <SavedCardSection card={data.savedCard ?? null} />
@@ -273,6 +313,45 @@ function PreviewBanner() {
         </p>
       </div>
     </div>
+  );
+}
+
+// Self-service data export. Hits /shop/me/export which streams a
+// JSON file with every cash-pay record we hold for the user. No PHI
+// (clinical data lives in a separate system); the section copy
+// surfaces that explicitly so customers know to file a separate
+// request for the resupply side if needed.
+function DataExportSection() {
+  return (
+    <section
+      className="glass-card rounded-2xl p-6 space-y-2"
+      data-testid="account-data-export"
+    >
+      <h2 className="font-semibold">Your data</h2>
+      <p className="text-sm text-muted-foreground">
+        Download every record we hold for your account on the cash-pay
+        shop — orders, subscriptions, returns, reviews, communication
+        preferences. The download is a JSON file; clinical / insurance
+        data isn&apos;t included (those live in a separate system —
+        email{" "}
+        <a
+          className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
+          href="mailto:support@pennpaps.com"
+        >
+          support@pennpaps.com
+        </a>{" "}
+        for that).
+      </p>
+      <div>
+        <a
+          href="/resupply-api/shop/me/export"
+          className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--penn-navy))] text-white text-sm font-semibold px-4 py-2 hover:bg-[hsl(var(--penn-navy))]/90"
+          data-testid="account-data-export-download"
+        >
+          Download my data (JSON)
+        </a>
+      </div>
+    </section>
   );
 }
 
@@ -817,6 +896,20 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
   >(null);
   const [cadenceSubmitting, setCadenceSubmitting] = useState(false);
 
+  // Cancel-intercept dialog — offers "Pause instead" before letting
+  // the customer follow through with a hard cancel. Holds the
+  // subscription targeted for cancellation (or null when closed)
+  // plus an optional reason the customer chose, so we can log /
+  // analyze later when we add a reasons table. The reason itself
+  // is stored in component state only for now (no backend yet) —
+  // the immediate goal is the deflection moment, not the analytics.
+  const [cancelInterceptSub, setCancelInterceptSub] =
+    useState<ShopSubscriptionView | null>(null);
+
+  // Travel-mode bulk pause/resume in-flight flag.
+  const [travelModeBusy, setTravelModeBusy] = useState(false);
+  const [travelModeError, setTravelModeError] = useState<string | null>(null);
+
   async function load() {
     setLoadError(null);
     try {
@@ -841,24 +934,38 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
     return action ? pending.action === action : true;
   }
 
-  async function handleCancel(sub: ShopSubscriptionView) {
+  function handleCancel(sub: ShopSubscriptionView) {
     if (pending) return;
-    // Double-confirm — auto-ship is irreversible from the patient
-    // side once stopped (they'd have to re-subscribe), and older
-    // patients are particularly likely to misclick.
-    if (
-      !window.confirm(
-        "Cancel auto-ship? Your supplies will keep shipping until the end of " +
-          "the current period, then stop. You can re-subscribe anytime.",
-      )
-    ) {
-      return;
-    }
+    // Open the cancel-intercept dialog instead of going straight to
+    // a confirm-and-cancel. The dialog surfaces "Pause instead" as
+    // the primary CTA — most patients who hit cancel just need a
+    // break (vacation, hospital stay, supply backlog) rather than a
+    // permanent stop. The native confirm() flow buried that option.
+    setCancelInterceptSub(sub);
+    setActionError(null);
+  }
+
+  async function confirmCancel(sub: ShopSubscriptionView) {
     setPending({ id: sub.id, action: "cancel" });
     setActionError(null);
     try {
       await cancelShopSubscription(sub.id);
       await load();
+      setCancelInterceptSub(null);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function pauseFromIntercept(sub: ShopSubscriptionView) {
+    setPending({ id: sub.id, action: "pause" });
+    setActionError(null);
+    try {
+      await pauseShopSubscription(sub.id);
+      await load();
+      setCancelInterceptSub(null);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -904,6 +1011,56 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setPending(null);
+    }
+  }
+
+  // Travel mode — bulk-pause or bulk-resume every applicable
+  // subscription with one click. Sequential rather than Promise.all so
+  // we surface partial-failure state (Stripe rate limits + retry).
+  // We don't store a "travel mode active" flag locally; the truth is
+  // the subscriptions' actual paused/active state, which the next
+  // load() reflects.
+  async function bulkPauseAll(targets: ShopSubscriptionView[]) {
+    if (travelModeBusy || pending) return;
+    setTravelModeBusy(true);
+    setTravelModeError(null);
+    let failed = 0;
+    for (const sub of targets) {
+      try {
+        await pauseShopSubscription(sub.id);
+      } catch {
+        failed += 1;
+      }
+    }
+    await load();
+    setTravelModeBusy(false);
+    if (failed > 0) {
+      setTravelModeError(
+        `${failed} subscription${failed === 1 ? "" : "s"} couldn't be paused. ` +
+          "Try the per-row Pause button.",
+      );
+    }
+  }
+
+  async function bulkResumeAll(targets: ShopSubscriptionView[]) {
+    if (travelModeBusy || pending) return;
+    setTravelModeBusy(true);
+    setTravelModeError(null);
+    let failed = 0;
+    for (const sub of targets) {
+      try {
+        await resumeShopSubscription(sub.id);
+      } catch {
+        failed += 1;
+      }
+    }
+    await load();
+    setTravelModeBusy(false);
+    if (failed > 0) {
+      setTravelModeError(
+        `${failed} subscription${failed === 1 ? "" : "s"} couldn't be resumed. ` +
+          "Try the per-row Resume button.",
+      );
     }
   }
 
@@ -987,10 +1144,75 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
       className="glass-card rounded-2xl p-6"
       data-testid="account-subscriptions-section"
     >
-      <div className="flex items-center gap-2 mb-4">
-        <Repeat className="h-5 w-5 text-muted-foreground" />
-        <h2 className="font-semibold">Auto-ship subscriptions</h2>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Repeat className="h-5 w-5 text-muted-foreground" />
+          <h2 className="font-semibold">Auto-ship subscriptions</h2>
+        </div>
+        {(() => {
+          // Bulk pause-everything is only useful when there's at least one
+          // subscription that could meaningfully change. We show "Pause
+          // all" if anything is active and "Resume all" if every active
+          // subscription is paused (Stripe `paused` status). When the
+          // collection is mixed we render Pause All — pausing what's
+          // active is the higher-leverage action.
+          const pauseTargets = subs.filter(
+            (s) => s.status === "active" || s.status === "trialing",
+          );
+          const pausedTargets = subs.filter((s) => s.status === "paused");
+          if (pauseTargets.length > 0) {
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void bulkPauseAll(pauseTargets)}
+                disabled={travelModeBusy || pending !== null}
+                data-testid="account-travel-mode-pause-all"
+                title="Pause every active auto-ship — useful for travel or hospital stays."
+              >
+                {travelModeBusy ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    Pausing all…
+                  </>
+                ) : (
+                  <>Pause all (travel mode)</>
+                )}
+              </Button>
+            );
+          }
+          if (pausedTargets.length > 1) {
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void bulkResumeAll(pausedTargets)}
+                disabled={travelModeBusy || pending !== null}
+                data-testid="account-travel-mode-resume-all"
+              >
+                {travelModeBusy ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    Resuming all…
+                  </>
+                ) : (
+                  <>Resume all</>
+                )}
+              </Button>
+            );
+          }
+          return null;
+        })()}
       </div>
+      {travelModeError && (
+        <p
+          className="text-xs text-rose-700 mb-3"
+          role="alert"
+          data-testid="account-travel-mode-error"
+        >
+          {travelModeError}
+        </p>
+      )}
       <ul className="divide-y divide-border/40">
         {subs.map((sub) => {
           const isActive = sub.status === "active" || sub.status === "trialing";
@@ -1274,6 +1496,98 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
                 </>
               ) : (
                 "Save cadence"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={cancelInterceptSub !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setCancelInterceptSub(null);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-lg"
+          data-testid="account-cancel-intercept-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>Before you cancel — would a pause work?</DialogTitle>
+            <DialogDescription>
+              Most patients who hit Cancel just need a temporary break. Pause
+              keeps your subscription on file with no charges; you resume in
+              one tap when you&apos;re ready.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="rounded-xl border border-[hsl(var(--penn-gold)/0.4)] bg-[hsl(var(--penn-gold)/0.06)] p-4">
+              <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+                Pause auto-ship instead
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                We&apos;ll stop charging your card and pause shipments. Your
+                cadence and payment method stay on file. Resume anytime from
+                this page.
+              </p>
+            </div>
+            <div className="rounded-xl border bg-background p-4">
+              <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+                Cancel for good
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                Your supplies will keep shipping until the end of the current
+                period, then stop. You&apos;ll need to re-subscribe (and
+                re-confirm cadence + price) if you change your mind later.
+              </p>
+            </div>
+            {actionError && (
+              <p className="text-xs text-rose-700" role="alert">
+                {actionError}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCancelInterceptSub(null)}
+              disabled={pending !== null}
+              data-testid="account-cancel-intercept-keep"
+            >
+              Keep auto-ship as-is
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                cancelInterceptSub && void confirmCancel(cancelInterceptSub)
+              }
+              disabled={pending !== null}
+              className="border-rose-300 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+              data-testid="account-cancel-intercept-confirm"
+            >
+              {isPending(cancelInterceptSub?.id ?? "", "cancel") ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Canceling…
+                </>
+              ) : (
+                "Cancel anyway"
+              )}
+            </Button>
+            <Button
+              onClick={() =>
+                cancelInterceptSub && void pauseFromIntercept(cancelInterceptSub)
+              }
+              disabled={pending !== null}
+              data-testid="account-cancel-intercept-pause"
+            >
+              {isPending(cancelInterceptSub?.id ?? "", "pause") ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Pausing…
+                </>
+              ) : (
+                "Pause instead"
               )}
             </Button>
           </DialogFooter>

@@ -5,6 +5,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, Mail, Phone, Tag, Home, RefreshCcw, ShieldCheck, BookOpen } from "lucide-react";
+import { ComfortGuarantee } from "@/components/comfort-guarantee";
 
 interface OrderConfirmation {
   orderReference: string;
@@ -152,6 +153,8 @@ export function OrderSuccess() {
           your insurance, contact, or address information on this website.
         </p>
       </div>
+
+      <ComfortGuarantee variant="feature" className="mb-8" />
 
       <Link
         href="/learn/device-setup"

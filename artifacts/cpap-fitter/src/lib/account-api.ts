@@ -200,3 +200,75 @@ export const startQuickCheckout = (input: QuickCheckoutInput) =>
     headers: { "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify(input),
   });
+
+/**
+ * Aggregated status digest powering the signed-in home banner.
+ * One round-trip across orders + subscriptions + abandoned cart.
+ */
+export interface ShopMeDashboardResponse {
+  nextShipment: {
+    subscriptionId: string;
+    /** ISO 8601 string. */
+    date: string;
+    firstItemName: string | null;
+    cancelAtPeriodEnd: boolean;
+  } | null;
+  latestOrder: {
+    id: string;
+    sessionId: string;
+    paidAt: string | null;
+    shippedAt: string | null;
+    deliveredAt: string | null;
+    trackingCarrier: string | null;
+    trackingNumber: string | null;
+  } | null;
+  activeSubscriptions: number;
+  pendingOrders: number;
+  abandonedCart: {
+    itemCount: number;
+    updatedAt: string;
+  } | null;
+}
+
+export const fetchShopMeDashboard = () =>
+  meFetch<ShopMeDashboardResponse>("/shop/me/dashboard");
+
+export interface CommunicationPreferences {
+  emailMarketing: boolean;
+  emailResupplyReminders: boolean;
+  emailAbandonedCart: boolean;
+  emailReviewRequests: boolean;
+  smsMarketing: boolean;
+  smsTransactional: boolean;
+  preferredChannel: "email" | "sms";
+  dndStartHour: number | null;
+  dndEndHour: number | null;
+  timezone: string | null;
+}
+
+export const fetchCommPrefs = () =>
+  meFetch<{ preferences: CommunicationPreferences }>("/shop/me/comm-prefs");
+
+export const updateCommPrefs = (input: Partial<CommunicationPreferences>) =>
+  meFetch<{ preferences: CommunicationPreferences }>("/shop/me/comm-prefs", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+
+export interface ReorderSuggestion {
+  productId: string;
+  productName: string;
+  category: string;
+  imageUrl: string | null;
+  cadenceDays: number;
+  lastPaidAt: string;
+  ageDays: number;
+  dueOn: string;
+  status: "overdue" | "due_soon";
+  totalQuantityHistorical: number;
+}
+
+export const fetchReorderSuggestions = () =>
+  meFetch<{ suggestions: ReorderSuggestion[]; previewMode?: boolean }>(
+    "/shop/me/reorder-suggestions",
+  );

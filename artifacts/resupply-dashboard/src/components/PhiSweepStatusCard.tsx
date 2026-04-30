@@ -52,33 +52,36 @@ interface ToneStyles {
 
 const TONE_STYLES: Record<Tone, ToneStyles> = {
   loading: {
-    bg: "#f9fafb",
-    border: "#e5e7eb",
-    badgeBg: "#e5e7eb",
-    badgeText: "#374151",
+    bg: "hsl(var(--surface-1))",
+    border: "hsl(var(--line-1))",
+    badgeBg: "hsl(var(--surface-3))",
+    badgeText: "hsl(var(--ink-2))",
     badgeLabel: "Loading…",
   },
   never: {
-    bg: "#f9fafb",
-    border: "#e5e7eb",
-    badgeBg: "#e5e7eb",
-    badgeText: "#374151",
+    bg: "hsl(var(--surface-1))",
+    border: "hsl(var(--line-1))",
+    badgeBg: "hsl(var(--surface-3))",
+    badgeText: "hsl(var(--ink-2))",
     badgeLabel: "No run yet",
   },
   healthy: {
-    // Soft green — matches Tailwind emerald-50 / emerald-200 / emerald-700
-    bg: "#ecfdf5",
-    border: "#a7f3d0",
-    badgeBg: "#a7f3d0",
-    badgeText: "#065f46",
+    // Soft brand-aligned emerald — pulls from the --tone-emerald
+    // status token so a healthy PHI-sweep card matches every other
+    // success-state surface in the console.
+    bg: "hsl(var(--tone-emerald) / 0.08)",
+    border: "hsl(var(--tone-emerald) / 0.32)",
+    badgeBg: "hsl(var(--tone-emerald) / 0.20)",
+    badgeText: "hsl(var(--tone-emerald) / 0.95)",
     badgeLabel: "Healthy",
   },
   attention: {
-    // Soft amber — matches Tailwind amber-50 / amber-300 / amber-800
-    bg: "#fffbeb",
-    border: "#fcd34d",
-    badgeBg: "#fcd34d",
-    badgeText: "#92400e",
+    // Soft amber — pulls from --tone-amber; same vocabulary the
+    // status pills + breaching-SLA timers use.
+    bg: "hsl(var(--tone-amber) / 0.10)",
+    border: "hsl(var(--tone-amber) / 0.45)",
+    badgeBg: "hsl(var(--tone-amber) / 0.32)",
+    badgeText: "hsl(38 80% 24%)",
     badgeLabel: "Needs attention",
   },
 };
@@ -129,7 +132,7 @@ export function PhiSweepStatusCard({ data, isLoading }: Props) {
       <header className="flex items-center justify-between mb-3">
         <h2
           className="text-base font-semibold"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Weekly PHI attachment sweep
         </h2>
@@ -146,13 +149,13 @@ export function PhiSweepStatusCard({ data, isLoading }: Props) {
       </header>
 
       {tone === "loading" && (
-        <p className="text-sm" style={{ color: "#374151" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           Loading sweep status…
         </p>
       )}
 
       {tone === "never" && (
-        <p className="text-sm" style={{ color: "#374151" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           No sweep has run yet. The job is scheduled weekly at
           03:13 UTC on Sunday — first run will appear here once it
           completes.
@@ -184,12 +187,12 @@ function PhiSweepDetails({
   // line with the most useful stats.
   return (
     <div className="space-y-3">
-      <p className="text-sm" style={{ color: "#374151" }}>
+      <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
         Last ran <strong>{relative}</strong>{" "}
         <time
           dateTime={lastRunIso}
           className="text-xs"
-          style={{ color: "#6b7280" }}
+          style={{ color: "hsl(var(--ink-3))" }}
         >
           ({lastRunIso})
         </time>
@@ -221,7 +224,7 @@ function PhiSweepDetails({
 
       <dl
         className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs"
-        style={{ color: "#374151" }}
+        style={{ color: "hsl(var(--ink-2))" }}
         data-testid="phi-sweep-counters"
       >
         <Counter label="Objects scanned" value={c.objectsScanned} />

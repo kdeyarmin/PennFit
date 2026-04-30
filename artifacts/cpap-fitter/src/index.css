@@ -305,6 +305,57 @@
     box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.6);
     border-radius: var(--radius);
   }
+
+  /* Branded scrollbar — matches the admin dashboard's treatment so the
+     two SPAs share scrolling chrome. Webkit-only; Firefox falls back
+     to its OS default. The track stays transparent so the page's
+     ambient atmosphere reads through; the thumb is brand navy at
+     low opacity, deepening on hover. */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--penn-navy) / 0.18);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--penn-navy) / 0.32);
+    background-clip: content-box;
+  }
+
+  /* Print: hide ambient layers + nav chrome for clean receipt prints.
+     The order-success and shop-checkout-success pages are the most
+     likely candidates to be printed; this gives them a paper-friendly
+     surface without each page having to manage its own print rules. */
+  @media print {
+    body {
+      background: #ffffff !important;
+    }
+    body::before,
+    body::after {
+      display: none !important;
+    }
+    header[role="banner"],
+    footer,
+    [data-testid="pwa-install-prompt"],
+    [data-testid="fit-flow-stepper"] {
+      display: none !important;
+    }
+    .glass-card,
+    .glass-panel {
+      background: #ffffff !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      box-shadow: none !important;
+      border-color: #d4d4d8 !important;
+    }
+  }
 }
 
 @layer utilities {

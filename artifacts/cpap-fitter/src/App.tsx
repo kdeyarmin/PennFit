@@ -52,6 +52,11 @@ const Order = lazy(() =>
 const OrderSuccess = lazy(() =>
   import("@/pages/order-success").then((m) => ({ default: m.OrderSuccess })),
 );
+const ComfortGuaranteePage = lazy(() =>
+  import("@/pages/comfort-guarantee").then((m) => ({
+    default: m.ComfortGuaranteePage,
+  })),
+);
 const ReplacementSchedule = lazy(() =>
   import("@/pages/replacement-schedule").then((m) => ({
     default: m.ReplacementSchedule,
@@ -256,6 +261,7 @@ function PatientRouter() {
           <Route path="/learn" component={Learn} />
           <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
           <Route path="/learn/device-setup" component={DeviceSetup} />
+          <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/shop" component={Shop} />
           <Route path="/shop/p/:productId">
