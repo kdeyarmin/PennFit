@@ -1775,9 +1775,30 @@ components:
           description: |
             Verified primary email, lowercased. Displayed in the
             dashboard chrome and recorded in audit rows.
+        role:
+          type: string
+          enum: [admin, agent]
+          description: |
+            Caller's effective role.
+
+              - `admin` — full privileges, including destructive
+                operations like deleting cadence rules.
+              - `agent` — junior-admin role used by customer-service
+                staff. Identical to `admin` in every read/write
+                surface EXCEPT explicit DELETE operations on
+                business records (e.g. `DELETE /rules/:id`), which
+                return 403 for agents. The dashboard reads this
+                value to hide or disable destructive UI affordances
+                so agents never see a button they cannot use.
+
+            Membership in `RESUPPLY_ADMIN_EMAILS` always wins over
+            `RESUPPLY_AGENT_EMAILS` if an email appears in both
+            allowlists. The dev-mode fallback (no allowlist
+            configured, NODE_ENV=development) returns `admin`.
       required:
         - clerkId
         - email
+        - role
     AuthError:
       type: object
       description: |

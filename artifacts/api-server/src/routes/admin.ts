@@ -240,7 +240,16 @@ router.get("/admin/audit-log", async (req, res) => {
 // Tiny helper for the frontend to confirm "yes, you are authorized as admin"
 // and display the admin email in the layout.
 router.get("/admin/me", (req, res) => {
-  res.json({ email: req.adminEmail, clerkId: req.adminClerkId });
+  // `role` drives whether the admin UI hides destructive UI
+  // affordances (Delete buttons etc) for customer-service agents.
+  // Default to "admin" if requireAdmin somehow didn't set it — a
+  // belt-and-suspenders fallback so a refactor regression doesn't
+  // silently downgrade real admins to agents.
+  res.json({
+    email: req.adminEmail,
+    clerkId: req.adminClerkId,
+    role: req.adminRole ?? "admin",
+  });
 });
 
 // ---------- GET /admin/reminders ----------

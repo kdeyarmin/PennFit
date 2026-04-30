@@ -39,6 +39,17 @@ async function adminFetch<T>(path: string): Promise<T> {
 export interface AdminMe {
   email: string;
   clerkId: string;
+  /**
+   * Caller's effective role. `admin` has full privileges; `agent` is
+   * a junior-admin role used by customer-service staff (identical
+   * permissions today since cpap-fitter has no destructive admin
+   * routes, but exposed so the UI can render a role badge and so
+   * future destructive operations can gate cleanly without a
+   * second round-trip). Optional in the type because older API
+   * builds may not include it; consumers should default to "admin"
+   * to avoid silently downgrading real admins.
+   */
+  role?: "admin" | "agent";
 }
 export const fetchAdminMe = () => adminFetch<AdminMe>("/admin/me");
 

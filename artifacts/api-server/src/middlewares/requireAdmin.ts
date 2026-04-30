@@ -4,40 +4,69 @@ import { getAuth, clerkClient } from "@clerk/express";
 /**
  * requireAdmin — gate for the admin API.
  *
- * Two checks, in order:
+ * Three checks, in order:
  *   1. The request has a valid Clerk session (user is signed in).
- *   2. The signed-in user's primary email is in the PENN_ADMIN_EMAILS allowlist.
+ *   2. The signed-in user's primary email is verified.
+ *   3. That email is in the `PENN_ADMIN_EMAILS` OR `PENN_AGENT_EMAILS`
+ *      allowlist.
  *
- * The allowlist is a comma-separated env var, e.g.
+ * The allowlists are comma-separated env vars, e.g.
  *   PENN_ADMIN_EMAILS="dr.smith@pennhomemedical.com,billing@pennhomemedical.com"
+ *   PENN_AGENT_EMAILS="csr1@pennhomemedical.com,csr2@pennhomemedical.com"
  *
- * Behavior when PENN_ADMIN_EMAILS is unset:
- *   - In `NODE_ENV=development` we allow any signed-in user. This makes the
- *     local dev loop bearable (you can test admin without managing env vars).
- *   - In production we DENY all requests with a 503 "admin not configured"
- *     response. This is intentional — better to have no admin than an
- *     accidentally world-open admin if a deploy ships without the env var.
+ * Roles:
+ *   - `admin` — full privileges. Membership in `PENN_ADMIN_EMAILS`
+ *     wins over `PENN_AGENT_EMAILS` if both contain the same email.
+ *   - `agent` — junior-admin role used by customer-service staff.
+ *     Identical to `admin` everywhere EXCEPT routes that explicitly
+ *     opt in to admin-only via `requireAdminOnly`. The cpap-fitter
+ *     admin currently has no admin-only routes (no destructive
+ *     deletes), so in practice agents see the same surface as
+ *     admins; the role distinction is wired so future destructive
+ *     operations can gate cleanly.
  *
- * On success we attach `req.adminEmail` and `req.adminClerkId` so route
- * handlers can write audit-log rows without re-fetching the user.
+ * Behavior when neither allowlist is set:
+ *   - In `NODE_ENV=development` we allow any signed-in user as
+ *     `admin`. This makes the local dev loop bearable — no env vars
+ *     to manage.
+ *   - In production we DENY all requests with a 503 "admin not
+ *     configured" response. Better to have no admin than an
+ *     accidentally world-open admin if a deploy ships without the
+ *     env var. An agent-only deployment is intentionally not
+ *     supported — every prod deploy MUST have at least one admin.
+ *
+ * On success we attach `req.adminEmail`, `req.adminClerkId`, and
+ * `req.adminRole` so route handlers can write audit-log rows
+ * without re-fetching the user.
  */
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       adminEmail?: string;
       adminClerkId?: string;
+      adminRole?: "admin" | "agent";
     }
   }
 }
 
-function parseAllowlist(): string[] | null {
-  const raw = process.env.PENN_ADMIN_EMAILS;
+function parseEmailList(envVar: string): string[] | null {
+  const raw = process.env[envVar];
   if (!raw) return null;
-  return raw
+  const list = raw
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
+  return list.length > 0 ? list : null;
+}
+
+function parseAdminAllowlist(): string[] | null {
+  return parseEmailList("PENN_ADMIN_EMAILS");
+}
+
+function parseAgentAllowlist(): string[] | null {
+  return parseEmailList("PENN_AGENT_EMAILS");
 }
 
 export async function requireAdmin(
@@ -76,7 +105,7 @@ export async function requireAdmin(
       return;
     }
     email = primary.emailAddress?.toLowerCase();
-  } catch (err) {
+  } catch (_err) {
     res.status(401).json({ error: "Could not verify your identity. Please sign in again." });
     return;
   }
@@ -86,9 +115,11 @@ export async function requireAdmin(
     return;
   }
 
-  const allowlist = parseAllowlist();
+  const adminAllowlist = parseAdminAllowlist();
+  const agentAllowlist = parseAgentAllowlist();
 
-  if (allowlist === null) {
+  let role: "admin" | "agent";
+  if (adminAllowlist === null) {
     if (process.env.NODE_ENV === "production") {
       res.status(503).json({
         error:
@@ -97,12 +128,47 @@ export async function requireAdmin(
       return;
     }
     // dev fallback — any signed-in user is an admin
-  } else if (!allowlist.includes(email)) {
+    role = "admin";
+  } else if (adminAllowlist.includes(email)) {
+    role = "admin";
+  } else if (agentAllowlist !== null && agentAllowlist.includes(email)) {
+    role = "agent";
+  } else {
     res.status(403).json({ error: "This account is not authorized for admin access." });
     return;
   }
 
   req.adminEmail = email;
   req.adminClerkId = userId;
+  req.adminRole = role;
+  next();
+}
+
+/**
+ * requireAdminOnly — stricter gate that admits only `role === "admin"`.
+ *
+ * Wraps `requireAdmin` so all the spoofing defenses and Clerk error
+ * handling stay in one place. Use on routes whose effects are not
+ * safely reversible by a customer-service agent. The cpap-fitter
+ * admin has no such routes today; this is wired in advance so future
+ * destructive operations can opt in cleanly.
+ */
+export async function requireAdminOnly(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  let advanced = false;
+  await requireAdmin(req, res, () => {
+    advanced = true;
+  });
+  if (!advanced) return;
+  if (req.adminRole !== "admin") {
+    res.status(403).json({
+      error:
+        "This action requires admin privileges. Customer-service agents cannot perform destructive operations.",
+    });
+    return;
+  }
   next();
 }

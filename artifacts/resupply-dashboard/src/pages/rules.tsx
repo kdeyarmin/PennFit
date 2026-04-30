@@ -20,6 +20,7 @@ import { ErrorPanel } from "../components/ErrorPanel";
 import { Button } from "../components/Button";
 import { Input, Label, Select } from "../components/Input";
 import { formatDateTime } from "../lib/format";
+import { useAdminRole } from "../lib/role-context";
 
 // PennPaps — Global frequency rules.
 //
@@ -345,6 +346,14 @@ function RuleFormModal({
   );
   const [error, setError] = useState<string | null>(null);
 
+  // The Delete button only renders for admins — agents see a small
+  // explanatory note instead. The server enforces this independently
+  // via `requireAdminOnly` on `DELETE /rules/:id`, so this UI gating
+  // is purely a UX courtesy. If a future refactor accidentally drops
+  // the check, the agent's click would 403 — visible failure, not
+  // a privilege escalation.
+  const role = useAdminRole();
+
   const createMut = useCreateRule();
   const updateMut = useUpdateRule();
   const deleteMut = useDeleteRule();
@@ -659,7 +668,7 @@ function RuleFormModal({
                   {initial.active ? "Deactivate" : "Activate"}
                 </Button>
               )}
-              {mode === "edit" && initial && (
+              {mode === "edit" && initial && role === "admin" && (
                 <Button
                   intent="ghost"
                   type="button"
@@ -669,6 +678,16 @@ function RuleFormModal({
                 >
                   Delete
                 </Button>
+              )}
+              {mode === "edit" && initial && role === "agent" && (
+                <span
+                  className="text-xs italic px-2 py-1"
+                  style={{ color: "#7a7a7a" }}
+                  title="Deleting cadence rules requires an admin account. Toggle the rule inactive instead."
+                  data-testid="rules-delete-blocked-agent"
+                >
+                  Delete is admin-only
+                </span>
               )}
             </div>
             <div className="flex gap-2">

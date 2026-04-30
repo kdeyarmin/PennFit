@@ -18,7 +18,7 @@ vi.mock("@clerk/express", () => ({
   },
 }));
 
-import { requireAdmin } from "./requireAdmin";
+import { requireAdmin, requireAdminOnly } from "./requireAdmin";
 
 function makeApp(): Express {
   const app = express();
@@ -27,6 +27,14 @@ function makeApp(): Express {
       ok: true,
       adminEmail: req.adminEmail,
       adminClerkId: req.adminClerkId,
+      adminRole: req.adminRole,
+    });
+  });
+  app.get("/admin-only", requireAdminOnly, (req, res) => {
+    res.json({
+      ok: true,
+      adminEmail: req.adminEmail,
+      adminRole: req.adminRole,
     });
   });
   return app;
@@ -51,6 +59,7 @@ function stubVerifiedUser(email: string, userId = "user_abc123"): void {
 
 describe("requireAdmin middleware", () => {
   let originalAllowlist: string | undefined;
+  let originalAgentAllowlist: string | undefined;
   let originalLegacyAllowlist: string | undefined;
   let originalNodeEnv: string | undefined;
 
@@ -58,12 +67,15 @@ describe("requireAdmin middleware", () => {
     getAuthMock.mockReset();
     getUserMock.mockReset();
     originalAllowlist = process.env.RESUPPLY_ADMIN_EMAILS;
+    originalAgentAllowlist = process.env.RESUPPLY_AGENT_EMAILS;
     originalLegacyAllowlist = process.env.RESUPPLY_OPERATOR_EMAILS;
     originalNodeEnv = process.env.NODE_ENV;
-    // Reset BOTH names — the middleware reads the legacy var as a
-    // fallback, so leaving it set leaks state into tests that
-    // expect "no allowlist configured".
+    // Reset all three names — the middleware reads the legacy var as a
+    // fallback and the agent var independently, so leaving any of them
+    // set leaks state into tests that expect "no allowlist configured"
+    // or "no agent role".
     delete process.env.RESUPPLY_ADMIN_EMAILS;
+    delete process.env.RESUPPLY_AGENT_EMAILS;
     delete process.env.RESUPPLY_OPERATOR_EMAILS;
     process.env.NODE_ENV = "test";
   });
@@ -73,6 +85,11 @@ describe("requireAdmin middleware", () => {
       delete process.env.RESUPPLY_ADMIN_EMAILS;
     } else {
       process.env.RESUPPLY_ADMIN_EMAILS = originalAllowlist;
+    }
+    if (originalAgentAllowlist === undefined) {
+      delete process.env.RESUPPLY_AGENT_EMAILS;
+    } else {
+      process.env.RESUPPLY_AGENT_EMAILS = originalAgentAllowlist;
     }
     if (originalLegacyAllowlist === undefined) {
       delete process.env.RESUPPLY_OPERATOR_EMAILS;
@@ -138,6 +155,7 @@ describe("requireAdmin middleware", () => {
       ok: true,
       adminEmail: ALLOWED_EMAIL,
       adminClerkId: "user_abc123",
+      adminRole: "admin",
     });
   });
 
@@ -320,5 +338,147 @@ describe("requireAdmin middleware", () => {
 
     expect(res.status).toBe(503);
     expect(res.body.error).toMatch(/RESUPPLY_ADMIN_EMAILS/);
+  });
+
+  // --- Agent role (RESUPPLY_AGENT_EMAILS) ---
+
+  it("assigns role 'admin' on the dev fallback path", async () => {
+    // Dev fallback always gives admin privileges — the agent role
+    // only meaningfully exists when ops has explicitly configured an
+    // agent allowlist. This invariant is what keeps existing tests
+    // and dev workflows from silently downgrading when the agent
+    // allowlist is wired in.
+    process.env.NODE_ENV = "development";
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
+    stubVerifiedUser("dev@example.com");
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+    expect(res.body.adminRole).toBe("admin");
+  });
+
+  it("assigns role 'agent' when the email is on the agent allowlist only", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = "owner@pennpaps.com";
+    process.env.RESUPPLY_AGENT_EMAILS = "csr@pennpaps.com";
+    stubVerifiedUser("csr@pennpaps.com");
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+    expect(res.body.adminRole).toBe("agent");
+    expect(res.body.adminEmail).toBe("csr@pennpaps.com");
+  });
+
+  it("admin allowlist wins over agent allowlist when an email is in both", async () => {
+    // Defensive choice: promoting an agent to admin should never
+    // silently downgrade them if ops forgets to remove their old
+    // agent entry. Admin wins.
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_AGENT_EMAILS = ALLOWED_EMAIL;
+    stubVerifiedUser(ALLOWED_EMAIL);
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+    expect(res.body.adminRole).toBe("admin");
+  });
+
+  it("matches agent allowlist case-insensitively", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = "owner@pennpaps.com";
+    process.env.RESUPPLY_AGENT_EMAILS = "CSR@PennPaps.com";
+    stubVerifiedUser("csr@pennpaps.com");
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(200);
+    expect(res.body.adminRole).toBe("agent");
+  });
+
+  it("returns 403 when email is in neither admin nor agent allowlist", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = "owner@pennpaps.com";
+    process.env.RESUPPLY_AGENT_EMAILS = "csr@pennpaps.com";
+    stubVerifiedUser(NOT_ALLOWED_EMAIL);
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/not authorized/i);
+  });
+
+  it("treats an agent allowlist of only commas/whitespace as unset", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+    process.env.RESUPPLY_AGENT_EMAILS = " , ,, ";
+    stubVerifiedUser("csr@pennpaps.com");
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(403);
+  });
+
+  it("still 503s in production when admin allowlist is empty even if agent allowlist is set", async () => {
+    // Agent-only deployments are intentionally not supported — every
+    // production deploy MUST have at least one admin to cover
+    // destructive operations. Setting only the agent var must NOT
+    // bypass the admin-required-in-prod invariant.
+    process.env.NODE_ENV = "production";
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
+    process.env.RESUPPLY_AGENT_EMAILS = "csr@pennpaps.com";
+    stubVerifiedUser("csr@pennpaps.com");
+
+    const res = await request(makeApp()).get("/protected");
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/RESUPPLY_ADMIN_EMAILS/);
+  });
+
+  // --- requireAdminOnly middleware (admin-gated destructive routes) ---
+
+  it("requireAdminOnly: admins pass through", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+    stubVerifiedUser(ALLOWED_EMAIL);
+
+    const res = await request(makeApp()).get("/admin-only");
+
+    expect(res.status).toBe(200);
+    expect(res.body.adminRole).toBe("admin");
+  });
+
+  it("requireAdminOnly: agents are 403-rejected", async () => {
+    process.env.RESUPPLY_ADMIN_EMAILS = "owner@pennpaps.com";
+    process.env.RESUPPLY_AGENT_EMAILS = "csr@pennpaps.com";
+    stubVerifiedUser("csr@pennpaps.com");
+
+    const res = await request(makeApp()).get("/admin-only");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/admin privileges/i);
+  });
+
+  it("requireAdminOnly: signed-out callers get the inner middleware's 401", async () => {
+    // Sanity: requireAdminOnly must not swallow inner failure
+    // responses by trying to "fix" them with its own 403. The 401
+    // from the inner requireAdmin must reach the client unchanged.
+    process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+    getAuthMock.mockReturnValue({ userId: null });
+
+    const res = await request(makeApp()).get("/admin-only");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Sign in required" });
+  });
+
+  it("requireAdminOnly: dev fallback still admits as admin", async () => {
+    // The dev-mode "any signed-in user is an admin" fallback gives
+    // role=admin, so requireAdminOnly must let dev users through.
+    // If this regresses, every destructive admin operation would
+    // 403 in local dev — making the dashboard untestable.
+    process.env.NODE_ENV = "development";
+    delete process.env.RESUPPLY_ADMIN_EMAILS;
+    stubVerifiedUser("dev@example.com");
+
+    const res = await request(makeApp()).get("/admin-only");
+
+    expect(res.status).toBe(200);
   });
 });

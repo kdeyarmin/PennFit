@@ -71,7 +71,7 @@ function AdminConsole() {
   }
 
   return (
-    <AppShell adminEmail={data?.email}>
+    <AppShell adminEmail={data?.email} adminRole={data?.role}>
       <Switch>
         <Route path="/" component={DashboardPage} />
         <Route path="/patients" component={PatientsPage} />

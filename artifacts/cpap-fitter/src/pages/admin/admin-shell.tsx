@@ -72,7 +72,14 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
     return <AdminErrorShell error={me.error as Error} />;
   }
 
-  return <AdminLayout adminEmail={me.data?.email ?? null}>{children}</AdminLayout>;
+  return (
+    <AdminLayout
+      adminEmail={me.data?.email ?? null}
+      adminRole={me.data?.role ?? "admin"}
+    >
+      {children}
+    </AdminLayout>
+  );
 }
 
 function AdminLoadingShell() {

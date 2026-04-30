@@ -28,6 +28,33 @@ export interface HealthStatus {
 }
 
 /**
+ * Caller's effective role.
+
+  - `admin` — full privileges, including destructive
+    operations like deleting cadence rules.
+  - `agent` — junior-admin role used by customer-service
+    staff. Identical to `admin` in every read/write
+    surface EXCEPT explicit DELETE operations on
+    business records (e.g. `DELETE /rules/:id`), which
+    return 403 for agents. The dashboard reads this
+    value to hide or disable destructive UI affordances
+    so agents never see a button they cannot use.
+
+Membership in `RESUPPLY_ADMIN_EMAILS` always wins over
+`RESUPPLY_AGENT_EMAILS` if an email appears in both
+allowlists. The dev-mode fallback (no allowlist
+configured, NODE_ENV=development) returns `admin`.
+
+ */
+export type AdminIdentityRole =
+  (typeof AdminIdentityRole)[keyof typeof AdminIdentityRole];
+
+export const AdminIdentityRole = {
+  admin: "admin",
+  agent: "agent",
+} as const;
+
+/**
  * Minimal identity payload for an authorized admin. Contains
 ONLY the fields the dashboard needs to render — no session
 token, no Clerk user object, no allowlist contents.
@@ -40,6 +67,24 @@ export interface AdminIdentity {
 dashboard chrome and recorded in audit rows.
  */
   email: string;
+  /** Caller's effective role.
+
+  - `admin` — full privileges, including destructive
+    operations like deleting cadence rules.
+  - `agent` — junior-admin role used by customer-service
+    staff. Identical to `admin` in every read/write
+    surface EXCEPT explicit DELETE operations on
+    business records (e.g. `DELETE /rules/:id`), which
+    return 403 for agents. The dashboard reads this
+    value to hide or disable destructive UI affordances
+    so agents never see a button they cannot use.
+
+Membership in `RESUPPLY_ADMIN_EMAILS` always wins over
+`RESUPPLY_AGENT_EMAILS` if an email appears in both
+allowlists. The dev-mode fallback (no allowlist
+configured, NODE_ENV=development) returns `admin`.
+ */
+  role: AdminIdentityRole;
 }
 
 /**
