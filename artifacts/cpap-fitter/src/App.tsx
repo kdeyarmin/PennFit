@@ -106,6 +106,16 @@ const AdminOrderDetail = lazy(() =>
     default: m.AdminOrderDetail,
   })),
 );
+const AdminCustomers = lazy(() =>
+  import("@/pages/admin/customers").then((m) => ({
+    default: m.AdminCustomers,
+  })),
+);
+const AdminCustomerDetailPage = lazy(() =>
+  import("@/pages/admin/customer-detail").then((m) => ({
+    default: m.AdminCustomerDetailPage,
+  })),
+);
 const AdminAuditLog = lazy(() =>
   import("@/pages/admin/audit").then((m) => ({ default: m.AdminAuditLog })),
 );
@@ -313,6 +323,16 @@ function TopRouter() {
         <Route path="/admin/orders/:id">
           <AdminShell>
             <AdminOrderDetail />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/customers">
+          <AdminShell>
+            <AdminCustomers />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/customers/:userId">
+          <AdminShell>
+            <AdminCustomerDetailPage />
           </AdminShell>
         </Route>
         <Route path="/admin/audit">

@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk, useUser } from "@clerk/react";
-import { LayoutDashboard, ListOrdered, ScrollText, LogOut, ShieldCheck, Bell, Users } from "lucide-react";
+import { LayoutDashboard, ListOrdered, ScrollText, LogOut, ShieldCheck, Bell, Users, Users2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminConsoleSwitcher } from "@/components/admin-console-switcher";
 
@@ -46,6 +46,13 @@ const navItems: ReadonlyArray<{
     label: "Orders",
     description: "Search and open individual customer orders.",
     icon: ListOrdered,
+    exact: false,
+  },
+  {
+    href: "/admin/customers",
+    label: "Customers",
+    description: "See lifetime history and reorder for any shopper.",
+    icon: Users2,
     exact: false,
   },
   {

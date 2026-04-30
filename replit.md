@@ -76,6 +76,17 @@ Admins can attach a single prescription document (PDF or image, ≤10MB) per pre
 
 A self-serve, opt-in reminder system at `/reminders` allows customers to sign up for email notifications when CPAP supplies are due for replacement. This system is separate from the internal Resupply Automation and includes a `reminder_subscriptions` table, public API endpoints for management, and an admin dispatcher.
 
+### Customer 360 (Admin)
+
+A "Customers" section in the cpap-fitter admin (`/admin/customers` and `/admin/customers/:userId`) gives staff a single-pane view of every shop customer: search/sort/paginate the directory, then drill into a profile that shows lifetime stats, recent orders, subscriptions, abandoned cart, and product reviews. From a paid order, an admin can click "Reorder for customer" to generate a Stripe Checkout Session (mode `payment`) prefilled with the prior order's line items; the dashboard returns the checkout URL with Copy and Open buttons so the admin can share it with the customer out-of-band (email/SMS).
+
+Architecture notes:
+- Backend lives in `artifacts/resupply-api/src/routes/admin/customers.ts` (mounted at `/resupply-api/admin/shop/customers/*`). Frontend pages call across the shared proxy via `resupplyAdminFetch` in `artifacts/cpap-fitter/src/lib/admin-api.ts`.
+- The new endpoints are intentionally NOT in the OpenAPI spec — this matches the local convention used by the other `/admin/shop/*` endpoints (orders, reviews, inventory), which both dashboards consume via raw fetch.
+- These endpoints log via `req.log` only; no `audit_log` writes. Shop is not patient-PHI surface, so it follows the same posture as the other `/admin/shop/*` routes (audit_log is reserved for `/patients/*` PHI operations).
+- PHI posture: list responses redact email via `redactEmail()`; the detail endpoint returns full email/address. Logs only carry `userId`, counts, and admin identity — never customer email or address.
+- Cross-API admin allowlist caveat: the cpap-fitter admin guard reads `PENN_ADMIN_EMAILS` (api-server) but the new endpoints are gated by `RESUPPLY_ADMIN_EMAILS` (resupply-api). For an account to actually use the Customers page in any environment (dev, preview, or prod), its email must be present in BOTH allowlists.
+
 ## External Dependencies
 
 *   **SendGrid:** For emails (order fulfillment, resupply reminders, abandoned cart, review moderation).

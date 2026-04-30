@@ -316,3 +316,244 @@ export const revokeAdminInvitation = (params: { invitationId: string }) =>
     `/admin/users/invitations/${encodeURIComponent(params.invitationId)}`,
     "DELETE",
   );
+
+// =====================================================================
+// Customer 360 — cross-API helpers (resupply-api, not api-server)
+// =====================================================================
+//
+// These helpers call the resupply-api admin endpoints at
+// `/resupply-api/admin/shop/customers/*` rather than `/api/admin/...`.
+// resupply-api owns the shop tables (shop_customers, shop_orders,
+// shop_subscriptions, shop_reviews, shop_abandoned_carts) and gates
+// requests on its own RESUPPLY_ADMIN_EMAILS allowlist (separate from
+// PENN_ADMIN_EMAILS that gates `/api/admin/*`).
+//
+// We deliberately don't add these to the resupply-api OpenAPI spec —
+// no admin shop endpoint is in that spec today (see shop-orders,
+// shop-reviews, shop-inventory consumed via raw fetch from
+// resupply-dashboard). Keeping the convention consistent.
+//
+// Cross-API auth caveat: a user signed in to cpap-fitter as a
+// PENN_ADMIN_EMAILS member will only succeed on these calls if their
+// email is ALSO in RESUPPLY_ADMIN_EMAILS. The 403 we surface from
+// resupply-api becomes an AdminApiError(403) here and the calling page
+// renders an "Add this email to RESUPPLY_ADMIN_EMAILS" hint.
+
+async function resupplyAdminFetch<T>(path: string): Promise<T> {
+  const res = await fetch(`${base}/resupply-api${path}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let body: { error?: string } | null = null;
+    try {
+      body = (await res.json()) as { error?: string };
+    } catch {}
+    throw new AdminApiError(res.status, body);
+  }
+  return (await res.json()) as T;
+}
+
+async function resupplyAdminMutate<T>(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const init: RequestInit = {
+    method,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const res = await fetch(`${base}/resupply-api${path}`, init);
+  if (!res.ok) {
+    let payload: { error?: string } | null = null;
+    try {
+      payload = (await res.json()) as { error?: string };
+    } catch {}
+    throw new AdminApiError(res.status, payload);
+  }
+  if (res.status === 204) return undefined as unknown as T;
+  return (await res.json()) as T;
+}
+
+export interface AdminCustomerSummary {
+  userId: string;
+  displayName: string | null;
+  emailRedacted: string | null;
+  stripeCustomerId: string | null;
+  ordersCount: number;
+  lifetimeValueCents: number;
+  lastOrderAt: string | null;
+  hasActiveSubscription: boolean;
+  createdAt: string | null;
+}
+
+export interface AdminCustomersResponse {
+  customers: AdminCustomerSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type AdminCustomerSortBy =
+  | "lifetime_value"
+  | "last_order"
+  | "created_at";
+
+export const fetchAdminCustomers = (params: {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: AdminCustomerSortBy;
+  order?: "asc" | "desc";
+  subscription?: "active" | "none";
+}): Promise<AdminCustomersResponse> => {
+  const usp = new URLSearchParams();
+  if (params.q) usp.set("q", params.q);
+  if (params.page) usp.set("page", String(params.page));
+  if (params.pageSize) usp.set("pageSize", String(params.pageSize));
+  if (params.sortBy) usp.set("sortBy", params.sortBy);
+  if (params.order) usp.set("order", params.order);
+  if (params.subscription) usp.set("subscription", params.subscription);
+  const qs = usp.toString();
+  return resupplyAdminFetch<AdminCustomersResponse>(
+    `/admin/shop/customers${qs ? `?${qs}` : ""}`,
+  );
+};
+
+export interface AdminCustomerShippingAddress {
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  name?: string | null;
+}
+
+export interface AdminCustomerProfile {
+  userId: string;
+  displayName: string | null;
+  email: string | null;
+  stripeCustomerId: string | null;
+  shippingAddress: AdminCustomerShippingAddress | null;
+  defaultPaymentMethod: {
+    brand: string | null;
+    last4: string | null;
+    expMonth: number | null;
+    expYear: number | null;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  /**
+   * True when this profile was synthesized from order rows because no
+   * `shop_customers` mirror row exists for this userId (guest-only
+   * checkout history). The detail page shows a small "Guest customer"
+   * pill in this case.
+   */
+  isGuest: boolean;
+}
+
+export interface AdminCustomerOrderRow {
+  id: string;
+  stripeSessionId: string | null;
+  stripePaymentIntentId: string | null;
+  status: string;
+  // Pending orders may not yet have an amount stamped by Stripe.
+  // Frontend renders null as an em dash via fmtCents().
+  amountTotalCents: number | null;
+  currency: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  trackingCarrier: string | null;
+  trackingNumber: string | null;
+  shippingAddress: unknown;
+  itemCount: number;
+}
+
+export interface AdminCustomerSubscriptionRow {
+  id: string;
+  stripeSubscriptionId: string | null;
+  stripeCustomerId: string | null;
+  status: string;
+  items: unknown[];
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean | null;
+  canceledAt: string | null;
+  initialAmountTotalCents: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminCustomerAbandonedCart {
+  id: string;
+  items: unknown[];
+  subtotalCents: number;
+  currency: string | null;
+  updatedAt: string;
+  remindedAt: string | null;
+  recoveredAt: string | null;
+  clearedAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminCustomerReviewRow {
+  id: string;
+  productId: string | null;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  status: string;
+  moderationNote: string | null;
+  moderatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminCustomerStats {
+  ordersCount: number;
+  lifetimeValueCents: number;
+  avgOrderValueCents: number;
+  firstOrderAt: string | null;
+  lastOrderAt: string | null;
+  pendingReviewsCount: number;
+}
+
+export interface AdminCustomerDetail {
+  customer: AdminCustomerProfile;
+  orders: AdminCustomerOrderRow[];
+  subscriptions: AdminCustomerSubscriptionRow[];
+  abandonedCart: AdminCustomerAbandonedCart | null;
+  reviews: AdminCustomerReviewRow[];
+  stats: AdminCustomerStats;
+}
+
+export const fetchAdminCustomer = (
+  userId: string,
+): Promise<AdminCustomerDetail> =>
+  resupplyAdminFetch<AdminCustomerDetail>(
+    `/admin/shop/customers/${encodeURIComponent(userId)}`,
+  );
+
+export interface AdminCustomerReorderResponse {
+  checkoutUrl: string;
+  sessionId: string;
+  expiresAt: string | null;
+}
+
+export const reorderForCustomer = (params: {
+  userId: string;
+  sourceOrderId: string;
+}): Promise<AdminCustomerReorderResponse> =>
+  resupplyAdminMutate<AdminCustomerReorderResponse>(
+    `/admin/shop/customers/${encodeURIComponent(params.userId)}/reorder`,
+    "POST",
+    { sourceOrderId: params.sourceOrderId },
+  );

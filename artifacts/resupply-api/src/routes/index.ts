@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
+import shopCustomersAdminRouter from "./admin/customers.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
@@ -58,5 +59,10 @@ router.use(shopProductsAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shop/customers/* — Customer 360 surface (search/list +
+// detail + reorder-on-behalf). Read-mostly; the only write is the
+// reorder action which creates a Stripe Checkout Session. Same
+// requireAdmin gate as the other shop-admin modules.
+router.use(shopCustomersAdminRouter);
 
 export default router;
