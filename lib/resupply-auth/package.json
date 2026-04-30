@@ -1,0 +1,25 @@
+{
+  "name": "@workspace/resupply-auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "test:watch": "vitest",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@workspace/resupply-db": "workspace:*",
+    "argon2": "^0.43.0",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vitest": "^2.1.8"
+  }
+}
