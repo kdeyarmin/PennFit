@@ -24,6 +24,7 @@ import { applyTemplate, templatesForChannel } from "../lib/reply-templates";
 import { applyMacro, applyLegacyFirstName } from "../lib/macro-merge";
 import { listMacros, type CsrMacro } from "../lib/csr-macros-api";
 import { useQuery } from "@tanstack/react-query";
+import { Patient360Panel } from "../components/Patient360Panel";
 import { useDraftAutosave } from "../lib/use-draft-autosave";
 
 // Conversation viewer. Renders the chronological message timeline as
@@ -66,8 +67,10 @@ export function ConversationDetailPage({ id }: { id: string }) {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-7xl">
       <BackLink />
+      <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+        <div className="space-y-6 min-w-0">
       <Card>
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -162,6 +165,11 @@ export function ConversationDetailPage({ id }: { id: string }) {
         episodeId={data.episodeId}
         onAfterAction={() => void refetch()}
       />
+        </div>
+        <aside className="space-y-4">
+          <Patient360Panel patientId={data.patientId} />
+        </aside>
+      </div>
     </div>
   );
 }
