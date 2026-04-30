@@ -5,6 +5,7 @@ import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
+import teamRouter from "./admin/team.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
@@ -80,5 +81,9 @@ router.use(shopSubsMetricsRouter);
 // post-purchase review-request email. Same atomic-claim pattern as
 // the abandoned-cart dispatcher; comm-prefs + DND aware.
 router.use(shopReviewRequestsRouter);
+// /admin/team/* — DB-backed admin/CSR team management. Supplements
+// (does not replace) the RESUPPLY_ADMIN_EMAILS env var allowlist;
+// see middlewares/requireAdmin.ts for the resolution order.
+router.use(teamRouter);
 
 export default router;

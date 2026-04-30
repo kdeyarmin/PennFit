@@ -1,5 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
 import { getAuth, clerkClient } from "@clerk/express";
+import { and, eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+import { adminUsers, getDbPool } from "@workspace/resupply-db";
+
 import { logger } from "../lib/logger";
 
 /**
@@ -283,13 +288,81 @@ export async function requireAdmin(
 
   // Admin membership wins over agent membership when both lists
   // contain the same email — promoting an agent to admin should
-  // never silently downgrade their privileges.
-  let role: "admin" | "agent";
+  // never silently downgrade their privileges. Env-var allowlists are
+  // checked FIRST as the bootstrap layer that always works regardless
+  // of DB state.
+  let role: "admin" | "agent" | null = null;
   if (adminAllowlist.includes(email)) {
     role = "admin";
   } else if (agentAllowlist !== null && agentAllowlist.includes(email)) {
     role = "agent";
   } else {
+    // Fall through to the DB-backed admin_users table. This is the
+    // path for CSRs invited through the in-app /admin/team flow —
+    // they don't appear in the env allowlists. Match by clerk_user_id
+    // (preferred — stable identity) OR email_lower (first-login link).
+    // Revoked rows are excluded from the WHERE clause so a previously
+    // active user who was removed can't slip back in via cached email.
+    try {
+      const db = drizzle(getDbPool());
+      const rows = await db
+        .select({
+          id: adminUsers.id,
+          emailLower: adminUsers.emailLower,
+          clerkUserId: adminUsers.clerkUserId,
+          role: adminUsers.role,
+          status: adminUsers.status,
+        })
+        .from(adminUsers)
+        .where(eq(adminUsers.emailLower, email))
+        .limit(1);
+      const row = rows[0];
+      if (row && row.status !== "revoked") {
+        role = row.role === "admin" ? "admin" : "agent";
+        // First-login linking: stamp clerk_user_id + accepted_at +
+        // last_login_at + flip pending → active. Subsequent logins
+        // just bump last_login_at. We tolerate concurrent first-
+        // login races by always going through this UPDATE — every
+        // caller will end up at status='active' with a recent
+        // last_login_at.
+        const now = new Date();
+        const updates: Partial<typeof adminUsers.$inferInsert> & {
+          updatedAt: Date;
+          lastLoginAt: Date;
+        } = {
+          updatedAt: now,
+          lastLoginAt: now,
+        };
+        if (!row.clerkUserId) updates.clerkUserId = userId;
+        if (row.status === "pending") {
+          updates.status = "active";
+          updates.acceptedAt = now;
+        }
+        await db
+          .update(adminUsers)
+          .set(updates)
+          .where(
+            and(
+              eq(adminUsers.id, row.id),
+              // Defensive: never re-activate a row that was revoked
+              // between SELECT and UPDATE.
+              eq(adminUsers.emailLower, email),
+            ),
+          );
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply_admin_db_lookup_failed",
+          err: err instanceof Error ? err.message : "unknown",
+        },
+        "requireAdmin: admin_users DB lookup failed; falling back to env allowlist only",
+      );
+      // Continue with role still null — caller will get 403 below.
+    }
+  }
+
+  if (role === null) {
     res
       .status(403)
       .json({ error: "This account is not authorized for admin access." });

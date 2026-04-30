@@ -20,6 +20,7 @@ import { AdminShopReviewsPage } from "./pages/admin-shop-reviews";
 import { AdminShopReturnsPage } from "./pages/admin-shop-returns";
 import { AdminMacrosPage } from "./pages/admin-macros";
 import { AdminShopSubscriptionsPage } from "./pages/admin-shop-subscriptions";
+import { AdminTeamPage } from "./pages/admin-team";
 import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
 import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
@@ -114,6 +115,7 @@ function AdminConsole() {
           path="/admin/shop/subscriptions"
           component={AdminShopSubscriptionsPage}
         />
+        <Route path="/admin/team" component={AdminTeamPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>
