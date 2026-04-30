@@ -194,12 +194,18 @@ importers:
       '@clerk/express':
         specifier: ^2.1.9
         version: 2.1.9(express@5.2.1)(react-dom@19.1.6(react@19.1.6))(react@19.1.6)
+      '@sendgrid/mail':
+        specifier: ^8.1.4
+        version: 8.1.6
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/resupply-email':
+        specifier: workspace:*
+        version: link:../../lib/resupply-email
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7

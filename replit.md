@@ -76,6 +76,35 @@ Admins can attach a single prescription document (PDF or image, ≤10MB) per pre
 
 A self-serve, opt-in reminder system at `/reminders` allows customers to sign up for email notifications when CPAP supplies are due for replacement. This system is separate from the internal Resupply Automation and includes a `reminder_subscriptions` table, public API endpoints for management, and an admin dispatcher.
 
+### Shop Transactional Emails
+
+Two customer-facing transactional emails close the loop on the cash-pay shop. Both are sent via SendGrid using the same brand styling (cream background + #c9a227 gold) as the cart-abandonment template, and both are idempotent at the database level under concurrency so Stripe re-deliveries, parallel webhook events, or accidental admin re-saves never duplicate.
+
+**Atomic-claim idempotency model.** Both helpers use a single `UPDATE … SET stamp = now() WHERE id = $1 AND stamp IS NULL RETURNING …` to *claim* the right to send. Postgres serializes this row-level UPDATE, so even when `checkout.session.completed` and `checkout.session.async_payment_succeeded` arrive in parallel — or two admins click "save tracking" simultaneously — only one worker wins the row and proceeds to render+send. On any failure path (no recipient, SendGrid not configured, SendGrid 4xx/5xx, helper throw) the claim is *released* by writing the stamp back to NULL, so a Stripe re-delivery (or a manual admin re-save) can retry. This preserves at-most-once *successful* sends while still allowing one retry per failure.
+
+- **Order confirmation** (`send-order-confirmation-email.ts`): triggered from the `checkout.session.completed` branch of `artifacts/resupply-api/src/lib/stripe/webhook-handler.ts`. After `markPaid` and `upsertOrderItemsFromSession`, the exported helper `sendOrderConfirmationIfFirst` performs the atomic claim on `confirmation_email_sent_at` and resolves the recipient as: linked `shop_customers.email_lower` → persisted `shop_orders.customer_email` → `session.customer_details.email`. The persisted column is captured at paid-time inside `markPaid` (lowercased) so guest checkouts have a stable on-row recipient even when the Stripe Session falls out of cache. Failures are logged but never thrown — Stripe must not retry the webhook because of an email outage. Subject: "Your PennPaps order is confirmed". customArgs: `{ kind: "shop_order_confirmation_v1", stripe_session_id }`.
+- **Shipping notification** (`send-shipping-notification-email.ts`): triggered from `POST /admin/shop/orders/:orderId/tracking` in `artifacts/resupply-api/src/routes/admin/shop-orders.ts`. The route's tracking UPDATE both stamps the new `tracking_carrier`/`tracking_number` AND, in the same statement, conditionally clears `shipping_email_sent_at` via `CASE WHEN tracking_carrier IS DISTINCT FROM $new OR tracking_number IS DISTINCT FROM $new THEN NULL ELSE shipping_email_sent_at END`. (Postgres SET clauses see OLD row values, so this compares prior vs new.) The helper `sendShippingNotificationIfNew` then atomically claims on the (possibly cleared) timestamp — first send and genuine re-ships claim and send, identical re-saves find the timestamp non-null and short-circuit. Recipient resolution: linked `shop_customers.email_lower` → persisted `shop_orders.customer_email` → skip silently. Builds a public carrier-tracking URL via `getCarrierTrackingUrl()` (UPS / USPS / FedEx / DHL); unknown carriers fall back to bare number. customArgs: `{ kind: "shop_shipping_notification_v1", stripe_session_id }`.
+
+Schema additions (additive, ADR 003 hand-authored migrations only):
+- `lib/resupply-db/drizzle/0016_shop_orders_email_tracking.sql` — adds `confirmation_email_sent_at` and `shipping_email_sent_at` (both nullable TIMESTAMPTZ).
+- `lib/resupply-db/drizzle/0017_shop_orders_customer_email.sql` — adds `customer_email` (nullable TEXT) for the guest-checkout fallback recipient.
+
+Delivery feedback closes via the existing SendGrid Event Webhook at `POST /email/sendgrid-events` (ECDSA signature verification, mapping to `messages.delivery_status`). The smoke test at `routes/email/sendgrid-events.test.ts` pins the rejection-without-signature path and the processed/delivered/bounce/dropped/deferred → status mappings.
+
+### Outbound email — single integration, single From address
+
+Every outbound email across the entire monorepo is funneled through one place: `createSendgridClient()` in `lib/resupply-email/src/client.ts`. That client is the only direct consumer of the `@sendgrid/mail` SDK in the repo (enforced for resupply packages by Rules 12 + 13 in `scripts/check-resupply-architecture.sh`) and reads `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, and `SENDGRID_FROM_NAME` at call time. Operations sets `SENDGRID_FROM_EMAIL=info@pennpaps.com` so every outbound message — Penn Fit fulfillment, Penn Fit reminders, shop confirmation, shop shipping, cart abandonment, review moderation, resupply reminders, two-way reply — leaves the platform from the same canonical address.
+
+Senders that go through the shared client:
+- `lib/resupply-reminders/src/{send-email,reply}.ts` (resupply outreach)
+- `artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts`
+- `artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-email.ts`
+- `artifacts/resupply-api/src/lib/cart-abandonment/send-cart-abandonment-email.ts`
+- `artifacts/resupply-api/src/lib/messaging/review-moderation-email.ts`
+- `artifacts/api-server/src/lib/{reminderEmail,orderEmail}.ts` (Penn Fit). These two were originally written before the shared client existed and used raw `fetch` to `https://api.sendgrid.com/v3/mail/send` plus their own `PENN_FROM_EMAIL` env var; the audit on 2026-04-30 migrated them to `createSendgridClient()` so there is no longer any path to SendGrid that bypasses the shared integration. Public function shapes (`sendReminderConfirmation`, `sendReminderManageLink`, `sendReminderDue`, `sendOrderToPenn`, `generateOrderReference`) are unchanged so all callers keep working.
+
+There is no `nodemailer`, no SMTP, and no other raw HTTP path to SendGrid anywhere in the repo. The `mailto:info@pennpaps.com` links in `cpap-fitter/{privacy,terms}.tsx` and `resupply-dashboard/not-authorized.tsx` are user-facing contact links and not outbound email.
+
 ### Customer 360 (Admin)
 
 A "Customers" section in the cpap-fitter admin (`/admin/customers` and `/admin/customers/:userId`) gives staff a single-pane view of every shop customer: search/sort/paginate the directory, then drill into a profile that shows lifetime stats, recent orders, subscriptions, abandoned cart, and product reviews. From a paid order, an admin can click "Reorder for customer" to generate a Stripe Checkout Session (mode `payment`) prefilled with the prior order's line items; the dashboard returns the checkout URL with Copy and Open buttons so the admin can share it with the customer out-of-band (email/SMS).
