@@ -172,21 +172,147 @@ export const fetchAdminReminders = () =>
   adminFetch<AdminRemindersResponse>("/admin/reminders");
 
 /**
- * POST helper — `adminFetch` only does GETs, so we hand-roll the POST
- * here. Same credentials/Accept/error semantics.
+ * Generic mutation helper for non-GET admin calls. Mirrors
+ * `adminFetch` but takes a method + optional JSON body and tolerates
+ * a 204 (no body) response. Used by sendDueReminders and the team
+ * routes below; centralizing here keeps credentials/Accept/error
+ * semantics in one place.
  */
-export async function sendDueReminders(): Promise<SendDueRemindersResponse> {
-  const res = await fetch(`${base}/api/admin/reminders/send-due`, {
-    method: "POST",
+async function adminMutate<T>(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const init: RequestInit = {
+    method,
     credentials: "include",
-    headers: { Accept: "application/json" },
-  });
+    headers: {
+      Accept: "application/json",
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+  };
+  if (body !== undefined) init.body = JSON.stringify(body);
+
+  const res = await fetch(`${base}/api${path}`, init);
   if (!res.ok) {
-    let body: { error?: string } | null = null;
+    let payload: { error?: string } | null = null;
     try {
-      body = (await res.json()) as { error?: string };
+      payload = (await res.json()) as { error?: string };
     } catch {}
-    throw new AdminApiError(res.status, body);
+    throw new AdminApiError(res.status, payload);
   }
-  return (await res.json()) as SendDueRemindersResponse;
+  if (res.status === 204) return undefined as unknown as T;
+  return (await res.json()) as T;
 }
+
+export async function sendDueReminders(): Promise<SendDueRemindersResponse> {
+  return adminMutate<SendDueRemindersResponse>(
+    "/admin/reminders/send-due",
+    "POST",
+  );
+}
+
+// ---------- Team / users ----------
+
+export type AdminTeamRole = "admin" | "agent";
+
+export interface AdminTeamClerkUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: AdminTeamRole;
+  /** True for the row representing the currently signed-in admin. */
+  isSelf: boolean;
+  createdAt: number;
+  lastSignInAt: number | null;
+  /**
+   * Set if this user's email is also in the server-config env
+   * allowlist. When present, role-change and remove are both no-ops
+   * for effective access (env wins), so the UI should disable those
+   * actions and explain that env access takes precedence.
+   */
+  envOverride: AdminTeamRole | null;
+}
+
+export interface AdminTeamEnvRow {
+  email: string;
+  role: AdminTeamRole;
+}
+
+export interface AdminTeamPendingInvitation {
+  id: string;
+  email: string;
+  role: AdminTeamRole;
+  createdAt: number;
+}
+
+export interface AdminTeamResponse {
+  /** Caller's own role — drives whether mutate buttons render. */
+  role: AdminTeamRole;
+  self: { email?: string; clerkId?: string };
+  clerkUsers: AdminTeamClerkUser[];
+  envAllowlist: AdminTeamEnvRow[];
+  pendingInvitations: AdminTeamPendingInvitation[];
+}
+
+export const fetchAdminUsers = () =>
+  adminFetch<AdminTeamResponse>("/admin/users");
+
+export interface AdminInvitationCreated {
+  id: string;
+  email: string;
+  role: AdminTeamRole;
+  createdAt: number;
+}
+
+/**
+ * Returned when the invite email already maps to a Clerk account
+ * that has no `pennRole` yet. Rather than send a fresh invitation
+ * (Clerk would reject a duplicate identity, and a re-invite is the
+ * wrong UX for someone who already has an account), the server
+ * stamps `pennRole` on their existing user and reports back here.
+ * The UI uses this to switch from "Invitation sent" → "Granted
+ * access to existing account".
+ */
+export interface AdminInvitationAdopted {
+  adopted: true;
+  userId: string;
+  email: string;
+  role: AdminTeamRole;
+}
+
+export type AdminInvitationResult =
+  | AdminInvitationCreated
+  | AdminInvitationAdopted;
+
+export const inviteAdminUser = (params: {
+  email: string;
+  role: AdminTeamRole;
+}) =>
+  adminMutate<AdminInvitationResult>(
+    "/admin/users/invite",
+    "POST",
+    params,
+  );
+
+export const updateAdminUserRole = (params: {
+  userId: string;
+  role: AdminTeamRole;
+}) =>
+  adminMutate<{ ok: true; userId: string; role: AdminTeamRole }>(
+    `/admin/users/${encodeURIComponent(params.userId)}/role`,
+    "PATCH",
+    { role: params.role },
+  );
+
+export const revokeAdminUser = (params: { userId: string }) =>
+  adminMutate<{ ok: true; userId: string }>(
+    `/admin/users/${encodeURIComponent(params.userId)}`,
+    "DELETE",
+  );
+
+export const revokeAdminInvitation = (params: { invitationId: string }) =>
+  adminMutate<{ ok: true; invitationId: string }>(
+    `/admin/users/invitations/${encodeURIComponent(params.invitationId)}`,
+    "DELETE",
+  );

@@ -114,6 +114,9 @@ const AdminReminders = lazy(() =>
     default: m.AdminReminders,
   })),
 );
+const AdminUsers = lazy(() =>
+  import("@/pages/admin/users").then((m) => ({ default: m.AdminUsers })),
+);
 const Reminders = lazy(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -320,6 +323,11 @@ function TopRouter() {
         <Route path="/admin/reminders">
           <AdminShell>
             <AdminReminders />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/users">
+          <AdminShell>
+            <AdminUsers />
           </AdminShell>
         </Route>
 

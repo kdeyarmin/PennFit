@@ -28,6 +28,7 @@ import { desc, eq, ilike, or, and, sql, count, lte } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/requireAdmin.js";
 import { logger } from "../lib/logger.js";
 import { sendReminderDue, type ReminderItemForEmail } from "../lib/reminderEmail.js";
+import adminUsersRouter from "./admin-users.js";
 
 const router = Router();
 
@@ -37,6 +38,12 @@ const router = Router();
 // parent router) and reject them with 401 — even though those routes
 // are intentionally public.
 router.use("/admin", requireAdmin);
+
+// Team-management routes live in their own file (admin-users.ts) but
+// share this router so they inherit the requireAdmin gate above. The
+// individual mutating routes additionally apply requireAdminOnly
+// internally so agents can read the roster but not modify it.
+router.use(adminUsersRouter);
 
 // ---------- GET /admin/orders ----------
 

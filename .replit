@@ -122,3 +122,6 @@ externalPort = 3002
 VITE_CLERK_PUBLISHABLE_KEY = "pk_test_cGxlYXNpbmctYW5jaG92eS00MS5jbGVyay5hY2NvdW50cy5kZXYk"
 
 [userenv.development]
+
+[objectStorage]
+defaultBucketID = "replit-objstore-a89f4666-9708-424b-b390-3f9949919d52"

@@ -4,36 +4,45 @@ import { getAuth, clerkClient } from "@clerk/express";
 /**
  * requireAdmin — gate for the admin API.
  *
- * Three checks, in order:
- *   1. The request has a valid Clerk session (user is signed in).
- *   2. The signed-in user's primary email is verified.
- *   3. That email is in the `PENN_ADMIN_EMAILS` OR `PENN_AGENT_EMAILS`
- *      allowlist.
+ * Resolution order for the role of the signed-in user (first match
+ * wins):
+ *   1. Email is in `PENN_ADMIN_EMAILS`           → admin
+ *   2. Email is in `PENN_AGENT_EMAILS`           → agent
+ *   3. Clerk `publicMetadata.pennRole === "admin"` → admin
+ *   4. Clerk `publicMetadata.pennRole === "agent"` → agent
+ *   5. otherwise                                  → 403
+ *
+ * The env-var allowlist is checked FIRST on purpose. It's the
+ * permanent recovery / bootstrap path: even if Clerk metadata gets
+ * mis-configured (or the very first admin needs to be seeded before
+ * anyone can sign in), an engineer can always set `PENN_ADMIN_EMAILS`
+ * and recover. The Clerk-metadata path is what the in-app "Team"
+ * page writes when an admin invites a new teammate — convenient for
+ * day-to-day team management, but not a single point of failure.
  *
  * The allowlists are comma-separated env vars, e.g.
  *   PENN_ADMIN_EMAILS="dr.smith@pennhomemedical.com,billing@pennhomemedical.com"
  *   PENN_AGENT_EMAILS="csr1@pennhomemedical.com,csr2@pennhomemedical.com"
  *
  * Roles:
- *   - `admin` — full privileges. Membership in `PENN_ADMIN_EMAILS`
- *     wins over `PENN_AGENT_EMAILS` if both contain the same email.
- *   - `agent` — junior-admin role used by customer-service staff.
- *     Identical to `admin` everywhere EXCEPT routes that explicitly
- *     opt in to admin-only via `requireAdminOnly`. The cpap-fitter
- *     admin currently has no admin-only routes (no destructive
- *     deletes), so in practice agents see the same surface as
- *     admins; the role distinction is wired so future destructive
- *     operations can gate cleanly.
+ *   - `admin` — full privileges. Includes the team-management
+ *     endpoints in `routes/admin-users.ts`.
+ *   - `agent` — junior role for customer-service staff. Identical
+ *     to `admin` everywhere EXCEPT routes that explicitly opt in to
+ *     admin-only via `requireAdminOnly` (e.g. team management,
+ *     future destructive operations).
  *
- * Behavior when neither allowlist is set:
+ * Behavior when neither env-var allowlist is set AND no Clerk
+ * metadata role is found:
  *   - In `NODE_ENV=development` we allow any signed-in user as
  *     `admin`. This makes the local dev loop bearable — no env vars
  *     to manage.
  *   - In production we DENY all requests with a 503 "admin not
  *     configured" response. Better to have no admin than an
- *     accidentally world-open admin if a deploy ships without the
- *     env var. An agent-only deployment is intentionally not
- *     supported — every prod deploy MUST have at least one admin.
+ *     accidentally world-open admin if a deploy ships without any
+ *     allowlist mechanism. Every prod deploy MUST seed at least one
+ *     admin via `PENN_ADMIN_EMAILS` before relying on Clerk-metadata
+ *     management.
  *
  * On success we attach `req.adminEmail`, `req.adminClerkId`, and
  * `req.adminRole` so route handlers can write audit-log rows
@@ -81,16 +90,18 @@ export async function requireAdmin(
     return;
   }
 
-  // Look up the user to get their primary verified email. We could also
-  // stash email in session claims via Clerk's "Customize session" feature,
-  // but that requires a dashboard change — fetching here keeps setup simple
-  // (the call is cached aggressively by @clerk/express).
+  // Look up the user to get their primary verified email AND any
+  // pennRole stamped on Clerk publicMetadata. Both are needed for
+  // role resolution below; we make exactly one Clerk lookup per
+  // request (the call is cached aggressively by @clerk/express).
   //
-  // We REQUIRE the primary email to be verified — otherwise an attacker
-  // who can sign up with someone else's address (without proving control)
-  // could match the allowlist. Clerk marks an email "verified" only after
-  // the user clicks the verification link or enters the code.
+  // We REQUIRE the primary email to be verified — otherwise an
+  // attacker who can sign up with someone else's address (without
+  // proving control) could match the env allowlist. Clerk marks an
+  // email "verified" only after the user clicks the verification
+  // link or enters the code.
   let email: string | undefined;
+  let metadataRole: "admin" | "agent" | undefined;
   try {
     const user = await clerkClient.users.getUser(userId);
     const primaryId = user.primaryEmailAddressId;
@@ -105,6 +116,7 @@ export async function requireAdmin(
       return;
     }
     email = primary.emailAddress?.toLowerCase();
+    metadataRole = readPennRoleFromMetadata(user.publicMetadata);
   } catch (_err) {
     res.status(401).json({ error: "Could not verify your identity. Please sign in again." });
     return;
@@ -119,7 +131,15 @@ export async function requireAdmin(
   const agentAllowlist = parseAgentAllowlist();
 
   let role: "admin" | "agent";
-  if (adminAllowlist === null) {
+  if (adminAllowlist !== null && adminAllowlist.includes(email)) {
+    role = "admin";
+  } else if (agentAllowlist !== null && agentAllowlist.includes(email)) {
+    role = "agent";
+  } else if (metadataRole !== undefined) {
+    // No env-var match, but the user has been promoted via the
+    // in-app Team page (which writes Clerk publicMetadata).
+    role = metadataRole;
+  } else if (adminAllowlist === null) {
     if (process.env.NODE_ENV === "production") {
       res.status(503).json({
         error:
@@ -127,12 +147,9 @@ export async function requireAdmin(
       });
       return;
     }
-    // dev fallback — any signed-in user is an admin
+    // dev fallback — any signed-in user is an admin so the local dev
+    // loop is bearable (no env vars to manage).
     role = "admin";
-  } else if (adminAllowlist.includes(email)) {
-    role = "admin";
-  } else if (agentAllowlist !== null && agentAllowlist.includes(email)) {
-    role = "agent";
   } else {
     res.status(403).json({ error: "This account is not authorized for admin access." });
     return;
@@ -142,6 +159,51 @@ export async function requireAdmin(
   req.adminClerkId = userId;
   req.adminRole = role;
   next();
+}
+
+/**
+ * Read `publicMetadata.pennRole` defensively. Clerk types
+ * `publicMetadata` as a free-form `Record<string, unknown>` so we
+ * narrow here rather than at every call site. Anything other than
+ * the two known role strings is treated as "no role" and the
+ * resolver continues to the next path (env fallback / 403).
+ */
+function readPennRoleFromMetadata(
+  metadata: unknown,
+): "admin" | "agent" | undefined {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const raw = (metadata as Record<string, unknown>).pennRole;
+  if (raw === "admin" || raw === "agent") return raw;
+  return undefined;
+}
+
+export type PennRole = "admin" | "agent";
+
+export const PENN_ROLE_METADATA_KEY = "pennRole" as const;
+
+/**
+ * Helper for `routes/admin-users.ts` so the team-management endpoints
+ * use the SAME parse logic the gate uses. Single source of truth for
+ * what a "valid" role string is.
+ */
+export function readPennRole(metadata: unknown): PennRole | undefined {
+  return readPennRoleFromMetadata(metadata);
+}
+
+/**
+ * Helper that returns the env-var allowlist parsed into the same
+ * shape used by the gate, so the team page can render those rows as
+ * read-only "set in server config" entries without re-implementing
+ * the parser.
+ */
+export function getEnvAllowlists(): {
+  admins: string[];
+  agents: string[];
+} {
+  return {
+    admins: parseAdminAllowlist() ?? [],
+    agents: parseAgentAllowlist() ?? [],
+  };
 }
 
 /**
