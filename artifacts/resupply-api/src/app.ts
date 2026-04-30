@@ -4,6 +4,8 @@ import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { errorHandler } from "./middlewares/errorHandler";
+import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
 const app: Express = express();
@@ -12,6 +14,12 @@ const app: Express = express();
 // looks like it came from 127.0.0.1, which breaks rate limiting and
 // audit-log IP capture.
 app.set("trust proxy", 1);
+
+// Security headers — mounted FIRST so every response (including the
+// Stripe webhook below, every CORS preflight, and every error handler
+// response) carries them. See middlewares/securityHeaders.ts for the
+// header set + per-header rationale.
+app.use(securityHeaders);
 
 // CORS allowlist resolution, in priority order:
 //   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Use this
@@ -141,5 +149,12 @@ app.use(clerkMiddleware());
 // and the admin smoke endpoint /resupply-api/me; richer endpoints
 // land in later phases.
 app.use("/resupply-api", router);
+
+// Top-level error handler — MUST be the last middleware mounted on
+// the app. Catches any error a route handler throws (or passes via
+// next(err)), emits ONE structured log line, and returns a generic
+// JSON envelope so we never leak stack traces or PHI-adjacent
+// identifiers in error responses. See middlewares/errorHandler.ts.
+app.use(errorHandler);
 
 export default app;
