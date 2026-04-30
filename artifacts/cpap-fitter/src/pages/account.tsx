@@ -22,7 +22,7 @@
 // /sign-in?redirect=/account when not signed in.
 
 import React, { useEffect, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
 import { Show, useUser } from "@clerk/react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
@@ -136,7 +136,7 @@ function SignedOutAccountPrompt() {
 }
 
 function AccountInner() {
-  const { user } = useUser();
+  const { user, isLoaded: isUserLoaded } = useUser();
   const [data, setData] = useState<ShopMeResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
@@ -173,8 +173,15 @@ function AccountInner() {
   }, []);
 
   useEffect(() => {
+    // Wait for the auth provider to finish hydrating before calling
+    // /shop/me. Otherwise the request can race ahead of the session
+    // cookie/token, the server sees an unauthenticated request and
+    // returns {signedIn:false}, and we'd render a misleading
+    // "couldn't load" error for a user we KNOW is signed in (the
+    // outer <Show when="signed-in"> already gated on this).
+    if (!isUserLoaded) return;
     void reload();
-  }, [reload]);
+  }, [reload, isUserLoaded]);
 
   if (loadError) {
     return (
@@ -196,11 +203,16 @@ function AccountInner() {
   }
 
   // Defensive guard: the backend currently always returns `profile`
-  // when signedIn=true, but the response shape declares it optional.
-  // Rather than relying on `data.profile!` (a non-null assertion that
-  // would crash the whole tree if the contract drifts), surface a
-  // recoverable inline state so the user can retry instead of hitting
-  // the global error boundary.
+  // when signedIn=true. If it comes back with signedIn=false here,
+  // the auth provider on the client thinks we're signed in but the
+  // server didn't see a session — most often a transient cookie/token
+  // propagation hiccup right after sign-in. Send the user back through
+  // sign-in with a return-to-/account so they end up where they
+  // intended instead of stuck on a generic error screen.
+  if (data.signedIn === false) {
+    return <Redirect to="/sign-in?redirect=/account" replace />;
+  }
+
   if (!data.profile) {
     return (
       <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">

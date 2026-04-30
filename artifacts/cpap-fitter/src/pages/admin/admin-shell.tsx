@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Redirect } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
 import { Show, useUser } from "@clerk/react";
 import { fetchAdminMe, AdminApiError } from "@/lib/admin-api";
 import { AdminLayout } from "@/components/admin-layout";
@@ -15,6 +15,10 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * AdminShell — wraps an admin page with two layered checks:
  *
  *   1. Signed-out users get redirected to /sign-in (Clerk's `<Show>`).
+ *      The current admin path is forwarded as `?redirect=` so the auth
+ *      provider returns the user to the page they were trying to reach
+ *      (e.g. /admin/orders) instead of the global
+ *      `signInFallbackRedirectUrl` (which is /account, the patient page).
  *      We deliberately do NOT redirect from "/" — only from /admin*.
  *
  *   2. Signed-in users hit /api/admin/me to verify they're on the
@@ -27,10 +31,20 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * display in the sidebar.
  */
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  // Pass the current admin path through to /sign-in so the auth provider's
+  // post-auth redirect lands the user back on the page they were trying to
+  // reach (e.g. /admin/orders) instead of falling through to the
+  // global signInFallbackRedirectUrl, which is /account. Without this,
+  // an admin who clicks an /admin link while signed-out gets bounced to
+  // the patient account page after authenticating, where the
+  // session-not-yet-propagated race produces a misleading "Your account
+  // info couldn't load" error.
+  const [location] = useLocation();
+  const signInTarget = `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
   return (
     <>
       <Show when="signed-out">
-        <Redirect to="/sign-in" />
+        <Redirect to={signInTarget} />
       </Show>
       <Show when="signed-in">
         <AdminAuthorizedShell>{children}</AdminAuthorizedShell>
@@ -41,6 +55,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
 function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
   const { isLoaded } = useUser();
+  const [location] = useLocation();
+  const signInTarget = `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
   const me = useQuery({
     queryKey: ["admin-me"],
     queryFn: fetchAdminMe,
@@ -67,7 +83,7 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
       return <NotAuthorized status={status} message={(me.error as Error).message} />;
     }
     if (status === 401) {
-      return <Redirect to="/sign-in" />;
+      return <Redirect to={signInTarget} />;
     }
     return <AdminErrorShell error={me.error as Error} />;
   }
