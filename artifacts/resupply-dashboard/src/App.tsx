@@ -18,6 +18,7 @@ import { RulesPage } from "./pages/rules";
 import { AuditPage } from "./pages/audit";
 import { AdminShopReviewsPage } from "./pages/admin-shop-reviews";
 import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
+import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
 
 // PennPaps Admin Console.
@@ -92,6 +93,10 @@ function AdminConsole() {
         <Route
           path="/admin/shop/inventory"
           component={AdminShopInventoryPage}
+        />
+        <Route
+          path="/admin/shop/inventory/new"
+          component={AdminShopProductNewPage}
         />
         <Route
           path="/admin/shop/abandoned-carts"

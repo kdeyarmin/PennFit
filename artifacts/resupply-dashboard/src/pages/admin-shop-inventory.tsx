@@ -622,16 +622,45 @@ export function AdminShopInventoryPage() {
   return (
     <div style={{ maxWidth: 980 }}>
       <header style={{ marginBottom: 24 }}>
-        <h1
+        <div
           style={{
-            margin: 0,
-            fontSize: 24,
-            fontWeight: 600,
-            color: "#0a1f44",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
           }}
         >
-          Shop Inventory
-        </h1>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 24,
+              fontWeight: 600,
+              color: "#0a1f44",
+            }}
+          >
+            Shop Inventory
+          </h1>
+          {/* Add Product button — wouter <Link> would also work, but
+              an <a> with the BASE_URL prefix matches the rest of the
+              cross-page navigation in this console and avoids pulling
+              wouter into the page-level imports. */}
+          <a
+            href={`${import.meta.env.BASE_URL}admin/shop/inventory/new`}
+            style={{
+              background: "#0a1f44",
+              color: "#fff",
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              borderRadius: 6,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            + Add product
+          </a>
+        </div>
         <p
           style={{
             margin: "8px 0 0",

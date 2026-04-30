@@ -253,3 +253,117 @@ export class InventoryUnavailableError extends Error {
     this.name = "InventoryUnavailableError";
   }
 }
+
+// SKU collision error surfaced by `createShopProduct`. The API
+// returns 409 with the existing Stripe product id; the form page
+// uses that id to render an "Edit existing SKU" link instead of a
+// raw error toast.
+export class SkuAlreadyExistsError extends Error {
+  constructor(public readonly existingProductId: string | null) {
+    super("sku_already_exists");
+    this.name = "SkuAlreadyExistsError";
+  }
+}
+
+// Shop categories — kept in lockstep with SHOP_CATEGORIES in
+// artifacts/resupply-api/src/lib/stripe/products-meta.ts. Hand-typed
+// on this side because the API package doesn't export the union type
+// across the workspace boundary today.
+export const SHOP_CATEGORIES = [
+  "mask",
+  "cushion",
+  "tubing",
+  "filter",
+  "headgear",
+  "chamber",
+  "accessory",
+  "bundle",
+] as const;
+export type ShopCategory = (typeof SHOP_CATEGORIES)[number];
+
+// Recurring (subscription) cadence options accepted by the create
+// endpoint. Mirrors Stripe's price.recurring.interval enum.
+export const RECURRING_INTERVALS = ["day", "week", "month", "year"] as const;
+export type RecurringInterval = (typeof RECURRING_INTERVALS)[number];
+
+// Input shape for `createShopProduct`. Mirrors the createBodySchema
+// in artifacts/resupply-api/src/routes/admin/shop-products.ts. We
+// keep nullable fields explicitly typed (`null | undefined`) so the
+// form page can pass `null` to mean "leave the metadata key out"
+// without TypeScript noise.
+export interface CreateShopProductInput {
+  sku: string;
+  name: string;
+  description: string;
+  category: ShopCategory;
+  unitAmountCents: number;
+  tagline?: string | null;
+  replacementHint?: string | null;
+  manufacturer?: string | null;
+  modelNumber?: string | null;
+  imageUrl?: string | null;
+  stockCount?: number | null;
+  lowStockThreshold?: number | null;
+  bundleContents?: string[] | null;
+  recurringInterval?: RecurringInterval | null;
+  recurringIntervalCount?: number | null;
+}
+
+// POST /admin/shop/products — create a new SKU.
+//
+// 201 → returns the projected product (same shape as the inventory
+//        list rows, plus the full ShopProductView fields the API
+//        emits, but the form page only needs the id + name to redirect).
+// 409 → SkuAlreadyExistsError with the existing product id so the
+//        UI can offer an "edit existing" link.
+// 503 → InventoryUnavailableError ("stripe_not_configured") — same
+//        contract as the stock-count PATCH for symmetry.
+// 4xx → Error with the Zod issues serialized into the message.
+export async function createShopProduct(
+  input: CreateShopProductInput,
+): Promise<{ id: string; name: string }> {
+  const res = await fetch("/resupply-api/admin/shop/products", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify(input),
+  });
+  if (res.status === 503) {
+    throw new InventoryUnavailableError("stripe_not_configured");
+  }
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as {
+      productId?: string;
+    };
+    throw new SkuAlreadyExistsError(body.productId ?? null);
+  }
+  if (!res.ok) {
+    // Surface Zod validation messages so the form page can render
+    // them inline. The API serializes issues as
+    // [{path: "sku", message: "..."}].
+    let detail = `Create failed (${res.status})`;
+    try {
+      const body = (await res.json()) as {
+        error?: string;
+        issues?: Array<{ path: string; message: string }>;
+      };
+      if (body.issues && body.issues.length > 0) {
+        detail = body.issues
+          .map((i) => `${i.path}: ${i.message}`)
+          .join("; ");
+      } else if (body.error) {
+        detail = body.error;
+      }
+    } catch {
+      // Fall through to the status-only message.
+    }
+    throw new Error(detail);
+  }
+  const json = (await res.json()) as {
+    product: { id: string; name: string };
+  };
+  return { id: json.product.id, name: json.product.name };
+}
