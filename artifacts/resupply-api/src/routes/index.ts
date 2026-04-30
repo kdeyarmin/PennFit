@@ -7,6 +7,7 @@ import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
+import reportsRouter from "./admin/reports.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
@@ -89,5 +90,7 @@ router.use(teamRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);
+// /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
+router.use(reportsRouter);
 
 export default router;
