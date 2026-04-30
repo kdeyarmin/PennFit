@@ -387,7 +387,12 @@ router.post("/admin/reminders/send-due", async (req, res) => {
     candidateCount: candidates.length,
     // Surface this so the admin UI can warn "configure SendGrid to actually
     // send" instead of silently reporting `sent: 0`.
-    sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY && process.env.PENN_FROM_EMAIL),
+    // Read the same env vars the shared SendGrid integration reads, so
+    // this readiness flag matches what `createSendgridClient()` will
+    // actually do. There is no longer a separate PENN_FROM_EMAIL — every
+    // outbound mail uses SENDGRID_FROM_EMAIL (operations sets this to
+    // info@pennpaps.com).
+    sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL),
   });
   // lte unused-import guard — referenced for future range queries
   void lte;

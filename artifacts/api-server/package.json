@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@clerk/express": "^2.1.9",
+    "@sendgrid/mail": "^8.1.4",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/resupply-email": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",
