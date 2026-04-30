@@ -267,6 +267,9 @@ importers:
       '@clerk/react':
         specifier: ^6.4.5
         version: 6.4.5(react-dom@19.1.6(react@19.1.6))(react@19.1.6)
+      '@workspace/resupply-auth-react':
+        specifier: workspace:*
+        version: link:../../lib/resupply-auth-react
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0
