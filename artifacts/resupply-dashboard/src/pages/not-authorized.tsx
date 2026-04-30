@@ -1,4 +1,6 @@
-import { useClerk, useUser } from "@clerk/react";
+import { useLocation } from "wouter";
+
+import { useDashboardIdentity } from "../lib/identity";
 import { clearAllDrafts } from "../lib/use-draft-autosave";
 
 // Friendly "you can't see the admin console" screen.
@@ -38,8 +40,6 @@ export type NotAuthorizedReason =
   | "not-configured"
   | "transient";
 
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 // Admin-facing contact address. Override per environment with
 // VITE_RESUPPLY_CONTACT_EMAIL so a production cutover (mailbox
 // rename, distribution list change, etc.) doesn't require shipping
@@ -56,9 +56,10 @@ export function NotAuthorizedPage({
   reason: NotAuthorizedReason;
   contactEmail?: string;
 }) {
-  const { user } = useUser();
-  const { signOut } = useClerk();
-  const email = user?.primaryEmailAddress?.emailAddress ?? "your account";
+  const identity = useDashboardIdentity();
+  const { signOut } = identity;
+  const email = identity.email ?? "your account";
+  const [, setNotAuthLocation] = useLocation();
 
   const isConfigError = reason === "not-configured";
   const isTransient = reason === "transient";
@@ -226,8 +227,13 @@ export function NotAuthorizedPage({
                     // Drop any persisted reply drafts before sign-out so
                     // PHI doesn't survive across admin sessions.
                     clearAllDrafts();
-                    void signOut({
-                      redirectUrl: `${basePath}/sign-in`,
+                    void signOut().finally(() => {
+                      // Soft navigate via wouter. The Clerk path
+                      // previously did `signOut({ redirectUrl })`
+                      // which forced a full document load — the
+                      // identity shim now handles cookie + cache
+                      // cleanup on its own, so a soft nav is enough.
+                      setNotAuthLocation("/sign-in");
                     });
                   }}
                   className="text-sm font-semibold px-4 py-2 rounded text-white"

@@ -12,6 +12,7 @@
     { "path": "./lib/resupply-db" },
     { "path": "./lib/resupply-audit" },
     { "path": "./lib/resupply-auth" },
+    { "path": "./lib/resupply-auth-react" },
     { "path": "./lib/resupply-telecom" },
     { "path": "./lib/resupply-ai" },
     { "path": "./lib/resupply-email" },
