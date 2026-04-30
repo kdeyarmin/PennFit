@@ -1,3 +1,11 @@
+import { assertRequiredEnv } from "./lib/env-check.js";
+
+// Fail fast on a misconfigured deploy. Runs before any other
+// side-effecting import so a missing var surfaces as a single clear
+// startup error listing every missing required variable, rather
+// than a confusing mid-job throw partway through execution.
+assertRequiredEnv();
+
 import {
   PgcryptoNotInstalledError,
   assertPgcryptoEnabled,
