@@ -1,25 +1,29 @@
-// GET /email/click?t=<token> — public link-click handler for the three
-// signed actions (confirm, edit, stop) embedded in outbound reminder
-// emails.
+// GET  /email/click?t=<token> — renders a confirmation landing page.
+// POST /email/click?t=<token> — performs the signed action.
 //
-// Why GET (and not POST):
-//   Email clients open links with GET. We cannot POST from a plain
-//   <a href>. Mitigations against the GET-side-effect concerns:
-//     - Tokens are HMAC-signed AND short-TTL (7 days).
-//     - Tokens are SINGLE-PURPOSE (action is baked into the payload).
-//     - Email link previews from corporate scanners (Outlook ATP,
-//       Gmail link-warmer) WILL fire these GETs. The downstream
-//       handlers are idempotent: confirm twice = one fulfillment;
-//       stop twice = still paused; edit twice = still
-//       awaiting_admin. We do NOT block the action on a "human
-//       click" check — false negatives there would break legitimate
-//       Outlook users whose corporate proxy strips Referer.
+// WHY TWO STEPS:
+//   Email security scanners (Outlook ATP, Gmail link-warmer, Proofpoint,
+//   Mimecast, etc.) pre-fetch every link in an outbound email via GET to
+//   check for malware and phishing. If GET performs a state-changing action
+//   — confirming an order, pausing reminders, escalating an address change —
+//   the scanner wins the race and the patient never actually chose anything.
+//   Idempotency only prevents the second trigger; it cannot prevent the
+//   FIRST unauthorised side-effect.
+//
+//   Separating the two verbs fixes this cleanly:
+//     • GET  → verify the token, render a human-readable landing page with
+//               a single POST <form> button. No DB writes, no side effects.
+//               A scanner sees an HTML page and moves on.
+//     • POST → verify the token again (re-entrant, safe to repeat), then
+//               perform the action. POST requests are never pre-fetched by
+//               mail scanners (RFC 7231 §4.2.1 — POST is not safe/idempotent
+//               so intermediaries must not auto-submit it).
 //
 // Security:
-//   - Signature mismatch / expired / malformed → generic "this link
-//     is no longer valid" page (no detail).
-//   - Conversation lookup fails → same generic page (do NOT confirm
-//     "this conversation does not exist" — that's a leak vector).
+//   - Both GET and POST verify the HMAC token so an expired/forged token
+//     cannot perform any action.
+//   - Conversation lookup fails → generic "link no longer valid" page.
+//   - Signature mismatch / malformed → same generic page (no detail leak).
 
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
@@ -29,6 +33,7 @@ import { conversations, getDbPool } from "@workspace/resupply-db";
 import {
   renderClickConfirmation,
   renderClickError,
+  renderClickLanding,
   verifyLinkToken,
 } from "@workspace/resupply-messaging";
 
@@ -42,35 +47,32 @@ import { safeAudit } from "../../lib/messaging/safe-audit";
 
 const router: IRouter = Router();
 
-router.get("/email/click", async (req, res) => {
-  const cfg = readMessagingConfigOrNull();
-  if (!cfg) {
-    res
-      .status(503)
-      .type("text/html")
-      .send(
-        renderClickError({
-          practiceName: "the practice",
-          reason: "malformed",
-        }),
-      );
-    return;
-  }
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
+function serializeErr(err: unknown): { name: string; message?: string } {
+  if (err instanceof Error) return { name: err.name, message: err.message };
+  return { name: "unknown" };
+}
+
+/**
+ * Parse and verify the `?t=` token from a request's query string.
+ * Returns the verified payload or null (after sending an error response).
+ */
+function extractVerifiedToken(
+  req: Parameters<Parameters<IRouter["get"]>[1]>[0],
+  res: Parameters<Parameters<IRouter["get"]>[1]>[1],
+  practiceName: string,
+) {
   const token = typeof req.query.t === "string" ? req.query.t : null;
   if (!token) {
     res
       .status(400)
       .type("text/html")
-      .send(
-        renderClickError({
-          practiceName: cfg.practiceName,
-          reason: "malformed",
-        }),
-      );
-    return;
+      .send(renderClickError({ practiceName, reason: "malformed" }));
+    return null;
   }
-
   const verified = verifyLinkToken(token);
   if (!verified.valid) {
     logger.info(
@@ -80,14 +82,93 @@ router.get("/email/click", async (req, res) => {
     res
       .status(400)
       .type("text/html")
-      .send(
-        renderClickError({
-          practiceName: cfg.practiceName,
-          reason: verified.reason,
-        }),
-      );
+      .send(renderClickError({ practiceName, reason: verified.reason }));
+    return null;
+  }
+  return verified;
+}
+
+// ---------------------------------------------------------------------------
+// GET — landing page only (no side-effects)
+// ---------------------------------------------------------------------------
+
+router.get("/email/click", async (req, res) => {
+  const cfg = readMessagingConfigOrNull();
+  if (!cfg) {
+    res
+      .status(503)
+      .type("text/html")
+      .send(renderClickError({ practiceName: "the practice", reason: "malformed" }));
     return;
   }
+
+  const verified = extractVerifiedToken(req, res, cfg.practiceName);
+  if (!verified) return;
+
+  // Audit the link open (no state change — audit is informational only).
+  const pool = getDbPool();
+  const db = drizzle(pool);
+  const convRows = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.id, verified.conversationId))
+    .limit(1);
+
+  if (!convRows[0]) {
+    res
+      .status(400)
+      .type("text/html")
+      .send(renderClickError({ practiceName: cfg.practiceName, reason: "malformed" }));
+    return;
+  }
+
+  await safeAudit({
+    action: "email.link.opened",
+    adminEmail: null,
+    adminUserId: null,
+    targetTable: "conversations",
+    targetId: verified.conversationId,
+    metadata: {
+      channel: "email",
+      conversation_id: verified.conversationId,
+      link_action: verified.action,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  });
+
+  // Build the form action URL so the POST carries the same signed token.
+  const formActionUrl =
+    `${cfg.email.publicBaseUrl}/resupply-api/email/click?t=${encodeURIComponent(typeof req.query.t === "string" ? req.query.t : "")}`;
+
+  res
+    .status(200)
+    .type("text/html")
+    .send(
+      renderClickLanding({
+        practiceName: cfg.practiceName,
+        action: verified.action,
+        formActionUrl,
+      }),
+    );
+});
+
+// ---------------------------------------------------------------------------
+// POST — perform the signed action
+// ---------------------------------------------------------------------------
+
+router.post("/email/click", async (req, res) => {
+  const cfg = readMessagingConfigOrNull();
+  if (!cfg) {
+    res
+      .status(503)
+      .type("text/html")
+      .send(renderClickError({ practiceName: "the practice", reason: "malformed" }));
+    return;
+  }
+
+  const verified = extractVerifiedToken(req, res, cfg.practiceName);
+  if (!verified) return;
 
   const { conversationId, action } = verified;
 
@@ -104,16 +185,10 @@ router.get("/email/click", async (req, res) => {
     .limit(1);
   const conv = convRows[0];
   if (!conv) {
-    // Generic error — do NOT leak that the conversation was deleted.
     res
       .status(400)
       .type("text/html")
-      .send(
-        renderClickError({
-          practiceName: cfg.practiceName,
-          reason: "malformed",
-        }),
-      );
+      .send(renderClickError({ practiceName: cfg.practiceName, reason: "malformed" }));
     return;
   }
 
@@ -174,7 +249,6 @@ router.get("/email/click", async (req, res) => {
             );
           return;
         }
-        // Episode not found / no prescription / etc — render error.
         res
           .status(400)
           .type("text/html")
@@ -286,10 +360,5 @@ router.get("/email/click", async (req, res) => {
       );
   }
 });
-
-function serializeErr(err: unknown): { name: string; message?: string } {
-  if (err instanceof Error) return { name: err.name, message: err.message };
-  return { name: "unknown" };
-}
 
 export default router;

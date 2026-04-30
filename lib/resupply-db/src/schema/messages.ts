@@ -4,6 +4,7 @@ import {
   jsonb,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -68,6 +69,16 @@ export const messages = resupplySchema.table(
     deliveryStatusIdx: index("messages_delivery_status_idx").on(
       t.deliveryStatus,
     ),
+    // Replay-protection: each inbound Twilio MessageSid must be unique.
+    // The partial expression index (direction = 'inbound') ensures the
+    // constraint only applies to inbound messages and does not interfere
+    // with outbound rows that never carry a twilio_message_sid. Created
+    // by migration 0018_messages_twilio_sid_unique.sql.
+    twilioSidInboundUniq: uniqueIndex(
+      "messages_twilio_sid_inbound_uniq",
+    )
+      .on(sql`(${t.vendorMetadata}->>'twilio_message_sid')`)
+      .where(sql`direction = 'inbound'`),
   }),
 );
 

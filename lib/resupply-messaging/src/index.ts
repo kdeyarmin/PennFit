@@ -37,11 +37,13 @@ export {
   renderResupplyReminder,
   renderClickConfirmation,
   renderClickError,
+  renderClickLanding,
   escapeHtml,
   type RenderResupplyReminderInput,
   type RenderedEmail,
   type RenderClickConfirmationInput,
   type RenderClickErrorInput,
+  type RenderClickLandingInput,
 } from "./email-templates";
 
 export {

@@ -293,12 +293,51 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     return;
   }
 
+  // Replay protection: reject any webhook whose MessageSid has already
+  // been stored. A Twilio signature is a static HMAC over the request
+  // body — a captured (payload + header) pair can be replayed verbatim
+  // and will pass signature validation. Checking the MessageSid (a
+  // globally unique Twilio identifier) before processing prevents a
+  // replayed request from inserting a second inbound message row and
+  // triggering a second dispatch (which could confirm a newer order
+  // the patient never approved).
+  //
+  // The companion DB migration (0018_messages_twilio_sid_unique.sql)
+  // adds a unique partial index on
+  //   (vendor_metadata->>'twilio_message_sid') WHERE direction = 'inbound'
+  // so the uniqueness is enforced at the storage layer too, but this
+  // pre-check lets us return a clean 200 (no error) to Twilio rather
+  // than a 500 on a duplicate-key violation.
+  const existingSid = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.direction, "inbound"),
+        sql`(${messages.vendorMetadata}->>'twilio_message_sid') = ${parsed.MessageSid}`,
+      ),
+    )
+    .limit(1);
+  if (existingSid[0]) {
+    logger.info(
+      {
+        event: "sms_inbound_duplicate_sid",
+        twilio_message_sid: parsed.MessageSid,
+      },
+      "sms.inbound: duplicate MessageSid — replayed webhook discarded",
+    );
+    res.status(200).type("text/xml").send("<Response/>");
+    return;
+  }
+
   // Find or create the conversation. We prefer the most recent OPEN
-  // sms conversation for this patient — same thread, same context.
-  // If none is open, we open a new one bound to the most recent
-  // episode. (Inbound SMS without an episode is rare but possible —
-  // a patient texts back days after the admin already closed the
-  // conversation.)
+  // SMS conversation for this patient — same thread, same context.
+  // Requiring status = 'open' prevents a replayed webhook from being
+  // rebound to a newer closed or awaiting_admin conversation that was
+  // created after the original message was sent.
+  // If no open conversation exists, we open a new one bound to the
+  // most recent episode. (Inbound SMS without an open conversation is
+  // possible — a patient texts back days after the admin closed theirs.)
   // `conversationId` is assigned in EVERY branch below before the
   // first read at line ~273 (the if-then sets it from openConv, the
   // else-then sets it from the new `conversations` insert). Declared
@@ -313,6 +352,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       and(
         eq(conversations.patientId, patientId),
         eq(conversations.channel, "sms"),
+        eq(conversations.status, "open"),
       ),
     )
     .orderBy(desc(conversations.lastMessageAt))
