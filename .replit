@@ -9,7 +9,7 @@ args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
 [workflows]
-runButton = "Project"
+runButton = "CPAP Fitter"
 
 [[workflows.workflow]]
 name = "Project"
@@ -33,6 +33,18 @@ task = "workflow.run"
 args = "Resupply Worker"
 
 [[workflows.workflow]]
+name = "CPAP Fitter"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm install --frozen-lockfile && PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
+
+[workflows.workflow.metadata]
+outputType = "service"
+restartOn = { success = false, failure = true, updateConfig = true }
+
+[[workflows.workflow]]
 name = "Resupply API"
 author = "agent"
 
@@ -50,18 +62,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=19334 BASE_PATH=/resupply/ pnpm --filter @workspace/resupply-dashboard run dev"
-
-[workflows.workflow.metadata]
-outputType = "service"
-restartOn = { success = false, failure = true, updateConfig = true }
-
-[[workflows.workflow]]
-name = "CPAP Fitter"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
 
 [workflows.workflow.metadata]
 outputType = "service"
