@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useCart } from "@/hooks/use-cart";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
+import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import {
   fetchOrderSummary,
   formatMoneyCents,
@@ -197,8 +198,9 @@ export function ShopCheckoutSuccess() {
 
           {/* Post-purchase reminders nudge — they just bought supplies, so
               this is the perfect moment to ask them to enroll. */}
-          <div className="mt-6">
+          <div className="mt-6 space-y-4">
             <SubscribeRemindersCta variant="compact" />
+            <ComfortGuarantee variant="callout" />
           </div>
         </div>
       ) : null}

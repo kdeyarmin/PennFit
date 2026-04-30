@@ -38,6 +38,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
+import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import {
   DEFAULT_LOW_STOCK_THRESHOLD,
   fetchProductReviews,
@@ -514,6 +515,9 @@ function Hero({
           <ShieldCheck className="w-3.5 h-3.5" /> Or use insurance — $0 with
           prescription
         </Link>
+        <div className="mt-4">
+          <ComfortGuarantee variant="badge" />
+        </div>
       </div>
     </div>
   );
