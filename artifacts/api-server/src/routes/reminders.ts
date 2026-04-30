@@ -121,9 +121,8 @@ router.post("/reminders", async (req, res) => {
   if (typeof honeypot === "string" && honeypot.trim().length > 0) {
     res.json({
       success: true,
-      manageToken: "honeypot",
       emailStatus: "skipped" as const,
-      message: "Subscription created.",
+      message: "Subscription saved. Check your email for a manage link.",
     });
     return;
   }
@@ -162,16 +161,15 @@ router.post("/reminders", async (req, res) => {
     .limit(1);
 
   if (existing.length > 0) {
-    const existingRow = existing[0]!;
-    // Email the EXISTING manage link to the registered owner only. If the
-    // submitter is the owner, they receive it; if not, the unauthenticated
-    // submitter learns nothing beyond "this email might be on file" — the
-    // same surface as any opt-in newsletter.
+    // Email the EXISTING manage link to the registered owner only. The
+    // response is intentionally identical to the new-subscription response
+    // so callers cannot determine whether the email was already on file
+    // (preventing email-enumeration of health-adjacent subscriber data).
     let emailStatus: "sent" | "skipped" | "failed" = "skipped";
     try {
       const result = await sendReminderManageLink({
-        toEmail: existingRow.email,
-        manageToken: existingRow.manageToken,
+        toEmail: existing[0]!.email,
+        manageToken: existing[0]!.manageToken,
       });
       emailStatus = !result.configured ? "skipped" : result.delivered ? "sent" : "failed";
     } catch (err) {
@@ -181,19 +179,16 @@ router.post("/reminders", async (req, res) => {
 
     res.json({
       success: true,
-      alreadySubscribed: true,
       emailStatus,
-      message:
-        "If this email is already subscribed, we've sent the manage link to your inbox. Open that email to update your supplies or unsubscribe.",
+      message: "Check your email for a manage link to view or update your reminders.",
     });
     return;
   }
 
-  // New row — safe to return the token in the response since this caller
-  // just demonstrated they could supply an email that wasn't in the
-  // system. Returning the token here also makes the dev-mode flow work
-  // (where SendGrid isn't configured) so they can immediately click
-  // "manage" without an email round-trip.
+  // New row — insert and send confirmation. The manage token is delivered
+  // only via email; it is never returned in the API response so that
+  // unauthenticated callers cannot mint and retain tokens for arbitrary
+  // email addresses without proving inbox ownership.
   const [inserted] = await db
     .insert(reminderSubscriptionsTable)
     .values({
@@ -221,13 +216,8 @@ router.post("/reminders", async (req, res) => {
 
   res.json({
     success: true,
-    alreadySubscribed: false,
-    manageToken: row.manageToken,
     emailStatus,
-    message:
-      emailStatus === "sent"
-        ? "Subscription confirmed — check your email for a manage link."
-        : "Subscription saved. (Confirmation email could not be sent right now; you can still manage your subscription using the link on this page.)",
+    message: "Check your email for a manage link to view or update your reminders.",
   });
 });
 
