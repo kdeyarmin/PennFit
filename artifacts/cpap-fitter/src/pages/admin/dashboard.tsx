@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchAdminAnalytics, fetchAdminOrders } from "@/lib/admin-api";
+import { funnelStepLabel } from "@/lib/admin-labels";
 import { Package, CheckCircle2, AlertCircle, TrendingUp, ArrowRight } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
@@ -40,7 +41,9 @@ export function AdminDashboard() {
           Dashboard
         </h1>
         <p className="text-muted-foreground mt-1">
-          Recent activity and order metrics across PennPaps.
+          A daily snapshot of orders coming in and how shoppers are using the
+          mask-fit tool. Use the menu on the left to dig into specific orders or
+          reminders.
         </p>
       </div>
 
@@ -64,7 +67,7 @@ export function AdminDashboard() {
           tone={totalsBy("failed") > 0 ? "danger" : "default"}
         />
         <StatCard
-          title="Order-success events (30 d)"
+          title="Successful orders (last 30 days)"
           value={
             analytics.isLoading
               ? null
@@ -78,7 +81,11 @@ export function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-lg">Top masks ordered</CardTitle>
+            <CardTitle className="text-lg">Most-ordered masks</CardTitle>
+            <CardDescription>
+              The masks customers picked the most. Counts include every order,
+              not just delivered ones.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {analytics.isLoading && (
@@ -108,7 +115,12 @@ export function AdminDashboard() {
 
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-lg">Funnel (anonymous)</CardTitle>
+            <CardTitle className="text-lg">Customer journey</CardTitle>
+            <CardDescription>
+              How far anonymous shoppers get through the mask-fit flow before
+              they place an order. Higher numbers near the bottom mean more
+              people are completing the full journey.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {analytics.isLoading && (
@@ -118,14 +130,19 @@ export function AdminDashboard() {
               </>
             )}
             {!analytics.isLoading && (data?.funnel?.length ?? 0) === 0 && (
-              <p className="text-sm text-muted-foreground">No funnel events yet.</p>
+              <p className="text-sm text-muted-foreground">
+                Nothing recorded yet. Once shoppers start using the mask-fit
+                tool, their progress will show here.
+              </p>
             )}
             {data?.funnel.map((f) => (
               <div
                 key={f.step}
                 className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-b-0"
               >
-                <span className="text-sm font-mono text-muted-foreground">{f.step}</span>
+                <span className="text-sm text-foreground">
+                  {funnelStepLabel(f.step)}
+                </span>
                 <Badge variant="outline">{f.count}</Badge>
               </div>
             ))}

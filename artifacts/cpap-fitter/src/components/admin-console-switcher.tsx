@@ -22,22 +22,34 @@ export function AdminConsoleSwitcher() {
       data-testid="admin-console-switcher"
     >
       <p className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-2 px-3 text-muted-foreground">
-        Console
+        Switch console
       </p>
       <div
         className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium mb-1"
         aria-current="page"
         data-testid="admin-console-switcher-current"
       >
-        Shop &amp; Fittings
+        <div>Shop &amp; Fittings</div>
+        <div className="text-[11px] font-normal text-primary-foreground/80 leading-snug mt-0.5">
+          You are here — new orders from the mask-fit tool.
+        </div>
       </div>
       <a
         href="/resupply/"
-        className="flex items-center justify-between px-3 py-2 rounded-lg text-sm hover:bg-muted text-foreground transition-colors"
+        title="Open the Resupply CRM in this tab"
+        className="flex items-start justify-between gap-2 px-3 py-2 rounded-lg text-sm hover:bg-muted text-foreground transition-colors"
         data-testid="admin-console-switcher-link-resupply"
       >
-        <span>Resupply CRM</span>
-        <ExternalLink className="w-3.5 h-3.5 opacity-60" aria-hidden="true" />
+        <div className="min-w-0">
+          <div>Resupply CRM</div>
+          <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+            Existing patients, refills, and inbox.
+          </div>
+        </div>
+        <ExternalLink
+          className="w-3.5 h-3.5 opacity-60 mt-1 shrink-0"
+          aria-hidden="true"
+        />
       </a>
     </div>
   );

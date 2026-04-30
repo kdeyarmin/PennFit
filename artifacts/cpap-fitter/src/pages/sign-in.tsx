@@ -29,12 +29,40 @@ function readRedirect(): string {
   return `${basePath}/admin`;
 }
 
+/**
+ * Branding note: the sign-in widget itself is rendered by Clerk and
+ * its title (e.g. "Sign in to <app name>") is set in the Clerk
+ * dashboard, NOT in code. Rename the Clerk application there if you
+ * want a different headline inside the box.
+ *
+ * The `appearance.elements.footer` override hides the
+ * "Secured by Clerk" badge so the footer chrome doesn't leak the
+ * vendor's name to non-technical operators. The wrapping <div>
+ * below adds our own page-level identity above the widget so
+ * shoppers and operators always see "Penn Home Medical Supply"
+ * regardless of the Clerk-side configuration.
+ */
+const HIDE_CLERK_BRANDING = {
+  elements: {
+    footer: { display: "none" as const },
+  },
+} as const;
+
 export function SignInPage() {
   useDocumentTitle("Sign in");
   const redirectUrl = readRedirect();
   return (
-    <div className="flex min-h-[calc(100dvh-5rem)] items-center justify-center px-4 py-12">
+    <div className="flex min-h-[calc(100dvh-5rem)] flex-col items-center justify-center px-4 py-12">
+      <div className="mb-6 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Sign in to Penn Home Medical Supply
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Use your work email to access the admin console.
+        </p>
+      </div>
       <SignIn
+        appearance={HIDE_CLERK_BRANDING}
         routing="path"
         path={`${basePath}/sign-in`}
         signUpUrl={`${basePath}/sign-up?redirect=${encodeURIComponent(

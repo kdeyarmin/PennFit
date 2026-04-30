@@ -36,8 +36,13 @@ export function AdminReminders() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Reminder subscribers</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Reminders</h1>
           <p className="text-muted-foreground mt-1">
+            People who asked to be reminded when supplies are due. Click
+            “Send due reminders now” to email everyone whose next reminder
+            falls today.
+          </p>
+          <p className="text-muted-foreground mt-1 text-sm">
             {list.isLoading
               ? "Loading…"
               : `${subs.length} total · ${activeCount} active · ${totalDue} item${totalDue === 1 ? "" : "s"} due today`}
@@ -70,8 +75,9 @@ export function AdminReminders() {
             Skipped (no items due) {send.data.skippedNoneDue} · Failed {send.data.failed}
             {!send.data.sendgridConfigured && (
               <span className="block mt-1 text-amber-700">
-                Email delivery is not configured — set SENDGRID_API_KEY and
-                PENN_FROM_EMAIL to actually send. Subscribers were skipped.
+                Email sending is turned off in this environment, so no
+                reminders actually went out. Ask an engineer to enable email
+                delivery before running this in production.
               </span>
             )}
           </AlertDescription>

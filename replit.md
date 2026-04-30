@@ -154,6 +154,39 @@ Admins can attach a single prescription document (PDF or image, ≤10MB) per pre
 - **UI:** Document column on `PrescriptionsTab` shows filename + Download/Remove when present, "Attach" picker when empty. Accepts PDF/JPEG/PNG/WebP only; client enforces 10MB cap pre-upload but server is the source of truth.
 - **Known debt (acceptable for slice):** Orphaned objects on incomplete upload / replaced-attachment paths (PHI retention follow-up). OpenAPI spec for `PatientPrescription` does not yet include the attachment fields — the dashboard uses an inline type. Both flagged for future cleanup.
 
+### Admin Console Plain-English Pass
+
+The cpap-fitter admin console has a UX-overhaul layer for non-technical
+operators (customer-service reps), so they never have to read raw
+backend identifiers like `capture_started` or `view_order_detail`.
+
+- **Central label dictionary:** `artifacts/cpap-fitter/src/lib/admin-labels.ts` exposes
+  `funnelStepLabel(step)` and `auditActionLabel(action)`. Keys mirror the
+  backend `usageEventStepEnum` (`artifacts/api-server/src/routes/usage-events.ts`)
+  and the audit-action shapes emitted by `artifacts/api-server/src/routes/admin.ts`.
+  Drift is handled by a humanised fallback (`some_new_step` → "Some new
+  step") so an unmapped key never leaks the snake_case identifier.
+- **Dashboard:** `pages/admin/dashboard.tsx` renames "Funnel (anonymous)" →
+  "Customer journey" with a one-line subhead, "Order-success events
+  (30 d)" → "Successful orders (last 30 days)", and renders friendly
+  step labels.
+- **Audit log:** `pages/admin/audit.tsx` renamed to "Activity history"
+  (page heading + document title), action column uses
+  `auditActionLabel()`, table headers reworded ("Who", "What they did",
+  "Order opened", "From IP"). Hovering the action cell still reveals
+  the raw machine string via `title=` for power-user diagnostics.
+- **Sidebar nav:** `components/admin-layout.tsx` adds a one-line
+  description under each nav item, `aria-current="page"` on the active
+  link, and friendlier labels. `admin-console-switcher.tsx` adds
+  sub-text to both console options.
+- **Sign-in / sign-up branding:** `pages/sign-in.tsx` and `pages/sign-up.tsx`
+  pass `appearance={{ elements: { footer: { display: "none" } } }}` to
+  the Clerk widget to suppress the "Secured by Clerk" badge, and wrap
+  the widget in our own page heading ("Sign in to Penn Home Medical
+  Supply"). The widget's internal title is still controlled by the
+  Clerk-dashboard application name (Clerk-side rename, not a code
+  change).
+
 ### Mobile Fit-Flow Stepper
 
 `<FitFlowStepper>` mounts in the customer Layout and self-gates by route (5 steps: face-scan → masks → cart → reminders → checkout-success). Mobile (<md) renders a "Step N of 5" label plus a progress bar; desktop (≥md) renders a 5-pill horizontal tracker. Hidden on `/shop` and other non-funnel pages. `aria-valuetext` carries the current step label for screen readers.
