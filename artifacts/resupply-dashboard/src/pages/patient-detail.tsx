@@ -17,6 +17,7 @@ import {
   useUpdatePrescriptionStatus,
   type PatientDetail,
   type PatientNote,
+  type PatientPrescription,
   type PatientTimelineEvent,
 } from "@workspace/resupply-api-client";
 import { Card } from "../components/Card";
@@ -442,23 +443,12 @@ function FulfillmentsTab({ fulfillments }: { fulfillments: Fulfillment[] }) {
   );
 }
 
-type Prescription = {
-  id: string;
-  itemSku: string;
-  cadenceDays: number;
-  validFrom: string;
-  validUntil?: string | null;
-  status: string;
-  createdAt: string;
-  // Attachment metadata mirrors the API's response shape. All four
-  // are populated together (one INSERT/UPDATE) or all null. The
-  // dashboard never sees the underlying object key — downloads go
-  // through the dedicated, audit-logged GET endpoint.
-  attachmentFilename?: string | null;
-  attachmentContentType?: string | null;
-  attachmentSizeBytes?: number | null;
-  attachmentUploadedAt?: string | null;
-};
+// Single-source the prescription row shape from the generated
+// OpenAPI client so the dashboard cannot drift from the contract.
+// Attachment metadata fields are part of the schema; the underlying
+// GCS object key is intentionally not exposed (downloads go through
+// the dedicated, audit-logged GET endpoint).
+type Prescription = PatientPrescription;
 
 // 10 MB hard cap, mirrored on the API. Kept as a const so the
 // "Document too large" message and the file-picker hint can stay in

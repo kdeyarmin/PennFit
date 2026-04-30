@@ -126,6 +126,15 @@ Final whole-site visual review across every customer-facing route (~22 pages) be
 
 **Convention recap (locked in):** every cpap-fitter sign-in/sign-up link uses `?redirect=` (NOT `?redirect_url=`) because that's what `readRedirect()` in `sign-in.tsx`/`sign-up.tsx` parses. `redirect_url` is Clerk's native param name but is silently dropped by the local helper.
 
+### Prescription-attachment PHI retention (April 2026)
+
+The admin dashboard's "Prescriptions" tab on each patient detail page lets ops upload a scan of the paper Rx (PDF/image, ≤10 MB) into private GCS via a presigned PUT, finalize the row's metadata, and download/delete it later. After the deep-review architect flagged orphaned-bytes risk in this slice, two debt items closed:
+
+- **Synchronous orphan cleanup on DELETE and finalize-replacement** in `artifacts/resupply-api/src/routes/patients/prescriptions-attachment.ts`. DELETE now attempts `getObjectEntityFile().delete()` BEFORE nulling the columns; `ObjectNotFoundError` is treated as success (idempotent), other errors are logged + audited as `bytes_deleted: "errored"` while still clearing the row so the UI doesn't get stuck advertising a phantom file. Finalize captures `previousObjectKey` BEFORE the DB update, repoints the row at the new object, then best-effort deletes the OLD bytes — row update is the durable commit point, audit captures `previous_object_deleted: true | false | "errored"`. Test coverage in `prescriptions-attachment.test.ts`: 4 DELETE behaviors + 4 finalize-replacement behaviors including call-order assertion (update before delete) and idempotent ObjectNotFound handling.
+- **OpenAPI spec sync.** `lib/resupply-api-spec/openapi.yaml`'s `PatientPrescription` schema now includes the four nullable attachment metadata fields (`attachmentFilename`, `attachmentContentType`, `attachmentSizeBytes`, `attachmentUploadedAt`); the dashboard's `patient-detail.tsx` consumes the generated `PatientPrescription` type instead of hand-rolling an inline extension.
+
+**Remaining known debt (documented in `docs/resupply/PHI-RETENTION.md`, not built yet):** when a presigned PUT URL is issued and the bytes upload but `/finalize` never runs (browser closed mid-flow, network drop), the bytes sit unreferenced in the bucket. Future async sweep job will reconcile bucket prefix vs `prescriptions.attachment_object_key` and delete unreferenced objects older than 24h. Low expected volume — finalize fires synchronously after the PUT in the dashboard flow — so deferred until we see actual orphans accumulate.
+
 ### Customer-Facing Reminder Subscriptions
 
 A self-serve, opt-in reminder system at `/reminders` lets customers (no account required) sign up to be emailed when each CPAP supply is due for replacement. The flow is intentionally separate from the internal Resupply Automation system, which is admin/CSV driven and manages full insurance episodes — this storefront feature is a lightweight email-only nudge.

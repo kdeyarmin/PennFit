@@ -700,6 +700,13 @@ export interface PatientPrescription {
   validUntil?: string | null;
   status: PatientPrescriptionStatus;
   createdAt: string;
+  /** Original filename supplied by the uploading admin. */
+  attachmentFilename?: string | null;
+  /** Content-type as confirmed by GCS at finalize time. */
+  attachmentContentType?: string | null;
+  /** Object size in bytes as confirmed by GCS at finalize time. */
+  attachmentSizeBytes?: number | null;
+  attachmentUploadedAt?: string | null;
 }
 
 export type PatientEpisodeStatus =

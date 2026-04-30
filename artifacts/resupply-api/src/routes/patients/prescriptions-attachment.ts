@@ -16,20 +16,39 @@
 //       the presigned URL ever leaves the API.
 //     * Every read/write is audit-logged with the prescription id.
 //
-// Three endpoints:
+// Four endpoints:
 //   POST /patients/:id/prescriptions/:rxId/attachment/upload-url
-//     -> { uploadURL, objectPath } valid for 15 minutes.
+//     -> { uploadURL, objectPath } valid for 15 minutes. The
+//     issuance of this presigned PUT capability is itself audit-
+//     logged; without that the URL is a bearer token whose use is
+//     invisible to the API once it leaves.
 //   POST /patients/:id/prescriptions/:rxId/attachment
 //     Body: { objectPath, filename, contentType, sizeBytes }.
-//     Verifies the object exists in GCS, sets ACL
-//     {owner: adminClerkId, visibility:"private"}, persists metadata.
+//     Verifies the object exists in GCS, RE-VALIDATES actual size
+//     and content-type against the bucket's metadata (rejects and
+//     deletes on mismatch — the client-declared values from
+//     /upload-url are advisory only), sets ACL
+//     {owner: adminClerkId, visibility:"private"}, persists the
+//     GCS-confirmed metadata. If a previous attachment existed on
+//     this prescription, the old object's bytes are deleted best-
+//     effort after the row is updated.
 //   GET  /patients/:id/prescriptions/:rxId/attachment
 //     Streams the bytes back to an authenticated admin.
 //   DELETE /patients/:id/prescriptions/:rxId/attachment
-//     Clears the row's metadata. We do NOT delete the GCS object
-//     itself — purge is a separate background job (out of scope for
-//     this slice; the orphaned object becomes inert because nothing
-//     references its path).
+//     Best-effort deletes the GCS object, then nulls the row's
+//     attachment columns. The bucket-side delete is best-effort:
+//     if it fails (transient GCS error) the row still clears so
+//     the UI doesn't get stuck advertising a phantom file, and
+//     the audit entry records that bytes were not removed so a
+//     future sweep can reconcile.
+//
+// PHI retention note: one orphan source remains by design — a
+// presigned PUT URL that the browser uses but where /finalize is
+// never called (browser closed mid-upload, network drop). Those
+// objects accumulate in the bucket with no DB reference and need
+// a periodic sweep job (see docs/resupply/PHI-RETENTION.md). Not
+// built yet because finalize fires immediately after PUT in the
+// dashboard flow and expected volume is single-digits/week.
 
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -334,6 +353,11 @@ router.post(
       return;
     }
 
+    // Capture BEFORE the row update so the cleanup step has the old
+    // path. Reading from rx (loaded earlier in the handler) is fine
+    // because nothing in this handler has mutated the row yet.
+    const previousObjectKey = rx.attachmentObjectKey;
+
     const db = drizzle(getDbPool());
     const now = new Date();
     await db
@@ -352,6 +376,36 @@ router.post(
       })
       .where(eq(prescriptions.id, rx.id));
 
+    // Replacement cleanup: the row now points at the NEW object, so
+    // delete the bytes of the OLD object. Best-effort — if GCS is
+    // having a bad day we'd rather complete the upload (the row is
+    // already pointing at the new object) and leave a single orphan
+    // for the future sweep job than fail an otherwise-successful
+    // user action. Capture the outcome in the audit row so we can
+    // reconcile later.
+    let previousObjectDeleted: boolean | "errored" = false;
+    if (previousObjectKey && previousObjectKey !== normalizedPath) {
+      try {
+        const previousFile =
+          await objectStorage.getObjectEntityFile(previousObjectKey);
+        await previousFile.delete();
+        previousObjectDeleted = true;
+      } catch (err) {
+        if (err instanceof ObjectNotFoundError) {
+          // The row pointed at an object that wasn't in the bucket
+          // anymore (manual cleanup, prior failed write, etc).
+          // Treat as success — there's nothing to delete.
+          previousObjectDeleted = true;
+        } else {
+          req.log.warn(
+            { err, previous_object_key: previousObjectKey },
+            "prescription_attachment_replace_cleanup_failed",
+          );
+          previousObjectDeleted = "errored";
+        }
+      }
+    }
+
     await logAudit({
       action: "patient.prescription.attachment.upload",
       adminEmail: req.adminEmail ?? null,
@@ -366,7 +420,12 @@ router.post(
         // record only the bounded technical metadata.
         content_type: actualContentType,
         size_bytes: actualSize,
-        replaced_existing: rx.attachmentObjectKey !== null,
+        replaced_existing: previousObjectKey !== null,
+        // Record whether the OLD object's bytes were cleaned up.
+        // `false` here means there was nothing to clean (no prior
+        // attachment); `"errored"` means the previous bytes are
+        // still in the bucket and a sweep is required.
+        previous_object_deleted: previousObjectDeleted,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -495,6 +554,44 @@ router.delete(
       return;
     }
 
+    // Delete the GCS bytes BEFORE clearing the DB column. Order
+    // matters here: if we cleared the DB first and then GCS failed,
+    // the row would have no pointer to the orphaned bytes and the
+    // future sweep job would have no way to know they should be
+    // deleted (it relies on "in bucket but not referenced by any
+    // row" — which would still be true for these orphans, so the
+    // sweep would catch them, but having an audit record of the
+    // failure makes manual reconciliation easier in the meantime).
+    //
+    // Best-effort: a transient GCS error must not leave the row
+    // pointing at a file the user thinks they removed. We always
+    // null the columns; the audit row records whether the bytes
+    // were actually deleted so a future sweep can reconcile.
+    // Definite assignment — every branch below sets this before
+    // the audit row is written. Declared without an initializer so
+    // eslint's no-useless-assignment doesn't fire on a dead `false`.
+    let bytesDeleted: boolean | "errored";
+    try {
+      const objectFile = await objectStorage.getObjectEntityFile(
+        rx.attachmentObjectKey,
+      );
+      await objectFile.delete();
+      bytesDeleted = true;
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) {
+        // Already gone (manual cleanup, prior failed write). The
+        // user's intent — "this prescription has no document" —
+        // is satisfied. Treat as success.
+        bytesDeleted = true;
+      } else {
+        req.log.warn(
+          { err, prescription_id: rx.id },
+          "prescription_attachment_delete_bytes_failed",
+        );
+        bytesDeleted = "errored";
+      }
+    }
+
     const db = drizzle(getDbPool());
     const now = new Date();
     await db
@@ -515,7 +612,13 @@ router.delete(
       adminClerkId: req.adminClerkId ?? null,
       targetTable: "prescriptions",
       targetId: rx.id,
-      metadata: { patient_id: ids.data.id },
+      metadata: {
+        patient_id: ids.data.id,
+        // `true` = bytes are gone or were already gone; `"errored"`
+        // = column cleared but bytes remain in the bucket and a
+        // sweep is required.
+        bytes_deleted: bytesDeleted,
+      },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
