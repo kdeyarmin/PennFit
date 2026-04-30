@@ -18,11 +18,42 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
+args = "Resupply API"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Resupply Dashboard"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
 args = "Resupply Worker"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "resupply-check"
+
+[[workflows.workflow]]
+name = "Resupply API"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8081 BASE_PATH=/resupply-api pnpm --filter @workspace/resupply-api run dev"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Resupply Dashboard"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8080 BASE_PATH=/resupply pnpm --filter @workspace/resupply-dashboard run dev"
+
+[workflows.workflow.metadata]
+outputType = "service"
+restartOn = { success = false, failure = true, updateConfig = true }
 
 [[workflows.workflow]]
 name = "Resupply Worker"

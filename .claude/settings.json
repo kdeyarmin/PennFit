@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /tmp/cc-agent/66286595/project && pnpm run build 2>&1 | tail -20; exit 0",
+            "timeout": 120,
+            "statusMessage": "Building project..."
+          }
+        ]
+      }
+    ]
+  }
+}
