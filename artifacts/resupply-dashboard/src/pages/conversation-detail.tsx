@@ -21,6 +21,9 @@ import { ErrorPanel } from "../components/ErrorPanel";
 import { Button } from "../components/Button";
 import { fullName, formatDateTime } from "../lib/format";
 import { applyTemplate, templatesForChannel } from "../lib/reply-templates";
+import { applyMacro, applyLegacyFirstName } from "../lib/macro-merge";
+import { listMacros, type CsrMacro } from "../lib/csr-macros-api";
+import { useQuery } from "@tanstack/react-query";
 import { useDraftAutosave } from "../lib/use-draft-autosave";
 
 // Conversation viewer. Renders the chronological message timeline as
@@ -196,7 +199,29 @@ function ReplyComposer({
     (restored) => setBody(restored),
   );
 
-  const templates = templatesForChannel(channel);
+  // DB-backed macros (preferred). Falls back to the hardcoded
+  // templatesForChannel() list if the API call fails (preview mode,
+  // network blip, or the table is empty in a fresh DB) so the
+  // composer never loses its picker entirely.
+  const macrosQuery = useQuery({
+    queryKey: ["admin-csr-macros-picker"],
+    queryFn: () => listMacros({ includeInactive: false }),
+    staleTime: 60_000,
+  });
+  const dbMacros = macrosQuery.data?.macros ?? [];
+  const filteredMacros: CsrMacro[] =
+    channel === "sms" || channel === "email"
+      ? dbMacros.filter((m) =>
+          m.channels.includes(channel as "sms" | "email"),
+        )
+      : [];
+  // Hardcoded fallback only when the DB list is empty AND the query
+  // resolved (success with no rows OR error). While loading, show
+  // nothing rather than flash legacy templates over the eventual list.
+  const fallbackTemplates =
+    !macrosQuery.isPending && filteredMacros.length === 0
+      ? templatesForChannel(channel)
+      : [];
 
   const isClosed = status === "closed";
   const isVoice = channel === "voice";
@@ -258,14 +283,31 @@ function ReplyComposer({
   }
 
   function onInsertTemplate(templateId: string) {
-    const tpl = templates.find((t) => t.id === templateId);
-    if (!tpl) return;
-    const rendered = applyTemplate(tpl.body, patientFirstName);
-    // If the textarea is empty, replace; otherwise append on a new
-    // paragraph so admins who half-typed something don't lose it.
+    let rendered: string | null = null;
+    // 1. DB-backed macro (id is the macro UUID).
+    const macro = filteredMacros.find((m) => m.id === templateId);
+    if (macro) {
+      // Apply both substitution passes — {{namespace.key}} for the
+      // new merge tokens AND legacy {firstName} for any historical
+      // body authored before the migration.
+      rendered = applyLegacyFirstName(
+        applyMacro(macro.body, {
+          patient: { firstName: patientFirstName },
+        }),
+        patientFirstName,
+      );
+    }
+    // 2. Hardcoded fallback (id is the template id).
+    if (!rendered) {
+      const tpl = fallbackTemplates.find((t) => t.id === templateId);
+      if (tpl) rendered = applyTemplate(tpl.body, patientFirstName);
+    }
+    if (!rendered) return;
     setBody((prev) => {
       const trimmedPrev = prev.trim();
-      return trimmedPrev.length === 0 ? rendered : `${prev.trimEnd()}\n\n${rendered}`;
+      return trimmedPrev.length === 0
+        ? rendered!
+        : `${prev.trimEnd()}\n\n${rendered}`;
     });
     setStatusMsg(null);
     setError(null);
@@ -280,38 +322,49 @@ function ReplyComposer({
           : "Sends on the channel the patient is already using. Audited."
       }
     >
-      {!isClosed && templates.length > 0 && (
-        <div className="mb-3 flex items-center gap-2">
-          <label
-            htmlFor="reply-template"
-            className="text-xs font-semibold"
-            style={{ color: "#6b7280" }}
-          >
-            Insert template:
-          </label>
-          {/* Use a controlled-but-resetting select: we set value="" so
-              after every selection the dropdown returns to the
-              placeholder, encouraging a fresh choice for the next
-              insert. */}
-          <select
-            id="reply-template"
-            value=""
-            disabled={reply.isPending}
-            onChange={(e) => {
-              if (e.target.value) onInsertTemplate(e.target.value);
-            }}
-            className="rounded border px-2 py-1 text-xs"
-            style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
-          >
-            <option value="">Choose a template…</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {!isClosed &&
+        (filteredMacros.length > 0 || fallbackTemplates.length > 0) && (
+          <div className="mb-3 flex items-center gap-2">
+            <label
+              htmlFor="reply-template"
+              className="text-xs font-semibold"
+              style={{ color: "#6b7280" }}
+            >
+              Insert canned reply:
+            </label>
+            <select
+              id="reply-template"
+              value=""
+              disabled={reply.isPending}
+              onChange={(e) => {
+                if (e.target.value) onInsertTemplate(e.target.value);
+              }}
+              className="rounded border px-2 py-1 text-xs"
+              style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+            >
+              <option value="">Choose a reply…</option>
+              {filteredMacros.length > 0 ? (
+                Object.entries(groupByCategory(filteredMacros)).map(
+                  ([category, items]) => (
+                    <optgroup key={category} label={category}>
+                      {items.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ),
+                )
+              ) : (
+                fallbackTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+        )}
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -380,6 +433,19 @@ function ReplyComposer({
       )}
     </Card>
   );
+}
+
+// Group macros by category for the picker. Uncategorized macros bucket
+// to "General". Insertion order in each bucket follows the array order
+// (already sorted by sortOrder + label from the API).
+function groupByCategory(macros: CsrMacro[]): Record<string, CsrMacro[]> {
+  const out: Record<string, CsrMacro[]> = {};
+  for (const m of macros) {
+    const cat = m.category?.trim() || "General";
+    if (!out[cat]) out[cat] = [];
+    out[cat]!.push(m);
+  }
+  return out;
 }
 
 function BackLink() {

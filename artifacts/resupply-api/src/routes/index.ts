@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
+import csrMacrosRouter from "./admin/csr-macros.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import auditRouter from "./audit/index.js";
@@ -64,5 +65,10 @@ router.use(shopOrdersAdminRouter);
 // received → refunded|replaced|closed) with strict from-state
 // assertions on every transition.
 router.use(shopReturnsAdminRouter);
+// /admin/csr-macros/* — admin CRUD for the canned-reply library used
+// by the in-thread reply composer. See migration 0017 + the
+// macroMerge helper in the dashboard for the {{namespace.key}}
+// substitution syntax.
+router.use(csrMacrosRouter);
 
 export default router;

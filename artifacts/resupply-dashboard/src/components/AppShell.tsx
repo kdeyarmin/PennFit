@@ -53,6 +53,11 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Returns & RMAs",
     matchPrefix: "/admin/shop/returns",
   },
+  {
+    href: "/admin/macros",
+    label: "Canned Replies",
+    matchPrefix: "/admin/macros",
+  },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
