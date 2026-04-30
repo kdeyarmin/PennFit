@@ -250,6 +250,7 @@ function AccountInner() {
             previewMode={previewMode === true}
           />
           <CommPrefsSection />
+          <DataExportSection />
         </div>
         <aside className="space-y-6">
           <SavedCardSection card={data.savedCard ?? null} />
@@ -277,6 +278,45 @@ function PreviewBanner() {
         </p>
       </div>
     </div>
+  );
+}
+
+// Self-service data export. Hits /shop/me/export which streams a
+// JSON file with every cash-pay record we hold for the user. No PHI
+// (clinical data lives in a separate system); the section copy
+// surfaces that explicitly so customers know to file a separate
+// request for the resupply side if needed.
+function DataExportSection() {
+  return (
+    <section
+      className="glass-card rounded-2xl p-6 space-y-2"
+      data-testid="account-data-export"
+    >
+      <h2 className="font-semibold">Your data</h2>
+      <p className="text-sm text-muted-foreground">
+        Download every record we hold for your account on the cash-pay
+        shop — orders, subscriptions, returns, reviews, communication
+        preferences. The download is a JSON file; clinical / insurance
+        data isn&apos;t included (those live in a separate system —
+        email{" "}
+        <a
+          className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
+          href="mailto:support@pennpaps.com"
+        >
+          support@pennpaps.com
+        </a>{" "}
+        for that).
+      </p>
+      <div>
+        <a
+          href="/resupply-api/shop/me/export"
+          className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--penn-navy))] text-white text-sm font-semibold px-4 py-2 hover:bg-[hsl(var(--penn-navy))]/90"
+          data-testid="account-data-export-download"
+        >
+          Download my data (JSON)
+        </a>
+      </div>
+    </section>
   );
 }
 
