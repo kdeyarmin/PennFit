@@ -391,7 +391,6 @@ router.post(
     }
 
     let stripeRefundId: string | null = null;
-    let refundError: string | null = null;
     const stripeConfig = readStripeConfigOrNull(process.env);
     const stripe = stripeConfig ? getStripeClient(stripeConfig) : null;
     if (stripe && orderRow.stripe_payment_intent_id) {
@@ -410,7 +409,7 @@ router.post(
         // Don't block the workflow on a Stripe-side error — log it and
         // let the admin retry. We keep status at `received` so the
         // operator can re-issue.
-        refundError = err instanceof Error ? err.message : String(err);
+        const refundError = err instanceof Error ? err.message : String(err);
         req.log?.warn(
           { returnId: ret.id, err: refundError },
           "stripe refund failed",

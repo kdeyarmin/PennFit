@@ -21,7 +21,7 @@
 // fields are non-null.
 
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import {

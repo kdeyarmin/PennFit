@@ -22,7 +22,7 @@ const router: IRouter = Router();
 
 router.get("/admin/system-info", requireAdmin, async (_req, res) => {
   const db = drizzle(getDbPool());
-  let pgVersion: string | null = null;
+  let pgVersion: string | null;
   try {
     const v = await db.execute<{ server_version: string }>(
       sql`SHOW server_version`,

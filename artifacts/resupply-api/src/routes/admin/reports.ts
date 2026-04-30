@@ -13,13 +13,12 @@
 // reference cash-pay orders.
 
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, desc } from "drizzle-orm";
+import { and, gte, lte, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
   getDbPool,
   shopOrders,
-  shopOrderItems,
   shopReturns,
 } from "@workspace/resupply-db";
 
@@ -97,21 +96,10 @@ router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
     )
     .orderBy(desc(shopOrders.createdAt));
 
-  // Build line-item map for "first product" + qty summary.
-  const orderIds = orders.map((o) => o.id);
-  const itemsByOrder = new Map<string, Array<{ productId: string; quantity: number }>>();
-  if (orderIds.length > 0) {
-    const items = await db
-      .select({
-        orderId: shopOrderItems.orderId,
-        productId: shopOrderItems.productId,
-        quantity: shopOrderItems.quantity,
-      })
-      .from(shopOrderItems)
-      .where(eq(shopOrderItems.orderId, orderIds[0]!)) // fallback safety
-      .limit(0);
-    void items; // intentionally pulled-in once for the typesystem; we re-query below with IN
-  }
+  // Line-item joining is intentionally not in the orders CSV — the
+  // returns CSV below carries it via shop_returns.exchangeProductId.
+  // Operators wanting per-line breakdowns hit the per-order detail
+  // route instead.
 
   setCsvHeaders(
     res,
