@@ -585,6 +585,50 @@ export interface CreatePatientResponse {
 }
 
 /**
+ * Counter snapshot from one sweep run. Every field is a
+non-negative integer. Field meanings live in the source-of-
+truth doc string in
+`artifacts/resupply-worker/src/jobs/prescription-attachment-sweep.ts`
+("Counters semantics" block).
+
+ */
+export interface PhiSweepCounters {
+  /** @minimum 0 */
+  objectsScanned: number;
+  /** @minimum 0 */
+  referencesLoaded: number;
+  /** @minimum 0 */
+  orphansDeleted: number;
+  /** @minimum 0 */
+  orphansTooYoung: number;
+  /** @minimum 0 */
+  orphansNoTimeCreated: number;
+  /** @minimum 0 */
+  deleteErrors: number;
+  /** @minimum 0 */
+  delete404Idempotent: number;
+  /** @minimum 0 */
+  recheckSaved: number;
+  /** @minimum 0 */
+  nonAttachmentSkipped: number;
+}
+
+/**
+ * One row of summary state from the weekly PHI attachment sweep.
+All counter fields mirror the worker's `SweepCounters` shape
+(snake_case in the worker / audit metadata; camelCased here to
+match the rest of this API surface).
+
+ */
+export interface PhiSweepStatus {
+  /** `audit_log.occurred_at` for the most recent
+`prescription.attachment.sweep` row.
+ */
+  lastRunAt: string;
+  counters: PhiSweepCounters;
+}
+
+/**
  * Top-of-page admin counters. Every value is a row count over
 the resupply.* tables, taken at request time. Numbers, not PHI.
 
@@ -608,6 +652,19 @@ window (now() - interval '7 days').
   fulfillmentsThisWeek: number;
   /** patients.status = 'paused'. */
   pausedPatients: number;
+  /** Status of the most recent run of the weekly PHI attachment
+sweep job (worker: `prescriptions.attachment.sweep`,
+cron `13 3 * * 0`). Sourced from the most recent
+`resupply.audit_log` row with `action =
+'prescription.attachment.sweep'`. `null` means no sweep
+audit row exists yet (worker has never completed a run on
+this deploy) OR the latest row's metadata could not be
+parsed into the expected counter shape (degraded gracefully
+so a malformed historical row never 500s the dashboard).
+Counters are documented in
+`artifacts/resupply-worker/src/jobs/prescription-attachment-sweep.ts`.
+ */
+  prescriptionAttachmentSweep: null | PhiSweepStatus;
 }
 
 export type PatientListItemStatus =

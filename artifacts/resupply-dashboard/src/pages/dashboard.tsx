@@ -2,6 +2,7 @@ import { Link } from "wouter";
 import { useGetDashboardSummary } from "@workspace/resupply-api-client";
 import { KpiCard } from "../components/Card";
 import { ErrorPanel } from "../components/ErrorPanel";
+import { PhiSweepStatusCard } from "../components/PhiSweepStatusCard";
 
 // Admin landing page. Six KPI tiles + four "filtered queue" deep
 // links. Numbers come from /dashboard/summary which is a single
@@ -97,6 +98,11 @@ export function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      <PhiSweepStatusCard
+        data={data?.prescriptionAttachmentSweep}
+        isLoading={isPending}
+      />
 
       <section
         className="bg-white border rounded-lg p-5"

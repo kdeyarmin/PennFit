@@ -112,8 +112,14 @@ Implementation: `artifacts/resupply-worker/src/jobs/prescription-attachment-swee
 
 Operational follow-ups:
 
-- Surface the counters on the admin dashboard's readiness section
-  (planned, not built; backed by an audit-log read query).
+- Surface the counters on the admin dashboard's readiness section —
+  **shipped**. The most-recent `prescription.attachment.sweep` audit
+  row is projected onto `GET /dashboard/summary` as
+  `prescriptionAttachmentSweep` and rendered by
+  `PhiSweepStatusCard` on the admin home. Three states: never run /
+  healthy / needs attention. "Needs attention" fires on any
+  `deleteErrors`, any `orphansNoTimeCreated`, or `lastRunAt > 14
+  days`.
 - Promote to nightly cron if any single weekly run deletes >10
   objects, indicating volume has grown past the cheap-to-leave
   threshold.
