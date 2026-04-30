@@ -1295,6 +1295,15 @@ importers:
 
   scripts:
     dependencies:
+      '@workspace/resupply-auth':
+        specifier: workspace:*
+        version: link:../lib/resupply-auth
+      '@workspace/resupply-email':
+        specifier: workspace:*
+        version: link:../lib/resupply-email
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
       stripe:
         specifier: ^22.1.0
         version: 22.1.0(@types/node@25.3.5)
@@ -1302,6 +1311,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
+      '@types/pg':
+        specifier: ^8.18.0
+        version: 8.18.0
       tsx:
         specifier: 'catalog:'
         version: 4.21.0

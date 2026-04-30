@@ -69,3 +69,9 @@ export type {
   EmailSender,
 } from "./types";
 export { makeRequireSession, makeRequireRole } from "./middleware";
+export {
+  renderPasswordResetEmail,
+  renderVerifyEmail,
+  type AuthEmailContext,
+  type RenderedEmail,
+} from "./email-templates";
