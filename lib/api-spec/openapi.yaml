@@ -653,8 +653,8 @@ components:
           $ref: "#/components/schemas/FacialMeasurements"
           description: >-
             Optional facial measurements (mm) captured on-device during the
-            Penn Fit flow. Forwarded to Penn so fulfillment can verify size
-            selection. Numeric only — never includes images.
+            PennPaps fitter flow. Forwarded to Penn so fulfillment can verify
+            size selection. Numeric only — never includes images.
         consentToContact:
           type: boolean
           description: Patient consents to be contacted by Penn Home Medical Supply about this order

@@ -638,7 +638,7 @@ importers:
         specifier: 'catalog:'
         version: 3.25.76
 
-  artifacts/penn-fit-tutorial:
+  artifacts/pennpaps-tutorial:
     devDependencies:
       '@react-spring/web':
         specifier: ^10.0.3

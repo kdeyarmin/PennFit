@@ -2,7 +2,7 @@
 
 ## Context
 
-The original plan called for AWS Cognito. Penn Fit already runs Clerk and
+The original plan called for AWS Cognito. The PennPaps fitter already runs Clerk and
 the existing `artifacts/api-server` integrates Clerk via `@clerk/express`.
 
 Cognito is fine but adds another vendor BAA and a second auth model in the
@@ -11,7 +11,7 @@ same monorepo.
 ## Decision
 
 Use Clerk for admin authentication on the resupply dashboard, mirroring
-Penn Fit's pattern.
+the fitter's pattern.
 
 - Admin allowlist: a comma-separated `RESUPPLY_ADMIN_EMAILS` env var,
   checked by a `requireAdmin` middleware against the user's
@@ -21,7 +21,7 @@ Penn Fit's pattern.
   (Phase 10) uses passwordless email/SMS magic-link auth that Clerk
   supports natively.
 
-The same pattern (Clerk allowlist) gates the Penn Fit admin dashboard, so
+The same pattern (Clerk allowlist) gates the PennPaps fitter admin dashboard, so
 admins get one login for both products if they are listed in both
 allowlists.
 

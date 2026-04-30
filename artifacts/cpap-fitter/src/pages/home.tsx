@@ -73,7 +73,7 @@ export function Home() {
             </Button>
           </Link>
           <Button asChild size="lg" variant="ghost" className="h-14 px-4 text-base rounded-full text-muted-foreground hover:text-primary gap-2">
-            <a href="/penn-fit-tutorial/" target="_blank" rel="noopener noreferrer">
+            <a href="/pennpaps-tutorial/" target="_blank" rel="noopener noreferrer">
               <PlayCircle className="w-5 h-5" />
               Watch the tutorial
               <span className="sr-only">(opens in a new tab)</span>

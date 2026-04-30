@@ -153,7 +153,7 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
   lines.push("─── CONSENT ───");
   lines.push(`Patient consents to be contacted about this order: ${order.consentToContact ? "YES" : "NO"}`);
   lines.push("");
-  lines.push("This order was submitted through Penn Fit. No data is stored on the server.");
+  lines.push("This order was submitted through PennPaps. No data is stored on the server.");
   return lines.join("\n");
 }
 
@@ -187,7 +187,7 @@ export async function sendOrderToPenn(
   }
 
   const body = composeEmailBody(order, orderReference);
-  const subject = `Penn Fit Order ${orderReference} — ${order.chosenMask.modelNumber} for ${order.patient.lastName}`;
+  const subject = `PennPaps Order ${orderReference} — ${order.chosenMask.modelNumber} for ${order.patient.lastName}`;
 
   try {
     const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
@@ -203,7 +203,7 @@ export async function sendOrderToPenn(
             subject,
           },
         ],
-        from: { email: fromEmail, name: "Penn Fit" },
+        from: { email: fromEmail, name: "PennPaps" },
         reply_to: { email: order.patient.email, name: `${order.patient.firstName} ${order.patient.lastName}` },
         content: [{ type: "text/plain", value: body }],
       }),

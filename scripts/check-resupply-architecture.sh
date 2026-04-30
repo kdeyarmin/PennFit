@@ -164,7 +164,7 @@ for libdir in lib/resupply-contracts/src lib/resupply-domain/src lib/resupply-db
   fi
 done
 
-# Rule 6: resupply packages must not import Penn Fit's lib/db, lib/api-zod,
+# Rule 6: resupply packages must not import the PennPaps fitter's lib/db, lib/api-zod,
 # or lib/api-client-react. Different product, different schema. The
 # dashboard now ships @workspace/resupply-api-client and is included in
 # this sweep — the Phase 0 carve-out documented in earlier revisions of
@@ -172,7 +172,7 @@ done
 # Quote-agnostic: forbid both single- and double-quoted forms.
 for resdir in lib/resupply-contracts/src lib/resupply-domain/src lib/resupply-db/src lib/resupply-audit/src lib/resupply-telecom/src lib/resupply-ai/src lib/resupply-testing/src artifacts/resupply-api/src artifacts/resupply-worker/src artifacts/resupply-dashboard/src; do
   forbid_imports_in "$resdir" \
-    "$resdir must not import Penn Fit packages (use the resupply-* equivalents)" \
+    "$resdir must not import PennPaps fitter packages (use the resupply-* equivalents)" \
     "@workspace/db['\"]" \
     "@workspace/api-zod['\"]" \
     "@workspace/api-client-react['\"]"

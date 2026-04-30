@@ -1,4 +1,4 @@
-# PennFit / PennPaps
+# PennPaps
 
 Privacy-first CPAP fitting, ordering, and resupply automation for
 Penn Home Medical Supply. See [`replit.md`](./replit.md) for the
@@ -9,13 +9,13 @@ top-level structure is:
 
 | Path | What lives here |
 | --- | --- |
-| `artifacts/api-server` | Penn-Fit storefront / fitter API (Express). |
+| `artifacts/api-server` | PennPaps storefront / fitter API (Express). |
 | `artifacts/resupply-api` | Resupply automation API + voice WS endpoint (Express). |
 | `artifacts/resupply-worker` | `pg-boss` background worker for reminders and PHI sweeps. |
 | `artifacts/cpap-fitter` | Customer-facing fitter SPA (Vite + React). |
 | `artifacts/resupply-dashboard` | Internal admin console SPA (Vite + React). |
 | `artifacts/mockup-sandbox` | Internal UI/UX mockup playground (Vite + React). |
-| `artifacts/penn-fit-tutorial` | Animated onboarding tutorial app (Vite + React). |
+| `artifacts/pennpaps-tutorial` | Animated onboarding tutorial app (Vite + React). |
 | `lib/*` | Shared workspace packages (DB, contracts, messaging, etc.). |
 
 ## Prerequisites
@@ -93,7 +93,7 @@ never commit real secrets.
 | `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS` | `resupply-api`, `resupply-worker` | Replit Object Storage paths for prescription attachments. |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Vite apps | Browser-side Clerk publishable key. |
 | `VITE_ENABLE_DEMO`, `VITE_RESUPPLY_CONTACT_EMAIL` | Vite apps | UI feature flags / display values. |
-| `CODEGEN_OUT_PENN_FIT_CLIENT`, `CODEGEN_OUT_PENN_FIT_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |
+| `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |
 | `REPL_ID`, `REPLIT_DEV_DOMAIN`, `REPLIT_DOMAINS` | All services | Set automatically on Replit; usually leave blank locally. |
 
 ## Useful scripts

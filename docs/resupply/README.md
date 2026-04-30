@@ -91,7 +91,7 @@ trigger that forces a migration before any real PHI can land. Read ADR
 
 ## What does not belong here
 
-- **Penn Fit changes.** Different product, different schema. Penn Fit's
+- **PennPaps fitter changes.** Different product, different schema. The fitter's
   `lib/db`, `lib/api-zod`, and `lib/api-client-react` are off-limits to
   every resupply package (the dashboard's `api-client-react` import is
   an explicit, time-limited exception — see ARCHITECTURE.md).
