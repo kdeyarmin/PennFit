@@ -32,10 +32,10 @@ export const auditLog = resupplySchema.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
 
-    // Who. adminEmail is denormalised from Clerk so the audit row
-    // remains readable if the Clerk user is later deleted.
+    // Who. adminEmail is denormalised from the auth provider so the audit row
+    // remains readable if the auth user is later deleted.
     adminEmail: text("operator_email"),
-    adminClerkId: text("operator_clerk_id"),
+    adminUserId: text("operator_clerk_id"),
 
     // What. Action is a free-form verb namespaced like
     // "patient.view" / "episode.confirm" / "fulfillment.upload_csv".

@@ -70,7 +70,7 @@ export const shopOrders = resupplySchema.table(
      */
     cartHash: text("cart_hash"),
     /**
-     * Clerk user ID of the buyer when the checkout was initiated by
+     * auth user ID of the buyer when the checkout was initiated by
      * a signed-in user. Nullable because guest checkout is still
      * supported. Indexed for the order-history query
      * (`/shop/me/orders` filters by this column ordered by

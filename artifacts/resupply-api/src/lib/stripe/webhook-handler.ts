@@ -542,7 +542,7 @@ async function syncCustomerAfterCheckout(
 }
 
 /**
- * Mark the abandoned-cart row for this Clerk user as recovered so the
+ * Mark the abandoned-cart row for this auth user as recovered so the
  * dispatcher never nudges a customer who already converted. Called
  * from `checkout.session.completed`.
  *

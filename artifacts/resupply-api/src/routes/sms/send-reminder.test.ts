@@ -171,7 +171,7 @@ describe("POST /sms/send-reminder", () => {
     expect(res.body.error).toBe("messaging_not_configured");
   });
 
-  it("returns 401 when there is no Clerk session", async () => {
+  it("returns 401 when there is no session", async () => {
     setMessagingEnv();
     getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp())

@@ -294,7 +294,7 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
     await logAudit({
       action: "patient.timeline.view",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "patients",
       targetId: id,
       ip: req.ip ?? null,

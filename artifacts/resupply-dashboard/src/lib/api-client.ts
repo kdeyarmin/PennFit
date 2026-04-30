@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useAuth } from "@clerk/react";
 import { setAuthTokenGetter } from "@workspace/resupply-api-client";
 
-// Bridge between Clerk's session-token API and the generated resupply
+// Bridge between the session-token API and the generated resupply
 // API client's `setAuthTokenGetter` hook.
 //
 // The generated client (orval + react-query) reads the bearer token
@@ -27,7 +27,7 @@ import { setAuthTokenGetter } from "@workspace/resupply-api-client";
 //   2. `useApiAuthBridge` re-registers the getter against Clerk's
 //      `useAuth().getToken` on every session change (sign-in, sign-
 //      out, switch account). Behaviorally equivalent to the global
-//      getter once Clerk has loaded, but this keeps the bridge in
+//      getter once the auth provider has loaded, but this keeps the bridge in
 //      lockstep with React state for any future API surface change.
 //
 // On sign-out, both getters resolve to null, which the custom-fetch
@@ -64,7 +64,7 @@ export function useApiAuthBridge(): void {
       try {
         return await getToken();
       } catch {
-        // Defensive: if Clerk throws (e.g. network blip during token
+        // Defensive: if the auth provider throws (e.g. network blip during token
         // refresh), suppress the error so the API client still issues
         // the request — without a token, it'll get a clean 401 and
         // the gate handles it. Throwing here would crash the request

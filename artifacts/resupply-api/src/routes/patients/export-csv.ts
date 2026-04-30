@@ -171,7 +171,7 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
     await logAudit({
       action: "patient.export.csv",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "patients",
       targetId: null,
       ip: req.ip ?? null,

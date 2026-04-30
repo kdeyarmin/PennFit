@@ -1,6 +1,6 @@
 // /shop/me/subscriptions — patient-facing subscription management.
 //
-// Endpoints, all Clerk-gated (signed-in users only):
+// Endpoints, all auth-gated (signed-in users only):
 //   GET  /shop/me/subscriptions               → list this user's subs
 //   POST /shop/me/subscriptions/:id/cancel    → flip cancel_at_period_end
 //   POST /shop/me/subscriptions/:id/pause     → pause_collection { void }

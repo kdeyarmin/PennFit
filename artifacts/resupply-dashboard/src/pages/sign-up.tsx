@@ -1,6 +1,6 @@
 import { SignUp } from "@clerk/react";
 
-// PennPaps-branded Clerk sign-up page. We expose sign-up because Clerk's
+// PennPaps-branded the auth provider sign-up page. We expose sign-up because Clerk's
 // default sign-in form links to it; the admin allowlist still
 // gates console access, so a self-signed-up user lands on the "not
 // authorized" screen until an admin adds them to

@@ -1,5 +1,5 @@
 // shop_reviews — customer-submitted product reviews for the cash-pay
-// shop. Any signed-in Clerk customer can submit one review per
+// shop. Any signed-in the auth provider customer can submit one review per
 // product (UNIQUE on clerk_user_id + product_id). Every review is
 // PENDING by default and only becomes publicly visible after an
 // admin approves it (status='approved'). Edits to an approved review
@@ -37,7 +37,7 @@ export const shopReviews = resupplySchema.table(
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
     /**
-     * Clerk user ID of the review author. Required — anonymous /
+     * auth user ID of the review author. Required — anonymous /
      * guest reviews are out of scope (no stable identity for
      * one-per-user enforcement or moderation appeals).
      */
@@ -57,9 +57,9 @@ export const shopReviews = resupplySchema.table(
     /**
      * Public display name, denormalized at submit time as
      * "FirstName L." (e.g. "Sarah K."). Falls back to "PennPaps
-     * customer" when the Clerk profile lacks a first name. Stored
-     * here so public reads never need a Clerk lookup AND so a
-     * later Clerk profile rename doesn't silently rewrite already-
+     * customer" when the the auth provider profile lacks a first name. Stored
+     * here so public reads never need a auth lookup AND so a
+     * later the auth provider profile rename doesn't silently rewrite already-
      * approved review attribution.
      */
     authorDisplayName: text("author_display_name").notNull(),
@@ -75,7 +75,7 @@ export const shopReviews = resupplySchema.table(
     moderationNote: text("moderation_note"),
     /** When the most recent moderation decision was applied. */
     moderatedAt: timestamp("moderated_at", { withTimezone: true }),
-    /** Clerk user ID of the moderating admin. */
+    /** auth user ID of the moderating admin. */
     moderatedBy: text("moderated_by"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

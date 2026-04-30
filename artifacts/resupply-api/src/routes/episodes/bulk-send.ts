@@ -104,7 +104,7 @@ router.post("/episodes/bulk-send", requireAdmin, async (req, res) => {
   const actor = {
     kind: "admin" as const,
     adminEmail: req.adminEmail ?? null,
-    adminClerkId: req.adminClerkId ?? null,
+    adminUserId: req.adminUserId ?? null,
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
   };

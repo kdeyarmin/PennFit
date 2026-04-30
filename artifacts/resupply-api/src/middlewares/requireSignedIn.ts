@@ -9,7 +9,7 @@
 // employee must not be able to access PHI".
 //
 // Behavior:
-//   * 401 if there's no Clerk session on the request.
+//   * 401 if there's no session on the request.
 //   * Otherwise sets `req.userClerkId` and continues.
 //
 // Why we DON'T require a verified email here: a freshly-signed-up

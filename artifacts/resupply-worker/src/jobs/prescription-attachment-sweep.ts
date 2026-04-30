@@ -346,7 +346,7 @@ export function buildProductionSweepDeps(
       await logAudit({
         action: "prescription.attachment.sweep",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: "prescriptions",
         targetId: null,
         metadata: { ...counters },

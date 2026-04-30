@@ -109,7 +109,7 @@ describe("GET /audit/export.csv", () => {
     }
   });
 
-  it("returns 401 with no Clerk session", async () => {
+  it("returns 401 with no session", async () => {
     getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp()).get(
       "/resupply-api/audit/export.csv",
@@ -157,7 +157,7 @@ describe("GET /audit/export.csv", () => {
     const lines = res.text.split("\r\n");
     // header + 1 row + trailing empty (from final \r\n)
     expect(lines[0]).toBe(
-      "id,occurredAt,adminEmail,adminClerkId,action,targetTable,targetId,ip,userAgent,metadataJson",
+      "id,occurredAt,adminEmail,adminUserId,action,targetTable,targetId,ip,userAgent,metadataJson",
     );
     expect(lines[1]).toContain(AUDIT_ID);
     expect(lines[1]).toContain("patient.view");
@@ -227,13 +227,13 @@ describe("GET /audit/export.csv", () => {
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const arg = (logAuditMock.mock.calls[0]?.[0] ?? {}) as {
       action?: string;
-      adminClerkId?: string | null;
+      adminUserId?: string | null;
       adminEmail?: string | null;
       targetTable?: string | null;
       metadata?: Record<string, unknown>;
     };
     expect(arg.action).toBe("audit.export.csv");
-    expect(arg.adminClerkId).toBe("user_op");
+    expect(arg.adminUserId).toBe("user_op");
     expect(arg.adminEmail).toBe(ALLOWED_EMAIL);
     expect(arg.targetTable).toBe("audit_log");
     expect(arg.metadata).toMatchObject({ count: 0, outcome: "complete" });

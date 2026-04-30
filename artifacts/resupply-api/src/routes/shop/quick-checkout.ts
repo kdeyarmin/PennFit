@@ -119,7 +119,7 @@ router.post(
 
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
-    // Resolve email + display name from Clerk for Customer creation.
+    // Resolve email + display name from the auth provider for Customer creation.
     let email: string | null = null;
     let displayName: string | null = null;
     try {

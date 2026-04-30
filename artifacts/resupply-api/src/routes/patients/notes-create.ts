@@ -76,7 +76,7 @@ router.post("/patients/:id/notes", requireAdmin, async (req, res) => {
       patientId,
       body: sql`${encrypt(body)}`,
       authorEmail: req.adminEmail ?? "<unknown>",
-      authorClerkId: req.adminClerkId ?? null,
+      authorUserId: req.adminUserId ?? null,
     })
     .returning({ id: patientNotes.id, createdAt: patientNotes.createdAt });
 
@@ -88,7 +88,7 @@ router.post("/patients/:id/notes", requireAdmin, async (req, res) => {
   await logAudit({
     action: "patient.note.create",
     adminEmail: req.adminEmail ?? null,
-    adminClerkId: req.adminClerkId ?? null,
+    adminUserId: req.adminUserId ?? null,
     targetTable: "patient_notes",
     targetId: row.id,
     // Structural metadata only. body_length lets reviewers spot

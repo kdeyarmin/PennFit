@@ -201,7 +201,7 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
     await logAudit({
       action: "patient.update",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "patients",
       targetId: id,
       ip: req.ip ?? null,

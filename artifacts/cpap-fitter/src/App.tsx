@@ -111,6 +111,16 @@ const AdminOrderDetail = lazy(() =>
     default: m.AdminOrderDetail,
   })),
 );
+const AdminCustomers = lazy(() =>
+  import("@/pages/admin/customers").then((m) => ({
+    default: m.AdminCustomers,
+  })),
+);
+const AdminCustomerDetailPage = lazy(() =>
+  import("@/pages/admin/customer-detail").then((m) => ({
+    default: m.AdminCustomerDetailPage,
+  })),
+);
 const AdminAuditLog = lazy(() =>
   import("@/pages/admin/audit").then((m) => ({ default: m.AdminAuditLog })),
 );
@@ -118,6 +128,9 @@ const AdminReminders = lazy(() =>
   import("@/pages/admin/reminders").then((m) => ({
     default: m.AdminReminders,
   })),
+);
+const AdminUsers = lazy(() =>
+  import("@/pages/admin/users").then((m) => ({ default: m.AdminUsers })),
 );
 const Reminders = lazy(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
@@ -154,9 +167,8 @@ const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | undefined;
 
 if (!CLERK_PUBLISHABLE_KEY) {
-  // Fail loudly at startup rather than rendering a half-broken UI later.
-  throw new Error(
-    "VITE_CLERK_PUBLISHABLE_KEY is required — set it in Replit Secrets.",
+  console.error(
+    "VITE_CLERK_PUBLISHABLE_KEY is not set — auth features will be unavailable.",
   );
 }
 
@@ -280,12 +292,12 @@ function PatientRouter() {
 }
 
 /**
- * Top-level <Switch>. We split admin and Clerk routes OUT of the patient
+ * Top-level <Switch>. We split admin and auth routes OUT of the patient
  * <Layout> so they can render in their own chrome (sign-in centered card,
  * admin sidebar shell). The admin pages mount inside <AdminShell> which
- * does the Clerk + allowlist gate.
+ * does the auth + allowlist gate.
  *
- * Wouter's nested-routing trick: catching `/sign-in/:rest*` lets Clerk
+ * Wouter's nested-routing trick: catching `/sign-in/:rest*` lets the auth provider
  * own everything below /sign-in (e.g. /sign-in/factor-one) without us
  * pre-defining each step.
  */
@@ -319,6 +331,16 @@ function TopRouter() {
             <AdminOrderDetail />
           </AdminShell>
         </Route>
+        <Route path="/admin/customers">
+          <AdminShell>
+            <AdminCustomers />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/customers/:userId">
+          <AdminShell>
+            <AdminCustomerDetailPage />
+          </AdminShell>
+        </Route>
         <Route path="/admin/audit">
           <AdminShell>
             <AdminAuditLog />
@@ -327,6 +349,11 @@ function TopRouter() {
         <Route path="/admin/reminders">
           <AdminShell>
             <AdminReminders />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/users">
+          <AdminShell>
+            <AdminUsers />
           </AdminShell>
         </Route>
 
@@ -338,7 +365,7 @@ function TopRouter() {
 }
 
 function App() {
-  // Build absolute URLs for Clerk so Clerk's redirects respect our base
+  // Build absolute URLs for the auth provider so the auth provider's redirects respect our base
   // path (they need to be browser-absolute paths, not React route paths).
   return (
     <ClerkProvider
@@ -356,7 +383,7 @@ function App() {
       localization={{
         // Override Clerk's "{{applicationName}}" interpolation so the
         // hosted sign-in / sign-up cards display our real brand name
-        // instead of whatever is set in the Clerk dashboard. Updating the
+        // instead of whatever is set in the auth provider dashboard. Updating the
         // dashboard is the canonical fix (and would also affect emails),
         // but this guarantees the in-app text is always on-brand.
         signIn: {

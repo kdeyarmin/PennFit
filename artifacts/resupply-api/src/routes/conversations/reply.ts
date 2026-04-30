@@ -99,7 +99,7 @@ router.post(
       actor: {
         kind: "admin",
         adminEmail: req.adminEmail ?? null,
-        adminClerkId: req.adminClerkId ?? null,
+        adminUserId: req.adminUserId ?? null,
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       },

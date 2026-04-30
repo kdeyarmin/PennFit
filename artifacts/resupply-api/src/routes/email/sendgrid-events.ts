@@ -117,7 +117,7 @@ router.post(
         await safeAudit({
           action: "email.delivery.bounced",
           adminEmail: null,
-          adminClerkId: null,
+          adminUserId: null,
           targetTable: "messages",
           targetId: null,
           metadata: {

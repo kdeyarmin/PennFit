@@ -125,7 +125,7 @@ router.get("/audit", requireAdmin, async (req, res) => {
       id: r.id,
       occurredAt: toIsoRequired(r.occurred_at),
       adminEmail: r.operator_email,
-      adminClerkId: r.operator_clerk_id,
+      adminUserId: r.operator_clerk_id,
       action: r.action,
       targetTable: r.target_table,
       targetId: r.target_id,

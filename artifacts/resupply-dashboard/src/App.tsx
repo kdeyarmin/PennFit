@@ -39,13 +39,13 @@ import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts"
 //          reachable while signed-out
 //        - everything else funnels through <ConsoleRoute>
 //
-//   3. <ConsoleRoute> — Clerk gate + /me probe + AppShell. Routes
+//   3. <ConsoleRoute> — the auth provider gate + /me probe + AppShell. Routes
 //      to admin pages live INSIDE this gate so a signed-out user
 //      never lands on a page that fires authenticated queries.
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// The console body — only rendered when Clerk says we have a session.
+// The console body — only rendered when the auth provider says we have a session.
 // /me probe outcomes funnel into:
 //   - pending  → loading spinner inside the console shell
 //   - error    → NotAuthorizedPage with a reason derived from status
@@ -165,7 +165,7 @@ function Router() {
 }
 
 function App() {
-  // Register the Clerk → API auth bridge once for the lifetime of
+  // Register the auth → API bridge once for the lifetime of
   // the app. Must live INSIDE ClerkProvider (in main.tsx).
   useApiAuthBridge();
 

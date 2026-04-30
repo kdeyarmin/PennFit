@@ -16,7 +16,7 @@ export type SendActor =
   | {
       kind: "admin";
       adminEmail: string | null;
-      adminClerkId: string | null;
+      adminUserId: string | null;
       ip: string | null;
       userAgent: string | null;
     }

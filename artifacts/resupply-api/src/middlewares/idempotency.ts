@@ -37,7 +37,7 @@
 //
 // Why we MUST mount this AFTER requireAdmin:
 //   The composite PK includes `user_id`, sourced from
-//   `req.adminClerkId`. requireAdmin populates that field. Mounting
+//   `req.adminUserId`. requireAdmin populates that field. Mounting
 //   this before requireAdmin would route every anonymous attempt
 //   through a 500 — fail loudly so the wiring bug is obvious.
 
@@ -110,13 +110,13 @@ export function withIdempotency(endpoint: string) {
       return;
     }
 
-    const userId = req.adminClerkId;
+    const userId = req.adminUserId;
     if (!userId) {
       // Wiring bug: idempotency middleware mounted before requireAdmin.
       // Fail loud so the misconfiguration is obvious in dev.
       logger.error(
         { endpoint },
-        "withIdempotency: req.adminClerkId is unset. " +
+        "withIdempotency: req.adminUserId is unset. " +
           "Did you mount this middleware before requireAdmin?",
       );
       res.status(500).json({

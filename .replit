@@ -9,7 +9,7 @@ args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
 [workflows]
-runButton = "Project"
+runButton = "CPAP Fitter"
 
 [[workflows.workflow]]
 name = "Project"
@@ -32,9 +32,17 @@ args = "CPAP Fitter"
 task = "workflow.run"
 args = "Resupply Worker"
 
+[[workflows.workflow]]
+name = "CPAP Fitter"
+author = "agent"
+
 [[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "resupply-check"
+task = "shell.exec"
+args = "pnpm install --frozen-lockfile && PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
+
+[workflows.workflow.metadata]
+outputType = "service"
+restartOn = { success = false, failure = true, updateConfig = true }
 
 [[workflows.workflow]]
 name = "Resupply API"
@@ -54,18 +62,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=19334 BASE_PATH=/resupply/ pnpm --filter @workspace/resupply-dashboard run dev"
-
-[workflows.workflow.metadata]
-outputType = "service"
-restartOn = { success = false, failure = true, updateConfig = true }
-
-[[workflows.workflow]]
-name = "CPAP Fitter"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
 
 [workflows.workflow.metadata]
 outputType = "service"
@@ -124,5 +120,10 @@ externalPort = 3002
 
 [userenv.shared]
 VITE_CLERK_PUBLISHABLE_KEY = "pk_test_cGxlYXNpbmctYW5jaG92eS00MS5jbGVyay5hY2NvdW50cy5kZXYk"
+RESUPPLY_ADMIN_EMAILS = "penn-admin-test@example.com"
 
 [userenv.development]
+PENN_ADMIN_EMAILS = "penn-admin-test@example.com"
+
+[objectStorage]
+defaultBucketID = "replit-objstore-a89f4666-9708-424b-b390-3f9949919d52"

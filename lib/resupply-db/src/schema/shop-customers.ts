@@ -1,4 +1,4 @@
-// shop_customers — local mirror of "this Clerk user has a Stripe Customer
+// shop_customers — local mirror of "this auth user has a Stripe Customer
 // + saved info" for the PennPaps cash-pay shop.
 //
 // Why a local table at all (Stripe is source of truth for Customers):
@@ -16,10 +16,10 @@
 //   * Card numbers, CVCs, full PANs — never. Only display crumbs
 //     (brand, last4, exp month/year) so we can render
 //     "Visa •••• 4242 — expires 04/29" without a Stripe round-trip.
-//   * Billing email — Clerk owns that. We store `email_lower` only
+//   * Billing email — the auth provider owns that. We store `email_lower` only
 //     for support lookups + audit; primary identity is `clerk_user_id`.
 //
-// PK = clerk_user_id: stable for the user's lifetime in Clerk and
+// PK = clerk_user_id: stable for the user's lifetime in the auth provider and
 // already the natural identifier for every signed-in shop request.
 // Using it directly (instead of an auto-generated id) eliminates a
 // lookup hop on every /shop/me call.
@@ -101,7 +101,7 @@ export const shopCustomers = resupplySchema.table(
     /**
      * Clerk's primary email at row-creation time, lowercased. Lets
      * support search "what shop customer is anna@example.com?" without
-     * a Clerk Backend API call. Refreshed opportunistically on each
+     * a auth provider API call. Refreshed opportunistically on each
      * /shop/me hit.
      */
     emailLower: text("email_lower"),

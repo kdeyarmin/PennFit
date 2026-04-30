@@ -10,7 +10,7 @@
 // Auth bridge: we reuse the same `globalThis.Clerk.session.getToken()`
 // pattern api-client.ts already wires up — see `getTokenFromGlobal`
 // there. The bridge is registered at module load, so by the time any
-// query in this module fires, Clerk has installed `window.Clerk`.
+// query in this module fires, the auth provider has installed `window.Clerk`.
 
 type ClerkGlobal = {
   session?: { getToken: () => Promise<string | null> } | null;

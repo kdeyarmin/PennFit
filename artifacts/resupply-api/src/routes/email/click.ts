@@ -120,7 +120,7 @@ router.get("/email/click", async (req, res) => {
   await safeAudit({
     action: "email.link.clicked",
     adminEmail: null,
-    adminClerkId: null,
+    adminUserId: null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {
@@ -148,7 +148,7 @@ router.get("/email/click", async (req, res) => {
             await safeAudit({
               action: "messaging.order.confirmed",
               adminEmail: null,
-              adminClerkId: null,
+              adminUserId: null,
               targetTable: "episodes",
               targetId: result.episodeId,
               metadata: {
@@ -194,7 +194,7 @@ router.get("/email/click", async (req, res) => {
         await safeAudit({
           action: "messaging.handoff.escalated",
           adminEmail: null,
-          adminClerkId: null,
+          adminUserId: null,
           targetTable: "conversations",
           targetId: conversationId,
           metadata: {
@@ -226,7 +226,7 @@ router.get("/email/click", async (req, res) => {
         await safeAudit({
           action: "messaging.handoff.escalated",
           adminEmail: null,
-          adminClerkId: null,
+          adminUserId: null,
           targetTable: "patients",
           targetId: conv.patientId,
           metadata: {

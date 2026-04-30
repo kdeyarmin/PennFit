@@ -20,7 +20,7 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  *   2. Signed-in users hit /api/admin/me to verify they're on the
  *      PENN_ADMIN_EMAILS allowlist. If not, we render a "not authorized"
  *      page instead of the admin UI. This second check is the
- *      authoritative one — Clerk gives us identity, the server gives us
+ *      authoritative one — the auth provider gives us identity, the server gives us
  *      authorization.
  *
  * The signed-in admin's email is then passed down to AdminLayout for

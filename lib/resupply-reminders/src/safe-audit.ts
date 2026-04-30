@@ -2,7 +2,7 @@
 //
 // Two responsibilities:
 //   1. Translate the SendActor union into the adminEmail /
-//      adminClerkId / ip / userAgent fields logAudit expects.
+//      adminUserId / ip / userAgent fields logAudit expects.
 //   2. Append `actor_kind` (and `job_id` for system runs) to the
 //      structural metadata so downstream queries can filter
 //      admin-initiated vs scheduled reminders without parsing
@@ -40,8 +40,8 @@ export async function safeAuditFromActor(
 ): Promise<void> {
   const adminEmail =
     input.actor.kind === "admin" ? input.actor.adminEmail : null;
-  const adminClerkId =
-    input.actor.kind === "admin" ? input.actor.adminClerkId : null;
+  const adminUserId =
+    input.actor.kind === "admin" ? input.actor.adminUserId : null;
   const ip = input.actor.kind === "admin" ? input.actor.ip : null;
   const userAgent =
     input.actor.kind === "admin" ? input.actor.userAgent : null;
@@ -57,7 +57,7 @@ export async function safeAuditFromActor(
     await logAudit({
       action: input.action,
       adminEmail,
-      adminClerkId,
+      adminUserId,
       targetTable: input.targetTable,
       targetId: input.targetId,
       metadata,

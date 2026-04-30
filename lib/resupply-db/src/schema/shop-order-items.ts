@@ -60,7 +60,7 @@ export const shopOrderItems = resupplySchema.table(
      */
     stripeSessionId: text("stripe_session_id").notNull(),
     /**
-     * Denormalised buyer Clerk id (mirrors shop_orders.clerk_user_id).
+     * Denormalised buyer the auth provider id (mirrors shop_orders.clerk_user_id).
      * Nullable for guest checkouts. Indexed for the verified-
      * purchaser hot path: `WHERE clerk_user_id = $1 AND product_id IN
      * ($2..)` runs as one composite-index lookup.

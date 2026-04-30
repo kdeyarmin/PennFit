@@ -8,8 +8,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /tmp/cc-agent/66286595/project && pnpm run build 2>&1 | tail -20; exit 0",
-            "timeout": 120,
+            "command": "cd /tmp/cc-agent/66286595/project && export PATH=\"/usr/local/lib/node_modules/corepack/shims:$PATH\" && pnpm install --frozen-lockfile 2>&1 | tail -3 && pnpm run build 2>&1 | tail -20; exit 0",
+            "timeout": 300,
             "statusMessage": "Building project..."
           }
         ]

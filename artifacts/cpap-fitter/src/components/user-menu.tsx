@@ -30,10 +30,10 @@ export function UserMenu() {
       : location;
   const signInHref = `/sign-in?redirect=${encodeURIComponent(safeRedirect)}`;
 
-  // Clerk v6 uses <Show when="signed-in" /> instead of the older
+  // the auth provider v6 uses <Show when="signed-in" /> instead of the older
   // <SignedIn>/<SignedOut> components. The fallback prop renders for
   // signed-out (and during the brief loading window — `Show` returns
-  // null until Clerk loads, which keeps the header from flashing).
+  // null until the auth provider loads, which keeps the header from flashing).
   return (
     <Show
       when="signed-in"

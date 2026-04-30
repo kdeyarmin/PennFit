@@ -92,6 +92,9 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error("[setup-mediapipe] FAILED:", e);
-  process.exit(1);
+  console.error("[setup-mediapipe] FAILED:", e.message);
+  // Non-fatal: dev server still starts, face-capture feature will be
+  // unavailable but all other pages (home, masks, questionnaire, results,
+  // shop) work without WASM assets.
+  process.exit(0);
 });

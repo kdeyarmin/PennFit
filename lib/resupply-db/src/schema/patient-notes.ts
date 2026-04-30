@@ -20,10 +20,16 @@ import { resupplySchema } from "./_schema";
  *   - `body` is encrypted because admins WILL paste PHI into the
  *     notes (call summaries quote the patient verbatim, and that
  *     transcript is PHI).
- *   - `authorEmail` and `authorClerkId` are operational metadata,
- *     not PHI. They are denormalized from Clerk so the note remains
- *     attributable if the Clerk user is later deleted (mirrors the
+ *   - `authorEmail` and `authorUserId` are operational metadata,
+ *     not PHI. They are denormalized from the auth provider so the note remains
+ *     attributable if the auth user is later deleted (mirrors the
  *     audit log convention).
+ *
+ * Drizzle JS-field rename note: the column on disk is still
+ * `author_clerk_id` (renaming would require a migration; per ADR 003
+ * we never auto-`db:push` schema changes). Only the JS property name
+ * was updated to `authorUserId` so the wire/DTO surface is consistent
+ * with `adminUserId` and the OpenAPI spec.
  *
  * Append-only by design: there is no `updatedAt`, no edit endpoint,
  * and the UI offers no edit affordance. A note is a record of what
@@ -47,10 +53,10 @@ export const patientNotes = resupplySchema.table(
     // read at query sites — see encryption.ts.
     body: encryptedText("body").notNull(),
 
-    // Who wrote it. Denormalized from Clerk; same rationale as
-    // audit_log.adminEmail / adminClerkId.
+    // Who wrote it. Denormalized from the auth provider; same rationale as
+    // audit_log.adminEmail / adminUserId.
     authorEmail: text("author_email").notNull(),
-    authorClerkId: text("author_clerk_id"),
+    authorUserId: text("author_clerk_id"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

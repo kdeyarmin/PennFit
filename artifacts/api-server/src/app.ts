@@ -17,7 +17,7 @@ const app: Express = express();
 // users together (and refuse to start in strict mode).
 app.set("trust proxy", 1);
 
-// Clerk Frontend API proxy — must be mounted BEFORE body parsers because
+// Auth frontend API proxy — must be mounted BEFORE body parsers because
 // the proxy streams raw bytes through to Clerk's backend. No-op in dev.
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
@@ -85,7 +85,7 @@ app.use(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// Clerk session middleware — attaches auth state to every request so
+// session middleware — attaches auth state to every request so
 // downstream `getAuth(req)` can read it. Safe to mount on every route;
 // it's a no-op for unauthenticated requests.
 app.use(clerkMiddleware());

@@ -169,7 +169,7 @@ export function AdminHeaderChip({
         onClick={() => {
           // Drop any half-typed reply drafts before sign-out so PHI
           // doesn't survive across admin sessions on a shared
-          // workstation. Must happen BEFORE signOut: once Clerk
+          // workstation. Must happen BEFORE signOut: once the auth provider
           // navigates away we lose the chance to run cleanup.
           clearAllDrafts();
           void signOut({ redirectUrl: `${basePath}/sign-in` });

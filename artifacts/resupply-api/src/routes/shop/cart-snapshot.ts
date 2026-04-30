@@ -19,14 +19,14 @@
 //     three suppression flags (reminded_at, recovered_at, cleared_at)
 //     are reset to null. This intentionally lets a re-fill after a
 //     long wait become re-eligible for ONE more nudge.
-//   * Email is denormalized at write time from Clerk so the dispatcher
-//     can scan in a single query without N+1 lookups. A Clerk blip is
+//   * Email is denormalized at write time from the auth provider so the dispatcher
+//     can scan in a single query without N+1 lookups. A the auth provider blip is
 //     non-fatal — we keep the previously-stored email rather than
 //     null it out.
 //
 // Privacy: cart contents are public catalog data (Stripe price/product
 // IDs, names, qty). NO PHI lands here. Email is the only PII and it's
-// denormalized from a Clerk lookup the user already authorized by
+// denormalized from a auth lookup the user already authorized by
 // signing in.
 
 import { Router, type IRouter } from "express";
@@ -90,8 +90,8 @@ function itemsSignature(items: readonly ShopAbandonedCartItem[]): string {
 }
 
 /**
- * Best-effort Clerk email lookup. Returns lowercase email or null.
- * Never throws — a Clerk Backend API blip should NOT fail the snapshot
+ * Best-effort the auth provider email lookup. Returns lowercase email or null.
+ * Never throws — a auth provider API blip should NOT fail the snapshot
  * write (the cart is public catalog data; missing email just means
  * the dispatcher will skip this row until the next PUT succeeds).
  */
@@ -170,7 +170,7 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     !existing || itemsSignature(existing.items) !== itemsSignature(items);
 
   // Refresh the denormalized email on every PUT — but never overwrite
-  // a known email with null on a Clerk blip.
+  // a known email with null on a the auth provider blip.
   const freshEmail = await fetchClerkEmail(clerkUserId, req.log);
   const email = freshEmail ?? existing?.email ?? null;
 

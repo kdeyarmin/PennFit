@@ -8,7 +8,7 @@ import { clearAllDrafts } from "../lib/use-draft-autosave";
 // follow-ups:
 //
 //   reason="not-authorized" (HTTP 401/403/most 4xx)
-//     The signed-in user passed Clerk's session check but is not on
+//     The signed-in user passed the session check but is not on
 //     the RESUPPLY_ADMIN_EMAILS allowlist. Resolution is "ask an
 //     admin to add me" — so we show the email, tell them to contact
 //     the resupply admin, and offer a sign-out button so they can
@@ -30,7 +30,7 @@ import { clearAllDrafts } from "../lib/use-draft-autosave";
 // raw error string. The API never includes the user's id, the
 // allowlist contents, or any environment fragment in its 4xx/5xx
 // bodies (see /me OpenAPI definition + requireAdmin.ts), but
-// belt-and-braces: we only render Clerk-side data the user already
+// belt-and-braces: we only render auth-provider-side data the user already
 // owns.
 
 export type NotAuthorizedReason =

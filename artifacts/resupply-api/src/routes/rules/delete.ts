@@ -49,7 +49,7 @@ router.delete("/rules/:id", requireAdminOnly, async (req, res) => {
     await logAudit({
       action: "rules.delete",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "frequency_rules",
       targetId: parsed.data.id,
       ip: req.ip ?? null,

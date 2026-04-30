@@ -13,7 +13,7 @@ export const logger = pino({
     "req.headers.authorization",
     "req.headers.cookie",
     "res.headers['set-cookie']",
-    // Belt-and-braces: pg / Clerk / fetch errors routinely embed
+    // Belt-and-braces: pg / the auth provider / fetch errors routinely embed
     // connection-string fragments, user identifiers, or hostnames
     // inside `error.message` (and friends). The right fix is for
     // call sites to log a categorized failure instead of `{ err }`,

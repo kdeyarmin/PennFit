@@ -2,7 +2,7 @@
 //
 // Mocking strategy:
 //   - Mock @clerk/express so requireAdmin can be exercised without
-//     a real Clerk lookup.
+//     a real auth lookup.
 //   - Mock drizzle so we can stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioClient so we
 //     never try to dial a real number.
@@ -174,7 +174,7 @@ describe("POST /voice/place-call", () => {
     expect(res.body.error).toBe("voice_not_configured");
   });
 
-  it("returns 401 when there is no Clerk session", async () => {
+  it("returns 401 when there is no session", async () => {
     setVoiceEnv();
     getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp())

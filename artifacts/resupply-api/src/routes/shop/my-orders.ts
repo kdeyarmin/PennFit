@@ -41,7 +41,7 @@
 //
 // Privacy:
 //   Both handlers ONLY ever return / mutate rows where
-//   `clerk_user_id` matches the caller's Clerk user id. This is the
+//   `clerk_user_id` matches the caller's auth user id. This is the
 //   core scope rule — no admin override path through this module.
 
 import { Router, type IRouter } from "express";

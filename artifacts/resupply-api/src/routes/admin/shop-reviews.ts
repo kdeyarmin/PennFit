@@ -187,7 +187,7 @@ router.post(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const db = drizzle(getDbPool());
     const updated = await db
       .update(shopReviews)
@@ -262,7 +262,7 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const db = drizzle(getDbPool());
     const updated = await db
       .update(shopReviews)
@@ -343,7 +343,7 @@ router.post(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const db = drizzle(getDbPool());
     // Guard: only `rejected` rows are eligible. We use a WHERE filter
     // on status so concurrent moderation actions can't accidentally

@@ -53,7 +53,7 @@ export const shopSubscriptions = resupplySchema.table(
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
     /**
-     * Clerk user ID of the subscriber. Required — guest subscriptions
+     * auth user ID of the subscriber. Required — guest subscriptions
      * aren't supported (we need a stable account to manage / cancel).
      * The /shop/checkout endpoint refuses to enter subscription mode
      * for an anonymous cart, so this is never null in practice.

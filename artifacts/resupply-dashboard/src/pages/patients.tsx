@@ -227,7 +227,7 @@ export function PatientsPage() {
   }
 
   // Export CSV. The dashboard talks to the API with a Bearer token
-  // (Clerk session), not cookies, so a plain anchor wouldn't carry
+  // (session), not cookies, so a plain anchor wouldn't carry
   // auth. We replicate the auth-bearing fetch the orval client
   // uses — pulling the token off `window.Clerk.session` — and
   // trigger a browser download from the resulting blob.

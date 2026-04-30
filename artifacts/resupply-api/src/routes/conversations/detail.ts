@@ -91,7 +91,7 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     await logAudit({
       action: "conversation.view",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "conversations",
       targetId: id,
       ip: req.ip ?? null,

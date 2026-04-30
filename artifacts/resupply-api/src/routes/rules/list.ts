@@ -32,7 +32,7 @@ router.get("/rules", requireAdmin, async (req, res) => {
     await logAudit({
       action: "rules.list",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "frequency_rules",
       targetId: null,
       ip: req.ip ?? null,

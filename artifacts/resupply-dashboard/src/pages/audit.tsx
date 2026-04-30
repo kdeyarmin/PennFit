@@ -13,6 +13,7 @@ import { ErrorPanel } from "../components/ErrorPanel";
 import { Pagination } from "../components/Pagination";
 import { Input, Label, Select } from "../components/Input";
 import { Button } from "../components/Button";
+import { humanizeAction } from "../components/Badge";
 import { formatDateTime } from "../lib/format";
 import { downloadAuditExport } from "../lib/audit-export";
 
@@ -54,12 +55,12 @@ const DISPLAY_KEY_ALLOWLIST: ReadonlyArray<string> = [
 // because the schema is `varchar` and new tables show up over time;
 // the dropdown here is just a convenience for the most common picks.
 const TARGET_TABLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "patients", label: "patients" },
-  { value: "episodes", label: "episodes" },
-  { value: "conversations", label: "conversations" },
-  { value: "messages", label: "messages" },
-  { value: "fulfillments", label: "fulfillments" },
-  { value: "prescriptions", label: "prescriptions" },
+  { value: "patients", label: "Patients" },
+  { value: "episodes", label: "Episodes" },
+  { value: "conversations", label: "Conversations" },
+  { value: "messages", label: "Messages" },
+  { value: "fulfillments", label: "Fulfillments" },
+  { value: "prescriptions", label: "Prescriptions" },
 ];
 
 type Row = {
@@ -193,16 +194,17 @@ export function AuditPage() {
                 PHI
               </span>
             )}
-            <code
+            <span
               className="text-xs px-1.5 py-0.5 rounded"
               style={{
                 backgroundColor: phi ? "#fffbeb" : "#f1f5f9",
                 color: "#0a1f44",
                 border: phi ? "1px solid #fde68a" : "1px solid transparent",
               }}
+              title={r.action}
             >
-              {r.action}
-            </code>
+              {humanizeAction(r.action)}
+            </span>
           </div>
         );
       },
@@ -213,7 +215,7 @@ export function AuditPage() {
       render: (r) =>
         r.targetTable ? (
           <span className="text-xs" style={{ color: "#374151" }}>
-            <code>{r.targetTable}</code>
+            <span title={r.targetTable}>{humanizeAction(r.targetTable)}</span>
             {r.targetId && (
               <span className="text-[10px] block" style={{ color: "#6b7280" }}>
                 {r.targetId.slice(0, 8)}…
@@ -408,7 +410,10 @@ export function SafeMetadata({
             color: "#0a1f44",
           }}
         >
-          <span style={{ color: "#6b7280" }}>{k}</span>={renderPrimitive(v)}
+          <span style={{ color: "#6b7280" }} title={k}>
+            {humanizeAction(k)}
+          </span>
+          ={renderPrimitive(v)}
         </span>
       ))}
       {hiddenCount > 0 && (
