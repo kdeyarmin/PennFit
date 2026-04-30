@@ -10,6 +10,7 @@ import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
+import lookupRouter from "./admin/lookup.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
@@ -97,6 +98,9 @@ router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
 // (per-message + audit-log failure events). Read-only.
 router.use(deliveryFailuresRouter);
+// /admin/lookup — global cross-entity lookup bar. Phone (HMAC),
+// email, UUID, and Stripe-session-id-aware. Read-only.
+router.use(lookupRouter);
 // /admin/shop/customers/* — Customer 360 surface (search/list +
 // detail + reorder-on-behalf). Read-mostly; the only write is the
 // reorder action which creates a Stripe Checkout Session. Same

@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useClerk } from "@clerk/react";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { ConsoleSwitcher } from "./ConsoleSwitcher";
+import { GlobalLookup } from "./GlobalLookup";
 import { RoleProvider, type AdminRole } from "../lib/role-context";
 import { clearAllDrafts } from "../lib/use-draft-autosave";
 
@@ -217,7 +218,10 @@ export function AppShell({
       <BrandHeader
         rightSlot={
           adminEmail ? (
-            <AdminHeaderChip email={adminEmail} role={adminRole} />
+            <div className="flex items-center gap-3">
+              <GlobalLookup />
+              <AdminHeaderChip email={adminEmail} role={adminRole} />
+            </div>
           ) : undefined
         }
       />
