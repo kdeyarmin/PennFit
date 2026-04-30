@@ -5,6 +5,7 @@ import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
+import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -70,5 +71,9 @@ router.use(shopReturnsAdminRouter);
 // macroMerge helper in the dashboard for the {{namespace.key}}
 // substitution syntax.
 router.use(csrMacrosRouter);
+// /admin/shop/subscriptions/metrics — KPI rollup for the
+// subscription health dashboard. Pure SQL aggregation — no Stripe
+// round-trip on this path.
+router.use(shopSubsMetricsRouter);
 
 export default router;

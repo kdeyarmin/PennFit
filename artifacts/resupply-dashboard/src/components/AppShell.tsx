@@ -58,6 +58,11 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Canned Replies",
     matchPrefix: "/admin/macros",
   },
+  {
+    href: "/admin/shop/subscriptions",
+    label: "Subscription Health",
+    matchPrefix: "/admin/shop/subscriptions",
+  },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
