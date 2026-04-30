@@ -123,3 +123,20 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
+
+  # Security: pin transitive dependencies to patched versions for known
+  # GitHub advisories. Targeted version-range overrides are used where a
+  # blanket override would force a major upgrade on an unrelated consumer.
+  lodash: ^4.18.1
+  path-to-regexp: ^8.4.2
+  'picomatch@<2.3.2': ^2.3.2
+  'picomatch@>=4.0.0 <4.0.4': ^4.0.4
+  'brace-expansion@<1.1.13': ^1.1.13
+  'brace-expansion@>=2.0.0 <2.0.3': ^2.0.3
+  uuid: ^14.0.0
+  postcss: ^8.5.10
+  yaml: ^2.8.3
+  http-proxy-agent: ^7.0.2
+  vitest>vite: ^6.4.2
+  vite-node>vite: ^6.4.2
+  '@vitest/mocker>vite': ^6.4.2
