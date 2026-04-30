@@ -25,6 +25,7 @@ import { applyMacro, applyLegacyFirstName } from "../lib/macro-merge";
 import { listMacros, type CsrMacro } from "../lib/csr-macros-api";
 import { useQuery } from "@tanstack/react-query";
 import { Patient360Panel } from "../components/Patient360Panel";
+import { ConversationAssignmentBar } from "../components/ConversationAssignmentBar";
 import { useDraftAutosave } from "../lib/use-draft-autosave";
 
 // Conversation viewer. Renders the chronological message timeline as
@@ -100,6 +101,26 @@ export function ConversationDetailPage({ id }: { id: string }) {
             </Badge>
           </div>
         </div>
+        <ConversationAssignmentBar
+          conversationId={data.id}
+          assignedAdminClerkId={
+            (data as { assignedAdminClerkId?: string | null }).assignedAdminClerkId ?? null
+          }
+          priority={
+            ((data as { priority?: string }).priority ?? "normal") as
+              | "low"
+              | "normal"
+              | "high"
+              | "urgent"
+          }
+          slaDueAt={(data as { slaDueAt?: string | null }).slaDueAt ?? null}
+          escalatedAt={(data as { escalatedAt?: string | null }).escalatedAt ?? null}
+          escalationReason={
+            (data as { escalationReason?: string | null }).escalationReason ?? null
+          }
+          status={data.status}
+          onChange={() => void refetch()}
+        />
       </Card>
 
       <Card>

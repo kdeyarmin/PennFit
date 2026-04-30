@@ -52,6 +52,13 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
       status: conversations.status,
       lastMessageAt: conversations.lastMessageAt,
       createdAt: conversations.createdAt,
+      assignedAdminClerkId: conversations.assignedAdminClerkId,
+      assignedAt: conversations.assignedAt,
+      priority: conversations.priority,
+      slaDueAt: conversations.slaDueAt,
+      escalatedAt: conversations.escalatedAt,
+      escalatedTo: conversations.escalatedTo,
+      escalationReason: conversations.escalationReason,
     })
     .from(conversations)
     .leftJoin(patients, eq(patients.id, conversations.patientId))
@@ -120,6 +127,13 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     status: header.status,
     lastMessageAt: toIso(header.lastMessageAt),
     createdAt: toIsoRequired(header.createdAt),
+    assignedAdminClerkId: header.assignedAdminClerkId ?? null,
+    assignedAt: toIso(header.assignedAt),
+    priority: header.priority ?? "normal",
+    slaDueAt: toIso(header.slaDueAt),
+    escalatedAt: toIso(header.escalatedAt),
+    escalatedTo: header.escalatedTo ?? null,
+    escalationReason: header.escalationReason ?? null,
     messages: messageRows.map((m) => ({
       id: m.id,
       direction: m.direction,
