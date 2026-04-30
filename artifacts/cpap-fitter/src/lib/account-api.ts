@@ -1,10 +1,10 @@
 // Tiny typed client for /shop/me/* endpoints. Mirrors lib/shop-api.ts
 // but for the auth-gated routes — uses `credentials: "include"` so the
-// Clerk session cookie travels along.
+// session cookie travels along.
 //
 // Why a separate file (not bolted onto shop-api.ts): the public shop
 // catalog is callable WITHOUT auth and the components that consume it
-// shouldn't have to think about Clerk. The /shop/me/* surface is
+// shouldn't have to think about the auth provider. The /shop/me/* surface is
 // fundamentally different (auth-required, returns user-scoped data)
 // and benefits from its own narrower set of types + error handling.
 

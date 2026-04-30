@@ -1,4 +1,4 @@
-// Stripe Customer ↔ Clerk user mapping.
+// Stripe Customer ↔ auth user mapping.
 //
 // Single entry point: `getOrCreateStripeCustomer(clerkUserId, email,
 // displayName?)`. Reads the `shop_customers` row, creates a Stripe
@@ -7,7 +7,7 @@
 //
 // Idempotency:
 //   * Stripe customer creation is wrapped with an `idempotencyKey`
-//     scoped to the Clerk user ID, so a concurrent retry from the
+//     scoped to the auth user ID, so a concurrent retry from the
 //     same user doesn't create two Stripe Customers. We then
 //     try-insert the mapping locally; if a UNIQUE constraint trips
 //     because a parallel call already won the race, we re-read the
@@ -66,7 +66,7 @@ export async function getOrCreateStripeCustomer(
     return { stripeCustomerId: row.stripeCustomerId, row };
   }
 
-  // Step 2: create a Stripe Customer, idempotency-keyed on the Clerk
+  // Step 2: create a Stripe Customer, idempotency-keyed on the the auth provider
   // user ID. Stripe scopes idempotency to the secret + key, so a
   // double-tap from the same user collapses to one Customer.
   const customer = await stripe.customers.create(

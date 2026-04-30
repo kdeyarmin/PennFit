@@ -91,7 +91,7 @@ describe("GET /conversations", () => {
     }
   });
 
-  it("returns 401 with no Clerk session", async () => {
+  it("returns 401 with no session", async () => {
     getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp()).get("/resupply-api/conversations");
     expect(res.status).toBe(401);

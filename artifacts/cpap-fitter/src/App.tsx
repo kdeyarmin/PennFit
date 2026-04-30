@@ -276,12 +276,12 @@ function PatientRouter() {
 }
 
 /**
- * Top-level <Switch>. We split admin and Clerk routes OUT of the patient
+ * Top-level <Switch>. We split admin and auth routes OUT of the patient
  * <Layout> so they can render in their own chrome (sign-in centered card,
  * admin sidebar shell). The admin pages mount inside <AdminShell> which
- * does the Clerk + allowlist gate.
+ * does the auth + allowlist gate.
  *
- * Wouter's nested-routing trick: catching `/sign-in/:rest*` lets Clerk
+ * Wouter's nested-routing trick: catching `/sign-in/:rest*` lets the auth provider
  * own everything below /sign-in (e.g. /sign-in/factor-one) without us
  * pre-defining each step.
  */
@@ -339,7 +339,7 @@ function TopRouter() {
 }
 
 function App() {
-  // Build absolute URLs for Clerk so Clerk's redirects respect our base
+  // Build absolute URLs for the auth provider so the auth provider's redirects respect our base
   // path (they need to be browser-absolute paths, not React route paths).
   return (
     <ClerkProvider
@@ -357,7 +357,7 @@ function App() {
       localization={{
         // Override Clerk's "{{applicationName}}" interpolation so the
         // hosted sign-in / sign-up cards display our real brand name
-        // instead of whatever is set in the Clerk dashboard. Updating the
+        // instead of whatever is set in the auth provider dashboard. Updating the
         // dashboard is the canonical fix (and would also affect emails),
         // but this guarantees the in-app text is always on-brand.
         signIn: {

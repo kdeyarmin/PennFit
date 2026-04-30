@@ -173,7 +173,7 @@ router.post(
     await logAudit({
       action: "patient.prescription.create",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "prescriptions",
       targetId: row.id,
       metadata: {

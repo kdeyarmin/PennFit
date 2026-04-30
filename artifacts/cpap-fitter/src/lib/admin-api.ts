@@ -1,10 +1,10 @@
 /**
- * Thin fetch wrappers for the Clerk-gated admin endpoints. We deliberately
+ * Thin fetch wrappers for the auth-gated admin endpoints. We deliberately
  * keep these OUT of the public OpenAPI client (`@workspace/api-client-react`)
  * because the public spec advertises a no-PHI service to patients — adding
  * admin endpoints there would muddy that contract.
  *
- * All calls use `credentials: "include"` so Clerk's session cookie is sent.
+ * All calls use `credentials: "include"` so the session cookie is sent.
  * Errors are surfaced as thrown `AdminApiError` with status + payload, so
  * callers can render auth gates ("not authorized") differently from
  * unexpected failures.
@@ -38,7 +38,7 @@ async function adminFetch<T>(path: string): Promise<T> {
 
 export interface AdminMe {
   email: string;
-  clerkId: string;
+  userId: string;
   /**
    * Caller's effective role. `admin` has full privileges; `agent` is
    * a junior-admin role used by customer-service staff (identical
@@ -116,7 +116,7 @@ export const fetchAdminAnalytics = () =>
 export interface AdminAuditEvent {
   id: string;
   adminEmail: string;
-  adminClerkId: string;
+  adminUserId: string;
   action: string;
   targetOrderId: string | null;
   ip: string | null;
@@ -216,7 +216,7 @@ export async function sendDueReminders(): Promise<SendDueRemindersResponse> {
 
 export type AdminTeamRole = "admin" | "agent";
 
-export interface AdminTeamClerkUser {
+export interface AdminTeamMember {
   id: string;
   email: string;
   name: string | null;
@@ -249,8 +249,8 @@ export interface AdminTeamPendingInvitation {
 export interface AdminTeamResponse {
   /** Caller's own role — drives whether mutate buttons render. */
   role: AdminTeamRole;
-  self: { email?: string; clerkId?: string };
-  clerkUsers: AdminTeamClerkUser[];
+  self: { email?: string; userId?: string };
+  members: AdminTeamMember[];
   envAllowlist: AdminTeamEnvRow[];
   pendingInvitations: AdminTeamPendingInvitation[];
 }
@@ -266,9 +266,9 @@ export interface AdminInvitationCreated {
 }
 
 /**
- * Returned when the invite email already maps to a Clerk account
+ * Returned when the invite email already maps to a auth account
  * that has no `pennRole` yet. Rather than send a fresh invitation
- * (Clerk would reject a duplicate identity, and a re-invite is the
+ * (the auth provider would reject a duplicate identity, and a re-invite is the
  * wrong UX for someone who already has an account), the server
  * stamps `pennRole` on their existing user and reports back here.
  * The UI uses this to switch from "Invitation sent" → "Granted

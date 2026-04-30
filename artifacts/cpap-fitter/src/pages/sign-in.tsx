@@ -7,7 +7,7 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * Pull a `?redirect=` target out of the current URL. We use this to
  * support BOTH the admin flow (legacy `/admin` destination) and the
  * patient flow (return-to-where-I-was). The query string is read at
- * render time — Clerk handles the rest of the auth dance and lands
+ * render time — the auth provider handles the rest of the auth dance and lands
  * the user at this URL on success.
  *
  * Validation: only allow same-origin paths starting with `/`. This
@@ -30,9 +30,9 @@ function readRedirect(): string {
 }
 
 /**
- * Branding note: the sign-in widget itself is rendered by Clerk and
- * its title (e.g. "Sign in to <app name>") is set in the Clerk
- * dashboard, NOT in code. Rename the Clerk application there if you
+ * Branding note: the sign-in widget itself is rendered by the auth provider and
+ * its title (e.g. "Sign in to <app name>") is set in the the auth provider
+ * dashboard, NOT in code. Rename the the auth provider application there if you
  * want a different headline inside the box.
  *
  * The `appearance.elements.footer` override hides the
@@ -40,7 +40,7 @@ function readRedirect(): string {
  * vendor's name to non-technical operators. The wrapping <div>
  * below adds our own page-level identity above the widget so
  * shoppers and operators always see "Penn Home Medical Supply"
- * regardless of the Clerk-side configuration.
+ * regardless of the auth-provider-side configuration.
  */
 const HIDE_CLERK_BRANDING = {
   elements: {

@@ -8,19 +8,19 @@
  * Authority model (single source of truth: requireAdmin.ts):
  *   1. PENN_ADMIN_EMAILS env match            → admin
  *   2. PENN_AGENT_EMAILS env match            → agent
- *   3. Clerk publicMetadata.pennRole === ...  → admin / agent
+ *   3. auth provider publicMetadata.pennRole === ...  → admin / agent
  *   4. else 403
  *
  * Env rows are deliberately NOT mutable from here. They are the
- * permanent recovery path: if Clerk metadata or this surface is
+ * permanent recovery path: if auth provider metadata or this surface is
  * misconfigured, an engineer with shell access can always restore
  * admin access by editing the env var. Showing them in the UI as a
  * read-only "set in server config" badge keeps that bootstrap path
  * visible to operators.
  *
  * Lockout guard: an admin cannot demote or revoke themselves. There
- * is no "admin count" in Clerk we could rely on (env-allowlisted
- * admins live entirely outside Clerk), so the simplest invariant is
+ * is no "admin count" in we could rely on (env-allowlisted
+ * admins live entirely outside the auth provider), so the simplest invariant is
  * "you can't fire yourself" — at minimum the actor remains.
  *
  * Audit: every state-changing call writes a row to admin_audit_log
@@ -68,7 +68,7 @@ async function writeAudit(
   try {
     await db.insert(adminAuditLogTable).values({
       adminEmail: req.adminEmail ?? "system",
-      adminClerkId: req.adminClerkId ?? "system",
+      adminUserId: req.adminUserId ?? "system",
       action,
       ip: req.ip ?? null,
     });
@@ -102,7 +102,7 @@ function displayName(user: {
 
 /**
  * If `email` is in either env allowlist, return the env-derived role.
- * Mutating Clerk metadata for such an email is a no-op for effective
+ * Mutating auth provider metadata for such an email is a no-op for effective
  * access (env wins in `requireAdmin`), so the routes refuse the call
  * up front with a clear "ask an engineer to edit env" message rather
  * than silently letting the operator believe access changed.
@@ -121,11 +121,11 @@ function envRoleFor(email: string): PennRole | null {
  * payload so the team page can render them as three sections without
  * three round-trips:
  *
- *   - clerkUsers: Clerk users with `publicMetadata.pennRole` set —
+ *   - members: auth users with `publicMetadata.pennRole` set —
  *     the in-app-managed teammates, mutable via the routes below.
  *   - envAllowlist: synthetic rows for emails listed in the env
  *     vars — read-only, badged "set in server config".
- *   - pendingInvitations: open Clerk invitations carrying a
+ *   - pendingInvitations: open the auth provider invitations carrying a
  *     `pennRole` claim — show in a "pending" section so admins can
  *     cancel mistyped invites.
  *
@@ -137,9 +137,9 @@ function envRoleFor(email: string): PennRole | null {
  * agent fishing the staff roster repeatedly stands out.
  */
 router.get("/admin/users", async (req, res) => {
-  // Clerk's getUserList does not support filtering by metadata, so
+  // the auth provider's getUserList does not support filtering by metadata, so
   // we page through and filter in memory. Penn's staff is small
-  // (<200 users in the foreseeable future), and Clerk caps page size
+  // (<200 users in the foreseeable future), and the auth provider caps page size
   // at 500. One page is overwhelmingly likely to be enough; we still
   // loop defensively up to a hard cap to avoid a runaway in case of
   // future growth.
@@ -147,7 +147,7 @@ router.get("/admin/users", async (req, res) => {
   const HARD_CAP_PAGES = 10;
 
   // Build env lookup once so we can both (a) emit synthesized env
-  // rows and (b) tag each Clerk row whose email is also in env so
+  // rows and (b) tag each the auth provider row whose email is also in env so
   // the UI knows mutating their metadata is a no-op (env wins).
   const env = getEnvAllowlists();
   const envByEmail = new Map<string, PennRole>();
@@ -156,7 +156,7 @@ router.get("/admin/users", async (req, res) => {
     if (!envByEmail.has(e)) envByEmail.set(e, "agent");
   }
 
-  type ClerkUserRow = {
+  type TeamMemberRow = {
     id: string;
     email: string;
     name: string | null;
@@ -168,13 +168,13 @@ router.get("/admin/users", async (req, res) => {
      * If the user's email is also in PENN_ADMIN_EMAILS or
      * PENN_AGENT_EMAILS, surface that role here. The UI uses this
      * to disable role-change / remove for the row, because env
-     * always wins — mutating Clerk metadata for an env-allowlisted
+     * always wins — mutating auth provider metadata for an env-allowlisted
      * user wouldn't actually change their effective access.
      */
     envOverride: PennRole | null;
   };
 
-  const clerkUsers: ClerkUserRow[] = [];
+  const members: TeamMemberRow[] = [];
   for (let page = 0; page < HARD_CAP_PAGES; page++) {
     const batch = await clerkClient.users.getUserList({
       limit: PAGE_SIZE,
@@ -187,12 +187,12 @@ router.get("/admin/users", async (req, res) => {
       if (!role) continue;
       const email = primaryEmail(u);
       if (!email) continue;
-      clerkUsers.push({
+      members.push({
         id: u.id,
         email,
         name: displayName(u),
         role,
-        isSelf: u.id === req.adminClerkId,
+        isSelf: u.id === req.adminUserId,
         createdAt: u.createdAt,
         lastSignInAt: u.lastSignInAt ?? null,
         envOverride: envByEmail.get(email) ?? null,
@@ -202,7 +202,7 @@ router.get("/admin/users", async (req, res) => {
   }
 
   // Synthesize env-allowlist rows. We do not deduplicate against
-  // Clerk users because both signals are independently meaningful:
+  // auth users because both signals are independently meaningful:
   // an email may be both env-allowlisted (the safety net) AND
   // metadata-tagged (the in-app record). Showing both rows makes
   // that overlap explicit instead of silently hiding the env entry.
@@ -240,15 +240,15 @@ router.get("/admin/users", async (req, res) => {
     // Don't fail the whole roster fetch just because the invitation
     // listing hiccupped — the active-teammate view is still useful
     // on its own. Log loudly so we notice in production.
-    logger.error({ err }, "Failed to fetch Clerk invitation list");
+    logger.error({ err }, "Failed to fetch invitation list");
   }
 
   await writeAudit(req, "team.list");
 
   res.json({
     role: req.adminRole ?? "admin",
-    self: { email: req.adminEmail, clerkId: req.adminClerkId },
-    clerkUsers,
+    self: { email: req.adminEmail, userId: req.adminUserId },
+    members,
     envAllowlist,
     pendingInvitations,
   });
@@ -258,7 +258,7 @@ router.get("/admin/users", async (req, res) => {
 
 /**
  * Build the redirect URL the invitee lands on after clicking the
- * Clerk invite link. We prefer the canonical published domain
+ * the invitation link. We prefer the canonical published domain
  * (REPLIT_DOMAINS) and fall back to the request origin so dev-mode
  * invites work too. Either way the link points at /admin so the
  * accepted user immediately lands in the console they were granted
@@ -291,7 +291,7 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
   const { email, role } = parsed.data;
 
   // Env-allowlist conflict: that email already has effective access
-  // via env, and changing Clerk metadata won't alter it. Refuse
+  // via env, and changing auth provider metadata won't alter it. Refuse
   // up front so the operator isn't fooled by a "success" toast.
   const envRole = envRoleFor(email);
   if (envRole) {
@@ -301,10 +301,10 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
     return;
   }
 
-  // Pre-check existing Clerk users:
+  // Pre-check existing auth users:
   //   - has pennRole already → refuse (use "Change role" instead).
   //   - exists but no pennRole → adopt them in place by stamping
-  //     publicMetadata.pennRole. Clerk would reject createInvitation
+  //     publicMetadata.pennRole. the auth provider would reject createInvitation
   //     for an already-existing identity (and a fresh invite is the
   //     wrong UX anyway — the person already has an account).
   try {
@@ -312,7 +312,7 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
       emailAddress: [email],
       limit: 5,
     });
-    // SECURITY: Clerk's getUserList({emailAddress}) matches users
+    // SECURITY: the auth provider's getUserList({emailAddress}) matches users
     // by ANY email on the account (primary OR secondary). We must
     // only consider users whose PRIMARY email equals the invited
     // address — otherwise an attacker (or just a typo) could stamp
@@ -342,11 +342,11 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
       } catch (err) {
         logger.error(
           { err, userId: noRoleYet.id, email, role },
-          "Clerk in-place promote failed",
+          "In-place promote failed",
         );
         res.status(502).json({
           error:
-            "That email already has a Clerk account but we couldn't grant them access. Please try again.",
+            "That email already has an account but we couldn't grant them access. Please try again.",
         });
         return;
       }
@@ -360,9 +360,9 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
       return;
     }
   } catch (err) {
-    // Don't block the invite on a failed pre-check — Clerk will
+    // Don't block the invite on a failed pre-check — the auth provider will
     // also enforce uniqueness on the invite call itself. Just log.
-    logger.warn({ err, email }, "Clerk pre-invite duplicate check failed");
+    logger.warn({ err, email }, "Pre-invite duplicate check failed");
   }
 
   try {
@@ -387,7 +387,7 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
       err instanceof Error && /already|duplicate|exists/i.test(err.message)
         ? "That email already has a pending invitation. Cancel it first if you want to re-send."
         : "Could not send the invitation. Please try again.";
-    logger.error({ err, email, role }, "Clerk invitation failed");
+    logger.error({ err, email, role }, "Invitation failed");
     res.status(502).json({ error: message });
   }
 });
@@ -410,7 +410,7 @@ router.patch(
     }
     const { role } = parsed.data;
 
-    if (userId === req.adminClerkId) {
+    if (userId === req.adminUserId) {
       // Lockout guard: prevent the active admin from demoting
       // themselves to agent (or no-op-promoting). They'd lose the
       // ability to undo it without an engineer touching the env.
@@ -439,7 +439,7 @@ router.patch(
         publicMetadata: { [PENN_ROLE_METADATA_KEY]: role },
       });
     } catch (err) {
-      logger.error({ err, userId, role }, "Clerk role change failed");
+      logger.error({ err, userId, role }, "Role change failed");
       res.status(502).json({ error: "Could not update that teammate's role." });
       return;
     }
@@ -452,8 +452,8 @@ router.patch(
 // ---------- DELETE /admin/users/:userId ----------
 
 /**
- * Revokes Penn access by clearing `pennRole` from the user's Clerk
- * publicMetadata. We do NOT delete the Clerk user — they may use
+ * Revokes Penn access by clearing `pennRole` from the user's the auth provider
+ * publicMetadata. We do NOT delete the auth user — they may use
  * the same identity for the patient-facing pages, and a future
  * re-grant should not require re-creating the account.
  */
@@ -463,7 +463,7 @@ router.delete("/admin/users/:userId", requireAdminOnly, async (req, res) => {
     res.status(400).json({ error: "Missing user id." });
     return;
   }
-  if (userId === req.adminClerkId) {
+  if (userId === req.adminUserId) {
     res.status(400).json({
       error:
         "You can't remove yourself. Ask another admin to revoke your access if you really mean it.",
@@ -486,7 +486,7 @@ router.delete("/admin/users/:userId", requireAdminOnly, async (req, res) => {
       });
       return;
     }
-    // Setting the key to null tells Clerk to drop it. We keep the
+    // Setting the key to null tells the auth provider to drop it. We keep the
     // shape (an object, not undefined) so the request itself stays
     // a PATCH-style merge on Clerk's side rather than a wholesale
     // metadata replacement.
@@ -494,7 +494,7 @@ router.delete("/admin/users/:userId", requireAdminOnly, async (req, res) => {
       publicMetadata: { [PENN_ROLE_METADATA_KEY]: null },
     });
   } catch (err) {
-    logger.error({ err, userId }, "Clerk revoke failed");
+    logger.error({ err, userId }, "Revoke failed");
     res.status(502).json({ error: "Could not remove that teammate." });
     return;
   }
@@ -520,7 +520,7 @@ router.delete(
       const revoked = await clerkClient.invitations.revokeInvitation(invId);
       targetEmail = revoked.emailAddress?.toLowerCase() ?? "(unknown)";
     } catch (err) {
-      logger.error({ err, invId }, "Clerk invitation revoke failed");
+      logger.error({ err, invId }, "Invitation revoke failed");
       res
         .status(502)
         .json({ error: "Could not cancel that invitation. It may already be gone." });

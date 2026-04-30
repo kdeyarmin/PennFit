@@ -2,7 +2,7 @@
 //
 // Same auth bridge as the other hand-rolled api wrappers
 // (abandoned-carts-api, shop-reviews-api, shop-inventory-api):
-// we read the Clerk session token via globalThis.Clerk and attach
+// we read the session token via globalThis.Clerk and attach
 // it as a Bearer header. We can't use the OpenAPI codegen client
 // here because the export endpoint streams `text/csv` rather than
 // JSON.

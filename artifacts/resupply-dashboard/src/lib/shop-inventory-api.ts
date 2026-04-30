@@ -9,7 +9,7 @@
 // the same SKUs the storefront does, plus the live `stockCount`
 // projection that already drops out of the public response.
 //
-// Auth bridge: same Clerk → Authorization header bridge as
+// Auth bridge: same session → Authorization header bridge as
 // shop-reviews-api.ts. The list call is technically public, but
 // sending the bearer token on it is a no-op (the public endpoint
 // doesn't read it), so we do it for free symmetry.

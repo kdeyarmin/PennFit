@@ -19,7 +19,7 @@
 //   * reminded_at IS NULL        — only one nudge per cart-event
 //   * recovered_at IS NULL       — they already paid; never nudge
 //   * cleared_at IS NULL         — they explicitly emptied; respect it
-//   * email IS NOT NULL          — Clerk lookup must have succeeded
+//   * email IS NOT NULL          — auth lookup must have succeeded
 //   * updated_at <= now() - 24h  — give them a real chance to come
 //                                   back on their own first
 //

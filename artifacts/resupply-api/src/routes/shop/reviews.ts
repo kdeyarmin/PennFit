@@ -132,9 +132,9 @@ interface ReviewAuthorIdentity {
 
 /**
  * Resolve the author's public display name + denormalized email from
- * Clerk. Display name is "FirstName L." (last initial only) so the
+ * the auth provider. Display name is "FirstName L." (last initial only) so the
  * public review feed reads as a real person without exposing full
- * names. Falls back to "PennPaps customer" if the Clerk profile lacks
+ * names. Falls back to "PennPaps customer" if the the auth provider profile lacks
  * a usable first name.
  *
  * Throws on missing email — we will not insert a review row without

@@ -126,7 +126,7 @@ Operational follow-ups:
 
 ## Open follow-ups (non-orphan)
 
-- Bucket-side ACL is `visibility:"private"` with `owner: adminClerkId` set
+- Bucket-side ACL is `visibility:"private"` with `owner: adminUserId` set
   but downloads are gated only by `requireAdmin` middleware (any allowlisted
   admin can read any prescription scan). This mirrors the existing rule for
   patient `details` PHI in the same dashboard. Tightening to "issuing admin

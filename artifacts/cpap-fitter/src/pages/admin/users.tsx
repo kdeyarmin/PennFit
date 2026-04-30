@@ -12,7 +12,7 @@ import {
   revokeAdminInvitation,
   AdminApiError,
   type AdminTeamRole,
-  type AdminTeamClerkUser,
+  type AdminTeamMember,
   type AdminTeamEnvRow,
   type AdminTeamPendingInvitation,
   type AdminInvitationResult,
@@ -55,12 +55,12 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
  *
  * Three sections, in priority order for daily use:
  *
- *   1. Active teammates (Clerk-managed). Mutable inline. The signed-
+ *   1. Active teammates (auth-managed). Mutable inline. The signed-
  *      in admin's own row is marked "(you)" with disabled actions —
  *      the lockout-guard is also enforced server-side, but disabling
  *      the buttons is the friendlier signal.
  *
- *   2. Pending invitations. Cancel button revokes the Clerk invite
+ *   2. Pending invitations. Cancel button revokes the the invitation
  *      (e.g. fixed a typo, want to re-send to the right address).
  *
  *   3. Env-allowlisted (read-only). Synthetic rows for emails listed
@@ -91,7 +91,7 @@ export function AdminUsers() {
   const [topError, setTopError] = useState<string | null>(null);
   // Transient success banner. We use this (rather than just closing
   // the dialog silently) when the invite path has a non-obvious
-  // outcome — most importantly the "adopted an existing Clerk
+  // outcome — most importantly the "adopted an existing the auth provider
   // account" branch, where no email was sent and the row appears in
   // Active rather than Pending.
   const [topInfo, setTopInfo] = useState<string | null>(null);
@@ -123,7 +123,7 @@ export function AdminUsers() {
     onSettled: () => setPendingId(null),
   });
 
-  const clerkUsers = team.data?.clerkUsers ?? [];
+  const members = team.data?.members ?? [];
   const envAllowlist = team.data?.envAllowlist ?? [];
   const pendingInvitations = team.data?.pendingInvitations ?? [];
 
@@ -135,7 +135,7 @@ export function AdminUsers() {
           <p className="text-muted-foreground mt-1 max-w-2xl">
             Invite a teammate to the admin console, change someone's role, or
             remove access when a staff member leaves. Invitees get a one-time
-            email link from Clerk and pick their own password.
+            email link and pick their own password.
           </p>
         </div>
         {isAdmin && (
@@ -145,7 +145,7 @@ export function AdminUsers() {
               setTopError(null);
               if ("adopted" in result) {
                 setTopInfo(
-                  `${result.email} already had a Clerk account, so we granted them ${result.role} access in place — no email was sent.`,
+                  `${result.email} already had an account, so we granted them ${result.role} access in place — no email was sent.`,
                 );
               } else {
                 setTopInfo(`Invitation sent to ${result.email}.`);
@@ -217,7 +217,7 @@ export function AdminUsers() {
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : clerkUsers.length === 0 ? (
+          ) : members.length === 0 ? (
             <EmptyHint
               icon={<Users className="w-5 h-5" />}
               title="No invited teammates yet"
@@ -229,7 +229,7 @@ export function AdminUsers() {
             />
           ) : (
             <ul className="divide-y divide-border/40" data-testid="active-teammates">
-              {clerkUsers.map((u) => (
+              {members.map((u) => (
                 <ActiveTeammateRow
                   key={u.id}
                   user={u}
@@ -243,7 +243,7 @@ export function AdminUsers() {
                   onRevoke={() => {
                     if (
                       !confirm(
-                        `Remove ${u.email}? They will lose access to the admin console immediately. Their Clerk account stays so they can still use the patient site.`,
+                        `Remove ${u.email}? They will lose access to the admin console immediately. Their account stays so they can still use the patient site.`,
                       )
                     )
                       return;
@@ -340,7 +340,7 @@ function ActiveTeammateRow({
   onChangeRole,
   onRevoke,
 }: {
-  user: AdminTeamClerkUser;
+  user: AdminTeamMember;
   isAdmin: boolean;
   pending: boolean;
   onChangeRole: (role: AdminTeamRole) => void;
@@ -348,7 +348,7 @@ function ActiveTeammateRow({
 }) {
   // Env override means the email also appears in the server's
   // PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS allowlist. Env wins over
-  // Clerk metadata in requireAdmin, so any role-change or remove
+  // auth provider metadata in requireAdmin, so any role-change or remove
   // action against this row would be a no-op for effective access.
   // Disable the controls and tell the operator who actually owns it.
   const isEnvOverride = user.envOverride !== null;
@@ -534,8 +534,8 @@ function InviteTeammateButton({
         <DialogHeader>
           <DialogTitle>Invite a teammate</DialogTitle>
           <DialogDescription>
-            They'll get an email from Clerk with a one-time link to create
-            their account. The link points back to this admin console.
+            They'll get an email with a one-time link to create their
+            account. The link points back to this admin console.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -685,7 +685,7 @@ function humanizeError(err: unknown): string {
  * Compact "X minutes ago" / "Yesterday" / date formatter. Uses
  * Intl.RelativeTimeFormat (broadly supported) for the recent window
  * and falls back to a date for older values. Accepts the millisecond
- * timestamps Clerk hands us.
+ * timestamps the auth provider hands us.
  */
 function formatTimeAgo(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "—";

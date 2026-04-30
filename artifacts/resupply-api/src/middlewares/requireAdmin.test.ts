@@ -3,12 +3,12 @@ import express, { type Express } from "express";
 import request from "supertest";
 
 // Mock @clerk/express wholesale. Two reasons:
-//   1. The middleware's only Clerk surface area is `getAuth(req)` and
+//   1. The middleware's only the auth provider surface area is `getAuth(req)` and
 //      `clerkClient.users.getUser(id)`. Stubbing those keeps the test
-//      hermetic — no Clerk network calls, no need for a CLERK_SECRET_KEY
+//      hermetic — no the auth provider network calls, no need for a CLERK_SECRET_KEY
 //      at test time.
 //   2. We want to drive the userId / email / verification status from
-//      the test, not a real Clerk fixture.
+//      the test, not a real the auth provider fixture.
 const getAuthMock = vi.fn();
 const getUserMock = vi.fn();
 vi.mock("@clerk/express", () => ({
@@ -26,7 +26,7 @@ function makeApp(): Express {
     res.json({
       ok: true,
       adminEmail: req.adminEmail,
-      adminClerkId: req.adminClerkId,
+      adminUserId: req.adminUserId,
       adminRole: req.adminRole,
     });
   });
@@ -105,7 +105,7 @@ describe("requireAdmin middleware", () => {
 
   // --- Required rejection paths from the task description ---
 
-  it("returns 401 when there is no Clerk session", async () => {
+  it("returns 401 when there is no session", async () => {
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     getAuthMock.mockReturnValue({ userId: null });
 
@@ -113,7 +113,7 @@ describe("requireAdmin middleware", () => {
 
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: "Sign in required" });
-    // Clerk SDK should NOT have been hit if the session check failed.
+    // the auth provider SDK should NOT have been hit if the session check failed.
     expect(getUserMock).not.toHaveBeenCalled();
   });
 
@@ -154,7 +154,7 @@ describe("requireAdmin middleware", () => {
     expect(res.body).toEqual({
       ok: true,
       adminEmail: ALLOWED_EMAIL,
-      adminClerkId: "user_abc123",
+      adminUserId: "user_abc123",
       adminRole: "admin",
     });
   });
@@ -171,7 +171,7 @@ describe("requireAdmin middleware", () => {
 
   it("returns 403 when the primary email is unverified, even if it matches the allowlist", async () => {
     // Defense-in-depth: an attacker who could add someone else's
-    // address to a Clerk profile (without proving they control the
+    // address to a the auth provider profile (without proving they control the
     // inbox) must not get past the allowlist on that basis alone.
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     getAuthMock.mockReturnValue({ userId: "user_abc123" });
@@ -223,7 +223,7 @@ describe("requireAdmin middleware", () => {
     // The verified-email check is defense-in-depth against allowlist
     // spoofing. With no allowlist set, there's nothing to spoof, so
     // the verification check is irrelevant. This branch is exercised
-    // by the e2e test harness, which creates Clerk users via the
+    // by the e2e test harness, which creates auth users via the
     // Backend API and does NOT mark their primary email as verified.
     process.env.NODE_ENV = "development";
     delete process.env.RESUPPLY_ADMIN_EMAILS;
@@ -243,11 +243,11 @@ describe("requireAdmin middleware", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.adminEmail).toBe("fresh-test-user@example.com");
-    expect(res.body.adminClerkId).toBe("user_unverified");
+    expect(res.body.adminUserId).toBe("user_unverified");
   });
 
-  it("dev fallback: still issues an admin id even if Clerk returns no email at all", async () => {
-    // Edge case: a Clerk user with zero email addresses. Production
+  it("dev fallback: still issues an admin id even if the auth provider returns no email at all", async () => {
+    // Edge case: a auth user with zero email addresses. Production
     // would never reach this branch (allowlist would catch it), but
     // dev should still let the admin in so the console isn't
     // bricked by a fixture quirk.
@@ -262,12 +262,12 @@ describe("requireAdmin middleware", () => {
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(200);
-    expect(res.body.adminEmail).toBe("clerk:user_no_email");
-    expect(res.body.adminClerkId).toBe("user_no_email");
+    expect(res.body.adminEmail).toBe("user:user_no_email");
+    expect(res.body.adminUserId).toBe("user_no_email");
   });
 
-  it("returns 502 if Clerk lookup throws (upstream failure, not an auth failure)", async () => {
-    // A failure to *reach* Clerk is fundamentally different from a
+  it("returns 502 if auth lookup throws (upstream failure, not an auth failure)", async () => {
+    // A failure to *reach* the auth provider is fundamentally different from a
     // failure to authenticate. Returning 401 here would tell the
     // dashboard "your session is bad — sign out and try again",
     // which is misleading: the user's session is fine, our
@@ -288,7 +288,7 @@ describe("requireAdmin middleware", () => {
       error:
         "Could not verify your identity right now. Please try again in a moment.",
     });
-    // The underlying Clerk error must NOT leak into the response —
+    // The underlying the auth provider error must NOT leak into the response —
     // not the user id, not the failure reason. Treat every byte we
     // hand back as world-readable.
     expect(JSON.stringify(res.body)).not.toMatch(/user_abc123/);

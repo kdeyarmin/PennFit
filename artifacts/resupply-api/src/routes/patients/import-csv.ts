@@ -231,7 +231,7 @@ router.post(
   await logAudit({
     action: "patient.bulk_create",
     adminEmail: req.adminEmail ?? null,
-    adminClerkId: req.adminClerkId ?? null,
+    adminUserId: req.adminUserId ?? null,
     targetTable: "patients",
     targetId: null,
     metadata: {

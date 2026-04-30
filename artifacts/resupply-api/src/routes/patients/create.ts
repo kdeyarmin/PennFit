@@ -204,7 +204,7 @@ router.post(
       await logAudit({
         action: "patient.create",
         adminEmail: req.adminEmail ?? null,
-        adminClerkId: req.adminClerkId ?? null,
+        adminUserId: req.adminUserId ?? null,
         targetTable: "patients",
         targetId: id,
         ip: req.ip ?? null,

@@ -15,7 +15,7 @@
 //
 // Privacy: cart contents are public catalog data (Stripe IDs, names,
 // qty). The server-side endpoint denormalizes the user's email at
-// write time via Clerk; the client never sends an email.
+// write time via the auth provider; the client never sends an email.
 //
 // Why a 3s debounce: matches typical "user keeps tweaking quantity"
 // burst patterns. Long enough to coalesce a flurry of +/- clicks

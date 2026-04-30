@@ -103,7 +103,7 @@ router.post("/rules", requireAdmin, async (req, res) => {
     await logAudit({
       action: "rules.create",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "frequency_rules",
       targetId: row.id,
       ip: req.ip ?? null,

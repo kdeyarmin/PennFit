@@ -1,7 +1,7 @@
 // Route tests for routes/shop/my-orders.ts.
 //
 // Coverage:
-//   * 401 when the caller has no Clerk session
+//   * 401 when the caller has no session
 //   * 200 with empty list + null cursor for a signed-in user with no orders
 //   * 200 with grouped line items per order when both tables have rows
 //   * Items belonging to other orders are not bled into this user's

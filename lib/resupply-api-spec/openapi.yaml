@@ -93,7 +93,7 @@ paths:
       tags: [admin]
       summary: Admin identity
       description: |
-        Returns the signed-in admin's Clerk id and verified primary
+        Returns the signed-in admin's the auth provider id and verified primary
         email when the caller is on the `RESUPPLY_ADMIN_EMAILS`
         allowlist. The dashboard calls this immediately after sign-in
         to decide whether to render the admin console (200), the
@@ -108,7 +108,7 @@ paths:
                 $ref: "#/components/schemas/AdminIdentity"
         "401":
           description: |
-            No valid Clerk session, or Clerk lookup failed. The body
+            No valid session, or Auth lookup failed. The body
             contains a generic error message — never the underlying
             driver text.
           content:
@@ -171,7 +171,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/VoiceValidationError"
         "401":
-          description: No valid Clerk session
+          description: No valid session
           content:
             application/json:
               schema:
@@ -262,7 +262,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessagingValidationError"
         "401":
-          description: No valid Clerk session
+          description: No valid session
           content:
             application/json:
               schema:
@@ -342,7 +342,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessagingValidationError"
         "401":
-          description: No valid Clerk session
+          description: No valid session
           content:
             application/json:
               schema:
@@ -391,7 +391,7 @@ paths:
       description: |
         Public endpoint hit by patients clicking the Confirm /
         Change-address / Stop links inside an outbound reminder
-        email. Authenticated by HMAC-signed token (NOT Clerk). The
+        email. Authenticated by HMAC-signed token (NOT a session check). The
         dashboard MUST NOT call this — it's published only so
         consumers of the spec can see it exists.
 
@@ -444,7 +444,7 @@ paths:
         Webhook called BY TWILIO (never by the dashboard) on every call
         lifecycle transition: initiated, ringing, answered, completed,
         failed, busy, no-answer, canceled. Authenticated via the Twilio
-        request signature, NOT by Clerk. The dashboard MUST NOT call
+        request signature, NOT by the auth provider. The dashboard MUST NOT call
         this — it's published here only so consumers of the spec can see
         it exists and understand the audit trail.
 
@@ -513,7 +513,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -582,7 +582,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -626,7 +626,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -676,7 +676,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -744,7 +744,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/StalePatientError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -786,7 +786,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -815,7 +815,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/FrequencyRuleList"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -850,7 +850,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -902,7 +902,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -934,7 +934,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1000,7 +1000,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1041,7 +1041,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1118,7 +1118,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1164,7 +1164,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1212,7 +1212,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessagingValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1287,7 +1287,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1378,7 +1378,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessagingUnavailableError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1421,7 +1421,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1473,7 +1473,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1530,7 +1530,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1586,7 +1586,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotFoundError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1630,7 +1630,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1689,7 +1689,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1733,7 +1733,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleValidationError"
         "401":
-          description: No Clerk session.
+          description: No session.
           content:
             application/json:
               schema:
@@ -1764,11 +1764,11 @@ components:
       description: |
         Minimal identity payload for an authorized admin. Contains
         ONLY the fields the dashboard needs to render — no session
-        token, no Clerk user object, no allowlist contents.
+        token, no auth user object, no allowlist contents.
       properties:
-        clerkId:
+        userId:
           type: string
-          description: Stable Clerk user id, used for audit log writes.
+          description: Stable auth user id, used for audit log writes.
         email:
           type: string
           format: email
@@ -1796,7 +1796,7 @@ components:
             allowlists. The dev-mode fallback (no allowlist
             configured, NODE_ENV=development) returns `admin`.
       required:
-        - clerkId
+        - userId
         - email
         - role
     AuthError:
@@ -3080,7 +3080,7 @@ components:
         adminEmail:
           type: string
           nullable: true
-        adminClerkId:
+        adminUserId:
           type: string
           nullable: true
         action:
@@ -3651,7 +3651,7 @@ components:
           type: string
         authorEmail:
           type: string
-        authorClerkId:
+        authorUserId:
           type: string
           nullable: true
         createdAt:

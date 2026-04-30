@@ -13,8 +13,8 @@
 //     "edit and resubmit" UI.
 //
 // Auth: review reads work for everyone. Write/edit/delete require a
-// Clerk session — the page swaps the form for a "Sign in to write a
-// review" prompt for signed-out visitors via Clerk's <Show>.
+// session — the page swaps the form for a "Sign in to write a
+// review" prompt for signed-out visitors via the auth provider's <Show>.
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
@@ -188,7 +188,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
     };
   }, [productId]);
 
-  // Load the caller's own review for this product when Clerk is ready.
+  // Load the caller's own review for this product when the auth provider is ready.
   // Refetches on sign-in/out via the user-id key dep below.
   const { isSignedIn, user } = useUser();
   const userId = user?.id ?? null;

@@ -91,7 +91,7 @@ router.patch("/prescriptions/:rxId", requireAdmin, async (req, res) => {
   await logAudit({
     action: "patient.prescription.status_changed",
     adminEmail: req.adminEmail ?? null,
-    adminClerkId: req.adminClerkId ?? null,
+    adminUserId: req.adminUserId ?? null,
     targetTable: "prescriptions",
     targetId: rxId,
     metadata: {

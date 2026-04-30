@@ -15,7 +15,7 @@ function readRedirect(): string {
   return `${basePath}/admin`;
 }
 
-/** See sign-in.tsx for the rationale on hiding the Clerk footer. */
+/** See sign-in.tsx for the rationale on hiding the the auth provider footer. */
 const HIDE_CLERK_BRANDING = {
   elements: {
     footer: { display: "none" as const },

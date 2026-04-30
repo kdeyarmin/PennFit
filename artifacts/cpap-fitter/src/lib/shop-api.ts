@@ -283,7 +283,7 @@ export interface ReviewWritePayload {
 }
 
 /**
- * Build the Authorization header from Clerk's global session, when
+ * Build the Authorization header from the auth provider's global session, when
  * the SDK has loaded. Returns an empty object when signed-out so
  * public reads still work.
  */
@@ -476,7 +476,7 @@ export interface OrderHistoryResponse {
 /**
  * Paginated order history for the signed-in caller. Newest first.
  * Throws on 401 — the caller is expected to gate the page behind a
- * Clerk `<SignedIn>` so this only fires for authenticated sessions.
+ * the auth provider's `<SignedIn>` so this only fires for authenticated sessions.
  */
 export async function fetchMyOrders(opts?: {
   cursor?: string;
@@ -500,7 +500,7 @@ export async function fetchMyOrders(opts?: {
  * can confirm "we just sent it to a***@example.com".
  *
  * Server enforces:
- *   - ownership (caller must be the Clerk user that paid)
+ *   - ownership (caller must be the auth user that paid)
  *   - status === 'paid'
  *   - per-session rate limit (5 sends / 10 min)
  *

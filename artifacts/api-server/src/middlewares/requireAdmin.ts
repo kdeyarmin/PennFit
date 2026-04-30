@@ -8,12 +8,12 @@ import { getAuth, clerkClient } from "@clerk/express";
  * wins):
  *   1. Email is in `PENN_ADMIN_EMAILS`           → admin
  *   2. Email is in `PENN_AGENT_EMAILS`           → agent
- *   3. Clerk `publicMetadata.pennRole === "admin"` → admin
- *   4. Clerk `publicMetadata.pennRole === "agent"` → agent
+ *   3. the auth provider `publicMetadata.pennRole === "admin"` → admin
+ *   4. the auth provider `publicMetadata.pennRole === "agent"` → agent
  *   5. otherwise                                  → 403
  *
  * The env-var allowlist is checked FIRST on purpose. It's the
- * permanent recovery / bootstrap path: even if Clerk metadata gets
+ * permanent recovery / bootstrap path: even if auth provider metadata gets
  * mis-configured (or the very first admin needs to be seeded before
  * anyone can sign in), an engineer can always set `PENN_ADMIN_EMAILS`
  * and recover. The Clerk-metadata path is what the in-app "Team"
@@ -32,7 +32,7 @@ import { getAuth, clerkClient } from "@clerk/express";
  *     admin-only via `requireAdminOnly` (e.g. team management,
  *     future destructive operations).
  *
- * Behavior when neither env-var allowlist is set AND no Clerk
+ * Behavior when neither env-var allowlist is set AND no the auth provider
  * metadata role is found:
  *   - In `NODE_ENV=development` we allow any signed-in user as
  *     `admin`. This makes the local dev loop bearable — no env vars
@@ -44,7 +44,7 @@ import { getAuth, clerkClient } from "@clerk/express";
  *     admin via `PENN_ADMIN_EMAILS` before relying on Clerk-metadata
  *     management.
  *
- * On success we attach `req.adminEmail`, `req.adminClerkId`, and
+ * On success we attach `req.adminEmail`, `req.adminUserId`, and
  * `req.adminRole` so route handlers can write audit-log rows
  * without re-fetching the user.
  */
@@ -54,7 +54,7 @@ declare global {
   namespace Express {
     interface Request {
       adminEmail?: string;
-      adminClerkId?: string;
+      adminUserId?: string;
       adminRole?: "admin" | "agent";
     }
   }
@@ -91,13 +91,13 @@ export async function requireAdmin(
   }
 
   // Look up the user to get their primary verified email AND any
-  // pennRole stamped on Clerk publicMetadata. Both are needed for
-  // role resolution below; we make exactly one Clerk lookup per
+  // pennRole stamped on auth provider publicMetadata. Both are needed for
+  // role resolution below; we make exactly one auth lookup per
   // request (the call is cached aggressively by @clerk/express).
   //
   // We REQUIRE the primary email to be verified — otherwise an
   // attacker who can sign up with someone else's address (without
-  // proving control) could match the env allowlist. Clerk marks an
+  // proving control) could match the env allowlist. the auth provider marks an
   // email "verified" only after the user clicks the verification
   // link or enters the code.
   let email: string | undefined;
@@ -137,7 +137,7 @@ export async function requireAdmin(
     role = "agent";
   } else if (metadataRole !== undefined) {
     // No env-var match, but the user has been promoted via the
-    // in-app Team page (which writes Clerk publicMetadata).
+    // in-app Team page (which writes auth provider publicMetadata).
     role = metadataRole;
   } else if (adminAllowlist === null) {
     if (process.env.NODE_ENV === "production") {
@@ -156,13 +156,13 @@ export async function requireAdmin(
   }
 
   req.adminEmail = email;
-  req.adminClerkId = userId;
+  req.adminUserId = userId;
   req.adminRole = role;
   next();
 }
 
 /**
- * Read `publicMetadata.pennRole` defensively. Clerk types
+ * Read `publicMetadata.pennRole` defensively. the auth provider types
  * `publicMetadata` as a free-form `Record<string, unknown>` so we
  * narrow here rather than at every call site. Anything other than
  * the two known role strings is treated as "no role" and the
@@ -209,7 +209,7 @@ export function getEnvAllowlists(): {
 /**
  * requireAdminOnly — stricter gate that admits only `role === "admin"`.
  *
- * Wraps `requireAdmin` so all the spoofing defenses and Clerk error
+ * Wraps `requireAdmin` so all the spoofing defenses and the auth provider error
  * handling stay in one place. Use on routes whose effects are not
  * safely reversible by a customer-service agent. The cpap-fitter
  * admin has no such routes today; this is wired in advance so future

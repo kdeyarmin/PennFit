@@ -34,9 +34,9 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
     return;
   }
 
-  // Fetch Clerk user to seed display name + email on first hit.
+  // Fetch auth user to seed display name + email on first hit.
   // We do this on every GET because the user can rename themselves
-  // in Clerk and we want the local row to drift toward the source
+  // in the auth provider and we want the local row to drift toward the source
   // of truth without a webhook subscription.
   let email: string | null = null;
   let displayName: string | null = null;
@@ -53,7 +53,7 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
       .trim();
     displayName = fullName.length > 0 ? fullName : null;
   } catch (err) {
-    // Clerk Backend API blip — degrade to "no email" rather than
+    // auth provider API blip — degrade to "no email" rather than
     // failing the whole /shop/me call. The /me UI is a read-mostly
     // surface and a missing email here is non-fatal.
     req.log?.warn(

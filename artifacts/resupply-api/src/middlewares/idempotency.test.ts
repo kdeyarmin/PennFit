@@ -166,7 +166,7 @@ import { withIdempotency } from "./idempotency";
 const ENDPOINT = "POST /test";
 
 function adminInjector(req: Request, _res: Response, next: NextFunction): void {
-  req.adminClerkId = "user_admin";
+  req.adminUserId = "user_admin";
   req.adminEmail = "admin@example.com";
   next();
 }

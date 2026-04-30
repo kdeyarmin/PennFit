@@ -39,7 +39,7 @@
 //
 // Mocking strategy mirrors my-orders.test.ts: drizzle is replaced
 // with a fluent stub backed by `selectQueue` / `updateQueue`; Stripe
-// is mocked at the lib/stripe/config layer; Clerk auth is mocked at
+// is mocked at the lib/stripe/config layer; the auth provider auth is mocked at
 // @clerk/express. We DON'T import a real Stripe SDK; the mock hands
 // back plain objects shaped like the SDK responses we read.
 

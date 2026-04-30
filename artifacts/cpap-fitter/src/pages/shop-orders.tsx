@@ -11,7 +11,7 @@
 //   The page is gated client-side: signed-out visitors see a
 //   sign-in prompt that round-trips through ?redirect=/shop/orders
 //   so they land back here after auth. The API endpoint itself
-//   returns 401 if called without a Clerk session, so even a
+//   returns 401 if called without a session, so even a
 //   curl-style probe doesn't leak.
 //
 // Pagination:
@@ -141,7 +141,7 @@ function SignedInOrders() {
   }, []);
 
   // Initial load. Run once on mount; the user-id-bound effect lives
-  // inside the Clerk session so a fresh sign-in already remounts
+  // inside the session so a fresh sign-in already remounts
   // this component with a fresh component state.
   useEffect(() => {
     let active = true;

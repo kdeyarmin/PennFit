@@ -1,13 +1,13 @@
 /**
- * Clerk Frontend API Proxy Middleware
+ * auth frontend API Proxy Middleware
  *
- * Proxies Clerk Frontend API requests through your domain, enabling Clerk
+ * Proxies auth frontend API requests through your domain, enabling the auth provider
  * authentication on custom domains and .replit.app deployments without
  * requiring CNAME DNS configuration.
  *
  * AUTH CONFIGURATION: To manage users, enable/disable login providers
  * (Google, GitHub, etc.), change app branding, or configure OAuth credentials,
- * use the Auth pane in the workspace toolbar. There is no external Clerk
+ * use the Auth pane in the workspace toolbar. There is no external the auth provider
  * dashboard — all auth configuration is done through the Auth pane.
  *
  * IMPORTANT:
@@ -26,7 +26,7 @@ const CLERK_FAPI = "https://frontend-api.clerk.dev";
 export const CLERK_PROXY_PATH = "/api/__clerk";
 
 export function clerkProxyMiddleware(): RequestHandler {
-  // Only run proxy in production — Clerk proxying doesn't work for dev instances
+  // Only run proxy in production — the auth provider proxying doesn't work for dev instances
   if (process.env.NODE_ENV !== "production") {
     return (_req, _res, next) => next();
   }

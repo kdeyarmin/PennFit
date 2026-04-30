@@ -4,7 +4,7 @@
 // the cart on a different device when the patient clicks the
 // email link.
 //
-// One row per Clerk user (clerk_user_id is UNIQUE). The frontend
+// One row per auth user (clerk_user_id is UNIQUE). The frontend
 // PUTs the current cart on a 3s debounce; an empty cart issues a
 // DELETE that flips `cleared_at` and zeroes `items` (the row stays
 // so the dispatcher can record "we already nudged this user once
@@ -27,7 +27,7 @@
 // Privacy: the cart contents (Stripe price/product IDs, names,
 // quantities) are PUBLIC catalog data. No PHI lands here. Email is
 // denormalized at PUT time so the dispatcher doesn't need to call
-// Clerk per row.
+// the auth provider per row.
 
 import { sql } from "drizzle-orm";
 import { index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
@@ -69,16 +69,16 @@ export const shopAbandonedCarts = resupplySchema.table(
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
     /**
-     * Clerk user ID of the cart owner. Required AND unique — only
+     * auth user ID of the cart owner. Required AND unique — only
      * signed-in patients are tracked (we need an email + a stable
      * identity to send the nudge and to suppress after checkout).
      */
     clerkUserId: text("clerk_user_id").notNull().unique(),
     /**
      * Denormalized destination email (lowercased). Refreshed on
-     * every PUT from the Clerk Backend API so the dispatcher can
-     * scan in one query without N+1 Clerk lookups. Nullable for
-     * the rare moment between row creation and the first Clerk
+     * every PUT from the auth provider API so the dispatcher can
+     * scan in one query without N+1 auth lookups. Nullable for
+     * the rare moment between row creation and the first the auth provider
      * fetch succeeding — dispatcher skips null-email rows.
      */
     email: text("email"),

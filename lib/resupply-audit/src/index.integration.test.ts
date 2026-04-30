@@ -59,7 +59,7 @@ describeIfDb("logAudit (live db)", () => {
     await logAudit({
       action: "patient.view",
       adminEmail: "test@example.com",
-      adminClerkId: "user_test123",
+      adminUserId: "user_test123",
       targetTable: "patients",
       targetId: "00000000-0000-0000-0000-000000000001",
       metadata: { _runTag: runTag, requestId: "req_abc" },

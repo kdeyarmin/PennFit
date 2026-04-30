@@ -1,6 +1,6 @@
 import { SignIn } from "@clerk/react";
 
-// PennPaps-branded Clerk sign-in page. Path-routed under the dashboard's
+// PennPaps-branded the auth provider sign-in page. Path-routed under the dashboard's
 // base path so the same component can serve `/sign-in/*` (Clerk's
 // multi-step flow uses sub-paths internally for verify-email,
 // MFA, etc.). All redirects target the dashboard root, where the

@@ -156,7 +156,7 @@ router.patch("/rules/:id", requireAdmin, async (req, res) => {
     await logAudit({
       action: "rules.update",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "frequency_rules",
       targetId: idParsed.data.id,
       ip: req.ip ?? null,

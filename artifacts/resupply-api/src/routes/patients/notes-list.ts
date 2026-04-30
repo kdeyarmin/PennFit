@@ -51,7 +51,7 @@ router.get("/patients/:id/notes", requireAdmin, async (req, res) => {
       id: patientNotes.id,
       body: decrypt(patientNotes.body),
       authorEmail: patientNotes.authorEmail,
-      authorClerkId: patientNotes.authorClerkId,
+      authorUserId: patientNotes.authorUserId,
       createdAt: patientNotes.createdAt,
     })
     .from(patientNotes)
@@ -62,7 +62,7 @@ router.get("/patients/:id/notes", requireAdmin, async (req, res) => {
   await logAudit({
     action: "patient.notes.list",
     adminEmail: req.adminEmail ?? null,
-    adminClerkId: req.adminClerkId ?? null,
+    adminUserId: req.adminUserId ?? null,
     targetTable: "patients",
     targetId: id,
     metadata: { count: rows.length },
@@ -77,7 +77,7 @@ router.get("/patients/:id/notes", requireAdmin, async (req, res) => {
       id: r.id,
       body: r.body ?? "",
       authorEmail: r.authorEmail,
-      authorClerkId: r.authorClerkId,
+      authorUserId: r.authorUserId,
       createdAt: r.createdAt.toISOString(),
     })),
   });

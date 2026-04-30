@@ -93,7 +93,7 @@ const COLUMNS: ReadonlyArray<string> = [
   "id",
   "occurredAt",
   "adminEmail",
-  "adminClerkId",
+  "adminUserId",
   "action",
   "targetTable",
   "targetId",
@@ -224,7 +224,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
     await logAudit({
       action: "audit.export.csv",
       adminEmail,
-      adminClerkId: auth.userId ?? null,
+      adminUserId: auth.userId ?? null,
       targetTable: "audit_log",
       targetId: null,
       metadata: {

@@ -128,7 +128,7 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// Clerk session middleware — attaches auth state (`getAuth(req)`) to
+// session middleware — attaches auth state (`getAuth(req)`) to
 // every request so downstream admin-gated routes can read it. Safe
 // to mount globally: it's a no-op for unauthenticated requests, and
 // the unauthenticated /healthz, /readyz probes don't read auth state

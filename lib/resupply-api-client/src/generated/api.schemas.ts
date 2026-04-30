@@ -57,12 +57,12 @@ export const AdminIdentityRole = {
 /**
  * Minimal identity payload for an authorized admin. Contains
 ONLY the fields the dashboard needs to render — no session
-token, no Clerk user object, no allowlist contents.
+token, no auth user object, no allowlist contents.
 
  */
 export interface AdminIdentity {
-  /** Stable Clerk user id, used for audit log writes. */
-  clerkId: string;
+  /** Stable auth user id, used for audit log writes. */
+  userId: string;
   /** Verified primary email, lowercased. Displayed in the
 dashboard chrome and recorded in audit rows.
  */
@@ -1201,7 +1201,7 @@ export interface AuditListItem {
   id: string;
   occurredAt: string;
   adminEmail?: string | null;
-  adminClerkId?: string | null;
+  adminUserId?: string | null;
   action: string;
   targetTable?: string | null;
   targetId?: string | null;
@@ -1715,7 +1715,7 @@ export interface PatientNote {
   id: string;
   body: string;
   authorEmail: string;
-  authorClerkId?: string | null;
+  authorUserId?: string | null;
   createdAt: string;
 }
 

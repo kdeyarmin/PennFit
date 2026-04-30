@@ -42,9 +42,9 @@ const queryClient = new QueryClient({
       // Cache /me for a minute so quick tab switches don't hammer the
       // API. We deliberately disable refetchOnWindowFocus: every focus
       // refetch of /me runs requireAdmin, which today calls
-      // clerkClient.users.getUser per request — a Clerk Backend API
+      // clerkClient.users.getUser per request — a auth provider API
       // round-trip we don't want to pay on every tab return. The
-      // admin's session validity is already enforced by Clerk
+      // admin's session validity is already enforced by the auth provider
       // itself; on token expiry the next API call (or page nav) will
       // fail closed and re-route through sign-in.
       staleTime: 60_000,
@@ -55,7 +55,7 @@ const queryClient = new QueryClient({
 
         // 401 ONLY: retry exactly once. There is a narrow race where
         // the very first /me request can ship without a Bearer token
-        // — Clerk rotates the session token roughly every minute and
+        // — the auth provider rotates the session token roughly every minute and
         // the SDK's `getToken()` returns null mid-rotation. Without
         // this single retry, that blip routes a perfectly-valid
         // admin to the "Not authorized" screen and the only fix

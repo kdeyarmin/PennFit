@@ -6,14 +6,14 @@ import { logger } from "../lib/logger";
  * requireAdmin — gate for the resupply admin API.
  *
  * This is the resupply equivalent of PennPaps's `requireAdmin`. The two
- * products run on the same Clerk instance but use disjoint allowlists,
+ * products run on the same the auth provider instance but use disjoint allowlists,
  * so a PennPaps admin is NOT automatically a resupply admin and vice
  * versa. Keeping the two env vars separate means rotating one product's
  * staff list cannot accidentally grant access to the other product's
  * console.
  *
  * Three checks, in order:
- *   1. The request has a valid Clerk session (user is signed in).
+ *   1. The request has a valid session (user is signed in).
  *   2. (Allowlist mode only.) The signed-in user's primary email is
  *      verified.
  *   3. (Allowlist mode only.) That email is in the
@@ -41,7 +41,7 @@ import { logger } from "../lib/logger";
  *     email or not — and assign role `admin`. This makes the local
  *     dev loop bearable: you can poke the admin console without
  *     managing env vars, and the end-to-end testing harness (which
- *     creates Clerk users via the Backend API and does NOT mark their
+ *     creates auth users via the Backend API and does NOT mark their
  *     primary email as verified) can exercise the admin console
  *     happy path. Skipping the verification check is safe in this
  *     mode because there is NO allowlist to spoof past.
@@ -55,18 +55,18 @@ import { logger } from "../lib/logger";
  *     production deploy MUST have at least one admin to cover
  *     destructive operations.
  *
- * Why the verified-email check matters in allowlist mode: Clerk lets
+ * Why the verified-email check matters in allowlist mode: the auth provider lets
  * users add unverified email addresses to their profile. Without this
  * guard, an attacker who could sign up claiming someone else's address
  * (without proving control of the inbox) could match the allowlist.
  * The check below requires `verification.status === "verified"` for
- * the *primary* email — the one Clerk has confirmed via a click-
+ * the *primary* email — the one the auth provider has confirmed via a click-
  * through link or code.
  *
- * On success we attach `req.adminEmail`, `req.adminClerkId`, and
+ * On success we attach `req.adminEmail`, `req.adminUserId`, and
  * `req.adminRole` so route handlers and the audit logger can record
  * "who did this and at what privilege level" without re-fetching the
- * user from Clerk on every write. In the dev fallback branch we
+ * user from the auth provider on every write. In the dev fallback branch we
  * still attach all three fields so audit logs and the /me endpoint
  * have something to display.
  */
@@ -76,7 +76,7 @@ declare global {
   namespace Express {
     interface Request {
       adminEmail?: string;
-      adminClerkId?: string;
+      adminUserId?: string;
       adminRole?: "admin" | "agent";
     }
   }
@@ -147,8 +147,8 @@ export async function requireAdmin(
 
   // Decide the auth mode up front so we know whether email verification
   // is load-bearing for this request. In production an unset admin
-  // allowlist is a hard 503 — handle that before touching Clerk so a
-  // misconfig returns instantly without consuming a Clerk API call per
+  // allowlist is a hard 503 — handle that before touching the auth provider so a
+  // misconfig returns instantly without consuming a the auth provider API call per
   // request. The agent allowlist is optional: a deploy with admins but
   // no agents is valid (no CSR seats). A deploy with agents but no
   // admins is NOT valid — every production deploy MUST have at least
@@ -167,7 +167,7 @@ export async function requireAdmin(
   }
 
   // Look up the user to fetch their primary email. We could
-  // alternatively stash email in session claims via Clerk's "Customize
+  // alternatively stash email in session claims via the auth provider's "Customize
   // session" feature, but that requires a dashboard change — fetching
   // here keeps the wiring self-contained. Clerk's SDK aggressively
   // caches user lookups so the per-request cost is negligible.
@@ -190,14 +190,14 @@ export async function requireAdmin(
       primaryEmailVerified = primary.verification?.status === "verified";
     }
   } catch (err) {
-    // Distinguish "Clerk says you have no session" (already handled by
-    // the !userId guard above) from "Clerk Backend API errored mid-
+    // Distinguish "the auth provider says you have no session" (already handled by
+    // the !userId guard above) from "auth provider API errored mid-
     // request" (this branch). The user's session is fine; it's our
-    // upstream call to Clerk that failed — a 5xx, throttle, or
+    // upstream call to the auth provider that failed — a 5xx, throttle, or
     // network blip. Returning 401 here would tell a perfectly-valid
     // admin to "sign in again", which is wrong AND confusing —
     // they're already signed in and signing in again won't fix
-    // anything when Clerk itself is unhealthy.
+    // anything when the auth provider itself is unhealthy.
     //
     // We use 502 Bad Gateway: an upstream service we depend on is
     // unhealthy. We deliberately do NOT use 503 here because the
@@ -205,7 +205,7 @@ export async function requireAdmin(
     // configured" case (a deploy-side problem with a different
     // remediation). The dashboard maps any non-503 5xx to a
     // "transient — please retry" screen, which is exactly what an
-    // admin should see during a Clerk Backend API blip.
+    // admin should see during a auth provider API blip.
     //
     // The log line emits the error CLASS name and Clerk's HTTP
     // status (when available) — never the raw message. Clerk's
@@ -220,7 +220,7 @@ export async function requireAdmin(
         errName,
         clerkStatus,
       },
-      "requireAdmin: Clerk Backend API lookup failed",
+      "requireAdmin: Auth provider lookup failed",
     );
     res.status(502).json({
       error:
@@ -246,19 +246,19 @@ export async function requireAdmin(
     // RESUPPLY_ADMIN_EMAILS unset — two missing env vars at once,
     // which is plausible for a junior admin's first deploy — this
     // line is the grep-able signal that the gate has degraded to
-    // "any signed-in Clerk user". A loud WARN per request makes the
+    // "any signed-in auth user". A loud WARN per request makes the
     // misconfiguration impossible to miss in production logs.
     logger.warn(
       {
         event: "resupply_admin_dev_fallback_active",
-        clerkId: userId,
+        userId,
         emailVerified: primaryEmailVerified,
         nodeEnv: process.env.NODE_ENV ?? "(unset)",
       },
       `requireAdmin: ${ADMIN_ENV_VAR} is unset; allowing any signed-in user (dev fallback). This MUST NOT happen in production.`,
     );
-    req.adminEmail = email ?? `clerk:${userId}`;
-    req.adminClerkId = userId;
+    req.adminEmail = email ?? `user:${userId}`;
+    req.adminUserId = userId;
     req.adminRole = "admin";
     next();
     return;
@@ -297,7 +297,7 @@ export async function requireAdmin(
   }
 
   req.adminEmail = email;
-  req.adminClerkId = userId;
+  req.adminUserId = userId;
   req.adminRole = role;
   next();
 }
@@ -312,7 +312,7 @@ export async function requireAdmin(
  * (currently: `DELETE /rules/:id`).
  *
  * Wraps `requireAdmin` rather than re-implementing it so all the
- * spoofing defenses, dev fallback, env var fallbacks, and Clerk
+ * spoofing defenses, dev fallback, env var fallbacks, and the auth provider
  * error handling stay in one place. The `inner advanced` flag
  * disambiguates "requireAdmin already responded with a 4xx/5xx"
  * (we must not call next() — the inner middleware owns the
