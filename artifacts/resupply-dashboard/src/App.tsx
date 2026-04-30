@@ -24,6 +24,7 @@ import { AdminTeamPage } from "./pages/admin-team";
 import { AdminOperationsPage } from "./pages/admin-operations";
 import { AdminReportsPage } from "./pages/admin-reports";
 import { AdminDeliveryFailuresPage } from "./pages/admin-delivery-failures";
+import { AdminRuleTesterPage } from "./pages/admin-rule-tester";
 import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
 import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
@@ -125,6 +126,7 @@ function AdminConsole() {
           path="/admin/delivery-failures"
           component={AdminDeliveryFailuresPage}
         />
+        <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>
