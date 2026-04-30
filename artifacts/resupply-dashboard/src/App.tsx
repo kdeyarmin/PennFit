@@ -17,6 +17,7 @@ import { EpisodesPage } from "./pages/episodes";
 import { RulesPage } from "./pages/rules";
 import { AuditPage } from "./pages/audit";
 import { AdminShopReviewsPage } from "./pages/admin-shop-reviews";
+import { AdminShopReturnsPage } from "./pages/admin-shop-returns";
 import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
 import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
@@ -101,6 +102,10 @@ function AdminConsole() {
         <Route
           path="/admin/shop/abandoned-carts"
           component={AdminShopAbandonedCartsPage}
+        />
+        <Route
+          path="/admin/shop/returns"
+          component={AdminShopReturnsPage}
         />
         <Route component={NotFound} />
       </Switch>

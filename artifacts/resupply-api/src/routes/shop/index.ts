@@ -12,6 +12,7 @@ import checkoutRouter from "./checkout";
 import meRouter from "./me";
 import meDashboardRouter from "./me-dashboard";
 import myOrdersRouter from "./my-orders";
+import myReturnsRouter from "./my-returns";
 import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
 import productsRouter from "./products";
@@ -30,6 +31,7 @@ router.use(orderRouter);
 router.use(meRouter);
 router.use(meDashboardRouter);
 router.use(myOrdersRouter);
+router.use(myReturnsRouter);
 // Mounted after myOrdersRouter so the more-specific
 // `/shop/me/orders/:sessionId/resend-receipt` POST sits next to
 // the GET it complements. Keeps grep / "where do I find the

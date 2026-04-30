@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
+import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
@@ -58,5 +59,10 @@ router.use(shopProductsAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shop/returns/* — comfort-guarantee swap / refund / RMA
+// queue. Linear lifecycle (requested → approved → shipped_back →
+// received → refunded|replaced|closed) with strict from-state
+// assertions on every transition.
+router.use(shopReturnsAdminRouter);
 
 export default router;

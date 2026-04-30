@@ -359,7 +359,231 @@ function OrderCard({
       </ul>
       <ShipmentSection order={order} onOrderUpdated={onOrderUpdated} />
       <ResendReceiptControl sessionId={order.sessionId} orderId={order.id} />
+      <ReturnRequestControl order={order} />
     </li>
+  );
+}
+
+// 30-day comfort-guarantee return initiation. Only renders for orders
+// paid within 30 days that don't already have an open return request.
+// First click opens an inline form (reason picker + free-form note +
+// preferred resolution); submit POSTs to /shop/me/orders/:sessionId/returns.
+//
+// We don't fetch the user's existing returns here for the disabled
+// state — the server is the source of truth and will 409 with
+// `open_return_exists` if a return is already in flight, surfacing
+// the existing return ID so the user can navigate to it.
+function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState<string>("fit");
+  const [note, setNote] = useState("");
+  const [resolution, setResolution] = useState<"refund" | "exchange">("exchange");
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<
+    | { kind: "success"; id: string }
+    | { kind: "error"; message: string; existingId?: string }
+    | null
+  >(null);
+
+  const paidAtMs = order.paidAt
+    ? new Date(order.paidAt).getTime()
+    : new Date(order.createdAt).getTime();
+  const ageDays = (Date.now() - paidAtMs) / (1000 * 60 * 60 * 24);
+  // Server is the source of truth on the 30-day window — we mirror it
+  // client-side so the button doesn't render past the cutoff. Returns
+  // outside the window can still be opened via support.
+  const eligible = ageDays <= 30;
+
+  if (!eligible && !result) return null;
+
+  if (result?.kind === "success") {
+    return (
+      <div
+        className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"
+        data-testid={`order-${order.id}-return-success`}
+      >
+        Thanks — we&apos;ve received your return request. You&apos;ll get an
+        email with next steps shortly.
+      </div>
+    );
+  }
+
+  async function handleSubmit() {
+    setSubmitting(true);
+    setResult(null);
+    try {
+      const res = await fetch(
+        `/resupply-api/shop/me/orders/${encodeURIComponent(order.sessionId)}/returns`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reason,
+            reasonNote: note || null,
+            preferredResolution: resolution,
+          }),
+        },
+      );
+      if (res.ok) {
+        const json = (await res.json()) as { id: string };
+        setResult({ kind: "success", id: json.id });
+      } else {
+        const json = (await res.json().catch(() => null)) as
+          | { error?: string; message?: string; returnId?: string }
+          | null;
+        setResult({
+          kind: "error",
+          message:
+            json?.message ??
+            json?.error ??
+            `Couldn't start the return (${res.status}).`,
+          existingId: json?.returnId,
+        });
+      }
+    } catch (err) {
+      setResult({
+        kind: "error",
+        message: err instanceof Error ? err.message : "Network error.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="mt-4 pt-3 border-t border-border/40">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-xs font-semibold text-[hsl(var(--penn-navy))] hover:underline"
+          data-testid={`order-${order.id}-return-open`}
+        >
+          Need a swap or refund? Start a return
+        </button>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Covered by our 30-day comfort guarantee.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-4 pt-4 border-t border-border/40 space-y-3"
+      data-testid={`order-${order.id}-return-form`}
+    >
+      <div>
+        <label
+          className="text-xs font-semibold text-[hsl(var(--penn-navy))] block mb-1.5"
+          htmlFor={`return-reason-${order.id}`}
+        >
+          What&apos;s the issue?
+        </label>
+        <select
+          id={`return-reason-${order.id}`}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          data-testid={`order-${order.id}-return-reason`}
+        >
+          <option value="fit">It doesn&apos;t fit comfortably</option>
+          <option value="defective">It arrived defective or damaged</option>
+          <option value="wrong_item">I received the wrong item</option>
+          <option value="no_longer_needed">I no longer need it</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <label
+          className="text-xs font-semibold text-[hsl(var(--penn-navy))] block mb-1.5"
+          htmlFor={`return-resolution-${order.id}`}
+        >
+          What would you prefer?
+        </label>
+        <div
+          className="grid grid-cols-2 gap-2"
+          role="radiogroup"
+          aria-label="Preferred resolution"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={resolution === "exchange"}
+            onClick={() => setResolution("exchange")}
+            className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+              resolution === "exchange"
+                ? "border-[hsl(var(--penn-navy))] bg-[hsl(var(--penn-navy)/0.06)] text-[hsl(var(--penn-navy))]"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Swap for a different size or style
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={resolution === "refund"}
+            onClick={() => setResolution("refund")}
+            className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+              resolution === "refund"
+                ? "border-[hsl(var(--penn-navy))] bg-[hsl(var(--penn-navy)/0.06)] text-[hsl(var(--penn-navy))]"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Refund
+          </button>
+        </div>
+      </div>
+      <div>
+        <label
+          className="text-xs font-semibold text-[hsl(var(--penn-navy))] block mb-1.5"
+          htmlFor={`return-note-${order.id}`}
+        >
+          Anything we should know? <span className="text-muted-foreground font-normal">(optional)</span>
+        </label>
+        <textarea
+          id={`return-note-${order.id}`}
+          value={note}
+          onChange={(e) => setNote(e.target.value.slice(0, 1000))}
+          rows={3}
+          maxLength={1000}
+          placeholder="Tell us where it leaks, what doesn't fit, or what arrived wrong."
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          data-testid={`order-${order.id}-return-note`}
+        />
+        <div className="text-[10px] text-muted-foreground text-right mt-0.5">
+          {note.length} / 1000
+        </div>
+      </div>
+      {result?.kind === "error" && (
+        <p className="text-xs text-rose-700" role="alert">
+          {result.message}
+        </p>
+      )}
+      <div className="flex gap-2 justify-end pt-1">
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setResult(null);
+          }}
+          disabled={submitting}
+          className="text-xs font-medium px-3 py-1.5 rounded-full text-muted-foreground hover:text-[hsl(var(--penn-navy))]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSubmit()}
+          disabled={submitting}
+          className="text-xs font-semibold px-4 py-1.5 rounded-full bg-[hsl(var(--penn-navy))] text-white hover:bg-[hsl(var(--penn-navy))]/90 disabled:opacity-60"
+          data-testid={`order-${order.id}-return-submit`}
+        >
+          {submitting ? "Submitting…" : "Submit return request"}
+        </button>
+      </div>
+    </div>
   );
 }
 
