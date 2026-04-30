@@ -10,6 +10,7 @@ import { Router, type IRouter } from "express";
 import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import meRouter from "./me";
+import meDashboardRouter from "./me-dashboard";
 import myOrdersRouter from "./my-orders";
 import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
@@ -27,6 +28,7 @@ router.use(orderRouter);
 // the same base path. The handlers themselves apply Clerk gating
 // (requireSignedIn / attachSignedIn) per-endpoint.
 router.use(meRouter);
+router.use(meDashboardRouter);
 router.use(myOrdersRouter);
 // Mounted after myOrdersRouter so the more-specific
 // `/shop/me/orders/:sessionId/resend-receipt` POST sits next to

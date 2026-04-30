@@ -200,3 +200,35 @@ export const startQuickCheckout = (input: QuickCheckoutInput) =>
     headers: { "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify(input),
   });
+
+/**
+ * Aggregated status digest powering the signed-in home banner.
+ * One round-trip across orders + subscriptions + abandoned cart.
+ */
+export interface ShopMeDashboardResponse {
+  nextShipment: {
+    subscriptionId: string;
+    /** ISO 8601 string. */
+    date: string;
+    firstItemName: string | null;
+    cancelAtPeriodEnd: boolean;
+  } | null;
+  latestOrder: {
+    id: string;
+    sessionId: string;
+    paidAt: string | null;
+    shippedAt: string | null;
+    deliveredAt: string | null;
+    trackingCarrier: string | null;
+    trackingNumber: string | null;
+  } | null;
+  activeSubscriptions: number;
+  pendingOrders: number;
+  abandonedCart: {
+    itemCount: number;
+    updatedAt: string;
+  } | null;
+}
+
+export const fetchShopMeDashboard = () =>
+  meFetch<ShopMeDashboardResponse>("/shop/me/dashboard");
