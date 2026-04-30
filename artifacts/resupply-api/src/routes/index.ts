@@ -6,6 +6,7 @@ import csrMacrosRouter from "./admin/csr-macros.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
+import opsStatusRouter from "./admin/ops-status.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
@@ -85,5 +86,8 @@ router.use(shopReviewRequestsRouter);
 // (does not replace) the RESUPPLY_ADMIN_EMAILS env var allowlist;
 // see middlewares/requireAdmin.ts for the resolution order.
 router.use(teamRouter);
+// /admin/ops-status — operations center status feed: vendor flags,
+// dispatcher-eligible row counts, team counts. Read-only.
+router.use(opsStatusRouter);
 
 export default router;

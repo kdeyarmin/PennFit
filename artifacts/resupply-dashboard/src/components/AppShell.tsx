@@ -68,6 +68,11 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Team",
     matchPrefix: "/admin/team",
   },
+  {
+    href: "/admin/operations",
+    label: "Operations",
+    matchPrefix: "/admin/operations",
+  },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
