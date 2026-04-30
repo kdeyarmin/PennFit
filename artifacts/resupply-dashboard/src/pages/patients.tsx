@@ -326,10 +326,10 @@ export function PatientsPage() {
       header: "Patient",
       render: (r) => (
         <div>
-          <div className="font-semibold" style={{ color: "#0a1f44" }}>
+          <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
             {fullName(r.firstName, r.lastName)}
           </div>
-          <div className="text-xs" style={{ color: "#6b7280" }}>
+          <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             PAC #{r.pacwareId}
           </div>
         </div>
@@ -379,7 +379,7 @@ export function PatientsPage() {
         return (
           <div className="flex flex-col gap-0.5" style={{ maxWidth: "22rem" }}>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs" style={{ color: "#6b7280" }}>
+              <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                 {formatDateTime(r.lastMessageAt)}
               </span>
               <Badge variant={isInbound ? "warning" : "neutral"}>
@@ -390,7 +390,7 @@ export function PatientsPage() {
               <div
                 className="text-xs"
                 style={{
-                  color: "#374151",
+                  color: "hsl(var(--ink-2))",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -408,7 +408,7 @@ export function PatientsPage() {
       key: "updatedAt",
       header: "Updated",
       render: (r) => (
-        <span className="text-xs" style={{ color: "#6b7280" }}>
+        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {formatDateTime(r.updatedAt)}
         </span>
       ),
@@ -421,11 +421,11 @@ export function PatientsPage() {
         <div>
           <h1
             className="text-2xl font-semibold mb-1"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             Patients
           </h1>
-          <p className="text-sm" style={{ color: "#374151" }}>
+          <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
             Search and review the patient roster. Names decrypted server-side;
             phone and email are only shown as channel availability.
           </p>
@@ -506,7 +506,7 @@ export function PatientsPage() {
           aria-label="Bulk patient actions"
         >
           <div className="flex items-center gap-3">
-            <span className="font-semibold" style={{ color: "#0a1f44" }}>
+            <span className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
               {selectedIds.size > 0
                 ? `${selectedIds.size} selected on this page`
                 : "Bulk action result"}
@@ -861,11 +861,11 @@ function NewCustomerModal({
           <h2
             id="new-customer-title"
             className="text-lg font-semibold"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             New customer
           </h2>
-          <p className="text-xs" style={{ color: "#6b7280" }}>
+          <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             All PHI fields are encrypted at rest. The Pacware ID must be
             unique — duplicates are rejected.
           </p>
@@ -937,7 +937,7 @@ function NewCustomerModal({
                 required
                 disabled={isPending}
               />
-              <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+              <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                 Stored as YYYY-MM-DD; no timezone applied.
               </p>
             </div>
@@ -969,11 +969,11 @@ function NewCustomerModal({
             <div className="md:col-span-2 pt-2">
               <h3
                 className="text-sm font-semibold"
-                style={{ color: "#0a1f44" }}
+                style={{ color: "hsl(var(--ink-1))" }}
               >
                 Mailing address (optional)
               </h3>
-              <p className="text-xs" style={{ color: "#6b7280" }}>
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                 Provide the full address or leave it blank. Required for
                 shipped supplies; optional if the patient is e-fulfillment only.
               </p>
@@ -1048,11 +1048,11 @@ function NewCustomerModal({
             <div className="md:col-span-2 pt-2">
               <h3
                 className="text-sm font-semibold"
-                style={{ color: "#0a1f44" }}
+                style={{ color: "hsl(var(--ink-1))" }}
               >
                 Outreach overrides (optional)
               </h3>
-              <p className="text-xs" style={{ color: "#6b7280" }}>
+              <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                 Leave blank to fall back to the matching frequency rule.
               </p>
             </div>
@@ -1115,7 +1115,7 @@ function NewCustomerModal({
 
           <div
             className="flex justify-end gap-2 pt-2 border-t"
-            style={{ borderColor: "#e5e7eb" }}
+            style={{ borderColor: "hsl(var(--line-1))" }}
           >
             <Button
               intent="secondary"
@@ -1440,13 +1440,13 @@ function ImportCsvModal({
               <h2
                 id="import-csv-title"
                 className="text-lg font-semibold"
-                style={{ color: "#0a1f44" }}
+                style={{ color: "hsl(var(--ink-1))" }}
               >
                 Import patients from CSV
               </h2>
               <p
                 className="text-xs mt-1"
-                style={{ color: "#6b7280" }}
+                style={{ color: "hsl(var(--ink-3))" }}
               >
                 Required columns: <code>pacwareId</code>,{" "}
                 <code>legalFirstName</code>, <code>legalLastName</code>,{" "}
@@ -1496,9 +1496,9 @@ function ImportCsvModal({
               <div
                 className="rounded border px-3 py-2 text-sm"
                 style={{
-                  borderColor: "#e5e7eb",
+                  borderColor: "hsl(var(--line-1))",
                   backgroundColor: "#fafafa",
-                  color: "#374151",
+                  color: "hsl(var(--ink-2))",
                 }}
               >
                 <strong>{validRows.length}</strong> valid row
@@ -1517,14 +1517,14 @@ function ImportCsvModal({
                   >
                     Validation errors
                   </p>
-                  <ul className="text-xs space-y-1" style={{ color: "#374151" }}>
+                  <ul className="text-xs space-y-1" style={{ color: "hsl(var(--ink-2))" }}>
                     {invalidRows.slice(0, 10).map((r) => (
                       <li key={r.rowIndex}>
                         <strong>Row {r.rowIndex}</strong>: {r.error}
                       </li>
                     ))}
                     {invalidRows.length > 10 && (
-                      <li style={{ color: "#6b7280" }}>
+                      <li style={{ color: "hsl(var(--ink-3))" }}>
                         …and {invalidRows.length - 10} more.
                       </li>
                     )}
@@ -1535,13 +1535,13 @@ function ImportCsvModal({
               <div>
                 <p
                   className="text-xs uppercase tracking-wider font-semibold mb-1"
-                  style={{ color: "#c9a24a" }}
+                  style={{ color: "hsl(var(--penn-gold-deep))" }}
                 >
                   Preview (first {Math.min(CSV_PREVIEW_ROWS, validRows.length)} rows)
                 </p>
                 <div
                   className="overflow-x-auto rounded border"
-                  style={{ borderColor: "#e5e7eb" }}
+                  style={{ borderColor: "hsl(var(--line-1))" }}
                 >
                   <table className="w-full text-xs">
                     <thead style={{ backgroundColor: "#f3f4f6" }}>
@@ -1557,7 +1557,7 @@ function ImportCsvModal({
                     <tbody>
                       {validRows.slice(0, CSV_PREVIEW_ROWS).map((r) => (
                         <tr key={r.rowIndex}>
-                          <td className="px-2 py-1" style={{ color: "#6b7280" }}>
+                          <td className="px-2 py-1" style={{ color: "hsl(var(--ink-3))" }}>
                             {r.rowIndex}
                           </td>
                           <td className="px-2 py-1">{r.parsed!.pacwareId}</td>
@@ -1577,7 +1577,7 @@ function ImportCsvModal({
               </div>
 
               {progress && (
-                <p className="text-xs" style={{ color: "#6b7280" }}>
+                <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                   Sending batch {progress.sentBatches} of{" "}
                   {progress.totalBatches}…
                 </p>
@@ -1614,9 +1614,9 @@ function ImportCsvModal({
               <div
                 className="rounded border px-4 py-3"
                 style={{
-                  borderColor: "#e5e7eb",
+                  borderColor: "hsl(var(--line-1))",
                   backgroundColor: "#fafafa",
-                  color: "#374151",
+                  color: "hsl(var(--ink-2))",
                 }}
               >
                 <p className="text-sm">
@@ -1651,7 +1651,7 @@ function ImportCsvModal({
                   >
                     Server-reported errors
                   </p>
-                  <ul className="text-xs space-y-1" style={{ color: "#374151" }}>
+                  <ul className="text-xs space-y-1" style={{ color: "hsl(var(--ink-2))" }}>
                     {summary.serverErrors.slice(0, 10).map((e, i) => (
                       <li key={`${e.rowIndex}-${i}`}>
                         <strong>Row {e.rowIndex + 1}</strong>
@@ -1659,7 +1659,7 @@ function ImportCsvModal({
                       </li>
                     ))}
                     {summary.serverErrors.length > 10 && (
-                      <li style={{ color: "#6b7280" }}>
+                      <li style={{ color: "hsl(var(--ink-3))" }}>
                         …and {summary.serverErrors.length - 10} more.
                       </li>
                     )}

@@ -75,19 +75,19 @@ export function ConversationDetailPage({ id }: { id: string }) {
       <Card>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "#c9a24a" }}>
+            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "hsl(var(--penn-gold-deep))" }}>
               Conversation
             </p>
-            <h1 className="text-2xl font-semibold mb-1" style={{ color: "#0a1f44" }}>
+            <h1 className="text-2xl font-semibold mb-1" style={{ color: "hsl(var(--ink-1))" }}>
               <Link
                 href={`/patients/${data.patientId}`}
                 className="underline decoration-dotted"
-                style={{ color: "#0a1f44" }}
+                style={{ color: "hsl(var(--ink-1))" }}
               >
                 {fullName(data.patientFirstName, data.patientLastName)}
               </Link>
             </h1>
-            <p className="text-xs" style={{ color: "#6b7280" }}>
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               Started {formatDateTime(data.createdAt)} · Last message{" "}
               {formatDateTime(data.lastMessageAt)}
             </p>
@@ -150,8 +150,8 @@ export function ConversationDetailPage({ id }: { id: string }) {
                             }
                           : {
                               backgroundColor: "#ffffff",
-                              color: "#0a1f44",
-                              borderColor: "#e5e7eb",
+                              color: "hsl(var(--ink-1))",
+                              borderColor: "hsl(var(--line-1))",
                             }
                       }
                     >
@@ -159,7 +159,7 @@ export function ConversationDetailPage({ id }: { id: string }) {
                     </div>
                     <p
                       className="text-[10px] mt-1 px-1"
-                      style={{ color: "#6b7280", textAlign: isOutbound ? "right" : "left" }}
+                      style={{ color: "hsl(var(--ink-3))", textAlign: isOutbound ? "right" : "left" }}
                     >
                       {humanizeStatus(m.senderRole)} ·{" "}
                       {formatDateTime(m.sentAt ?? m.createdAt)}
@@ -261,9 +261,9 @@ function ReplyComposer({
   if (isVoice) {
     return (
       <Card title="Reply">
-        <p className="text-sm" style={{ color: "#6b7280" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           Voice conversations don't support typed replies. Use{" "}
-          <span className="font-semibold" style={{ color: "#0a1f44" }}>
+          <span className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
             Place voice call
           </span>{" "}
           below to call the patient back.
@@ -357,7 +357,7 @@ function ReplyComposer({
             <label
               htmlFor="reply-template"
               className="text-xs font-semibold"
-              style={{ color: "#6b7280" }}
+              style={{ color: "hsl(var(--ink-3))" }}
             >
               Insert canned reply:
             </label>
@@ -369,7 +369,7 @@ function ReplyComposer({
                 if (e.target.value) onInsertTemplate(e.target.value);
               }}
               className="rounded border px-2 py-1 text-xs"
-              style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+              style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
             >
               <option value="">Choose a reply…</option>
               {filteredMacros.length > 0 ? (
@@ -420,7 +420,7 @@ function ReplyComposer({
           }
         }}
         className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-        style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+        style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
         data-testid="conv-reply-textarea"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
@@ -482,7 +482,7 @@ function BackLink() {
     <Link
       href="/conversations"
       className="text-sm underline"
-      style={{ color: "#0a1f44" }}
+      style={{ color: "hsl(var(--ink-1))" }}
     >
       ← Back to conversations
     </Link>

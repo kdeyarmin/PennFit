@@ -15,7 +15,7 @@ export function Label({
     <label
       htmlFor={htmlFor}
       className="block text-xs font-semibold mb-1"
-      style={{ color: "#374151" }}
+      style={{ color: "hsl(var(--ink-2))" }}
     >
       {children}
     </label>
@@ -28,10 +28,10 @@ export function Input({ className = "", ...rest }: InputProps) {
   return (
     <input
       {...rest}
-      className={`block w-full rounded border px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 ${className}`}
+      className={`block w-full rounded-md border px-3 py-1.5 text-sm bg-white ${className}`}
       style={{
-        borderColor: "#d1d5db",
-        color: "#0a1f44",
+        borderColor: "hsl(var(--line-2))",
+        color: "hsl(var(--ink-1))",
       }}
     />
   );
@@ -51,10 +51,10 @@ export function Select({
   return (
     <select
       {...rest}
-      className={`block w-full rounded border px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 ${className}`}
+      className={`block w-full rounded-md border px-3 py-1.5 text-sm bg-white ${className}`}
       style={{
-        borderColor: "#d1d5db",
-        color: "#0a1f44",
+        borderColor: "hsl(var(--line-2))",
+        color: "hsl(var(--ink-1))",
       }}
     >
       {emptyOptionLabel !== undefined && (

@@ -46,7 +46,7 @@ export function AdminRuleTesterPage() {
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Rule tester
         </h1>
@@ -54,7 +54,7 @@ export function AdminRuleTesterPage() {
           Simulate a (patient, prescription) pair against the live
           frequency-rules table. Read-only — nothing is modified by
           running a test.{" "}
-          <Link href="/rules" className="underline decoration-dotted" style={{ color: "#0a1f44" }}>
+          <Link href="/rules" className="underline decoration-dotted" style={{ color: "hsl(var(--ink-1))" }}>
             Edit rules →
           </Link>
         </p>

@@ -37,7 +37,7 @@ export function AdminOperationsPage() {
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Operations
         </h1>
@@ -299,7 +299,7 @@ function TeamSummary({ team }: { team: OpsStatus["team"] }) {
         <Link
           href="/admin/team"
           className="text-xs underline decoration-dotted"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Manage team →
         </Link>

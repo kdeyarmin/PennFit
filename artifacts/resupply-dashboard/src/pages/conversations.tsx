@@ -119,7 +119,7 @@ export function ConversationsPage() {
       key: "patient",
       header: "Patient",
       render: (r) => (
-        <div className="font-semibold" style={{ color: "#0a1f44" }}>
+        <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
           {fullName(r.patientFirstName, r.patientLastName)}
         </div>
       ),
@@ -159,7 +159,7 @@ export function ConversationsPage() {
         r.assignedAdminClerkId ? (
           <span
             className="text-[11px] font-mono"
-            style={{ color: "#374151" }}
+            style={{ color: "hsl(var(--ink-2))" }}
             title={r.assignedAdminClerkId}
           >
             {r.assignedAdminClerkId.slice(-8)}
@@ -174,7 +174,7 @@ export function ConversationsPage() {
       key: "last",
       header: "Last message",
       render: (r) => (
-        <span className="text-xs" style={{ color: "#374151" }}>
+        <span className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
           {formatDateTime(r.lastMessageAt)}
         </span>
       ),
@@ -186,11 +186,11 @@ export function ConversationsPage() {
       <header>
         <h1
           className="text-2xl font-semibold mb-1"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Conversations
         </h1>
-        <p className="text-sm" style={{ color: "#374151" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           Cross-channel inbox. Body content is decrypted only when an admin
           opens a single thread.
         </p>

@@ -32,7 +32,7 @@ export function AdminDeliveryFailuresPage() {
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Delivery failures
         </h1>
@@ -191,7 +191,7 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
           <Link
             href={`/patients/${row.patientId}`}
             className="underline decoration-dotted"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             {row.patientName?.trim() || "(no name)"}
           </Link>
@@ -207,7 +207,7 @@ function MessageRow({ row }: { row: MessageFailureEvent }) {
           <Link
             href={`/conversations/${row.conversationId}`}
             className="underline decoration-dotted"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             Open thread →
           </Link>

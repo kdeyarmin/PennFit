@@ -27,7 +27,7 @@ export function AdminReportsPage() {
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Reports
         </h1>

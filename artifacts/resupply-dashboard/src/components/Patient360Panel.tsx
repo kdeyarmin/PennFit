@@ -56,7 +56,7 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
           <Link
             href={`/patients/${patientId}`}
             className="underline decoration-dotted"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             Open full patient view →
           </Link>
@@ -66,7 +66,7 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
       <div className="space-y-4 text-sm">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="font-semibold" style={{ color: "#0a1f44" }}>
+            <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
               {fullName(data.firstName, data.lastName)}
             </div>
             <div className="text-xs text-slate-500">
@@ -176,7 +176,7 @@ function Section({
     <div>
       <p
         className="text-[10px] uppercase tracking-wider font-semibold mb-1.5"
-        style={{ color: "#c9a24a" }}
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
       >
         {title}
       </p>
@@ -198,7 +198,7 @@ function ContactsRow({
     <div>
       <p
         className="text-[10px] uppercase tracking-wider font-semibold mb-1.5"
-        style={{ color: "#c9a24a" }}
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
       >
         Channels on file
       </p>

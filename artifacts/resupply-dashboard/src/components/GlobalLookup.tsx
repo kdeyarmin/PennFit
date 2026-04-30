@@ -111,13 +111,16 @@ export function GlobalLookup() {
         }}
         placeholder="Lookup phone / email / id…"
         className="w-full rounded-md border px-3 py-1.5 text-sm"
-        style={{ borderColor: "#c9a24a", backgroundColor: "#ffffff" }}
+        style={{
+          borderColor: "hsl(var(--penn-gold))",
+          backgroundColor: "hsl(var(--surface-2))",
+        }}
         aria-label="Global lookup"
       />
       {open && hits !== null && (
         <div
           className="absolute right-0 mt-1 w-full max-w-md rounded-md border bg-white shadow-lg z-50"
-          style={{ borderColor: "#e5e7eb" }}
+          style={{ borderColor: "hsl(var(--line-1))" }}
           role="listbox"
         >
           {busy && hits.length === 0 ? (
