@@ -11,6 +11,14 @@ import {
   setProjectionLogger,
 } from "@workspace/resupply-db";
 
+import { assertRequiredEnv } from "./lib/env-check";
+
+// Fail fast on a misconfigured deploy. Runs before any other
+// side-effecting import so a missing var surfaces as a single clear
+// startup error listing every missing required variable, rather
+// than a confusing mid-request throw deep in a route handler.
+assertRequiredEnv();
+
 import app from "./app";
 import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
