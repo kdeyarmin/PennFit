@@ -817,6 +817,16 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
   >(null);
   const [cadenceSubmitting, setCadenceSubmitting] = useState(false);
 
+  // Cancel-intercept dialog — offers "Pause instead" before letting
+  // the customer follow through with a hard cancel. Holds the
+  // subscription targeted for cancellation (or null when closed)
+  // plus an optional reason the customer chose, so we can log /
+  // analyze later when we add a reasons table. The reason itself
+  // is stored in component state only for now (no backend yet) —
+  // the immediate goal is the deflection moment, not the analytics.
+  const [cancelInterceptSub, setCancelInterceptSub] =
+    useState<ShopSubscriptionView | null>(null);
+
   async function load() {
     setLoadError(null);
     try {
@@ -841,24 +851,38 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
     return action ? pending.action === action : true;
   }
 
-  async function handleCancel(sub: ShopSubscriptionView) {
+  function handleCancel(sub: ShopSubscriptionView) {
     if (pending) return;
-    // Double-confirm — auto-ship is irreversible from the patient
-    // side once stopped (they'd have to re-subscribe), and older
-    // patients are particularly likely to misclick.
-    if (
-      !window.confirm(
-        "Cancel auto-ship? Your supplies will keep shipping until the end of " +
-          "the current period, then stop. You can re-subscribe anytime.",
-      )
-    ) {
-      return;
-    }
+    // Open the cancel-intercept dialog instead of going straight to
+    // a confirm-and-cancel. The dialog surfaces "Pause instead" as
+    // the primary CTA — most patients who hit cancel just need a
+    // break (vacation, hospital stay, supply backlog) rather than a
+    // permanent stop. The native confirm() flow buried that option.
+    setCancelInterceptSub(sub);
+    setActionError(null);
+  }
+
+  async function confirmCancel(sub: ShopSubscriptionView) {
     setPending({ id: sub.id, action: "cancel" });
     setActionError(null);
     try {
       await cancelShopSubscription(sub.id);
       await load();
+      setCancelInterceptSub(null);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function pauseFromIntercept(sub: ShopSubscriptionView) {
+    setPending({ id: sub.id, action: "pause" });
+    setActionError(null);
+    try {
+      await pauseShopSubscription(sub.id);
+      await load();
+      setCancelInterceptSub(null);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1274,6 +1298,98 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
                 </>
               ) : (
                 "Save cadence"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={cancelInterceptSub !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setCancelInterceptSub(null);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-lg"
+          data-testid="account-cancel-intercept-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>Before you cancel — would a pause work?</DialogTitle>
+            <DialogDescription>
+              Most patients who hit Cancel just need a temporary break. Pause
+              keeps your subscription on file with no charges; you resume in
+              one tap when you&apos;re ready.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="rounded-xl border border-[hsl(var(--penn-gold)/0.4)] bg-[hsl(var(--penn-gold)/0.06)] p-4">
+              <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+                Pause auto-ship instead
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                We&apos;ll stop charging your card and pause shipments. Your
+                cadence and payment method stay on file. Resume anytime from
+                this page.
+              </p>
+            </div>
+            <div className="rounded-xl border bg-background p-4">
+              <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+                Cancel for good
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                Your supplies will keep shipping until the end of the current
+                period, then stop. You&apos;ll need to re-subscribe (and
+                re-confirm cadence + price) if you change your mind later.
+              </p>
+            </div>
+            {actionError && (
+              <p className="text-xs text-rose-700" role="alert">
+                {actionError}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCancelInterceptSub(null)}
+              disabled={pending !== null}
+              data-testid="account-cancel-intercept-keep"
+            >
+              Keep auto-ship as-is
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                cancelInterceptSub && void confirmCancel(cancelInterceptSub)
+              }
+              disabled={pending !== null}
+              className="border-rose-300 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+              data-testid="account-cancel-intercept-confirm"
+            >
+              {isPending(cancelInterceptSub?.id ?? "", "cancel") ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Canceling…
+                </>
+              ) : (
+                "Cancel anyway"
+              )}
+            </Button>
+            <Button
+              onClick={() =>
+                cancelInterceptSub && void pauseFromIntercept(cancelInterceptSub)
+              }
+              disabled={pending !== null}
+              data-testid="account-cancel-intercept-pause"
+            >
+              {isPending(cancelInterceptSub?.id ?? "", "pause") ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Pausing…
+                </>
+              ) : (
+                "Pause instead"
               )}
             </Button>
           </DialogFooter>
