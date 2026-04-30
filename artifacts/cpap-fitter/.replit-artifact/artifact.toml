@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "CPAP Mask Fitter"
+title = "Penn Home Medical Supply"
 version = "1.0.0"
 id = "artifacts/cpap-fitter"
 router = "path"

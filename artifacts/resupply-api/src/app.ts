@@ -1,8 +1,10 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import { clerkMiddleware } from "@clerk/express";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
 const app: Express = express();
 
@@ -11,31 +13,55 @@ const app: Express = express();
 // audit-log IP capture.
 app.set("trust proxy", 1);
 
-// CORS allowlist. In dev (no RESUPPLY_ALLOWED_ORIGINS set) we allow the
-// Replit dev domain + localhost so the operator dashboard preview iframe
-// can call the API. In production, only explicitly-listed origins
-// (comma-separated env var) are allowed — operators should only access
-// the dashboard from a vetted URL.
+// CORS allowlist resolution, in priority order:
+//   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Use this
+//      for custom domains or multi-tenant deployments where the runtime
+//      hostnames don't match the public-facing URL (e.g. fronted by a
+//      CDN or vanity domain).
+//   2. REPLIT_DOMAINS (production only) — Replit's runtime sets this to
+//      the exact hostnames the deployment is serving on. It is NOT
+//      attacker-controlled (no inbound HTTP can mutate it), so falling
+//      back to it preserves the same safety property as the explicit
+//      allowlist while removing a foot-gun where every deploy needs a
+//      manual env var.
+//   3. Dev fallback (non-production only) — Replit dev domain +
+//      localhost ports so preview iframes and curl can hit the API.
 //
-// Production fails CLOSED: if NODE_ENV=production and the env var is
-// missing or empty, the process exits at boot rather than silently
-// inheriting the dev allowlist. Misconfigured CORS in prod could
-// expose the operator API to attacker-controlled origins, and that
-// risk grows as soon as Phase 1 lands real PHI-touching endpoints —
-// catching it at boot is cheaper than catching it after a leak.
+// Production fails CLOSED: if NODE_ENV=production and BOTH the explicit
+// env var and REPLIT_DOMAINS are missing or empty, the process exits at
+// boot rather than silently inheriting the dev allowlist. That would
+// expose the admin API to unintended origins, and the risk grows as
+// soon as PHI-touching endpoints land — catching it at boot is cheaper
+// than catching it after a leak.
 const allowedOrigins = (() => {
   const fromEnv = (process.env.RESUPPLY_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
   if (fromEnv.length > 0) return fromEnv;
+
   if (process.env.NODE_ENV === "production") {
+    // REPLIT_DOMAINS is comma-separated and bare-host (no scheme).
+    // Production deployments are always HTTPS, so prepend `https://`.
+    const fromReplit = (process.env.REPLIT_DOMAINS ?? "")
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .map((d) => `https://${d}`);
+    if (fromReplit.length > 0) {
+      logger.info(
+        { origins: fromReplit, source: "REPLIT_DOMAINS" },
+        "CORS allowlist derived from REPLIT_DOMAINS",
+      );
+      return fromReplit;
+    }
     throw new Error(
-      "RESUPPLY_ALLOWED_ORIGINS must be set in production. Refusing to " +
-        "fall back to the dev allowlist (localhost + Replit dev domain) — " +
-        "that would expose the operator API to unintended origins.",
+      "Refusing to start: in production we require either " +
+        "RESUPPLY_ALLOWED_ORIGINS or REPLIT_DOMAINS to be set so the " +
+        "CORS allowlist is bound to vetted hostnames. Both are empty.",
     );
   }
+
   const dev: string[] = [];
   if (process.env.REPLIT_DEV_DOMAIN) {
     dev.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
@@ -48,6 +74,16 @@ const allowedOrigins = (() => {
   return dev;
 })();
 
+// `credentials` is intentionally OFF: the dashboard authenticates with
+// `Authorization: Bearer <clerk_token>`, never cookies. Setting
+// `credentials: true` would oblige us to keep an exact-match Origin
+// allowlist forever (browsers refuse `Access-Control-Allow-Origin: *`
+// when credentials are enabled) AND would unlock cookie-based CSRF
+// attack surface that we don't actually use. Bearer tokens are
+// immune to classic CSRF because the browser does not auto-attach
+// them — JS code must read and send them deliberately. Leaving
+// credentials off is the simpler, safer default for a Bearer-only
+// API.
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -55,7 +91,6 @@ app.use(
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
     },
-    credentials: true,
   }),
 );
 
@@ -78,12 +113,33 @@ app.use(
     },
   }),
 );
+// Stripe webhook is registered BEFORE express.json() because Stripe's
+// signature verification is computed over the exact bytes Stripe sent
+// — express.json() would mutate `req.body` to a parsed object that we
+// can't re-serialize byte-identically. Mounting it directly on `app`
+// (rather than inside the /resupply-api router tree) keeps the body
+// parser order honest no matter how the router is reorganized later.
+app.post(
+  "/resupply-api/stripe/webhook",
+  express.raw({ type: "application/json", limit: "256kb" }),
+  stripeWebhookHandler,
+);
+
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
+// Clerk session middleware — attaches auth state (`getAuth(req)`) to
+// every request so downstream admin-gated routes can read it. Safe
+// to mount globally: it's a no-op for unauthenticated requests, and
+// the unauthenticated /healthz, /readyz probes don't read auth state
+// at all. We mount it BEFORE the route tree so every nested router
+// inherits it without needing per-router wiring.
+app.use(clerkMiddleware());
+
 // Routes are mounted under /resupply-api (matches the artifact.toml path
-// list). Phase 0 only ships /resupply-api/healthz; everything else lands
-// in later phases.
+// list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,
+// and the admin smoke endpoint /resupply-api/me; richer endpoints
+// land in later phases.
 app.use("/resupply-api", router);
 
 export default app;

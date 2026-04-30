@@ -5,9 +5,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { fetchAdminAuditLog } from "@/lib/admin-api";
+import { auditActionLabel } from "@/lib/admin-labels";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function AdminAuditLog() {
+  useDocumentTitle("Admin · Activity history");
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
@@ -22,11 +25,13 @@ export function AdminAuditLog() {
     <div className="space-y-5">
       <div>
         <h1 className="text-display text-3xl font-bold tracking-tight" data-testid="admin-page-title">
-          Audit log
+          Activity history
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Every time an admin opens an individual patient record or runs a name search, a row
-          is appended here. Listing the orders index does not log.
+          A read-only paper trail of what each admin and customer-service rep
+          has done — for example, which patient records were opened or which
+          reminder batches were sent. Use this when you need to retrace your
+          steps or answer "who looked at this order?".
         </p>
       </div>
 
@@ -37,10 +42,10 @@ export function AdminAuditLog() {
               <thead className="text-xs text-muted-foreground uppercase tracking-wide bg-muted/30">
                 <tr>
                   <th className="text-left py-3 px-4">When</th>
-                  <th className="text-left py-3 px-4">Admin</th>
-                  <th className="text-left py-3 px-4">Action</th>
-                  <th className="text-left py-3 px-4">Target order</th>
-                  <th className="text-left py-3 px-4">IP</th>
+                  <th className="text-left py-3 px-4">Who</th>
+                  <th className="text-left py-3 px-4">What they did</th>
+                  <th className="text-left py-3 px-4">Order opened</th>
+                  <th className="text-left py-3 px-4">From IP</th>
                 </tr>
               </thead>
               <tbody>
@@ -55,7 +60,8 @@ export function AdminAuditLog() {
                 {!isLoading && data && data.events.length === 0 && (
                   <tr>
                     <td colSpan={5} className="py-12 text-center text-muted-foreground">
-                      No audit events yet.
+                      Nothing recorded yet — once admins start opening orders or
+                      sending reminders, their actions will appear here.
                     </td>
                   </tr>
                 )}
@@ -65,12 +71,18 @@ export function AdminAuditLog() {
                       {new Date(ev.occurredAt).toLocaleString()}
                     </td>
                     <td className="py-3 px-4">{ev.adminEmail}</td>
-                    <td className="py-3 px-4 font-mono text-xs">{ev.action}</td>
+                    <td
+                      className="py-3 px-4"
+                      title={ev.action}
+                    >
+                      {auditActionLabel(ev.action)}
+                    </td>
                     <td className="py-3 px-4 font-mono text-xs">
                       {ev.targetOrderId ? (
                         <Link
                           href={`/admin/orders/${ev.targetOrderId}`}
                           className="text-primary hover:underline"
+                          title="Open this order"
                         >
                           {ev.targetOrderId.slice(0, 8)}…
                         </Link>

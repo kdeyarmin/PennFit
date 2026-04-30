@@ -4,7 +4,7 @@ import { logger } from "./logger";
 // What "ready" means for the resupply API:
 //
 //   db    — Postgres is reachable AND accepting queries from this
-//           process's connection pool. Anything operator-facing fails
+//           process's connection pool. Anything admin-facing fails
 //           if the DB is down, so this is a hard requirement.
 //   queue — pg-boss has bootstrapped its schema. We don't start
 //           pg-boss in the API process (the worker owns it — see
@@ -117,7 +117,17 @@ export async function checkReadiness(): Promise<ReadinessResult> {
   const errors: NonNullable<ReadinessResult["errors"]> = {};
   if (db.status === "rejected") {
     errors.db = categorize(db.reason);
-    logger.warn({ err: db.reason }, "readiness: db check failed");
+    // Log only the categorized failure mode — never the raw error.
+    // node-postgres error.message routinely includes connection-string
+    // fragments ("password authentication failed for user X on host
+    // Y", "database X does not exist"). The HTTP body redaction is
+    // already proven by the integration test; this keeps the
+    // admin-readable log stream equally clean. Treat every log
+    // line as world-readable.
+    logger.warn(
+      { errCategory: errors.db },
+      "readiness: db check failed",
+    );
   }
   if (queue.status === "rejected") {
     if ((queue.reason as { code?: string })?.code === "SCHEMA_MISSING") {
@@ -125,7 +135,10 @@ export async function checkReadiness(): Promise<ReadinessResult> {
     } else {
       errors.queue = categorize(queue.reason);
     }
-    logger.warn({ err: queue.reason }, "readiness: queue check failed");
+    logger.warn(
+      { errCategory: errors.queue },
+      "readiness: queue check failed",
+    );
   }
 
   const allOk = checks.db === "ok" && checks.queue === "ok";

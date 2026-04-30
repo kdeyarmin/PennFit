@@ -83,15 +83,15 @@ function Header() {
         <a
           href={APP_HOME}
           className="flex items-center gap-3 hover:opacity-80 transition-opacity"
-          aria-label="Penn Fit home"
+          aria-label="PennPaps home"
         >
           <img
             src={logoSrc}
-            alt="Penn Home Medical Supply"
+            alt="PennPaps"
             className="h-10 sm:h-12 w-auto rounded-lg shadow-sm"
           />
           <span className="hidden sm:flex flex-col leading-tight">
-            <span className="text-base font-bold">Penn Fit</span>
+            <span className="text-base font-bold">PennPaps</span>
             <span className="text-[10px] tracking-widest uppercase text-[#1F3A5C]/60">
               Tutorial
             </span>
@@ -127,7 +127,7 @@ function Hero() {
   return (
     <section className="container mx-auto px-4 sm:px-6 pt-5 sm:pt-14 pb-4 sm:pb-6 text-center">
       <p className="text-xs sm:text-sm uppercase tracking-[0.2em] text-[#F4B942] font-bold">
-        Penn Fit · Tutorial
+        PennPaps · Tutorial
       </p>
       <h1
         className="mt-2 sm:mt-3 text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]"
@@ -136,7 +136,7 @@ function Hero() {
         A 1-minute walkthrough.
       </h1>
       <p className="mt-2 sm:mt-5 text-sm sm:text-lg lg:text-xl text-[#475569] max-w-2xl mx-auto leading-snug sm:leading-relaxed">
-        See exactly how Penn Fit goes from one selfie to a confident CPAP mask
+        See exactly how PennPaps goes from one selfie to a confident CPAP mask
         recommendation — then read the full step-by-step guide below.
       </p>
     </section>
@@ -169,8 +169,8 @@ const guideSteps: GuideStep[] = [
   {
     num: 1,
     Icon: Smartphone,
-    title: "Open Penn Fit on your phone",
-    body: "On any modern phone, tablet, or laptop with a camera. Nothing to install — Penn Fit runs in your browser.",
+    title: "Open PennPaps on your phone",
+    body: "On any modern phone, tablet, or laptop with a camera. Nothing to install — PennPaps runs in your browser.",
     detail: [
       "Works on iPhone (Safari 14+), Android (Chrome 90+), and desktop Chrome / Edge / Safari.",
       "Allow camera access when your browser prompts you — we use it locally and never upload the image.",
@@ -200,7 +200,7 @@ const guideSteps: GuideStep[] = [
     num: 4,
     Icon: Ruler,
     title: "AI extracts 5 facial measurements",
-    body: "Penn Fit's on-device computer-vision model finds 478 landmarks on your face and converts five of them to millimeter measurements.",
+    body: "PennPaps's on-device computer-vision model finds 478 landmarks on your face and converts five of them to millimeter measurements.",
     detail: [
       "Nose width, nose height, nose-to-chin distance, mouth width, and face width at the cheekbones.",
       "We calibrate millimeters per pixel using the diameter of your iris — a biological constant of ~11.7 mm.",
@@ -222,21 +222,21 @@ const guideSteps: GuideStep[] = [
     num: 6,
     Icon: Sparkles,
     title: "Review your top 3 mask matches",
-    body: "Penn Fit ranks every mask in our catalog against your measurements and answers, then surfaces the three best fits with a confidence score and a plain-English reason for each.",
+    body: "PennPaps ranks every mask in our catalog against your measurements and answers, then surfaces the three best fits with a confidence score and a plain-English reason for each.",
     detail: [
       "Each card shows the clinical reasoning — which measurements matched and which preferences were honored.",
       "Tap the confidence badge to see how the score breaks down between mask-type fit and physical-measurement fit.",
-      "All recommendations come from masks Penn Home Medical Supply actually stocks and ships.",
+      "All recommendations come from masks PennPaps actually stocks and ships.",
     ],
   },
   {
     num: 7,
     Icon: ShoppingBag,
-    title: "Order direct from Penn Home Medical Supply",
-    body: "Pick the mask you'd like to try, share your shipping details, and Penn's fulfillment team takes it from there.",
+    title: "Order direct from PennPaps",
+    body: "Pick the mask you'd like to try, share your shipping details, and PennPaps's fulfillment team takes it from there.",
     detail: [
       "Most orders ship the next business day to addresses in our service area.",
-      "Insurance and replacement-supply questions? Reach out to your Penn rep with the order confirmation.",
+      "Insurance and replacement-supply questions? Reach out to your PennPaps rep with the order confirmation.",
     ],
   },
 ];
@@ -314,7 +314,7 @@ function WrittenGuide() {
 const proTips = [
   { Icon: Ruler, title: "Eye level, arm's length", text: "Hold the phone so the camera sits roughly between your eyebrows and chin." },
   { Icon: Glasses, title: "Glasses off, hair back", text: "Anything covering your nose bridge, cheekbones, or chin will skew the measurements." },
-  { Icon: MessageCircleQuestion, title: "Honest answers win", text: "If you're unsure of your CPAP pressure, just pick \"I'm not sure\" — Penn Fit handles it." },
+  { Icon: MessageCircleQuestion, title: "Honest answers win", text: "If you're unsure of your CPAP pressure, just pick \"I'm not sure\" — PennPaps handles it." },
 ];
 
 function ProTipsSection() {
@@ -384,7 +384,7 @@ function PrivacyCallout() {
               Your photo never leaves your device.
             </h3>
             <p className="mt-3 text-sm sm:text-base text-white/85 leading-relaxed">
-              Penn Fit runs the face-mesh model entirely in your browser. The
+              PennPaps runs the face-mesh model entirely in your browser. The
               photo is converted to five numeric measurements and then{" "}
               <span className="font-semibold text-white">discarded</span>. Only
               those numbers — plus your questionnaire answers — are sent to our
@@ -407,10 +407,10 @@ function PrivacyCallout() {
 const faqs = [
   {
     q: "How long does the whole thing take?",
-    a: "About three minutes from opening Penn Fit to seeing your top three mask recommendations.",
+    a: "About three minutes from opening PennPaps to seeing your top three mask recommendations.",
   },
   {
-    q: "Can I use Penn Fit on my computer?",
+    q: "Can I use PennPaps on my computer?",
     a: "Yes. Any modern laptop or desktop with a webcam works. Phones and tablets generally give the most consistent results because they're easier to hold at eye level.",
   },
   {
@@ -419,7 +419,7 @@ const faqs = [
   },
   {
     q: "Are the recommendations medical advice?",
-    a: "No. Penn Fit is a fitting aid, not a clinical diagnosis. Talk to your prescriber or your Penn rep before changing therapy.",
+    a: "No. PennPaps is a fitting aid, not a clinical diagnosis. Talk to your prescriber or your PennPaps rep before changing therapy.",
   },
   {
     q: "Can I retake the photo?",
@@ -483,7 +483,7 @@ function FinalCta() {
         </h2>
         <p className="mt-3 text-base text-[#475569] max-w-xl mx-auto">
           Three minutes from now you'll have a confident, data-backed
-          recommendation — and Penn's team can ship it as soon as the next
+          recommendation — and PennPaps's team can ship it as soon as the next
           business day.
         </p>
         <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center items-center">
@@ -514,12 +514,12 @@ function Footer() {
         <div className="flex items-center gap-3">
           <img
             src={logoSrc}
-            alt="Penn Home Medical Supply"
+            alt="PennPaps"
             className="h-9 w-auto rounded-lg"
           />
           <div className="text-xs text-[#1F3A5C]/70 leading-tight">
             <div className="font-semibold text-[#1F3A5C]">
-              Penn Home Medical Supply, LLC
+              PennPaps, LLC
             </div>
             <div>Secure &amp; private · Images never leave your device.</div>
           </div>

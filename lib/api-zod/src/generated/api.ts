@@ -197,6 +197,257 @@ export const SubmitOrderResponse = zod.object({
 });
 
 /**
+ * Public endpoint. Behavior depends on whether the email is already
+on file:
+
+- **New email:** the subscription is created. The response includes
+  `manageToken` so the client can deep-link to the manage page
+  immediately (this also makes the dev-mode flow usable when
+  email delivery isn't configured). A confirmation email is sent
+  containing the same manage link.
+- **Existing email:** the response is `alreadySubscribed: true`
+  with NO `manageToken` — to prevent email-enumeration takeover
+  of an existing subscription, the manage link is only sent to
+  the registered owner's inbox. The submitter's items are not
+  applied to the existing row; the registered owner can update
+  items via the manage page.
+
+Honeypot: a hidden `website` field. If non-empty, the request is
+silently accepted (fake `manageToken: "honeypot"`) and no DB
+write or email send occurs.
+
+ * @summary Subscribe to supply replacement reminders
+ */
+export const subscribeToRemindersBodyEmailMax = 200;
+
+export const subscribeToRemindersBodyItemsItemLastReplacedAtRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const subscribeToRemindersBodyItemsItemIntervalDaysMax = 365;
+
+export const subscribeToRemindersBodyItemsMax = 10;
+
+export const subscribeToRemindersBodyWebsiteMax = 200;
+
+export const SubscribeToRemindersBody = zod.object({
+  email: zod.string().email().max(subscribeToRemindersBodyEmailMax),
+  items: zod
+    .array(
+      zod
+        .object({
+          sku: zod.enum([
+            "maskCushion",
+            "maskFrameHeadgear",
+            "headgear",
+            "tubing",
+            "disposableFilter",
+            "reusableFilter",
+            "waterChamber",
+          ]),
+          lastReplacedAt: zod
+            .string()
+            .regex(subscribeToRemindersBodyItemsItemLastReplacedAtRegExp)
+            .describe("YYYY-MM-DD"),
+          intervalDays: zod
+            .number()
+            .min(1)
+            .max(subscribeToRemindersBodyItemsItemIntervalDaysMax),
+        })
+        .describe(
+          "One supply line on a subscription. `sku` is the canonical SKU\n(one of: maskCushion, maskFrameHeadgear, headgear, tubing,\ndisposableFilter, reusableFilter, waterChamber). `intervalDays`\nis how often we should remind. `lastReplacedAt` is the date the\ncustomer last swapped this item in (used to compute next due).\n",
+        ),
+    )
+    .min(1)
+    .max(subscribeToRemindersBodyItemsMax),
+  website: zod
+    .string()
+    .max(subscribeToRemindersBodyWebsiteMax)
+    .optional()
+    .describe("Anti-spam honeypot. Must be empty."),
+});
+
+export const SubscribeToRemindersResponse = zod.object({
+  success: zod.boolean(),
+  manageToken: zod
+    .string()
+    .optional()
+    .describe(
+      "Capability token for the \/reminders\/manage endpoints. ONLY\nreturned for newly-created subscriptions. For requests against\nan already-existing email we deliberately omit this field — the\nexisting manage link is sent only to the registered owner's\ninbox, so an attacker who guesses an email cannot escalate to\nfull subscription control via this endpoint.\n",
+    ),
+  alreadySubscribed: zod
+    .boolean()
+    .optional()
+    .describe(
+      'True when the email was already on file. The response is\notherwise indistinguishable from a fresh subscribe (no items\ndisclosed, no token disclosed) — the caller should display a\ngeneric \"check your email for a manage link\" message.\n',
+    ),
+  emailStatus: zod
+    .enum(["sent", "skipped", "failed"])
+    .describe("Whether a confirmation \/ manage email was sent"),
+  message: zod.string(),
+});
+
+/**
+ * @summary Get a subscription by manage token
+ */
+export const GetReminderSubscriptionQueryParams = zod.object({
+  token: zod.coerce.string(),
+});
+
+export const getReminderSubscriptionResponseItemsItemOneLastReplacedAtRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const getReminderSubscriptionResponseItemsItemOneIntervalDaysMax = 365;
+
+export const getReminderSubscriptionResponseItemsItemTwoNextDueAtRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
+export const GetReminderSubscriptionResponse = zod.object({
+  email: zod.string(),
+  status: zod.enum(["active", "unsubscribed"]),
+  items: zod.array(
+    zod
+      .object({
+        sku: zod.enum([
+          "maskCushion",
+          "maskFrameHeadgear",
+          "headgear",
+          "tubing",
+          "disposableFilter",
+          "reusableFilter",
+          "waterChamber",
+        ]),
+        lastReplacedAt: zod
+          .string()
+          .regex(
+            getReminderSubscriptionResponseItemsItemOneLastReplacedAtRegExp,
+          )
+          .describe("YYYY-MM-DD"),
+        intervalDays: zod
+          .number()
+          .min(1)
+          .max(getReminderSubscriptionResponseItemsItemOneIntervalDaysMax),
+      })
+      .describe(
+        "One supply line on a subscription. `sku` is the canonical SKU\n(one of: maskCushion, maskFrameHeadgear, headgear, tubing,\ndisposableFilter, reusableFilter, waterChamber). `intervalDays`\nis how often we should remind. `lastReplacedAt` is the date the\ncustomer last swapped this item in (used to compute next due).\n",
+      )
+      .and(
+        zod.object({
+          nextDueAt: zod
+            .string()
+            .regex(getReminderSubscriptionResponseItemsItemTwoNextDueAtRegExp)
+            .describe("YYYY-MM-DD computed by the server"),
+        }),
+      ),
+  ),
+  createdAt: zod.string().describe("ISO-8601 timestamp"),
+});
+
+/**
+ * @summary Update items on a subscription
+ */
+export const UpdateReminderSubscriptionQueryParams = zod.object({
+  token: zod.coerce.string(),
+});
+
+export const updateReminderSubscriptionBodyItemsItemLastReplacedAtRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const updateReminderSubscriptionBodyItemsItemIntervalDaysMax = 365;
+
+export const updateReminderSubscriptionBodyItemsMax = 10;
+
+export const UpdateReminderSubscriptionBody = zod.object({
+  items: zod
+    .array(
+      zod
+        .object({
+          sku: zod.enum([
+            "maskCushion",
+            "maskFrameHeadgear",
+            "headgear",
+            "tubing",
+            "disposableFilter",
+            "reusableFilter",
+            "waterChamber",
+          ]),
+          lastReplacedAt: zod
+            .string()
+            .regex(updateReminderSubscriptionBodyItemsItemLastReplacedAtRegExp)
+            .describe("YYYY-MM-DD"),
+          intervalDays: zod
+            .number()
+            .min(1)
+            .max(updateReminderSubscriptionBodyItemsItemIntervalDaysMax),
+        })
+        .describe(
+          "One supply line on a subscription. `sku` is the canonical SKU\n(one of: maskCushion, maskFrameHeadgear, headgear, tubing,\ndisposableFilter, reusableFilter, waterChamber). `intervalDays`\nis how often we should remind. `lastReplacedAt` is the date the\ncustomer last swapped this item in (used to compute next due).\n",
+        ),
+    )
+    .min(1)
+    .max(updateReminderSubscriptionBodyItemsMax),
+});
+
+export const updateReminderSubscriptionResponseItemsItemOneLastReplacedAtRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const updateReminderSubscriptionResponseItemsItemOneIntervalDaysMax = 365;
+
+export const updateReminderSubscriptionResponseItemsItemTwoNextDueAtRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
+export const UpdateReminderSubscriptionResponse = zod.object({
+  email: zod.string(),
+  status: zod.enum(["active", "unsubscribed"]),
+  items: zod.array(
+    zod
+      .object({
+        sku: zod.enum([
+          "maskCushion",
+          "maskFrameHeadgear",
+          "headgear",
+          "tubing",
+          "disposableFilter",
+          "reusableFilter",
+          "waterChamber",
+        ]),
+        lastReplacedAt: zod
+          .string()
+          .regex(
+            updateReminderSubscriptionResponseItemsItemOneLastReplacedAtRegExp,
+          )
+          .describe("YYYY-MM-DD"),
+        intervalDays: zod
+          .number()
+          .min(1)
+          .max(updateReminderSubscriptionResponseItemsItemOneIntervalDaysMax),
+      })
+      .describe(
+        "One supply line on a subscription. `sku` is the canonical SKU\n(one of: maskCushion, maskFrameHeadgear, headgear, tubing,\ndisposableFilter, reusableFilter, waterChamber). `intervalDays`\nis how often we should remind. `lastReplacedAt` is the date the\ncustomer last swapped this item in (used to compute next due).\n",
+      )
+      .and(
+        zod.object({
+          nextDueAt: zod
+            .string()
+            .regex(
+              updateReminderSubscriptionResponseItemsItemTwoNextDueAtRegExp,
+            )
+            .describe("YYYY-MM-DD computed by the server"),
+        }),
+      ),
+  ),
+  createdAt: zod.string().describe("ISO-8601 timestamp"),
+});
+
+/**
+ * @summary Unsubscribe from all reminders
+ */
+export const UnsubscribeFromRemindersQueryParams = zod.object({
+  token: zod.coerce.string(),
+});
+
+export const UnsubscribeFromRemindersResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string(),
+});
+
+/**
  * Accepts facial measurements (numeric only) and questionnaire answers.
 Returns ranked mask recommendations. No images accepted. No PHI stored.
 

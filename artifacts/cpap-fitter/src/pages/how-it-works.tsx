@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   Card,
   CardContent,
@@ -33,12 +34,12 @@ const steps = [
   {
     icon: Camera,
     title: "2. Capture Your Face",
-    body: "Use your device's front-facing camera to take a clear, well-lit photo of your face. Penn Fit will guide you through framing.",
+    body: "Use your device's front-facing camera to take a clear, well-lit photo of your face. PennPaps will guide you through framing.",
   },
   {
     icon: Ruler,
     title: "3. Generate Measurements",
-    body: "Penn Fit's on-device facial landmark engine derives numerical measurements (such as nose width and face height in millimeters) from the captured image, then immediately discards the image.",
+    body: "PennPaps's on-device facial landmark engine derives numerical measurements (such as nose width and face height in millimeters) from the captured image, then immediately discards the image.",
   },
   {
     icon: ClipboardList,
@@ -48,12 +49,12 @@ const steps = [
   {
     icon: Sparkles,
     title: "5. See Your Recommendations",
-    body: "Penn Fit ranks masks from our catalog using your measurements and questionnaire — with a clear explanation of why each one fits.",
+    body: "PennPaps ranks masks from our catalog using your measurements and questionnaire — with a clear explanation of why each one fits.",
   },
   {
     icon: PackageCheck,
     title: "6. Place Your Order",
-    body: "Pick a mask, fill in your shipping, insurance, and prescription details, and submit. Penn Home Medical Supply receives the order and follows up directly.",
+    body: "Pick a mask, fill in your shipping, insurance, and prescription details, and submit. PennPaps receives the order and follows up directly.",
   },
 ];
 
@@ -95,24 +96,28 @@ const faqs = [
     a: "You can retake the photo as many times as you like — nothing is uploaded. If a measurement looks off, try better lighting, remove anything covering your face, and make sure you're looking straight ahead at eye level.",
   },
   {
-    q: "Does Penn Fit work on a phone, tablet, and computer?",
+    q: "Does PennPaps work on a phone, tablet, and computer?",
     a: "Yes — anything with a front-facing camera and a modern browser (Chrome, Safari, Edge, or Firefox) works. Phones tend to give the best results because it's easier to hold the camera at eye level.",
   },
   {
     q: "Is my photo stored or sent anywhere?",
-    a: "No. The image is processed entirely in your browser by Google's MediaPipe library. Only the resulting numerical measurements (in millimeters) are sent to Penn Home Medical Supply's recommendation server. The photo itself is discarded the moment the measurements are extracted.",
+    a: "No. The image is processed entirely in your browser by Google's MediaPipe library. Only the resulting numerical measurements (in millimeters) are sent to PennPaps's recommendation server. The photo itself is discarded the moment the measurements are extracted.",
   },
   {
     q: "What if I don't like any of the recommended masks?",
-    a: "You can browse the full catalog from the header at any time, or contact Penn Home Medical Supply directly — our team can help you find alternatives based on your insurance coverage and clinical needs.",
+    a: "You can browse the full catalog from the header at any time, or contact PennPaps directly — our team can help you find alternatives based on your insurance coverage and clinical needs.",
   },
   {
     q: "Do I need a prescription to order a CPAP mask?",
-    a: "Yes. CPAP masks are prescription medical devices. The order form lets you indicate that you have an existing prescription on file with Penn Home Medical Supply, or our team will reach out to coordinate getting one from your provider.",
+    a: "Yes. CPAP masks are prescription medical devices. The order form lets you indicate that you have an existing prescription on file with PennPaps, or our team will reach out to coordinate getting one from your provider.",
   },
 ];
 
 export function HowItWorks() {
+  useDocumentTitle(
+    "Virtual Mask Fitter",
+    "How the PennPaps Virtual Mask Fitter works: a 3-minute on-device face capture matches you to the right CPAP mask. Your face image never leaves your phone.",
+  );
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
       {/* Hero */}
@@ -127,17 +132,17 @@ export function HowItWorks() {
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              How It Works
+              Virtual Mask Fitter
             </span>
             <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>
         </div>
         <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-gradient-brand leading-[1.05]">
-          How Penn Fit Works
+          Virtual Mask Fitter
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          A short guide to using Penn Fit and getting the most accurate CPAP mask
-          recommendation in just a few minutes — start to finish.
+          A short guide to everything PennPaps does — the on-device mask fitter,
+          the supply shop, customer accounts, and how resupply works.
         </p>
       </header>
 
@@ -148,7 +153,7 @@ export function HowItWorks() {
             Watch the 30-Second Tutorial
           </h2>
           <p className="text-muted-foreground">
-            A quick visual walkthrough of the entire Penn Fit experience.
+            A quick visual walkthrough of the entire PennPaps experience.
           </p>
         </div>
         {/* Aspect ratio is portrait on phones (where the tutorial scenes
@@ -157,7 +162,7 @@ export function HowItWorks() {
         <div className="relative w-full overflow-hidden rounded-2xl border border-border/60 shadow-lg bg-black aspect-[3/5] sm:aspect-video">
           <iframe
             src="/penn-fit-tutorial/"
-            title="Penn Fit — How To Use"
+            title="PennPaps — How To Use"
             className="absolute inset-0 w-full h-full"
             sandbox="allow-scripts allow-same-origin"
             allow="autoplay; fullscreen"
@@ -260,7 +265,7 @@ export function HowItWorks() {
                 <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                 <span>
                   <strong>Mention claustrophobia or skin sensitivities.</strong>{" "}
-                  These factors steer Penn Fit toward minimal-contact pillow
+                  These factors steer PennPaps toward minimal-contact pillow
                   styles or hypoallergenic cushion materials.
                 </span>
               </li>
@@ -298,7 +303,7 @@ export function HowItWorks() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Your photo is processed entirely in your browser and is never
-                uploaded. The only information sent to Penn Home Medical Supply
+                uploaded. The only information sent to PennPaps
                 is your numerical face measurements, your questionnaire answers,
                 and — if you place an order — the contact, insurance, and
                 prescription details you submit on the order form.
@@ -353,14 +358,14 @@ export function HowItWorks() {
             </div>
             <div className="space-y-1">
               <h3 className="font-semibold tracking-tight text-foreground">
-                When to Call Penn Home Medical Supply Directly
+                When to Call PennPaps Directly
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Penn Fit is a recommendation tool — not a substitute for clinical
-                advice. If you have severe pressure sores, an open facial wound,
-                a recent facial injury, or you're a pediatric patient, please
-                contact our team directly so a respiratory therapist can fit you
-                in person.
+                Our online fitter and shop are convenient, but they're not a
+                substitute for clinical advice. If you have severe pressure
+                sores, an open facial wound, a recent facial injury, or you're
+                a pediatric patient, please contact our team directly so a
+                respiratory therapist can fit you in person.
               </p>
             </div>
           </CardContent>
@@ -370,25 +375,26 @@ export function HowItWorks() {
       {/* CTA */}
       <section className="text-center space-y-4 pt-4">
         <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-gradient-brand">
-          Ready to Find Your Mask?
+          Ready to get started?
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          The full fitting takes about 3 minutes. Your camera image never leaves
-          your device.
+          New mask? The fitter takes about 3 minutes and your camera image
+          never leaves your device. Already know what you need? Skip straight
+          to the shop.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
             <Button size="lg" className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow">
-              Start Fitting Process
+              Get fitted for a mask
             </Button>
           </Link>
-          <Link href="/masks">
+          <Link href="/shop">
             <Button
               size="lg"
               variant="outline"
               className="w-full sm:w-auto h-12 px-8 rounded-full glass-panel border-border/60"
             >
-              Browse Mask Catalog
+              Shop CPAP supplies
             </Button>
           </Link>
         </div>

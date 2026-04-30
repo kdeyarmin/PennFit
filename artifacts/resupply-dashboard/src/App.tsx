@@ -1,91 +1,158 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Show } from "@clerk/react";
+import { useGetAdminMe, ApiError } from "@workspace/resupply-api-client";
 import NotFound from "./pages/not-found";
+import { SignInPage } from "./pages/sign-in";
+import { SignUpPage } from "./pages/sign-up";
+import { NotAuthorizedPage } from "./pages/not-authorized";
+import { useApiAuthBridge } from "./lib/api-client";
+import { AppShell } from "./components/AppShell";
+import { Spinner } from "./components/Spinner";
+import { DashboardPage } from "./pages/dashboard";
+import { PatientsPage } from "./pages/patients";
+import { PatientDetailPage } from "./pages/patient-detail";
+import { ConversationsPage } from "./pages/conversations";
+import { ConversationDetailPage } from "./pages/conversation-detail";
+import { EpisodesPage } from "./pages/episodes";
+import { RulesPage } from "./pages/rules";
+import { AuditPage } from "./pages/audit";
+import { AdminShopReviewsPage } from "./pages/admin-shop-reviews";
+import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
+import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
+import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
 
-// Penn Resupply Operator Console — Phase 0 placeholder.
+// PennPaps Admin Console.
 //
-// This is the operator-facing console. The Phase 0 deliverable is a
-// minimal Penn-branded shell so contributors can confirm the artifact
-// boots and the brand bar renders. Real screens (queue, episode
-// detail, conversation viewer, fulfillment screen) land in Phase 4+.
-function Home() {
+// Three routing layers, in order:
+//
+//   1. <WouterRouter base> — strips the artifact base path so
+//      routes below are written as if they were root-relative.
+//
+//   2. <Switch> — top-level routes:
+//        - /sign-in, /sign-in/:rest*, /sign-up, /sign-up/:rest*
+//          reachable while signed-out
+//        - everything else funnels through <ConsoleRoute>
+//
+//   3. <ConsoleRoute> — Clerk gate + /me probe + AppShell. Routes
+//      to admin pages live INSIDE this gate so a signed-out user
+//      never lands on a page that fires authenticated queries.
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// The console body — only rendered when Clerk says we have a session.
+// /me probe outcomes funnel into:
+//   - pending  → loading spinner inside the console shell
+//   - error    → NotAuthorizedPage with a reason derived from status
+//   - success  → AppShell + nested admin pages
+//
+// `error.status` mapping is unchanged from the placeholder build.
+// status 0 (network drop, ApiError-not-thrown) → "transient" so a
+// connectivity blip doesn't tell the admin they were de-allow-listed.
+
+function AdminConsole() {
+  const { data, isPending, isError, error } = useGetAdminMe();
+
+  if (isError) {
+    const status = error instanceof ApiError ? error.status : 0;
+    const reason: "not-configured" | "transient" | "not-authorized" =
+      status === 503
+        ? "not-configured"
+        : status === 0 || (status >= 500 && status < 600)
+          ? "transient"
+          : "not-authorized";
+    return <NotAuthorizedPage reason={reason} />;
+  }
+
+  if (isPending) {
+    return (
+      <AppShell>
+        <Spinner label="Confirming admin access…" />
+      </AppShell>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#f7f8fb" }}>
-      <header
-        className="flex items-center justify-between px-6 py-4 border-b"
-        style={{ backgroundColor: "#0a1f44", borderColor: "#0a1f44" }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="h-8 w-8 rounded flex items-center justify-center font-bold"
-            style={{ backgroundColor: "#c9a24a", color: "#0a1f44" }}
-            aria-hidden="true"
-          >
-            P
-          </div>
-          <div className="leading-tight">
-            <div className="text-white font-semibold tracking-tight">
-              Penn Resupply Console
-            </div>
-            <div className="text-xs" style={{ color: "#c9a24a" }}>
-              Operator workstation
-            </div>
-          </div>
-        </div>
-        <div className="text-xs uppercase tracking-wider" style={{ color: "#c9a24a" }}>
-          Phase 0 · Scaffold
-        </div>
-      </header>
+    <AppShell adminEmail={data?.email} adminRole={data?.role}>
+      <Switch>
+        <Route path="/" component={DashboardPage} />
+        <Route path="/patients" component={PatientsPage} />
+        <Route path="/patients/:id">
+          {(params) => <PatientDetailPage id={params.id} />}
+        </Route>
+        <Route path="/conversations" component={ConversationsPage} />
+        <Route path="/conversations/:id">
+          {(params) => <ConversationDetailPage id={params.id} />}
+        </Route>
+        <Route path="/episodes" component={EpisodesPage} />
+        <Route path="/rules" component={RulesPage} />
+        <Route path="/audit" component={AuditPage} />
+        <Route
+          path="/admin/shop/reviews"
+          component={AdminShopReviewsPage}
+        />
+        <Route
+          path="/admin/shop/inventory"
+          component={AdminShopInventoryPage}
+        />
+        <Route
+          path="/admin/shop/inventory/new"
+          component={AdminShopProductNewPage}
+        />
+        <Route
+          path="/admin/shop/abandoned-carts"
+          component={AdminShopAbandonedCartsPage}
+        />
+        <Route component={NotFound} />
+      </Switch>
+    </AppShell>
+  );
+}
 
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div
-          className="max-w-xl w-full bg-white border rounded-lg p-8 shadow-sm"
-          style={{ borderColor: "#e5e7eb" }}
-        >
-          <p
-            className="text-xs uppercase tracking-[0.2em] mb-3 font-semibold"
-            style={{ color: "#c9a24a" }}
-          >
-            CPAP Resupply Automation
-          </p>
-          <h1 className="text-2xl font-semibold mb-3" style={{ color: "#0a1f44" }}>
-            Operator console placeholder
-          </h1>
-          <p className="text-sm leading-relaxed mb-4" style={{ color: "#374151" }}>
-            This is the resupply dashboard scaffold. Real operator screens —
-            patient queue, episode detail, conversation viewer, fulfillment —
-            land in Phase 4. For Phase 0, this page exists only to confirm
-            the artifact boots, the brand bar renders, and the routing shell
-            is wired correctly.
-          </p>
-          <p className="text-sm leading-relaxed" style={{ color: "#374151" }}>
-            See <code className="text-xs px-1 py-0.5 bg-gray-100 rounded">docs/resupply/README.md</code>{" "}
-            for an onboarding tour and the phased build plan.
-          </p>
-        </div>
-      </main>
-
-      <footer
-        className="text-xs px-6 py-3 border-t text-center"
-        style={{ color: "#6b7280", backgroundColor: "#ffffff", borderColor: "#e5e7eb" }}
-      >
-        Penn Home Medical Supply · Internal tooling · Not for patient use
-      </footer>
-    </div>
+function ConsoleRoute() {
+  return (
+    <>
+      <Show when="signed-out">
+        <Redirect to="/sign-in" />
+      </Show>
+      <Show when="signed-in">
+        <AdminConsole />
+      </Show>
+    </>
   );
 }
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route component={NotFound} />
+      <Route path="/sign-in" component={SignInPage} />
+      <Route path="/sign-in/:rest*" component={SignInPage} />
+      <Route path="/sign-up" component={SignUpPage} />
+      <Route path="/sign-up/:rest*" component={SignUpPage} />
+      {/* Every other route — including the bare "/" landing page
+          and all detail pages — gets gated by ConsoleRoute.
+          ConsoleRoute itself renders a nested <Switch> with the
+          actual admin pages.
+
+          The pattern MUST be "*" (not "/:rest*"). Wouter uses
+          regexparam, and `/:rest*` requires at least one path
+          segment after the slash — so it matches "/foo" but NOT
+          "/" itself. Using "*" matches both, which is what we need
+          so the admin landing on /resupply/ actually gets
+          the dashboard (or the redirect to /sign-in when signed-out)
+          instead of a blank page from a Switch that found no
+          matching route. */}
+      <Route path="*" component={ConsoleRoute} />
     </Switch>
   );
 }
 
 function App() {
+  // Register the Clerk → API auth bridge once for the lifetime of
+  // the app. Must live INSIDE ClerkProvider (in main.tsx).
+  useApiAuthBridge();
+
   return (
-    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+    <WouterRouter base={basePath}>
       <Router />
     </WouterRouter>
   );

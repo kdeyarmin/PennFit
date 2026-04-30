@@ -20,7 +20,7 @@ export default function NotFound() {
           Page not found
         </h1>
         <p className="text-sm mb-6" style={{ color: "#374151" }}>
-          That route is not part of the operator console. Phase 0 only ships
+          That route is not part of the admin console. Phase 0 only ships
           the home placeholder.
         </p>
         <Link

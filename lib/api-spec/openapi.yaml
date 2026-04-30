@@ -14,6 +14,8 @@ tags:
     description: Mask recommendation operations
   - name: orders
     description: Mask order submission
+  - name: reminders
+    description: Supply replacement reminder subscriptions
 paths:
   /healthz:
     get:
@@ -66,6 +68,135 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Email delivery not configured on this server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reminders:
+    post:
+      operationId: subscribeToReminders
+      tags: [reminders]
+      summary: Subscribe to supply replacement reminders
+      description: |
+        Public endpoint. Behavior depends on whether the email is already
+        on file:
+
+        - **New email:** the subscription is created. The response includes
+          `manageToken` so the client can deep-link to the manage page
+          immediately (this also makes the dev-mode flow usable when
+          email delivery isn't configured). A confirmation email is sent
+          containing the same manage link.
+        - **Existing email:** the response is `alreadySubscribed: true`
+          with NO `manageToken` — to prevent email-enumeration takeover
+          of an existing subscription, the manage link is only sent to
+          the registered owner's inbox. The submitter's items are not
+          applied to the existing row; the registered owner can update
+          items via the manage page.
+
+        Honeypot: a hidden `website` field. If non-empty, the request is
+        silently accepted (fake `manageToken: "honeypot"`) and no DB
+        write or email send occurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscribeReminderRequest"
+      responses:
+        "200":
+          description: Subscription created or updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscribeReminderResponse"
+        "400":
+          description: Invalid subscription payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reminders/manage:
+    get:
+      operationId: getReminderSubscription
+      tags: [reminders]
+      summary: Get a subscription by manage token
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subscription found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderSubscriptionView"
+        "404":
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateReminderSubscription
+      tags: [reminders]
+      summary: Update items on a subscription
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReminderRequest"
+      responses:
+        "200":
+          description: Subscription updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderSubscriptionView"
+        "400":
+          description: Invalid update payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /reminders/manage/unsubscribe:
+    post:
+      operationId: unsubscribeFromReminders
+      tags: [reminders]
+      summary: Unsubscribe from all reminders
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Unsubscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnsubscribeResponse"
+        "404":
+          description: Token not found
           content:
             application/json:
               schema:
@@ -534,6 +665,149 @@ components:
         - insurance
         - prescription
         - consentToContact
+
+    ReminderItem:
+      type: object
+      description: |
+        One supply line on a subscription. `sku` is the canonical SKU
+        (one of: maskCushion, maskFrameHeadgear, headgear, tubing,
+        disposableFilter, reusableFilter, waterChamber). `intervalDays`
+        is how often we should remind. `lastReplacedAt` is the date the
+        customer last swapped this item in (used to compute next due).
+      properties:
+        sku:
+          type: string
+          enum:
+            - maskCushion
+            - maskFrameHeadgear
+            - headgear
+            - tubing
+            - disposableFilter
+            - reusableFilter
+            - waterChamber
+        lastReplacedAt:
+          type: string
+          description: YYYY-MM-DD
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        intervalDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+      required:
+        - sku
+        - lastReplacedAt
+        - intervalDays
+
+    ReminderItemView:
+      allOf:
+        - $ref: "#/components/schemas/ReminderItem"
+        - type: object
+          properties:
+            nextDueAt:
+              type: string
+              description: YYYY-MM-DD computed by the server
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+          required:
+            - nextDueAt
+
+    SubscribeReminderRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 200
+        items:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/ReminderItem"
+        # Honeypot — must be empty. Bots tend to fill every field; humans
+        # never see this one (rendered with sr-only + tabindex=-1).
+        website:
+          type: string
+          maxLength: 200
+          description: Anti-spam honeypot. Must be empty.
+      required:
+        - email
+        - items
+
+    SubscribeReminderResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        manageToken:
+          type: string
+          description: |
+            Capability token for the /reminders/manage endpoints. ONLY
+            returned for newly-created subscriptions. For requests against
+            an already-existing email we deliberately omit this field — the
+            existing manage link is sent only to the registered owner's
+            inbox, so an attacker who guesses an email cannot escalate to
+            full subscription control via this endpoint.
+        alreadySubscribed:
+          type: boolean
+          description: |
+            True when the email was already on file. The response is
+            otherwise indistinguishable from a fresh subscribe (no items
+            disclosed, no token disclosed) — the caller should display a
+            generic "check your email for a manage link" message.
+        emailStatus:
+          type: string
+          enum: [sent, skipped, failed]
+          description: Whether a confirmation / manage email was sent
+        message:
+          type: string
+      required:
+        - success
+        - emailStatus
+        - message
+
+    ReminderSubscriptionView:
+      type: object
+      properties:
+        email:
+          type: string
+        status:
+          type: string
+          enum: [active, unsubscribed]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReminderItemView"
+        createdAt:
+          type: string
+          description: ISO-8601 timestamp
+      required:
+        - email
+        - status
+        - items
+        - createdAt
+
+    UpdateReminderRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/ReminderItem"
+      required:
+        - items
+
+    UnsubscribeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+        - success
+        - message
 
     OrderResponse:
       type: object

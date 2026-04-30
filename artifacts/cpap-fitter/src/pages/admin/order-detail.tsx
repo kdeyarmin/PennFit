@@ -7,10 +7,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fetchAdminOrder, AdminApiError } from "@/lib/admin-api";
 import { ArrowLeft, AlertCircle, ClipboardCheck } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending send",
-  sent: "Delivered to Penn",
+  sent: "Delivered to PennPaps",
   failed: "Delivery failed",
   skipped: "Skipped (email not configured)",
 };
@@ -51,6 +52,7 @@ interface ShippingField {
 }
 
 export function AdminOrderDetail() {
+  useDocumentTitle("Admin · Order details");
   const params = useParams<{ id: string }>();
   const id = params.id;
 
@@ -178,7 +180,7 @@ export function AdminOrderDetail() {
         <Section title="Prescription">
           <Field
             label="Existing CPAP Rx on file"
-            value={prescription.hasExistingPrescription ? "Yes" : "No — Penn must obtain Rx before shipping"}
+            value={prescription.hasExistingPrescription ? "Yes" : "No — PennPaps must obtain Rx before shipping"}
           />
           {prescription.physicianName && <Field label="Physician" value={prescription.physicianName} />}
           {prescription.physicianPhone && <Field label="Physician phone" value={prescription.physicianPhone} />}

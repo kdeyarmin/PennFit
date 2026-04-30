@@ -6,6 +6,7 @@ import {
   text,
   timestamp,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 import { encryptedJson } from "../encryption";
@@ -18,7 +19,7 @@ import { resupplySchema } from "./_schema";
  *
  * Why each column lives where it does:
  *   - `patientId` — owning patient. ON DELETE CASCADE is intentional:
- *     when a patient row is deleted (operator-initiated PHI purge), every
+ *     when a patient row is deleted (admin-initiated PHI purge), every
  *     prescription on file is also deleted.
  *   - `itemSku` and `cadenceDays` — the operational fields the eligibility
  *     engine reads on every tick. Plaintext, indexed.
@@ -71,6 +72,21 @@ export const prescriptions = resupplySchema.table(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
+
+    // Document attachment metadata. The bytes themselves live in
+    // App Storage (GCS) under PRIVATE_OBJECT_DIR, gated by the
+    // ACL framework in artifacts/resupply-api/src/lib/objectAcl.ts.
+    // We persist only the object path here so download URLs can be
+    // re-derived on demand without round-tripping every prescription
+    // row through GCS metadata. See migration 0015 for the rationale
+    // behind each column individually.
+    attachmentObjectKey: text("attachment_object_key"),
+    attachmentFilename: varchar("attachment_filename", { length: 255 }),
+    attachmentContentType: varchar("attachment_content_type", { length: 120 }),
+    attachmentSizeBytes: integer("attachment_size_bytes"),
+    attachmentUploadedAt: timestamp("attachment_uploaded_at", {
+      withTimezone: true,
+    }),
   },
   (t) => ({
     patientIdx: index("prescriptions_patient_idx").on(t.patientId),

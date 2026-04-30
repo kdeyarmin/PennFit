@@ -1,0 +1,23 @@
+
+3. One-tap reorder from /account — you already store past orders against the Clerk customer. Add a "Buy this again" button on each past order that pre-fills the cart with the same line items and routes straight to checkout. Highest LTV lift for the lowest effort, and it leans into the cash-pay flywheel you've built.
+5. Auto-ship / Subscribe & Save — the /reminders table already knows each subscriber's SKUs and intervalDays. Promote it from "we'll email you" to "we'll ship + charge you (10% off)" via Stripe Subscriptions. Reminders becomes a soft option for skeptics; subscribe-and-save becomes the default for fans. This is the single biggest revenue multiplier on this product shape.
+7. Embed the Penn Fit tutorial video on /how-it-works, /consent, and /results — you already have a video artifact (artifacts/penn-fit-tutorial) but it's not surfaced to patients. A short "watch how it works" thumbnail above the fold on /how-it-works will lift fitting-funnel conversion meaningfully.
+Conversion & checkout
+6. Free-shipping progress bar in /shop/cart — "$12 away from free shipping" is a proven AOV booster on supply-store carts; with bundles already curated this works well.
+8. Apple Pay / Google Pay via Stripe's Express Checkout Element on the cart page — most CPAP buyers are 50+ on mobile and won't type a card.
+10. Trust strip near the "Add to cart" / "Place order" buttons — "HSA/FSA eligible · Ships from PA · 30-day fit guarantee · Genuine ResMed." None of those are gated on integrations; they're copy + small icons.
+12. Auto-emailed HSA/FSA receipt after every cash-pay order. Mirrors the reminder email pattern and is a real reason for cash-pay shoppers to choose you over Amazon.
+Repeat customer / LTV
+1. "Your replacement schedule" panel on /account — if a signed-in patient has ordered a cushion, show their personal next-due date for it (same math as /reminders, just bound to order history). Turns the account page from a settings dump into a daily-useful surface.
+2. Win-back email at +90 days no-order for accounts without an active subscription — reuses the reminders sender, just a different template.
+Education & engagement (sticky daily reasons to come back)
+1. Mini-quiz on the home page — a 3-question "find my mask in 30 seconds" that ends in a personalized shop page. Lighter than the full Virtual Mask Fitter and a much lower commitment for first-time visitors who aren't ready to capture facial measurements yet.
+2. Reviews + Q&A on each product card in /shop (start moderated, admin-curated). Even 1–2 short quotes per product lifts shop conversion noticeably.
+3. "Mask compatibility" filter on /shop — pick your machine (AirSense 10/11, AirCurve, etc.) and the catalog re-orders to put compatible items first. Already have manufacturer + model data in the catalog.
+Post-purchase delight
+15. SMS shipping notifications opt-in at checkout — Twilio is already wired for the resupply system, so it's mostly plumbing.
+17. +14-day "how's the fit?" survey email with a one-click "swap cushion size for free" CTA if they say it leaks. Turns a refund into a save.
+19. A real /account/orders/[id] page with tracking link, instead of just the post-checkout success screen. Right now order history exists but isn't drillable.
+Trust / social proof
+18. Live "X masks fitted this week" counter on the home page — real number from the DB, refreshes nightly.
+20. Testimonial carousel on /, /insurance, and /shop(admin-managed in the existing admin console).

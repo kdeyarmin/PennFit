@@ -35,7 +35,7 @@ export const messages = resupplySchema.table(
 
     direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
     senderRole: text("sender_role", {
-      enum: ["patient", "operator", "agent", "system"],
+      enum: ["patient", "admin", "agent", "system"],
     }).notNull(),
 
     // Encrypted body. Use `encrypt(value)` to write and

@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Redirect } from "wouter";
 import { Show, useUser } from "@clerk/react";
@@ -8,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ShieldOff } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -48,24 +48,17 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
     retry: false,
   });
 
-  // Set <title> for admin pages so it's clear in the tab bar.
-  useEffect(() => {
-    const prev = document.title;
-    document.title = "Penn Fit · Admin";
-    return () => {
-      document.title = prev;
-    };
-  }, []);
+  // Title precedence is intentionally NOT shared between this shell
+  // and child admin pages — that would create a useEffect ordering
+  // hazard (children mount before parents in React, so the parent's
+  // title hook would run last and clobber e.g. "Admin · Orders" with
+  // "Admin"). Instead, each non-child branch below renders a tiny
+  // sub-shell component that owns the "Admin" title for that state,
+  // and child pages own their own (e.g. "Admin · Orders") with no
+  // overlap.
 
   if (!isLoaded || me.isLoading) {
-    return (
-      <AdminLayout adminEmail={null}>
-        <div className="space-y-4">
-          <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-32 w-full" />
-        </div>
-      </AdminLayout>
-    );
+    return <AdminLoadingShell />;
   }
 
   if (me.error) {
@@ -76,21 +69,46 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
     if (status === 401) {
       return <Redirect to="/sign-in" />;
     }
-    return (
-      <AdminLayout adminEmail={null}>
-        <Card className="border-0 glass-card rounded-2xl">
-          <CardContent className="p-8 text-sm text-destructive">
-            Could not verify admin access: {(me.error as Error).message}
-          </CardContent>
-        </Card>
-      </AdminLayout>
-    );
+    return <AdminErrorShell error={me.error as Error} />;
   }
 
-  return <AdminLayout adminEmail={me.data?.email ?? null}>{children}</AdminLayout>;
+  return (
+    <AdminLayout
+      adminEmail={me.data?.email ?? null}
+      adminRole={me.data?.role ?? "admin"}
+    >
+      {children}
+    </AdminLayout>
+  );
+}
+
+function AdminLoadingShell() {
+  useDocumentTitle("Admin");
+  return (
+    <AdminLayout adminEmail={null}>
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-72" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    </AdminLayout>
+  );
+}
+
+function AdminErrorShell({ error }: { error: Error }) {
+  useDocumentTitle("Admin");
+  return (
+    <AdminLayout adminEmail={null}>
+      <Card className="border-0 glass-card rounded-2xl">
+        <CardContent className="p-8 text-sm text-destructive">
+          Could not verify admin access: {error.message}
+        </CardContent>
+      </Card>
+    </AdminLayout>
+  );
 }
 
 function NotAuthorized({ status, message }: { status: number; message: string }) {
+  useDocumentTitle("Admin");
   return (
     <div className="container max-w-2xl mx-auto px-4 py-16">
       <Card className="border-0 glass-card rounded-2xl">
@@ -105,11 +123,11 @@ function NotAuthorized({ status, message }: { status: number; message: string })
         <CardContent className="space-y-4 text-center">
           <p className="text-muted-foreground">{message}</p>
           <p className="text-sm text-muted-foreground">
-            If you should have access, ask your Penn Home Medical Supply administrator to add
+            If you should have access, ask your PennPaps administrator to add
             your email to the <code className="font-mono">PENN_ADMIN_EMAILS</code> allowlist.
           </p>
           <Link href="/">
-            <Button variant="outline">Back to Penn Fit</Button>
+            <Button variant="outline">Back to PennPaps</Button>
           </Link>
         </CardContent>
       </Card>

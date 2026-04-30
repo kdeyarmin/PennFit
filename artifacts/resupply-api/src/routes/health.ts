@@ -11,10 +11,10 @@ router.get("/healthz", (_req, res) => {
 });
 
 // Readiness — confirms the API can actually serve traffic by probing
-// every dependency operators rely on (Postgres + the pg-boss queue).
+// every dependency admins rely on (Postgres + the pg-boss queue).
 // Returns 503 on any failure so load balancers / deploy gates stop
 // routing traffic until the dependency recovers. The body still
-// includes per-dependency status on a 503 so an operator looking at
+// includes per-dependency status on a 503 so an admin looking at
 // the response can tell *which* dependency was unhappy without
 // scraping logs. See ./lib/readiness.ts for the failure-categorization
 // allowlist — we deliberately don't echo raw error messages.
@@ -27,7 +27,7 @@ router.get("/readyz", async (_req, res) => {
     // wrapped in Promise.allSettled with a per-check timeout. But if a
     // future regression breaks that contract, falling through to
     // Express's default 500 handler would (a) drop the structured
-    // body operators rely on, and (b) potentially leak the raw error
+    // body admins rely on, and (b) potentially leak the raw error
     // through the default error middleware. Fail closed with a safe,
     // structured 503 instead.
     res.status(503).json({

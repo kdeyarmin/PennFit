@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchAdminOrders } from "@/lib/admin-api";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pending",
@@ -24,6 +25,7 @@ const STATUS_TONE: Record<string, "default" | "secondary" | "destructive" | "out
 };
 
 export function AdminOrders() {
+  useDocumentTitle("Admin · Orders");
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [status, setStatus] = useState<string | undefined>(undefined);
@@ -58,7 +60,7 @@ export function AdminOrders() {
             Orders
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            All orders submitted through Penn Fit. Click a row to view full patient detail.
+            All orders submitted through PennPaps. Click a row to view full patient detail.
           </p>
         </div>
       </div>

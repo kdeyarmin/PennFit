@@ -6,7 +6,7 @@ type ConversationInsertValue = PgInsertValue<typeof conversations>;
 
 export interface ConversationFixtureSpec {
   channel: "sms" | "voice" | "email";
-  status: "open" | "awaiting_patient" | "awaiting_operator" | "closed";
+  status: "open" | "awaiting_patient" | "awaiting_admin" | "closed";
   externalRef: string | null;
   lastMessageAt: Date | null;
 }

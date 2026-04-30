@@ -44,7 +44,7 @@ activities, the state-machine table becomes implicit Temporal history.
 - We give up Temporal's free goodies: workflow visibility UI, child
   workflows, signals, queries, automatic versioning of workflow code,
   side-effect detection. We replace these with: structured logs, an
-  operator-dashboard view onto the workflow table, and a strict rule that
+  admin-dashboard view onto the workflow table, and a strict rule that
   workflow steps must be idempotent (since pg-boss can re-run a step on
   retry without rolling back side effects).
 - The "step must be idempotent" rule is tested explicitly in
@@ -57,7 +57,7 @@ Move to Temporal when **any** of these become true:
 
 - Workflows have more than ~10 steps and the state machine becomes hard to
   reason about.
-- We need durable signals from operators (e.g. "pause this patient's
+- We need durable signals from admins (e.g. "pause this patient's
   outreach mid-flight") and the ad-hoc table updates feel fragile.
 - We need workflow versioning because deploys change step semantics
   mid-flight.

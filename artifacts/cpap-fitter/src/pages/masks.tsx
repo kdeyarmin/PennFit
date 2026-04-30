@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Filter, Wind, Weight, Ruler, Activity, Tag } from "lucide-react";
 import { getMaskImage, formatMaskType } from "@/lib/mask-images";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 const priceTierLabel: Record<string, string> = {
   budget: "Budget",
@@ -20,6 +21,10 @@ const priceTierColor: Record<string, string> = {
 };
 
 export function Masks() {
+  useDocumentTitle(
+    "Mask catalog",
+    "Browse the full PennPaps CPAP mask catalog: nasal, nasal pillow, full face, and hybrid masks with sizing, weight, noise level, and price tier.",
+  );
   const { data, isLoading } = useListMasks();
   const [filter, setFilter] = useState<MaskEntryType | "all">("all");
 
@@ -32,12 +37,15 @@ export function Masks() {
           <div className="inline-flex items-center gap-3 mb-3">
             <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              Penn Fit · Catalog
+              PennPaps · Catalog
             </span>
           </div>
           <h1 className="text-display text-4xl md:text-5xl font-bold tracking-tight mb-2 text-gradient-brand">Mask Catalog</h1>
           <p className="text-muted-foreground">
-            Browse all CPAP masks available through Penn Home Medical Supply.
+            Every mask we carry. Get matched to one with the{" "}
+            <a href="/consent" className="text-primary underline-offset-4 hover:underline">on-device fitter</a>,
+            or order a complete mask direct from{" "}
+            <a href="/shop" className="text-primary underline-offset-4 hover:underline">the shop</a>.
           </p>
         </div>
 
@@ -79,6 +87,7 @@ export function Masks() {
                   alt={`${mask.manufacturer} ${mask.name}`}
                   className="w-full h-full object-contain p-4"
                   loading="lazy"
+                  decoding="async"
                 />
                 <Badge
                   className="absolute top-3 left-3 glass-panel text-foreground border-0 font-medium"

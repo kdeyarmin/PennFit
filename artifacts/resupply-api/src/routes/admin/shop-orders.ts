@@ -1,0 +1,508 @@
+// /admin/shop/orders/* — admin tools for shop-order fulfillment.
+//
+// Scope of this module:
+//   * POST /admin/shop/orders/:orderId/tracking
+//       Enter carrier + tracking number; stamps shipped_at=now().
+//   * POST /admin/shop/orders/:orderId/delivered
+//       Mark a previously-shipped parcel as delivered.
+//   * PATCH /admin/shop/orders/:orderId/shipping-address
+//       Admin-side address correction (e.g. customer phoned in a typo).
+//       Allowed pre-AND-post-shipment because support occasionally
+//       fixes the address-of-record after the fact for return labels.
+//   * POST /admin/shop/orders/:orderId/refund
+//       Issue a Stripe refund (full or partial). The actual status
+//       flip to 'refunded' lands via the charge.refunded webhook —
+//       this endpoint just kicks off the refund and returns the
+//       Stripe Refund object id so the operator gets immediate
+//       feedback.
+//
+// What this module does NOT own:
+//   * Customer-facing edits — those live in /shop/me/orders/* and
+//     enforce a stricter "shipped_at IS NULL" guard. Admins are
+//     trusted to know when a post-ship address tweak is appropriate.
+//   * Tracking projection / carrier URL templates — that lives in
+//     the customer-facing endpoint. Admins enter the raw fields here.
+//
+// Authorization:
+//   requireAdmin (RESUPPLY_ADMIN_EMAILS allowlist). Each handler
+//   re-validates the per-route preconditions (order exists, payment
+//   state appropriate) before mutating.
+//
+// Error contract (consistent across all four endpoints):
+//   400 invalid_body / invalid_order_id    — input validation
+//   404 order_not_found                    — id matched no row
+//   409 order_not_paid                     — status != 'paid'
+//   409 order_not_shipped                  — delivered without shipped_at
+//   409 order_already_refunded             — refund attempt on refunded
+//   409 order_no_payment_intent            — refund attempt with no PI
+//   503 stripe_not_configured              — env missing in preview
+//   502 stripe_refund_failed               — Stripe error proxied
+
+import { Router, type IRouter } from "express";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { z } from "zod";
+
+import { getDbPool, shopOrders } from "@workspace/resupply-db";
+import type { SavedShippingAddress } from "@workspace/resupply-db";
+
+import { requireAdmin } from "../../middlewares/requireAdmin";
+import {
+  getStripeClient,
+  readStripeConfigOrNull,
+} from "../../lib/stripe/config";
+
+const router: IRouter = Router();
+
+// ID validation: shop_orders.id is a text column whose values are
+// `gen_random_uuid()::text`. Accept the canonical UUID format so a
+// stray path param can't be smuggled into the WHERE clause as a
+// substring match. (Drizzle parameterises so this is belt-and-
+// suspenders defence.)
+const ORDER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validateOrderId(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  return ORDER_ID_RE.test(raw) ? raw : null;
+}
+
+// Trim + length-cap the tracking inputs. Carrier is a free-form name
+// the customer-facing track-link projection maps to a known URL
+// template; we only validate that it isn't empty / suspiciously long.
+const trackingBodySchema = z.object({
+  carrier: z
+    .string()
+    .trim()
+    .min(1, "carrier required")
+    .max(50, "carrier too long"),
+  number: z
+    .string()
+    .trim()
+    .min(1, "tracking number required")
+    .max(100, "tracking number too long"),
+});
+
+// Address shape mirrors SavedShippingAddress in shop-customers so the
+// existing customer Zod validator + UI form can be reused as-is. We
+// re-declare here (rather than importing from a shared shop module)
+// because the shape is small and the duplication keeps the admin
+// route self-contained — a future address-fields change would touch
+// both validators in one PR anyway.
+const addressBodySchema = z.object({
+  line1: z.string().trim().min(1).max(200),
+  line2: z
+    .union([z.string().trim().max(200), z.null(), z.undefined()])
+    .transform((v) => (v === undefined || v === "" ? null : v)),
+  city: z.string().trim().min(1).max(100),
+  state: z.string().trim().min(2).max(2),
+  postalCode: z.string().trim().min(3).max(20),
+  country: z.literal("US"),
+});
+
+// Refund body — both fields optional. Omitted amountCents = full
+// refund; omitted reason = no reason recorded on the Stripe Refund.
+const refundBodySchema = z.object({
+  amountCents: z
+    .number()
+    .int()
+    .min(1, "refund amount must be positive")
+    .max(1_000_000_000, "refund amount unreasonably large")
+    .optional(),
+  reason: z
+    .enum(["duplicate", "fraudulent", "requested_by_customer"])
+    .optional(),
+});
+
+interface OrderRow {
+  id: string;
+  stripeSessionId: string;
+  stripePaymentIntentId: string | null;
+  status: string;
+  amountTotalCents: number | null;
+  currency: string | null;
+  clerkUserId: string | null;
+  createdAt: Date;
+  paidAt: Date | null;
+  shippingAddress: SavedShippingAddress | null;
+  trackingCarrier: string | null;
+  trackingNumber: string | null;
+  shippedAt: Date | null;
+  deliveredAt: Date | null;
+}
+
+async function loadOrder(orderId: string): Promise<OrderRow | null> {
+  const db = drizzle(getDbPool());
+  const rows = await db
+    .select({
+      id: shopOrders.id,
+      stripeSessionId: shopOrders.stripeSessionId,
+      stripePaymentIntentId: shopOrders.stripePaymentIntentId,
+      status: shopOrders.status,
+      amountTotalCents: shopOrders.amountTotalCents,
+      currency: shopOrders.currency,
+      clerkUserId: shopOrders.clerkUserId,
+      createdAt: shopOrders.createdAt,
+      paidAt: shopOrders.paidAt,
+      shippingAddress: shopOrders.shippingAddress,
+      trackingCarrier: shopOrders.trackingCarrier,
+      trackingNumber: shopOrders.trackingNumber,
+      shippedAt: shopOrders.shippedAt,
+      deliveredAt: shopOrders.deliveredAt,
+    })
+    .from(shopOrders)
+    .where(eq(shopOrders.id, orderId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+function projectOrder(row: OrderRow) {
+  return {
+    id: row.id,
+    sessionId: row.stripeSessionId,
+    paymentIntentId: row.stripePaymentIntentId,
+    status: row.status,
+    amountTotalCents: row.amountTotalCents,
+    currency: row.currency,
+    clerkUserId: row.clerkUserId,
+    createdAt: row.createdAt.toISOString(),
+    paidAt: row.paidAt ? row.paidAt.toISOString() : null,
+    shippingAddress: row.shippingAddress,
+    trackingCarrier: row.trackingCarrier,
+    trackingNumber: row.trackingNumber,
+    shippedAt: row.shippedAt ? row.shippedAt.toISOString() : null,
+    deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
+  };
+}
+
+// ---------------------------------------------------------------------
+// POST /admin/shop/orders/:orderId/tracking
+// ---------------------------------------------------------------------
+// Sets carrier + number and stamps shipped_at=now() in a single UPDATE.
+// We deliberately allow OVERWRITE — re-entering tracking after a
+// re-ship is a real workflow (lost parcel, replacement label) and
+// blocking it would force admins to use SQL. shipped_at gets re-stamped
+// on overwrite, which is the desired semantics ("when did the customer's
+// CURRENT parcel ship").
+router.post(
+  "/admin/shop/orders/:orderId/tracking",
+  requireAdmin,
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const parsed = trackingBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { carrier, number } = parsed.data;
+
+    const existing = await loadOrder(orderId);
+    if (!existing) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    if (existing.status !== "paid") {
+      // Tracking on an unpaid (or refunded) order makes no sense and
+      // would mislead the customer-facing track link. Surface a clean
+      // 409 so the admin UI can render an explainer.
+      res.status(409).json({
+        error: "order_not_paid",
+        currentStatus: existing.status,
+      });
+      return;
+    }
+
+    const db = drizzle(getDbPool());
+    const updated = await db
+      .update(shopOrders)
+      .set({
+        trackingCarrier: carrier,
+        trackingNumber: number,
+        shippedAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(shopOrders.id, orderId))
+      .returning();
+    const row = updated[0];
+    if (!row) {
+      // Race: another admin deleted the row between SELECT + UPDATE.
+      // Treat the same as not-found.
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+
+    req.log?.info?.(
+      {
+        orderId,
+        carrier,
+        adminEmail: req.adminEmail,
+      },
+      "admin/shop/orders: tracking entered",
+    );
+    res.json({ order: projectOrder(row as OrderRow) });
+  },
+);
+
+// ---------------------------------------------------------------------
+// POST /admin/shop/orders/:orderId/delivered
+// ---------------------------------------------------------------------
+// Stamps delivered_at=now(). Idempotent: re-firing on an already-
+// delivered order is a no-op (we keep the original delivered_at so the
+// customer-facing "delivered on" date doesn't drift on accidental
+// double-clicks).
+router.post(
+  "/admin/shop/orders/:orderId/delivered",
+  requireAdmin,
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const existing = await loadOrder(orderId);
+    if (!existing) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    if (!existing.shippedAt) {
+      res.status(409).json({ error: "order_not_shipped" });
+      return;
+    }
+    if (existing.deliveredAt) {
+      // Idempotent — don't bump the timestamp.
+      res.json({ order: projectOrder(existing) });
+      return;
+    }
+
+    const db = drizzle(getDbPool());
+    const updated = await db
+      .update(shopOrders)
+      .set({
+        deliveredAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(shopOrders.id, orderId))
+      .returning();
+    const row = updated[0];
+    if (!row) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    req.log?.info?.(
+      { orderId, adminEmail: req.adminEmail },
+      "admin/shop/orders: marked delivered",
+    );
+    res.json({ order: projectOrder(row as OrderRow) });
+  },
+);
+
+// ---------------------------------------------------------------------
+// PATCH /admin/shop/orders/:orderId/shipping-address
+// ---------------------------------------------------------------------
+// Admin override of the shipping address snapshot. Allowed both pre-
+// and post-shipment because:
+//   * Pre-shipment: support resolves a typo for the customer.
+//   * Post-shipment: address-of-record correction for returns / RMAs.
+// The customer-facing edit endpoint enforces shipped_at IS NULL; only
+// admins are trusted to edit after the fact (and the audit log
+// records who did it via req.adminEmail in the structured log).
+router.patch(
+  "/admin/shop/orders/:orderId/shipping-address",
+  requireAdmin,
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const parsed = addressBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const address: SavedShippingAddress = {
+      line1: parsed.data.line1,
+      line2: parsed.data.line2 ?? null,
+      city: parsed.data.city,
+      state: parsed.data.state.toUpperCase(),
+      postalCode: parsed.data.postalCode,
+      country: "US",
+    };
+
+    const existing = await loadOrder(orderId);
+    if (!existing) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+
+    const db = drizzle(getDbPool());
+    const updated = await db
+      .update(shopOrders)
+      .set({
+        shippingAddress: address,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(shopOrders.id, orderId))
+      .returning();
+    const row = updated[0];
+    if (!row) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    req.log?.info?.(
+      {
+        orderId,
+        adminEmail: req.adminEmail,
+        afterShip: existing.shippedAt !== null,
+      },
+      "admin/shop/orders: shipping address overwritten by admin",
+    );
+    res.json({ order: projectOrder(row as OrderRow) });
+  },
+);
+
+// ---------------------------------------------------------------------
+// POST /admin/shop/orders/:orderId/refund
+// ---------------------------------------------------------------------
+// Kicks off a Stripe refund against the captured payment_intent. We
+// DO NOT flip status='refunded' here — that's the webhook
+// (charge.refunded) handler's job, which keeps the local mirror
+// eventually consistent with Stripe's view of the world. Returning
+// the Stripe Refund object id gives the admin UI immediate confirmation
+// that the API call succeeded; the status flip (and visible badge)
+// follows on the next webhook redelivery (typically <2s).
+router.post(
+  "/admin/shop/orders/:orderId/refund",
+  requireAdmin,
+  async (req, res) => {
+    const orderId = validateOrderId(req.params.orderId);
+    if (!orderId) {
+      res.status(400).json({ error: "invalid_order_id" });
+      return;
+    }
+    const parsed = refundBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const { amountCents, reason } = parsed.data;
+
+    const existing = await loadOrder(orderId);
+    if (!existing) {
+      res.status(404).json({ error: "order_not_found" });
+      return;
+    }
+    if (existing.status === "refunded") {
+      res.status(409).json({ error: "order_already_refunded" });
+      return;
+    }
+    if (existing.status !== "paid") {
+      res.status(409).json({
+        error: "order_not_paid",
+        currentStatus: existing.status,
+      });
+      return;
+    }
+    if (!existing.stripePaymentIntentId) {
+      // No PI captured means the webhook never ran — nothing to refund.
+      res.status(409).json({ error: "order_no_payment_intent" });
+      return;
+    }
+    if (
+      typeof amountCents === "number" &&
+      typeof existing.amountTotalCents === "number" &&
+      amountCents > existing.amountTotalCents
+    ) {
+      res.status(409).json({
+        error: "refund_exceeds_amount",
+        amountTotalCents: existing.amountTotalCents,
+      });
+      return;
+    }
+
+    const config = readStripeConfigOrNull();
+    if (!config) {
+      // Preview / dev: refund infrastructure is unreachable. Surface
+      // a clean 503 so the admin UI can render an explainer rather
+      // than the generic error toast.
+      res.status(503).json({ error: "stripe_not_configured" });
+      return;
+    }
+    const stripe = getStripeClient(config);
+
+    let refund;
+    try {
+      refund = await stripe.refunds.create({
+        payment_intent: existing.stripePaymentIntentId,
+        ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
+        ...(reason ? { reason } : {}),
+        metadata: {
+          // Records WHO issued the refund directly on the Stripe
+          // Refund object; survives even if our local audit log
+          // is later purged or queried out of band.
+          admin_email: req.adminEmail ?? "unknown",
+          shop_order_id: orderId,
+        },
+      });
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 502;
+      req.log?.warn?.(
+        {
+          orderId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "admin/shop/orders: stripe refund failed",
+      );
+      res
+        .status(status >= 400 && status < 600 ? status : 502)
+        .json({ error: "stripe_refund_failed" });
+      return;
+    }
+
+    req.log?.info?.(
+      {
+        orderId,
+        refundId: refund.id,
+        amountCents: refund.amount,
+        adminEmail: req.adminEmail,
+      },
+      "admin/shop/orders: refund issued",
+    );
+    res.json({
+      refund: {
+        id: refund.id,
+        amountCents: refund.amount,
+        status: refund.status,
+      },
+      // Note: `order.status` here is still the pre-refund value.
+      // The webhook will flip it to 'refunded' moments later.
+      order: projectOrder(existing),
+    });
+  },
+);
+
+export default router;

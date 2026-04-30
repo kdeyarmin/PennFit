@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   useGetRecommendation,
   useListMasks,
@@ -28,6 +29,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
 
 export function Results() {
+  useDocumentTitle("Your mask matches");
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `measurements` is non-null by the time Results mounts — no local
@@ -147,7 +149,7 @@ export function Results() {
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
             <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              Penn Fit · Recommendation
+              PennPaps · Recommendation
             </span>
             <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>
@@ -207,7 +209,23 @@ export function Results() {
       </Collapsible>
 
       <div className="space-y-6 mb-12">
-        <h2 className="text-xl font-semibold px-2 tracking-tight">Top Recommendations</h2>
+        <div className="px-2">
+          <h2 className="text-xl font-semibold tracking-tight">
+            Top Recommendations
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1 leading-relaxed max-w-2xl">
+            Ranked by fit confidence. Each card explains exactly{" "}
+            <span className="font-medium text-foreground/80">
+              why it matched
+            </span>{" "}
+            — your sleep style, breathing, and how your measurements
+            line up against each mask's documented size range. Tap{" "}
+            <span className="font-medium text-foreground/80">
+              Match confidence
+            </span>{" "}
+            on any card to see the breakdown.
+          </p>
+        </div>
         {data.topRecommendations.map((mask, idx) => (
           <MaskRecommendationCard
             key={mask.maskId}

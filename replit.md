@@ -1,17 +1,8 @@
-# Penn Fit — CPAP Mask Fitter
+# PennPaps — Penn Home Medical Supply
 
 ## Overview
 
-Penn Fit is a web application designed for Penn Home Medical Supply, LLC, to guide patients in selecting the best-fit CPAP mask. The application provides a privacy-first facial measurement process and a clinical questionnaire to recommend suitable CPAP masks from Penn's catalog.
-
-**Key Capabilities:**
-
-*   **Privacy-First Facial Measurement:** Utilizes on-device processing of facial images to extract numeric measurements without transmitting or storing sensitive image data.
-*   **Clinical Questionnaire:** Gathers patient-specific information to refine mask recommendations.
-*   **Personalized Mask Recommendations:** Provides a ranked list of top masks with detailed justifications, considering both facial fit and clinical needs.
-*   **Order Placement:** Facilitates order submission to Penn Home Medical Supply through a secure and stateless API.
-*   **Brand Alignment:** Adheres to Penn's branding with a distinct visual design system.
-*   **Tutorial:** Includes an animated tutorial to guide users through the fitting process.
+PennPaps is a privacy-first web application designed to simplify CPAP mask selection and ordering. It uses on-device facial measurements and a clinical questionnaire to provide personalized mask recommendations from its product catalog. The application supports both insurance-based and cash-pay customers, aims to improve patient adherence, and includes an internal CPAP Resupply Automation system for patient outreach and management. The project envisions PennPaps as a full storefront for CPAP supplies, encompassing fitting, shopping, and resupply services.
 
 ## User Preferences
 
@@ -21,134 +12,192 @@ Please ask before making major changes to the project structure or core function
 Do not add image logging anywhere in the backend.
 Do not log order request bodies in the application logger (treat every log line as world-readable).
 
-**Database / PHI policy (April 2026 update — overrides earlier "no PHI persistence" rule):**
-Order rows ARE persisted to PostgreSQL so Penn staff can ship, bill insurance, and verify prescriptions through an internal admin dashboard at `/admin/*`. The patient-facing consent and `/privacy` pages disclose this storage explicitly. Camera images and video streams remain on-device only — never uploaded.
-
 ## System Architecture
 
-The Penn Fit application adopts a privacy-first, stateless architecture with a focus on on-device processing for sensitive patient data.
+The PennPaps application employs a privacy-first, stateless architecture, prioritizing on-device processing for sensitive data and secure handling of persistent information.
 
-### Privacy-First Design
-All facial image processing occurs exclusively on the user's device using MediaPipe Face Mesh. Camera images and video streams never leave the browser. Only numeric measurements (in millimeters) are transmitted to the backend. The recommendation engine (`POST /api/recommend`) is stateless and discards measurements after responding.
+### Privacy and Data Handling
 
-### Order Persistence + Admin Dashboard (HIPAA-aware)
-`POST /api/orders` writes a Drizzle row to the `orders` table BEFORE attempting SendGrid delivery, so a failed email leaves a recoverable row marked `email_status='failed'`. The patient consent checkbox at the order step and the `/privacy` page (Section 03 "Order Data Storage") disclose this storage explicitly. A honeypot field (`website`) short-circuits with fake success and never touches the DB.
-
-An internal admin dashboard lives inside the same `cpap-fitter` artifact at `/admin/*`, gated by:
-1. Clerk session (provisioned via `setupClerkWhitelabelAuth()`).
-2. `requireAdmin` middleware that requires a verified primary email AND membership in the `PENN_ADMIN_EMAILS` comma-separated allowlist. In production the middleware fails closed (503) if `PENN_ADMIN_EMAILS` is unset; in development any signed-in user is treated as admin for local-loop convenience.
-
-Every PHI-touching admin read writes a row to `admin_audit_log`: list-orders (any filter), search-orders, and view-order-detail.
-
-Anonymous funnel events (`home_view`, `consent_given`, `capture_started`, …) are POSTed to `/api/usage-events` (rate-limited 30/min, no auth, no IP/UA stored — only a per-tab session id).
-
-### Tech additions
-- `@workspace/db` (Drizzle + node-postgres) with three new tables: `orders`, `usage_events`, `admin_audit_log`.
-- `@clerk/express` (server) + `@clerk/react` + `@clerk/themes` (frontend) wrapped in a Penn-branded `<ClerkProvider>`.
-- Content-Security-Policy in `index.html` widened to allow `*.clerk.accounts.dev`, `*.clerk.com`, and `challenges.cloudflare.com` (Clerk bot protection).
+Facial image processing occurs entirely on-device using MediaPipe Face Mesh; only numeric measurements are transmitted to the backend. Camera images and video streams are never uploaded or stored. Order data, including PHI, is securely persisted in PostgreSQL.
 
 ### Technical Stack
-*   **Monorepo Tool:** pnpm workspaces
-*   **Node.js Version:** 24
-*   **Package Manager:** pnpm
-*   **TypeScript Version:** 5.9
-*   **API Framework:** Express 5
-*   **Validation:** Zod (generated from OpenAPI spec)
-*   **API Codegen:** Orval (from OpenAPI spec)
-*   **On-device AI:** MediaPipe Face Mesh (`@mediapipe/tasks-vision`) for 478 facial landmarks
-*   **Frontend:** React, Vite, Tailwind CSS, Wouter routing
+
+The project utilizes a monorepo with `pnpm workspaces`, `Node.js v24`, `TypeScript v5.9`. The API is built with `Express 5` and `Zod` for validation. The frontend uses `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` manages database interactions. `Clerk` handles admin and customer authentication.
 
 ### Application Flow
-The user journey includes distinct stages:
-1.  **Home:** Landing page.
-2.  **Consent:** BIPA-aware privacy disclosures.
-3.  **Capture:** Live camera feed with face oval guide and 3-second steady-shot countdown. Calibration is iris-based (11.7 mm average iris diameter).
-4.  **Measure:** On-device MediaPipe processing extracts numeric measurements, and the captured image is immediately discarded.
-5.  **Questionnaire:** 11 clinical questions for personalized recommendations.
-6.  **Results:** Displays top 3 mask recommendations with confidence scores.
-7.  **Order:** Patient/contact/shipping/insurance/prescription intake form.
-8.  **Order Success:** Confirmation page with an order reference.
-9.  **Masks:** Filterable mask catalog browser.
-10. **Privacy:** Privacy policy stub.
 
-### Recommendation Scoring
-The recommendation engine uses a combined score:
-*   **Combined score** = (typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier
-*   **typeScore:** Driven by questionnaire answers.
-*   **fitScore:** Based on physical match between facial measurements and mask size ranges.
-*   **contraMultiplier:** Reduces score for contraindications (e.g., heavy beard for full-face).
-*   **pressureMultiplier:** Reduces score for high-pressure patients with unsuitable masks.
-*   **Top-3 diversification:** Ensures a variety of mask types in the top recommendations.
+The user journey includes Home, Consent, Capture (facial scan), Measure (on-device processing), Questionnaire, Results (mask recommendations), Order (intake form), Order Success, Masks (catalog browser), and Privacy policy. Mask recommendations are generated using a weighted scoring formula: `(typeScore × 0.60 + fitScore × 0.40) × contraMultiplier × pressureMultiplier`.
 
 ### Visual Design System
-The application features a high-end, professional visual language using Penn's navy and gold brand palette.
-*   **No Dark Mode:** Intentional design decision for a light-mode-only interface.
-*   **Brand Tokens:** Custom CSS properties for Penn navy, gold, and other brand colors.
-*   **Reusable Utility Classes:** Tailwind CSS classes for consistent styling of cards, icons, buttons, and form elements.
-*   **Eyebrow Pattern:** Consistent page header design with small caps text and gradient gold accents.
-*   **Page Background:** Layered "ambient atmosphere" — eight stacked radial blooms (cool plinth, gold sun + sunrise top-right, navy bloom top-left, mid-right depth, navy bottom plinth, gold whisper bottom-left) plus a diagonal sheen highlight, a viewport-fixed navy dot grid masked into a soft center bloom, and a low-opacity SVG `feTurbulence` grain. Background is `fixed` so it anchors as you scroll. The penn-fit-tutorial standalone page mirrors the same recipe (with rgba literals instead of HSL vars) so the two artifacts feel like one product.
-*   **Scroll Restoration:** `window.scrollTo(0, 0)` on route changes for enhanced user experience.
 
-### Tutorial Video
-A short, animated tutorial (`/penn-fit-tutorial/`) guides users. The standalone landing page mirrors the cpap-fitter's "ambient atmosphere" page background (see the design-system note above) so the two artifacts feel like one product. It's built with framer-motion + lucide-react, brand-themed, and features dual-mode rendering: embedded (inside the main app) or standalone (full landing experience with navigation and a written walkthrough). Real app screenshots are embedded for visual accuracy. Total runtime is ~58 seconds — each scene is timed so all body copy is revealed by ~70% of its duration, leaving 4-6 seconds of "everything visible" hold time at the end for re-reading before the next scene transitions in. The video container uses a portrait aspect ratio (`aspect-[3/5]`) on mobile and 16:9 (`sm:aspect-video`) from tablet up — required because Scenes 2 and 4 stack their phone-mockup + text vertically on mobile, which doesn't fit a 16:9 letterbox. Scene 2 reuses the home-page screenshot for Step 1 (the camera-capture page can't be screenshotted in headless because no camera is available). Mobile-only content density is reduced in Scenes 2 and 4 (smaller phone, hidden long-form paragraphs/taglines, condensed chip rows) so all scene content fits inside the container without clipping.
+The application features a professional aesthetic with Penn's navy and gold brand palette, a light-mode only design, custom CSS brand tokens, and a layered "ambient atmosphere" background. An animated tutorial guides users. Mobile responsiveness is a key design consideration, with careful attention to small screen layouts and touch targets. The site is optimized for performance, SEO, and PWA capabilities, including self-hosted fonts and optimized image assets.
 
-## CPAP Resupply Automation (separate product, same monorepo) — Phase 1
+### CPAP Resupply Automation System
 
-A second product lives alongside Penn Fit in this repo: the **CPAP Resupply Automation** system. It is a different product (operator-facing console + automated multi-channel patient outreach) with different branding and a separate Postgres schema (`resupply.*`). Phase 0 shipped scaffolding; Phase 1 added the database schema and pgcrypto-backed PHI encryption — no operator-facing business logic yet.
+A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema with encrypted PHI columns and `Clerk` for admin authentication. Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
 
-### Layout
-*   `artifacts/resupply-api/` — Express + Zod + Pino HTTP API mounted at `/resupply-api/*`. Exposes `GET /resupply-api/healthz` (liveness, never touches dependencies) and `GET /resupply-api/readyz` (readiness — probes Postgres + the pg-boss queue, returns 503 with structured per-dependency error categories on failure, never echoes raw driver text). The deploy gate in `.replit-artifact/artifact.toml` points at `/readyz` so production is only marked deployed once dependencies are reachable. Readiness logic lives in `src/lib/readiness.ts` with a closed allowlist of failure categories that mirrors the `CheckError` enum in `lib/resupply-api-spec/openapi.yaml`.
-*   `artifacts/resupply-worker/` — pg-boss background worker (no HTTP, no preview). Connects to `DATABASE_URL`, logs `resupply-worker ready`, stays alive. Workflow name: `Resupply Worker`.
-*   `artifacts/resupply-dashboard/` — React + Vite operator console at `/resupply/`. Default scaffold; real pages land in Phase 4+.
-*   `lib/resupply-{contracts,domain,db,audit,telecom,ai,testing}` — seven composite TypeScript libs with the dependency rules below. `resupply-db` now ships the full Phase 1 schema; the others remain empty until later phases.
+### Cash-Pay Shop & Customer Accounts
 
-### Postgres pool
-There is exactly **one** Postgres pool per resupply process. It is owned by `@workspace/resupply-db` (`lib/resupply-db/src/pool.ts`) and exposed as `getDbPool()`. Every resupply package (API readiness, future query helpers, etc.) imports that helper. The `resupply-check` architecture rule (Rule 7) forbids `new Pool(` anywhere in `artifacts/resupply-*/src` or any other resupply lib so a future contributor can't silently re-introduce a second pool. The worker's pg-boss connection is intentionally separate (ADR 002).
+A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Hosted Checkout`. `Stripe` is the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend handles `Stripe` integration for checkout sessions and webhooks. Signed-in customers can save shipping information, view saved card crumbs, and reorder past purchases. `Clerk` provides customer identity, linking to `Stripe` customer IDs.
 
-### Database (Phase 1)
-*   All resupply tables live under the Postgres `resupply` schema (created by `pgSchema('resupply')` in `lib/resupply-db/src/schema/_schema.ts`). Tables: `patients`, `prescriptions`, `episodes`, `conversations`, `messages`, `fulfillments`, `audit_log`. Apply with `pnpm --filter @workspace/resupply-db push` (interactive) or `... push:force` (CI).
-*   Drizzle config (`lib/resupply-db/drizzle.config.ts`) sets `schemaFilter: ["resupply"]` so drizzle-kit ignores Penn Fit's `public.*` tables.
-*   PHI columns are stored as `bytea` and encrypted with pgcrypto. Helpers in `lib/resupply-db/src/encryption.ts`: `encryptedText(name)` / `encryptedJson(name)` declare the column; the SQL helpers `encrypt()` / `encryptJson()` go in `.values({...})` payloads, and `decrypt()` / `decryptJson()` go in select projections (`db.select({ dob: decrypt(patients.dateOfBirth) })`). The column types intentionally throw on direct read/write so plaintext can never bypass the helpers.
-*   `RESUPPLY_DATA_KEY` (32-byte hex) is required at every encrypt/decrypt site. Set in development; for production, see ADR 007's KMS migration trigger.
-*   pgcrypto preflight: `lib/resupply-db/scripts/preflight.mjs` runs `CREATE EXTENSION IF NOT EXISTS pgcrypto` and verifies it. It runs automatically from `scripts/post-merge.sh` BEFORE `db push`, so a fresh environment can never end up with the schema present but the extension missing. The API and worker also call `assertPgcryptoEnabled(getDbPool())` at startup (from `@workspace/resupply-db`) and refuse to listen / start pg-boss with a clear `PgcryptoNotInstalledError` if it is missing — this turns a confusing "function pgp_sym_encrypt does not exist" runtime error into a fail-fast boot error.
-*   Round-trip is covered by `lib/resupply-db/src/encryption.test.ts` (3 vitest cases including a missing-key safety test); the suite skips when `DATABASE_URL` or `RESUPPLY_DATA_KEY` is unset.
-*   Test fixture factories live in `lib/resupply-testing/src/factories/` (`makePatient`, `makePrescription`, `makeEpisode`, `makeConversation`, `makeMessage`, `makeFulfillment`, `makeAuditLog`). Each factory takes plain values via a `Partial<XFixtureSpec>` override (or required FK ids) and applies `encrypt()` / `encryptJson()` internally so test sites cannot accidentally write plaintext PHI. Returns `PgInsertValue<typeof table>` to slot directly into `db.insert(...).values(...)`. The undefined-vs-key-present override pattern is intentional: omitting a key takes the faker default, while passing `email: null` writes SQL NULL. Round-trip integration test (`factories.test.ts`, 4 cases) inserts the full patient → prescription → episode → conversation → message + fulfillment + audit-log tree and decrypts every PHI column to assert equality; skips without `DATABASE_URL` / `RESUPPLY_DATA_KEY`.
+Past-order reorder is intentionally cart-mediated rather than direct-to-checkout. On `/account`, each paid order has a "Buy this again" button that fetches the order summary, drops a sessionStorage breadcrumb (`pennpaps_reorder_from = {sessionId, createdAt, droppedCount}`), atomically replaces the cart via `useCart.replaceItems()`, and navigates to `/shop/cart`. The cart page reads + clears the breadcrumb on mount and renders a one-time soft-gold "Loaded from your order on …" banner with a dismiss × button; if any line items had to be skipped (typically because their Stripe price was archived after the original purchase), the banner surfaces an explicit "N items from that order are no longer available and were skipped" sub-line so the customer isn't surprised by a shorter cart. The flag is sessionStorage-scoped so it dies with the tab and can't replay on a later visit. To preserve this contract, `GET /shop/orders/:sessionId` returns `priceId`, `productId`, `unitAmountCents`, and `imageUrl` per line item alongside the existing display fields.
 
-### Dependency rules
-Enforced by `scripts/check-resupply-architecture.sh` and the `resupply-check` validation step. The full ruleset and rationale live in `docs/resupply/ARCHITECTURE.md`. The short version: `contracts` may only import zod; `domain` is pure (no I/O); `db`/`telecom`/`ai` are isolated layers that do not import each other; `testing` is devDeps only and never reaches production code; the resupply tree may not import Penn Fit's `lib/db`, `lib/api-zod`, or `lib/api-client-react`.
+The shop's product fetch is resilient to transient hiccups: on the very first failure of `/resupply-api/shop/products` it silently auto-retries once after ~1.2s before surfacing the friendly `<ShopLoadError>` card, which itself offers an in-place "Try again" button (no full reload required) plus a secondary "See how insurance works" escape hatch to `/insurance`. The 503/preview-mode "shop coming soon" branch is unchanged.
 
-### Architectural decisions (deviations from original AWS plan)
-Twelve ADRs in `docs/resupply/adr/` (000–007 and 009–012) document why the Replit substitutes were chosen. Highlights:
-*   Express + Zod (not NestJS), Drizzle (not Prisma), pg-boss (not Temporal), pgcrypto + `RESUPPLY_DATA_KEY` env var (not AWS KMS — migration trigger documented in ADR 007), Clerk (not Cognito), Twilio + SendGrid for telecom, Anthropic Claude for AI conversation, manual CSV exchange for the Pacware integration, no Docker / no Redis / no Mailhog, React + Vite (not Next.js), no Turborepo / no Husky.
-*   Each substitute lists its migration trigger so Phase 9 production hardening is a checklist, not a vibe.
+**Subscribe & Save / Auto-ship.** Every consumable SKU (cushion, filter, tubing, headgear, chamber, accessory, bundle — masks excluded) ships with a synthesized recurring price (cushions/filters monthly; tubing/headgear/chamber/accessory/bundle quarterly) at the same per-unit amount as the one-time price (no discount in v1; the value prop is convenience, not price). `/shop/products` returns `recurringPrice: { id, unitAmount, currency, interval, intervalCount, intervalDays, intervalLabel } | null` per product. Each `<ProductCard>` and each cart line in `/shop/cart` shows a segmented "One-time / Subscribe & ship" toggle (defaulting to subscribe when a recurring price exists). The cart's stable per-line key remains the one-time `priceId`; the `mode` field swaps which `priceId` is sent to `/shop/checkout`. Stripe supports mixed line items in subscription mode, so a cart can contain both one-time and recurring lines in a single Session. Subscription mode requires a signed-in user (we need a stable Clerk identity for cancellation); guests see the same toggle but a 401 with `error: "sign_in_required"` if they try to check out with any subscription line — the cart redirects them to sign-in. The local `shop_subscriptions` table mirrors Stripe via `customer.subscription.created/updated/deleted` webhooks (see ADR 003 — versioned hand-authored migrations only; the table's id matches the existing `shop_orders` pattern). `/account` renders an "Auto-ship subscriptions" section (hidden when none) listing line items + next ship date + a double-confirm "Cancel auto-ship" button that hits `POST /shop/me/subscriptions/:id/cancel` (sets `cancel_at_period_end=true`; the webhook mirrors the final canceled state back). `/reminders` was restructured around this primary flow: the hero now leads with "Subscribe & ship" linking to `/shop#autoship`, and the legacy email-only signup is demoted to a `#email-reminders` anchor below — the email form itself is untouched and continues to work.
 
-### Validation
-*   `resupply-check` validation step runs the architecture check + `pnpm -r --filter '@workspace/resupply-*' run typecheck` + vitest.
-*   A local pre-commit hook (`scripts/git-hooks/pre-commit`, installed by `scripts/install-hooks.sh`) runs the codegen drift + architecture checks before the commit lands, so developers don't wait for server-side validation to discover a missed `pnpm run codegen`. The hook is auto-installed by `scripts/post-merge.sh`, runs only when staged files touch `lib/api-spec`, `lib/resupply-api-spec`, the generated client trees, `lib/resupply-*`, or `artifacts/resupply-*`, and is bypassable with `SKIP_HOOKS=1` or `git commit --no-verify`.
-*   The hook executes against an **isolated snapshot of the staged index**, not the live working tree. Unstaged edits and untracked files are captured to a patch + tar archive, removed for the duration of the checks, then restored. This means the checks see exactly what the commit will introduce — unstaged edits can't mask drift the commit actually adds, and they can't trigger drift the commit doesn't add. The snapshot logic lives in `scripts/git-hooks/lib-staged-snapshot.sh` and is verified by `scripts/git-hooks/lib-staged-snapshot.test`. The snapshot is skipped during in-progress merges/rebases/cherry-picks (with a warning) since mutating the working tree in those states is unsafe.
+### Cart Abandonment Nudge
+
+Signed-in shop visitors who leave items in their cart for more than 24 hours receive **exactly one** SendGrid email reminder with a deep link that re-hydrates the cart on a new device. Guests are out of scope (no stable identity to email).
+
+- **Storage:** A new `shop_abandoned_carts` table (one row per `clerk_user_id`, `UNIQUE`) holds the item snapshot (jsonb), denormalized email (refreshed from Clerk on every PUT), `subtotal_cents`, `currency`, and the four lifecycle timestamps `updated_at`, `reminded_at`, `recovered_at`, `cleared_at`. Migration `0008_shop_abandoned_carts.sql` is purely additive (CREATE TABLE only — versioned hand-authored migration per ADR 003).
+- **Snapshot sync (frontend → backend):** A debounced `useCartSnapshot` hook (3s idle) watches `useCart().items` from anywhere in the cpap-fitter app. When signed-in, it `PUT`s `/shop/me/cart-snapshot` on every material change (max 50 items, 413 otherwise) and `DELETE`s when the cart goes empty. PUT upserts on `clerk_user_id`; on a material item-set change it resets `reminded_at`/`recovered_at`/`cleared_at` so a re-fill becomes re-eligible after the 24h wait. DELETE stamps `cleared_at` (idempotent). On 401 the hook silently disables.
+- **Dispatcher:** `POST /admin/shop/abandoned-carts/send-due` (requireAdmin) scans for rows with `updated_at <= now() - 24h`, items non-empty, and all three suppression timestamps `IS NULL`, then sends one email per row and stamps `reminded_at` only when SendGrid actually delivered. Returns `{ scanned, sent, skippedNoConfig, skippedFailed, sendgridConfigured }`. A second invocation is a true no-op because the SQL filter excludes the rows just stamped. `GET /admin/shop/abandoned-carts` lists rows with redacted email for admin triage. Same manual-trigger model as the existing reminders dispatcher — no cron in v1.
+- **Suppression on conversion:** The Stripe `checkout.session.completed` webhook calls a best-effort `markCartRecovered(session, log)` helper that, when `session.metadata.clerk_user_id` is present, sets `recovered_at = now()`, zeroes the items, and clears the subtotal. Wrapped in try/catch so the webhook always returns 200; guest sessions (no metadata) are a silent no-op.
+- **Resume on a new device:** The reminder email's CTA points to `${SHOP_PUBLIC_BASE_URL || RESUPPLY_VOICE_PUBLIC_BASE_URL || https://pennpaps.com}/shop/cart?resume=1`. On mount, `/shop/cart` reads the flag, `GET`s `/shop/me/cart-snapshot`, and only calls `replaceItems()` when the local cart is empty or strictly fewer items (never silently overwrites a fresh cart). The `?resume=1` param is stripped via `history.replaceState` so a refresh doesn't re-trigger. A soft-gold dismissable banner explains "We restored your cart from the email reminder." If the visitor isn't signed in when they land, they see a "Sign in to restore your cart" prompt instead.
+- **Privacy:** The recipient email is never logged (only the row id appears in dispatcher warn lines). Cart contents are public catalog data (Stripe price/product IDs + display name + qty) and contain no PHI — this is the cash-pay storefront, not the resupply outreach surface. The admin list endpoint partially redacts the email (`jo*****@example.com`).
+- **Env vars:** `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME` (delivery), `SHOP_PUBLIC_BASE_URL` (preferred deep-link base; falls back to `RESUPPLY_VOICE_PUBLIC_BASE_URL` then `https://pennpaps.com`), and `RESUPPLY_ADMIN_EMAILS` (admin gate on the dispatcher route).
+
+### Customer Product Reviews
+
+Any signed-in Clerk customer can leave **one review per product** (1–5 stars + optional title + 20–2000 char body). Reviews are pre-moderated — they start `status='pending'` and an admin must approve before they appear publicly. Edits to an approved review reset status to `pending` (re-moderation). No PHI flows through this surface — it's the cash-pay shop only.
+
+- **Storage:** A new `shop_reviews` table holds `clerkUserId`, `productId`, rating, title, body, denormalized `authorDisplayName` (e.g. "Sarah K.", computed from Clerk first + last initial at submit time, falls back to "PennPaps customer"), `authorEmail` (admin queue only — never displayed publicly), `status`, `moderationNote`, `moderatedAt`, `moderatedBy`. Indexes: `UNIQUE (clerk_user_id, product_id)` enforces one-per-user-per-product, plus `(product_id, status)` for public reads and `(status, created_at desc)` for the admin queue. Migration `0009_shop_reviews.sql` is purely additive (CREATE TABLE only — versioned hand-authored migration per ADR 003); the table's `id` matches the existing `shop_*` pattern (`text` with `gen_random_uuid()::text` default).
+- **Public read API:** `GET /shop/products/:productId/reviews?cursor=&limit=` returns approved reviews newest-first with an `aggregate: { count, averageRating, distribution }` block; defaults to 10 per page, cap 25. Pagination uses a **composite cursor** of the form `<ISO timestamp>__<row id>` (helpers in `src/lib/cursor.ts`, shared by the admin queue) — a `created_at`-only cursor would silently skip rows tied on timestamp at a page boundary, which is a real risk during seeding / bulk import. The same composite predicate (`created_at < ts OR (created_at = ts AND id < cursorId)` against `ORDER BY created_at DESC, id DESC`) is used by the admin queue. `GET /shop/products/reviews/aggregates?productIds=p_1,p_2,…` returns `{ [productId]: { count, averageRating } }` for the entire shop in one round trip (cap 50 ids, 413 otherwise) — used by `/shop` to render compact star summaries on every card without N+1. Author email is **never** included in public read responses. The bulk handler uses Drizzle's `inArray` (not raw `= ANY($1)`) so the JS array binds correctly to a parameterised pg `IN (…)` clause.
+- **Author API (requireSignedIn):** `POST /shop/products/:productId/reviews` (insert; 409 if the user already has one), `GET /shop/me/reviews/:productId` (the caller's own review at any status, used by the product detail page to show "your pending review" UI), `PATCH /shop/me/reviews/:productId` (always resets status → pending and clears moderation fields), `DELETE /shop/me/reviews/:productId` (idempotent, 200 even if already gone). Title/body are HTML-stripped (script + style tag content removed entirely) before insert as defense in depth.
+- **Admin moderation (requireAdmin):** `GET /admin/shop/reviews?status=pending|approved|rejected|all&cursor=&limit=` (queue with full author email for accountability), `POST /admin/shop/reviews/:id/approve`, `POST /admin/shop/reviews/:id/reject` (zod body `{note?: string ≤500}`). Both action endpoints stamp `moderatedAt` + `moderatedBy = req.adminClerkId` (the request middleware attaches admin identity as `adminClerkId`/`adminEmail` rather than the user's `userClerkId` — this distinction matters when reading other admin handlers).
+- **Frontend — `/shop` cards:** After the products fetch, a single `fetchReviewAggregates(productIds[])` populates a soft-gold `<StarRating>` block (decimal-aware via clipped overlay) + `4.6 (24)` count on each card. Card headline + rating both link to `/shop/p/:productId`; the existing "Add to cart" CTA still uses `stopPropagation` so it doesn't navigate. Aggregates load is best-effort — a failure leaves cards in their existing zero-state rather than blanking the storefront.
+- **Frontend — `/shop/p/:productId`:** A new product detail page with hero (image + name + price + Subscribe-or-One-time toggle + Add to cart, all reusing the existing cart hook), aggregate header (large rating, count, 1–5 distribution bars), paginated reviews list with "Show more", and a write-review form gated by Clerk's `<Show when="signed-in">`. Signed-in callers see one of: the write form, their own review with Edit/Delete buttons + a "Pending approval" / "Not approved" badge (rejected reviews surface the moderator note + an "Edit & resubmit" button), depending on `GET /shop/me/reviews/:productId`. Signed-out visitors see a "Sign in to review" prompt with a return-to-product redirect baked into the sign-in URL. Submitting a review triggers an immediate refetch of the public list so the user sees the aggregate update once approved.
+- **Frontend — `/admin/shop/reviews` (resupply-dashboard):** New "Shop Reviews" sidebar entry leads to a status-tab queue (Pending | Approved | Rejected | All — Pending is the default landing tab). Each row shows the rating, title, body, author display name + email, productId, and createdAt; pending rows have inline Approve / Reject buttons (Reject opens a small note textarea ≤500 chars). After an action the row is optimistically removed from the current tab so the queue shrinks visibly. Uses TanStack Query's `useInfiniteQuery` for pagination and a thin hand-rolled fetch wrapper (`lib/shop-reviews-api.ts`) that piggybacks on the existing Clerk auth bridge — these endpoints aren't in the OpenAPI spec yet (intentional for the v1 admin loop; promote them when the surface stabilizes).
+
+### Phase 2 — Reviews polish, SEO, inventory, order history
+
+Four customer-facing improvements to the cash-pay shop, all built on the existing schema + Stripe-as-source-of-truth posture.
+
+- **Order line items table.** A new `shop_order_items` table (migration `0010_shop_order_items.sql`, additive CREATE TABLE only — versioned hand-authored per ADR 003; `id` follows the existing shop_* pattern: `text` with `gen_random_uuid()::text` default; UNIQUE on `(stripe_session_id, product_id, price_id)` so the webhook upsert is idempotent) gives us per-line history without paying a Stripe API hit per page load. Indexed on `(clerk_user_id, product_id)` for the verified-purchaser lookup, `(order_id)` for order-history fetch, `(product_id)` for "buyers of X" admin queries. The existing `checkout.session.completed` (and async-payment-succeeded) webhook handler in `lib/stripe/webhook-handler.ts` populates it after the order row flips to `paid`, using `onConflictDoNothing` so re-deliveries are no-ops.
+- **Verified purchaser badge.** `GET /shop/products/:productId/reviews` runs one extra query per page (`SELECT DISTINCT clerk_user_id FROM shop_order_items WHERE product_id = ? AND clerk_user_id IN (…page user ids)`) and tags each item with `verifiedPurchaser: true|false`. The product detail page renders a small soft-gold "Verified purchaser" pill next to the author display name when true. Aggregate response shape unchanged.
+- **Review moderation emails (fail-soft).** A new `lib/messaging/review-moderation-email.ts` mirrors `orderEmail.ts` / `reminderEmail.ts` — graceful skip when SendGrid isn't configured, returns `{sent, reason?}` so callers log without throwing. Approve / Reject handlers in `routes/admin/shop-reviews.ts` look up the product display name (cached projection helper, falls back to "your review" if Stripe is offline) and fire the email inside a `try/catch`. Email failure NEVER blocks the moderation action — the handler logs a `warn` with `reviewId` and continues; the existing tests assert this contract directly.
+- **Inventory in Stripe metadata.** `ShopProductView.stockCount: number | null` reads `metadata.stock_count` (parseInt; non-numeric or missing → `null` = "not tracked, treat as available"). The preview catalog seeds a couple "low stock" / "out of stock" examples for dev. New admin endpoint `PATCH /admin/shop/products/:productId/stock` (requireAdmin, zod-validated body `{stockCount: integer ≥ 0 | null}`) writes through to Stripe via `stripe.products.update`; sending `null` writes the empty-string sentinel that deletes the metadata key. Returns 503 in preview mode (no `STRIPE_SECRET_KEY`) so the admin UI can render an explainer. Storefront UX: cards show "Out of stock" pill (disabled Add) at `stockCount === 0`, and a small "Only N left" notice between 1–5; product detail hero gets the same treatment in the hero. The Subscribe-and-ship recurring toggle stays available even when one-time stock is 0 (subscription replenishment is operationally separate inventory). Cart hook `addItem()` returns `{ok: false, reason: "out_of_stock"}` when adding a one-time SKU at stock 0 (defense in depth; subscription mode is exempt).
+- **Admin inventory editor.** New "Shop Inventory" sidebar entry in `resupply-dashboard` leads to `/admin/shop/inventory` — a single table of every catalog SKU with current stock count, an inline number input + Save / Untrack buttons per row. Optimistic update on save; rollback + toast on error. Uses the public `/shop/products` for the list (the projection already includes `stockCount`) + the new admin PATCH for the writes. Hand-rolled fetch wrapper `lib/shop-inventory-api.ts` mirrors the existing `lib/shop-reviews-api.ts` Clerk auth bridge.
+- **SEO on `/shop/p/:productId`.** A small in-house `useDocumentMeta({title, description, openGraph, jsonLd})` hook (`lib/use-document-meta.ts`) idempotently injects/removes `<title>`, `<meta>` and `<script type="application/ld+json">` nodes in `document.head` (tagged with `data-doc-meta` for cleanup). The product detail page emits a full `Product` JSON-LD (name, image, description, brand=manufacturer, mpn=modelNumber, offers with price/currency/availability derived from stock count, plus `aggregateRating` when the count > 0) along with classic OpenGraph (`og:type=product`, `og:image`, `og:url`). **SPA-SEO caveat:** Googlebot renders JS so this content IS indexed in Google search, but classic OpenGraph crawlers (Slack, Discord, iMessage previews) hit the static HTML and won't see the meta — server-side pre-rendering would be needed to fix that. Tracked as future work; intentional v1 trade-off given the cost of a Vite SSR setup.
+- **Order history page.** New `GET /shop/me/orders?cursor=&limit=` (requireSignedIn) returns the caller's paid orders newest-first with line items joined in (composite cursor of `paidAt + id` for stable pagination across rows tied on `paidAt`; same cursor helpers as the review endpoints). Product display names come from a single bulk Stripe `products.list` call per page (cached in-process for 60s), with graceful degrade to `"Product <id-prefix>"` when Stripe is unavailable. The new `/shop/orders` page renders a card per order (paid date, total, list of line items linking to `/shop/p/:productId`), with a "Show more" button driving the cursor and a small note about the verified-purchaser flag. Header gets a "Your orders" link gated by `<Show when="signed-in">`. Signed-out visitors get a "Sign in to view your orders" prompt.
+- **Hardening notes (post-review).** Three issues caught in code review and fixed at the root: (1) `shop_order_items.price_id` was originally nullable, which silently broke the `(stripe_session_id, product_id, price_id)` UNIQUE under PostgreSQL NULL-comparison semantics — the webhook upsert would re-insert on every redelivery. Migration `0011_shop_order_items_price_id_not_null.sql` (additive constraint-only, no type change: `UPDATE` NULLs → `''`, then `SET DEFAULT ''` + `SET NOT NULL`) plus the schema's `priceId: text(...).notNull().default("")` plus the webhook handler writing `price?.id ?? ""` defends the invariant at three layers (DB constraint, Drizzle insert type, handler code). (2) The admin `PATCH /admin/shop/products/:productId/stock` originally would write `metadata.stock_count` to ANY Stripe product id; it now does `stripe.products.retrieve` + `projectProduct(...)` first and rejects with `product_not_found` (Stripe 404) or `product_not_in_catalog` (unprojectable) before touching update — covered by two new tests that assert update is never called on the reject paths. (3) The dashboard inventory client originally read `price.amount` but the API emits `price.unitAmount` (mirrors Stripe's `unit_amount`) — both list AND patch parsers now read `unitAmount ?? amount ?? null`, and the admin route test asserts `res.body.product.price.unitAmount === 1999` to lock the cross-package contract from the producer side. Backlog (non-blocking): bootstrap a vitest harness for `resupply-dashboard/src/lib/` so the parse paths get direct unit coverage.
+
+### Visual identity & ambient motion
+
+Every customer-facing page shares the same restrained, premium background defined in `src/index.css`. The base canvas is a near-white `--background` (HSL `210 25% 99%`) with three carefully-placed brand washes: a soft gold corner-glow top-right (`--penn-gold` @ 0.10), a soft navy corner-glow bottom-left (`--penn-navy` @ 0.08), and a subtle mist plinth across the bottom (`--penn-mist` @ 0.55). Over that sits a faint navy dot-grid (32px lattice @ 0.07 opacity, edge-masked) and a 0.04-opacity film grain. The whole stack breathes via two slow `background-position` animations — `body-bloom-drift` (90s alternate) and `body-grid-drift` (72s linear) — that stay GPU-cheap because the background is `position: fixed`. **Design philosophy: the brand announces itself in interactions (button gold, focus rings, badges), not in atmospheric washes** — the canvas should read as clean, classy, and out-of-the-way, never muddy or dark. The `<TechBackdrop>` component (mounted on `/reminders` and `/reminders/manage`) is an **additive** brand-aligned motion layer using the same navy + gold palette and the same drift cadences — it does not replace or darken the global background, so reminders pages read as the same product as the rest of the site, with just a touch more living motion. All ambient animations are gated by the global `prefers-reduced-motion` rule plus an explicit guard inside `tech-backdrop.css`.
+
+**Layout-wrapping convention:** `App.tsx` wraps the entire `<Switch>` in a single `<Layout>`, so individual page components must NOT also wrap their return in `<Layout>` — doing so renders the global header twice. (Bug observed and fixed on `/shop/orders`; pattern enforced by inline comments on the affected page.)
+
+### Deep-review polish sweep (post-Phase 2)
+
+After Phase 2 shipped, a full-site review uncovered six small but real issues that have all been corrected:
+
+- **Clerk fallback redirect:** `signInFallbackRedirectUrl` / `signUpFallbackRedirectUrl` were defaulting to `/admin`, which would 403 a shop customer who signed in without an explicit `?redirect_url=`. Now defaults to `/account`. Admin links continue to work because they always supply their own `redirect_url=/admin/...`.
+- **Cart quantity hardening:** `useCart.setQuantity` now `Math.floor`s and guards against `NaN`/`Infinity` before clamping to `[0, 20]`. Defends against fractional inputs from number-input change handlers (Stripe rejects fractional quantities at checkout).
+- **Reminders `/manage` validation:** Saving with zero supplies enabled was a silent no-op — now surfaces a destructive Alert ("Pick at least one supply…") that auto-clears when the user re-checks a box. Customers who genuinely want to disable everything are pointed to the Unsubscribe button.
+- **Measurement type safety:** `pages/measure.tsx` replaced `any`-typed MediaPipe landmarks with a `Landmark = {x, y, z?}` type and converted `catch (err: any)` → `catch (err: unknown)` with a proper `instanceof Error` narrowing.
+- **Questionnaire a11y:** All selection tiles upgraded from `aria-pressed` to proper radiogroup semantics — each question wraps its tiles in `role="radiogroup"` with `aria-labelledby` pointing at the question heading, and each tile uses `role="radio"` + `aria-checked`. (Initial pass used `aria-pressed`, which is for toggle buttons; radio semantics are the correct ARIA pattern for "pick exactly one" UIs.)
+- **Capture overlay a11y:** Decorative scan-frame chrome (face oval + corner brackets) marked `aria-hidden="true"` so SR users aren't told about empty containers; the visible "Quick reminders" list and the existing `aria-live="assertive"` countdown region remain the canonical guidance channels.
+
+A second pass on architect MEDIUM advisories (round 2) caught and fixed three more:
+
+- **`/shop/orders` sign-in redirect:** The signed-out CTA was linking to `/sign-in?redirect_url=/shop/orders` while every other caller (and the `readRedirect()` helper in `sign-in.tsx`/`sign-up.tsx`) uses `?redirect=`. The mismatch silently dropped the return target and dumped customers at the global Clerk fallback. Fixed by normalizing the link to `?redirect=/shop/orders`. **Convention going forward: use `?redirect=` (never `?redirect_url=`) on every sign-in link in cpap-fitter — `redirect_url` is Clerk's native param name but is NOT what `readRedirect()` parses.**
+- **Reminders `/manage` "Saved" banner staleness:** After a successful save, any subsequent edit (toggle or field change) used to leave the green "Saved" banner up next to the unsaved edits, falsely implying the new changes were persisted. Both `toggleItem` and `updateItemField` now clear `savedAt` the moment the user mutates anything, so the banner only shows immediately after save and disappears the instant the user starts editing again.
+- **App.tsx Clerk fallback:** `signInFallbackRedirectUrl` / `signUpFallbackRedirectUrl` flipped from `/admin` to `/account` (round 1, kept here for completeness) — admin entry points always supply their own `?redirect=` so admin flow is unaffected.
+
+Findings explicitly **rejected as false-positives or out-of-scope** during the same sweep (documented here so they don't get re-raised):
+
+- *Pending-payment cart-clear* on `/shop/checkout-success` — the existing behavior (clear only when `paymentStatus === "paid"`) is intentional and the user-facing copy explicitly says "your cart is still saved" if the charge fails.
+- *N+1 product fetch* on the product detail page — small catalog, browser-cached; refactor would need a backend change.
+- *Mobile menu focus trap* — would require swapping the bespoke dropdown for Radix Sheet; deferred as polish, not a regression.
+- *`globalThis.Clerk` auth header* in `lib/shop-api.ts` — works correctly today; refactor risk > reward.
+
+`resupply-check` remains green: 31 files / 207 tests on the API, plus all lib/dashboard suites.
+
+### Publish-readiness sweep (April 2026)
+
+Final whole-site visual review across every customer-facing route (~22 pages) before going live. Every page screenshot-checked at desktop width. Two real bugs surfaced and fixed; the rest of the funnel was clean.
+
+- **`/account` blank-page bug:** The page wrapped its content in `<Show when="signed-in" fallback={<Redirect to="/sign-in?redirect=/account" />}>`. Wouter's `<Redirect>` mounted inside Clerk's `<Show fallback>` rendered during the brief Clerk-boot window AND again on the signed-out branch; the double-mount caused the route to render an empty `<div>` instead of navigating. Fix: replaced the JSX-driven redirect with an inline `<SignedOutAccountPrompt />` that mirrors the `/shop/orders` pattern — a centered card with both "Sign in" and "Create account" buttons, both pointing at `/sign-in?redirect=/account` and `/sign-up?redirect=/account`. Better UX too: the customer sees *why* they're being asked to sign in instead of a jarring auto-bounce.
+- **api-server CORS allowlist gap:** Every page load fires `track.ts` → `POST /api/usage-events` (api-server). Behind Replit's reverse proxy the browser sends `Origin: http://localhost` (no port), but the dev fallback allowlist only had `http://localhost:80`, `:3000`, `:5173` — so the bare-host form was rejected with `Origin http://localhost not allowed by CORS policy`, surfacing as a `Failed to load resource: the server responded with a status of 500` in the browser console of EVERY page. Fixed by adding `"http://localhost"` (no port) to the dev allowlist alongside the explicit-port forms. Production allowlist (`PENN_ALLOWED_ORIGINS` env var) is unaffected.
+- **Cart subtitle / preview-mode self-contradiction:** `/shop/cart`'s page subtitle promised "Review your items, then check out securely with Stripe" while the same page's CTA section warned "Card checkout opens once Stripe is connected." Patient saw mixed signals. Tightened the subtitle to "Review your items, then continue to secure checkout." — processor-agnostic, still reassuring, and stays accurate whether Stripe is wired or not. Body copy that explicitly references Stripe (success-state "Secure payment processed by Stripe") was left intact since it only renders inside the actual Stripe-routed flow.
+- **React catalog bump 19.1.0 → 19.1.6 (Clerk Invalid hook call fix):** After sign-up, `/account` rendered an `ErrorBoundary` showing "Invalid hook call. … You might have more than one copy of React in the same app" originating in `<ProfileSection>` (whose only hook is `useState`, so it was not a Rules-of-Hooks violation). Two compounding causes: (1) `cpap-fitter` carried an unused `@clerk/themes@^2.4.57` dep, which dragged in a second `@clerk/shared@3.47.5` alongside the live `@clerk/shared@4.8.5` from `@clerk/react@6.4.5`; (2) the workspace catalog pinned `react`/`react-dom` to `19.1.0`, which sits **outside** `@clerk/shared@4.8.5`'s declared peer range `^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0` — React 19.1.0–19.1.3 had a known hooks-dispatcher regression upstream-fixed in 19.1.4. Removed `@clerk/themes` from `cpap-fitter` (Clerk UI is themed inline via `<ClerkProvider appearance>`; the `@clerk/themes` import had been deleted long ago) and bumped catalog `react`/`react-dom` to `19.1.6` (latest stable 19.1.x). `pnpm why @clerk/shared` from `cpap-fitter` now returns a single `4.8.5`; runtime `react/package.json` resolves to `19.1.6` across all four artifacts (`cpap-fitter`, `resupply-dashboard`, `penn-fit-tutorial`, `mockup-sandbox`) since they all use `"react": "catalog:"`. Smoke-tested all four post-bump: clean. Stale `vite.config.ts` comment about `@clerk/themes` was rewritten to explain why `tailwindcss({ optimize: false })` stays as cheap insurance for any future `@layer`-using third-party widget. `@types/react`/`@types/react-dom` deliberately left at catalog `19.2.0` — TS allows types one minor ahead of runtime and all typechecks are clean.
+
+**Convention recap (locked in):** every cpap-fitter sign-in/sign-up link uses `?redirect=` (NOT `?redirect_url=`) because that's what `readRedirect()` in `sign-in.tsx`/`sign-up.tsx` parses. `redirect_url` is Clerk's native param name but is silently dropped by the local helper.
+
+### Prescription-attachment PHI retention (April 2026)
+
+The admin dashboard's "Prescriptions" tab on each patient detail page lets ops upload a scan of the paper Rx (PDF/image, ≤10 MB) into private GCS via a presigned PUT, finalize the row's metadata, and download/delete it later. After the deep-review architect flagged orphaned-bytes risk in this slice, two debt items closed:
+
+- **Synchronous orphan cleanup on DELETE and finalize-replacement** in `artifacts/resupply-api/src/routes/patients/prescriptions-attachment.ts`. DELETE now attempts `getObjectEntityFile().delete()` BEFORE nulling the columns; `ObjectNotFoundError` is treated as success (idempotent), other errors are logged + audited as `bytes_deleted: "errored"` while still clearing the row so the UI doesn't get stuck advertising a phantom file. Finalize captures `previousObjectKey` BEFORE the DB update, repoints the row at the new object, then best-effort deletes the OLD bytes — row update is the durable commit point, audit captures `previous_object_deleted: true | false | "errored"`. Test coverage in `prescriptions-attachment.test.ts`: 4 DELETE behaviors + 4 finalize-replacement behaviors including call-order assertion (update before delete) and idempotent ObjectNotFound handling.
+- **OpenAPI spec sync.** `lib/resupply-api-spec/openapi.yaml`'s `PatientPrescription` schema now includes the four nullable attachment metadata fields (`attachmentFilename`, `attachmentContentType`, `attachmentSizeBytes`, `attachmentUploadedAt`); the dashboard's `patient-detail.tsx` consumes the generated `PatientPrescription` type instead of hand-rolling an inline extension.
+
+**Async PHI sweep (April 2026):** the orphan path that was deferred above (`upload-url issued, GCS PUT happened, finalize never called`) is now reaped by a weekly pg-boss schedule in `artifacts/resupply-worker/src/jobs/prescription-attachment-sweep.ts`. Cron `13 3 * * 0` (Sunday 03:13 UTC) — off-hours, doesn't stack with the hourly reminders scan. The job loads every non-null `prescriptions.attachment_object_key` into a Set, lists `<entity-prefix>/uploads/` in the private bucket, and for each unreferenced object older than the 24h grace window does a **per-candidate DB recheck** (`SELECT 1 ... LIMIT 1`) immediately before deleting — this closes the race window where a finalize lands between bulk Set-build and per-object delete (architect-flagged in code review; counter `recheck_saved` tracks how often it fires). A 404 from the delete is treated as idempotent success (`delete_404_idempotent` counter), mirroring the api's `ObjectNotFoundError` policy on the user-facing DELETE handler. Orphans missing GCS `timeCreated` are skip-and-warn, not deleted (`orphans_no_time_created` counter alerts operator if persistent). One audit row per run via `logAudit({ action: "prescription.attachment.sweep" })` carries counters only — `objects_scanned`, `references_loaded`, `orphans_deleted`, `orphans_too_young`, `orphans_no_time_created`, `delete_errors`, `delete_404_idempotent`, `recheck_saved`, `non_attachment_skipped`. **Object names are never logged anywhere** (audit OR structured logs); per-object log lines carry counters / classification / age-bucket only. Our `/objects/uploads/<uuid>` key uses an opaque random upload id, but its value is durable in `attachment_object_key` and one-hop joinable to the patient row — making it a pseudo-identifier that must not appear in logs/metadata. Boot-time check: `getPrivateObjectLocation()` runs during `registerPrescriptionAttachmentSweepJob`, so a missing/malformed `PRIVATE_OBJECT_DIR` fails the worker boot rather than silently no-op'ing the sweep for the lifetime of the deploy. Worker imports `@google-cloud/storage` directly via a small shim at `src/lib/object-storage.ts` (sidecar auth mirrors the api version's `objectStorage.ts` exactly); we deliberately did NOT hoist the api's full `ObjectStorageService` into a shared lib for one new caller — the shim only pulls in list/delete/parse-key. Test coverage: 15 unit tests in `prescription-attachment-sweep.test.ts` driving the full decision tree (referenced/young/old/recheck-saved/delete-error/delete-404/non-attachment/empty-bucket/missing-timeCreated/non-default-grace) with all I/O injected via the `SweepDeps` shape. Operational follow-ups documented in `docs/resupply/PHI-RETENTION.md`: ~~surface counters on the dashboard's readiness section~~ **shipped April 2026** — `getLatestPhiSweepStatus()` (`artifacts/resupply-api/src/routes/dashboard/sweep-status.ts`) projects the most-recent `prescription.attachment.sweep` audit row onto `GET /dashboard/summary` as `prescriptionAttachmentSweep` (snake→camel mapped, defensive Zod parse — malformed metadata degrades to `null` rather than 500'ing the dashboard), rendered by `PhiSweepStatusCard` (`artifacts/resupply-dashboard/src/components/PhiSweepStatusCard.tsx`) with three states: never run / healthy / needs attention. "Needs attention" tone fires on `deleteErrors > 0`, `orphansNoTimeCreated > 0`, OR `lastRunAt > 14 days` (two missed weekly runs). Promote sweep to nightly if weekly runs ever delete >10 objects.
+
+### Customer-Facing Reminder Subscriptions
+
+A self-serve, opt-in reminder system at `/reminders` lets customers (no account required) sign up to be emailed when each CPAP supply is due for replacement. The flow is intentionally separate from the internal Resupply Automation system, which is admin/CSV driven and manages full insurance episodes — this storefront feature is a lightweight email-only nudge.
+
+- **Storage:** A single `reminder_subscriptions` table in the main schema holds email, status (`active`/`unsubscribed`), a JSONB `items` array of `{sku, lastReplacedAt, intervalDays, nextDueAt}`, a 32-byte hex `manage_token`, and a `last_sent_at` timestamp. Email is unique-indexed (case-insensitive via lowercased writes); the manage token is the authentication mechanism for unauthenticated edits.
+- **API:** Public routes under `/api/reminders` (POST to subscribe with honeypot `website` field; GET/PATCH/POST manage by `?token=`). Admin routes under `/api/admin/reminders` (list view + `send-due` dispatcher).
+- **Dispatcher policy:** `POST /api/admin/reminders/send-due` finds active subscribers with at least one item whose `nextDueAt <= today`, respects a 7-day quiet period per subscriber (no spam), and does NOT auto-advance `lastReplacedAt` (sending a reminder is not evidence of replacement — the customer updates dates themselves from the manage page after they swap). Returns counts (`sent`, `skippedQuiet`, `skippedNoneDue`, `failed`) and a `sendgridConfigured` flag so the admin UI can warn when delivery is not actually wired up.
+- **Email:** `reminderEmail.ts` mirrors `orderEmail.ts` — graceful skip when SendGrid is unconfigured. Confirmation on subscribe + due-reminder on dispatch, both with one-click manage links.
+- **Frontend:** `/reminders` (signup form with per-SKU last-replaced/interval inputs and honeypot), `/reminders/manage?token=…` (edit/unsubscribe), and a `<SubscribeRemindersCta>` card placed on `/learn/replacement-schedule` (primary) and `/shop/checkout-success` (post-purchase nudge). Admin console gets a `/admin/reminders` page with a manual "Send due reminders now" button (cron wiring is future work).
+
+### Prescription Document Attachments (admin)
+
+Admins can attach a single prescription document (PDF or image, ≤10MB) per prescription row from the patient detail page. Storage is GCS-backed via the shared object-storage helper.
+
+- **Schema (migration 0015):** Five nullable columns on `prescriptions` — `attachment_object_key`, `attachment_filename`, `attachment_content_type`, `attachment_size_bytes`, `attachment_uploaded_at`. Hand-authored, applied via `pnpm --filter @workspace/resupply-db run migrate` per ADR 003.
+- **API (resupply-api, all `requireAdmin`):** `POST .../upload-url` issues a presigned PUT (audited as `upload_url_issued` so leaked URLs are forensically traceable). `POST .../finalize` re-reads `file.getMetadata()` to verify actual GCS size/MIME against caps (rejects + deletes object on mismatch), persists GCS-confirmed values, audited. `GET .../attachment` streams via `objectStorage.downloadObject()`. `DELETE .../attachment` clears columns + deletes object best-effort. `attachmentObjectKey` is never exposed to the client.
+- **UI:** Document column on `PrescriptionsTab` shows filename + Download/Remove when present, "Attach" picker when empty. Accepts PDF/JPEG/PNG/WebP only; client enforces 10MB cap pre-upload but server is the source of truth.
+- **Known debt (acceptable for slice):** Orphaned objects on incomplete upload / replaced-attachment paths (PHI retention follow-up). OpenAPI spec for `PatientPrescription` does not yet include the attachment fields — the dashboard uses an inline type. Both flagged for future cleanup.
+
+### Admin Console Plain-English Pass
+
+The cpap-fitter admin console has a UX-overhaul layer for non-technical
+operators (customer-service reps), so they never have to read raw
+backend identifiers like `capture_started` or `view_order_detail`.
+
+- **Central label dictionary:** `artifacts/cpap-fitter/src/lib/admin-labels.ts` exposes
+  `funnelStepLabel(step)` and `auditActionLabel(action)`. Keys mirror the
+  backend `usageEventStepEnum` (`artifacts/api-server/src/routes/usage-events.ts`)
+  and the audit-action shapes emitted by `artifacts/api-server/src/routes/admin.ts`.
+  Drift is handled by a humanised fallback (`some_new_step` → "Some new
+  step") so an unmapped key never leaks the snake_case identifier.
+- **Dashboard:** `pages/admin/dashboard.tsx` renames "Funnel (anonymous)" →
+  "Customer journey" with a one-line subhead, "Order-success events
+  (30 d)" → "Successful orders (last 30 days)", and renders friendly
+  step labels.
+- **Audit log:** `pages/admin/audit.tsx` renamed to "Activity history"
+  (page heading + document title), action column uses
+  `auditActionLabel()`, table headers reworded ("Who", "What they did",
+  "Order opened", "From IP"). Hovering the action cell still reveals
+  the raw machine string via `title=` for power-user diagnostics.
+- **Sidebar nav:** `components/admin-layout.tsx` adds a one-line
+  description under each nav item, `aria-current="page"` on the active
+  link, and friendlier labels. `admin-console-switcher.tsx` adds
+  sub-text to both console options.
+- **Sign-in / sign-up branding:** `pages/sign-in.tsx` and `pages/sign-up.tsx`
+  pass `appearance={{ elements: { footer: { display: "none" } } }}` to
+  the Clerk widget to suppress the "Secured by Clerk" badge, and wrap
+  the widget in our own page heading ("Sign in to Penn Home Medical
+  Supply"). The widget's internal title is still controlled by the
+  Clerk-dashboard application name (Clerk-side rename, not a code
+  change).
+
+### Mobile Fit-Flow Stepper
+
+`<FitFlowStepper>` mounts in the customer Layout and self-gates by route (5 steps: face-scan → masks → cart → reminders → checkout-success). Mobile (<md) renders a "Step N of 5" label plus a progress bar; desktop (≥md) renders a 5-pill horizontal tracker. Hidden on `/shop` and other non-funnel pages. `aria-valuetext` carries the current step label for screen readers.
 
 ## External Dependencies
 
-*   **SendGrid:** For sending order fulfillment emails from `POST /api/orders`.
-*   **MediaPipe Face Mesh:** Google's machine learning solution for on-device facial landmark detection. WASM runtime and the `face_landmarker.task` model are **self-hosted** under `artifacts/cpap-fitter/public/mediapipe/` (populated by `scripts/setup-mediapipe.mjs` via predev/prebuild hooks; the directory is gitignored). No external CDN is contacted at runtime, which lets the app's CSP stay strict.
-*   **AWS:** Deployment target for HIPAA-compliant infrastructure with a Business Associate Agreement (BAA).
-
-## Recent Hardening (April 2026 deep-review pass)
-
-A full severity-ranked review was implemented end-to-end. Key items future contributors should be aware of:
-
-### Backend (`artifacts/api-server`)
-*   `app.ts` enables `trust proxy` (required for accurate client IPs behind the Replit / AWS proxy), reads its CORS allowlist from `PENN_ALLOWED_ORIGINS` (comma-separated), and caps JSON bodies at 100 kb.
-*   `routes/orders.ts` applies `express-rate-limit` keyed via `ipKeyGenerator` (do **not** swap to raw `req.ip` — it breaks IPv6 normalization), and short-circuits with a fake-success response if the honeypot field `website` is non-empty. Honeypot hits are intentionally indistinguishable from real success on the wire.
-
-### Frontend routing (`artifacts/cpap-fitter/src/App.tsx`)
-*   Protected routes are implemented as **inline `Guarded*` function components rendered via standard `<Route component={GuardedX}>`**. Wouter's `<Switch>` only inspects the `path` prop on its direct `<Route>` children, so a generic `<ProtectedRoute>` wrapper component falls through to `NotFound`. Keep guards inline.
-*   Each guard reads from the in-memory fitter store and returns `<Redirect>` when the precondition fails — preventing flash-of-protected-content. Per-page `useEffect`+`setLocation`+`return null` guards have been removed.
-
-### Form accessibility (`artifacts/cpap-fitter/src/pages/order.tsx`)
-*   The `Field` helper generates an id with `useId()` and clones its child input to bind `htmlFor`. For shadcn `Select` triggers (which already render their own label association), pass `skipHtmlFor` to avoid double-binding.
-*   The honeypot `website` input is registered in the zod schema, rendered offscreen with `aria-hidden`, `tabindex={-1}`, and `autocomplete="off"`; the submit handler short-circuits to a fake success when filled.
-
-### Type safety
-*   `lib/api-client-react/src/index.ts` now re-exports `ApiError` and `ErrorType` so consumers can type errors as `ApiError<{error?: string; details?: string[]}>` instead of `as any`.
-*   `order.tsx`'s `consentToContact` uses `z.boolean().refine()` so the form no longer needs the `false as unknown as true` cast.
+*   **SendGrid:** For emails (order fulfillment, resupply reminders).
+*   **MediaPipe Face Mesh:** Google's on-device facial landmark detection.
+*   **AWS:** Provides HIPAA-compliant deployment infrastructure.
+*   **PostgreSQL:** Primary database.
+*   **Clerk:** Authentication service for admins and customers.
+*   **Twilio:** For outbound voice calls and two-way SMS messaging in resupply.
+*   **OpenAI:** Used by Resupply Automation for Realtime API (voice) and chat completions (SMS intent).
+*   **Stripe:** For payment processing and managing the cash-pay shop.

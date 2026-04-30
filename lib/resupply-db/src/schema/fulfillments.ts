@@ -20,7 +20,7 @@ import { resupplySchema } from "./_schema";
  *   - One episode can spawn multiple fulfillment rows if Pacware splits
  *     the order (mask + tubing + filters arriving in separate cartons).
  *   - It is the integration boundary with Pacware — `pacwareOrderRef`
- *     and the operator-uploaded CSV row both land here.
+ *     and the admin-uploaded CSV row both land here.
  *
  * No PHI on this row. Shipping address lookup goes through the patient.
  */
@@ -52,7 +52,7 @@ export const fulfillments = resupplySchema.table(
       .notNull()
       .default("queued"),
 
-    // Identifier on the Pacware side once the operator uploads the CSV
+    // Identifier on the Pacware side once the admin uploads the CSV
     // batch. Plaintext, indexed.
     pacwareOrderRef: text("pacware_order_ref"),
 

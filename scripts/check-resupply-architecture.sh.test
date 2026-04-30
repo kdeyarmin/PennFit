@@ -28,6 +28,9 @@ mkdir -p "$WORK"/lib/resupply-telecom/src
 mkdir -p "$WORK"/lib/resupply-ai/src
 mkdir -p "$WORK"/lib/resupply-audit/src
 mkdir -p "$WORK"/lib/resupply-testing/src
+mkdir -p "$WORK"/lib/resupply-messaging/src
+mkdir -p "$WORK"/lib/resupply-email/src
+mkdir -p "$WORK"/lib/resupply-reminders/src
 mkdir -p "$WORK"/artifacts/resupply-api/src
 mkdir -p "$WORK"/artifacts/resupply-worker/src
 mkdir -p "$WORK"/artifacts/resupply-dashboard/src
@@ -40,6 +43,9 @@ echo 'export {};' > "$WORK"/lib/resupply-telecom/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-ai/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-audit/src/index.ts
 echo 'export {};' > "$WORK"/lib/resupply-testing/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-messaging/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-email/src/index.ts
+echo 'export {};' > "$WORK"/lib/resupply-reminders/src/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-api/src/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-worker/src/index.ts
 echo 'export {};' > "$WORK"/artifacts/resupply-dashboard/src/index.ts
@@ -129,6 +135,72 @@ echo 'import { x } from "@workspace/resupply-ai";' > "$WORK"/lib/resupply-teleco
 assert_fail_with "telecom importing ai" \
   "lib/resupply-telecom must not import lib/resupply-ai"
 rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+# --- Rule 9: lib/resupply-ai must not touch DB or telephony SDKs -----
+echo "[self-test] Rule 9: ai may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing @workspace/resupply-db" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai may not import 'pg' (double-quoted)"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing pg (double-quoted)" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai may not import 'pg' (single-quoted)"
+echo "import { Pool } from 'pg';" > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing pg (single-quoted)" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai may not import 'twilio'"
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-ai/src/bad.ts
+assert_fail_with "ai importing twilio" \
+  "lib/resupply-ai must not import the DB layer or telephony SDKs"
+rm "$WORK"/lib/resupply-ai/src/bad.ts
+
+echo "[self-test] Rule 9: ai importing 'ws' is allowed"
+# The Realtime adapter uses the `ws` package directly to talk to
+# OpenAI. This is an explicit carve-out — `ws` is a transport, not a
+# vendor SDK, and isolating the OpenAI API surface in this lib is
+# exactly what the rule is protecting.
+echo 'import WebSocket from "ws";' > "$WORK"/lib/resupply-ai/src/ok.ts
+assert_pass "ai importing ws (transport, not a vendor SDK)"
+rm "$WORK"/lib/resupply-ai/src/ok.ts
+
+# --- Rule 10: lib/resupply-telecom must not touch DB or AI SDKs ------
+echo "[self-test] Rule 10: telecom may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing @workspace/resupply-db" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom may not import 'pg'"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing pg" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom may not import 'openai'"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing openai" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom may not import '@anthropic-ai/sdk'"
+echo 'import Anthropic from "@anthropic-ai/sdk";' > "$WORK"/lib/resupply-telecom/src/bad.ts
+assert_fail_with "telecom importing @anthropic-ai/sdk" \
+  "lib/resupply-telecom must not import the DB layer or AI SDKs"
+rm "$WORK"/lib/resupply-telecom/src/bad.ts
+
+echo "[self-test] Rule 10: telecom importing 'twilio' is allowed"
+# The whole point of this lib is to be the ONE place that talks to
+# Twilio. The rule blocks AI/DB SDKs, not Twilio.
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-telecom/src/ok.ts
+assert_pass "telecom importing twilio (its own vendor)"
+rm "$WORK"/lib/resupply-telecom/src/ok.ts
 
 echo "[self-test] Rule 5: api may not import resupply-testing"
 echo 'import { x } from "@workspace/resupply-testing";' > "$WORK"/artifacts/resupply-api/src/bad.ts
@@ -224,6 +296,345 @@ echo "import { Pool } from 'pg';" > "$WORK"/lib/resupply-db/src/pool-ok.ts
 echo "export const p = new Pool({});" >> "$WORK"/lib/resupply-db/src/pool-ok.ts
 assert_pass "resupply-db constructing Pool"
 rm "$WORK"/lib/resupply-db/src/pool-ok.ts
+
+echo "[self-test] Rule 8: api may not call .insert(auditLog ...)"
+echo "import { auditLog } from '@workspace/resupply-db';" \
+  > "$WORK"/artifacts/resupply-api/src/bad.ts
+echo "await db.insert(auditLog).values({});" \
+  >> "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api calling .insert(auditLog)" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 8: worker may not raw 'INSERT INTO audit_log'"
+echo "await pool.query('INSERT INTO audit_log (...) VALUES (...)');" \
+  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+assert_fail_with "worker raw INSERT INTO audit_log" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+
+echo "[self-test] Rule 8: schema-qualified 'INSERT INTO resupply.audit_log' also banned"
+echo 'await pool.query("INSERT INTO resupply.audit_log (...) VALUES (...)");' \
+  > "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api raw INSERT INTO resupply.audit_log" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 8: case-insensitive (lowercase 'insert into ...') still banned"
+echo 'await pool.query("insert into audit_log (...) values (...)");' \
+  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+assert_fail_with "worker lowercase 'insert into audit_log'" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+
+echo "[self-test] Rule 8: SELECT from audit_log is allowed"
+echo 'await pool.query("SELECT * FROM resupply.audit_log WHERE id = $1");' \
+  > "$WORK"/artifacts/resupply-api/src/ok.ts
+assert_pass "api SELECT from audit_log"
+rm "$WORK"/artifacts/resupply-api/src/ok.ts
+
+echo "[self-test] Rule 8: DELETE from audit_log (test cleanup) is allowed"
+echo 'await pool.query("DELETE FROM resupply.audit_log WHERE metadata->>$1 = $2");' \
+  > "$WORK"/artifacts/resupply-api/src/ok.ts
+assert_pass "api DELETE from audit_log"
+rm "$WORK"/artifacts/resupply-api/src/ok.ts
+
+echo "[self-test] Rule 8: bare 'import { auditLog }' is banned outside the helper"
+# The two-step alias bypass `import { auditLog }; const al = auditLog;
+# db.insert(al)` would slip past every `.insert(...audit...)` regex.
+# Banning the IMPORT itself kills the entire bypass family — without
+# the import, `auditLog` simply isn't in scope. The legitimate factory
+# in lib/resupply-testing imports the public AuditEvent input type
+# from @workspace/resupply-audit instead of the schema symbol, so this
+# ban has zero false positives in the live tree (verified during the
+# 2026-04 hardening pass).
+echo "import { auditLog } from '@workspace/resupply-db';" \
+  > "$WORK"/lib/resupply-testing/src/bad.ts
+echo "type X = typeof auditLog;" \
+  >> "$WORK"/lib/resupply-testing/src/bad.ts
+assert_fail_with "testing bare import { auditLog }" \
+  "must not write to audit_log directly"
+rm "$WORK"/lib/resupply-testing/src/bad.ts
+
+echo "[self-test] Rule 8: lib/resupply-audit/src/ IS allowed to write audit_log"
+mkdir -p "$WORK"/lib/resupply-audit/src
+echo "import { auditLog } from '@workspace/resupply-db';" \
+  > "$WORK"/lib/resupply-audit/src/helper.ts
+echo "export async function w(db: any) { await db.insert(auditLog).values({}); }" \
+  >> "$WORK"/lib/resupply-audit/src/helper.ts
+assert_pass "audit helper itself writing audit_log"
+rm "$WORK"/lib/resupply-audit/src/helper.ts
+
+echo "[self-test] Rule 8: namespaced .insert(schema.auditLog) bypass is banned"
+# Without the namespaced pattern, a contributor could route around
+# the bare-symbol check via `db.insert(schema.auditLog).values(...)`
+# pulled off a tables namespace import.
+echo "import { schema } from '@workspace/resupply-db';" \
+  > "$WORK"/artifacts/resupply-api/src/bad.ts
+echo "await db.insert(schema.auditLog).values({});" \
+  >> "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "api .insert(schema.auditLog) namespaced bypass" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 8: aliased import bypass (auditLog as al) is banned"
+# Without the import-rename ban, `import { auditLog as al }` followed
+# by `db.insert(al)` would slip past every `audit`-keyed pattern: the
+# insert line wouldn't contain the word `audit` at all.
+echo "import { auditLog as al } from '@workspace/resupply-db';" \
+  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+echo "await db.insert(al).values({});" \
+  >> "$WORK"/artifacts/resupply-worker/src/bad.ts
+assert_fail_with "worker import { auditLog as al } rename bypass" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+
+echo "[self-test] Rule 8: indirect aliasing 'const al = auditLog; .insert(al)' is banned"
+# The architect's 2026-04 review flagged this two-step bypass as
+# undetected by the symbol-on-the-insert-line pattern alone. The fix
+# is the import-side ban: without `import { auditLog }`, the local
+# alias has no value to point at. Both the import and the alias-then-
+# insert pattern must fail this case for the test to be meaningful.
+cat > "$WORK"/artifacts/resupply-api/src/bad.ts <<'EOF'
+import { auditLog } from "@workspace/resupply-db";
+const al = auditLog;
+await db.insert(al).values({});
+EOF
+assert_fail_with "api indirect aliasing const al = auditLog" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 8: multi-line braced import is banned"
+# Without rg's `-U` (multiline) flag, a contributor could split the
+# import across lines and slip past every line-oriented regex:
+#   import {
+#     foo,
+#     auditLog as al,
+#   } from "@workspace/resupply-db";
+# With `-U` enabled and `[^}]*` spanning newlines, the import-side
+# pattern catches it.
+cat > "$WORK"/artifacts/resupply-worker/src/bad.ts <<'EOF'
+import {
+  foo,
+  auditLog as al,
+} from "@workspace/resupply-db";
+await db.insert(al).values({});
+EOF
+assert_fail_with "worker multi-line braced import with auditLog" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+
+echo "[self-test] Rule 8: multi-line .insert(\\n  schema.auditLog\\n) is banned"
+# `.insert(<ident>?audit*)` must match across newlines under `-U` so
+# a pretty-printed call cannot escape the gate. `\s*` in the pattern
+# accommodates the embedded newline + indent.
+cat > "$WORK"/artifacts/resupply-api/src/bad.ts <<'EOF'
+import { schema } from "@workspace/resupply-db";
+await db.insert(
+  schema.auditLog,
+).values({});
+EOF
+assert_fail_with "api multi-line .insert(schema.auditLog)" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 8: multi-line raw 'INSERT\\n  INTO ... audit_log' is banned"
+# A SQL writer that pretty-prints across lines must still hit the
+# raw-INSERT pattern. With `-U` and `[^;]*` (which spans newlines),
+# the gap matcher reaches the audit_log token without crossing a
+# statement terminator.
+cat > "$WORK"/artifacts/resupply-worker/src/bad.ts <<'EOF'
+await pool.query(`
+  INSERT INTO
+    resupply.audit_log (action)
+  VALUES ($1)
+`, ["x"]);
+EOF
+assert_fail_with "worker multi-line raw INSERT INTO audit_log" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-worker/src/bad.ts
+
+echo "[self-test] Rule 8: template-literal interpolated INSERT INTO …audit_log is banned"
+# `INSERT INTO \${schema}.audit_log` would slip past a strict
+# `INSERT INTO (resupply\.)?audit_log` regex because the schema name
+# is dynamic. The broader `INSERT.*audit_log` pattern catches it.
+cat > "$WORK"/artifacts/resupply-api/src/bad.ts <<'EOF'
+const schema = "resupply";
+await pool.query(`INSERT INTO ${schema}.audit_log (action) VALUES ($1)`, ["x"]);
+EOF
+assert_fail_with "api template-literal INSERT INTO \${schema}.audit_log" \
+  "must not write to audit_log directly"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 8: non-audit insert is still allowed (no false positive)"
+# Sanity: ensure the broadened patterns don't fire on innocent code.
+echo "await db.insert(patients).values({ id: '1' });" \
+  > "$WORK"/artifacts/resupply-api/src/ok.ts
+assert_pass "api .insert(patients) is fine"
+rm "$WORK"/artifacts/resupply-api/src/ok.ts
+
+echo "[self-test] Rule 8: comment mentioning audit_log is NOT a violation"
+# A comment describing the helper shouldn't trip the regex (would
+# require a separate INSERT keyword on the same line).
+echo "// Use logAudit() to write to resupply.audit_log; do not call insert() directly." \
+  > "$WORK"/artifacts/resupply-api/src/ok.ts
+assert_pass "api comment mentioning audit_log"
+rm "$WORK"/artifacts/resupply-api/src/ok.ts
+
+echo "[self-test] Rule 8 KNOWN LIMITATION: SQL split across string-literal boundaries is NOT detected"
+# This is INTENTIONALLY a passing case — it documents what the
+# regex-only check cannot catch. An attacker who actively wants to
+# evade Rule 8 can split the SQL across string concatenation:
+#   await pool.query("INSERT INTO " + "resupply.audit_log …")
+# The closing `"` of the first literal stops the matcher's gap
+# before it reaches `audit_log`. Tightening the gap to allow `"`
+# would re-open the comment-INSERT-near-DELETE false positive,
+# which is the much more common day-to-day failure mode.
+#
+# This test pins the gap explicitly so:
+#   * a future "tighten the regex" commit that breaks the
+#     comment-vs-DELETE no-false-positive test ALSO has to confront
+#     this case (it'll start failing because what was a pass becomes
+#     a flag);
+#   * the gap is visible in the test inventory rather than buried
+#     in a comment;
+#   * the proper fix (AST-based raw-SQL sink check) has a concrete
+#     reproducer to point at when scoping that work.
+cat > "$WORK"/artifacts/resupply-api/src/ok.ts <<'EOF'
+await pool.query("INSERT INTO " + "resupply.audit_log (action) VALUES ($1)", ["x"]);
+EOF
+assert_pass "api SQL concatenated across string boundaries (KNOWN GAP — see Rule 8 docs)"
+rm "$WORK"/artifacts/resupply-api/src/ok.ts
+
+echo "[self-test] Rule 8: comment with 'INSERT' near a legal DELETE FROM audit_log is NOT a violation"
+# Real regression caught during the 2026-04 hardening: when the gap
+# matcher used `[^;]*` it spanned across newlines from a comment-
+# INSERT to a legitimate DELETE statement's `audit_log` token, since
+# there was no `;` between them. The fix excluded string-literal
+# boundaries (backtick / `"` / `'`) from the gap so the matcher can't
+# bridge from a comment into a string-quoted DELETE. This test pins
+# that fix down so the regression cannot return silently.
+cat > "$WORK"/lib/resupply-testing/src/ok.ts <<'EOF'
+// SELECT/DELETE against audit_log are explicitly allowed under
+// architecture-check Rule 8; only INSERT is restricted to the helper.
+await pool.query(
+  "DELETE FROM resupply.audit_log WHERE metadata->>'_factoriesTag' = $1",
+  [tag],
+);
+EOF
+assert_pass "testing comment with INSERT word + legal DELETE FROM audit_log"
+rm "$WORK"/lib/resupply-testing/src/ok.ts
+
+# --- Rule 11: lib/resupply-messaging is a pure semantic layer --------
+echo "[self-test] Rule 11: messaging may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing @workspace/resupply-db" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import 'pg'"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing pg" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import 'twilio'"
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing twilio" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import '@sendgrid/mail'"
+echo 'import sg from "@sendgrid/mail";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing @sendgrid/mail" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging may not import 'openai'"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-messaging/src/bad.ts
+assert_fail_with "messaging importing openai" \
+  "lib/resupply-messaging must not import any vendor SDK or the DB layer"
+rm "$WORK"/lib/resupply-messaging/src/bad.ts
+
+echo "[self-test] Rule 11: messaging importing 'zod' is allowed"
+echo 'import { z } from "zod";' > "$WORK"/lib/resupply-messaging/src/ok.ts
+assert_pass "messaging importing zod (allowed pure dep)"
+rm "$WORK"/lib/resupply-messaging/src/ok.ts
+
+# --- Rule 12: lib/resupply-email is the SendGrid adapter -------------
+echo "[self-test] Rule 12: email may not import @workspace/resupply-db"
+echo 'import { x } from "@workspace/resupply-db";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing @workspace/resupply-db" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email may not import 'pg'"
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing pg" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email may not import 'twilio'"
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing twilio" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email may not import 'openai'"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-email/src/bad.ts
+assert_fail_with "email importing openai" \
+  "lib/resupply-email must not import the DB layer or non-SendGrid vendor SDKs"
+rm "$WORK"/lib/resupply-email/src/bad.ts
+
+echo "[self-test] Rule 12: email importing '@sendgrid/mail' is allowed"
+# This is the WHOLE point of the lib — symmetric with Rule 10's
+# "telecom may import twilio" carve-out.
+echo 'import sg from "@sendgrid/mail";' > "$WORK"/lib/resupply-email/src/ok.ts
+assert_pass "email importing @sendgrid/mail (its own vendor)"
+rm "$WORK"/lib/resupply-email/src/ok.ts
+
+# --- Rule 13: lib/resupply-reminders composes through wrappers -------
+echo "[self-test] Rule 13: reminders may not import 'twilio' directly"
+# Twilio MUST go through resupply-telecom — inlining the SDK here
+# would re-create the split-import problem.
+echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-reminders/src/bad.ts
+assert_fail_with "reminders importing twilio directly" \
+  "lib/resupply-reminders must not import vendor SDKs directly"
+rm "$WORK"/lib/resupply-reminders/src/bad.ts
+
+echo "[self-test] Rule 13: reminders may not import '@sendgrid/mail' directly"
+echo 'import sg from "@sendgrid/mail";' > "$WORK"/lib/resupply-reminders/src/bad.ts
+assert_fail_with "reminders importing @sendgrid/mail directly" \
+  "lib/resupply-reminders must not import vendor SDKs directly"
+rm "$WORK"/lib/resupply-reminders/src/bad.ts
+
+echo "[self-test] Rule 13: reminders may not import 'openai' directly"
+echo 'import OpenAI from "openai";' > "$WORK"/lib/resupply-reminders/src/bad.ts
+assert_fail_with "reminders importing openai directly" \
+  "lib/resupply-reminders must not import vendor SDKs directly"
+rm "$WORK"/lib/resupply-reminders/src/bad.ts
+
+echo "[self-test] Rule 13: reminders importing resupply-telecom is allowed"
+# This is the entire purpose of the package — composing the wrappers.
+echo 'import { createTwilioSmsClient } from "@workspace/resupply-telecom";' \
+  > "$WORK"/lib/resupply-reminders/src/ok.ts
+assert_pass "reminders importing resupply-telecom (wrapper, not raw SDK)"
+rm "$WORK"/lib/resupply-reminders/src/ok.ts
+
+echo "[self-test] Rule 13: reminders importing resupply-email is allowed"
+echo 'import { createSendgridClient } from "@workspace/resupply-email";' \
+  > "$WORK"/lib/resupply-reminders/src/ok.ts
+assert_pass "reminders importing resupply-email (wrapper, not raw SDK)"
+rm "$WORK"/lib/resupply-reminders/src/ok.ts
+
+echo "[self-test] Rule 13: reminders importing 'pg' is allowed"
+# Reminders helpers receive a Pool from the caller and need the type.
+# This is the ONLY non-test consumer outside resupply-db that may
+# import pg directly — Rule 7 explicitly excludes lib/resupply-reminders/
+# from its sweep (it's not in the Rule 7 dir list).
+echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-reminders/src/ok.ts
+assert_pass "reminders importing pg (Pool type for helper signatures)"
+rm "$WORK"/lib/resupply-reminders/src/ok.ts
 
 echo "[self-test] Final clean-tree check"
 assert_pass "post-test cleanup"

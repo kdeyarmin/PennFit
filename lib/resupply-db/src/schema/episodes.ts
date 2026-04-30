@@ -22,7 +22,7 @@ import { resupplySchema } from "./_schema";
  *
  * Why this is its own table (and not just a status on prescriptions):
  *   - One prescription can produce many episodes over time (one per
- *     refill cycle). The episode is the unit of operator workflow.
+ *     refill cycle). The episode is the unit of admin workflow.
  *   - It carries scheduling state (`dueAt`, `expiresAt`) that is
  *     independent of the prescription itself.
  *   - It is the join point for messaging history and fulfillment

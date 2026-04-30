@@ -1,0 +1,1039 @@
+// /shop/p/:productId — public product detail page for the cash-pay
+// shop. Hosts product hero (image + name + price + add-to-cart),
+// aggregate rating header, paginated reviews list, and the
+// write-review form for signed-in customers.
+//
+// Data shape:
+//   * Product comes from the existing /shop/products list endpoint
+//     (catalog is small enough that one round trip wins over an
+//     N-product detail endpoint we don't need yet).
+//   * Reviews + aggregate come from /shop/products/:id/reviews.
+//   * The signed-in caller's own review (any status) comes from
+//     /shop/me/reviews/:id. Used to drive "your pending review" /
+//     "edit and resubmit" UI.
+//
+// Auth: review reads work for everyone. Write/edit/delete require a
+// Clerk session — the page swaps the form for a "Sign in to write a
+// review" prompt for signed-out visitors via Clerk's <Show>.
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
+import { Show, useUser } from "@clerk/react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Loader2,
+  Package,
+  ShieldCheck,
+  ShoppingCart,
+  Trash2,
+  Pencil,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
+import { useCart } from "@/hooks/use-cart";
+import { StarRating } from "@/components/star-rating";
+import {
+  DEFAULT_LOW_STOCK_THRESHOLD,
+  fetchProductReviews,
+  fetchShopProducts,
+  fetchMyReview,
+  submitReview,
+  updateMyReview,
+  deleteMyReview,
+  formatMoneyCents,
+  resolveProductImage,
+  type ReviewItem,
+  type ReviewListResponse,
+  type MyReview,
+  type ShopProductView,
+} from "@/lib/shop-api";
+
+const BODY_MIN = 20;
+const BODY_MAX = 2000;
+
+type LoadState = "loading" | "ready" | "not_found" | "error";
+
+export function ShopProductDetail({ productId }: { productId: string }) {
+  const [product, setProduct] = useState<ShopProductView | null>(null);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [state, setState] = useState<LoadState>("loading");
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  // Reviews list (paginated) + aggregate. We store the whole
+  // ReviewListResponse so the aggregate doesn't go stale on "Show
+  // more" loads.
+  const [reviewPages, setReviewPages] =
+    useState<ReviewListResponse | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // The signed-in caller's own review for this product, when present.
+  const [mine, setMine] = useState<MyReview | null>(null);
+  const [mineLoaded, setMineLoaded] = useState(false);
+
+  useDocumentTitle(
+    product ? `${product.name} — PennPaps shop` : "Product — PennPaps shop",
+    product?.tagline ?? product?.description ?? undefined,
+  );
+
+  // OpenGraph + JSON-LD product schema. We compute these together so a
+  // single useEffect inside the hook handles both inserts and the
+  // unmount cleanup. Memoized on the inputs we actually read so a
+  // re-render of unrelated state (e.g. typing in the review form)
+  // doesn't re-stringify the JSON-LD payload every keystroke.
+  //
+  // Aggregate-rating tie-in: only emitted when the public reviews
+  // endpoint reports `count > 0` — Google's structured-data validator
+  // rejects `aggregateRating` with a zero ratingCount.
+  const seoMeta = useMemo(() => {
+    if (!product) return { openGraph: null, jsonLd: null };
+    const description = (
+      product.description ??
+      product.tagline ??
+      product.name
+    ).slice(0, 160);
+    const absoluteImage =
+      product.imageUrl && /^https?:\/\//i.test(product.imageUrl)
+        ? product.imageUrl
+        : product.imageUrl
+          ? `${window.location.origin}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`
+          : undefined;
+    const url = `${window.location.origin}/shop/p/${encodeURIComponent(product.id)}`;
+
+    // availability mirrors the in-page UI rule: explicit zero =
+    // OutOfStock; null (untracked) or any positive integer = InStock.
+    const availability =
+      typeof product.stockCount === "number" && product.stockCount <= 0
+        ? "https://schema.org/OutOfStock"
+        : "https://schema.org/InStock";
+
+    const aggregate = reviewPages?.aggregate;
+    const jsonLd: Record<string, unknown> = {
+      "@context": "https://schema.org/",
+      "@type": "Product",
+      name: product.name,
+      description,
+      image: absoluteImage,
+      brand: product.manufacturer
+        ? { "@type": "Brand", name: product.manufacturer }
+        : undefined,
+      mpn: product.modelNumber ?? undefined,
+      offers: {
+        "@type": "Offer",
+        url,
+        priceCurrency: product.price.currency.toUpperCase(),
+        price: (product.price.unitAmount / 100).toFixed(2),
+        availability,
+      },
+    };
+    if (aggregate && aggregate.count > 0) {
+      jsonLd.aggregateRating = {
+        "@type": "AggregateRating",
+        ratingValue: aggregate.averageRating.toFixed(2),
+        reviewCount: aggregate.count,
+      };
+    }
+    return {
+      openGraph: {
+        title: `${product.name} — Penn Home Medical Supply`,
+        description,
+        type: "product",
+        url,
+        siteName: "Penn Home Medical Supply",
+        image: absoluteImage,
+      } as const,
+      jsonLd,
+    };
+  }, [product, reviewPages?.aggregate]);
+
+  useDocumentMeta({
+    openGraph: seoMeta.openGraph,
+    jsonLd: seoMeta.jsonLd,
+  });
+
+  // Load the product (from the catalog) + its reviews on mount.
+  useEffect(() => {
+    let active = true;
+    setState("loading");
+    setErrMsg(null);
+    Promise.all([fetchShopProducts(), fetchProductReviews(productId)])
+      .then(([catalog, reviews]) => {
+        if (!active) return;
+        if ("unavailable" in catalog) {
+          setState("not_found");
+          return;
+        }
+        const found = catalog.products.find((p) => p.id === productId) ?? null;
+        if (!found) {
+          setState("not_found");
+          return;
+        }
+        setProduct(found);
+        setPreviewMode(catalog.previewMode);
+        setReviewPages(reviews);
+        setState("ready");
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setErrMsg(err instanceof Error ? err.message : String(err));
+        setState("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [productId]);
+
+  // Load the caller's own review for this product when Clerk is ready.
+  // Refetches on sign-in/out via the user-id key dep below.
+  const { isSignedIn, user } = useUser();
+  const userId = user?.id ?? null;
+  const refetchMine = useCallback(() => {
+    if (!isSignedIn) {
+      setMine(null);
+      setMineLoaded(true);
+      return;
+    }
+    fetchMyReview(productId)
+      .then((r) => {
+        setMine(r);
+        setMineLoaded(true);
+      })
+      .catch(() => {
+        // Network / 5xx shouldn't break the page — treat as "no review".
+        setMine(null);
+        setMineLoaded(true);
+      });
+  }, [isSignedIn, productId]);
+  useEffect(() => {
+    setMineLoaded(false);
+    refetchMine();
+  }, [refetchMine, userId]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (!reviewPages?.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await fetchProductReviews(productId, {
+        cursor: reviewPages.nextCursor,
+      });
+      setReviewPages((prev) =>
+        prev
+          ? {
+              items: [...prev.items, ...next.items],
+              nextCursor: next.nextCursor,
+              // Aggregate is identical between pages (filter is
+              // status='approved' across the whole product); keep the
+              // first page's snapshot to avoid layout jumps if a new
+              // approval lands mid-pagination.
+              aggregate: prev.aggregate,
+            }
+          : next,
+      );
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [productId, reviewPages, loadingMore]);
+
+  if (state === "loading") {
+    return (
+      <PageShell>
+        <div className="flex items-center justify-center py-24 text-muted-foreground">
+          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Loading product…
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (state === "not_found") {
+    return (
+      <PageShell>
+        <div className="glass-card rounded-2xl p-10 max-w-xl mx-auto text-center mt-8">
+          <h1 className="text-2xl font-bold tracking-tight mb-2">
+            We couldn&apos;t find that product.
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            It may have been retired or replaced. Browse the full catalog
+            and we&apos;ll help you find a fresh equivalent.
+          </p>
+          <Link href="/shop">
+            <Button data-testid="pdp-not-found-shop-cta">Back to shop</Button>
+          </Link>
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (state === "error" || !product || !reviewPages) {
+    return (
+      <PageShell>
+        <div className="glass-card rounded-2xl p-10 max-w-xl mx-auto text-center mt-8">
+          <h1 className="text-2xl font-bold tracking-tight mb-2">
+            We couldn&apos;t load this product right now.
+          </h1>
+          <p className="text-xs text-muted-foreground/70 font-mono mt-2">
+            {errMsg}
+          </p>
+          <div className="mt-6">
+            <Link href="/shop">
+              <Button variant="outline">Back to shop</Button>
+            </Link>
+          </div>
+        </div>
+      </PageShell>
+    );
+  }
+
+  return (
+    <PageShell>
+      <Hero product={product} previewMode={previewMode} />
+      <ReviewsSection
+        productId={productId}
+        reviews={reviewPages}
+        loadingMore={loadingMore}
+        onLoadMore={handleLoadMore}
+        mine={mine}
+        mineLoaded={mineLoaded}
+        onMineChange={(next) => {
+          setMine(next);
+          setMineLoaded(true);
+          // Refetch the public list so a freshly-approved review (or
+          // a deletion) is reflected immediately on this page.
+          fetchProductReviews(productId)
+            .then(setReviewPages)
+            .catch(() => {
+              // Non-fatal — list will refresh on next mount.
+            });
+        }}
+      />
+    </PageShell>
+  );
+}
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="container mx-auto px-4 md:px-6 py-10 md:py-14 max-w-5xl">
+      <Link
+        href="/shop"
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-[hsl(var(--penn-navy))] transition-colors mb-6"
+        data-testid="pdp-back-to-shop"
+      >
+        <ArrowLeft className="w-4 h-4" /> All products
+      </Link>
+      {children}
+    </div>
+  );
+}
+
+function Hero({
+  product,
+  previewMode,
+}: {
+  product: ShopProductView;
+  previewMode: boolean;
+}) {
+  const { addItem } = useCart();
+  const [justAdded, setJustAdded] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
+  const [mode, setMode] = useState<"one_time" | "subscription">(
+    product.recurringPrice ? "subscription" : "one_time",
+  );
+  const resolved = resolveProductImage(product.imageUrl);
+
+  // Inventory affordances. Subscription mode is exempt: the
+  // Subscribe & ship toggle stays available even when the one-time
+  // pool has hit zero — auto-ship inventory is a separate weekly
+  // replenishment pipeline, not the storefront stock count.
+  const oneTimeOutOfStock =
+    typeof product.stockCount === "number" && product.stockCount <= 0;
+  // Per-SKU low-stock threshold (A15). Falls back to the legacy
+  // hardcoded 5 when the admin hasn't customized it. A threshold of
+  // 0 means "never show the low-stock badge" (admin opt-out).
+  const lowThreshold =
+    product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+  const lowStockHint =
+    typeof product.stockCount === "number" &&
+    product.stockCount > 0 &&
+    lowThreshold > 0 &&
+    product.stockCount <= lowThreshold
+      ? product.stockCount
+      : null;
+  const isSubscriptionMode =
+    !!product.recurringPrice && mode === "subscription";
+  const addDisabled =
+    previewMode || (!isSubscriptionMode && oneTimeOutOfStock);
+
+  const handleAdd = () => {
+    const result = addItem({
+      productId: product.id,
+      priceId: product.price.id,
+      name: product.name,
+      unitAmountCents: product.price.unitAmount,
+      currency: product.price.currency,
+      imageUrl: resolved,
+      isBundle: product.isBundle,
+      mode: isSubscriptionMode ? "subscription" : "one_time",
+      recurringPriceId: product.recurringPrice?.id ?? null,
+      recurringIntervalLabel: product.recurringPrice?.intervalLabel ?? null,
+      stockCount: product.stockCount,
+    });
+    if (!result.ok) return;
+    setJustAdded(true);
+    window.setTimeout(() => setJustAdded(false), 1800);
+  };
+  return (
+    <div
+      className="grid grid-cols-1 md:grid-cols-2 gap-8"
+      data-testid="pdp-hero"
+    >
+      <div className="aspect-square glass-card rounded-2xl overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center">
+        {resolved && !imgFailed ? (
+          <img
+            src={resolved}
+            alt={product.name}
+            loading="eager"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="w-full h-full object-contain p-8"
+          />
+        ) : (
+          <Package className="w-24 h-24 text-[hsl(var(--penn-navy))]/40" />
+        )}
+      </div>
+      <div className="flex flex-col">
+        {product.isBundle && (
+          <Badge
+            className="self-start mb-3 bg-[hsl(var(--penn-gold))]/95 text-[hsl(var(--penn-navy))] border-0 font-semibold"
+            variant="outline"
+          >
+            Bundle
+          </Badge>
+        )}
+        <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight">
+          {product.name}
+        </h1>
+        {product.tagline && (
+          <p className="text-base text-muted-foreground mt-2">
+            {product.tagline}
+          </p>
+        )}
+        {product.description && (
+          <p className="text-sm text-foreground/80 leading-relaxed mt-4">
+            {product.description}
+          </p>
+        )}
+        <div className="mt-6 flex items-baseline gap-3 flex-wrap">
+          <span className="text-4xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
+            {formatMoneyCents(product.price.unitAmount, product.price.currency)}
+          </span>
+          {oneTimeOutOfStock ? (
+            <Badge
+              variant="outline"
+              className="border-slate-300 text-slate-500 bg-slate-100 font-semibold"
+              data-testid="pdp-stock-out"
+            >
+              Out of stock
+            </Badge>
+          ) : lowStockHint !== null ? (
+            <Badge
+              variant="outline"
+              className={`font-semibold ${
+                lowStockHint <= 3
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-[hsl(var(--penn-gold))]/40 bg-[hsl(var(--penn-gold))]/10 text-[hsl(var(--penn-navy))]"
+              }`}
+              data-testid="pdp-stock-low"
+            >
+              Only {lowStockHint} left
+            </Badge>
+          ) : null}
+        </div>
+        {product.recurringPrice && (
+          <div
+            className="mt-5 rounded-xl border border-border/60 p-1 grid grid-cols-2 gap-1 bg-secondary/30 max-w-sm"
+            role="radiogroup"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === "one_time"}
+              onClick={() => setMode("one_time")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                mode === "one_time"
+                  ? "bg-white text-[hsl(var(--penn-navy))] shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid="pdp-mode-onetime"
+            >
+              One-time
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === "subscription"}
+              onClick={() => setMode("subscription")}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg transition-colors ${
+                mode === "subscription"
+                  ? "bg-white text-[hsl(var(--penn-navy))] shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid="pdp-mode-subscribe"
+            >
+              Subscribe & ship
+            </button>
+          </div>
+        )}
+        <Button
+          onClick={handleAdd}
+          className="mt-6 max-w-sm"
+          disabled={addDisabled}
+          aria-disabled={addDisabled}
+          data-testid="pdp-add-to-cart"
+        >
+          {justAdded ? (
+            <>
+              <CheckCircle2 className="w-4 h-4 mr-2" /> Added to cart
+            </>
+          ) : !isSubscriptionMode && oneTimeOutOfStock ? (
+            <>Out of stock</>
+          ) : (
+            <>
+              <ShoppingCart className="w-4 h-4 mr-2" />{" "}
+              {isSubscriptionMode ? "Subscribe & add" : "Add to cart"}
+            </>
+          )}
+        </Button>
+        <Link
+          href="/insurance"
+          className="text-xs text-muted-foreground hover:text-primary transition-colors mt-3 inline-flex items-center gap-1"
+        >
+          <ShieldCheck className="w-3.5 h-3.5" /> Or use insurance — $0 with
+          prescription
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function ReviewsSection({
+  productId,
+  reviews,
+  loadingMore,
+  onLoadMore,
+  mine,
+  mineLoaded,
+  onMineChange,
+}: {
+  productId: string;
+  reviews: ReviewListResponse;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+  mine: MyReview | null;
+  mineLoaded: boolean;
+  onMineChange: (next: MyReview | null) => void;
+}) {
+  return (
+    <section className="mt-14" data-testid="pdp-reviews-section">
+      <div className="flex items-center justify-between gap-4 mb-6">
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
+          Customer reviews
+        </h2>
+      </div>
+      <AggregateBlock aggregate={reviews.aggregate} />
+      <div className="mt-10">
+        <Show
+          when="signed-in"
+          fallback={
+            <div
+              className="glass-card rounded-2xl p-6 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4"
+              data-testid="pdp-signin-prompt"
+            >
+              <div>
+                <h3 className="font-semibold tracking-tight">
+                  Want to write a review?
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Sign in with your PennPaps account to leave one.
+                </p>
+              </div>
+              <Link
+                href={`/sign-in?redirect=/shop/p/${encodeURIComponent(productId)}`}
+                className="sm:ml-auto"
+              >
+                <Button variant="outline">Sign in to review</Button>
+              </Link>
+            </div>
+          }
+        >
+          {mineLoaded ? (
+            mine ? (
+              <MyReviewPanel
+                productId={productId}
+                review={mine}
+                onChange={onMineChange}
+              />
+            ) : (
+              <WriteReviewForm
+                productId={productId}
+                onSubmitted={(r) => onMineChange(r)}
+              />
+            )
+          ) : (
+            <div className="text-sm text-muted-foreground py-4 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading your
+              review status…
+            </div>
+          )}
+        </Show>
+      </div>
+      <ReviewList items={reviews.items} />
+      {reviews.nextCursor && (
+        <div className="mt-6 text-center">
+          <Button
+            variant="outline"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            data-testid="pdp-reviews-load-more"
+          >
+            {loadingMore ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : null}
+            Show more reviews
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AggregateBlock({
+  aggregate,
+}: {
+  aggregate: ReviewListResponse["aggregate"];
+}) {
+  if (aggregate.count === 0) {
+    return (
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="pdp-reviews-empty"
+      >
+        No reviews yet — be the first to share how this works for you.
+      </p>
+    );
+  }
+  // Distribution bars (5★ → 1★ from top to bottom). Each bar's width
+  // is its share of the total approved reviews.
+  const total = aggregate.count;
+  const rows: Array<{ star: 1 | 2 | 3 | 4 | 5; n: number }> = [
+    { star: 5, n: aggregate.distribution["5"] ?? 0 },
+    { star: 4, n: aggregate.distribution["4"] ?? 0 },
+    { star: 3, n: aggregate.distribution["3"] ?? 0 },
+    { star: 2, n: aggregate.distribution["2"] ?? 0 },
+    { star: 1, n: aggregate.distribution["1"] ?? 0 },
+  ];
+  return (
+    <div
+      className="grid grid-cols-1 md:grid-cols-[auto,1fr] gap-8 items-start glass-card rounded-2xl p-6 md:p-8"
+      data-testid="pdp-reviews-aggregate"
+    >
+      <div className="text-center md:text-left">
+        <div className="text-5xl font-bold text-[hsl(var(--penn-navy))]">
+          {aggregate.averageRating.toFixed(1)}
+        </div>
+        <StarRating
+          value={aggregate.averageRating}
+          size="lg"
+          hideCount
+          className="mt-2"
+        />
+        <p className="text-sm text-muted-foreground mt-2">
+          {aggregate.count} {aggregate.count === 1 ? "review" : "reviews"}
+        </p>
+      </div>
+      <div className="space-y-2">
+        {rows.map((r) => {
+          const pct = total === 0 ? 0 : (r.n / total) * 100;
+          return (
+            <div key={r.star} className="flex items-center gap-3 text-sm">
+              <span className="w-8 text-muted-foreground tabular-nums">
+                {r.star}★
+              </span>
+              <div className="flex-1 h-2 rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className="h-full bg-[hsl(var(--penn-gold))] rounded-full"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="w-8 text-right text-muted-foreground tabular-nums">
+                {r.n}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReviewList({ items }: { items: ReviewItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="mt-8 space-y-5" data-testid="pdp-reviews-list">
+      {items.map((r) => (
+        <li
+          key={r.id}
+          className="glass-card rounded-2xl p-5 md:p-6"
+          data-testid={`pdp-review-${r.id}`}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <StarRating value={r.rating} size="sm" hideCount />
+              {r.title && (
+                <h3 className="font-semibold tracking-tight mt-2">
+                  {r.title}
+                </h3>
+              )}
+            </div>
+            <div className="text-right text-xs text-muted-foreground shrink-0">
+              <div className="font-medium text-foreground/80">
+                {r.authorDisplayName}
+              </div>
+              {/*
+                Verified-purchaser pill. Server flag — the client never
+                computes it. Soft-gold to match the existing brand
+                affordances (cart count, gold underline) and stays
+                small so it doesn't compete with the star rating.
+              */}
+              {r.verifiedPurchaser && (
+                <Badge
+                  variant="outline"
+                  className="mt-1 border-[hsl(var(--penn-gold))]/60 bg-[hsl(var(--penn-gold))]/10 text-[hsl(var(--penn-navy))] font-semibold text-[10px] tracking-wide"
+                  data-testid={`pdp-review-verified-${r.id}`}
+                >
+                  Verified purchaser
+                </Badge>
+              )}
+              <time dateTime={r.createdAt} className="block mt-1">
+                {new Date(r.createdAt).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </time>
+            </div>
+          </div>
+          <p className="text-sm text-foreground/85 leading-relaxed mt-3 whitespace-pre-wrap">
+            {r.body}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MyReviewPanel({
+  productId,
+  review,
+  onChange,
+}: {
+  productId: string;
+  review: MyReview;
+  onChange: (next: MyReview | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  if (editing) {
+    return (
+      <WriteReviewForm
+        productId={productId}
+        initial={review}
+        onCancel={() => setEditing(false)}
+        onSubmitted={(updated) => {
+          setEditing(false);
+          onChange(updated);
+        }}
+      />
+    );
+  }
+
+  const handleDelete = async () => {
+    if (!window.confirm("Delete your review? This can't be undone.")) return;
+    setDeleting(true);
+    try {
+      await deleteMyReview(productId);
+      onChange(null);
+    } catch {
+      setDeleting(false);
+      window.alert("Couldn't delete your review. Please try again.");
+    }
+  };
+
+  return (
+    <div
+      className="glass-card rounded-2xl p-6 mb-8 border-l-4 border-l-[hsl(var(--penn-gold))]"
+      data-testid="pdp-my-review-panel"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase font-semibold tracking-wider text-[hsl(var(--penn-navy))]/70">
+            Your review
+          </p>
+          <div className="mt-1 flex items-center gap-3">
+            <StarRating value={review.rating} size="md" hideCount />
+            <ReviewStatusBadge status={review.status} />
+          </div>
+          {review.status === "pending" && (
+            <p
+              className="mt-2 text-xs text-[hsl(var(--penn-navy))]/75 leading-relaxed max-w-md"
+              data-testid="pdp-my-review-pending-hint"
+            >
+              Awaiting moderation — usually within one business day.
+              You can still edit or delete it until it's approved, and
+              your changes will be re-reviewed.
+            </p>
+          )}
+          {review.title && (
+            <h3 className="font-semibold tracking-tight mt-3">
+              {review.title}
+            </h3>
+          )}
+          <p className="text-sm text-foreground/85 leading-relaxed mt-2 whitespace-pre-wrap">
+            {review.body}
+          </p>
+          {review.status === "rejected" && review.moderationNote && (
+            <p
+              className="mt-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3"
+              data-testid="pdp-my-review-mod-note"
+            >
+              <span className="font-semibold">Moderator note:</span>{" "}
+              {review.moderationNote}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditing(true)}
+            data-testid="pdp-my-review-edit"
+          >
+            <Pencil className="w-3.5 h-3.5 mr-1.5" />
+            {review.status === "rejected" ? "Edit & resubmit" : "Edit"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDelete}
+            disabled={deleting}
+            data-testid="pdp-my-review-delete"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+            Delete
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewStatusBadge({
+  status,
+}: {
+  status: "pending" | "approved" | "rejected";
+}) {
+  if (status === "approved") {
+    return (
+      <Badge
+        className="bg-emerald-50 text-emerald-700 border-emerald-200"
+        variant="outline"
+      >
+        Live
+      </Badge>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <Badge
+        className="bg-rose-50 text-rose-700 border-rose-200"
+        variant="outline"
+      >
+        Not approved
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      className="bg-[hsl(var(--penn-gold))]/15 text-[hsl(var(--penn-navy))] border-[hsl(var(--penn-gold))]/40"
+      variant="outline"
+      data-testid="pdp-my-review-pending-badge"
+    >
+      Pending approval
+    </Badge>
+  );
+}
+
+function WriteReviewForm({
+  productId,
+  initial,
+  onSubmitted,
+  onCancel,
+}: {
+  productId: string;
+  initial?: MyReview;
+  onSubmitted: (review: MyReview) => void;
+  onCancel?: () => void;
+}) {
+  const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(
+    initial?.rating ?? 5,
+  );
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [body, setBody] = useState(initial?.body ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmedBodyLen = body.trim().length;
+  const canSubmit =
+    !submitting && trimmedBodyLen >= BODY_MIN && trimmedBodyLen <= BODY_MAX;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    const payload = {
+      rating,
+      title: title.trim() ? title.trim() : null,
+      body: body.trim(),
+    };
+    try {
+      if (initial) {
+        const updated = await updateMyReview(productId, payload);
+        onSubmitted(updated);
+        return;
+      }
+      const result = await submitReview(productId, payload);
+      if (result.ok) {
+        onSubmitted(result.review);
+        return;
+      }
+      if (result.ok === false && "alreadyReviewed" in result) {
+        // Race: someone (the same user in another tab) already created
+        // a review since the page mounted. Refetch to swap into the
+        // edit panel.
+        const mine = await fetchMyReview(productId);
+        if (mine) onSubmitted(mine);
+        return;
+      }
+      setError(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="glass-card rounded-2xl p-6 mb-8"
+      data-testid="pdp-write-review-form"
+    >
+      <h3 className="font-semibold tracking-tight">
+        {initial ? "Edit your review" : "Write a review"}
+      </h3>
+      <p className="text-xs text-muted-foreground mt-1">
+        {initial
+          ? "Edits go back through moderation before they show publicly."
+          : "Reviews are moderated before they appear on the public shop."}
+      </p>
+      <div className="mt-4">
+        <label className="block text-sm font-medium mb-2">Your rating</label>
+        <StarRating
+          value={rating}
+          interactive
+          onChange={setRating}
+          size="lg"
+          hideCount
+          testId="pdp-form-rating"
+        />
+      </div>
+      <div className="mt-4">
+        <label className="block text-sm font-medium mb-2" htmlFor="rev-title">
+          Title <span className="text-muted-foreground">(optional)</span>
+        </label>
+        <Input
+          id="rev-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={100}
+          placeholder="e.g. Great seal, comfortable strap"
+          data-testid="pdp-form-title"
+        />
+      </div>
+      <div className="mt-4">
+        <label className="block text-sm font-medium mb-2" htmlFor="rev-body">
+          Your review
+        </label>
+        <Textarea
+          id="rev-body"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          maxLength={BODY_MAX}
+          rows={6}
+          placeholder="Share your honest experience — what you liked, what could be better, who you'd recommend it for."
+          data-testid="pdp-form-body"
+        />
+        <div className="text-xs text-muted-foreground mt-1 flex items-center justify-between">
+          <span>
+            {trimmedBodyLen < BODY_MIN
+              ? `${BODY_MIN - trimmedBodyLen} more character${BODY_MIN - trimmedBodyLen === 1 ? "" : "s"} needed`
+              : "Looks good."}
+          </span>
+          <span>
+            {trimmedBodyLen} / {BODY_MAX}
+          </span>
+        </div>
+      </div>
+      {error && (
+        <p
+          className="mt-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
+      <div className="mt-5 flex flex-wrap gap-3">
+        <Button
+          type="submit"
+          disabled={!canSubmit}
+          data-testid="pdp-form-submit"
+        >
+          {submitting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : null}
+          {initial ? "Save changes" : "Submit review"}
+        </Button>
+        {onCancel && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={submitting}
+            data-testid="pdp-form-cancel"
+          >
+            Cancel
+          </Button>
+        )}
+      </div>
+    </form>
+  );
+}
+
+// Suppress unused-import warning for memo helper — kept for parity
+// with surrounding shop pages that use it. Remove on next refactor.
+void useMemo;

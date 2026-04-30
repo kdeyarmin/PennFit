@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ClerkProvider } from "@clerk/react";
@@ -6,25 +6,141 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
+
+// Eagerly imported pages — small, public, and likely entry points.
+// Splitting them out of the initial chunk would only add latency to
+// first paint without meaningful payload savings.
 import { Home } from "@/pages/home";
-import { Consent } from "@/pages/consent";
-import { Capture } from "@/pages/capture";
-import { Measure } from "@/pages/measure";
-import { Questionnaire } from "@/pages/questionnaire";
-import { Results } from "@/pages/results";
-import { Order } from "@/pages/order";
-import { OrderSuccess } from "@/pages/order-success";
+import { Shop } from "@/pages/shop";
 import { Masks } from "@/pages/masks";
-import { Privacy } from "@/pages/privacy";
 import { HowItWorks } from "@/pages/how-it-works";
-import { SignInPage } from "@/pages/sign-in";
-import { SignUpPage } from "@/pages/sign-up";
-import { AdminShell } from "@/pages/admin/admin-shell";
-import { AdminDashboard } from "@/pages/admin/dashboard";
-import { AdminOrders } from "@/pages/admin/orders";
-import { AdminOrderDetail } from "@/pages/admin/order-detail";
-import { AdminAuditLog } from "@/pages/admin/audit";
+import { Faq } from "@/pages/faq";
+import { Learn } from "@/pages/learn";
+import { Privacy } from "@/pages/privacy";
+import { Terms } from "@/pages/terms";
+import { Insurance } from "@/pages/insurance";
+
+// Lazy-loaded pages. Each is its own webpack/Rollup chunk so the
+// heavy dependencies they pull in (e.g. @mediapipe/tasks-vision in
+// /measure, the admin tables in /admin) don't bloat the initial
+// patient-shop bundle. The catch-all <Suspense> below shows a tiny
+// loading shim while the chunk is in flight.
+//
+// The named-export -> default-export adapter is needed because each
+// page file uses a named export and React.lazy expects a module with
+// a default export.
+const Consent = lazy(() =>
+  import("@/pages/consent").then((m) => ({ default: m.Consent })),
+);
+const Capture = lazy(() =>
+  import("@/pages/capture").then((m) => ({ default: m.Capture })),
+);
+const Measure = lazy(() =>
+  import("@/pages/measure").then((m) => ({ default: m.Measure })),
+);
+const Questionnaire = lazy(() =>
+  import("@/pages/questionnaire").then((m) => ({ default: m.Questionnaire })),
+);
+const Results = lazy(() =>
+  import("@/pages/results").then((m) => ({ default: m.Results })),
+);
+const Order = lazy(() =>
+  import("@/pages/order").then((m) => ({ default: m.Order })),
+);
+const OrderSuccess = lazy(() =>
+  import("@/pages/order-success").then((m) => ({ default: m.OrderSuccess })),
+);
+const ReplacementSchedule = lazy(() =>
+  import("@/pages/replacement-schedule").then((m) => ({
+    default: m.ReplacementSchedule,
+  })),
+);
+const DeviceSetup = lazy(() =>
+  import("@/pages/device-setup").then((m) => ({ default: m.DeviceSetup })),
+);
+const ShopCart = lazy(() =>
+  import("@/pages/shop-cart").then((m) => ({ default: m.ShopCart })),
+);
+const ShopProductDetail = lazy(() =>
+  import("@/pages/shop-product-detail").then((m) => ({
+    default: m.ShopProductDetail,
+  })),
+);
+const ShopCheckoutSuccess = lazy(() =>
+  import("@/pages/shop-checkout-success").then((m) => ({
+    default: m.ShopCheckoutSuccess,
+  })),
+);
+const ShopCheckoutCancel = lazy(() =>
+  import("@/pages/shop-checkout-cancel").then((m) => ({
+    default: m.ShopCheckoutCancel,
+  })),
+);
+const ShopOrders = lazy(() =>
+  import("@/pages/shop-orders").then((m) => ({ default: m.ShopOrders })),
+);
+const AccountPage = lazy(() =>
+  import("@/pages/account").then((m) => ({ default: m.AccountPage })),
+);
+const SignInPage = lazy(() =>
+  import("@/pages/sign-in").then((m) => ({ default: m.SignInPage })),
+);
+const SignUpPage = lazy(() =>
+  import("@/pages/sign-up").then((m) => ({ default: m.SignUpPage })),
+);
+const AdminShell = lazy(() =>
+  import("@/pages/admin/admin-shell").then((m) => ({ default: m.AdminShell })),
+);
+const AdminDashboard = lazy(() =>
+  import("@/pages/admin/dashboard").then((m) => ({
+    default: m.AdminDashboard,
+  })),
+);
+const AdminOrders = lazy(() =>
+  import("@/pages/admin/orders").then((m) => ({ default: m.AdminOrders })),
+);
+const AdminOrderDetail = lazy(() =>
+  import("@/pages/admin/order-detail").then((m) => ({
+    default: m.AdminOrderDetail,
+  })),
+);
+const AdminAuditLog = lazy(() =>
+  import("@/pages/admin/audit").then((m) => ({ default: m.AdminAuditLog })),
+);
+const AdminReminders = lazy(() =>
+  import("@/pages/admin/reminders").then((m) => ({
+    default: m.AdminReminders,
+  })),
+);
+const Reminders = lazy(() =>
+  import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
+);
+const RemindersManage = lazy(() =>
+  import("@/pages/reminders-manage").then((m) => ({
+    default: m.RemindersManage,
+  })),
+);
+
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
+
+/**
+ * Suspense fallback for lazy-loaded routes. Intentionally minimal
+ * (matches the page-load skeleton tone) so a slow-network chunk
+ * load doesn't flash a heavy spinner above the fold.
+ */
+function RouteFallback() {
+  return (
+    <div
+      className="flex flex-1 items-center justify-center min-h-[40vh]"
+      role="status"
+      aria-label="Loading page"
+    >
+      <div className="h-8 w-8 rounded-full border-2 border-[hsl(var(--penn-navy))]/20 border-t-[hsl(var(--penn-navy))] animate-spin" />
+    </div>
+  );
+}
 
 const queryClient = new QueryClient();
 
@@ -103,23 +219,56 @@ function GuardedOrderSuccess() {
 function PatientRouter() {
   return (
     <Layout>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/consent" component={Consent} />
-        <Route path="/capture" component={Capture} />
-        <Route path="/masks" component={Masks} />
-        <Route path="/how-it-works" component={HowItWorks} />
-        <Route path="/privacy" component={Privacy} />
+      {/*
+        Render-nothing component that mirrors a signed-in user's cart
+        to the server (debounced, best-effort) so the cart-abandonment
+        nudge dispatcher has something to scan. Mounted here so it runs
+        on every patient page where the cart can change. No-op for
+        signed-out visitors.
+      */}
+      <CartSnapshotSync />
+      {/*
+        Single Suspense boundary above the Switch. Wouter swaps the
+        active <Route>'s component on navigation; if the new component
+        is lazy and not yet loaded, React suspends and we render the
+        fallback in place of the page content (header/footer stay).
+      */}
+      <Suspense fallback={<RouteFallback />}>
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/consent" component={Consent} />
+          <Route path="/capture" component={Capture} />
+          <Route path="/masks" component={Masks} />
+          <Route path="/how-it-works" component={HowItWorks} />
+          <Route path="/faq" component={Faq} />
+          <Route path="/learn" component={Learn} />
+          <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
+          <Route path="/learn/device-setup" component={DeviceSetup} />
+          <Route path="/insurance" component={Insurance} />
+          <Route path="/shop" component={Shop} />
+          <Route path="/shop/p/:productId">
+            {(params) => <ShopProductDetail productId={params.productId} />}
+          </Route>
+          <Route path="/shop/cart" component={ShopCart} />
+          <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
+          <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
+          <Route path="/shop/orders" component={ShopOrders} />
+          <Route path="/account" component={AccountPage} />
+          <Route path="/reminders" component={Reminders} />
+          <Route path="/reminders/manage" component={RemindersManage} />
+          <Route path="/privacy" component={Privacy} />
+          <Route path="/terms" component={Terms} />
 
-        {/* Guarded routes — see GuardedXxx components above. */}
-        <Route path="/measure" component={GuardedMeasure} />
-        <Route path="/questionnaire" component={GuardedQuestionnaire} />
-        <Route path="/results" component={GuardedResults} />
-        <Route path="/order" component={GuardedOrder} />
-        <Route path="/order-success" component={GuardedOrderSuccess} />
+          {/* Guarded routes — see GuardedXxx components above. */}
+          <Route path="/measure" component={GuardedMeasure} />
+          <Route path="/questionnaire" component={GuardedQuestionnaire} />
+          <Route path="/results" component={GuardedResults} />
+          <Route path="/order" component={GuardedOrder} />
+          <Route path="/order-success" component={GuardedOrderSuccess} />
 
-        <Route component={NotFound} />
-      </Switch>
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </Layout>
   );
 }
@@ -136,36 +285,49 @@ function PatientRouter() {
  */
 function TopRouter() {
   return (
-    <Switch>
-      <Route path="/sign-in" component={SignInPage} />
-      <Route path="/sign-in/:rest*" component={SignInPage} />
-      <Route path="/sign-up" component={SignUpPage} />
-      <Route path="/sign-up/:rest*" component={SignUpPage} />
+    /*
+      Top-level Suspense for sign-in/sign-up/admin chunks. Patient
+      pages have their own Suspense inside <PatientRouter>; this one
+      catches the chunk loads for routes that render outside the
+      patient <Layout> chrome.
+    */
+    <Suspense fallback={<RouteFallback />}>
+      <Switch>
+        <Route path="/sign-in" component={SignInPage} />
+        <Route path="/sign-in/:rest*" component={SignInPage} />
+        <Route path="/sign-up" component={SignUpPage} />
+        <Route path="/sign-up/:rest*" component={SignUpPage} />
 
-      <Route path="/admin">
-        <AdminShell>
-          <AdminDashboard />
-        </AdminShell>
-      </Route>
-      <Route path="/admin/orders">
-        <AdminShell>
-          <AdminOrders />
-        </AdminShell>
-      </Route>
-      <Route path="/admin/orders/:id">
-        <AdminShell>
-          <AdminOrderDetail />
-        </AdminShell>
-      </Route>
-      <Route path="/admin/audit">
-        <AdminShell>
-          <AdminAuditLog />
-        </AdminShell>
-      </Route>
+        <Route path="/admin">
+          <AdminShell>
+            <AdminDashboard />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/orders">
+          <AdminShell>
+            <AdminOrders />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/orders/:id">
+          <AdminShell>
+            <AdminOrderDetail />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/audit">
+          <AdminShell>
+            <AdminAuditLog />
+          </AdminShell>
+        </Route>
+        <Route path="/admin/reminders">
+          <AdminShell>
+            <AdminReminders />
+          </AdminShell>
+        </Route>
 
-      {/* Everything else falls through to the patient experience. */}
-      <Route component={PatientRouter} />
-    </Switch>
+        {/* Everything else falls through to the patient experience. */}
+        <Route component={PatientRouter} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -177,10 +339,35 @@ function App() {
       publishableKey={CLERK_PUBLISHABLE_KEY!}
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
-      signInFallbackRedirectUrl={`${basePath}/admin`}
-      signUpFallbackRedirectUrl={`${basePath}/admin`}
+      // Fallback only — used when no explicit ?redirect_url= is given.
+      // Shop customers are the dominant audience here; admin links
+      // already supply their own redirect, so defaulting unauthenticated
+      // visitors to /account is correct (admins land in /admin via the
+      // admin-link redirect_url, while shoppers don't get dumped into a
+      // 403'd /admin shell after signing in to view their orders).
+      signInFallbackRedirectUrl={`${basePath}/account`}
+      signUpFallbackRedirectUrl={`${basePath}/account`}
+      localization={{
+        // Override Clerk's "{{applicationName}}" interpolation so the
+        // hosted sign-in / sign-up cards display our real brand name
+        // instead of whatever is set in the Clerk dashboard. Updating the
+        // dashboard is the canonical fix (and would also affect emails),
+        // but this guarantees the in-app text is always on-brand.
+        signIn: {
+          start: {
+            title: "Sign in to Penn Home Medical Supply",
+            subtitle: "Welcome back! Please sign in to continue",
+          },
+        },
+        signUp: {
+          start: {
+            title: "Create your Penn Home Medical Supply account",
+            subtitle: "Welcome! Please fill in the details to get started.",
+          },
+        },
+      }}
       appearance={{
-        // Penn brand: navy primary + gold accent. The CSS @layer order in
+        // PennPaps brand: navy primary + gold accent. The CSS @layer order in
         // index.css ensures Tailwind's utilities don't clobber Clerk's
         // internal styles.
         variables: {
@@ -201,9 +388,19 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <FitterProvider>
-            <WouterRouter base={basePath}>
-              <TopRouter />
-            </WouterRouter>
+            {/*
+              ErrorBoundary wraps the router so any thrown render error in a
+              page falls back to a recoverable on-brand screen instead of a
+              blank white page. Sits inside ClerkProvider/QueryClient so the
+              fallback can still navigate (the <a href="/"> in the fallback
+              triggers a real reload, which is intentional — it gives the
+              shop a clean React tree on recovery).
+            */}
+            <ErrorBoundary>
+              <WouterRouter base={basePath}>
+                <TopRouter />
+              </WouterRouter>
+            </ErrorBoundary>
             <Toaster />
           </FitterProvider>
         </TooltipProvider>

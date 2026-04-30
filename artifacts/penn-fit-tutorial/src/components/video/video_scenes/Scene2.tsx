@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Camera, ScanFace, Ruler } from 'lucide-react';
 
 // Use the home-page screenshot — it's the actual entry point patients see when
-// they open Penn Fit (Step 1 of this scene's narrative). The cpap-fitter capture
+// they open PennPaps (Step 1 of this scene's narrative). The cpap-fitter capture
 // page itself can't be screenshotted in headless because it requires a working
 // camera permission.
 const homeScreenshot = `${import.meta.env.BASE_URL}screenshots/home-mobile.jpg`;
@@ -27,7 +27,7 @@ export function Scene2() {
   }, []);
 
   const steps = [
-    { Icon: Camera, num: 1, text: 'Open Penn Fit and tap Start Fitting Process.' },
+    { Icon: Camera, num: 1, text: 'Open PennPaps and tap Start Fitting Process.' },
     { Icon: ScanFace, num: 2, text: 'Frame your face inside the oval — a 3-second timer takes the photo.' },
     { Icon: Ruler, num: 3, text: 'On-device AI extracts 5 facial measurements in millimeters.' },
   ];
@@ -67,7 +67,7 @@ export function Scene2() {
             <div className="relative overflow-hidden rounded-[2rem] lg:rounded-[2.5rem] bg-white w-[120px] sm:w-[200px] lg:w-[260px] aspect-[390/844]">
               <img
                 src={homeScreenshot}
-                alt="Penn Fit home screen"
+                alt="PennPaps home screen"
                 className="absolute inset-0 w-full h-full object-cover object-top"
                 draggable={false}
               />

@@ -3,6 +3,44 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+/*
+ * Self-hosted Inter (rsms/inter v4, SIL Open Font License). Hosting the
+ * font files locally — instead of pulling from fonts.googleapis.com —
+ * keeps the storefront fully same-origin (matching the privacy posture
+ * we already enforce in the page CSP) and avoids a third-party network
+ * call on first paint. `font-display: swap` mirrors what the prior
+ * Google Fonts URL did, so initial render still uses the system fallback
+ * stack instead of blocking on the woff2 download.
+ */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Inter-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/Inter-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/Inter-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/Inter-Bold.woff2") format("woff2");
+}
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -72,7 +110,7 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 210 30% 98%;
+  --background: 210 25% 99%;
   --foreground: 213 45% 15%;
   --card: 0 0% 100%;
   --card-foreground: 222.2 84% 4.9%;
@@ -166,53 +204,77 @@
   body {
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
-    /* Layered ambient atmosphere — editorial, high-end, with real depth.
-       Order, from back to front:
-         1. Soft cool plinth at the bottom (cool atmospheric haze).
-         2. Warm gold "sun" concentrated top-right (the headline accent).
-         3. Wide gold sunrise glow that washes top-right area.
-         4. Top-left navy bloom (anchors the heading).
-         5. Mid-right deep navy depth bloom.
-         6. Bottom navy plinth (grounds the page).
-         7. Lower-left soft gold whisper (warmth balance).
-         8. Diagonal sheen — a faint angular highlight band that gives
-            the surface a sense of being a polished material rather than
-            flat paper. Last so it sits on top of the color blooms.
-       All blobs use large radii + carefully tuned alpha so they fuse
-       into a continuous wash instead of reading as discrete circles. */
+    /* Cutting-edge premium atmosphere — pulled back to whisper-quiet.
+       The page reads as a clean off-white sheet with two faint brand
+       aurorae tucked into opposite corners (well outside the reading
+       column) and a soft cool plinth grounding the very bottom. The
+       brand should announce itself in interactions (buttons, hover
+       states, accents) — not in giant atmospheric color washes that
+       fight content for attention.
+
+       Order back-to-front:
+         1. Top-right: warm gold aurora (10% opacity, in the corner).
+         2. Bottom-left: cool navy aurora (8% opacity, in the corner).
+         3. Bottom plinth: faint mist anchors the page floor.
+
+       The whole stack still breathes via `body-bloom-drift` (90s now,
+       slower than before — feels more sophisticated than the 60s
+       cadence), so the surface remains alive without distracting. */
     background-image:
-      radial-gradient(ellipse 90% 50% at 50% 110%, hsl(var(--penn-mist) / 0.55), transparent 70%),
-      radial-gradient(circle 30% at 92% -2%, hsl(var(--penn-gold) / 0.32), transparent 65%),
-      radial-gradient(ellipse 75% 55% at 100% -5%, hsl(var(--penn-gold) / 0.20), transparent 60%),
-      radial-gradient(ellipse 95% 65% at 8% -12%, hsl(var(--penn-navy) / 0.20), transparent 65%),
-      radial-gradient(ellipse 55% 45% at 115% 45%, hsl(var(--penn-navy) / 0.10), transparent 60%),
-      radial-gradient(ellipse 70% 55% at 50% 118%, hsl(var(--penn-navy) / 0.16), transparent 62%),
-      radial-gradient(ellipse 50% 40% at -5% 95%, hsl(var(--penn-gold) / 0.12), transparent 65%),
-      linear-gradient(125deg, transparent 35%, hsl(var(--penn-gold) / 0.05) 50%, transparent 65%);
+      radial-gradient(ellipse 55% 45% at 95% 5%, hsl(var(--penn-gold) / 0.10), transparent 70%),
+      radial-gradient(ellipse 55% 45% at 5% 95%, hsl(var(--penn-navy) / 0.08), transparent 70%),
+      radial-gradient(ellipse 100% 40% at 50% 110%, hsl(var(--penn-mist) / 0.55), transparent 70%);
     background-attachment: fixed;
+    background-size: 110% 110%;
+    animation: body-bloom-drift 90s ease-in-out infinite alternate;
   }
 
-  /* Dot grid overlay — anchored to the viewport so it never tiles weirdly.
-     Slightly more present than before so the page reads as a designed
-     surface, not a flat color. Still masked into a center bloom so it
-     fades softly at the edges. */
+  /* Slow ambient drift on the body mesh blooms — same character as the
+     <TechBackdrop> blob animation, just much gentler. 60s alternate
+     means a one-minute breath in each direction; you don't notice it
+     when reading, you only notice that the page feels alive. */
+  @keyframes body-bloom-drift {
+    0% {
+      background-position: 0% 0%;
+    }
+    100% {
+      background-position: 100% 100%;
+    }
+  }
+
+  /* Dot grid overlay — visible enough to read as a designed surface,
+     feathered at the edges via mask so it doesn't fight the corner
+     blooms. The grid itself drifts on the same cadence as the
+     <TechBackdrop>'s perspective grid (28px / 48s) so the two layers
+     share one motion language site-wide. */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.11) 1px, transparent 0);
-    background-size: 28px 28px;
-    mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
-    -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
-    opacity: 0.6;
+    /* Whisper-quiet grid: half a percent navy per dot, feathered
+       aggressively at the edges so it disappears entirely behind any
+       content card. You should sense the texture, not see the dots. */
+    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.07) 1px, transparent 0);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, black 10%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, black 10%, transparent 75%);
+    opacity: 0.55;
+    animation: body-grid-drift 72s linear infinite;
   }
 
-  /* Premium grain — a hair of texture so the page never reads as flat
-     digital gradient. Very low opacity SVG noise, viewport-fixed so it
-     doesn't tile-shift on scroll. Keeps the surface feeling tactile,
-     like premium printed material. */
+  @keyframes body-grid-drift {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 32px 32px;
+    }
+  }
+
+  /* Whisper grain — keep just enough to break up flat digital
+     gradients (matte-paper feel) without competing with content. */
   body::after {
     content: "";
     position: fixed;
@@ -221,7 +283,7 @@
     z-index: 0;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.18  0 0 0 0 0.30  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
     background-size: 240px 240px;
-    opacity: 0.06;
+    opacity: 0.04;
     mix-blend-mode: multiply;
   }
 

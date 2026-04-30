@@ -1,0 +1,35 @@
+-- Snapshot the shipping address used for THIS order onto shop_orders
+-- (Admin Phase 4 / W3 T-C7).
+--
+-- Why a per-order snapshot rather than just reading shop_customers.shipping_address:
+--   shop_customers stores the customer's CURRENT default address.
+--   A customer can move between orders; for support, returns, and
+--   tracking-page rendering the address-of-record for an individual
+--   shipment must be preserved alongside the order itself, never
+--   re-derived from a column that may have changed since.
+--
+-- How this column is populated:
+--   1. At checkout.session.completed the webhook reads
+--      session.collected_information.shipping_details and writes
+--      it here in the same transaction that flips status='paid'.
+--   2. While shipped_at IS NULL the customer can edit it via
+--      POST /shop/me/orders/:id/shipping-address. After shipped_at
+--      is set the column becomes read-only (the API returns 409).
+--   3. Admins can also overwrite via the admin endpoint (e.g. a
+--      support call where the customer reads back a corrected
+--      address).
+--
+-- Shape: jsonb matching SavedShippingAddress in
+-- lib/resupply-db/src/schema/shop-customers.ts so the existing
+-- Zod validator + UI form can be reused without duplication.
+--
+-- Pure additive change — nullable, no default, no backfill. Existing
+-- paid orders simply lack a snapshot until they're shipped (admins
+-- reading those rows fall back to shop_customers for the address).
+--
+-- Per ADR 003 — versioned hand-authored migration; this codebase
+-- does not use db:push because db:push silently rewrites columns
+-- once PHI lands.
+
+ALTER TABLE "resupply"."shop_orders"
+  ADD COLUMN IF NOT EXISTS "shipping_address_json" jsonb;

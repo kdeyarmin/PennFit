@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Camera, AlertCircle, RefreshCw, Eye, Sun, ScanFace } from "lucide-react";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { track } from "@/lib/track";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function Capture() {
+  useDocumentTitle("Take a photo");
   const [, setLocation] = useLocation();
   const { setCapturedImage } = useFitterStore();
   useEffect(() => {
@@ -119,18 +121,89 @@ export function Capture() {
   }, [countdown]);
 
   if (hasPermission === false || error) {
+    // Browser-specific instructions for re-enabling the camera. We
+    // detect via UA — coarse but right for the common cases (iOS
+    // Safari, Android Chrome, desktop Chrome / Safari / Firefox).
+    // Worst case: we fall through to the generic "address-bar lock
+    // icon" advice, which is right on every desktop browser. We never
+    // block the user — even with no camera at all, the rest of the
+    // shop is fully usable, so we always surface that escape hatch.
+    const ua =
+      typeof navigator !== "undefined" ? navigator.userAgent.toLowerCase() : "";
+    const isIos = /iphone|ipad|ipod/.test(ua);
+    const isAndroid = /android/.test(ua);
+    const isFirefox = /firefox/.test(ua);
+    let howTo: string;
+    if (isIos) {
+      howTo =
+        "On iPhone or iPad: open Settings → Safari → Camera and pick \"Allow\" for this site, then come back and tap Try again.";
+    } else if (isAndroid) {
+      howTo =
+        "On Android: tap the lock icon to the left of the address bar → Permissions → Camera → Allow, then tap Try again.";
+    } else if (isFirefox) {
+      howTo =
+        "In Firefox: click the camera icon in the address bar (or Settings → Privacy & Security → Permissions → Camera) and grant access for this site, then tap Try again.";
+    } else {
+      howTo =
+        "Click the lock or camera icon to the left of the address bar, set Camera to \"Allow\" for this site, refresh, then tap Try again.";
+    }
+    const isPermissionDenied = /denied|notallowederror/i.test(error ?? "");
+    const isNoDevice = /no camera/i.test(error ?? "");
     return (
-      <div className="container max-w-2xl mx-auto px-4 py-16 animate-shimmer-in">
-        <Alert variant="destructive" className="mb-6 glass-card border-destructive/30">
+      <div className="container max-w-2xl mx-auto px-4 py-16 animate-shimmer-in space-y-6">
+        <Alert
+          variant="destructive"
+          className="glass-card border-destructive/30"
+          data-testid="capture-camera-error"
+        >
           <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Camera Access Required</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertTitle>
+            {isPermissionDenied
+              ? "Camera permission was blocked"
+              : isNoDevice
+                ? "We couldn't find a camera on this device"
+                : "Camera access required"}
+          </AlertTitle>
+          <AlertDescription className="space-y-3">
+            <p>{error}</p>
+            {isPermissionDenied && (
+              <p
+                className="text-xs leading-relaxed bg-white/40 border border-destructive/20 rounded-lg p-2.5"
+                data-testid="capture-camera-howto"
+              >
+                {howTo}
+              </p>
+            )}
+          </AlertDescription>
         </Alert>
-        <div className="flex justify-center">
-          <Button onClick={startCamera} className="gap-2 rounded-full btn-primary-glow px-6">
-            <RefreshCw className="h-4 w-4" /> Try Again
-          </Button>
+
+        <div className="flex flex-wrap gap-3 justify-center">
+          {!isNoDevice && (
+            <Button
+              onClick={startCamera}
+              className="gap-2 rounded-full btn-primary-glow px-6"
+              data-testid="capture-camera-retry"
+            >
+              <RefreshCw className="h-4 w-4" /> Try again
+            </Button>
+          )}
+          <Link href="/shop">
+            <Button
+              variant="outline"
+              className="rounded-full glass-panel border-0 px-6"
+              data-testid="capture-camera-fallback-shop"
+            >
+              Skip for now — browse the shop
+            </Button>
+          </Link>
         </div>
+
+        <p className="text-xs text-center text-muted-foreground/85 max-w-md mx-auto leading-relaxed">
+          The camera is only used to measure your face on this device.
+          Photos never leave your phone. If you'd rather not use the
+          camera, you can still browse our shop or use insurance —
+          PennPaps will help you pick a mask in person.
+        </p>
       </div>
     );
   }
@@ -153,9 +226,10 @@ export function Capture() {
           Position Your Face
         </h1>
         <p className="text-muted-foreground leading-relaxed">
-          Center your face in the oval and look straight at the camera. Penn Fit
-          uses your eye's iris (a known size) to calibrate the measurement scale —
-          no rulers or cards needed.
+          Center your face in the oval and look straight at the camera.
+          We measure off your iris — it's almost exactly the same size in
+          every adult — so you don't need a ruler or a credit card in the
+          shot. The photo never leaves your device.
         </p>
       </div>
 
@@ -178,8 +252,15 @@ export function Capture() {
         {/* Hidden canvas for extraction */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Overlay Guides */}
-        <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+        {/* Overlay Guides — purely decorative scan-frame chrome.
+            aria-hidden because screen readers should not announce the
+            empty face oval / corner-bracket divs; the actual guidance
+            lives in the visible "Quick reminders" list below + the
+            countdown live region further down. */}
+        <div
+          className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center"
+          aria-hidden="true"
+        >
           {/* Face Oval — softer, premium "scanner" feel */}
           <div className="w-3/5 md:w-2/5 aspect-[3/4] border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
 

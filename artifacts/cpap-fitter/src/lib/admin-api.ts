@@ -39,6 +39,17 @@ async function adminFetch<T>(path: string): Promise<T> {
 export interface AdminMe {
   email: string;
   clerkId: string;
+  /**
+   * Caller's effective role. `admin` has full privileges; `agent` is
+   * a junior-admin role used by customer-service staff (identical
+   * permissions today since cpap-fitter has no destructive admin
+   * routes, but exposed so the UI can render a role badge and so
+   * future destructive operations can gate cleanly without a
+   * second round-trip). Optional in the type because older API
+   * builds may not include it; consumers should default to "admin"
+   * to avoid silently downgrading real admins.
+   */
+  role?: "admin" | "agent";
 }
 export const fetchAdminMe = () => adminFetch<AdminMe>("/admin/me");
 
@@ -123,3 +134,59 @@ export const fetchAdminAuditLog = (params: { page?: number; pageSize?: number })
   if (params.pageSize) usp.set("pageSize", String(params.pageSize));
   return adminFetch<AdminAuditResponse>(`/admin/audit-log?${usp.toString()}`);
 };
+
+// ---------- Reminders ----------
+
+export interface AdminReminderItemView {
+  sku: string;
+  lastReplacedAt: string;
+  intervalDays: number;
+  nextDueAt: string;
+}
+export interface AdminReminderSubscriber {
+  id: string;
+  email: string;
+  status: "active" | "unsubscribed";
+  items: AdminReminderItemView[];
+  itemCount: number;
+  dueCount: number;
+  lastSentAt: string | null;
+  createdAt: string;
+}
+export interface AdminRemindersResponse {
+  subscribers: AdminReminderSubscriber[];
+  total: number;
+}
+export interface SendDueRemindersResponse {
+  sent: number;
+  skippedQuiet: number;
+  skippedNoneDue: number;
+  skippedNotConfigured: number;
+  failed: number;
+  errors: Array<{ id: string; error: string }>;
+  candidateCount: number;
+  sendgridConfigured: boolean;
+}
+
+export const fetchAdminReminders = () =>
+  adminFetch<AdminRemindersResponse>("/admin/reminders");
+
+/**
+ * POST helper — `adminFetch` only does GETs, so we hand-roll the POST
+ * here. Same credentials/Accept/error semantics.
+ */
+export async function sendDueReminders(): Promise<SendDueRemindersResponse> {
+  const res = await fetch(`${base}/api/admin/reminders/send-due`, {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    let body: { error?: string } | null = null;
+    try {
+      body = (await res.json()) as { error?: string };
+    } catch {}
+    throw new AdminApiError(res.status, body);
+  }
+  return (await res.json()) as SendDueRemindersResponse;
+}

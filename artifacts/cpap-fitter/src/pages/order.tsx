@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useSubmitOrder, ApiError } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -71,6 +72,7 @@ const US_STATES = [
 ];
 
 export function Order() {
+  useDocumentTitle("Confirm your order");
   const [, setLocation] = useLocation();
   // The route-level <ProtectedRoute> in App.tsx already guarantees that
   // `chosenMask` is non-null by the time Order mounts.
@@ -128,7 +130,7 @@ export function Order() {
       {
         data: {
           chosenMask,
-          // Forward the on-device measurements so Penn can verify sizing.
+          // Forward the on-device measurements so PennPaps can verify sizing.
           // Numeric only — image was discarded after the measure step.
           ...(measurements ? { measurements } : {}),
           patient: values.patient,
@@ -204,7 +206,7 @@ export function Order() {
         <div className="inline-flex items-center justify-center gap-3 mb-1">
           <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-            Penn Fit · Checkout
+            PennPaps · Checkout
           </span>
           <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
@@ -339,7 +341,7 @@ export function Order() {
                 onValueChange={(v) => setValue("shippingAddress.state", v, { shouldValidate: true })}
               >
                 <SelectTrigger data-testid="select-state">
-                  <SelectValue placeholder="--" />
+                  <SelectValue placeholder="Select state" />
                 </SelectTrigger>
                 <SelectContent>
                   {US_STATES.map((s) => (
@@ -495,14 +497,27 @@ export function Order() {
                   setValue("consentToContact", c === true, { shouldValidate: true })
                 }
               />
-              <div className="flex-1 -mt-0.5">
-                <Label htmlFor="consent" className="cursor-pointer font-normal text-sm leading-relaxed">
-                  I authorize Penn Home Medical Supply to <strong>contact me</strong> by phone, email, or SMS
-                  regarding this order, my insurance verification, and shipping updates, and to{" "}
+              <div className="flex-1 -mt-0.5 space-y-2">
+                <Label htmlFor="consent" className="cursor-pointer font-normal text-sm leading-relaxed block">
+                  I authorize Penn Home Medical Supply to <strong>contact me</strong> by phone, email, and SMS
+                  text message at the number and email above regarding this order, insurance
+                  verification, shipping updates, and ongoing CPAP resupply reminders, and to{" "}
                   <strong>store the order details I've entered above</strong> (including my contact, shipping,
-                  insurance, and prescription information) in Penn's secure system for fulfillment and
+                  insurance, and prescription information) in Penn Home Medical Supply's secure system for fulfillment and
                   recordkeeping.
                 </Label>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong>SMS terms:</strong> By providing your mobile number you consent to
+                  receive transactional text messages from Penn Home Medical Supply at that number, including via
+                  automated systems. Approximately 1–2 messages per resupply cycle (typically
+                  every 30–90 days). No marketing texts. <strong>Message and data rates may
+                  apply.</strong> Reply <strong>HELP</strong> for help, <strong>STOP</strong> to
+                  unsubscribe at any time. See our{" "}
+                  <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
+                  and{" "}
+                  <Link href="/terms" className="underline hover:text-primary">Terms of Service</Link>{" "}
+                  for full SMS program details.
+                </p>
                 {isSubmitted && errors.consentToContact && (
                   <p className="text-xs text-destructive mt-1">{errors.consentToContact.message}</p>
                 )}
@@ -517,7 +532,9 @@ export function Order() {
                 above plus the numeric facial measurements that were used to recommend your mask. Your
                 camera image and video stream were never uploaded — only the measurement numbers leave your
                 device. By submitting, you agree to our{" "}
-                <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>.
+                <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
+                and{" "}
+                <Link href="/terms" className="underline hover:text-primary">Terms of Service</Link>.
               </p>
             </div>
           </CardContent>
@@ -538,6 +555,34 @@ export function Order() {
             tabIndex={-1}
             {...register("website")}
           />
+        </div>
+
+        {/*
+          Reassurance card directly above the submit button. Insurance-
+          path orders never carry a surprise charge — the patient owes
+          $0 if the prescription + benefit verify, and Penn Home
+          Medical Supply contacts them BEFORE shipping if anything
+          would change that. Surfaces the no-surprise commitment at
+          the exact moment the patient is deciding whether to submit.
+        */}
+        <div
+          className="glass-card rounded-2xl p-5 flex items-start gap-3 border-l-4 border-l-[hsl(var(--penn-gold))]"
+          data-testid="order-no-surprise-card"
+        >
+          <ShieldCheck className="w-5 h-5 mt-0.5 shrink-0 text-[hsl(var(--penn-gold))]" />
+          <div className="text-sm leading-relaxed">
+            <p className="font-semibold text-[hsl(var(--penn-navy))]">
+              No surprise bills.
+            </p>
+            <p className="text-muted-foreground mt-0.5">
+              Submitting this form does not charge your card. Penn Home
+              Medical Supply will verify your insurance benefit and
+              prescription first, then contact you to confirm before
+              anything ships. You'll know your out-of-pocket — usually
+              <span className="font-semibold"> $0 with prescription</span> —
+              before they fulfill the order.
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-col-reverse md:flex-row md:justify-between gap-3 pt-2">
@@ -563,7 +608,7 @@ export function Order() {
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending order...
               </>
             ) : (
-              "Send Order to Penn Home Medical"
+              "Send Order to Penn Home Medical Supply"
             )}
           </Button>
         </div>

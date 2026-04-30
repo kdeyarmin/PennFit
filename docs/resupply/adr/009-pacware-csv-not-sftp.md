@@ -14,14 +14,14 @@ willing to do a daily upload-and-download workflow.
 ## Decision
 
 Pacware integration in v1 is **manual CSV file exchange**, mediated
-through the operator dashboard:
+through the admin dashboard:
 
 - **Inbound (Pacware → us):** staff exports the patient roster, insurance,
   equipment, shipment history, and supply entitlement reports from
-  Pacware's UI. They upload the CSV files into the operator dashboard's
+  Pacware's UI. They upload the CSV files into the admin dashboard's
   "Daily Pacware Import" page. The dashboard parses, validates, diffs
   against our DB, and applies the changes — surfacing rejections for
-  operator review.
+  admin review.
 - **Outbound (us → Pacware):** confirmed orders that are ready to bill
   produce a downloadable order CSV in the dashboard. Staff downloads it
   and imports it into Pacware. The download is logged to
@@ -41,9 +41,9 @@ history, and outreach state.
   cadences (Medicare allows orders no earlier than the schedule date
   anyway).
 - Operational dependency on a single staff member doing the daily SOP.
-  Backup operator must be designated.
+  Backup admin must be designated.
 - Manual = error-prone. Every import surfaces a diff and requires
-  operator confirmation before applying destructive changes (status
+  admin confirmation before applying destructive changes (status
   changes, soft deletes).
 
 ## Migration exit ramp
@@ -52,7 +52,7 @@ If Brightree opens a real API or builds an SFTP automation:
 
 1. The CSV import pipeline becomes an automated fetch on the same parser.
 2. The download-and-paste outbound becomes a push.
-3. The schema and the operator workflows do not change — only the
+3. The schema and the admin workflows do not change — only the
    transport.
 
 ## Alternatives Considered

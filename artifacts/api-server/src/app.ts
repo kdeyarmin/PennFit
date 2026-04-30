@@ -37,7 +37,15 @@ const allowedOrigins = (() => {
   if (process.env.REPLIT_DEV_DOMAIN) {
     dev.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
   }
-  dev.push("http://localhost:3000", "http://localhost:5173", "http://localhost:80");
+  // Replit's reverse proxy presents requests with `Origin: http://localhost`
+  // (no port) when the preview iframe calls us, so include the bare-host
+  // variant alongside the explicit-port forms used by direct dev servers.
+  dev.push(
+    "http://localhost",
+    "http://localhost:80",
+    "http://localhost:3000",
+    "http://localhost:5173",
+  );
   return dev;
 })();
 

@@ -41,7 +41,7 @@ export function Scene5() {
           transition={{ type: 'spring', stiffness: 150, damping: 20 }}
           style={{ transformPerspective: 1000 }}
         >
-          <img src={logoSrc} alt="Penn Home Medical Supply" className="w-36 sm:w-48 lg:w-64 object-contain" />
+          <img src={logoSrc} alt="PennPaps" className="w-36 sm:w-48 lg:w-64 object-contain" />
         </motion.div>
 
         <motion.h2 

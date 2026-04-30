@@ -2,8 +2,13 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Compass, Home as HomeIcon } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export default function NotFound() {
+  useDocumentTitle(
+    "Page not found",
+    "We couldn't find that page on PennPaps. Try the home page, the shop, or the mask catalog.",
+  );
   return (
     <div className="container max-w-2xl mx-auto px-4 py-20 animate-shimmer-in">
       <Card className="border-0 glass-card rounded-2xl">
@@ -22,25 +27,31 @@ export default function NotFound() {
             Page Not Found
           </CardTitle>
           <CardDescription className="text-base max-w-md mx-auto">
-            The page you're looking for doesn't exist on the Penn Fit site. Let's get you back on track.
+            The page you're looking for doesn't exist on PennPaps. Try the home
+            page, the supply shop, or the mask fitter.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-8">
+        <CardContent className="flex flex-col sm:flex-row gap-3 justify-center pt-4 pb-8 flex-wrap">
           <Link href="/">
             <Button className="w-full sm:w-auto btn-primary-glow rounded-full px-6">
               <HomeIcon className="w-4 h-4 mr-2" />
-              Return to Penn Fit Home
+              Return home
             </Button>
           </Link>
-          <Link href="/masks">
+          <Link href="/shop">
             <Button variant="outline" className="w-full sm:w-auto rounded-full glass-panel border-0 px-6">
-              Browse Mask Catalog
+              Shop CPAP supplies
+            </Button>
+          </Link>
+          <Link href="/consent">
+            <Button variant="outline" className="w-full sm:w-auto rounded-full glass-panel border-0 px-6">
+              Get fitted for a mask
             </Button>
           </Link>
         </CardContent>
       </Card>
       <p className="text-center text-xs text-muted-foreground mt-6">
-        Need help? Contact Penn Home Medical Supply for personalized fitting assistance.
+        Need help? Contact PennPaps for help with mask fittings, supply orders, insurance, or resupply.
       </p>
     </div>
   );

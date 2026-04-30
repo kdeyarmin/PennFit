@@ -111,7 +111,7 @@ export function Scene4() {
               transition={{ duration: 0.5 }}
             >
               <p className="hidden sm:block text-base sm:text-lg lg:text-xl text-[#475569] leading-snug sm:leading-relaxed text-left">
-                Penn Fit ranks every mask in our catalog against your measurements and answers, then
+                PennPaps ranks every mask in our catalog against your measurements and answers, then
                 surfaces the three best fits with a confidence score for each.
               </p>
               <div className="space-y-1.5 sm:space-y-2">
@@ -139,7 +139,7 @@ export function Scene4() {
                 transition={{ delay: 0.5 }}
               >
                 <ShieldCheck className="w-4 h-4 text-[#F4B942]" />
-                Order direct from Penn Home Medical Supply.
+                Order direct from PennPaps.
               </motion.p>
             </motion.div>
           )}

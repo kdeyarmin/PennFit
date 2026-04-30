@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 /*
- * Resupply Operator Console — minimal stylesheet (Phase 0).
+ * Resupply Admin Console — minimal stylesheet (Phase 0).
  *
- * Penn brand tokens are intentionally NOT exposed as Tailwind theme
- * variables yet. Phase 4 will introduce a proper Penn theme + shadcn
+ * PennPaps brand tokens are intentionally NOT exposed as Tailwind theme
+ * variables yet. Phase 4 will introduce a proper PennPaps theme + shadcn
  * setup once we know which UI primitives are actually needed. Until
  * then, App.tsx and not-found.tsx use literal brand hex values inline.
  */
