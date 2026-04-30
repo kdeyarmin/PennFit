@@ -4,23 +4,21 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-const rawPort = process.env.PORT;
+const isBuild = process.argv.includes("build");
 
-if (!rawPort) {
+const rawPort = process.env.PORT;
+if (!isBuild && !rawPort) {
   throw new Error(
     "PORT environment variable is required but was not provided.",
   );
 }
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
+const port = rawPort ? Number(rawPort) : 3000;
+if (!isBuild && (Number.isNaN(port) || port <= 0)) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
 const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
+if (!isBuild && !basePath) {
   throw new Error(
     "BASE_PATH environment variable is required but was not provided.",
   );
@@ -36,7 +34,8 @@ if (!basePath) {
  * form, preserving any querystring. It runs in both dev and preview
  * servers so the behavior is identical between local and built output.
  */
-const baseWithSlash = basePath.endsWith("/") ? basePath : `${basePath}/`;
+const resolvedBase = basePath ?? "/resupply/";
+const baseWithSlash = resolvedBase.endsWith("/") ? resolvedBase : `${resolvedBase}/`;
 const baseWithoutSlash = baseWithSlash.replace(/\/$/, "");
 
 const baseTrailingSlashRedirect = {
@@ -76,7 +75,7 @@ const baseTrailingSlashRedirect = {
 };
 
 export default defineConfig({
-  base: basePath,
+  base: basePath ?? "/resupply/",
   plugins: [
     baseTrailingSlashRedirect,
     react(),

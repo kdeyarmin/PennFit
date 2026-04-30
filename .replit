@@ -26,6 +26,10 @@ args = "Resupply Dashboard"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
+args = "CPAP Fitter"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
 args = "Resupply Worker"
 
 [[workflows.workflow.tasks]]
@@ -38,7 +42,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8081 BASE_PATH=/resupply-api pnpm --filter @workspace/resupply-api run dev"
+args = "PORT=8083 BASE_PATH=/resupply-api pnpm --filter @workspace/resupply-api run dev"
 
 [workflows.workflow.metadata]
 outputType = "console"
@@ -49,7 +53,19 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8080 BASE_PATH=/resupply pnpm --filter @workspace/resupply-dashboard run dev"
+args = "PORT=19334 BASE_PATH=/resupply/ pnpm --filter @workspace/resupply-dashboard run dev"
+
+[workflows.workflow.metadata]
+outputType = "service"
+restartOn = { success = false, failure = true, updateConfig = true }
+
+[[workflows.workflow]]
+name = "CPAP Fitter"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
 
 [workflows.workflow.metadata]
 outputType = "service"
@@ -89,24 +105,12 @@ timeoutMs = 20000
 channel = "stable-25_05"
 
 [[ports]]
-localPort = 8080
+localPort = 25632
 externalPort = 80
-
-[[ports]]
-localPort = 8081
-externalPort = 8081
-
-[[ports]]
-localPort = 8082
-externalPort = 4200
 
 [[ports]]
 localPort = 8083
 externalPort = 3001
-
-[[ports]]
-localPort = 8084
-externalPort = 5173
 
 [[ports]]
 localPort = 19334
@@ -115,10 +119,6 @@ externalPort = 3003
 [[ports]]
 localPort = 20466
 externalPort = 3002
-
-[[ports]]
-localPort = 25632
-externalPort = 3000
 
 [userenv]
 
