@@ -89,6 +89,11 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Rule Tester",
     matchPrefix: "/admin/rule-tester",
   },
+  {
+    href: "/admin/settings",
+    label: "Settings",
+    matchPrefix: "/admin/settings",
+  },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
