@@ -79,8 +79,8 @@ router.get("/conversations", requireAdmin, async (req, res) => {
   if (patientId) filters.push(eq(conversations.patientId, patientId));
   if (priority) filters.push(eq(conversations.priority, priority));
   if (view === "mine") {
-    if (req.adminClerkId) {
-      filters.push(eq(conversations.assignedAdminClerkId, req.adminClerkId));
+    if (req.adminUserId) {
+      filters.push(eq(conversations.assignedAdminClerkId, req.adminUserId));
       filters.push(
         sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
       );

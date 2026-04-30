@@ -184,7 +184,7 @@ router.post(
       return;
     }
     const db = drizzle(getDbPool());
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const now = new Date();
     const updated = await db
       .update(shopReturns)
@@ -227,7 +227,7 @@ router.post(
       return;
     }
     const db = drizzle(getDbPool());
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const now = new Date();
     const updated = await db
       .update(shopReturns)
@@ -264,7 +264,7 @@ router.post(
       return;
     }
     const db = drizzle(getDbPool());
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const now = new Date();
     const updated = await db
       .update(shopReturns)
@@ -300,7 +300,7 @@ router.post(
       return;
     }
     const db = drizzle(getDbPool());
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const now = new Date();
     // Allow received from either shipped_back (normal flow) or
     // approved (admin received before flipping shipped_back —
@@ -423,7 +423,7 @@ router.post(
       }
     }
 
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const now = new Date();
     const updated = await db
       .update(shopReturns)
@@ -474,7 +474,7 @@ router.post(
       return;
     }
     const db = drizzle(getDbPool());
-    const adminId = req.adminClerkId ?? null;
+    const adminId = req.adminUserId ?? null;
     const now = new Date();
     const updated = await db
       .update(shopReturns)
@@ -516,7 +516,7 @@ router.post("/admin/shop/returns/:id/note", requireAdmin, async (req, res) => {
     return;
   }
   const db = drizzle(getDbPool());
-  const adminId = req.adminClerkId ?? null;
+  const adminId = req.adminUserId ?? null;
   const rows = await db
     .select()
     .from(shopReturns)

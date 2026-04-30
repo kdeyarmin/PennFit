@@ -67,7 +67,7 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
     return;
   }
   const force = req.query.force === "1";
-  const adminId = req.adminClerkId!;
+  const adminId = req.adminUserId!;
   const db = drizzle(getDbPool());
 
   const rows = await db
@@ -123,7 +123,7 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "missing_id" });
     return;
   }
-  const adminId = req.adminClerkId!;
+  const adminId = req.adminUserId!;
   const adminRole = req.adminRole;
   const db = drizzle(getDbPool());
   const rows = await db

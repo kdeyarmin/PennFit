@@ -87,7 +87,7 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
     return;
   }
   const { email, role, displayName, notes } = parsed.data;
-  const inviterId = req.adminClerkId ?? null;
+  const inviterId = req.adminUserId ?? null;
   const db = drizzle(getDbPool());
 
   // Reuse the existing row if one is already there for this email.
@@ -221,7 +221,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
     const inv = await clerkClient.invitations.createInvitation({
       emailAddress: row.emailLower,
       redirectUrl: deriveRedirectUrl(),
-      publicMetadata: { resupplyRole: row.role, invitedBy: req.adminClerkId ?? "" },
+      publicMetadata: { resupplyRole: row.role, invitedBy: req.adminUserId ?? "" },
     });
     clerkInvitationId = inv.id;
     clerkInviteSent = true;
@@ -237,7 +237,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
     .set({
       clerkInvitationId,
       invitedAt: new Date(),
-      invitedBy: req.adminClerkId ?? null,
+      invitedBy: req.adminUserId ?? null,
       updatedAt: new Date(),
     })
     .where(eq(adminUsers.id, id))
@@ -269,7 +269,7 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
   // Defensive: don't let an admin revoke themselves — that locks them
   // out of the very console they're using. They'd recover via the env-
   // var bootstrap, but only if env vars are configured.
-  if (row.clerkUserId && row.clerkUserId === req.adminClerkId) {
+  if (row.clerkUserId && row.clerkUserId === req.adminUserId) {
     res.status(409).json({
       error: "cannot_revoke_self",
       message: "You can't revoke your own admin access. Have another admin revoke your seat.",
@@ -294,7 +294,7 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
     .set({
       status: "revoked",
       revokedAt: now,
-      revokedBy: req.adminClerkId ?? null,
+      revokedBy: req.adminUserId ?? null,
       updatedAt: now,
     })
     .where(and(eq(adminUsers.id, id), ne(adminUsers.status, "revoked")))
@@ -329,7 +329,7 @@ router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
     if (
       row &&
       row.currentRole === "admin" &&
-      row.clerkUserId === req.adminClerkId
+      row.clerkUserId === req.adminUserId
     ) {
       res.status(409).json({
         error: "cannot_demote_self",

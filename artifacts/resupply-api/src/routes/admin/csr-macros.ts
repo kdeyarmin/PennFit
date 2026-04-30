@@ -74,7 +74,7 @@ router.post("/admin/csr-macros", requireAdmin, async (req, res) => {
     return;
   }
   const db = drizzle(getDbPool());
-  const adminId = req.adminClerkId ?? null;
+  const adminId = req.adminUserId ?? null;
   try {
     const inserted = await db
       .insert(csrMacros)
@@ -117,7 +117,7 @@ router.patch("/admin/csr-macros/:id", requireAdmin, async (req, res) => {
     return;
   }
   const db = drizzle(getDbPool());
-  const adminId = req.adminClerkId ?? null;
+  const adminId = req.adminUserId ?? null;
   const updated = await db
     .update(csrMacros)
     .set({
@@ -157,7 +157,7 @@ router.delete("/admin/csr-macros/:id", requireAdmin, async (req, res) => {
     res.json({ ok: true, hardDeleted: true });
     return;
   }
-  const adminId = req.adminClerkId ?? null;
+  const adminId = req.adminUserId ?? null;
   const updated = await db
     .update(csrMacros)
     .set({ isActive: false, updatedBy: adminId, updatedAt: new Date() })
