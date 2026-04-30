@@ -149,9 +149,8 @@ const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | undefined;
 
 if (!CLERK_PUBLISHABLE_KEY) {
-  // Fail loudly at startup rather than rendering a half-broken UI later.
-  throw new Error(
-    "VITE_CLERK_PUBLISHABLE_KEY is required — set it in Replit Secrets.",
+  console.error(
+    "VITE_CLERK_PUBLISHABLE_KEY is not set — auth features will be unavailable.",
   );
 }
 
