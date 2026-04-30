@@ -91,6 +91,20 @@ Schema additions (additive, ADR 003 hand-authored migrations only):
 
 Delivery feedback closes via the existing SendGrid Event Webhook at `POST /email/sendgrid-events` (ECDSA signature verification, mapping to `messages.delivery_status`). The smoke test at `routes/email/sendgrid-events.test.ts` pins the rejection-without-signature path and the processed/delivered/bounce/dropped/deferred → status mappings.
 
+### Outbound email — single integration, single From address
+
+Every outbound email across the entire monorepo is funneled through one place: `createSendgridClient()` in `lib/resupply-email/src/client.ts`. That client is the only direct consumer of the `@sendgrid/mail` SDK in the repo (enforced for resupply packages by Rules 12 + 13 in `scripts/check-resupply-architecture.sh`) and reads `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, and `SENDGRID_FROM_NAME` at call time. Operations sets `SENDGRID_FROM_EMAIL=info@pennpaps.com` so every outbound message — Penn Fit fulfillment, Penn Fit reminders, shop confirmation, shop shipping, cart abandonment, review moderation, resupply reminders, two-way reply — leaves the platform from the same canonical address.
+
+Senders that go through the shared client:
+- `lib/resupply-reminders/src/{send-email,reply}.ts` (resupply outreach)
+- `artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts`
+- `artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-email.ts`
+- `artifacts/resupply-api/src/lib/cart-abandonment/send-cart-abandonment-email.ts`
+- `artifacts/resupply-api/src/lib/messaging/review-moderation-email.ts`
+- `artifacts/api-server/src/lib/{reminderEmail,orderEmail}.ts` (Penn Fit). These two were originally written before the shared client existed and used raw `fetch` to `https://api.sendgrid.com/v3/mail/send` plus their own `PENN_FROM_EMAIL` env var; the audit on 2026-04-30 migrated them to `createSendgridClient()` so there is no longer any path to SendGrid that bypasses the shared integration. Public function shapes (`sendReminderConfirmation`, `sendReminderManageLink`, `sendReminderDue`, `sendOrderToPenn`, `generateOrderReference`) are unchanged so all callers keep working.
+
+There is no `nodemailer`, no SMTP, and no other raw HTTP path to SendGrid anywhere in the repo. The `mailto:info@pennpaps.com` links in `cpap-fitter/{privacy,terms}.tsx` and `resupply-dashboard/not-authorized.tsx` are user-facing contact links and not outbound email.
+
 ### Customer 360 (Admin)
 
 A "Customers" section in the cpap-fitter admin (`/admin/customers` and `/admin/customers/:userId`) gives staff a single-pane view of every shop customer: search/sort/paginate the directory, then drill into a profile that shows lifetime stats, recent orders, subscriptions, abandoned cart, and product reviews. From a paid order, an admin can click "Reorder for customer" to generate a Stripe Checkout Session (mode `payment`) prefilled with the prior order's line items; the dashboard returns the checkout URL with Copy and Open buttons so the admin can share it with the customer out-of-band (email/SMS).
