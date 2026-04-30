@@ -32,10 +32,6 @@ args = "CPAP Fitter"
 task = "workflow.run"
 args = "Resupply Worker"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "resupply-check"
-
 [[workflows.workflow]]
 name = "Resupply API"
 author = "agent"
