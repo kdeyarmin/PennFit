@@ -47,13 +47,16 @@ import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
+  DEFAULT_COMMUNICATION_PREFERENCES,
   getDbPool,
   shopAbandonedCarts,
+  shopCustomers,
   type ShopAbandonedCartItem,
 } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { sendCartAbandonmentEmail } from "../../lib/cart-abandonment/send-cart-abandonment-email";
+import { isInDndWindow } from "../../lib/comm-prefs";
 
 const router: IRouter = Router();
 
@@ -153,22 +156,59 @@ router.post(
       UPDATE ${shopAbandonedCarts}
       SET reminded_at = now()
       WHERE id IN (SELECT id FROM eligible)
-      RETURNING id, email, items, subtotal_cents AS "subtotalCents", currency
+      RETURNING id, clerk_user_id AS "clerkUserId", email, items, subtotal_cents AS "subtotalCents", currency
     `);
     const claimed = (claimedRaw.rows ?? []) as Array<{
       id: string;
+      clerkUserId: string;
       email: string | null;
       items: ShopAbandonedCartItem[];
       subtotalCents: number;
       currency: string;
     }>;
 
+    // Pre-fetch comm prefs for every claimed user so we can suppress
+    // sends for customers who turned off cart-abandonment nudges or
+    // are inside a DND window. Single batch query — never N+1.
+    const prefsByUser = new Map<
+      string,
+      ReturnType<typeof mergePrefs>
+    >();
+    if (claimed.length > 0) {
+      const userIds = Array.from(new Set(claimed.map((r) => r.clerkUserId)));
+      const customerRows = await db
+        .select({
+          clerkUserId: shopCustomers.clerkUserId,
+          prefs: shopCustomers.communicationPreferences,
+        })
+        .from(shopCustomers)
+        .where(sql`${shopCustomers.clerkUserId} = ANY(${userIds})`);
+      for (const cr of customerRows) {
+        prefsByUser.set(cr.clerkUserId, mergePrefs(cr.prefs));
+      }
+    }
+
     let sent = 0;
     let skippedNoConfig = 0;
     let skippedFailed = 0;
+    let skippedOptOut = 0;
     let configuredFlag = true;
 
     for (const row of claimed) {
+      // Comm-prefs gate. If the user turned off abandoned-cart emails
+      // or is currently in a DND window, unclaim and skip. Default
+      // (no row in shop_customers) opts in — the `mergePrefs` helper
+      // returns DEFAULT_COMMUNICATION_PREFERENCES which has
+      // emailAbandonedCart=true.
+      const prefs = prefsByUser.get(row.clerkUserId) ?? mergePrefs(null);
+      if (!prefs.emailAbandonedCart || isInDndWindow(prefs)) {
+        await db
+          .update(shopAbandonedCarts)
+          .set({ remindedAt: null })
+          .where(eq(shopAbandonedCarts.id, row.id));
+        skippedOptOut += 1;
+        continue;
+      }
       // Defensive: belt-and-suspenders email check (the SQL filter
       // already guarded this, but null-checks are cheap and the
       // SendGrid SDK throws on missing `to`).
@@ -263,9 +303,16 @@ router.post(
       sent,
       skippedNoConfig,
       skippedFailed,
+      skippedOptOut,
       sendgridConfigured: configuredFlag,
     });
   },
 );
+
+function mergePrefs(stored: typeof DEFAULT_COMMUNICATION_PREFERENCES | null) {
+  return stored
+    ? { ...DEFAULT_COMMUNICATION_PREFERENCES, ...stored }
+    : { ...DEFAULT_COMMUNICATION_PREFERENCES };
+}
 
 export default router;

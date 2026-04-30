@@ -78,6 +78,7 @@ import {
   formatMoneyCents,
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
+import { CommPrefsSection } from "@/components/comm-prefs-section";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
 // from your order on …" banner. Stored as a JSON object so we can
@@ -246,6 +247,7 @@ function AccountInner() {
             orders={data.recentOrders ?? []}
             previewMode={previewMode === true}
           />
+          <CommPrefsSection />
         </div>
         <aside className="space-y-6">
           <SavedCardSection card={data.savedCard ?? null} />

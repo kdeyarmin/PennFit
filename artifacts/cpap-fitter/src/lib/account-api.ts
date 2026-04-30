@@ -232,3 +232,25 @@ export interface ShopMeDashboardResponse {
 
 export const fetchShopMeDashboard = () =>
   meFetch<ShopMeDashboardResponse>("/shop/me/dashboard");
+
+export interface CommunicationPreferences {
+  emailMarketing: boolean;
+  emailResupplyReminders: boolean;
+  emailAbandonedCart: boolean;
+  emailReviewRequests: boolean;
+  smsMarketing: boolean;
+  smsTransactional: boolean;
+  preferredChannel: "email" | "sms";
+  dndStartHour: number | null;
+  dndEndHour: number | null;
+  timezone: string | null;
+}
+
+export const fetchCommPrefs = () =>
+  meFetch<{ preferences: CommunicationPreferences }>("/shop/me/comm-prefs");
+
+export const updateCommPrefs = (input: Partial<CommunicationPreferences>) =>
+  meFetch<{ preferences: CommunicationPreferences }>("/shop/me/comm-prefs", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });

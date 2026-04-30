@@ -10,6 +10,7 @@ import { Router, type IRouter } from "express";
 import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import meRouter from "./me";
+import meCommPrefsRouter from "./me-comm-prefs";
 import meDashboardRouter from "./me-dashboard";
 import myOrdersRouter from "./my-orders";
 import myReturnsRouter from "./my-returns";
@@ -29,6 +30,7 @@ router.use(orderRouter);
 // the same base path. The handlers themselves apply Clerk gating
 // (requireSignedIn / attachSignedIn) per-endpoint.
 router.use(meRouter);
+router.use(meCommPrefsRouter);
 router.use(meDashboardRouter);
 router.use(myOrdersRouter);
 router.use(myReturnsRouter);
