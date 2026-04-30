@@ -2,10 +2,21 @@ import {
   PgcryptoNotInstalledError,
   assertPgcryptoEnabled,
   getDbPool,
+  setProjectionLogger,
 } from "@workspace/resupply-db";
 import PgBoss from "pg-boss";
 import { logger } from "./logger.js";
 import { registerReminderJobs } from "./jobs/reminders.js";
+
+// Mirror the API server's wiring (see api/src/index.ts) so projection
+// failures from worker-side message sends (the bulk of outbound SMS
+// + email reminder traffic) flow through the worker's structured
+// logger instead of falling back to console.warn.
+setProjectionLogger({
+  warn(obj, msg) {
+    logger.warn(obj, msg ?? "patient_latest_message: refresh failed");
+  },
+});
 
 // The resupply worker hosts pg-boss against the same Postgres instance the
 // api uses (see ADR 002). Phase 0 only proves the wiring — we boot

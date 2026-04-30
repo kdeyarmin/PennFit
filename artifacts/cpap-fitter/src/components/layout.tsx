@@ -5,6 +5,7 @@ import { Show } from "@clerk/react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { useCart } from "@/hooks/use-cart";
 import { UserMenu } from "@/components/user-menu";
+import { FitFlowStepper } from "@/components/fit-flow-stepper";
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -182,6 +183,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
         <div className="aurora-divider" aria-hidden="true" />
       </header>
+
+      {/*
+       * Mask-fit progress indicator. Self-gates: returns null on
+       * any non-fit-flow route, so we can mount it unconditionally
+       * here without polluting unrelated pages (Shop, FAQ, etc).
+       */}
+      <FitFlowStepper />
 
       <main
         id="main-content"

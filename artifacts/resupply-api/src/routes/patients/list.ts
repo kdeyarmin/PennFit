@@ -39,6 +39,7 @@ import {
   getDbPool,
   hmacPhone,
   normalizeE164,
+  patientLatestMessage,
   patients,
   phoneLookup,
 } from "@workspace/resupply-db";
@@ -114,6 +115,19 @@ router.get("/patients", requireAdmin, async (req, res) => {
     .from(patients)
     .where(whereClause);
 
+  // LEFT JOIN the latest-message projection so the list can show
+  // "last contacted" without a per-row scan of the messages table.
+  // The projection is patient-scoped (one row per patient, refreshed
+  // in-line on every message write) so this is a 1:1 join — no row
+  // multiplication, no GROUP BY needed. Patients with no messages
+  // yet land with NULLs across the three lastMessage* columns,
+  // exactly matching the API contract.
+  //
+  // The preview column is bytea-encrypted (the schema's customType
+  // refuses Drizzle's default decoder); decrypt(...) routes through
+  // the same SQL helper used for legalFirstName/legalLastName so
+  // plaintext PHI never crosses the Node boundary except inside the
+  // already-authenticated admin response.
   const rows = await db
     .select({
       id: patients.id,
@@ -125,8 +139,15 @@ router.get("/patients", requireAdmin, async (req, res) => {
       hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
       createdAt: patients.createdAt,
       updatedAt: patients.updatedAt,
+      lastMessageAt: patientLatestMessage.lastMessageAt,
+      lastMessageDirection: patientLatestMessage.lastMessageDirection,
+      lastMessagePreview: decrypt(patientLatestMessage.lastMessagePreview),
     })
     .from(patients)
+    .leftJoin(
+      patientLatestMessage,
+      eq(patientLatestMessage.patientId, patients.id),
+    )
     .where(whereClause)
     .orderBy(sql`${patients.createdAt} DESC`)
     .limit(limit)
@@ -145,6 +166,12 @@ router.get("/patients", requireAdmin, async (req, res) => {
         r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
       updatedAt:
         r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
+      lastMessageAt:
+        r.lastMessageAt instanceof Date
+          ? r.lastMessageAt.toISOString()
+          : (r.lastMessageAt ?? null),
+      lastMessageDirection: r.lastMessageDirection ?? null,
+      lastMessagePreview: r.lastMessagePreview ?? null,
     })),
     total: totalRow?.count ?? 0,
     limit,

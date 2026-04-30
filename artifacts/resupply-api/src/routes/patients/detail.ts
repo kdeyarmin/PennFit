@@ -29,6 +29,7 @@ import {
   episodes,
   fulfillments,
   getDbPool,
+  patientLatestMessage,
   patients,
   prescriptions,
 } from "@workspace/resupply-db";
@@ -50,6 +51,11 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
 
   const db = drizzle(getDbPool());
 
+  // Detail header LEFT JOINs the latest-message projection so the
+  // patient header strip can show "last contacted" without a
+  // separate /messages query. Same encryption-on-the-wire treatment
+  // as patients/list — decrypt() is the only path through which the
+  // bytea preview leaves Postgres.
   const patientRows = await db
     .select({
       id: patients.id,
@@ -68,8 +74,15 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
       channelPreference: patients.channelPreference,
       createdAt: patients.createdAt,
       updatedAt: patients.updatedAt,
+      lastMessageAt: patientLatestMessage.lastMessageAt,
+      lastMessageDirection: patientLatestMessage.lastMessageDirection,
+      lastMessagePreview: decrypt(patientLatestMessage.lastMessagePreview),
     })
     .from(patients)
+    .leftJoin(
+      patientLatestMessage,
+      eq(patientLatestMessage.patientId, patients.id),
+    )
     .where(eq(patients.id, id))
     .limit(1);
 
@@ -88,6 +101,15 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
       validUntil: prescriptions.validUntil,
       status: prescriptions.status,
       createdAt: prescriptions.createdAt,
+      // Attachment metadata. We only forward the bounded technical
+      // fields the dashboard needs to render the "Document attached"
+      // chip + download link — the actual object key is intentionally
+      // NOT exposed here. Downloads go through the dedicated GET
+      // endpoint which is admin-gated and audit-logged on every hit.
+      attachmentFilename: prescriptions.attachmentFilename,
+      attachmentContentType: prescriptions.attachmentContentType,
+      attachmentSizeBytes: prescriptions.attachmentSizeBytes,
+      attachmentUploadedAt: prescriptions.attachmentUploadedAt,
     })
     .from(prescriptions)
     .where(eq(prescriptions.patientId, id))
@@ -181,6 +203,9 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
     channelPreference: patient.channelPreference,
     createdAt: toIsoRequired(patient.createdAt),
     updatedAt: toIsoRequired(patient.updatedAt),
+    lastMessageAt: toIso(patient.lastMessageAt),
+    lastMessageDirection: patient.lastMessageDirection ?? null,
+    lastMessagePreview: patient.lastMessagePreview ?? null,
     prescriptions: prescriptionRows.map((p) => ({
       id: p.id,
       itemSku: p.itemSku,
@@ -201,6 +226,14 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
             : String(p.validUntil),
       status: p.status,
       createdAt: toIsoRequired(p.createdAt),
+      // Forward the bounded attachment metadata. The dashboard uses
+      // `attachmentFilename` truthiness to switch between "Attach"
+      // and "Download/Remove" UI states; the other three fields are
+      // for display only. Object key is intentionally NOT forwarded.
+      attachmentFilename: p.attachmentFilename,
+      attachmentContentType: p.attachmentContentType,
+      attachmentSizeBytes: p.attachmentSizeBytes,
+      attachmentUploadedAt: toIso(p.attachmentUploadedAt),
     })),
     episodes: episodeRows.map((e) => ({
       id: e.id,

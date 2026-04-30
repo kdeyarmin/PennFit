@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
+import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import auditRouter from "./audit/index.js";
@@ -53,5 +54,9 @@ router.use(shopReviewsAdminRouter);
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.
 router.use(shopProductsAdminRouter);
+// /admin/shop/orders/* — fulfillment tooling on shop_orders rows
+// (tracking entry, mark-delivered, address override, refund issuance).
+// requireAdmin gate is on the router itself.
+router.use(shopOrdersAdminRouter);
 
 export default router;

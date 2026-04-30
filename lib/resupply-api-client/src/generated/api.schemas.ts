@@ -620,9 +620,27 @@ export const PatientListItemStatus = {
 } as const;
 
 /**
+ * Direction of that most recent message. NULL when there is
+no message yet.
+
+ */
+export type PatientListItemLastMessageDirection =
+  | (typeof PatientListItemLastMessageDirection)[keyof typeof PatientListItemLastMessageDirection]
+  | null;
+
+export const PatientListItemLastMessageDirection = {
+  inbound: "inbound",
+  outbound: "outbound",
+} as const;
+
+/**
  * One row in the patient list. Decrypts firstName + lastName for
 display. NEVER includes the phone number or email — only booleans
-showing whether the patient has each on file.
+showing whether the patient has each on file. The lastMessage*
+triplet is sourced from the patient_latest_message projection
+(refreshed in-line on every inbound/outbound message write) so
+the list can show "last contacted" without a per-row scan of
+the messages table.
 
  */
 export interface PatientListItem {
@@ -635,6 +653,21 @@ export interface PatientListItem {
   hasEmail: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Timestamp of the most recent inbound or outbound message
+for this patient across any conversation. NULL when the
+patient has never exchanged a message.
+ */
+  lastMessageAt?: string | null;
+  /** Direction of that most recent message. NULL when there is
+no message yet.
+ */
+  lastMessageDirection?: PatientListItemLastMessageDirection;
+  /** Decrypted, single-line preview of the most recent message
+body, truncated to 80 characters by the projection helper.
+NULL when there is no message yet. PHI: only render in
+authenticated admin contexts.
+ */
+  lastMessagePreview?: string | null;
 }
 
 export interface PatientListPage {
@@ -774,6 +807,15 @@ export const PatientDetailChannelPreference = {
   voice: "voice",
 } as const;
 
+export type PatientDetailLastMessageDirection =
+  | (typeof PatientDetailLastMessageDirection)[keyof typeof PatientDetailLastMessageDirection]
+  | null;
+
+export const PatientDetailLastMessageDirection = {
+  inbound: "inbound",
+  outbound: "outbound",
+} as const;
+
 /**
  * Full patient detail for the patient detail page. Decrypted
 firstName + lastName for display; phone + email never returned.
@@ -806,6 +848,15 @@ override.
   channelPreference?: PatientDetailChannelPreference;
   createdAt: string;
   updatedAt: string;
+  /** Timestamp of the most recent inbound or outbound message
+for this patient. Sourced from patient_latest_message.
+ */
+  lastMessageAt?: string | null;
+  lastMessageDirection?: PatientDetailLastMessageDirection;
+  /** Decrypted preview of the most recent message body,
+truncated to 80 characters. PHI.
+ */
+  lastMessagePreview?: string | null;
   prescriptions: PatientPrescription[];
   episodes: PatientEpisode[];
   /** Up to 10 most recent. */

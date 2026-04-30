@@ -45,6 +45,15 @@ type PatientRow = {
   hasPhone: boolean;
   hasEmail: boolean;
   updatedAt: string;
+  // Patient-scoped latest-message projection. Refreshed in-line on
+  // every inbound/outbound message write, so the list can show "last
+  // contacted" without a per-row scan of the messages table. Each
+  // field is independently nullable; in practice they're either all
+  // populated (the patient has at least one message) or all null
+  // (brand-new patient who has never been contacted).
+  lastMessageAt?: string | null;
+  lastMessageDirection?: "inbound" | "outbound" | null;
+  lastMessagePreview?: string | null;
 };
 
 export function PatientsPage() {
@@ -345,6 +354,55 @@ export function PatientsPage() {
           {!r.hasPhone && !r.hasEmail && <Badge variant="muted">None</Badge>}
         </div>
       ),
+    },
+    {
+      // Last-contacted column. The triplet (timestamp + direction +
+      // 80-char preview) lets an admin scan the page and immediately
+      // spot patients waiting on a reply. We render the timestamp on
+      // top in the existing muted style, then a one-line clamped
+      // preview underneath prefixed with the direction so an admin
+      // can tell at a glance whether the last touch was outbound
+      // ("we wrote them; awaiting reply") or inbound ("they wrote;
+      // awaiting us"). Patients with no messages yet show a single
+      // dash to keep row heights uniform.
+      key: "lastMessage",
+      header: "Last message",
+      render: (r) => {
+        if (!r.lastMessageAt) {
+          return (
+            <span className="text-xs" style={{ color: "#9ca3af" }}>
+              —
+            </span>
+          );
+        }
+        const isInbound = r.lastMessageDirection === "inbound";
+        return (
+          <div className="flex flex-col gap-0.5" style={{ maxWidth: "22rem" }}>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs" style={{ color: "#6b7280" }}>
+                {formatDateTime(r.lastMessageAt)}
+              </span>
+              <Badge variant={isInbound ? "warning" : "neutral"}>
+                {isInbound ? "Inbound" : "Outbound"}
+              </Badge>
+            </div>
+            {r.lastMessagePreview ? (
+              <div
+                className="text-xs"
+                style={{
+                  color: "#374151",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={r.lastMessagePreview}
+              >
+                {r.lastMessagePreview}
+              </div>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "updatedAt",

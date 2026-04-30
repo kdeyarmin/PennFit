@@ -14,6 +14,7 @@ import importCsvRouter from "./import-csv";
 import listRouter from "./list";
 import notesCreateRouter from "./notes-create";
 import notesListRouter from "./notes-list";
+import prescriptionsAttachmentRouter from "./prescriptions-attachment";
 import prescriptionsCreateRouter from "./prescriptions-create";
 import prescriptionsUpdateRouter from "./prescriptions-update";
 import timelineRouter from "./timeline";
@@ -33,6 +34,11 @@ router.use(notesListRouter);
 router.use(notesCreateRouter);
 router.use(prescriptionsCreateRouter);
 router.use(prescriptionsUpdateRouter);
+// Attachment routes — admin-only, prescription-scoped object-storage
+// upload/download/delete. Mounted after the create/update so the
+// /attachment literal segment can never collide with a future
+// :rxId-style param route on the same prefix.
+router.use(prescriptionsAttachmentRouter);
 router.use(detailRouter);
 router.use(timelineRouter);
 router.use(updateRouter);

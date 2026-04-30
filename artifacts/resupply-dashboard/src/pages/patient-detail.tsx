@@ -36,6 +36,11 @@ import { ErrorPanel } from "../components/ErrorPanel";
 import { Button } from "../components/Button";
 import { Input, Label, Select } from "../components/Input";
 import { fullName, formatDate, formatDateTime } from "../lib/format";
+import {
+  prescriptionAttachmentDownloadUrl,
+  removePrescriptionAttachment,
+  uploadPrescriptionAttachment,
+} from "../lib/prescription-attachment";
 
 type Tab =
   | "timeline"
@@ -121,6 +126,62 @@ export function PatientDetailPage({ id }: { id: string }) {
             <p style={{ color: "#0a1f44" }}>{formatDateTime(data.updatedAt)}</p>
           </div>
         </div>
+        {/*
+          Last contact strip. Sourced from patient_latest_message
+          (refreshed in-line on every inbound/outbound write across
+          SMS / email / voice transcript). Hidden entirely when the
+          patient has no message history yet — the empty state would
+          add visual noise without conveying anything an admin can
+          act on.
+
+          Direction is rendered as a coloured Badge (warning for
+          inbound = "they're waiting on us", neutral for outbound)
+          to mirror the colour cue used in the patients list. The
+          preview sits below in a single ellipsised line; the full
+          80-char body is also exposed via the title attribute so
+          hovering reveals the rest without taking layout space.
+        */}
+        {data.lastMessageAt ? (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: "#e5e7eb" }}>
+            <p
+              className="text-xs uppercase tracking-wider font-semibold mb-1"
+              style={{ color: "#c9a24a" }}
+            >
+              Last contact
+            </p>
+            <div className="flex items-center gap-2 text-sm">
+              <Badge
+                variant={
+                  data.lastMessageDirection === "inbound"
+                    ? "warning"
+                    : "neutral"
+                }
+              >
+                {data.lastMessageDirection === "inbound"
+                  ? "Inbound"
+                  : "Outbound"}
+              </Badge>
+              <span style={{ color: "#0a1f44" }}>
+                {formatDateTime(data.lastMessageAt)}
+              </span>
+            </div>
+            {data.lastMessagePreview ? (
+              <p
+                className="mt-1 text-sm"
+                style={{
+                  color: "#374151",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: "48rem",
+                }}
+                title={data.lastMessagePreview}
+              >
+                {data.lastMessagePreview}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </Card>
 
       <PatientActionBar patient={data} onAfterAction={() => void refetch()} />
@@ -389,7 +450,29 @@ type Prescription = {
   validUntil?: string | null;
   status: string;
   createdAt: string;
+  // Attachment metadata mirrors the API's response shape. All four
+  // are populated together (one INSERT/UPDATE) or all null. The
+  // dashboard never sees the underlying object key — downloads go
+  // through the dedicated, audit-logged GET endpoint.
+  attachmentFilename?: string | null;
+  attachmentContentType?: string | null;
+  attachmentSizeBytes?: number | null;
+  attachmentUploadedAt?: string | null;
 };
+
+// 10 MB hard cap, mirrored on the API. Kept as a const so the
+// "Document too large" message and the file-picker hint can stay in
+// sync without two truths drifting.
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_ACCEPT =
+  "application/pdf,image/png,image/jpeg,image/heic,image/heif,image/webp";
+
+function formatBytes(n: number | null | undefined): string {
+  if (n == null) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function PrescriptionsTab({
   patientId,
@@ -407,6 +490,61 @@ function PrescriptionsTab({
   // Single shared mutation for all rows. Tracking which row is busy
   // prevents the "every button spins at once" UX bug.
   const [busyRxId, setBusyRxId] = useState<string | null>(null);
+  // Separate busy state for attachment uploads/removes so the
+  // "Mark expired" button doesn't spin while a document is being
+  // attached to the same row, and vice versa. We never let the same
+  // row run both concurrently anyway, but the visual feedback is
+  // cleaner this way.
+  const [busyAttachmentRxId, setBusyAttachmentRxId] = useState<string | null>(
+    null,
+  );
+
+  async function handleUpload(rxId: string, file: File) {
+    setActionError(null);
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setActionError(
+        `Document is too large — max ${formatBytes(MAX_ATTACHMENT_BYTES)}.`,
+      );
+      return;
+    }
+    setBusyAttachmentRxId(rxId);
+    try {
+      await uploadPrescriptionAttachment({ patientId, rxId, file });
+      onChanged();
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't attach document.",
+      );
+    } finally {
+      setBusyAttachmentRxId(null);
+    }
+  }
+
+  async function handleRemoveAttachment(rxId: string) {
+    if (
+      !window.confirm(
+        "Remove the attached document? The patient's record will no longer link to it.",
+      )
+    ) {
+      return;
+    }
+    setActionError(null);
+    setBusyAttachmentRxId(rxId);
+    try {
+      await removePrescriptionAttachment({ patientId, rxId });
+      onChanged();
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't remove attachment.",
+      );
+    } finally {
+      setBusyAttachmentRxId(null);
+    }
+  }
 
   async function changeStatus(
     rxId: string,
@@ -455,6 +593,23 @@ function PrescriptionsTab({
         <Badge variant={r.status === "active" ? "success" : "muted"}>
           {humanizeStatus(r.status)}
         </Badge>
+      ),
+    },
+    {
+      key: "attachment",
+      header: "Document",
+      render: (r) => (
+        <PrescriptionAttachmentCell
+          patientId={patientId}
+          rx={r}
+          isBusy={busyAttachmentRxId === r.id}
+          isDisabled={
+            (busyAttachmentRxId !== null && busyAttachmentRxId !== r.id) ||
+            busyRxId === r.id
+          }
+          onUpload={(file) => void handleUpload(r.id, file)}
+          onRemove={() => void handleRemoveAttachment(r.id)}
+        />
       ),
     },
     {
@@ -514,6 +669,108 @@ function PrescriptionsTab({
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Inline cell renderer for the prescription table's "Document" column.
+// Two states: "no attachment yet" (file picker label-as-button) and
+// "attachment present" (download link + remove button). Kept as a
+// dedicated component so the file-input ref is scoped per row and the
+// `accept` / size hint stay colocated with the picker.
+function PrescriptionAttachmentCell({
+  patientId,
+  rx,
+  isBusy,
+  isDisabled,
+  onUpload,
+  onRemove,
+}: {
+  patientId: string;
+  rx: Prescription;
+  isBusy: boolean;
+  isDisabled: boolean;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const inputId = `rx-attachment-${rx.id}`;
+
+  if (rx.attachmentFilename) {
+    return (
+      <div className="flex flex-col gap-1">
+        <a
+          href={prescriptionAttachmentDownloadUrl({
+            patientId,
+            rxId: rx.id,
+          })}
+          target="_blank"
+          rel="noopener"
+          className="text-sm underline"
+          style={{ color: "#1d4ed8" }}
+          // download attribute hints the browser to save with the
+          // server-supplied Content-Disposition filename. Same-origin
+          // request so this works even though the link target is
+          // technically a streamed binary response.
+          download={rx.attachmentFilename}
+        >
+          {rx.attachmentFilename}
+        </a>
+        <div
+          className="text-xs flex items-center gap-2"
+          style={{ color: "#6b7280" }}
+        >
+          <span>{formatBytes(rx.attachmentSizeBytes)}</span>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={isDisabled || isBusy}
+            className="underline"
+            style={{
+              color: isBusy || isDisabled ? "#9ca3af" : "#b91c1c",
+              cursor: isBusy || isDisabled ? "not-allowed" : "pointer",
+              background: "none",
+              border: "none",
+              padding: 0,
+              font: "inherit",
+            }}
+          >
+            {isBusy ? "Removing…" : "Remove"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        id={inputId}
+        type="file"
+        accept={ATTACHMENT_ACCEPT}
+        className="hidden"
+        disabled={isDisabled || isBusy}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // Reset the input so picking the same filename twice in a
+          // row still fires `change` (browsers suppress the event
+          // when the value is identical to the prior selection).
+          e.target.value = "";
+          if (file) onUpload(file);
+        }}
+      />
+      <label
+        htmlFor={inputId}
+        className="text-xs underline"
+        style={{
+          color: isBusy || isDisabled ? "#9ca3af" : "#1d4ed8",
+          cursor: isBusy || isDisabled ? "not-allowed" : "pointer",
+        }}
+      >
+        {isBusy ? "Uploading…" : "Attach document"}
+      </label>
+      <span className="text-xs" style={{ color: "#9ca3af" }}>
+        PDF or image · max 10 MB
+      </span>
     </div>
   );
 }

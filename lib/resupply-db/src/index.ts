@@ -33,3 +33,13 @@ export {
   ensurePgcryptoEnabled,
 } from "./preflight";
 export { normalizeE164, hmacPhone } from "./phone-hash";
+export {
+  PREVIEW_MAX_CHARS,
+  buildPreview,
+  upsertPatientLatestMessage,
+  tryUpsertPatientLatestMessage,
+  setProjectionLogger,
+  type LatestMessageDirection,
+  type ProjectionLogger,
+  type UpsertPatientLatestMessageInput,
+} from "./projections/patient-latest-message";

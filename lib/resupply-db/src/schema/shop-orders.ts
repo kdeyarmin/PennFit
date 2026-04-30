@@ -16,13 +16,25 @@
 // What we DO NOT store:
 //   * Line items — Stripe stores them on the Session. We re-fetch on
 //     demand for the success page (single Stripe API call).
-//   * Shipping address — Stripe collects it during Checkout and we
-//     read it back from the Session when shipping. Avoids duplicate
-//     copies of personal data.
 //   * Card details — never touched by us; PCI scope stays with
 //     Stripe by using Hosted Checkout.
 //
-// `status` lifecycle:
+// What we DO store (Phase 4 fulfillment columns):
+//   * `shipping_address_json` — snapshot of the address used for THIS
+//     order. Separate from shop_customers.shipping_address (which is
+//     the customer's CURRENT default) so historical orders never
+//     change as the customer moves. Captured by the webhook at
+//     checkout.session.completed; editable by the customer (and admins)
+//     while shipped_at IS NULL.
+//   * `tracking_carrier` / `tracking_number` — set by an admin when the
+//     parcel ships; surfaces a public Track link on /shop/orders.
+//   * `shipped_at` / `delivered_at` — fulfillment timestamps. Modeled
+//     as separate columns rather than overloaded onto `status` so the
+//     payment lifecycle (`pending`/`paid`/`expired`/`refunded`) and
+//     the physical fulfillment lifecycle stay independent. Refunds
+//     after shipment preserve the shipped_at timestamp for support.
+//
+// `status` lifecycle (PAYMENT only — fulfillment is its own dimension):
 //   pending  — row created when /shop/checkout creates the Session.
 //              Stripe hasn't redirected the user yet.
 //   paid     — checkout.session.completed webhook landed.
@@ -34,9 +46,10 @@
 // same Session ID, so the upsert is safe.
 
 import { sql } from "drizzle-orm";
-import { index, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
+import type { SavedShippingAddress } from "./shop-customers";
 
 export const shopOrders = resupplySchema.table(
   "shop_orders",
@@ -74,11 +87,52 @@ export const shopOrders = resupplySchema.table(
       .notNull()
       .default(sql`now()`),
     paidAt: timestamp("paid_at", { withTimezone: true }),
+    /**
+     * Snapshot of the shipping address used for THIS order. Same
+     * shape as shop_customers.shipping_address_json so the existing
+     * Zod validator + UI form can be reused. Migration 0014.
+     */
+    shippingAddress: jsonb("shipping_address_json").$type<SavedShippingAddress | null>(),
+    /**
+     * Carrier name (free-form: "UPS", "USPS", "FedEx", "DHL"). The
+     * track-link projection layer maps this to a known URL template;
+     * unknown carriers render the bare tracking number with no link.
+     * Migration 0013.
+     */
+    trackingCarrier: text("tracking_carrier"),
+    /**
+     * Carrier-specific tracking number. Always paired with carrier;
+     * the admin endpoint requires both fields so partial state is
+     * impossible. Migration 0013.
+     */
+    trackingNumber: text("tracking_number"),
+    /**
+     * Set by the admin at the moment they enter tracking. Once non-null
+     * the order is no longer in the "awaiting shipment" queue and the
+     * customer-facing address-edit endpoint stops accepting writes.
+     * Migration 0013.
+     */
+    shippedAt: timestamp("shipped_at", { withTimezone: true }),
+    /**
+     * Set by an admin (or, in a future iteration, by a carrier-callback
+     * worker) once the parcel is delivered. Used for the "delivered"
+     * badge on the customer order list and the admin queue counts.
+     * Migration 0013.
+     */
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   },
   (t) => ({
     statusIdx: index("shop_orders_status_idx").on(t.status),
     createdAtIdx: index("shop_orders_created_at_idx").on(t.createdAt),
     clerkUserIdx: index("shop_orders_clerk_user_id_idx").on(t.clerkUserId),
+    // NOTE: Migration 0013 also creates a PARTIAL index
+    //   "shop_orders_awaiting_shipment_idx" ON (paid_at DESC)
+    //     WHERE shipped_at IS NULL
+    // It powers the admin "awaiting shipment" queue. We deliberately
+    // do NOT declare it here because Drizzle can't express the WHERE
+    // clause; the migration SQL is the source of truth for that
+    // index, and query code never names it directly (Postgres
+    // chooses it via the planner).
   }),
 );
 

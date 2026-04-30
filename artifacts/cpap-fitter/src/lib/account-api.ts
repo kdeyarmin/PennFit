@@ -151,6 +151,49 @@ export const cancelShopSubscription = (id: string) =>
     { method: "POST" },
   );
 
+/**
+ * T-C5 — pause / resume / cadence change.
+ *
+ * `pause` and `resume` mirror Stripe's `pause_collection` field. We
+ * don't track paused state in our local schema yet (no-schema slice),
+ * so the UI shows BOTH options whenever the subscription is active
+ * and not pending cancellation. Both endpoints are idempotent server-
+ * side; clicking the wrong one returns 200 without making a no-op
+ * Stripe round-trip needlessly visible to the patient.
+ */
+export const pauseShopSubscription = (id: string) =>
+  meFetch<{ ok: true }>(
+    `/shop/me/subscriptions/${encodeURIComponent(id)}/pause`,
+    { method: "POST" },
+  );
+
+export const resumeShopSubscription = (id: string) =>
+  meFetch<{ ok: true }>(
+    `/shop/me/subscriptions/${encodeURIComponent(id)}/resume`,
+    { method: "POST" },
+  );
+
+export interface ShopCadenceOption {
+  priceId: string;
+  intervalLabel: string;
+  unitAmountCents: number | null;
+  currency: string | null;
+  isCurrent: boolean;
+}
+export interface ShopCadenceOptionsResponse {
+  options: ShopCadenceOption[];
+}
+export const fetchShopCadenceOptions = (id: string) =>
+  meFetch<ShopCadenceOptionsResponse>(
+    `/shop/me/subscriptions/${encodeURIComponent(id)}/cadence-options`,
+  );
+
+export const changeShopSubscriptionCadence = (id: string, priceId: string) =>
+  meFetch<{ ok: true; unchanged?: boolean }>(
+    `/shop/me/subscriptions/${encodeURIComponent(id)}/cadence`,
+    { method: "POST", body: JSON.stringify({ priceId }) },
+  );
+
 export const startQuickCheckout = (input: QuickCheckoutInput) =>
   meFetch<{ url: string; sessionId: string }>("/shop/me/quick-checkout", {
     method: "POST",

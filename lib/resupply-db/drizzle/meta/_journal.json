@@ -85,6 +85,34 @@
             "when": 1778090400000,
             "tag": "0011_shop_order_items_price_id_not_null",
             "breakpoints": true
+        },
+        {
+            "idx": 12,
+            "version": "7",
+            "when": 1778176800000,
+            "tag": "0012_patient_latest_message",
+            "breakpoints": true
+        },
+        {
+            "idx": 13,
+            "version": "7",
+            "when": 1778263200000,
+            "tag": "0013_shop_orders_tracking",
+            "breakpoints": true
+        },
+        {
+            "idx": 14,
+            "version": "7",
+            "when": 1778349600000,
+            "tag": "0014_shop_orders_shipping_address",
+            "breakpoints": true
+        },
+        {
+            "idx": 15,
+            "version": "7",
+            "when": 1778436000000,
+            "tag": "0015_prescription_attachments",
+            "breakpoints": true
         }
     ]
 }

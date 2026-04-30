@@ -31,6 +31,7 @@ import {
   encrypt,
   getDbPool,
   messages,
+  tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
 import {
   buildSystemPrompt,
@@ -267,12 +268,24 @@ async function persistTranscript(
   conversationId: string,
   turn: TranscriptTurn,
 ): Promise<void> {
+  const direction = turn.source === "input" ? "inbound" : "outbound";
+  const sentAt = new Date();
   await db.insert(messages).values({
     conversationId,
-    direction: turn.source === "input" ? "inbound" : "outbound",
+    direction,
     senderRole: turn.source === "input" ? "patient" : "agent",
     body: encrypt(turn.text),
-    sentAt: new Date(),
+    sentAt,
+  });
+
+  // Refresh latest-message projection (best-effort). Voice transcripts
+  // can be long — `tryUpsert` truncates internally before encryption,
+  // so we don't need to pre-truncate here.
+  await tryUpsertPatientLatestMessage(db, {
+    conversationId,
+    body: turn.text,
+    direction,
+    messageAt: sentAt,
   });
 }
 

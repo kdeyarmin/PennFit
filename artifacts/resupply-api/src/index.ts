@@ -8,6 +8,7 @@ import {
   PgcryptoNotInstalledError,
   assertPgcryptoEnabled,
   getDbPool,
+  setProjectionLogger,
 } from "@workspace/resupply-db";
 
 import app from "./app";
@@ -15,6 +16,19 @@ import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import { handleVoiceWsConnection } from "./lib/voice/ws-handler";
 import { readVoiceConfigOrNull } from "./lib/voice/voice-config";
+
+// Route resupply-db's projection-failure log path through the
+// API server's structured pino logger. This eliminates the silent-
+// failure mode for callsites that don't explicitly thread req.log
+// (worker reminder jobs, voice transcript callbacks). Mirrors the
+// `setPoolErrorLogger` pattern already used for pg pool errors —
+// resupply-db itself stays dependency-free; the boundary owner
+// supplies the sink at boot.
+setProjectionLogger({
+  warn(obj, msg) {
+    logger.warn(obj, msg ?? "patient_latest_message: refresh failed");
+  },
+});
 
 const rawPort = process.env["PORT"];
 

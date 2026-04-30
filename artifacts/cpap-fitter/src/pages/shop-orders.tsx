@@ -28,19 +28,34 @@ import {
   CheckCircle2,
   Loader2,
   Mail,
+  MapPin,
   Package,
+  Pencil,
   ShieldCheck,
   ShoppingBag,
+  Truck,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   fetchMyOrders,
   formatMoneyCents,
   resendOrderReceipt,
+  updateOrderShippingAddress,
   type OrderHistoryItem,
+  type OrderShippingAddress,
 } from "@/lib/shop-api";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -114,6 +129,16 @@ function SignedInOrders() {
   const [state, setState] = useState<LoadState>("idle");
   const [loadingMore, setLoadingMore] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  // After a successful address edit we patch the order in place
+  // rather than re-fetching the whole list — keeps the cursor stable
+  // and avoids a flash of "Loading…". The PATCH is a single-order
+  // operation so a list-wide refresh would be wasteful.
+  const replaceOrder = useCallback((next: OrderHistoryItem) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === next.id ? next : o)),
+    );
+  }, []);
 
   // Initial load. Run once on mount; the user-id-bound effect lives
   // inside the Clerk session so a fresh sign-in already remounts
@@ -235,7 +260,7 @@ function SignedInOrders() {
       </div>
       <ul className="space-y-4" data-testid="orders-list">
         {orders.map((o) => (
-          <OrderCard key={o.id} order={o} />
+          <OrderCard key={o.id} order={o} onOrderUpdated={replaceOrder} />
         ))}
       </ul>
       {cursor && (
@@ -257,7 +282,13 @@ function SignedInOrders() {
   );
 }
 
-function OrderCard({ order }: { order: OrderHistoryItem }) {
+function OrderCard({
+  order,
+  onOrderUpdated,
+}: {
+  order: OrderHistoryItem;
+  onOrderUpdated: (next: OrderHistoryItem) => void;
+}) {
   const paidAt = order.paidAt ?? order.createdAt;
   const dateLabel = new Date(paidAt).toLocaleDateString(undefined, {
     year: "numeric",
@@ -326,9 +357,389 @@ function OrderCard({ order }: { order: OrderHistoryItem }) {
           </li>
         ))}
       </ul>
+      <ShipmentSection order={order} onOrderUpdated={onOrderUpdated} />
       <ResendReceiptControl sessionId={order.sessionId} orderId={order.id} />
     </li>
   );
+}
+
+// Shipment + address block. Sits between the line items and the
+// receipt control — visually ordered "what you bought → where it's
+// going / where it is → secondary actions".
+//
+// Render rules:
+//   - tracking present  → show carrier + number, with "Track" link
+//                         when the server computed a URL.
+//   - shipped, no track → "Shipped on <date>" label only.
+//   - no shipment yet   → "Preparing your order" + (when canEditAddress)
+//                         the "Edit address" button.
+//   - delivered         → green badge on top of whatever else applies.
+//
+// We deliberately do NOT show a "still no tracking after N days"
+// warning here — that's the support team's job. The customer-facing
+// UI stays calm and factual.
+function ShipmentSection({
+  order,
+  onOrderUpdated,
+}: {
+  order: OrderHistoryItem;
+  onOrderUpdated: (next: OrderHistoryItem) => void;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
+
+  // Pre-migration-0014 orders have neither shipping_address nor any
+  // tracking columns. Skip the section entirely so they don't show
+  // a misleading "Preparing your order" label that's actually just
+  // "we never captured this data".
+  const hasAnyShipmentData =
+    order.shippingAddress !== null ||
+    order.tracking !== null ||
+    order.shippedAt !== null ||
+    order.deliveredAt !== null;
+  if (!hasAnyShipmentData) {
+    return null;
+  }
+
+  const shippedDate = order.shippedAt
+    ? new Date(order.shippedAt).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+  const deliveredDate = order.deliveredAt
+    ? new Date(order.deliveredAt).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+
+  return (
+    <div
+      className="mt-4 pt-3 border-t border-border/40 space-y-3"
+      data-testid={`order-${order.id}-shipment`}
+    >
+      {/* Tracking row */}
+      <div className="flex flex-wrap items-start gap-3">
+        <Truck className="w-4 h-4 mt-0.5 text-[hsl(var(--penn-navy))]/70 shrink-0" />
+        <div className="flex-1 min-w-0">
+          {order.tracking ? (
+            <div className="text-sm">
+              <div className="font-medium text-foreground">
+                {order.tracking.carrier}
+                <span className="text-muted-foreground font-mono ml-2">
+                  {order.tracking.number}
+                </span>
+              </div>
+              {order.tracking.url && (
+                <a
+                  href={order.tracking.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-1"
+                  data-testid={`order-${order.id}-track-link`}
+                >
+                  Track this shipment ↗
+                </a>
+              )}
+              {shippedDate && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  Shipped {shippedDate}
+                </div>
+              )}
+            </div>
+          ) : shippedDate ? (
+            <div className="text-sm">
+              <div className="font-medium text-foreground">Shipped</div>
+              <div className="text-xs text-muted-foreground">
+                Sent on {shippedDate}. Carrier tracking not provided.
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm">
+              <div className="font-medium text-foreground">
+                Preparing your order
+              </div>
+              <div className="text-xs text-muted-foreground">
+                We&apos;ll email you tracking when it ships.
+              </div>
+            </div>
+          )}
+        </div>
+        {deliveredDate && (
+          <Badge
+            variant="outline"
+            className="border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold"
+            data-testid={`order-${order.id}-delivered-badge`}
+          >
+            Delivered {deliveredDate}
+          </Badge>
+        )}
+      </div>
+
+      {/* Address row */}
+      {order.shippingAddress && (
+        <div className="flex flex-wrap items-start gap-3">
+          <MapPin className="w-4 h-4 mt-0.5 text-[hsl(var(--penn-navy))]/70 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--penn-navy))]/70">
+              Shipping to
+            </div>
+            <address
+              className="not-italic text-sm text-foreground mt-1 leading-snug"
+              data-testid={`order-${order.id}-address`}
+            >
+              {order.shippingAddress.line1}
+              {order.shippingAddress.line2 ? `, ${order.shippingAddress.line2}` : ""}
+              <br />
+              {order.shippingAddress.city}, {order.shippingAddress.state}{" "}
+              {order.shippingAddress.postalCode}
+            </address>
+          </div>
+          {order.canEditAddress && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setEditOpen(true)}
+              data-testid={`order-${order.id}-edit-address`}
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1.5" />
+              Edit
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Address-edit dialog. Mounted here (not at the page root) so
+          the dialog's local state is per-order: opening one card's
+          dialog never leaks the prior card's draft. */}
+      {order.shippingAddress && order.canEditAddress && (
+        <EditAddressDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          orderId={order.id}
+          current={order.shippingAddress}
+          onSaved={(saved) => {
+            onOrderUpdated({
+              ...order,
+              shippingAddress: saved.shippingAddress,
+              shippedAt: saved.shippedAt,
+              canEditAddress: saved.canEditAddress,
+            });
+            setEditOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Address edit form. Lives in a modal so it can sit on top of the
+// order-history list without taking the customer to a separate
+// route — most edits are a one-line correction (typo in apartment
+// number, wrong unit) that doesn't justify a navigation hop.
+//
+// US-only: the country field is fixed to "US". The PennPaps shop
+// only ships domestically; international orders aren't supported and
+// surface a server-side validation error if attempted via curl.
+function EditAddressDialog({
+  open,
+  onOpenChange,
+  orderId,
+  current,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  orderId: string;
+  current: OrderShippingAddress;
+  onSaved: (next: {
+    shippingAddress: OrderShippingAddress;
+    shippedAt: string | null;
+    canEditAddress: boolean;
+  }) => void;
+}) {
+  const [line1, setLine1] = useState(current.line1);
+  const [line2, setLine2] = useState(current.line2 ?? "");
+  const [city, setCity] = useState(current.city);
+  const [stateCode, setStateCode] = useState(current.state);
+  const [postalCode, setPostalCode] = useState(current.postalCode);
+  const [phase, setPhase] = useState<"idle" | "saving" | "error">("idle");
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  // Reset the form when the dialog re-opens with a (potentially
+  // different) `current` snapshot. Without this, editing one address,
+  // closing without saving, and re-opening would show the stale
+  // draft instead of the current saved value.
+  useEffect(() => {
+    if (!open) return;
+    setLine1(current.line1);
+    setLine2(current.line2 ?? "");
+    setCity(current.city);
+    setStateCode(current.state);
+    setPostalCode(current.postalCode);
+    setPhase("idle");
+    setErrMsg(null);
+  }, [open, current]);
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPhase("saving");
+    setErrMsg(null);
+    try {
+      const result = await updateOrderShippingAddress(orderId, {
+        line1: line1.trim(),
+        line2: line2.trim() ? line2.trim() : null,
+        city: city.trim(),
+        // The server uppercases this anyway — we trim+upper here so
+        // the optimistic UI matches what the server will return.
+        state: stateCode.trim().toUpperCase(),
+        postalCode: postalCode.trim(),
+        country: "US",
+      });
+      onSaved({
+        shippingAddress: result.order.shippingAddress,
+        shippedAt: result.order.shippedAt,
+        canEditAddress: result.order.canEditAddress,
+      });
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? "unknown";
+      setPhase("error");
+      setErrMsg(addressErrorMessage(code));
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid={`order-${orderId}-edit-address-dialog`}
+      >
+        <DialogHeader>
+          <DialogTitle>Update shipping address</DialogTitle>
+          <DialogDescription>
+            You can change this until your order ships. After that, contact
+            support to update the address of record.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor={`addr-line1-${orderId}`}>Street address</Label>
+            <Input
+              id={`addr-line1-${orderId}`}
+              required
+              maxLength={200}
+              value={line1}
+              onChange={(e) => setLine1(e.target.value)}
+              data-testid={`order-${orderId}-addr-line1`}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={`addr-line2-${orderId}`}>
+              Apartment, suite, etc. (optional)
+            </Label>
+            <Input
+              id={`addr-line2-${orderId}`}
+              maxLength={200}
+              value={line2}
+              onChange={(e) => setLine2(e.target.value)}
+              data-testid={`order-${orderId}-addr-line2`}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5 col-span-2">
+              <Label htmlFor={`addr-city-${orderId}`}>City</Label>
+              <Input
+                id={`addr-city-${orderId}`}
+                required
+                maxLength={100}
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                data-testid={`order-${orderId}-addr-city`}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`addr-state-${orderId}`}>State</Label>
+              <Input
+                id={`addr-state-${orderId}`}
+                required
+                minLength={2}
+                maxLength={2}
+                value={stateCode}
+                onChange={(e) => setStateCode(e.target.value)}
+                placeholder="PA"
+                className="uppercase"
+                data-testid={`order-${orderId}-addr-state`}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`addr-zip-${orderId}`}>ZIP code</Label>
+              <Input
+                id={`addr-zip-${orderId}`}
+                required
+                maxLength={20}
+                value={postalCode}
+                onChange={(e) => setPostalCode(e.target.value)}
+                data-testid={`order-${orderId}-addr-zip`}
+              />
+            </div>
+          </div>
+          {phase === "error" && errMsg && (
+            <div
+              role="alert"
+              className="text-xs text-rose-700 inline-flex items-center gap-1"
+              data-testid={`order-${orderId}-addr-error`}
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              {errMsg}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={phase === "saving"}
+              data-testid={`order-${orderId}-addr-cancel`}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={phase === "saving"}
+              data-testid={`order-${orderId}-addr-save`}
+            >
+              {phase === "saving" && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Save address
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Map server-side error codes to short human-readable phrases.
+// Mirror of the receipt-control mapper. We surface "already shipped"
+// distinctly because the customer's next action genuinely changes —
+// they need to contact support, not retry.
+function addressErrorMessage(code: string): string {
+  switch (code) {
+    case "order_already_shipped":
+      return "This order has already shipped. Contact support to update the address of record.";
+    case "order_not_paid":
+      return "This order isn't fully paid yet. Try again in a moment.";
+    case "order_not_found":
+      return "We couldn't find this order. Reload the page and try again.";
+    case "invalid_body":
+      return "Some fields look invalid. Double-check the address and try again.";
+    default:
+      return "Something went wrong. Please try again.";
+  }
 }
 
 // Re-send receipt control (C8). Lives BELOW the line items so the

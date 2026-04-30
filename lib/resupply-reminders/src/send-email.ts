@@ -26,6 +26,7 @@ import {
   messages,
   patients,
   prescriptions,
+  tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -191,6 +192,7 @@ export async function sendReminderEmail(
     throw err;
   }
 
+  const sentAt = new Date();
   await db.insert(messages).values({
     conversationId,
     direction: "outbound",
@@ -201,12 +203,20 @@ export async function sendReminderEmail(
       sendgrid_message_id: messageId,
       subject: rendered.subject,
     },
-    sentAt: new Date(),
+    sentAt,
   });
   await db
     .update(conversations)
     .set({ externalRef: messageId, updatedAt: new Date() })
     .where(eq(conversations.id, conversationId));
+
+  // Refresh latest-message projection (best-effort).
+  await tryUpsertPatientLatestMessage(db, {
+    conversationId,
+    body: rendered.text,
+    direction: "outbound",
+    messageAt: sentAt,
+  });
 
   await safeAuditFromActor({
     action: "messaging.reminder.sent",

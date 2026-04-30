@@ -54,6 +54,7 @@ import {
   messages,
   normalizeE164,
   phoneLookup,
+  tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
 import {
   parseInboundSmsParams,
@@ -372,6 +373,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
 
   // Persist inbound message row before any decision logic — we want
   // the transcript even if dispatch crashes.
+  const inboundAt = new Date();
   await db.insert(messages).values({
     conversationId,
     direction: "inbound",
@@ -379,12 +381,24 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     body: sql`${encrypt(parsed.Body)}`,
     deliveryStatus: "received",
     vendorMetadata: { twilio_message_sid: parsed.MessageSid },
-    sentAt: new Date(),
+    sentAt: inboundAt,
   });
   await db
     .update(conversations)
-    .set({ lastMessageAt: new Date(), updatedAt: new Date() })
+    .set({ lastMessageAt: inboundAt, updatedAt: inboundAt })
     .where(eq(conversations.id, conversationId));
+
+  // Refresh latest-message projection (best-effort).
+  await tryUpsertPatientLatestMessage(
+    db,
+    {
+      conversationId,
+      body: parsed.Body,
+      direction: "inbound",
+      messageAt: inboundAt,
+    },
+    req.log,
+  );
 
   await safeAudit({
     action: "messaging.inbound.received",
@@ -490,6 +504,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
   }
 
   // Persist the outbound reply we're about to send.
+  const replyAt = new Date();
   await db.insert(messages).values({
     conversationId,
     direction: "outbound",
@@ -497,8 +512,20 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     body: sql`${encrypt(twimlBody)}`,
     deliveryStatus: "queued",
     vendorMetadata: { twiml_inline: true },
-    sentAt: new Date(),
+    sentAt: replyAt,
   });
+
+  // Refresh latest-message projection (best-effort).
+  await tryUpsertPatientLatestMessage(
+    db,
+    {
+      conversationId,
+      body: twimlBody,
+      direction: "outbound",
+      messageAt: replyAt,
+    },
+    req.log,
+  );
 
   res
     .status(200)

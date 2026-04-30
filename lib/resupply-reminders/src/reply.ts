@@ -31,6 +31,7 @@ import {
   messages,
   normalizeE164,
   patients,
+  tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -238,6 +239,7 @@ export async function replyInConversation(
   }
 
   // Persist the outbound message + thread the conversation forward.
+  const sentAt = new Date();
   const inserted = await db
     .insert(messages)
     .values({
@@ -250,7 +252,7 @@ export async function replyInConversation(
         conv.channel === "sms"
           ? { twilio_message_sid: vendorRef }
           : { sendgrid_message_id: vendorRef },
-      sentAt: new Date(),
+      sentAt,
     })
     .returning({ id: messages.id });
   const messageId = inserted[0]?.id;
@@ -269,13 +271,21 @@ export async function replyInConversation(
   await db
     .update(conversations)
     .set({
-      lastMessageAt: new Date(),
+      lastMessageAt: sentAt,
       // Admin replied — the ball is back in the patient's court.
       // We don't transition closed→ here; that's gated above.
       status: "awaiting_patient",
-      updatedAt: new Date(),
+      updatedAt: sentAt,
     })
     .where(eq(conversations.id, conversationId));
+
+  // Refresh latest-message projection (best-effort).
+  await tryUpsertPatientLatestMessage(db, {
+    conversationId,
+    body,
+    direction: "outbound",
+    messageAt: sentAt,
+  });
 
   await safeAuditFromActor({
     action: "messaging.reply.sent",

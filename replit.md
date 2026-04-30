@@ -136,6 +136,19 @@ A self-serve, opt-in reminder system at `/reminders` lets customers (no account 
 - **Email:** `reminderEmail.ts` mirrors `orderEmail.ts` — graceful skip when SendGrid is unconfigured. Confirmation on subscribe + due-reminder on dispatch, both with one-click manage links.
 - **Frontend:** `/reminders` (signup form with per-SKU last-replaced/interval inputs and honeypot), `/reminders/manage?token=…` (edit/unsubscribe), and a `<SubscribeRemindersCta>` card placed on `/learn/replacement-schedule` (primary) and `/shop/checkout-success` (post-purchase nudge). Admin console gets a `/admin/reminders` page with a manual "Send due reminders now" button (cron wiring is future work).
 
+### Prescription Document Attachments (admin)
+
+Admins can attach a single prescription document (PDF or image, ≤10MB) per prescription row from the patient detail page. Storage is GCS-backed via the shared object-storage helper.
+
+- **Schema (migration 0015):** Five nullable columns on `prescriptions` — `attachment_object_key`, `attachment_filename`, `attachment_content_type`, `attachment_size_bytes`, `attachment_uploaded_at`. Hand-authored, applied via `pnpm --filter @workspace/resupply-db run migrate` per ADR 003.
+- **API (resupply-api, all `requireAdmin`):** `POST .../upload-url` issues a presigned PUT (audited as `upload_url_issued` so leaked URLs are forensically traceable). `POST .../finalize` re-reads `file.getMetadata()` to verify actual GCS size/MIME against caps (rejects + deletes object on mismatch), persists GCS-confirmed values, audited. `GET .../attachment` streams via `objectStorage.downloadObject()`. `DELETE .../attachment` clears columns + deletes object best-effort. `attachmentObjectKey` is never exposed to the client.
+- **UI:** Document column on `PrescriptionsTab` shows filename + Download/Remove when present, "Attach" picker when empty. Accepts PDF/JPEG/PNG/WebP only; client enforces 10MB cap pre-upload but server is the source of truth.
+- **Known debt (acceptable for slice):** Orphaned objects on incomplete upload / replaced-attachment paths (PHI retention follow-up). OpenAPI spec for `PatientPrescription` does not yet include the attachment fields — the dashboard uses an inline type. Both flagged for future cleanup.
+
+### Mobile Fit-Flow Stepper
+
+`<FitFlowStepper>` mounts in the customer Layout and self-gates by route (5 steps: face-scan → masks → cart → reminders → checkout-success). Mobile (<md) renders a "Step N of 5" label plus a progress bar; desktop (≥md) renders a 5-pill horizontal tracker. Hidden on `/shop` and other non-funnel pages. `aria-valuetext` carries the current step label for screen readers.
+
 ## External Dependencies
 
 *   **SendGrid:** For emails (order fulfillment, resupply reminders).

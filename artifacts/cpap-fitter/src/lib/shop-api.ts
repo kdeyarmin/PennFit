@@ -421,6 +421,29 @@ export interface OrderHistoryLineItem {
   currency: string | null;
 }
 
+/**
+ * Per-order shipping address snapshot. Captured by the webhook at
+ * paid time from Stripe Checkout (or written by the customer via
+ * `updateOrderShippingAddress` while shipped_at IS NULL). Older orders
+ * — paid before migration 0014 — return `null`.
+ */
+export interface OrderShippingAddress {
+  line1: string;
+  line2: string | null;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: "US";
+}
+
+/** Tracking projection (W3 T-C6). Server computes the carrier-specific URL. */
+export interface OrderTracking {
+  carrier: string;
+  number: string;
+  /** Pre-computed tracking URL; null when the carrier isn't recognised. */
+  url: string | null;
+}
+
 export interface OrderHistoryItem {
   id: string;
   sessionId: string;
@@ -429,6 +452,18 @@ export interface OrderHistoryItem {
   currency: string | null;
   createdAt: string;
   paidAt: string | null;
+  /** Snapshot at paid-time. May be null for orders paid pre-migration-0014. */
+  shippingAddress: OrderShippingAddress | null;
+  /** null until the admin enters tracking. */
+  tracking: OrderTracking | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  /**
+   * Server-side hint: customer is allowed to PATCH the shipping
+   * address only while the parcel hasn't shipped. The server
+   * re-validates this on write (a stale `true` is harmless).
+   */
+  canEditAddress: boolean;
   items: OrderHistoryLineItem[];
 }
 
@@ -499,6 +534,62 @@ export async function resendOrderReceipt(
     throw err;
   }
   return (await res.json()) as { sent: true; email: string };
+}
+
+/**
+ * Update the per-order shipping address. Only allowed while the
+ * parcel hasn't shipped — the server returns 409 once shipped_at IS
+ * NOT NULL. Throws an Error whose `code` field carries the server's
+ * machine-readable error string so the caller can branch on it.
+ *
+ * Possible codes:
+ *   - "invalid_order_id" / "invalid_body" — caller bug
+ *   - "order_not_found"                   — wrong id, or someone
+ *                                            else's order (server
+ *                                            collapses both into 404
+ *                                            for privacy)
+ *   - "order_not_paid"                    — never billed, can't edit
+ *   - "order_already_shipped"             — too late, contact support
+ */
+export async function updateOrderShippingAddress(
+  orderId: string,
+  address: OrderShippingAddress,
+): Promise<{ order: { id: string; shippingAddress: OrderShippingAddress; shippedAt: string | null; canEditAddress: boolean } }> {
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(await authHeader()),
+  };
+  const res = await fetch(
+    `/resupply-api/shop/me/orders/${encodeURIComponent(orderId)}/shipping-address`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(address),
+    },
+  );
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      // Body wasn't JSON — keep http_<status>.
+    }
+    const err = new Error(
+      `Failed to update shipping address (${code})`,
+    ) as Error & { code: string };
+    err.code = code;
+    throw err;
+  }
+  return (await res.json()) as {
+    order: {
+      id: string;
+      shippingAddress: OrderShippingAddress;
+      shippedAt: string | null;
+      canEditAddress: boolean;
+    };
+  };
 }
 
 export function formatMoneyCents(cents: number, currency = "usd"): string {

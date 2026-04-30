@@ -44,9 +44,68 @@ import {
   type ShopSubscriptionItemSnapshot,
 } from "@workspace/resupply-db";
 
+import type { SavedShippingAddress } from "@workspace/resupply-db";
+
 import { getStripeClient, readStripeConfigOrNull, type StripeConfig } from "./config";
 import { readDefaultPaymentMethod } from "./customer";
 import { formatIntervalLabel } from "./products-meta";
+
+/**
+ * Extract a shipping address from a Checkout Session into our
+ * canonical SavedShippingAddress shape, or return null if the
+ * session didn't collect one (or collected an obviously incomplete
+ * address — e.g. line1 missing).
+ *
+ * Why we tolerate two different field locations:
+ *   - The current Stripe API returns shipping under
+ *     `session.collected_information.shipping_details`.
+ *   - Older / legacy events delivered it directly at
+ *     `session.shipping_details`.
+ *   Stripe's TS types only surface the former; we cast for the
+ *   latter so a re-delivery from a webhook backlog still parses.
+ *
+ * Why we always write country: "US":
+ *   The shop is US-only by current product policy. Stripe will only
+ *   ever return a US address (we restrict at Checkout config time).
+ *   Hardcoding the literal here matches the SavedShippingAddress
+ *   `country: "US"` literal type so consumers never have to guard.
+ */
+export function extractShippingAddressFromSession(
+  session: Stripe.Checkout.Session,
+): SavedShippingAddress | null {
+  const shipping =
+    session.collected_information?.shipping_details ??
+    (
+      session as unknown as {
+        shipping_details?: {
+          address?: {
+            line1?: string | null;
+            line2?: string | null;
+            city?: string | null;
+            state?: string | null;
+            postal_code?: string | null;
+            country?: string | null;
+          };
+        };
+      }
+    ).shipping_details ??
+    null;
+  const addr = shipping?.address;
+  // Required-field gate — a half-filled address (e.g. only line1) is
+  // worse than none, because the customer-facing UI would render the
+  // partial value as if it were authoritative.
+  if (!addr?.line1 || !addr.city || !addr.state || !addr.postal_code) {
+    return null;
+  }
+  return {
+    line1: addr.line1,
+    line2: addr.line2 ?? null,
+    city: addr.city,
+    state: addr.state,
+    postalCode: addr.postal_code,
+    country: "US",
+  };
+}
 
 export const stripeWebhookHandler: RequestHandler = async (
   req: Request,
@@ -245,6 +304,15 @@ async function markPaid(
       session.metadata.clerk_user_id) ||
     null;
 
+  // Per-order shipping address snapshot (W3 T-C7). Reading from the
+  // session at paid-time captures the address-as-shipped, which is
+  // the right semantics for the customer-facing order history and
+  // the admin tracking workflow — even if the shop_customers default
+  // address is later edited. Falls back to null when the session
+  // didn't collect shipping (shipping-disabled SKUs, etc); the
+  // admin "edit address" endpoint can fill it in later.
+  const shippingAddress = extractShippingAddressFromSession(session);
+
   // Returning the row so the line-item upsert downstream can copy
   // (orderId, clerkUserId, paidAt) without a second SELECT.
   const updated = await db
@@ -255,6 +323,10 @@ async function markPaid(
       amountTotalCents: session.amount_total ?? null,
       currency: session.currency ?? null,
       ...(clerkUserId ? { clerkUserId } : {}),
+      // Only write the snapshot if Stripe actually gave us one.
+      // Skipping the key on null preserves any later admin edit on
+      // a Stripe re-delivery (charge.refunded → no shipping_details).
+      ...(shippingAddress ? { shippingAddress } : {}),
       paidAt: sql`now()`,
       updatedAt: sql`now()`,
     })
@@ -404,23 +476,7 @@ async function syncCustomerAfterCheckout(
   const db = drizzle(getDbPool());
 
   const dpm = await readDefaultPaymentMethod(config, stripeCustomerId);
-  const shipping =
-    session.collected_information?.shipping_details ??
-    (
-      session as unknown as {
-        shipping_details?: {
-          address?: {
-            line1?: string | null;
-            line2?: string | null;
-            city?: string | null;
-            state?: string | null;
-            postal_code?: string | null;
-            country?: string | null;
-          };
-        };
-      }
-    ).shipping_details ??
-    null;
+  const shippingAddress = extractShippingAddressFromSession(session);
 
   // Read existing row to decide whether to backfill the shipping
   // address (only when empty — never overwrite a deliberate edit).
@@ -435,11 +491,7 @@ async function syncCustomerAfterCheckout(
   const existing = existingRows[0];
 
   const shouldSetShipping =
-    !!shipping?.address?.line1 &&
-    !!shipping.address.city &&
-    !!shipping.address.state &&
-    !!shipping.address.postal_code &&
-    (existing?.shippingAddress ?? null) === null;
+    shippingAddress !== null && (existing?.shippingAddress ?? null) === null;
 
   const updates: Partial<typeof shopCustomers.$inferInsert> & {
     updatedAt: Date;
@@ -455,15 +507,8 @@ async function syncCustomerAfterCheckout(
     updates.defaultPaymentMethodExpMonth = dpm.expMonth;
     updates.defaultPaymentMethodExpYear = dpm.expYear;
   }
-  if (shouldSetShipping && shipping?.address) {
-    updates.shippingAddress = {
-      line1: shipping.address.line1!,
-      line2: shipping.address.line2 ?? null,
-      city: shipping.address.city!,
-      state: shipping.address.state!,
-      postalCode: shipping.address.postal_code!,
-      country: "US",
-    };
+  if (shouldSetShipping && shippingAddress) {
+    updates.shippingAddress = shippingAddress;
   }
 
   // Upsert: handle the (rare) case where the row doesn't exist yet

@@ -2295,7 +2295,11 @@ components:
       description: |
         One row in the patient list. Decrypts firstName + lastName for
         display. NEVER includes the phone number or email — only booleans
-        showing whether the patient has each on file.
+        showing whether the patient has each on file. The lastMessage*
+        triplet is sourced from the patient_latest_message projection
+        (refreshed in-line on every inbound/outbound message write) so
+        the list can show "last contacted" without a per-row scan of
+        the messages table.
       properties:
         id:
           type: string
@@ -2319,6 +2323,29 @@ components:
         updatedAt:
           type: string
           format: date-time
+        lastMessageAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Timestamp of the most recent inbound or outbound message
+            for this patient across any conversation. NULL when the
+            patient has never exchanged a message.
+        lastMessageDirection:
+          type: string
+          enum: [inbound, outbound]
+          nullable: true
+          description: |
+            Direction of that most recent message. NULL when there is
+            no message yet.
+        lastMessagePreview:
+          type: string
+          nullable: true
+          description: |
+            Decrypted, single-line preview of the most recent message
+            body, truncated to 80 characters by the projection helper.
+            NULL when there is no message yet. PHI: only render in
+            authenticated admin contexts.
       required:
         - id
         - pacwareId
@@ -2532,6 +2559,23 @@ components:
         updatedAt:
           type: string
           format: date-time
+        lastMessageAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Timestamp of the most recent inbound or outbound message
+            for this patient. Sourced from patient_latest_message.
+        lastMessageDirection:
+          type: string
+          enum: [inbound, outbound]
+          nullable: true
+        lastMessagePreview:
+          type: string
+          nullable: true
+          description: |
+            Decrypted preview of the most recent message body,
+            truncated to 80 characters. PHI.
         prescriptions:
           type: array
           items:

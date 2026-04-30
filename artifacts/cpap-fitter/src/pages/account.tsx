@@ -33,8 +33,11 @@ import {
   Loader2,
   MapPin,
   Package,
+  Pause,
+  Play,
   RefreshCw,
   Repeat,
+  Settings2,
   ShoppingBag,
   User as UserIcon,
   UserCircle2,
@@ -43,12 +46,27 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import {
   AccountApiError,
   cancelShopSubscription,
+  changeShopSubscriptionCadence,
+  fetchShopCadenceOptions,
   fetchShopMe,
   fetchShopMySubscriptions,
+  pauseShopSubscription,
+  resumeShopSubscription,
   updateShopMe,
   type SavedShippingAddress,
+  type ShopCadenceOption,
   type ShopMeResponse,
   type ShopRecentOrder,
   type ShopSubscriptionView,
@@ -770,11 +788,34 @@ function OrdersSection({
 // feature on accounts that haven't tried it. Discovery happens on
 // /shop and /reminders; this section only manages.
 // ---------------------------------------------------------------------------
+// Per-row pending action — one of these at a time per subscription.
+// `null` means the row is idle. We use a single state field rather
+// than four booleans so the UI always disables every other button on
+// the row while ONE is in flight (older patients double-tap things).
+type PendingAction = "cancel" | "pause" | "resume";
+
 function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
   const [subs, setSubs] = useState<ShopSubscriptionView[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    id: string;
+    action: PendingAction;
+  } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Cadence dialog state. Held at the section level (not per-row) so
+  // we can render a single shared <Dialog> instead of N dialogs.
+  const [cadenceSub, setCadenceSub] = useState<ShopSubscriptionView | null>(
+    null,
+  );
+  const [cadenceOptions, setCadenceOptions] = useState<
+    ShopCadenceOption[] | null
+  >(null);
+  const [cadenceLoadError, setCadenceLoadError] = useState<string | null>(null);
+  const [cadenceSelectedPriceId, setCadenceSelectedPriceId] = useState<
+    string | null
+  >(null);
+  const [cadenceSubmitting, setCadenceSubmitting] = useState(false);
 
   async function load() {
     setLoadError(null);
@@ -795,8 +836,13 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
     void load();
   }, []);
 
+  function isPending(id: string, action?: PendingAction) {
+    if (!pending || pending.id !== id) return false;
+    return action ? pending.action === action : true;
+  }
+
   async function handleCancel(sub: ShopSubscriptionView) {
-    if (cancellingId) return;
+    if (pending) return;
     // Double-confirm — auto-ship is irreversible from the patient
     // side once stopped (they'd have to re-subscribe), and older
     // patients are particularly likely to misclick.
@@ -808,15 +854,115 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
     ) {
       return;
     }
-    setCancellingId(sub.id);
-    setCancelError(null);
+    setPending({ id: sub.id, action: "cancel" });
+    setActionError(null);
     try {
       await cancelShopSubscription(sub.id);
       await load();
     } catch (err: unknown) {
-      setCancelError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
-      setCancellingId(null);
+      setPending(null);
+    }
+  }
+
+  // Pause / resume — both buttons are always shown when the sub is
+  // active and not pending cancellation. We don't track local pause
+  // state (no schema slice), so showing both lets the patient pick the
+  // intent without us having to guess Stripe's `pause_collection`
+  // value. Both endpoints are idempotent server-side.
+  async function handlePause(sub: ShopSubscriptionView) {
+    if (pending) return;
+    if (
+      !window.confirm(
+        "Pause auto-ship? We'll stop charging your card and shipping until you " +
+          "resume. Your subscription stays active so you can pick up where you left off.",
+      )
+    ) {
+      return;
+    }
+    setPending({ id: sub.id, action: "pause" });
+    setActionError(null);
+    try {
+      await pauseShopSubscription(sub.id);
+      await load();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function handleResume(sub: ShopSubscriptionView) {
+    if (pending) return;
+    setPending({ id: sub.id, action: "resume" });
+    setActionError(null);
+    try {
+      await resumeShopSubscription(sub.id);
+      await load();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  // Cadence dialog — opened by clicking "Change cadence" on a row.
+  // We fetch the option list lazily on open (Stripe round-trip) so
+  // the patient pays the latency only when they actually want it.
+  async function openCadenceDialog(sub: ShopSubscriptionView) {
+    setCadenceSub(sub);
+    setCadenceOptions(null);
+    setCadenceLoadError(null);
+    setCadenceSelectedPriceId(null);
+    try {
+      const r = await fetchShopCadenceOptions(sub.id);
+      setCadenceOptions(r.options);
+      // Default-select the current cadence so the radio group has
+      // a chosen value immediately (better than empty selection).
+      const current = r.options.find((o) => o.isCurrent);
+      if (current) setCadenceSelectedPriceId(current.priceId);
+    } catch (err: unknown) {
+      setCadenceLoadError(err instanceof Error ? err.message : String(err));
+      setCadenceOptions([]);
+    }
+  }
+
+  function closeCadenceDialog() {
+    if (cadenceSubmitting) return;
+    setCadenceSub(null);
+    setCadenceOptions(null);
+    setCadenceLoadError(null);
+    setCadenceSelectedPriceId(null);
+  }
+
+  async function handleCadenceConfirm() {
+    if (!cadenceSub || !cadenceSelectedPriceId) return;
+    // No-op if the patient didn't actually change their selection —
+    // the server short-circuits this too, but skipping the round-trip
+    // makes the UX feel snappier on close.
+    const current = cadenceOptions?.find((o) => o.isCurrent);
+    if (current?.priceId === cadenceSelectedPriceId) {
+      closeCadenceDialog();
+      return;
+    }
+    setCadenceSubmitting(true);
+    setActionError(null);
+    try {
+      await changeShopSubscriptionCadence(
+        cadenceSub.id,
+        cadenceSelectedPriceId,
+      );
+      await load();
+      // Close AFTER the load completes so the dialog visibly reflects
+      // the new state on the row underneath when it disappears.
+      setCadenceSub(null);
+      setCadenceOptions(null);
+      setCadenceSelectedPriceId(null);
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCadenceSubmitting(false);
     }
   }
 
@@ -916,41 +1062,223 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
                   </div>
                 </div>
                 {!isCanceled && !sub.cancelAtPeriodEnd && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={previewMode || cancellingId === sub.id}
-                    onClick={() => void handleCancel(sub)}
-                    data-testid={`account-subscription-cancel-${sub.id}`}
-                    title={
-                      previewMode
-                        ? "Auto-ship will be cancellable as soon as Stripe is connected."
-                        : undefined
-                    }
-                  >
-                    {cancellingId === sub.id ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                        Cancelling…
-                      </>
-                    ) : (
-                      "Cancel auto-ship"
-                    )}
-                  </Button>
+                  // Vertical button column on the right keeps the
+                  // four CTAs from wrapping awkwardly on mobile, and
+                  // lets us put the destructive action visually last.
+                  // Pause + Resume are both shown unconditionally
+                  // because we don't track local pause state — see
+                  // the comment block at the top of the section.
+                  <div className="flex flex-col items-stretch gap-1.5 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={previewMode || isPending(sub.id)}
+                      onClick={() => void handlePause(sub)}
+                      data-testid={`account-subscription-pause-${sub.id}`}
+                      title={
+                        previewMode
+                          ? "Pause will be available once Stripe is connected."
+                          : "Pause auto-ship and stop charges until you resume."
+                      }
+                    >
+                      {isPending(sub.id, "pause") ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          Pausing…
+                        </>
+                      ) : (
+                        <>
+                          <Pause className="h-3.5 w-3.5 mr-1.5" />
+                          Pause
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={previewMode || isPending(sub.id)}
+                      onClick={() => void handleResume(sub)}
+                      data-testid={`account-subscription-resume-${sub.id}`}
+                      title={
+                        previewMode
+                          ? "Resume will be available once Stripe is connected."
+                          : "Resume auto-ship if it's currently paused."
+                      }
+                    >
+                      {isPending(sub.id, "resume") ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          Resuming…
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-3.5 w-3.5 mr-1.5" />
+                          Resume
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={previewMode || isPending(sub.id)}
+                      onClick={() => void openCadenceDialog(sub)}
+                      data-testid={`account-subscription-cadence-${sub.id}`}
+                      title={
+                        previewMode
+                          ? "Cadence changes will be available once Stripe is connected."
+                          : "Change how often supplies arrive."
+                      }
+                    >
+                      <Settings2 className="h-3.5 w-3.5 mr-1.5" />
+                      Change cadence
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={previewMode || isPending(sub.id)}
+                      onClick={() => void handleCancel(sub)}
+                      data-testid={`account-subscription-cancel-${sub.id}`}
+                      title={
+                        previewMode
+                          ? "Auto-ship will be cancellable as soon as Stripe is connected."
+                          : undefined
+                      }
+                    >
+                      {isPending(sub.id, "cancel") ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          Cancelling…
+                        </>
+                      ) : (
+                        "Cancel auto-ship"
+                      )}
+                    </Button>
+                  </div>
                 )}
               </div>
             </li>
           );
         })}
       </ul>
-      {cancelError && (
+      {actionError && (
         <p
           className="mt-3 text-sm text-destructive"
-          data-testid="account-subscription-cancel-error"
+          data-testid="account-subscription-action-error"
         >
-          {cancelError}
+          {actionError}
         </p>
       )}
+
+      {/* Cadence-change dialog — shared across all rows; opens with
+          the row's options pre-fetched. We render the radio group
+          inline (rather than a Select) because older patients find
+          radios easier to scan and the option list is short (≤ ~6). */}
+      <Dialog
+        open={cadenceSub !== null}
+        onOpenChange={(o) => {
+          if (!o) closeCadenceDialog();
+        }}
+      >
+        <DialogContent
+          data-testid="account-cadence-dialog"
+          className="sm:max-w-md"
+        >
+          <DialogHeader>
+            <DialogTitle>Change auto-ship cadence</DialogTitle>
+            <DialogDescription>
+              Choose how often you'd like your supplies to ship. Changes apply
+              to your next order — we won't re-charge you for the current
+              period.
+            </DialogDescription>
+          </DialogHeader>
+          {cadenceOptions === null && !cadenceLoadError && (
+            <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Loading options…
+            </div>
+          )}
+          {cadenceLoadError && (
+            <p className="py-4 text-sm text-destructive">
+              Couldn't load cadence options. Please try again.
+            </p>
+          )}
+          {cadenceOptions !== null && cadenceOptions.length === 0 && (
+            <p className="py-4 text-sm text-muted-foreground">
+              No alternate shipping cadences are available for this product.
+            </p>
+          )}
+          {cadenceOptions !== null && cadenceOptions.length > 0 && (
+            <RadioGroup
+              value={cadenceSelectedPriceId ?? ""}
+              onValueChange={(v) => setCadenceSelectedPriceId(v)}
+              className="space-y-2 py-2"
+            >
+              {cadenceOptions.map((opt) => {
+                const inputId = `cadence-opt-${opt.priceId}`;
+                const price =
+                  opt.unitAmountCents != null && opt.currency
+                    ? formatMoneyCents(opt.unitAmountCents, opt.currency)
+                    : null;
+                return (
+                  <div
+                    key={opt.priceId}
+                    className="flex items-center gap-3 rounded-md border border-border/40 px-3 py-2 hover:bg-accent/30"
+                  >
+                    <RadioGroupItem value={opt.priceId} id={inputId} />
+                    <Label
+                      htmlFor={inputId}
+                      className="flex-1 cursor-pointer text-sm font-normal"
+                    >
+                      <span className="font-medium">
+                        Every {opt.intervalLabel}
+                      </span>
+                      {price && (
+                        <span className="ml-2 text-muted-foreground tabular-nums">
+                          · {price}
+                        </span>
+                      )}
+                      {opt.isCurrent && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          (current)
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                );
+              })}
+            </RadioGroup>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={closeCadenceDialog}
+              disabled={cadenceSubmitting}
+              data-testid="account-cadence-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handleCadenceConfirm()}
+              disabled={
+                cadenceSubmitting ||
+                !cadenceSelectedPriceId ||
+                cadenceOptions === null ||
+                cadenceOptions.length === 0
+              }
+              data-testid="account-cadence-confirm"
+            >
+              {cadenceSubmitting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                "Save cadence"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

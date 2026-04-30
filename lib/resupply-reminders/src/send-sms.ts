@@ -30,6 +30,7 @@ import {
   normalizeE164,
   patients,
   phoneLookup,
+  tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
 import {
   createTwilioSmsClient,
@@ -264,6 +265,7 @@ export async function sendReminderSms(
     throw err;
   }
 
+  const sentAt = new Date();
   await db.insert(messages).values({
     conversationId,
     direction: "outbound",
@@ -271,12 +273,22 @@ export async function sendReminderSms(
     body: sql`${encrypt(messageBody)}`,
     deliveryStatus: "queued",
     vendorMetadata: { twilio_message_sid: messageSid },
-    sentAt: new Date(),
+    sentAt,
   });
   await db
     .update(conversations)
     .set({ externalRef: messageSid, updatedAt: new Date() })
     .where(eq(conversations.id, conversationId));
+
+  // Refresh the latest-message projection. Best-effort — a projection
+  // failure must not abort the send (the message itself is the source
+  // of truth; the projection is a UX accelerator only).
+  await tryUpsertPatientLatestMessage(db, {
+    conversationId,
+    body: messageBody,
+    direction: "outbound",
+    messageAt: sentAt,
+  });
 
   await safeAuditFromActor({
     action: "messaging.reminder.sent",
