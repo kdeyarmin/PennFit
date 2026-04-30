@@ -26,6 +26,7 @@ interface Harness {
   app: Express;
   repo: ReturnType<typeof makeMemoryRepo>;
   audit: AuditWriter & { events: Array<{ action: string }> };
+  emails: Array<{ to: string; subject: string; html: string; text: string }>;
 }
 
 function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
@@ -37,6 +38,12 @@ function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
     },
     { events: auditEvents },
   );
+  const emails: Array<{
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  }> = [];
   const env = readAuthEnv({
     AUTH_PROVIDER: "in_house",
     AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
@@ -45,14 +52,19 @@ function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
     env,
     repo,
     audit,
+    email: (input) => {
+      emails.push(input);
+    },
+    publicBaseUrl: "https://example.test",
+    allowSignUp: true,
     secureCookies: false,
     passwordHashParams: { memoryCost: 1024, timeCost: 1, parallelism: 1 },
     ...overrides,
   };
   const app = express();
   app.use(express.json());
-  app.use("/auth", makeAuthRouter(deps));
-  return { app, repo, audit };
+  app.use("/auth", makeAuthRouter(deps, { productName: "TestProduct" }));
+  return { app, repo, audit, emails };
 }
 
 /** Pull the value of a Set-Cookie header by cookie name. */

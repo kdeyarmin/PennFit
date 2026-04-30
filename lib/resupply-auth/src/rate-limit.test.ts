@@ -12,11 +12,19 @@ function fakeRepo(failures: { byEmail: number; byIp: number }): AuthRepository {
   return {
     findUserByEmail: unused,
     findUserById: unused,
+    insertUser: unused,
+    markEmailVerified: unused,
+    updateUserStatus: unused,
     findCredentialByUserId: unused,
+    upsertCredential: unused,
     findSessionByTokenHash: unused,
     insertSession: unused,
     revokeSession: unused,
+    revokeAllUserSessions: unused,
+    revokeOtherUserSessions: unused,
     bumpSession: unused,
+    insertEmailToken: unused,
+    consumeEmailToken: unused,
     recordLoginAttempt: unused,
     async countRecentFailures(input) {
       if (input.emailLower !== null) return failures.byEmail;

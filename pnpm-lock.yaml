@@ -203,6 +203,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/resupply-auth':
+        specifier: workspace:*
+        version: link:../../lib/resupply-auth
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../../lib/resupply-email
@@ -727,6 +730,9 @@ importers:
       '@workspace/resupply-audit':
         specifier: workspace:*
         version: link:../../lib/resupply-audit
+      '@workspace/resupply-auth':
+        specifier: workspace:*
+        version: link:../../lib/resupply-auth
       '@workspace/resupply-contracts':
         specifier: workspace:*
         version: link:../../lib/resupply-contracts

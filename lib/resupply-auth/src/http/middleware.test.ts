@@ -30,6 +30,8 @@ function harness() {
     env,
     repo,
     audit: () => {},
+    email: () => {},
+    publicBaseUrl: "https://example.test",
     secureCookies: false,
   };
   return { repo, deps };

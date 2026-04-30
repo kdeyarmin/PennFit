@@ -5,6 +5,7 @@
 
 import { hashPassword } from "./password";
 import type {
+  AuthEmailTokenRow,
   AuthRepository,
   AuthSession,
   AuthUser,
@@ -24,6 +25,9 @@ export interface MemoryRepo extends AuthRepository {
   __putUser(u: AuthUser): void;
   __putCredential(c: PasswordCredential): void;
   __sessions(): AuthSession[];
+  __users(): AuthUser[];
+  __credentials(): PasswordCredential[];
+  __emailTokens(): AuthEmailTokenRow[];
   __failures(emailLower: string): number;
   __successes(emailLower: string): number;
   __forceFailures(emailLower: string, count: number): void;
@@ -41,7 +45,9 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
   const credentials = new Map<string, PasswordCredential>();
   const sessions = new Map<string, AuthSession>();
   const sessionsByHash = new Map<string, AuthSession>();
+  const emailTokens = new Map<string, AuthEmailTokenRow>();
   const attempts: Attempt[] = [];
+  let userSeq = 0;
 
   const repo: MemoryRepo = {
     async findUserByEmail(emailLower) {
@@ -53,8 +59,45 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
     async findUserById(id) {
       return users.get(id) ?? null;
     },
+    async insertUser(input) {
+      userSeq += 1;
+      const user: AuthUser = {
+        id: `u_mem_${userSeq}`,
+        emailLower: input.emailLower,
+        displayName: input.displayName,
+        role: input.role,
+        status: input.status,
+        emailVerifiedAt: null,
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      users.set(user.id, user);
+      return user;
+    },
+    async markEmailVerified(userId, at) {
+      const u = users.get(userId);
+      if (!u) return;
+      if (!u.emailVerifiedAt) u.emailVerifiedAt = at;
+      if (u.status === "invited") u.status = "active";
+      u.updatedAt = at;
+    },
+    async updateUserStatus(userId, status) {
+      const u = users.get(userId);
+      if (!u) return;
+      u.status = status;
+      u.updatedAt = now();
+    },
     async findCredentialByUserId(userId) {
       return credentials.get(userId) ?? null;
+    },
+    async upsertCredential(input) {
+      credentials.set(input.userId, {
+        userId: input.userId,
+        passwordHash: input.passwordHash,
+        algo: "argon2id-v1",
+        mustChange: input.mustChange ?? false,
+        updatedAt: now(),
+      });
     },
     async findSessionByTokenHash(hash) {
       return sessionsByHash.get(hash.toString("hex")) ?? null;
@@ -79,11 +122,42 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
       if (!s || s.revokedAt) return;
       s.revokedAt = at;
     },
+    async revokeAllUserSessions(userId, at) {
+      for (const s of sessions.values()) {
+        if (s.userId === userId && !s.revokedAt) s.revokedAt = at;
+      }
+    },
+    async revokeOtherUserSessions(userId, exceptSessionId, at) {
+      for (const s of sessions.values()) {
+        if (s.userId === userId && s.id !== exceptSessionId && !s.revokedAt) {
+          s.revokedAt = at;
+        }
+      }
+    },
     async bumpSession(sessionId, expiresAt, at) {
       const s = sessions.get(sessionId);
       if (!s || s.revokedAt) return;
       s.expiresAt = expiresAt;
       s.lastSeenAt = at;
+    },
+    async insertEmailToken(input) {
+      emailTokens.set(input.tokenHash.toString("hex"), {
+        tokenHash: input.tokenHash,
+        userId: input.userId,
+        purpose: input.purpose,
+        expiresAt: input.expiresAt,
+        consumedAt: null,
+        createdAt: now(),
+      });
+    },
+    async consumeEmailToken(input) {
+      const key = input.tokenHash.toString("hex");
+      const row = emailTokens.get(key);
+      if (!row) return null;
+      if (row.consumedAt) return null;
+      if (row.expiresAt.getTime() <= input.at.getTime()) return null;
+      row.consumedAt = input.at;
+      return row;
     },
     async recordLoginAttempt(input) {
       attempts.push({ ...input, attemptedAt: now() });
@@ -114,6 +188,15 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
     },
     __sessions() {
       return [...sessions.values()];
+    },
+    __users() {
+      return [...users.values()];
+    },
+    __credentials() {
+      return [...credentials.values()];
+    },
+    __emailTokens() {
+      return [...emailTokens.values()];
     },
     __failures(emailLower) {
       return attempts.filter((a) => !a.success && a.emailLower === emailLower)
