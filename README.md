@@ -84,8 +84,8 @@ never commit real secrets.
 | `PENN_ALLOWED_ORIGINS` | `api-server` | CORS allowlist. Falls back to Replit dev domain + localhost. |
 | `RESUPPLY_ALLOWED_ORIGINS` | `resupply-api` | CORS allowlist. Falls back to Replit dev domain + localhost. |
 | `SHOP_PUBLIC_BASE_URL`, `REMINDER_PUBLIC_BASE_URL`, `RESUPPLY_VOICE_PUBLIC_BASE_URL` | `resupply-api` | Public base URLs used in outbound deep links. Cart-recovery + reminder emails fall through `SHOP → RESUPPLY_VOICE → https://pennpaps.com` in order. |
-| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `api-server`, `resupply-api`, `resupply-worker` | Outbound email + delivery webhooks. Email features log-and-skip when missing. |
-| `PENN_FROM_EMAIL`, `PENN_FULFILLMENT_EMAIL` | `api-server` | Storefront notification senders. |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `api-server`, `resupply-api`, `resupply-worker` | Outbound email + delivery webhooks. Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
+| `PENN_FULFILLMENT_EMAIL` | `api-server` | Where Penn Fit fulfillment receives new mask orders (this is the recipient, not the sender). |
 | `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS` | `resupply-api` | Comma-separated allowlists for role-gated admin endpoints. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID` | `resupply-api` | SMS + voice. Outbound SMS / voice routes return 503 when missing. |
 | `OPENAI_API_KEY` | `resupply-api` | Conversation AI. AI features disable when missing. |

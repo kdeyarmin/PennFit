@@ -17,6 +17,15 @@ import { EpisodesPage } from "./pages/episodes";
 import { RulesPage } from "./pages/rules";
 import { AuditPage } from "./pages/audit";
 import { AdminShopReviewsPage } from "./pages/admin-shop-reviews";
+import { AdminShopReturnsPage } from "./pages/admin-shop-returns";
+import { AdminMacrosPage } from "./pages/admin-macros";
+import { AdminShopSubscriptionsPage } from "./pages/admin-shop-subscriptions";
+import { AdminTeamPage } from "./pages/admin-team";
+import { AdminOperationsPage } from "./pages/admin-operations";
+import { AdminReportsPage } from "./pages/admin-reports";
+import { AdminDeliveryFailuresPage } from "./pages/admin-delivery-failures";
+import { AdminRuleTesterPage } from "./pages/admin-rule-tester";
+import { AdminSettingsPage } from "./pages/admin-settings";
 import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
 import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
@@ -102,6 +111,24 @@ function AdminConsole() {
           path="/admin/shop/abandoned-carts"
           component={AdminShopAbandonedCartsPage}
         />
+        <Route
+          path="/admin/shop/returns"
+          component={AdminShopReturnsPage}
+        />
+        <Route path="/admin/macros" component={AdminMacrosPage} />
+        <Route
+          path="/admin/shop/subscriptions"
+          component={AdminShopSubscriptionsPage}
+        />
+        <Route path="/admin/team" component={AdminTeamPage} />
+        <Route path="/admin/operations" component={AdminOperationsPage} />
+        <Route path="/admin/reports" component={AdminReportsPage} />
+        <Route
+          path="/admin/delivery-failures"
+          component={AdminDeliveryFailuresPage}
+        />
+        <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
+        <Route path="/admin/settings" component={AdminSettingsPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

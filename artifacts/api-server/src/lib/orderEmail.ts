@@ -11,16 +11,27 @@
  * Configuration (all REQUIRED — set as Replit Secrets):
  *   - SENDGRID_API_KEY       — SendGrid API key with "Mail Send" permission
  *   - PENN_FULFILLMENT_EMAIL — Where the order is delivered
- *   - PENN_FROM_EMAIL        — Verified sender on the SendGrid account
+ *   - SENDGRID_FROM_EMAIL    — Verified sender on the SendGrid account
  *                              (must be verified in SendGrid before delivery
- *                              works — SendGrid will reject mail from
- *                              unverified senders)
+ *                              works — operations should set this to
+ *                              info@pennpaps.com so every outbound email
+ *                              originates from the canonical practice address)
+ *   - SENDGRID_FROM_NAME     — Display name shown next to the From address
  *
  * If any of the above is missing, the function returns { configured: false }
  * and the route returns HTTP 503. We never silently swallow an order.
+ *
+ * All outbound mail funnels through the shared SendGrid integration in
+ * @workspace/resupply-email — no raw fetch, no separate PENN_FROM_EMAIL,
+ * so the entire platform sends from a single From address.
  */
 
 import { randomBytes } from "node:crypto";
+import {
+  createSendgridClient,
+  EmailApiError,
+  EmailConfigError,
+} from "@workspace/resupply-email";
 
 export interface OrderPayload {
   chosenMask: {
@@ -157,10 +168,24 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
   return lines.join("\n");
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function bodyToHtml(text: string): string {
+  return `<div style="font-family:system-ui,-apple-system,sans-serif;white-space:pre-wrap;font-size:14px;line-height:1.5;color:#222">${escapeHtml(text)}</div>`;
+}
+
 /**
- * Send the order email via SendGrid. Returns a structured result so the route
- * can react appropriately. Never throws on missing config — returns
- * { configured: false } instead so the route can return HTTP 503.
+ * Send the order email via the shared SendGrid integration. Returns a
+ * structured result so the route can react appropriately. Never throws on
+ * missing config — returns { configured: false } instead so the route can
+ * return HTTP 503.
  */
 export async function sendOrderToPenn(
   order: OrderPayload,
@@ -172,11 +197,8 @@ export async function sendOrderToPenn(
   const orderReference = options.orderReference ?? generateOrderReference();
   const deliveredAt = new Date().toISOString();
 
-  const apiKey = process.env.SENDGRID_API_KEY;
   const toEmail = process.env.PENN_FULFILLMENT_EMAIL;
-  const fromEmail = process.env.PENN_FROM_EMAIL;
-
-  if (!apiKey || !toEmail || !fromEmail) {
+  if (!toEmail) {
     return {
       configured: false,
       delivered: false,
@@ -186,48 +208,67 @@ export async function sendOrderToPenn(
     };
   }
 
+  let client;
+  try {
+    client = createSendgridClient();
+  } catch (err) {
+    if (err instanceof EmailConfigError) {
+      return {
+        configured: false,
+        delivered: false,
+        orderReference,
+        deliveredAt,
+        error: "Order email delivery is not configured.",
+      };
+    }
+    return {
+      configured: false,
+      delivered: false,
+      orderReference,
+      deliveredAt,
+      error: err instanceof Error ? err.message : "Unknown email config error",
+    };
+  }
+
   const body = composeEmailBody(order, orderReference);
   const subject = `PennPaps Order ${orderReference} — ${order.chosenMask.modelNumber} for ${order.patient.lastName}`;
 
+  // Set the patient as the reply-to so the fulfillment team can reply
+  // directly. SendGrid accepts the standard "Name <email>" string format,
+  // BUT we never want to interpolate an unsanitized name field — names can
+  // contain CRLF, angle brackets, quotes, or other characters that would
+  // break header parsing or enable header injection. The cheapest robust
+  // posture is to drop the display name entirely and pass only the
+  // email; SendGrid is happy with bare addresses, fulfillment can still
+  // reply, and there is no untrusted string anywhere near the headers.
+  const replyTo = order.patient.email;
+
   try {
-    const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        personalizations: [
-          {
-            to: [{ email: toEmail }],
-            subject,
-          },
-        ],
-        from: { email: fromEmail, name: "PennPaps" },
-        reply_to: { email: order.patient.email, name: `${order.patient.firstName} ${order.patient.lastName}` },
-        content: [{ type: "text/plain", value: body }],
-      }),
+    await client.sendEmail({
+      to: toEmail,
+      subject,
+      text: body,
+      html: bodyToHtml(body),
+      replyTo,
     });
-
-    if (response.status >= 200 && response.status < 300) {
-      return { configured: true, delivered: true, orderReference, deliveredAt };
+    return { configured: true, delivered: true, orderReference, deliveredAt };
+  } catch (err) {
+    if (err instanceof EmailApiError) {
+      const status = err.status ?? "unknown";
+      return {
+        configured: true,
+        delivered: false,
+        orderReference,
+        deliveredAt,
+        error: `Email provider returned ${status}: ${err.message.slice(0, 200)}`,
+      };
     }
-
-    const errText = await response.text().catch(() => "");
     return {
       configured: true,
       delivered: false,
       orderReference,
       deliveredAt,
-      error: `Email provider returned ${response.status}: ${errText.slice(0, 200)}`,
-    };
-  } catch (e) {
-    return {
-      configured: true,
-      delivered: false,
-      orderReference,
-      deliveredAt,
-      error: e instanceof Error ? e.message : "Unknown email delivery error",
+      error: err instanceof Error ? err.message : "Unknown email delivery error",
     };
   }
 }

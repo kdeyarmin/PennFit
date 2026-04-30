@@ -10,7 +10,12 @@ import { Router, type IRouter } from "express";
 import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import meRouter from "./me";
+import meCommPrefsRouter from "./me-comm-prefs";
+import meDashboardRouter from "./me-dashboard";
+import meExportRouter from "./me-export";
+import meReorderSuggestionsRouter from "./me-reorder-suggestions";
 import myOrdersRouter from "./my-orders";
+import myReturnsRouter from "./my-returns";
 import mySubscriptionsRouter from "./my-subscriptions";
 import orderRouter from "./order";
 import productsRouter from "./products";
@@ -27,7 +32,12 @@ router.use(orderRouter);
 // the same base path. The handlers themselves apply the auth provider gating
 // (requireSignedIn / attachSignedIn) per-endpoint.
 router.use(meRouter);
+router.use(meCommPrefsRouter);
+router.use(meDashboardRouter);
+router.use(meExportRouter);
+router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);
+router.use(myReturnsRouter);
 // Mounted after myOrdersRouter so the more-specific
 // `/shop/me/orders/:sessionId/resend-receipt` POST sits next to
 // the GET it complements. Keeps grep / "where do I find the

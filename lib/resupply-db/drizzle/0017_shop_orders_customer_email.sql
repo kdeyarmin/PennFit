@@ -1,0 +1,32 @@
+-- Adds a `customer_email` column on shop_orders so the admin
+-- shipping-notification flow can email guest checkouts (where there
+-- is no `shop_customers` row to join against on `clerk_user_id`).
+--
+-- Why on shop_orders, not chasing the Stripe Session at admin time:
+--   * One in-network DB read vs an outbound Stripe API call from the
+--     admin handler. The latter would be a) slow, b) a new
+--     reliability surface for an admin click, c) subject to Stripe
+--     rate limits.
+--   * shop_orders already snapshots shipping_address at paid-time
+--     (W3 T-C7) for exactly the same reason — the order row is the
+--     historical truth even if the customer record changes later.
+--
+-- Why nullable, no backfill:
+--   * Pre-existing rows had no captured email; leaving them NULL is
+--     truthful. The webhook populates this column going forward; old
+--     orders missing it cannot retro-receive a shipping notification,
+--     which matches the conservative "do not surprise-email about
+--     ancient orders" posture in 0016.
+--   * No default — we want the absence of a captured email to be
+--     visibly NULL on the order row rather than coerced to a sentinel.
+--
+-- Why no index:
+--   * customer_email is read by primary-key lookup (the row itself);
+--     it does not power list queries or joins.
+--
+-- Per ADR 003 — versioned hand-authored migration; this codebase
+-- does not use db:push because db:push silently rewrites columns
+-- once PHI lands.
+
+ALTER TABLE "resupply"."shop_orders"
+  ADD COLUMN IF NOT EXISTS "customer_email" text;
