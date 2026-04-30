@@ -23,6 +23,7 @@ import { AdminShopSubscriptionsPage } from "./pages/admin-shop-subscriptions";
 import { AdminTeamPage } from "./pages/admin-team";
 import { AdminOperationsPage } from "./pages/admin-operations";
 import { AdminReportsPage } from "./pages/admin-reports";
+import { AdminDeliveryFailuresPage } from "./pages/admin-delivery-failures";
 import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
 import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
@@ -120,6 +121,10 @@ function AdminConsole() {
         <Route path="/admin/team" component={AdminTeamPage} />
         <Route path="/admin/operations" component={AdminOperationsPage} />
         <Route path="/admin/reports" component={AdminReportsPage} />
+        <Route
+          path="/admin/delivery-failures"
+          component={AdminDeliveryFailuresPage}
+        />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

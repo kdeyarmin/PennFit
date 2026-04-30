@@ -9,6 +9,7 @@ import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import reportsRouter from "./admin/reports.js";
+import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
@@ -93,6 +94,9 @@ router.use(teamRouter);
 router.use(opsStatusRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
+// /admin/delivery-failures — webhook delivery error triage queue
+// (per-message + audit-log failure events). Read-only.
+router.use(deliveryFailuresRouter);
 // /admin/shop/customers/* — Customer 360 surface (search/list +
 // detail + reorder-on-behalf). Read-mostly; the only write is the
 // reorder action which creates a Stripe Checkout Session. Same
