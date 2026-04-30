@@ -1,6 +1,6 @@
 # PHI retention — prescription document attachments
 
-Status: living doc. Last reviewed 2026-04-30.
+Status: living doc. Last reviewed 2026-04-30 (sweep job shipped).
 
 ## Background
 
@@ -43,9 +43,9 @@ Handled by the DELETE handler. Bytes are deleted before the columns clear so
 the audit row can capture `bytes_deleted: true | "errored"`. On `"errored"`
 the row is correctly cleared but the bytes need a sweep.
 
-### 4. **Orphan source still open: upload-url issued, PUT happened, finalize never called**
+### 4. Orphan source: upload-url issued, PUT happened, finalize never called
 
-This is the only remaining unmanaged path. Concrete causes:
+Concrete causes:
 
 - Admin starts an upload, browser closes mid-flight, presigned PUT
   succeeds at GCS but the response never reaches the dashboard's finalize
@@ -57,33 +57,66 @@ This is the only remaining unmanaged path. Concrete causes:
 Result: bytes in the bucket with no DB row pointing at them, no audit trail
 beyond the `upload_url_issued` entry.
 
-Why not built yet:
+This path is now reaped by the **weekly sweep job** described below.
+Until that job runs (worst case: 7 days), forensic detection still
+works the same way it did before the job shipped: `upload_url_issued`
+audit entries without a matching `attachment.upload` entry within 1h
+are the indicator.
 
-- Expected volume: single-digits per week given the three small admin team.
-- Detection: `upload_url_issued` audit entries without a matching `upload`
-  audit entry within 1h are themselves a forensic indicator — operations
-  can grep for them.
-- Cost: GCS storage is cheap relative to the engineering time of building,
-  testing, and operating a new pg-boss schedule with bucket-list semantics.
+## Sweep job — shipped, weekly
 
-## Future sweep job (when volume justifies it)
+Implementation: `artifacts/resupply-worker/src/jobs/prescription-attachment-sweep.ts`.
 
-Sketch — implement as a `lib/resupply-jobs` pg-boss schedule fired daily:
+- pg-boss schedule `prescriptions.attachment.sweep`, cron
+  `13 3 * * 0` (Sunday 03:13 UTC). Off-hours, doesn't stack with the
+  hourly reminders scan that runs at minute 7.
+- Algorithm:
+  1. SELECT every non-null `attachment_object_key` from
+     `prescriptions` (column shape: `/objects/uploads/<uuid>`) into
+     a Set.
+  2. List bucket objects under `<entity-prefix>/uploads/` in the
+     private bucket.
+  3. Per bucket object: derive its expected
+     `/objects/uploads/<uuid>` shape and look it up in the Set.
+     Referenced → leave alone. Unreferenced AND `timeCreated`
+     missing → skip-and-warn (rare GCS anomaly, safer than blind
+     delete; counter alerts operator if persistent). Unreferenced
+     AND younger than 24h → leave for next run (in-flight finalize
+     grace). Unreferenced AND older than 24h → **per-candidate DB
+     recheck** (`SELECT 1 FROM prescriptions WHERE
+     attachment_object_key = $1 LIMIT 1`); if the recheck still
+     says unreferenced, delete the bytes. The recheck closes the
+     race window between bulk Set-build and per-object delete.
+  4. A delete that returns 404 is treated as idempotent success
+     (mirrors the api's `ObjectNotFoundError` policy on the user-
+     facing DELETE handler).
+- Audit row per run via `logAudit({ action:
+  "prescription.attachment.sweep" })` with counters
+  `objects_scanned`, `references_loaded`, `orphans_deleted`,
+  `orphans_too_young`, `orphans_no_time_created`, `delete_errors`,
+  `delete_404_idempotent`, `recheck_saved`,
+  `non_attachment_skipped`. **No object names are persisted** —
+  the `/objects/uploads/<uuid>` shape uses an opaque random upload
+  id, but the value is durable in `attachment_object_key` and
+  one-hop joinable to the patient row, making it a pseudo-identifier
+  that must not appear in logs or audit metadata.
+- Per-object decisions go to the worker's structured logs (info /
+  warn / error) — also counters / classes / age-buckets only.
+  `object_name` is **never** logged anywhere; the redaction policy
+  is enforced at the log call sites in
+  `prescription-attachment-sweep.ts`.
+- Boot-time check: `getPrivateObjectLocation()` is called during
+  `registerPrescriptionAttachmentSweepJob`, so a missing or
+  malformed `PRIVATE_OBJECT_DIR` fails the worker boot rather than
+  silently no-op'ing the sweep for the lifetime of the deploy.
 
-1. List bucket objects under the entity prefix
-   (`PRIVATE_OBJECT_DIR/uploads/`).
-2. For each object, query `prescriptions` for any row whose
-   `attachment_object_key` ends with the object's name. Key format includes
-   a UUID so collisions are not a concern.
-3. If unreferenced AND object's `timeCreated` is older than 24h (grace
-   period for in-flight finalize), `delete()` the object.
-4. Emit a per-run audit entry summarizing `objects_scanned`,
-   `orphans_deleted`, `errors` so SOC reviewers can see retention is
-   actively enforced.
+Operational follow-ups:
 
-Operationally: run weekly initially, surface counters on the existing
-admin dashboard's readiness section. Promote to nightly if the sweep
-deletes >10 objects/run.
+- Surface the counters on the admin dashboard's readiness section
+  (planned, not built; backed by an audit-log read query).
+- Promote to nightly cron if any single weekly run deletes >10
+  objects, indicating volume has grown past the cheap-to-leave
+  threshold.
 
 ## Open follow-ups (non-orphan)
 

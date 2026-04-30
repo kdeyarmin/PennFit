@@ -7,6 +7,7 @@ import {
 import PgBoss from "pg-boss";
 import { logger } from "./logger.js";
 import { registerReminderJobs } from "./jobs/reminders.js";
+import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-attachment-sweep.js";
 
 // Mirror the API server's wiring (see api/src/index.ts) so projection
 // failures from worker-side message sends (the bulk of outbound SMS
@@ -82,7 +83,25 @@ async function main(): Promise<void> {
     await flushLogsAndExit(1);
   }
 
-  logger.info("resupply-worker ready (pg-boss started, reminders scheduled)");
+  // Register the weekly PHI-attachment sweep. Mirrors the same
+  // fail-fast contract: if the registration itself throws (queue
+  // creation or schedule call), we treat it as a config error and
+  // refuse to start the worker. The handler ITSELF tolerates an
+  // empty bucket / empty DB at runtime so a quiet week doesn't
+  // generate a spurious failure (see jobs/prescription-attachment-sweep.ts).
+  try {
+    await registerPrescriptionAttachmentSweepJob(boss);
+  } catch (err) {
+    logger.fatal(
+      { err },
+      "fatal: failed to register prescription attachment sweep",
+    );
+    await flushLogsAndExit(1);
+  }
+
+  logger.info(
+    "resupply-worker ready (pg-boss started, reminders + attachment-sweep scheduled)",
+  );
 
   // Keep the process alive.
 

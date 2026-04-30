@@ -872,6 +872,9 @@ importers:
 
   artifacts/resupply-worker:
     dependencies:
+      '@google-cloud/storage':
+        specifier: ^7.19.0
+        version: 7.19.0
       '@workspace/resupply-ai':
         specifier: workspace:*
         version: link:../../lib/resupply-ai
