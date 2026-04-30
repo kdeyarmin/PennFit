@@ -197,19 +197,54 @@ function AccountInner() {
     );
   }
 
-  // Defensive guard: the backend currently always returns `profile`
-  // when signedIn=true, but the response shape declares it optional.
-  // Rather than relying on `data.profile!` (a non-null assertion that
-  // would crash the whole tree if the contract drifts), surface a
-  // recoverable inline state so the user can retry instead of hitting
-  // the global error boundary.
+  // Two distinct failure modes funnel into the no-profile branch:
+  //
+  //   data.signedIn === false  → the API can't see our session at all.
+  //     This usually means the auth provider session cookie isn't
+  //     reaching /resupply-api (cross-origin / SameSite issue or a
+  //     proxy that strips cookies). Retrying won't fix it; the user
+  //     needs to sign in again so a fresh cookie gets attached on
+  //     the same origin as the API.
+  //
+  //   data.signedIn === true && !data.profile  → the API saw the
+  //     session but couldn't materialize a profile row. This IS
+  //     usually a momentary hiccup — Clerk Backend API blip,
+  //     transient DB error during ensureShopCustomerRow, etc.
+  //     "Try again" is the right call here.
+  //
+  // The two need different copy + actions because retry-first vs
+  // sign-in-first matters: telling someone whose session cookie is
+  // gone to "try again in a few seconds" leaves them stuck.
+  if (!data.signedIn) {
+    return (
+      <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">
+        <div className="glass-card rounded-2xl p-6 text-center">
+          <AlertCircle className="h-6 w-6 mx-auto mb-2 text-destructive" />
+          <p
+            className="text-sm font-semibold mb-1"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            Your session expired
+          </p>
+          <p className="text-sm text-muted-foreground mb-4">
+            We can&apos;t see your sign-in anymore — sign back in and
+            you&apos;ll land right back here.
+          </p>
+          <Link href="/sign-in?redirect=/account">
+            <Button>Sign in</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!data.profile) {
     return (
       <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">
         <div className="glass-card rounded-2xl p-6 text-center">
           <AlertCircle className="h-6 w-6 mx-auto mb-2 text-destructive" />
           <p className="text-sm text-muted-foreground mb-4">
-            Your account info couldn't load. This is usually a momentary
+            Your account info couldn&apos;t load. This is usually a momentary
             hiccup — try again in a few seconds.
           </p>
           <Button onClick={() => void reload()}>Try again</Button>

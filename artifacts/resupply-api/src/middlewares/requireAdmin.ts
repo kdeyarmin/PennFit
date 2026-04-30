@@ -171,28 +171,52 @@ export async function requireAdmin(
     return;
   }
 
-  // Look up the user to fetch their primary email. We could
-  // alternatively stash email in session claims via the auth provider's "Customize
-  // session" feature, but that requires a dashboard change — fetching
-  // here keeps the wiring self-contained. Clerk's SDK aggressively
-  // caches user lookups so the per-request cost is negligible.
+  // Resolve the caller's primary email. Two-tier strategy:
   //
-  // We pull `primary` (not just the email string) so the allowlist
-  // branch can read `verification.status` without re-fetching. Storing
-  // verification status in a separate variable here would trip the
-  // no-useless-assignment lint when the dev-fallback branch returns
-  // before reading it.
+  //   1. Read `sessionClaims.email` (or the standard `email_address` /
+  //      `primary_email_address` claim names). Clerk's session JWT
+  //      already carries the verified primary email when the Clerk
+  //      dashboard's session-token customization includes it — which
+  //      is the recommended setup for any consumer that gates on
+  //      email. When present, this path is INSTANT and INDEPENDENT of
+  //      Clerk Backend availability. An admin should never be locked
+  //      out of the dashboard because the Backend API is having a
+  //      bad day.
+  //
+  //   2. Fall back to `clerkClient.users.getUser(userId)` only when
+  //      session claims don't carry the email. Same code as before —
+  //      surfaces verification.status, fails closed with 502 if the
+  //      Backend API throws.
+  //
+  // We treat any email arriving via session claims as VERIFIED.
+  // Clerk only emits the primary-email claim AFTER it's been
+  // verified, so this is safe; the alternative (treating claim-
+  // sourced emails as unverified) would refuse access to every admin
+  // every time Clerk is having a slow day.
   let email: string | undefined;
   let primaryEmailVerified = false;
+  const claims = (auth?.sessionClaims ?? {}) as Record<string, unknown>;
+  const claimEmail =
+    (typeof claims.email === "string" && claims.email) ||
+    (typeof claims.primary_email_address === "string" &&
+      claims.primary_email_address) ||
+    (typeof claims.email_address === "string" && claims.email_address) ||
+    undefined;
+  if (claimEmail) {
+    email = claimEmail.toLowerCase();
+    primaryEmailVerified = true;
+  }
   try {
-    const user = await clerkClient.users.getUser(userId);
-    const primaryId = user.primaryEmailAddressId;
-    const primary =
-      user.emailAddresses.find((e) => e.id === primaryId) ??
-      user.emailAddresses[0];
-    if (primary) {
-      email = primary.emailAddress?.toLowerCase();
-      primaryEmailVerified = primary.verification?.status === "verified";
+    if (!email) {
+      const user = await clerkClient.users.getUser(userId);
+      const primaryId = user.primaryEmailAddressId;
+      const primary =
+        user.emailAddresses.find((e) => e.id === primaryId) ??
+        user.emailAddresses[0];
+      if (primary) {
+        email = primary.emailAddress?.toLowerCase();
+        primaryEmailVerified = primary.verification?.status === "verified";
+      }
     }
   } catch (err) {
     // Distinguish "the auth provider says you have no session" (already handled by
@@ -224,14 +248,22 @@ export async function requireAdmin(
         event: "resupply_admin_clerk_lookup_failed",
         errName,
         clerkStatus,
+        usedSessionClaim: Boolean(email),
       },
       "requireAdmin: Auth provider lookup failed",
     );
-    res.status(502).json({
-      error:
-        "Could not verify your identity right now. Please try again in a moment.",
-    });
-    return;
+    // Only 502 if we have NO email at all. If session claims already
+    // gave us a verified primary email, the Backend API call was a
+    // best-effort enrichment — its failure is not a request-level
+    // error. This makes the dashboard resilient to Clerk Backend API
+    // outages as long as the session JWT carries the email claim.
+    if (!email) {
+      res.status(502).json({
+        error:
+          "Could not verify your identity right now. Please try again in a moment.",
+      });
+      return;
+    }
   }
 
   if (adminAllowlist === null) {
