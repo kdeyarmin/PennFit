@@ -12,6 +12,7 @@ import checkoutRouter from "./checkout";
 import meRouter from "./me";
 import meCommPrefsRouter from "./me-comm-prefs";
 import meDashboardRouter from "./me-dashboard";
+import meReorderSuggestionsRouter from "./me-reorder-suggestions";
 import myOrdersRouter from "./my-orders";
 import myReturnsRouter from "./my-returns";
 import mySubscriptionsRouter from "./my-subscriptions";
@@ -32,6 +33,7 @@ router.use(orderRouter);
 router.use(meRouter);
 router.use(meCommPrefsRouter);
 router.use(meDashboardRouter);
+router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);
 router.use(myReturnsRouter);
 // Mounted after myOrdersRouter so the more-specific

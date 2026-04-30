@@ -254,3 +254,21 @@ export const updateCommPrefs = (input: Partial<CommunicationPreferences>) =>
     method: "PUT",
     body: JSON.stringify(input),
   });
+
+export interface ReorderSuggestion {
+  productId: string;
+  productName: string;
+  category: string;
+  imageUrl: string | null;
+  cadenceDays: number;
+  lastPaidAt: string;
+  ageDays: number;
+  dueOn: string;
+  status: "overdue" | "due_soon";
+  totalQuantityHistorical: number;
+}
+
+export const fetchReorderSuggestions = () =>
+  meFetch<{ suggestions: ReorderSuggestion[]; previewMode?: boolean }>(
+    "/shop/me/reorder-suggestions",
+  );

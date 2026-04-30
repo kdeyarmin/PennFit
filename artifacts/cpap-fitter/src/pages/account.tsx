@@ -79,6 +79,7 @@ import {
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
+import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
 // from your order on …" banner. Stored as a JSON object so we can
@@ -242,6 +243,7 @@ function AccountInner() {
             profile={data.profile!}
             onSaved={() => void reload()}
           />
+          <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection
             orders={data.recentOrders ?? []}
