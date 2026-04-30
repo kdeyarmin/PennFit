@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Redirect } from "wouter";
+import { Link, Redirect, useLocation } from "wouter";
 import { Show, useUser } from "@clerk/react";
 import { fetchAdminMe, AdminApiError } from "@/lib/admin-api";
 import { AdminLayout } from "@/components/admin-layout";
@@ -27,19 +27,37 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * display in the sidebar.
  */
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  // Capture the admin path the user is trying to reach so re-auth
+  // returns them here instead of falling through to the patient
+  // /account page (which is the ClerkProvider's signInFallbackRedirectUrl).
+  // Without this query param the auth provider's "already signed-in"
+  // shortcut on /sign-in lands stale-session admins on /account, where
+  // /shop/me also returns signedIn:false and renders a confusing
+  // "Your account info couldn't load" error that the Try again button
+  // can't recover.
+  const [location] = useLocation();
+  const signInHref = `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
   return (
     <>
       <Show when="signed-out">
-        <Redirect to="/sign-in" />
+        <Redirect to={signInHref} />
       </Show>
       <Show when="signed-in">
-        <AdminAuthorizedShell>{children}</AdminAuthorizedShell>
+        <AdminAuthorizedShell signInHref={signInHref}>
+          {children}
+        </AdminAuthorizedShell>
       </Show>
     </>
   );
 }
 
-function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
+function AdminAuthorizedShell({
+  children,
+  signInHref,
+}: {
+  children: React.ReactNode;
+  signInHref: string;
+}) {
   const { isLoaded } = useUser();
   const me = useQuery({
     queryKey: ["admin-me"],
@@ -67,7 +85,7 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
       return <NotAuthorized status={status} message={(me.error as Error).message} />;
     }
     if (status === 401) {
-      return <Redirect to="/sign-in" />;
+      return <Redirect to={signInHref} />;
     }
     return <AdminErrorShell error={me.error as Error} />;
   }

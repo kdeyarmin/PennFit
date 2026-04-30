@@ -195,22 +195,36 @@ function AccountInner() {
     );
   }
 
-  // Defensive guard: the backend currently always returns `profile`
-  // when signedIn=true, but the response shape declares it optional.
-  // Rather than relying on `data.profile!` (a non-null assertion that
-  // would crash the whole tree if the contract drifts), surface a
-  // recoverable inline state so the user can retry instead of hitting
-  // the global error boundary.
+  // The backend returns { signedIn: false } (no profile) when its
+  // session middleware can't resolve the request to an authenticated
+  // user — most commonly because the session token has expired or the
+  // cookie isn't being forwarded. We get here despite Clerk's
+  // <Show when="signed-in"> gate above because Clerk's client state
+  // and the API server's view of the session can diverge (e.g. the
+  // session expired between page load and the /shop/me call). Telling
+  // the user to "try again" wouldn't fix that; they need to re-auth.
+  // The legacy `data.profile!` shape was a separate, hypothetical
+  // contract drift — that case is now folded into the same retry path
+  // since the signedIn:false branch is the only one we've actually
+  // observed in the wild.
   if (!data.profile) {
+    const isSessionMismatch = data.signedIn === false;
     return (
       <div className="container mx-auto px-4 md:px-6 py-12 max-w-3xl">
         <div className="glass-card rounded-2xl p-6 text-center">
           <AlertCircle className="h-6 w-6 mx-auto mb-2 text-destructive" />
           <p className="text-sm text-muted-foreground mb-4">
-            Your account info couldn't load. This is usually a momentary
-            hiccup — try again in a few seconds.
+            {isSessionMismatch
+              ? "Your session has expired. Sign in again to view your account."
+              : "Your account info couldn't load. This is usually a momentary hiccup — try again in a few seconds."}
           </p>
-          <Button onClick={() => void reload()}>Try again</Button>
+          {isSessionMismatch ? (
+            <Link href="/sign-in?redirect=/account">
+              <Button data-testid="account-resignin-btn">Sign in again</Button>
+            </Link>
+          ) : (
+            <Button onClick={() => void reload()}>Try again</Button>
+          )}
         </div>
       </div>
     );
