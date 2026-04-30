@@ -139,7 +139,7 @@ export interface ShopProductView {
   recurringPrice: ShopRecurringPriceView | null;
 }
 
-function isShopCategory(v: string | undefined): v is ShopCategory {
+export function isShopCategory(v: string | undefined): v is ShopCategory {
   return !!v && (SHOP_CATEGORIES as readonly string[]).includes(v);
 }
 
