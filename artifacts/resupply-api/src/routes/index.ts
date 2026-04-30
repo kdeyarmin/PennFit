@@ -4,6 +4,7 @@ import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
+import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
@@ -75,5 +76,9 @@ router.use(csrMacrosRouter);
 // subscription health dashboard. Pure SQL aggregation — no Stripe
 // round-trip on this path.
 router.use(shopSubsMetricsRouter);
+// /admin/shop/review-requests/send-due — manual dispatcher for the
+// post-purchase review-request email. Same atomic-claim pattern as
+// the abandoned-cart dispatcher; comm-prefs + DND aware.
+router.use(shopReviewRequestsRouter);
 
 export default router;
