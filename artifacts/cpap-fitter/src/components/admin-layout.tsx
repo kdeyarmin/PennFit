@@ -1,11 +1,9 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { useClerk, useUser } from "@clerk/react";
 import { LayoutDashboard, ListOrdered, ScrollText, LogOut, ShieldCheck, Bell, Users, Users2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminConsoleSwitcher } from "@/components/admin-console-switcher";
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+import { useShopIdentity } from "@/lib/identity";
 
 /**
  * Sidebar nav items.
@@ -100,14 +98,9 @@ export function AdminLayout({
    */
   adminRole?: "admin" | "agent";
 }) {
-  const [location] = useLocation();
-  const { signOut } = useClerk();
-  const { user } = useUser();
-  const displayEmail =
-    adminEmail ??
-    user?.primaryEmailAddress?.emailAddress ??
-    user?.emailAddresses[0]?.emailAddress ??
-    "";
+  const [location, setLocation] = useLocation();
+  const { signOut, email: identityEmail } = useShopIdentity();
+  const displayEmail = adminEmail ?? identityEmail ?? "";
   const isAdmin = adminRole === "admin";
 
   return (
@@ -186,7 +179,14 @@ export function AdminLayout({
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start gap-2 text-muted-foreground"
-                onClick={() => signOut({ redirectUrl: basePath || "/" })}
+                onClick={() => {
+                  // Sign out via the shim, then soft-navigate to
+                  // root. Same semantics in both modes; the shim
+                  // owns cookie / cache cleanup.
+                  void signOut().finally(() => {
+                    setLocation("/");
+                  });
+                }}
                 data-testid="button-admin-signout"
               >
                 <LogOut className="w-4 h-4" />

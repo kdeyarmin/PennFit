@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Show, useUser } from "@clerk/react";
 import {
   Truck,
   CalendarClock,
@@ -14,6 +13,7 @@ import {
   fetchShopMeDashboard,
   type ShopMeDashboardResponse,
 } from "@/lib/account-api";
+import { SignedIn, useShopIdentity } from "@/lib/identity";
 
 /**
  * Personalized banner rendered at the top of /home for signed-in
@@ -25,20 +25,20 @@ import {
  *   * Pending order backlog count + active subscription count pills.
  *   * "You left items in your cart on another device" nudge.
  *
- * Self-contained: <Show when="signed-in"> wraps it, so it returns
- * nothing for guests. Failures degrade silently — a network blip
- * shouldn't blank the home page.
+ * Self-contained: <SignedIn> wraps it, so it returns nothing for
+ * guests. Failures degrade silently — a network blip shouldn't
+ * blank the home page.
  */
 export function HomeStatusBanner() {
   return (
-    <Show when="signed-in" fallback={null}>
+    <SignedIn fallback={null}>
       <SignedInBanner />
-    </Show>
+    </SignedIn>
   );
 }
 
 function SignedInBanner() {
-  const { user } = useUser();
+  const { displayName } = useShopIdentity();
   const [data, setData] = useState<ShopMeDashboardResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -77,7 +77,7 @@ function SignedInBanner() {
     (data.abandonedCart && data.abandonedCart.itemCount > 0);
   if (!hasSignal) return null;
 
-  const firstName = (user?.firstName ?? "").trim();
+  const firstName = ((displayName ?? "").trim().split(/\s+/)[0] ?? "").trim();
   const greeting = firstName ? `Welcome back, ${firstName}.` : "Welcome back.";
 
   return (

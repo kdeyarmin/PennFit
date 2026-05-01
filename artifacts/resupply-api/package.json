@@ -15,6 +15,7 @@
     "@google-cloud/storage": "^7.19.0",
     "@workspace/resupply-ai": "workspace:*",
     "@workspace/resupply-audit": "workspace:*",
+    "@workspace/resupply-auth": "workspace:*",
     "@workspace/resupply-contracts": "workspace:*",
     "@workspace/resupply-db": "workspace:*",
     "@workspace/resupply-domain": "workspace:*",

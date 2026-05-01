@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@clerk/react": "^6.4.5",
-    "@tanstack/react-query": "catalog:"
+    "@tanstack/react-query": "catalog:",
+    "@workspace/resupply-auth-react": "workspace:*"
   },
   "devDependencies": {
     "@replit/vite-plugin-cartographer": "catalog:",
