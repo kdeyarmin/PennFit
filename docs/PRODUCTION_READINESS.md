@@ -39,13 +39,17 @@ need to be **correct**, not just present.
       this PR (shop_returns, csr_macros, comm_prefs JSONB,
       review_request_sent_at, admin_users, conversations assignment).
 
-### PHI encryption
+### PHI storage
 
-- [ ] `RESUPPLY_PHI_ENCRYPTION_KEY` — never rotated without a
-      coordinated re-encryption pass; lost = unrecoverable PHI.
-- [ ] `RESUPPLY_PHONE_HMAC_KEY` — must be DIFFERENT from
-      `RESUPPLY_PHI_ENCRYPTION_KEY` (separate compromise paths per
-      ADR 009).
+PHI columns are stored in plaintext in the resupply schema (per
+migration 0025_strip_phi_encryption — see ADR 007's "Superseded"
+header). Confidentiality at this layer is enforced by Postgres
+authn / encryption-at-rest at the storage layer, not column-level
+crypto. The only remaining application-layer secret in this family is:
+
+- [ ] `RESUPPLY_LINK_HMAC_KEY` — 32+ random bytes used to sign the
+      short-lived patient links delivered in SMS / email reminders.
+      Rotating it invalidates every in-flight link.
 
 ### Admin allowlist
 
@@ -130,9 +134,9 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
       `13 3 * * 0` reaps unreferenced rows; lifecycle should NOT
       auto-delete referenced ones).
 - [ ] Restore drill: a recent restore-to-staging exercise has
-      verified `RESUPPLY_PHI_ENCRYPTION_KEY` decrypts the backup.
-      Without that, "we have backups" is a thinkpiece, not a recovery
-      plan.
+      verified the dump restores cleanly and the resupply API boots
+      against it. Without that, "we have backups" is a thinkpiece,
+      not a recovery plan.
 
 ---
 
@@ -169,11 +173,12 @@ catches drift:
 - [ ] No PHI in logs. Audit by running:
       `rg "patient\.firstName|patient\.lastName|email_address|phone" artifacts/resupply-api/src --glob="!*.test.ts" --glob="!*.md"`
       and confirming no log lines reference these fields directly.
-- [ ] Audit log writes on every admin read of decrypted PHI (covered
-      by the `conversation.view`, `patient.view`, `audit.export.csv`
-      pattern; new admin endpoints should follow suit).
-- [ ] `RESUPPLY_PHI_ENCRYPTION_KEY` rotation procedure documented
-      and tested in staging.
+- [ ] Audit log writes on every admin read of PHI (covered by the
+      `conversation.view`, `patient.view`, `audit.export.csv` pattern;
+      new admin endpoints should follow suit).
+- [ ] `RESUPPLY_LINK_HMAC_KEY` rotation procedure documented (rotation
+      invalidates every in-flight signed link, so coordinate with a
+      send-pause window).
 - [ ] Customer self-service data-export (GET /shop/me/export) is
       reachable and returns the user's complete record set.
 

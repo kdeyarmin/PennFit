@@ -83,10 +83,10 @@ pnpm --filter @workspace/resupply-audit test
 
 *   `sanitize.test.ts` — 75 unit cases covering every rejection mode and the
     documented allow-list of compound keys.
-*   `index.integration.test.ts` — DATABASE_URL / RESUPPLY_DATA_KEY-gated;
-    skips cleanly when env is unset. Round-trips a logAudit() call against
-    the live DB, asserts the sanitized metadata is what gets stored, and
-    cleans up via `DELETE FROM resupply.audit_log WHERE metadata->>'_tag' = $1`.
+*   `index.integration.test.ts` — DATABASE_URL-gated; skips cleanly
+    when the env is unset. Round-trips a logAudit() call against the
+    live DB, asserts the sanitized metadata is what gets stored, and
+    cleans up via `DELETE FROM resupply.audit_log WHERE metadata->>'_runTag' = $1`.
 
 ## Architecture
 

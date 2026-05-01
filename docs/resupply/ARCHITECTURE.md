@@ -105,22 +105,30 @@ which runs as part of the `resupply-check` validation step.
   `lib/resupply-api-spec/openapi.yaml`) and is swept by the check
   alongside every other resupply source dir.
 
-## Schema and encryption
+## Schema
 
 - All resupply tables live in the Postgres `resupply` schema (created by
   the first migration in Phase 1). pg-boss tables live in `pgboss_resupply`.
-- Encrypted columns use the `encryptedText()` / `encryptedJson()` Drizzle
-  helpers from `lib/resupply-db`, backed by pgcrypto + `RESUPPLY_DATA_KEY`
-  in dev. See ADR 007 for the migration path to managed KMS before launch.
+- PHI columns (legal name, DOB, phone, email, address) are stored as
+  plaintext `text` / `jsonb`. Migration `0025_strip_phi_encryption`
+  removed the prior pgcrypto column-level encryption and the
+  `RESUPPLY_DATA_KEY` it depended on; ADR 007 has the historical context
+  and is marked superseded.
 
 ## Auth model
 
-- Admins authenticate via Clerk (ADR 005). The api enforces a
-  `requireAdmin` middleware that checks the admin allowlist
-  (`RESUPPLY_ADMIN_EMAILS` env var, comma-separated).
-- Patients do NOT have Clerk accounts. Patient-facing endpoints use
-  short-lived signed links delivered via SMS or email, plus device-side
-  session tokens. Patient auth lands in Phase 10.
+- Admins authenticate via the in-house auth library
+  (`lib/resupply-auth`) — argon2id-hashed passwords with a
+  process-wide pepper (`AUTH_PASSWORD_PEPPER`), DB-backed sliding
+  sessions, email-token flows for invite / reset / verify. Clerk is
+  fully decommissioned (see `docs/resupply/AUTH-MIGRATION-PLAN.md`);
+  ADR 005 is marked superseded.
+- The api enforces a `requireAdmin` middleware that checks DB
+  membership in `auth.users` plus the `RESUPPLY_ADMIN_EMAILS`
+  allowlist (comma-separated env var).
+- Patients do NOT have admin accounts. Patient-facing endpoints use
+  short-lived signed links delivered via SMS or email, signed with
+  `RESUPPLY_LINK_HMAC_KEY`, plus device-side session tokens.
 
 ## Observability
 

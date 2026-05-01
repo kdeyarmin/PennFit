@@ -1,5 +1,14 @@
 # ADR 007 — pgcrypto (not AWS KMS) for PHI encryption in dev
 
+> **Status: Superseded.** Migration `0025_strip_phi_encryption`
+> removed column-level pgcrypto encryption from the resupply schema
+> entirely. PHI is now stored as plaintext `text` / `jsonb` and
+> protected by Postgres authn + storage-layer encryption-at-rest
+> instead. The `RESUPPLY_DATA_KEY` env var is no longer read by any
+> code path. This ADR is preserved as historical record only — see
+> `docs/PRODUCTION_READINESS.md` and `ARCHITECTURE.md` for the
+> current model.
+
 ## Context
 
 The original plan called for AWS KMS-backed envelope encryption on

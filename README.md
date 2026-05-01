@@ -70,42 +70,14 @@ commit real secrets.
 | --- | :---: | :---: | :---: | --- |
 | `PORT` | ✅ | ✅ | — | HTTP listen port. |
 | `DATABASE_URL` | — | ✅ | ✅ | Postgres connection string. `pgcrypto` must be enabled. |
-| **Resupply key material** (one of the two options below) | — | ✅ | ✅ | See [Resupply key material](#resupply-key-material). |
+| `AUTH_PASSWORD_PEPPER` | ✅ | ✅ | — | 32+ random bytes (base64). HMAC-SHA256 input to argon2id for password hashing. Generate with `openssl rand -base64 48`. **Never rotate after real users exist** — every stored password hash depends on it. |
+| `RESUPPLY_LINK_HMAC_KEY` | — | ✅ | ✅ | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links. |
 
-#### Resupply key material
-
-The resupply stack uses three cryptographic subkeys: a bulk PHI
-encryption key (pgcrypto), a link-signing HMAC key (email CTAs), and a
-phone-number-lookup HMAC key. They must remain cryptographically
-separate so a leak of one does not unlock the others.
-
-Pick **one** of these configurations:
-
-- **Preferred — single master key.** Set `RESUPPLY_MASTER_KEY` to a
-  32+ byte secret. The three subkeys are HKDF-SHA256-derived from it
-  with distinct domain-separated `info` labels (`data`, `link-hmac`,
-  `phone-hmac`); cryptographic separation is preserved. One secret
-  to generate, store, and rotate.
-- **Legacy — three per-purpose keys.** Set all three of
-  `RESUPPLY_DATA_KEY`, `RESUPPLY_LINK_HMAC_KEY`, and
-  `RESUPPLY_PHONE_HMAC_KEY`. When any legacy var is present it takes
-  precedence over the master-derived value for that specific purpose
-  — that's how PHI already encrypted under a legacy key keeps
-  decrypting after you start setting `RESUPPLY_MASTER_KEY`.
-
-> Generate any of these with `openssl rand -base64 48`.
-
-> **Migrating from legacy to master:** set `RESUPPLY_MASTER_KEY`
-> alongside the existing three legacy vars, then run
-> `pnpm --filter @workspace/resupply-db rotate-to-master-key`
-> (re-encrypts PHI and re-HMACs `phone_lookup` rows under the
-> master-derived subkeys, inside one transaction). After it commits,
-> drop `RESUPPLY_DATA_KEY` and `RESUPPLY_PHONE_HMAC_KEY` from your
-> secrets store. Leave `RESUPPLY_LINK_HMAC_KEY` in place for one full
-> link-token TTL (default 7 days) so any in-flight email CTAs still
-> verify, then drop it too. See
-> `lib/resupply-db/scripts/rotate-to-master-key.mjs` for the full
-> dry-run / commit flow.
+> Migration 0025 stripped pgcrypto column-level PHI encryption and
+> dropped the `phone_lookup` table, so the legacy
+> `RESUPPLY_MASTER_KEY` / `RESUPPLY_DATA_KEY` / `RESUPPLY_PHONE_HMAC_KEY`
+> secrets are no longer read by any code path. Delete them from your
+> secrets store if they're still hanging around.
 
 ### Optional / feature-gated (degrade gracefully when unset)
 
