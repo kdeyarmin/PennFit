@@ -7,7 +7,7 @@
  *
  * Auth: every route runs through `requireAdmin`, which:
  *   1. Checks session
- *   2. Validates the signed-in user's email against PENN_ADMIN_EMAILS
+ *   2. Validates `auth.users.role` is admin or agent
  *
  * Audit: every route that returns full PHI (currently only the order
  * detail view) writes a row to admin_audit_log. List views return a

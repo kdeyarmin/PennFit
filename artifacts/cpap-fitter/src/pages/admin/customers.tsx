@@ -174,10 +174,9 @@ export function AdminCustomers() {
       </Card>
 
       {/* Auth-error banner: cross-API gate failed. The user is signed
-          into cpap-fitter as a PENN_ADMIN_EMAILS member but their
-          email isn't in RESUPPLY_ADMIN_EMAILS, so the resupply-api
-          rejects the request with 403. Surface a hint instead of a
-          generic error. */}
+          into cpap-fitter as an admin but their account doesn't have
+          admin/agent role on the resupply-api side, so it rejects the
+          request with 403. Surface a hint instead of a generic error. */}
       {isAuthError && (
         <Card className="border-destructive/40 bg-destructive/5 rounded-2xl">
           <CardContent className="p-4 flex items-start gap-3">
@@ -188,11 +187,11 @@ export function AdminCustomers() {
               </div>
               <div className="text-muted-foreground mt-1">
                 You're signed in as an admin here, but the shop service
-                doesn't recognize your email. Add your address to the{" "}
-                <code className="font-mono text-xs">
-                  RESUPPLY_ADMIN_EMAILS
-                </code>{" "}
-                allowlist and reload.
+                doesn't recognize your account. Ask an admin on the
+                resupply dashboard to grant your account the admin (or
+                agent) role from{" "}
+                <code className="font-mono text-xs">/admin/team</code>{" "}
+                and reload.
               </div>
             </div>
           </CardContent>
