@@ -16,12 +16,14 @@
  */
 
 // AUTH_PASSWORD_PEPPER is consumed by `readAuthEnv` (resupply-auth)
-// during `getAuthDeps()`, which app.ts calls at module init. Without
-// it the server crashes before binding to PORT, so the gateway can
-// only return 502 to clients. Listing it here means the error
-// surfaces as a clean missing-env message alongside any others.
+// during `getAuthDeps()`, which app.ts calls at module init. DATABASE_URL
+// is checked eagerly by `@workspace/db`'s module-init. Without either
+// the server crashes before binding to PORT, so the gateway can only
+// return 502 to clients. Listing them here means the error surfaces as
+// a clean missing-env message alongside any others.
 const REQUIRED_ENV_VARS = [
   "PORT",
+  "DATABASE_URL",
   "AUTH_PASSWORD_PEPPER",
 ] as const;
 
