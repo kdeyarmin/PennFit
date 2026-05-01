@@ -101,6 +101,24 @@ const CATEGORY_META: Record<
   },
 };
 
+// Categories that Medicare and most commercial CPAP benefits cover
+// on a defined cadence. We surface "Often covered by insurance" on
+// cards in these categories so cash-pay shoppers know they may be
+// leaving covered benefit on the table. The badge links the patient
+// to /insurance for the full coverage workflow.
+//
+// Excluded: `accessory` (cleaners, wipes, replacement clips — these
+// are always cash-pay) and `bundle` (mixed contents — handled per
+// individual line item if the patient breaks out the bundle).
+const INSURANCE_COVERED_CATEGORIES: ReadonlySet<Category> = new Set([
+  "mask",
+  "cushion",
+  "tubing",
+  "filter",
+  "headgear",
+  "chamber",
+]);
+
 // Section ordering: bundles surface first, then high-cadence small items.
 const SECTION_ORDER: Category[] = [
   "bundle",
@@ -491,6 +509,16 @@ function ProductCard({
           <p className="text-xs text-muted-foreground mb-4">
             {product.replacementHint}
           </p>
+        )}
+        {INSURANCE_COVERED_CATEGORIES.has(product.category) && (
+          <Link
+            href="/insurance"
+            className="mb-4 inline-flex items-center gap-1.5 self-start rounded-full border border-[hsl(var(--penn-navy)/0.18)] bg-[hsl(var(--penn-navy)/0.05)] px-2.5 py-1 text-[11px] font-semibold text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-navy)/0.10)]"
+            data-testid={`shop-insurance-pill-${product.id}`}
+          >
+            <ShieldCheck className="w-3 h-3" />
+            Often covered by insurance
+          </Link>
         )}
         {product.recurringPrice && (
           <div

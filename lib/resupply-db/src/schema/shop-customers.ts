@@ -43,6 +43,49 @@ export interface SavedShippingAddress {
   country: "US";
 }
 
+/**
+ * Per-customer communication preferences for the cash-pay shop.
+ * Every flag is opt-OUT (defaults to true on first account hit) for
+ * the transactional channels and opt-IN (defaults to false) for the
+ * marketing-style channels. Dispatchers consult this object before
+ * sending — see the abandonment-cart and order-tracking helpers.
+ */
+export interface CommunicationPreferences {
+  /** Marketing emails (new product announcements, promotions). */
+  emailMarketing: boolean;
+  /** Resupply / restock reminder emails. */
+  emailResupplyReminders: boolean;
+  /** Cart-abandonment recovery emails. */
+  emailAbandonedCart: boolean;
+  /** Post-purchase review-request emails. */
+  emailReviewRequests: boolean;
+  /** Marketing SMS. Promotions etc. */
+  smsMarketing: boolean;
+  /** Transactional SMS (order shipped, delivered). Off by default. */
+  smsTransactional: boolean;
+  /** Channel preference when both apply (e.g. shipped events). */
+  preferredChannel: "email" | "sms";
+  /** DND start (0-23, customer's local timezone). null = no DND. */
+  dndStartHour: number | null;
+  /** DND end (0-23, exclusive). null = no DND. */
+  dndEndHour: number | null;
+  /** IANA timezone ID for evaluating DND windows server-side. */
+  timezone: string | null;
+}
+
+export const DEFAULT_COMMUNICATION_PREFERENCES: CommunicationPreferences = {
+  emailMarketing: false,
+  emailResupplyReminders: true,
+  emailAbandonedCart: true,
+  emailReviewRequests: true,
+  smsMarketing: false,
+  smsTransactional: false,
+  preferredChannel: "email",
+  dndStartHour: null,
+  dndEndHour: null,
+  timezone: null,
+};
+
 export const shopCustomers = resupplySchema.table(
   "shop_customers",
   {
@@ -76,6 +119,14 @@ export const shopCustomers = resupplySchema.table(
     defaultPaymentMethodLast4: text("default_payment_method_last4"),
     defaultPaymentMethodExpMonth: integer("default_payment_method_exp_month"),
     defaultPaymentMethodExpYear: integer("default_payment_method_exp_year"),
+    /**
+     * Per-customer comm prefs JSONB. Nullable in the DB; the API
+     * coalesces missing keys to DEFAULT_COMMUNICATION_PREFERENCES on
+     * read so callers can rely on a fully-populated object.
+     */
+    communicationPreferences: jsonb("communication_preferences").$type<
+      CommunicationPreferences | null
+    >(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

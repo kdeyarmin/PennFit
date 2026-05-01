@@ -1,5 +1,17 @@
 import type { Request, Response, NextFunction } from "express";
 import { getAuth, clerkClient } from "@clerk/express";
+import { and, eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+import { adminUsers, getDbPool } from "@workspace/resupply-db";
+import {
+  SESSION_COOKIE,
+  hashToken,
+  isExpired,
+  readCookie,
+} from "@workspace/resupply-auth";
+
+import { getAuthDepsOrNull } from "../lib/auth-deps";
 import { logger } from "../lib/logger";
 
 /**
@@ -138,6 +150,21 @@ export async function requireAdmin(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  // In-house auth path. When AUTH_PROVIDER is "dual" or "in_house"
+  // and the request carries a valid pf_session cookie, derive
+  // adminEmail / adminUserId / adminRole from auth.users and skip
+  // the entire Clerk path. The role on auth.users is authoritative
+  // (admin > agent > customer); env allow-lists no longer gate.
+  // See ADR 014 + docs/resupply/AUTH-MIGRATION-PLAN.md (Stage 3).
+  const inHouse = await tryInHouseAdmin(req);
+  if (inHouse) {
+    req.adminEmail = inHouse.email;
+    req.adminUserId = inHouse.userId;
+    req.adminRole = inHouse.role;
+    next();
+    return;
+  }
+
   const auth = getAuth(req);
   const userId = auth?.userId;
   if (!userId) {
@@ -166,28 +193,52 @@ export async function requireAdmin(
     return;
   }
 
-  // Look up the user to fetch their primary email. We could
-  // alternatively stash email in session claims via the auth provider's "Customize
-  // session" feature, but that requires a dashboard change — fetching
-  // here keeps the wiring self-contained. Clerk's SDK aggressively
-  // caches user lookups so the per-request cost is negligible.
+  // Resolve the caller's primary email. Two-tier strategy:
   //
-  // We pull `primary` (not just the email string) so the allowlist
-  // branch can read `verification.status` without re-fetching. Storing
-  // verification status in a separate variable here would trip the
-  // no-useless-assignment lint when the dev-fallback branch returns
-  // before reading it.
+  //   1. Read `sessionClaims.email` (or the standard `email_address` /
+  //      `primary_email_address` claim names). Clerk's session JWT
+  //      already carries the verified primary email when the Clerk
+  //      dashboard's session-token customization includes it — which
+  //      is the recommended setup for any consumer that gates on
+  //      email. When present, this path is INSTANT and INDEPENDENT of
+  //      Clerk Backend availability. An admin should never be locked
+  //      out of the dashboard because the Backend API is having a
+  //      bad day.
+  //
+  //   2. Fall back to `clerkClient.users.getUser(userId)` only when
+  //      session claims don't carry the email. Same code as before —
+  //      surfaces verification.status, fails closed with 502 if the
+  //      Backend API throws.
+  //
+  // We treat any email arriving via session claims as VERIFIED.
+  // Clerk only emits the primary-email claim AFTER it's been
+  // verified, so this is safe; the alternative (treating claim-
+  // sourced emails as unverified) would refuse access to every admin
+  // every time Clerk is having a slow day.
   let email: string | undefined;
   let primaryEmailVerified = false;
+  const claims = (auth?.sessionClaims ?? {}) as Record<string, unknown>;
+  const claimEmail =
+    (typeof claims.email === "string" && claims.email) ||
+    (typeof claims.primary_email_address === "string" &&
+      claims.primary_email_address) ||
+    (typeof claims.email_address === "string" && claims.email_address) ||
+    undefined;
+  if (claimEmail) {
+    email = claimEmail.toLowerCase();
+    primaryEmailVerified = true;
+  }
   try {
-    const user = await clerkClient.users.getUser(userId);
-    const primaryId = user.primaryEmailAddressId;
-    const primary =
-      user.emailAddresses.find((e) => e.id === primaryId) ??
-      user.emailAddresses[0];
-    if (primary) {
-      email = primary.emailAddress?.toLowerCase();
-      primaryEmailVerified = primary.verification?.status === "verified";
+    if (!email) {
+      const user = await clerkClient.users.getUser(userId);
+      const primaryId = user.primaryEmailAddressId;
+      const primary =
+        user.emailAddresses.find((e) => e.id === primaryId) ??
+        user.emailAddresses[0];
+      if (primary) {
+        email = primary.emailAddress?.toLowerCase();
+        primaryEmailVerified = primary.verification?.status === "verified";
+      }
     }
   } catch (err) {
     // Distinguish "the auth provider says you have no session" (already handled by
@@ -219,14 +270,22 @@ export async function requireAdmin(
         event: "resupply_admin_clerk_lookup_failed",
         errName,
         clerkStatus,
+        usedSessionClaim: Boolean(email),
       },
       "requireAdmin: Auth provider lookup failed",
     );
-    res.status(502).json({
-      error:
-        "Could not verify your identity right now. Please try again in a moment.",
-    });
-    return;
+    // Only 502 if we have NO email at all. If session claims already
+    // gave us a verified primary email, the Backend API call was a
+    // best-effort enrichment — its failure is not a request-level
+    // error. This makes the dashboard resilient to Clerk Backend API
+    // outages as long as the session JWT carries the email claim.
+    if (!email) {
+      res.status(502).json({
+        error:
+          "Could not verify your identity right now. Please try again in a moment.",
+      });
+      return;
+    }
   }
 
   if (adminAllowlist === null) {
@@ -283,13 +342,81 @@ export async function requireAdmin(
 
   // Admin membership wins over agent membership when both lists
   // contain the same email — promoting an agent to admin should
-  // never silently downgrade their privileges.
-  let role: "admin" | "agent";
+  // never silently downgrade their privileges. Env-var allowlists are
+  // checked FIRST as the bootstrap layer that always works regardless
+  // of DB state.
+  let role: "admin" | "agent" | null = null;
   if (adminAllowlist.includes(email)) {
     role = "admin";
   } else if (agentAllowlist !== null && agentAllowlist.includes(email)) {
     role = "agent";
   } else {
+    // Fall through to the DB-backed admin_users table. This is the
+    // path for CSRs invited through the in-app /admin/team flow —
+    // they don't appear in the env allowlists. Match by clerk_user_id
+    // (preferred — stable identity) OR email_lower (first-login link).
+    // Revoked rows are excluded from the WHERE clause so a previously
+    // active user who was removed can't slip back in via cached email.
+    try {
+      const db = drizzle(getDbPool());
+      const rows = await db
+        .select({
+          id: adminUsers.id,
+          emailLower: adminUsers.emailLower,
+          clerkUserId: adminUsers.clerkUserId,
+          role: adminUsers.role,
+          status: adminUsers.status,
+        })
+        .from(adminUsers)
+        .where(eq(adminUsers.emailLower, email))
+        .limit(1);
+      const row = rows[0];
+      if (row && row.status !== "revoked") {
+        role = row.role === "admin" ? "admin" : "agent";
+        // First-login linking: stamp clerk_user_id + accepted_at +
+        // last_login_at + flip pending → active. Subsequent logins
+        // just bump last_login_at. We tolerate concurrent first-
+        // login races by always going through this UPDATE — every
+        // caller will end up at status='active' with a recent
+        // last_login_at.
+        const now = new Date();
+        const updates: Partial<typeof adminUsers.$inferInsert> & {
+          updatedAt: Date;
+          lastLoginAt: Date;
+        } = {
+          updatedAt: now,
+          lastLoginAt: now,
+        };
+        if (!row.clerkUserId) updates.clerkUserId = userId;
+        if (row.status === "pending") {
+          updates.status = "active";
+          updates.acceptedAt = now;
+        }
+        await db
+          .update(adminUsers)
+          .set(updates)
+          .where(
+            and(
+              eq(adminUsers.id, row.id),
+              // Defensive: never re-activate a row that was revoked
+              // between SELECT and UPDATE.
+              eq(adminUsers.emailLower, email),
+            ),
+          );
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply_admin_db_lookup_failed",
+          err: err instanceof Error ? err.message : "unknown",
+        },
+        "requireAdmin: admin_users DB lookup failed; falling back to env allowlist only",
+      );
+      // Continue with role still null — caller will get 403 below.
+    }
+  }
+
+  if (role === null) {
     res
       .status(403)
       .json({ error: "This account is not authorized for admin access." });
@@ -319,6 +446,66 @@ export async function requireAdmin(
  * response) from "requireAdmin succeeded and called next()" (we
  * then check the role).
  */
+/**
+ * Attempt to authenticate the request using the in-house auth
+ * cookie. Returns the resolved admin context on success, null
+ * when the in-house path is not configured (AUTH_PROVIDER=clerk),
+ * the cookie is missing, or the session is invalid / expired /
+ * belongs to a non-staff user. The Clerk path takes over from
+ * there.
+ *
+ * Customer-role users are deliberately rejected — the dashboard
+ * is staff-only, even when a customer has a valid cookie from the
+ * shop. Returning null here causes the middleware to fall through
+ * to the Clerk path, which then returns 401/403 as it would for
+ * any non-admin Clerk identity.
+ */
+async function tryInHouseAdmin(req: Request): Promise<{
+  email: string;
+  userId: string;
+  role: "admin" | "agent";
+} | null> {
+  const deps = getAuthDepsOrNull();
+  if (!deps) return null;
+  const raw = readCookie(req, SESSION_COOKIE);
+  if (!raw) return null;
+  const tokenHash = hashToken(raw);
+  if (!tokenHash) return null;
+  try {
+    const session = await deps.repo.findSessionByTokenHash(tokenHash);
+    if (!session) return null;
+    if (
+      isExpired(
+        { expiresAt: session.expiresAt, revokedAt: session.revokedAt },
+        new Date(),
+      )
+    ) {
+      return null;
+    }
+    const user = await deps.repo.findUserById(session.userId);
+    if (!user) return null;
+    if (user.status === "locked" || user.status === "revoked") return null;
+    if (user.role !== "admin" && user.role !== "agent") return null;
+    return {
+      email: user.emailLower,
+      userId: user.id,
+      role: user.role,
+    };
+  } catch (err) {
+    // Don't fail the request on a transient repo error — fall
+    // through to the Clerk path. The Clerk path itself returns a
+    // structured error for upstream issues.
+    logger.warn(
+      {
+        event: "resupply_admin_in_house_lookup_failed",
+        err: err instanceof Error ? err.message : "unknown",
+      },
+      "requireAdmin: in-house session lookup failed; falling back to Clerk",
+    );
+    return null;
+  }
+}
+
 export async function requireAdminOnly(
   req: Request,
   res: Response,

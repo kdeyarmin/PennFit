@@ -1,5 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
 import { getAuth, clerkClient } from "@clerk/express";
+import {
+  SESSION_COOKIE,
+  hashToken,
+  isExpired,
+  readCookie,
+} from "@workspace/resupply-auth";
+
+import { getAuthDepsOrNull } from "../lib/auth-deps";
 
 /**
  * requireAdmin — gate for the admin API.
@@ -83,6 +91,20 @@ export async function requireAdmin(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  // In-house auth path — see resupply-api's requireAdmin for the
+  // canonical comment. When AUTH_PROVIDER is "dual" or "in_house"
+  // and the request carries a valid pf_session cookie, derive
+  // adminEmail / adminUserId / adminRole from auth.users and skip
+  // the Clerk path entirely.
+  const inHouse = await tryInHouseAdmin(req);
+  if (inHouse) {
+    req.adminEmail = inHouse.email;
+    req.adminUserId = inHouse.userId;
+    req.adminRole = inHouse.role;
+    next();
+    return;
+  }
+
   const auth = getAuth(req);
   const userId = auth?.userId;
   if (!userId) {
@@ -159,6 +181,41 @@ export async function requireAdmin(
   req.adminUserId = userId;
   req.adminRole = role;
   next();
+}
+
+async function tryInHouseAdmin(req: Request): Promise<{
+  email: string;
+  userId: string;
+  role: "admin" | "agent";
+} | null> {
+  const deps = getAuthDepsOrNull();
+  if (!deps) return null;
+  const raw = readCookie(req, SESSION_COOKIE);
+  if (!raw) return null;
+  const tokenHash = hashToken(raw);
+  if (!tokenHash) return null;
+  try {
+    const session = await deps.repo.findSessionByTokenHash(tokenHash);
+    if (!session) return null;
+    if (
+      isExpired(
+        { expiresAt: session.expiresAt, revokedAt: session.revokedAt },
+        new Date(),
+      )
+    ) {
+      return null;
+    }
+    const user = await deps.repo.findUserById(session.userId);
+    if (!user) return null;
+    if (user.status === "locked" || user.status === "revoked") return null;
+    if (user.role !== "admin" && user.role !== "agent") return null;
+    return { email: user.emailLower, userId: user.id, role: user.role };
+  } catch {
+    // Transient repo error: fall through to the Clerk path rather
+    // than surfacing an opaque 500 here. The Clerk path will return
+    // a structured response for whichever failure mode it sees.
+    return null;
+  }
 }
 
 /**

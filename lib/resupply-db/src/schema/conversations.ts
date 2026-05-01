@@ -51,6 +51,18 @@ export const conversations = resupplySchema.table(
     // admin inbox sort order.
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
 
+    // Assignment + SLA columns (migration 0021). assignedAdminClerkId
+    // mirrors the Clerk user id directly (no FK) so threads handled by
+    // bootstrap env-var admins still work — those admins don't have
+    // rows in admin_users yet.
+    assignedAdminClerkId: text("assigned_admin_clerk_id"),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }),
+    priority: text("priority").notNull().default("normal"),
+    slaDueAt: timestamp("sla_due_at", { withTimezone: true }),
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    escalatedTo: text("escalated_to"),
+    escalationReason: text("escalation_reason"),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -68,6 +80,12 @@ export const conversations = resupplySchema.table(
     lastMessageAtIdx: index("conversations_last_message_at_idx").on(
       t.lastMessageAt,
     ),
+    // NOTE: migration 0021 creates three PARTIAL indexes
+    //   conversations_assignee_active_idx
+    //   conversations_sla_due_active_idx
+    //   conversations_escalated_idx
+    // Drizzle can't express the WHERE clauses; the migration SQL is
+    // the source of truth for those indexes.
   }),
 );
 

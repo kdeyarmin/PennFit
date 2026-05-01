@@ -29,7 +29,7 @@
 // sensitive. We log event id + type + amount only.
 
 import type { Request, RequestHandler, Response } from "express";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
@@ -49,6 +49,10 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 import { getStripeClient, readStripeConfigOrNull, type StripeConfig } from "./config";
 import { readDefaultPaymentMethod } from "./customer";
 import { formatIntervalLabel } from "./products-meta";
+import {
+  sendOrderConfirmationEmail,
+  type OrderConfirmationLineItem,
+} from "../order-emails/send-order-confirmation-email";
 
 /**
  * Extract a shipping address from a Checkout Session into our
@@ -178,9 +182,15 @@ export const stripeWebhookHandler: RequestHandler = async (
         // throw out of the webhook — the parent order is already
         // paid; the badge degrades gracefully if the items are
         // missing (one re-delivery later it'll fill in).
+        let emailItems: OrderConfirmationLineItem[] = [];
         if (paidRow) {
           try {
-            await upsertOrderItemsFromSession(config, session, paidRow, log);
+            emailItems = await upsertOrderItemsFromSession(
+              config,
+              session,
+              paidRow,
+              log,
+            );
           } catch (itemsErr) {
             log?.warn?.(
               {
@@ -216,6 +226,34 @@ export const stripeWebhookHandler: RequestHandler = async (
             { err: recErr instanceof Error ? recErr.message : String(recErr) },
             "stripe webhook: cart recovery mark failed (non-fatal)",
           );
+        }
+        // Best-effort: send the order confirmation email. Idempotent
+        // via shop_orders.confirmation_email_sent_at — a Stripe re-
+        // delivery (or the async_payment_succeeded shadow on the same
+        // session) sees the timestamp set and short-circuits.
+        // Failures here MUST NOT throw out of the webhook —
+        // SendGrid being temporarily down (or unconfigured) must not
+        // cause Stripe to retry the entire webhook, which would
+        // re-fire markPaid and the customer-sync side-effects.
+        if (paidRow) {
+          try {
+            await sendOrderConfirmationIfFirst({
+              session,
+              paidOrderId: paidRow.id,
+              items: emailItems,
+              log,
+            });
+          } catch (emailErr) {
+            log?.warn?.(
+              {
+                err:
+                  emailErr instanceof Error
+                    ? emailErr.message
+                    : String(emailErr),
+              },
+              "stripe webhook: order confirmation email failed (non-fatal)",
+            );
+          }
         }
         break;
       }
@@ -313,6 +351,14 @@ async function markPaid(
   // admin "edit address" endpoint can fill it in later.
   const shippingAddress = extractShippingAddressFromSession(session);
 
+  // Capture the buyer's email at paid-time. Lower-cased to match the
+  // shop_customers.email_lower convention used elsewhere. We persist
+  // this on the order row (rather than chasing the Stripe Session
+  // again at admin-shipping time) so guest checkouts can still
+  // receive shipping notifications. See migration 0017.
+  const sessionEmailRaw = session.customer_details?.email?.trim();
+  const customerEmail = sessionEmailRaw ? sessionEmailRaw.toLowerCase() : null;
+
   // Returning the row so the line-item upsert downstream can copy
   // (orderId, clerkUserId, paidAt) without a second SELECT.
   const updated = await db
@@ -327,6 +373,8 @@ async function markPaid(
       // Skipping the key on null preserves any later admin edit on
       // a Stripe re-delivery (charge.refunded → no shipping_details).
       ...(shippingAddress ? { shippingAddress } : {}),
+      // Same posture for customer_email: only write when present.
+      ...(customerEmail ? { customerEmail } : {}),
       paidAt: sql`now()`,
       updatedAt: sql`now()`,
     })
@@ -378,7 +426,7 @@ async function upsertOrderItemsFromSession(
   log:
     | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
     | undefined,
-): Promise<void> {
+): Promise<OrderConfirmationLineItem[]> {
   const stripe = getStripeClient(config);
   const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
     limit: 100,
@@ -386,6 +434,13 @@ async function upsertOrderItemsFromSession(
   });
 
   const rows: InsertShopOrderItemRow[] = [];
+  // Built alongside `rows` so the email can reuse the line items we
+  // just paid Stripe a single round-trip to fetch — instead of
+  // making the same expanded listLineItems call again from the email
+  // helper. Product names are deliberately NOT mirrored into
+  // shop_order_items (see schema comment), so the email path picks
+  // them up here from the live Stripe catalog rendering.
+  const emailItems: OrderConfirmationLineItem[] = [];
   for (const li of lineItems.data) {
     const price = li.price ?? null;
     const product = price?.product ?? null;
@@ -416,6 +471,21 @@ async function upsertOrderItemsFromSession(
       currency: price?.currency ?? null,
       paidAt: order.paidAt,
     });
+
+    // Stripe gives us a description on the LineItem itself (matches
+    // what the customer saw in Hosted Checkout). Fall back to the
+    // expanded product name if for some reason description is empty.
+    const productName =
+      product && typeof product === "object" && !product.deleted
+        ? product.name
+        : null;
+    const displayName = li.description?.trim() || productName?.trim() || "Item";
+    emailItems.push({
+      name: displayName,
+      quantity: li.quantity ?? 1,
+      unitAmountCents: price?.unit_amount ?? 0,
+      currency: price?.currency ?? "usd",
+    });
   }
 
   if (rows.length === 0) {
@@ -423,7 +493,7 @@ async function upsertOrderItemsFromSession(
       { sessionId: session.id },
       "stripe webhook: no insertable line items for session",
     );
-    return;
+    return emailItems;
   }
 
   const db = drizzle(getDbPool());
@@ -442,6 +512,7 @@ async function upsertOrderItemsFromSession(
     { sessionId: session.id, count: rows.length },
     "shop_order_items upserted",
   );
+  return emailItems;
 }
 
 /**
@@ -767,4 +838,174 @@ async function markStatusByPaymentIntent(
     .set({ status, updatedAt: sql`now()` })
     .where(eq(shopOrders.stripePaymentIntentId, paymentIntentId));
   log?.info?.({ status }, "shop order marked refunded");
+}
+
+/**
+ * Send the post-purchase confirmation email exactly once per order.
+ *
+ * Called after `markPaid` + `upsertOrderItemsFromSession` in the
+ * checkout-completed branch. Idempotency is enforced by an ATOMIC
+ * CLAIM on `shop_orders.confirmation_email_sent_at`:
+ *   1. `UPDATE … SET confirmation_email_sent_at = now() WHERE id = $1
+ *      AND confirmation_email_sent_at IS NULL RETURNING …` — only
+ *      one worker can win the row even if Stripe fires
+ *      `checkout.session.completed` and
+ *      `checkout.session.async_payment_succeeded` concurrently.
+ *   2. If no row was returned, another worker already claimed the
+ *      send (or it was previously sent); short-circuit.
+ *   3. If we won the claim, resolve recipient (linked
+ *      `shop_customers.email_lower` joined on `clerk_user_id`,
+ *      falling back to `session.customer_details.email` for guests),
+ *      render, and send.
+ *   4. ON SEND FAILURE, RELEASE THE CLAIM by writing
+ *      `confirmation_email_sent_at = NULL` so a Stripe re-delivery
+ *      (or manual replay) can retry — preserving the at-most-once
+ *      *successful* send while still allowing one retry per failure.
+ *
+ * Errors are swallowed — the caller wraps in try/catch as a second
+ * line of defence. SendGrid being misconfigured or returning a 5xx
+ * must NOT cause Stripe to retry the entire webhook (which would
+ * re-fire markPaid + the customer/cart sync side-effects).
+ */
+export async function sendOrderConfirmationIfFirst(args: {
+  session: Stripe.Checkout.Session;
+  paidOrderId: string;
+  items: readonly OrderConfirmationLineItem[];
+  log:
+    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | undefined;
+}): Promise<{ skipped: true; reason: string } | { skipped: false; delivered: boolean }> {
+  const { session, paidOrderId, items, log } = args;
+  const db = drizzle(getDbPool());
+
+  // Atomic claim: stamp the timestamp ONLY if it is currently NULL.
+  // The RETURNING gives back the canonical row fields the email needs
+  // (avoiding a separate SELECT). If `claimed` is undefined either
+  // (a) the row doesn't exist or (b) another worker already stamped.
+  // Both are "skip" outcomes for this send.
+  const claimedRows = await db
+    .update(shopOrders)
+    .set({ confirmationEmailSentAt: sql`now()`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(shopOrders.id, paidOrderId),
+        isNull(shopOrders.confirmationEmailSentAt),
+      ),
+    )
+    .returning({
+      id: shopOrders.id,
+      stripeSessionId: shopOrders.stripeSessionId,
+      clerkUserId: shopOrders.clerkUserId,
+      amountTotalCents: shopOrders.amountTotalCents,
+      currency: shopOrders.currency,
+      shippingAddress: shopOrders.shippingAddress,
+      customerEmail: shopOrders.customerEmail,
+    });
+  const claimed = claimedRows[0];
+
+  if (!claimed) {
+    log?.info?.(
+      { orderId: paidOrderId },
+      "order confirmation email skipped — already sent or row missing",
+    );
+    return { skipped: true, reason: "already_sent_or_missing" };
+  }
+
+  // From here on, ANY failure path MUST release the claim by writing
+  // confirmation_email_sent_at = NULL so a future redelivery can retry.
+  // Idempotent: safe to call multiple times (sets stamp back to NULL).
+  // The outer try/catch below guarantees release on ANY thrown error
+  // anywhere in the post-claim block — including transient DB errors
+  // during the customer lookup — so a transient failure can never
+  // permanently lock out the email.
+  const releaseClaim = async (): Promise<void> => {
+    try {
+      await db
+        .update(shopOrders)
+        .set({ confirmationEmailSentAt: null, updatedAt: sql`now()` })
+        .where(eq(shopOrders.id, claimed.id));
+    } catch (releaseErr) {
+      log?.warn?.(
+        {
+          orderId: claimed.id,
+          err: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+        },
+        "order confirmation email claim release failed",
+      );
+    }
+  };
+
+  try {
+    // Recipient resolution: linked customer first, persisted
+    // `customer_email` (captured at paid-time) next, Stripe Session
+    // fallback last. We never log any of these values.
+    let toEmail: string | null = null;
+    if (claimed.clerkUserId) {
+      const [cust] = await db
+        .select({ email: shopCustomers.emailLower })
+        .from(shopCustomers)
+        .where(eq(shopCustomers.clerkUserId, claimed.clerkUserId))
+        .limit(1);
+      if (cust?.email) toEmail = cust.email;
+    }
+    if (!toEmail && claimed.customerEmail) {
+      toEmail = claimed.customerEmail;
+    }
+    if (!toEmail) {
+      const sessionEmail = session.customer_details?.email?.trim();
+      if (sessionEmail) toEmail = sessionEmail.toLowerCase();
+    }
+    if (!toEmail) {
+      await releaseClaim();
+      log?.warn?.(
+        { orderId: claimed.id },
+        "order confirmation email skipped — no recipient on file",
+      );
+      return { skipped: true, reason: "no_email_on_file" };
+    }
+
+    const result = await sendOrderConfirmationEmail({
+      toEmail,
+      stripeSessionId: claimed.stripeSessionId,
+      items,
+      amountTotalCents: claimed.amountTotalCents ?? session.amount_total ?? 0,
+      currency: claimed.currency ?? session.currency ?? "usd",
+      shippingAddress: claimed.shippingAddress ?? null,
+    });
+
+    if (!result.configured) {
+      await releaseClaim();
+      log?.info?.(
+        { orderId: claimed.id },
+        "order confirmation email skipped — sendgrid not configured",
+      );
+      return { skipped: true, reason: "not_configured" };
+    }
+    if (!result.delivered) {
+      await releaseClaim();
+      log?.warn?.(
+        { orderId: claimed.id, error: result.error },
+        "order confirmation email send failed (non-fatal, claim released)",
+      );
+      return { skipped: false, delivered: false };
+    }
+
+    log?.info?.(
+      { orderId: claimed.id, messageId: result.messageId ?? null },
+      "order confirmation email delivered",
+    );
+    return { skipped: false, delivered: true };
+  } catch (err) {
+    // Catch-all: ANY uncaught error after the claim acquisition
+    // (transient DB read failure, unexpected throw inside the email
+    // helper, etc.) must release the claim so the next webhook
+    // redelivery can retry — otherwise a single transient failure
+    // would permanently suppress the confirmation email.
+    await releaseClaim();
+    log?.warn?.(
+      { orderId: claimed.id, err: err instanceof Error ? err.message : String(err) },
+      "order confirmation email post-claim threw (non-fatal, claim released)",
+    );
+    return { skipped: false, delivered: false };
+  }
 }
