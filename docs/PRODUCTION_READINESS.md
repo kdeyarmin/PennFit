@@ -21,8 +21,9 @@ need to be **correct**, not just present.
 ### Auth (in-house)
 
 - [ ] `AUTH_PASSWORD_PEPPER` — 32+ random bytes (base64). Mixed into
-      bcrypt before hashing customer passwords. Treat as long-lived;
-      rotating it invalidates every stored hash.
+      argon2id when hashing customer passwords; bcrypt is only the
+      legacy Clerk import path. Treat as long-lived; rotating it
+      invalidates every stored hash.
 - [ ] `AUTH_SESSION_TTL_DAYS` (default 14), `AUTH_EMAIL_TOKEN_TTL_HOURS`
       (default 24) — session and verify/reset link lifetimes. Defaults
       are fine for production unless a security review says otherwise.
