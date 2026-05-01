@@ -107,5 +107,32 @@ if ! run_check >/dev/null 2>&1; then
   echo "[self-test] FAIL: E (unrelated edit should have passed)" >&2
   exit 1
 fi
+git restore --staged artifacts/cpap-fitter/src/index.ts >/dev/null 2>&1 || true
+git checkout -- . >/dev/null 2>&1 || true
+rm -rf artifacts
+
+# --- F: working-tree diff mode (DIFF_TARGET="") -----------------------------
+# Validation/CI invocation pattern. Stage + commit a baseline, then
+# leave a schema edit UNSTAGED and confirm the working-tree-vs-HEAD
+# comparison still detects it. This proves the empty-DIFF_TARGET
+# branch (which drops the positional flag from `git diff`) actually
+# works — the prior `${VAR:---cached}` form silently fell back to
+# --cached and missed unstaged drift.
+echo "[self-test] scenario F: DIFF_TARGET= (working tree vs HEAD) should fail on unstaged schema edit"
+echo "// unstaged drift" >> lib/resupply-db/src/schema/patients.ts
+if BASE_REF=HEAD DIFF_TARGET= bash scripts/check-resupply-migration-pair.sh \
+   >/dev/null 2>&1; then
+  echo "[self-test] FAIL: F (working-tree mode should have detected drift)" >&2
+  exit 1
+fi
+git checkout -- lib/resupply-db/src/schema/patients.ts
+
+# --- G: working-tree diff mode, clean working tree --------------------------
+echo "[self-test] scenario G: DIFF_TARGET= against clean working tree should pass"
+if ! BASE_REF=HEAD DIFF_TARGET= bash scripts/check-resupply-migration-pair.sh \
+     >/dev/null 2>&1; then
+  echo "[self-test] FAIL: G (clean working tree should have passed)" >&2
+  exit 1
+fi
 
 echo "[self-test] all scenarios passed"

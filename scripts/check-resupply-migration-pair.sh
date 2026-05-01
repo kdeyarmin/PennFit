@@ -49,12 +49,18 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# Resolve the diff range. In the pre-commit case the caller exports
-# BASE_REF=HEAD and DIFF_TARGET=--cached so we look at the staged
-# index. In CI / a validation pass we want HEAD vs the merge base
-# with main; the caller is responsible for setting BASE_REF.
+# Resolve the diff range. Pre-commit caller leaves both unset so we
+# default to comparing the staged index against HEAD. A validation /
+# CI caller can override:
+#   - BASE_REF=origin/main DIFF_TARGET=    → working tree vs origin/main
+#   - BASE_REF=origin/main DIFF_TARGET=    on a freshly-checked-out
+#     CI tree compares the merge result against the base branch.
+# The `${VAR-default}` form (single dash, no colon) only substitutes
+# when the variable is *unset*, so an explicit empty string from the
+# caller is honored as "no diff target flag" — `git diff $BASE_REF`
+# without --cached compares working tree to BASE_REF.
 BASE_REF="${BASE_REF:-HEAD}"
-DIFF_TARGET="${DIFF_TARGET:---cached}"
+DIFF_TARGET="${DIFF_TARGET---cached}"
 
 if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   printf 'WARNING: %s does not resolve; skipping resupply migration-pair check.\n' \
@@ -62,15 +68,32 @@ if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   exit 0
 fi
 
+# Build the git diff invocation. When DIFF_TARGET is the empty
+# string the caller wants "working tree vs BASE_REF", so we drop the
+# positional flag entirely (passing "" would be parsed as a literal
+# ref name and fail). Otherwise pass --cached / --staged / whatever
+# the caller set.
+diff_args=(diff)
+if [[ -n "$DIFF_TARGET" ]]; then
+  diff_args+=("$DIFF_TARGET")
+fi
+diff_args+=(--name-only --diff-filter=AMR "$BASE_REF")
+
 # Names of files added/modified/renamed in the diff window. We only
 # look at A/M/R; deletions don't trigger schema-vs-migration
 # obligations on their own. (A delete-only schema change still drops
 # the underlying table, but that is itself a migration-shaped change
 # and would land alongside a migration in any reasonable workflow.)
-mapfile -t changed < <(
-  git diff "$DIFF_TARGET" --name-only --diff-filter=AMR "$BASE_REF" 2>/dev/null \
-    || true
-)
+mapfile -t changed < <(git "${diff_args[@]}" 2>/dev/null || true)
+
+# A second pass with --diff-filter=A returns just the new files; used
+# below to confirm a migration was *added* (not merely modified).
+added_args=(diff)
+if [[ -n "$DIFF_TARGET" ]]; then
+  added_args+=("$DIFF_TARGET")
+fi
+added_args+=(--name-only --diff-filter=A "$BASE_REF")
+added_files="$(git "${added_args[@]}" 2>/dev/null || true)"
 
 schema_changed=0
 new_migration=0
@@ -79,14 +102,13 @@ for f in "${changed[@]}"; do
     lib/resupply-db/src/schema/*|lib/resupply-db/src/schema/*/*)
       schema_changed=1
       ;;
-    # New migration SQL must be ADDED (not just modified) to count as
-    # "this commit shipped a migration." Modifying a previously-
-    # committed migration is, per ADR 003, prohibited anyway and would
-    # be caught by a separate review. Use --diff-filter=A on a second
-    # pass to be sure we're counting adds.
+    # New migration SQL must be ADDED (not just modified) to count
+    # as "this commit shipped a migration." Modifying a previously-
+    # committed migration is, per ADR 003, prohibited anyway and
+    # would be caught by review. We check membership in the
+    # precomputed added-only file list.
     lib/resupply-db/drizzle/[0-9]*.sql)
-      if git diff "$DIFF_TARGET" --name-only --diff-filter=A "$BASE_REF" \
-         2>/dev/null | grep -Fxq "$f"; then
+      if grep -Fxq "$f" <<<"$added_files"; then
         new_migration=1
       fi
       ;;
