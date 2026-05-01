@@ -6,7 +6,7 @@
 //     card brand/last4?" in one DB query — without it we'd hit Stripe
 //     on every account-page render.
 //   * Order-history queries need a stable foreign key from
-//     shop_orders.clerk_user_id back to "the Stripe Customer ID we
+//     shop_orders.customer_id back to "the Stripe Customer ID we
 //     used for that purchase". Storing the mapping locally avoids
 //     a Stripe customer-search per order.
 //   * Quick-checkout / one-click reorder needs to find the user's
@@ -16,13 +16,15 @@
 //   * Card numbers, CVCs, full PANs — never. Only display crumbs
 //     (brand, last4, exp month/year) so we can render
 //     "Visa •••• 4242 — expires 04/29" without a Stripe round-trip.
-//   * Billing email — the auth provider owns that. We store `email_lower` only
-//     for support lookups + audit; primary identity is `clerk_user_id`.
+//   * Billing email — the auth provider owns that. We store
+//     `email_lower` only for support lookups + audit; primary
+//     identity is `customer_id`.
 //
-// PK = clerk_user_id: stable for the user's lifetime in the auth provider and
-// already the natural identifier for every signed-in shop request.
-// Using it directly (instead of an auto-generated id) eliminates a
-// lookup hop on every /shop/me call.
+// PK = customer_id: an opaque shop-customer key (sourced from
+// `auth.users.id` post-cutover) that is stable for the user's
+// lifetime and the natural identifier for every signed-in shop
+// request. Using it directly (instead of an auto-generated id)
+// eliminates a lookup hop on every /shop/me call.
 
 import { sql } from "drizzle-orm";
 import { index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
@@ -89,7 +91,7 @@ export const DEFAULT_COMMUNICATION_PREFERENCES: CommunicationPreferences = {
 export const shopCustomers = resupplySchema.table(
   "shop_customers",
   {
-    clerkUserId: text("clerk_user_id").primaryKey(),
+    customerId: text("customer_id").primaryKey(),
     /**
      * Stripe Customer ID once we've created one. Nullable because the
      * row is created on first /shop/me hit (so we always have a place
@@ -99,10 +101,10 @@ export const shopCustomers = resupplySchema.table(
     stripeCustomerId: text("stripe_customer_id").unique(),
     displayName: text("display_name"),
     /**
-     * Clerk's primary email at row-creation time, lowercased. Lets
-     * support search "what shop customer is anna@example.com?" without
-     * a auth provider API call. Refreshed opportunistically on each
-     * /shop/me hit.
+     * The auth user's primary email at row-creation time,
+     * lowercased. Lets support search "what shop customer is
+     * anna@example.com?" without a join. Refreshed
+     * opportunistically on each /shop/me hit.
      */
     emailLower: text("email_lower"),
     shippingAddress: jsonb("shipping_address_json").$type<SavedShippingAddress | null>(),

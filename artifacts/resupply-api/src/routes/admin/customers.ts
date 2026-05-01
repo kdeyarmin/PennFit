@@ -168,29 +168,29 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
   // Single round-trip aggregation using inline CTEs. shop_customers
   // drives the FROM (registered customers only); the two LEFT JOINs
   // bring in per-customer order rollup and an "any active sub" flag.
-  // Tie-break by clerk_user_id for stable pagination across pages
+  // Tie-break by customer_id for stable pagination across pages
   // when the primary sort key has duplicates (e.g. lifetime=0).
   const listResult = (await db.execute(sql`
     WITH order_agg AS (
       SELECT
-        clerk_user_id,
+        customer_id,
         COUNT(*)::int AS orders_count,
         COALESCE(SUM(amount_total_cents) FILTER (
           WHERE paid_at IS NOT NULL AND status <> 'refunded'
         ), 0)::int AS lifetime_cents,
         MAX(created_at) AS last_order_at
       FROM resupply.shop_orders
-      WHERE clerk_user_id IS NOT NULL
-      GROUP BY clerk_user_id
+      WHERE customer_id IS NOT NULL
+      GROUP BY customer_id
     ),
     sub_agg AS (
-      SELECT clerk_user_id, true AS has_active
+      SELECT customer_id, true AS has_active
       FROM resupply.shop_subscriptions
       WHERE status = 'active'
-      GROUP BY clerk_user_id
+      GROUP BY customer_id
     )
     SELECT
-      c.clerk_user_id              AS user_id,
+      c.customer_id              AS user_id,
       c.display_name               AS display_name,
       c.email_lower                AS email_lower,
       c.stripe_customer_id         AS stripe_customer_id,
@@ -200,15 +200,15 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
       o.last_order_at              AS last_order_at,
       COALESCE(s.has_active, false) AS has_active_subscription
     FROM resupply.shop_customers c
-    LEFT JOIN order_agg o ON o.clerk_user_id = c.clerk_user_id
-    LEFT JOIN sub_agg s   ON s.clerk_user_id = c.clerk_user_id
+    LEFT JOIN order_agg o ON o.customer_id = c.customer_id
+    LEFT JOIN sub_agg s   ON s.customer_id = c.customer_id
     WHERE (${qPattern}::text IS NULL OR c.email_lower ILIKE ${qPattern})
       AND (
         ${subFilter}::text IS NULL
         OR (${subFilter}::text = 'active' AND s.has_active IS TRUE)
         OR (${subFilter}::text = 'none' AND s.has_active IS NOT TRUE)
       )
-    ORDER BY ${orderClauseExpr} ${orderDirSql}, c.clerk_user_id ASC
+    ORDER BY ${orderClauseExpr} ${orderDirSql}, c.customer_id ASC
     LIMIT ${pageSize} OFFSET ${offset}
   `)) as unknown as { rows: ListRow[] };
 
@@ -216,14 +216,14 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
   // page would otherwise hide the true total for pagination UX.
   const totalResult = (await db.execute(sql`
     WITH sub_agg AS (
-      SELECT clerk_user_id, true AS has_active
+      SELECT customer_id, true AS has_active
       FROM resupply.shop_subscriptions
       WHERE status = 'active'
-      GROUP BY clerk_user_id
+      GROUP BY customer_id
     )
     SELECT COUNT(*)::int AS total
     FROM resupply.shop_customers c
-    LEFT JOIN sub_agg s ON s.clerk_user_id = c.clerk_user_id
+    LEFT JOIN sub_agg s ON s.customer_id = c.customer_id
     WHERE (${qPattern}::text IS NULL OR c.email_lower ILIKE ${qPattern})
       AND (
         ${subFilter}::text IS NULL
@@ -376,7 +376,7 @@ router.get(
     // 1. Customer mirror row (may be missing for guest-only users).
     const customerResult = (await db.execute(sql`
       SELECT
-        clerk_user_id                     AS user_id,
+        customer_id                     AS user_id,
         display_name                      AS display_name,
         email_lower                       AS email_lower,
         stripe_customer_id                AS stripe_customer_id,
@@ -388,7 +388,7 @@ router.get(
         created_at                        AS created_at,
         updated_at                        AS updated_at
       FROM resupply.shop_customers
-      WHERE clerk_user_id = ${userId}
+      WHERE customer_id = ${userId}
       LIMIT 1
     `)) as unknown as { rows: CustomerRow[] };
     const customerRow = customerResult.rows[0] ?? null;
@@ -416,7 +416,7 @@ router.get(
           WHERE i.order_id = o.id
         ), 0)                      AS item_count
       FROM resupply.shop_orders o
-      WHERE o.clerk_user_id = ${userId}
+      WHERE o.customer_id = ${userId}
       ORDER BY o.created_at DESC
       LIMIT 25
     `)) as unknown as { rows: OrderRow[] };
@@ -446,11 +446,11 @@ router.get(
         created_at                  AS created_at,
         updated_at                  AS updated_at
       FROM resupply.shop_subscriptions
-      WHERE clerk_user_id = ${userId}
+      WHERE customer_id = ${userId}
       ORDER BY created_at DESC
     `)) as unknown as { rows: SubscriptionRow[] };
 
-    // 4. Abandoned cart (UNIQUE(clerk_user_id) — at most 1).
+    // 4. Abandoned cart (UNIQUE(customer_id) — at most 1).
     const cartResult = (await db.execute(sql`
       SELECT
         id              AS id,
@@ -463,7 +463,7 @@ router.get(
         cleared_at      AS cleared_at,
         created_at      AS created_at
       FROM resupply.shop_abandoned_carts
-      WHERE clerk_user_id = ${userId}
+      WHERE customer_id = ${userId}
       LIMIT 1
     `)) as unknown as { rows: AbandonedCartRow[] };
 
@@ -481,7 +481,7 @@ router.get(
         created_at      AS created_at,
         updated_at      AS updated_at
       FROM resupply.shop_reviews
-      WHERE clerk_user_id = ${userId}
+      WHERE customer_id = ${userId}
       ORDER BY created_at DESC
       LIMIT 100
     `)) as unknown as { rows: ReviewRow[] };
@@ -492,19 +492,19 @@ router.get(
       WITH paid AS (
         SELECT amount_total_cents, created_at
         FROM resupply.shop_orders
-        WHERE clerk_user_id = ${userId}
+        WHERE customer_id = ${userId}
           AND paid_at IS NOT NULL
           AND status <> 'refunded'
       )
       SELECT
         (SELECT COUNT(*)::int FROM resupply.shop_orders
-         WHERE clerk_user_id = ${userId})                    AS orders_count,
+         WHERE customer_id = ${userId})                    AS orders_count,
         COALESCE((SELECT SUM(amount_total_cents)::int FROM paid), 0)
                                                               AS lifetime_value_cents,
         (SELECT MIN(created_at) FROM paid)                    AS first_order_at,
         (SELECT MAX(created_at) FROM paid)                    AS last_order_at,
         (SELECT COUNT(*)::int FROM resupply.shop_reviews
-         WHERE clerk_user_id = ${userId}
+         WHERE customer_id = ${userId}
            AND status = 'pending')                            AS pending_reviews_count
     `)) as unknown as { rows: StatsRow[] };
 
@@ -690,7 +690,7 @@ interface SourceOrderRow {
   id: string;
   status: string;
   paid_at: string | Date | null;
-  clerk_user_id: string | null;
+  customer_id: string | null;
 }
 
 interface ItemRow {
@@ -732,7 +732,7 @@ router.post(
     // 1. Look up the source order. Must belong to this userId AND
     //    be paid AND not refunded.
     const orderResult = (await db.execute(sql`
-      SELECT id, status, paid_at, clerk_user_id
+      SELECT id, status, paid_at, customer_id
       FROM resupply.shop_orders
       WHERE id = ${sourceOrderId}
       LIMIT 1
@@ -743,7 +743,7 @@ router.post(
       res.status(404).json({ error: "source_order_not_found" });
       return;
     }
-    if (order.clerk_user_id !== userId) {
+    if (order.customer_id !== userId) {
       // Don't leak whether the id exists at all; treat
       // ownership-mismatch as a generic 400.
       res.status(400).json({ error: "source_order_user_mismatch" });
@@ -778,7 +778,7 @@ router.post(
     const customerResult = (await db.execute(sql`
       SELECT email_lower, stripe_customer_id
       FROM resupply.shop_customers
-      WHERE clerk_user_id = ${userId}
+      WHERE customer_id = ${userId}
       LIMIT 1
     `)) as unknown as { rows: CustomerLookupRow[] };
     const customerLookup = customerResult.rows[0] ?? null;
@@ -829,7 +829,7 @@ router.post(
           // The reorder_for_user_id stamp lets the webhook attribute
           // the resulting shop_order row to the right customer even
           // if the email/Stripe-customer linkage is novel.
-          clerk_user_id: userId,
+          customer_id: userId,
           reorder_source_order_id: sourceOrderId,
           initiated_by_admin: req.adminEmail ?? "unknown",
           initiated_by_admin_user_id: req.adminUserId ?? "unknown",

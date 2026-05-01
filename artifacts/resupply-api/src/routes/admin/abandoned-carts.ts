@@ -68,7 +68,7 @@ router.get("/admin/shop/abandoned-carts", requireAdmin, async (_req, res) => {
   const rows = await db
     .select({
       id: shopAbandonedCarts.id,
-      clerkUserId: shopAbandonedCarts.clerkUserId,
+      customerId: shopAbandonedCarts.customerId,
       email: shopAbandonedCarts.email,
       items: shopAbandonedCarts.items,
       subtotalCents: shopAbandonedCarts.subtotalCents,
@@ -99,7 +99,7 @@ router.get("/admin/shop/abandoned-carts", requireAdmin, async (_req, res) => {
   res.json({
     rows: rows.map((r) => ({
       id: r.id,
-      clerkUserId: r.clerkUserId,
+      customerId: r.customerId,
       emailRedacted: redactEmail(r.email),
       itemCount: Array.isArray(r.items)
         ? r.items.reduce((sum, it) => sum + (it.quantity || 0), 0)
@@ -156,11 +156,11 @@ router.post(
       UPDATE ${shopAbandonedCarts}
       SET reminded_at = now()
       WHERE id IN (SELECT id FROM eligible)
-      RETURNING id, clerk_user_id AS "clerkUserId", email, items, subtotal_cents AS "subtotalCents", currency
+      RETURNING id, customer_id AS "customerId", email, items, subtotal_cents AS "subtotalCents", currency
     `);
     const claimed = (claimedRaw.rows ?? []) as Array<{
       id: string;
-      clerkUserId: string;
+      customerId: string;
       email: string | null;
       items: ShopAbandonedCartItem[];
       subtotalCents: number;
@@ -175,16 +175,16 @@ router.post(
       ReturnType<typeof mergePrefs>
     >();
     if (claimed.length > 0) {
-      const userIds = Array.from(new Set(claimed.map((r) => r.clerkUserId)));
+      const userIds = Array.from(new Set(claimed.map((r) => r.customerId)));
       const customerRows = await db
         .select({
-          clerkUserId: shopCustomers.clerkUserId,
+          customerId: shopCustomers.customerId,
           prefs: shopCustomers.communicationPreferences,
         })
         .from(shopCustomers)
-        .where(sql`${shopCustomers.clerkUserId} = ANY(${userIds})`);
+        .where(sql`${shopCustomers.customerId} = ANY(${userIds})`);
       for (const cr of customerRows) {
-        prefsByUser.set(cr.clerkUserId, mergePrefs(cr.prefs));
+        prefsByUser.set(cr.customerId, mergePrefs(cr.prefs));
       }
     }
 
@@ -200,7 +200,7 @@ router.post(
       // (no row in shop_customers) opts in — the `mergePrefs` helper
       // returns DEFAULT_COMMUNICATION_PREFERENCES which has
       // emailAbandonedCart=true.
-      const prefs = prefsByUser.get(row.clerkUserId) ?? mergePrefs(null);
+      const prefs = prefsByUser.get(row.customerId) ?? mergePrefs(null);
       if (!prefs.emailAbandonedCart || isInDndWindow(prefs)) {
         await db
           .update(shopAbandonedCarts)

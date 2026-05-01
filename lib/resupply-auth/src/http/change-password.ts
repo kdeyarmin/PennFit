@@ -22,11 +22,6 @@ const ChangeBody = z.object({
 });
 
 export function makeChangePasswordHandler(deps: AuthDeps) {
-  if (!deps.env.passwordPepper) {
-    throw new Error(
-      "auth change-password handler requires AUTH_PASSWORD_PEPPER (provider must be 'dual' or 'in_house')",
-    );
-  }
   const pepper = deps.env.passwordPepper;
   const now = deps.now ?? (() => new Date());
 

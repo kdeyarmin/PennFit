@@ -12,7 +12,7 @@
 //   one-click button on the order history card.
 //
 // Ownership rule (HARD):
-//   The handler ONLY proceeds when shop_orders.clerk_user_id
+//   The handler ONLY proceeds when shop_orders.customer_id
 //   equals the caller's clerk id AND the order is `paid`.
 //   Anything else returns 404 to avoid leaking the existence of
 //   another user's session id by id-probing.
@@ -85,7 +85,7 @@ router.post(
     const rawSessionId = req.params.sessionId;
     const sessionId =
       typeof rawSessionId === "string" ? rawSessionId : (rawSessionId?.[0] ?? "");
-    const clerkId = req.userClerkId!;
+    const clerkId = req.userCustomerId!;
 
     // sessionId is path-segment-bounded by Express but we still
     // sanity-check shape — Stripe ids are URL-safe ASCII and short
@@ -120,7 +120,7 @@ router.post(
       .where(
         and(
           eq(shopOrders.stripeSessionId, sessionId),
-          eq(shopOrders.clerkUserId, clerkId),
+          eq(shopOrders.customerId, clerkId),
           eq(shopOrders.status, "paid"),
         ),
       )

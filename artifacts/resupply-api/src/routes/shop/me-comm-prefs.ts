@@ -51,13 +51,13 @@ const prefsSchema = z
   .strict();
 
 router.get("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId!;
-  await ensureShopCustomerRow({ clerkUserId, email: null });
+  const customerId = req.userCustomerId!;
+  await ensureShopCustomerRow({ customerId, email: null });
   const db = drizzle(getDbPool());
   const rows = await db
     .select({ prefs: shopCustomers.communicationPreferences })
     .from(shopCustomers)
-    .where(eq(shopCustomers.clerkUserId, clerkUserId))
+    .where(eq(shopCustomers.customerId, customerId))
     .limit(1);
   const stored = rows[0]?.prefs ?? null;
   res.json({ preferences: mergeWithDefaults(stored) });
@@ -75,13 +75,13 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
     });
     return;
   }
-  const clerkUserId = req.userClerkId!;
-  await ensureShopCustomerRow({ clerkUserId, email: null });
+  const customerId = req.userCustomerId!;
+  await ensureShopCustomerRow({ customerId, email: null });
   const db = drizzle(getDbPool());
   const rows = await db
     .select({ prefs: shopCustomers.communicationPreferences })
     .from(shopCustomers)
-    .where(eq(shopCustomers.clerkUserId, clerkUserId))
+    .where(eq(shopCustomers.customerId, customerId))
     .limit(1);
   const current = mergeWithDefaults(rows[0]?.prefs ?? null);
   // Validate DND window: either both null or both set with start != end.
@@ -124,7 +124,7 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
   await db
     .update(shopCustomers)
     .set({ communicationPreferences: next, updatedAt: new Date() })
-    .where(eq(shopCustomers.clerkUserId, clerkUserId));
+    .where(eq(shopCustomers.customerId, customerId));
   res.json({ preferences: next });
 });
 

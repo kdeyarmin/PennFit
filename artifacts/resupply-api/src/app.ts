@@ -1,10 +1,9 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
 import { makeAuthRouter } from "@workspace/resupply-auth";
 import router from "./routes";
-import { getAuthDepsOrNull } from "./lib/auth-deps";
+import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 import { errorHandler } from "./middlewares/errorHandler";
 import { securityHeaders } from "./middlewares/securityHeaders";
@@ -84,16 +83,13 @@ const allowedOrigins = (() => {
   return dev;
 })();
 
-// `credentials` is intentionally OFF: the dashboard authenticates with
-// `Authorization: Bearer <clerk_token>`, never cookies. Setting
-// `credentials: true` would oblige us to keep an exact-match Origin
-// allowlist forever (browsers refuse `Access-Control-Allow-Origin: *`
-// when credentials are enabled) AND would unlock cookie-based CSRF
-// attack surface that we don't actually use. Bearer tokens are
-// immune to classic CSRF because the browser does not auto-attach
-// them — JS code must read and send them deliberately. Leaving
-// credentials off is the simpler, safer default for a Bearer-only
-// API.
+// `credentials: true` is required for the in-house auth path —
+// the dashboard sends the `pf_session` cookie cross-origin, and
+// browsers strip Set-Cookie / Cookie when credentials aren't
+// allowed. The exact-match Origin allowlist above is what makes
+// this safe (browsers refuse `Access-Control-Allow-Origin: *`
+// when credentials are enabled, so every allowed origin is
+// vetted hostname-by-hostname).
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -101,6 +97,7 @@ app.use(
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
     },
+    credentials: true,
   }),
 );
 
@@ -138,29 +135,18 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// session middleware — attaches auth state (`getAuth(req)`) to
-// every request so downstream admin-gated routes can read it. Safe
-// to mount globally: it's a no-op for unauthenticated requests, and
-// the unauthenticated /healthz, /readyz probes don't read auth state
-// at all. We mount it BEFORE the route tree so every nested router
-// inherits it without needing per-router wiring.
-app.use(clerkMiddleware());
-
-// In-house /auth/* routes — only mounted when AUTH_PROVIDER is
-// "dual" or "in_house". The default ("clerk") leaves the in-house
-// path entirely off the wire so a misconfig can't accidentally
-// expose it. See ADR 014 + docs/resupply/AUTH-MIGRATION-PLAN.md.
-const authDeps = getAuthDepsOrNull();
-if (authDeps) {
-  app.use(
-    "/resupply-api/auth",
-    makeAuthRouter(authDeps, { productName: "Resupply" }),
-  );
-  logger.info(
-    { event: "auth_in_house_mounted", provider: authDeps.env.provider },
-    "in-house auth routes mounted at /resupply-api/auth",
-  );
-}
+// In-house /auth/* routes. The router is unconditionally mounted;
+// a missing AUTH_PASSWORD_PEPPER throws here so the misconfig
+// surfaces at boot rather than at the first sign-in attempt.
+const authDeps = getAuthDeps();
+app.use(
+  "/resupply-api/auth",
+  makeAuthRouter(authDeps, { productName: "Resupply" }),
+);
+logger.info(
+  { event: "auth_in_house_mounted" },
+  "in-house auth routes mounted at /resupply-api/auth",
+);
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,

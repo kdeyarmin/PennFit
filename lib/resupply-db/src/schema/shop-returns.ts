@@ -31,7 +31,7 @@ export const shopReturns = resupplySchema.table(
     id: text("id")
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
-    clerkUserId: text("clerk_user_id").notNull(),
+    customerId: text("customer_id").notNull(),
     /**
      * The original paid order. ON DELETE RESTRICT — we never let an
      * order be deleted while a return references it (returns are part
@@ -75,8 +75,8 @@ export const shopReturns = resupplySchema.table(
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },
   (t) => ({
-    byUserIdx: index("shop_returns_clerk_user_id_idx").on(
-      t.clerkUserId,
+    byUserIdx: index("shop_returns_customer_id_idx").on(
+      t.customerId,
       t.createdAt,
     ),
     byStatusIdx: index("shop_returns_status_idx").on(t.status, t.createdAt),

@@ -70,16 +70,16 @@ export const shopOrders = resupplySchema.table(
      */
     cartHash: text("cart_hash"),
     /**
-     * auth user ID of the buyer when the checkout was initiated by
-     * a signed-in user. Nullable because guest checkout is still
-     * supported. Indexed for the order-history query
-     * (`/shop/me/orders` filters by this column ordered by
+     * Shop-customer key of the buyer when the checkout was
+     * initiated by a signed-in user. Nullable because guest
+     * checkout is still supported. Indexed for the order-history
+     * query (`/shop/me/orders` filters by this column ordered by
      * created_at DESC). Populated at Session-create time AND
-     * re-confirmed by the webhook from Session.metadata.clerk_user_id
+     * re-confirmed by the webhook from Session.metadata.customer_id
      * — defence-in-depth in case the create-time write loses to a
      * crash before commit.
      */
-    clerkUserId: text("clerk_user_id"),
+    customerId: text("customer_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -154,7 +154,7 @@ export const shopOrders = resupplySchema.table(
      * (`session.customer_details.email`). Persisted on the order row
      * so the admin shipping-notification flow can reach guest
      * checkouts where there is no `shop_customers` row to join
-     * against on `clerk_user_id`. Lower-cased before write to match
+     * against on `customer_id`. Lower-cased before write to match
      * the `shop_customers.email_lower` convention. NULL on
      * pre-migration historical orders. Migration 0017.
      */
@@ -163,7 +163,7 @@ export const shopOrders = resupplySchema.table(
   (t) => ({
     statusIdx: index("shop_orders_status_idx").on(t.status),
     createdAtIdx: index("shop_orders_created_at_idx").on(t.createdAt),
-    clerkUserIdx: index("shop_orders_clerk_user_id_idx").on(t.clerkUserId),
+    customerIdx: index("shop_orders_customer_id_idx").on(t.customerId),
     // NOTE: Migration 0013 also creates a PARTIAL index
     //   "shop_orders_awaiting_shipment_idx" ON (paid_at DESC)
     //     WHERE shipped_at IS NULL

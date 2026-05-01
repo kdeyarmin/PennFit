@@ -15,12 +15,10 @@
 //     dashboard auth pages.
 //
 // The module is lazy: nothing here runs until the API server
-// asks for `getAuthDepsOrNull()`. When AUTH_PROVIDER=clerk (the
-// Stage 1/2a default), the function returns null and the API
-// does not mount the in-house auth router. That's the kill
-// switch ADR 014 describes — it stays in the codebase as a
-// runtime-flag-only difference, not an env-var-controlled
-// dead-code conditional.
+// asks for `getAuthDeps()`. After Stage 5a the function always
+// returns a value (the kill switch is gone); a misconfigured
+// AUTH_PASSWORD_PEPPER throws at first call so the misconfig
+// surfaces at boot instead of on the first sign-in attempt.
 
 import {
   createSendgridClient,
@@ -33,28 +31,24 @@ import {
   pgAuthRepository,
   readAuthEnv,
   type AuthDeps,
+  type CustomerIdResolver,
   type EmailSender,
 } from "@workspace/resupply-auth";
 
 import { logger } from "./logger";
 
-let cachedDeps: AuthDeps | null | undefined;
+let cachedDeps: AuthDeps | undefined;
 
 /**
- * Build (and memoize) the AuthDeps. Returns null when the in-house
- * path is dormant (`AUTH_PROVIDER=clerk`). Returns AuthDeps
- * otherwise. Exceptions during construction (e.g. missing pepper
- * for `in_house` mode) propagate — the API server should fail to
- * boot rather than silently disable auth.
+ * Build (and memoize) the AuthDeps. Always returns a value after
+ * Stage 5a — the kill switch is gone. Exceptions during
+ * construction (missing AUTH_PASSWORD_PEPPER, missing DB pool,
+ * etc.) propagate so a misconfigured deploy fails LOUD at first
+ * call rather than at the first sign-in attempt.
  */
-export function getAuthDepsOrNull(): AuthDeps | null {
+export function getAuthDeps(): AuthDeps {
   if (cachedDeps !== undefined) return cachedDeps;
   const env = readAuthEnv(process.env);
-  if (env.provider === "clerk") {
-    cachedDeps = null;
-    return null;
-  }
-
   const repo = pgAuthRepository(getDbPool());
 
   const audit: AuthDeps["audit"] = (event) => {
@@ -95,8 +89,72 @@ export function getAuthDepsOrNull(): AuthDeps | null {
     publicBaseUrl,
     secureCookies: process.env.NODE_ENV === "production",
     allowSignUp: false, // staff-facing API: no public sign-up
+    customerIdResolver: makeCustomerIdResolver(),
   };
   return cachedDeps;
+}
+
+/**
+ * Bridges an `auth.users.id` to the value the rest of the API
+ * uses as the customer key (`shop_customers.customer_id`). See
+ * Stage 4c plan doc.
+ *
+ * Behaviour:
+ *   * If `shop_customers.auth_user_id = $authUserId` exists →
+ *     return that row's `customer_id` (preserved across the
+ *     backfill so every downstream join keeps working).
+ *   * Else mint a new shop_customers row keyed by `auth.users.id`
+ *     itself. The PK column is `text`, so a UUID slots in fine.
+ *   * Email is taken from `auth.users.email_lower`. Display name
+ *     defaults to the auth row, then to the existing customer
+ *     row if any. Stripe customer creation happens lazily on
+ *     first checkout (see `lib/stripe/customer.ts`).
+ */
+function makeCustomerIdResolver(): CustomerIdResolver {
+  return async (input) => {
+    const pool = getDbPool();
+    const existing = await pool.query<{
+      customer_id: string;
+      display_name: string | null;
+      email_lower: string | null;
+    }>(
+      `SELECT customer_id, display_name, email_lower
+         FROM resupply.shop_customers
+        WHERE auth_user_id = $1
+        LIMIT 1`,
+      [input.authUserId],
+    );
+    if (existing.rows[0]) {
+      const row = existing.rows[0];
+      return {
+        customerKey: row.customer_id,
+        // Prefer auth.users.email — that's the canonical inbox
+        // (rotating it goes through the in-house verify flow).
+        email: input.emailLower,
+        displayName: input.displayName ?? row.display_name,
+      };
+    }
+
+    // First sign-in for an in-house customer with no
+    // shop_customers row yet (typical for brand-new in-house
+    // sign-ups). Mint the row keyed by auth.users.id; subsequent
+    // requests find it via the auth_user_id index.
+    await pool.query(
+      `INSERT INTO resupply.shop_customers
+         (customer_id, auth_user_id, email_lower, display_name)
+       VALUES ($1, $1, $2, $3)
+       ON CONFLICT (customer_id) DO UPDATE
+         SET auth_user_id = EXCLUDED.auth_user_id,
+             email_lower = COALESCE(EXCLUDED.email_lower, resupply.shop_customers.email_lower),
+             updated_at = NOW()`,
+      [input.authUserId, input.emailLower, input.displayName],
+    );
+    return {
+      customerKey: input.authUserId,
+      email: input.emailLower,
+      displayName: input.displayName,
+    };
+  };
 }
 
 function makeSendgridSender(): EmailSender {

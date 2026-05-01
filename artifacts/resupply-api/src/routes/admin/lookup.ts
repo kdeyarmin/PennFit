@@ -105,7 +105,7 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
     const emailLower = q.toLowerCase();
     const rows = await db
       .select({
-        clerkUserId: shopCustomers.clerkUserId,
+        customerId: shopCustomers.customerId,
         emailLower: shopCustomers.emailLower,
         displayName: shopCustomers.displayName,
       })
@@ -115,11 +115,11 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
     for (const r of rows) {
       hits.push({
         kind: "shop_customer",
-        id: r.clerkUserId,
-        label: r.displayName ?? r.emailLower ?? r.clerkUserId,
+        id: r.customerId,
+        label: r.displayName ?? r.emailLower ?? r.customerId,
         // Customers don't have an admin detail page yet; deep-link to
         // the abandoned-cart list filtered on the user (close enough).
-        href: `/admin/shop/abandoned-carts?clerkUserId=${encodeURIComponent(r.clerkUserId)}`,
+        href: `/admin/shop/abandoned-carts?customerId=${encodeURIComponent(r.customerId)}`,
         hint: "Cash-pay shop customer",
       });
     }

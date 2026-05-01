@@ -33,7 +33,6 @@
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { getAuth, clerkClient } from "@clerk/express";
 
 import { getDbPool } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
@@ -206,25 +205,15 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
   res.end();
 
   // Best-effort audit trail of the export. Do this AFTER the
-  // response so a logging hiccup never bricks the download.
+  // response so a logging hiccup never bricks the download. The
+  // requireAdmin middleware has already attached adminEmail and
+  // adminUserId to the request, so no auth-provider round-trip
+  // is needed here.
   try {
-    const auth = getAuth(req);
-    let adminEmail: string | null = null;
-    if (auth.userId) {
-      try {
-        const u = await clerkClient.users.getUser(auth.userId);
-        const primary = u.emailAddresses.find(
-          (e) => e.id === u.primaryEmailAddressId,
-        );
-        adminEmail = primary?.emailAddress ?? null;
-      } catch {
-        adminEmail = null;
-      }
-    }
     await logAudit({
       action: "audit.export.csv",
-      adminEmail,
-      adminUserId: auth.userId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "audit_log",
       targetId: null,
       metadata: {

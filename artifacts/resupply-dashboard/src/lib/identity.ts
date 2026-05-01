@@ -1,41 +1,11 @@
-// Dashboard identity shim — picks Clerk or the in-house auth at
-// module-load time so the rest of the dashboard can stay
-// auth-vendor-agnostic.
-//
-// Pick rule:
-//   VITE_AUTH_PROVIDER === "in_house" → in-house implementation
-//   anything else (including unset)    → Clerk implementation
-//
-// At module load only ONE branch is evaluated for hook selection,
-// so the rules-of-hooks invariant is preserved for every consumer.
-// Both branch files are still imported (so Vite ships either
-// implementation), but only one runs.
-//
-// What the shim returns:
-//   {
-//     email:        the verified primary email, or null if signed-out
-//     role:         "admin" | "agent" | "customer" | null
-//     displayName:  optional display name (in-house only; Clerk impl
-//                   returns null because Clerk doesn't expose a
-//                   stable display name we already use)
-//     userId:       the auth-provider-specific user id (Clerk id or
-//                   in-house auth.users.id)
-//     signOut:      kicks off sign-out + cookie/session cleanup.
-//                   ALWAYS returns a Promise even when the underlying
-//                   provider is fire-and-forget so callers can
-//                   `await` consistently.
-//   }
+// Dashboard identity shim. Reads the current session from
+// /resupply-api/auth/me via the React Query hook from
+// @workspace/resupply-auth-react.
 //
 // Components that previously called `useUser()` / `useClerk()`
-// import from this file instead.
+// import `useDashboardIdentity` from here instead.
 
-import * as clerkImpl from "./identity-clerk";
-import * as inHouseImpl from "./identity-in-house";
-
-const provider = (import.meta.env.VITE_AUTH_PROVIDER ?? "clerk") as
-  | "clerk"
-  | "dual"
-  | "in_house";
+import { authHooks, authClient } from "./auth-hooks";
 
 export interface DashboardIdentity {
   email: string | null;
@@ -47,13 +17,23 @@ export interface DashboardIdentity {
 
 /**
  * Read the current dashboard identity. Returns null-shaped values
- * for fields when no session is present; callers should branch
- * on `email !== null` (or wrap with a session gate).
+ * when no session is present; callers should branch on
+ * `email !== null` (or wrap with a session gate).
  */
-export const useDashboardIdentity: () => DashboardIdentity =
-  provider === "in_house"
-    ? inHouseImpl.useDashboardIdentity
-    : clerkImpl.useDashboardIdentity;
+export function useDashboardIdentity(): DashboardIdentity {
+  const { data } = authHooks.useSession();
+  return {
+    email: data?.email ?? null,
+    role: data?.role ?? null,
+    displayName: data?.displayName ?? null,
+    userId: data?.id ?? null,
+    signOut: async () => {
+      // Bypass the React Query mutation so the shim is callable
+      // from non-component contexts (e.g. an error boundary).
+      // Components that want the cache-reset side effect on
+      // sign-out should use authHooks.useSignOut() directly.
+      await authClient.signOut().catch(() => undefined);
+    },
+  };
+}
 
-/** True when the SPA is configured to use the in-house auth path. */
-export const IS_IN_HOUSE_AUTH = provider === "in_house";

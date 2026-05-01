@@ -38,7 +38,7 @@ export type ReturnResolution = "refund" | "exchange" | "store_credit" | null;
 
 export interface AdminReturn {
   id: string;
-  clerkUserId: string;
+  customerId: string;
   orderId: string;
   sessionId: string;
   status: ReturnStatus;

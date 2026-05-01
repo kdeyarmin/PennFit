@@ -1,4 +1,8 @@
 // admin_users — DB-backed roster of admins / CSRs. See migration 0020.
+//
+// `auth_user_id` (Stage 1) is the only identity link to the
+// in-house `auth.users` table. The legacy `clerk_user_id` /
+// `clerk_invitation_id` columns were dropped by migration 0023.
 
 import { sql } from "drizzle-orm";
 import { index, text, timestamp } from "drizzle-orm/pg-core";
@@ -15,10 +19,14 @@ export const adminUsers = resupplySchema.table(
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
     emailLower: text("email_lower").notNull().unique(),
-    clerkUserId: text("clerk_user_id").unique(),
+    /**
+     * Link to `auth.users(id)`. Populated by the team page on
+     * invite and by the bootstrap-admin CLI; null only for
+     * legacy pre-cutover rows.
+     */
+    authUserId: text("auth_user_id"),
     role: text("role").notNull().default("agent"),
     status: text("status").notNull().default("pending"),
-    clerkInvitationId: text("clerk_invitation_id"),
     displayName: text("display_name"),
     notes: text("notes"),
     invitedBy: text("invited_by"),

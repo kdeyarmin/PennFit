@@ -36,6 +36,45 @@ export type EmailSender = (input: {
 }) => Promise<void> | void;
 
 /**
+ * Stage 4c — opaque customer-id remapping for the in-house
+ * sign-in path.
+ *
+ * Some products carry a separate customer table whose primary
+ * key (`shop_customers.customer_id`) was preserved across the
+ * Clerk → in-house cutover so downstream joins kept working.
+ * After cutover, an in-house auth user's id is a UUID, and that
+ * stable customer key may differ from `auth.users.id` for
+ * pre-cutover rows.
+ *
+ * The resolver bridges that. Given an authenticated `auth.users`
+ * row, it returns the string the rest of the API should treat
+ * as the customer key — typically:
+ *
+ *   * For an existing customer the Stage 4c backfill linked, the
+ *     `shop_customers.customer_id` value.
+ *   * For a brand-new in-house sign-up, a freshly minted
+ *     customer-table row keyed by `auth.users.id` (the resolver
+ *     does the upsert).
+ *
+ * Default behaviour (no resolver supplied): `auth.users.id` is
+ * passed through unchanged. resupply-dashboard uses this default;
+ * api-server installs a real resolver that does the
+ * shop_customers lookup.
+ */
+export type CustomerIdResolver = (input: {
+  authUserId: string;
+  emailLower: string;
+  displayName: string | null;
+}) => Promise<{
+  /** Value to put in `req.userCustomerId` after resolution. */
+  customerKey: string;
+  /** Email surfaced to enrichment-aware shop endpoints. */
+  email: string | null;
+  /** Display name surfaced to enrichment-aware shop endpoints. */
+  displayName: string | null;
+}>;
+
+/**
  * Bundle of dependencies the handlers need. Constructed once at
  * mount time and threaded through every route. Keeps the
  * dependency graph explicit — no module-level singletons.
@@ -85,6 +124,17 @@ export interface AuthDeps {
    * (out-of-scope-for-this-PR) team-management endpoint.
    */
   signUpRole?: "customer";
+  /**
+   * Optional. When supplied, the customer-auth middleware
+   * (`requireSignedIn` / `attachSignedIn`) calls this AFTER an
+   * in-house cookie has been resolved to an `auth.users` row.
+   * The resolved `customerKey` lands in `req.userCustomerId` instead
+   * of the raw `auth.users.id`. Default: pass-through.
+   *
+   * Wired on api-server only; resupply-dashboard has no shop
+   * customer table.
+   */
+  customerIdResolver?: CustomerIdResolver;
 }
 
 /** Locals attached by `requireSession` for downstream handlers. */

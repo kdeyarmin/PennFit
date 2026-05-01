@@ -79,7 +79,7 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
         eq(shopOrders.status, "paid"),
         sql`${shopOrders.paidAt} <= now() - (${REVIEW_REQUEST_AGE_DAYS} || ' days')::interval`,
         isNull(shopOrders.reviewRequestSentAt),
-        sql`${shopOrders.clerkUserId} IS NOT NULL`,
+        sql`${shopOrders.customerId} IS NOT NULL`,
       ),
     );
 

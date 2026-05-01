@@ -55,6 +55,26 @@ import {
 } from "../order-emails/send-order-confirmation-email";
 
 /**
+ * Pull our shop-customer id out of Stripe metadata, accepting
+ * either the current `customer_id` key or the legacy
+ * `clerk_user_id` key that pre-cutover Stripe Sessions /
+ * Subscriptions / Customers may still carry. Returns null if
+ * neither is present.
+ */
+function readCustomerIdFromMetadata(
+  meta: Stripe.Metadata | null | undefined,
+): string | null {
+  if (!meta) return null;
+  if (typeof meta.customer_id === "string" && meta.customer_id) {
+    return meta.customer_id;
+  }
+  if (typeof meta.clerk_user_id === "string" && meta.clerk_user_id) {
+    return meta.clerk_user_id;
+  }
+  return null;
+}
+
+/**
  * Extract a shipping address from a Checkout Session into our
  * canonical SavedShippingAddress shape, or return null if the
  * session didn't collect one (or collected an obviously incomplete
@@ -319,7 +339,7 @@ export const stripeWebhookHandler: RequestHandler = async (
 
 interface PaidOrderRow {
   id: string;
-  clerkUserId: string | null;
+  customerId: string | null;
   paidAt: Date;
 }
 
@@ -333,14 +353,11 @@ async function markPaid(
       ? session.payment_intent
       : session.payment_intent?.id ?? null;
 
-  // Re-stamp clerk_user_id from session metadata. The route that
+  // Re-stamp customer_id from session metadata. The route that
   // created this Session also wrote it locally — this is belt-and-
   // suspenders in case the local write was lost (crash mid-request,
   // sequencing issue, etc.).
-  const clerkUserId =
-    (typeof session.metadata?.clerk_user_id === "string" &&
-      session.metadata.clerk_user_id) ||
-    null;
+  const customerId = readCustomerIdFromMetadata(session.metadata);
 
   // Per-order shipping address snapshot (W3 T-C7). Reading from the
   // session at paid-time captures the address-as-shipped, which is
@@ -360,7 +377,7 @@ async function markPaid(
   const customerEmail = sessionEmailRaw ? sessionEmailRaw.toLowerCase() : null;
 
   // Returning the row so the line-item upsert downstream can copy
-  // (orderId, clerkUserId, paidAt) without a second SELECT.
+  // (orderId, customerId, paidAt) without a second SELECT.
   const updated = await db
     .update(shopOrders)
     .set({
@@ -368,7 +385,7 @@ async function markPaid(
       stripePaymentIntentId: paymentIntentId,
       amountTotalCents: session.amount_total ?? null,
       currency: session.currency ?? null,
-      ...(clerkUserId ? { clerkUserId } : {}),
+      ...(customerId ? { customerId } : {}),
       // Only write the snapshot if Stripe actually gave us one.
       // Skipping the key on null preserves any later admin edit on
       // a Stripe re-delivery (charge.refunded → no shipping_details).
@@ -381,7 +398,7 @@ async function markPaid(
     .where(eq(shopOrders.stripeSessionId, session.id))
     .returning({
       id: shopOrders.id,
-      clerkUserId: shopOrders.clerkUserId,
+      customerId: shopOrders.customerId,
       paidAt: shopOrders.paidAt,
     });
 
@@ -394,7 +411,7 @@ async function markPaid(
   if (!row) return null;
   return {
     id: row.id,
-    clerkUserId: row.clerkUserId,
+    customerId: row.customerId,
     // paidAt was just set to now() above and is non-null on the
     // returned row.
     paidAt: row.paidAt ?? new Date(),
@@ -459,7 +476,7 @@ async function upsertOrderItemsFromSession(
     rows.push({
       orderId: order.id,
       stripeSessionId: session.id,
-      clerkUserId: order.clerkUserId,
+      customerId: order.customerId,
       productId,
       // Use '' (not null) so the (stripe_session_id, product_id,
       // price_id) UNIQUE actually dedupes redeliveries — Postgres
@@ -519,7 +536,7 @@ async function upsertOrderItemsFromSession(
  * Sync the buyer's saved card + shipping address back to
  * shop_customers so the next /shop/me render includes the freshly
  * saved details. Runs only when the Session has both a
- * `clerk_user_id` in metadata AND a `customer` attached.
+ * `customer_id` in metadata AND a `customer` attached.
  *
  * Order of operations:
  *   1. Best-effort: read the Customer's default payment method and
@@ -534,15 +551,12 @@ async function syncCustomerAfterCheckout(
   session: Stripe.Checkout.Session,
   log: { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void } | undefined,
 ): Promise<void> {
-  const clerkUserId =
-    typeof session.metadata?.clerk_user_id === "string"
-      ? session.metadata.clerk_user_id
-      : null;
+  const customerId = readCustomerIdFromMetadata(session.metadata);
   const stripeCustomerId =
     typeof session.customer === "string"
       ? session.customer
       : session.customer?.id ?? null;
-  if (!clerkUserId || !stripeCustomerId) return;
+  if (!customerId || !stripeCustomerId) return;
 
   const db = drizzle(getDbPool());
 
@@ -557,7 +571,7 @@ async function syncCustomerAfterCheckout(
       stripeCustomerId: shopCustomers.stripeCustomerId,
     })
     .from(shopCustomers)
-    .where(eq(shopCustomers.clerkUserId, clerkUserId))
+    .where(eq(shopCustomers.customerId, customerId))
     .limit(1);
   const existing = existingRows[0];
 
@@ -588,7 +602,7 @@ async function syncCustomerAfterCheckout(
   await db
     .insert(shopCustomers)
     .values({
-      clerkUserId,
+      customerId,
       stripeCustomerId,
       defaultPaymentMethodId: updates.defaultPaymentMethodId ?? null,
       defaultPaymentMethodBrand: updates.defaultPaymentMethodBrand ?? null,
@@ -598,13 +612,13 @@ async function syncCustomerAfterCheckout(
       shippingAddress: updates.shippingAddress ?? null,
     })
     .onConflictDoUpdate({
-      target: shopCustomers.clerkUserId,
+      target: shopCustomers.customerId,
       set: updates,
     });
 
   log?.info?.(
     {
-      clerkUserId,
+      customerId,
       hasCard: !!dpm,
       savedShipping: shouldSetShipping,
     },
@@ -624,7 +638,7 @@ async function syncCustomerAfterCheckout(
  * subtotal so a stale items list cannot leak into a future "we
  * restored your cart from the email" rehydration after the purchase.
  *
- * Guest checkouts (no `clerk_user_id` in session metadata) are a
+ * Guest checkouts (no `customer_id` in session metadata) are a
  * no-op — there's no abandoned-cart row to update because guests
  * never write one.
  */
@@ -634,11 +648,8 @@ export async function markCartRecovered(
     | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
     | undefined,
 ): Promise<void> {
-  const clerkUserId =
-    typeof session.metadata?.clerk_user_id === "string"
-      ? session.metadata.clerk_user_id
-      : null;
-  if (!clerkUserId) return;
+  const customerId = readCustomerIdFromMetadata(session.metadata);
+  if (!customerId) return;
   const db = drizzle(getDbPool());
   const updated = await db
     .update(shopAbandonedCarts)
@@ -649,12 +660,12 @@ export async function markCartRecovered(
       updatedAt: new Date(),
     })
     .where(
-      sql`${shopAbandonedCarts.clerkUserId} = ${clerkUserId} AND ${shopAbandonedCarts.recoveredAt} IS NULL`,
+      sql`${shopAbandonedCarts.customerId} = ${customerId} AND ${shopAbandonedCarts.recoveredAt} IS NULL`,
     )
     .returning({ id: shopAbandonedCarts.id });
   if (updated.length > 0) {
     log?.info?.(
-      { clerkUserId, rowId: updated[0]!.id },
+      { customerId, rowId: updated[0]!.id },
       "abandoned cart marked recovered",
     );
   }
@@ -676,14 +687,14 @@ async function markStatus(
 /**
  * Upsert one customer.subscription.* event into shop_subscriptions.
  *
- * `clerk_user_id` is recovered from the subscription's metadata
- * (stamped at Session creation time in checkout.ts). If it's
- * missing — which can happen for legacy subscriptions or for events
- * Stripe emits without our prior context — we still insert the row
- * with a synthetic placeholder so we don't lose the Stripe-side
- * source of truth, but log a warning. The /shop/me/subscriptions
- * endpoint filters by clerk_user_id, so an unowned row won't
- * accidentally surface to the wrong patient.
+ * The shop customer id is recovered from the subscription's
+ * metadata (stamped at Session creation time in checkout.ts).
+ * If it's missing — which can happen for legacy subscriptions or
+ * for events Stripe emits without our prior context — we still
+ * insert the row with a synthetic placeholder so we don't lose
+ * the Stripe-side source of truth, but log a warning. The
+ * /shop/me/subscriptions endpoint filters by customer_id, so an
+ * unowned row won't accidentally surface to the wrong patient.
  */
 async function upsertSubscription(
   subscription: Stripe.Subscription,
@@ -692,15 +703,11 @@ async function upsertSubscription(
 ): Promise<void> {
   const db = drizzle(getDbPool());
 
-  const clerkUserId =
-    typeof subscription.metadata?.clerk_user_id === "string" &&
-    subscription.metadata.clerk_user_id.length > 0
-      ? subscription.metadata.clerk_user_id
-      : null;
-  if (!clerkUserId) {
+  const customerId = readCustomerIdFromMetadata(subscription.metadata);
+  if (!customerId) {
     log?.warn?.(
       { subscriptionId: subscription.id },
-      "stripe subscription event missing clerk_user_id metadata; storing with __unknown placeholder",
+      "stripe subscription event missing customer_id metadata; storing with __unknown placeholder",
     );
   }
 
@@ -774,7 +781,7 @@ async function upsertSubscription(
   const result = await db
     .insert(shopSubscriptions)
     .values({
-      clerkUserId: clerkUserId ?? "__unknown",
+      customerId: customerId ?? "__unknown",
       stripeSubscriptionId: subscription.id,
       stripeCustomerId,
       status: subscription.status,
@@ -788,10 +795,10 @@ async function upsertSubscription(
     .onConflictDoUpdate({
       target: shopSubscriptions.stripeSubscriptionId,
       set: {
-        // Don't overwrite a known clerk_user_id with __unknown — the
+        // Don't overwrite a known customer_id with __unknown — the
         // creation event always carries it; later updates may come
         // from system events (e.g. invoice retry) that may not.
-        ...(clerkUserId ? { clerkUserId } : {}),
+        ...(customerId ? { customerId } : {}),
         stripeCustomerId,
         status: subscription.status,
         items,
@@ -854,7 +861,7 @@ async function markStatusByPaymentIntent(
  *   2. If no row was returned, another worker already claimed the
  *      send (or it was previously sent); short-circuit.
  *   3. If we won the claim, resolve recipient (linked
- *      `shop_customers.email_lower` joined on `clerk_user_id`,
+ *      `shop_customers.email_lower` joined on `customer_id`,
  *      falling back to `session.customer_details.email` for guests),
  *      render, and send.
  *   4. ON SEND FAILURE, RELEASE THE CLAIM by writing
@@ -895,7 +902,7 @@ export async function sendOrderConfirmationIfFirst(args: {
     .returning({
       id: shopOrders.id,
       stripeSessionId: shopOrders.stripeSessionId,
-      clerkUserId: shopOrders.clerkUserId,
+      customerId: shopOrders.customerId,
       amountTotalCents: shopOrders.amountTotalCents,
       currency: shopOrders.currency,
       shippingAddress: shopOrders.shippingAddress,
@@ -940,11 +947,11 @@ export async function sendOrderConfirmationIfFirst(args: {
     // `customer_email` (captured at paid-time) next, Stripe Session
     // fallback last. We never log any of these values.
     let toEmail: string | null = null;
-    if (claimed.clerkUserId) {
+    if (claimed.customerId) {
       const [cust] = await db
         .select({ email: shopCustomers.emailLower })
         .from(shopCustomers)
-        .where(eq(shopCustomers.clerkUserId, claimed.clerkUserId))
+        .where(eq(shopCustomers.customerId, claimed.customerId))
         .limit(1);
       if (cust?.email) toEmail = cust.email;
     }

@@ -66,6 +66,7 @@ export type {
   AuthDeps,
   AuditWriter,
   AuthRequestLocals,
+  CustomerIdResolver,
   EmailSender,
 } from "./types";
 export { makeRequireSession, makeRequireRole } from "./middleware";

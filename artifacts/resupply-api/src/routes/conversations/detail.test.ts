@@ -4,14 +4,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 function fluent(result: unknown) {
   const obj: Record<string, unknown> = {
@@ -63,20 +66,14 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -84,11 +81,12 @@ describe("GET /conversations/:id", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
+    process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
+
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     dbStub.select.mockClear();
     logAuditMock.mockReset().mockResolvedValue(undefined);
   });
@@ -99,9 +97,7 @@ describe("GET /conversations/:id", () => {
     }
   });
 
-  it("returns 401 with no session", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const res = await request(makeApp()).get(
+  it("returns 401 with no session", async () => {    const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}`,
     );
     expect(res.status).toBe(401);
