@@ -10,6 +10,15 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { SignedIn, SignedOut, useShopIdentity } from "@/lib/identity";
 
 /**
+ * Build the `/sign-in` URL that returns the user to the admin route
+ * they were trying to reach. Centralized so the signed-out branch and
+ * the 401-from-/admin/me branch can't drift apart.
+ */
+function getSignInTarget(location: string): string {
+  return `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
+}
+
+/**
  * AdminShell — wraps an admin page with two layered checks:
  *
  *   1. Signed-out users get redirected to /sign-in (via the
@@ -39,7 +48,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // session-not-yet-propagated race produces a misleading "Your account
   // info couldn't load" error.
   const [location] = useLocation();
-  const signInTarget = `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
+  const signInTarget = getSignInTarget(location);
   return (
     <>
       <SignedOut>
@@ -55,7 +64,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
   const { isLoaded } = useShopIdentity();
   const [location] = useLocation();
-  const signInTarget = `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
+  const signInTarget = getSignInTarget(location);
   const me = useQuery({
     queryKey: ["admin-me"],
     queryFn: fetchAdminMe,
