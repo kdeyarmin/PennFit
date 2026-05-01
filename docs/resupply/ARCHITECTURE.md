@@ -8,28 +8,42 @@ must obey. The "why" for each major choice lives in `docs/resupply/adr/`.
 
 ```
 artifacts/
-  resupply-api/         Express + Zod HTTP API (in-house cookie auth)
+  resupply-api/         Express + Zod HTTP API (in-house cookie auth) —
+                        also hosts the storefront/fitter routes mounted
+                        at /api/* (Task #37 merged the former api-server
+                        process in here).
   resupply-worker/      pg-boss background worker (durable jobs)
-  resupply-dashboard/   React + Vite admin console (in-house cookie auth)
+  resupply-dashboard/   React + Vite admin console (in-house cookie auth) —
+                        also hosts the staff PennPaps order/audit/reminders
+                        pages under /admin/pennpaps/*.
+  cpap-fitter/          Customer-facing PennPaps fitter SPA (Vite + React).
 lib/
   resupply-contracts/   Zod schemas + DTOs (shared over the wire)
   resupply-domain/      Pure business logic — no I/O
-  resupply-db/          Drizzle schema + connection
+  resupply-db/          Drizzle schema + connection. Owns BOTH the
+                        resupply schema (resupply.*) and the storefront
+                        schema (public.orders, public.usage_events,
+                        public.admin_audit_log, public.reminder_subscriptions)
+                        under src/schema/storefront/.
   resupply-audit/       Append-only audit logger + helpers
   resupply-telecom/     Twilio (SMS, Voice) + SendGrid (Email) adapters
   resupply-ai/          Anthropic Claude adapter for the conversation agent
-  resupply-testing/     Fixtures, factories, mock vendors (devDeps only)
-  resupply-api-spec/    OpenAPI spec + orval config for the admin API
   resupply-api-client/  Generated React-Query client consumed by the dashboard
+  api-zod / api-client-react
+                        Storefront OpenAPI + generated React-Query client
+                        consumed by cpap-fitter (and api-zod by resupply-api
+                        for storefront route validation).
 docs/resupply/
   ARCHITECTURE.md       This file.
-  adr/                  Architectural Decision Records (000–012).
+  adr/                  Architectural Decision Records.
 ```
 
-The PennPaps fitter product (`artifacts/api-server`, `artifacts/cpap-fitter`,
-`artifacts/pennpaps-tutorial`) is a separate product and shares only
-`lib/db`'s connection pool. The two products' tables live in different
-Postgres schemas — the fitter in `public.*`, resupply in `resupply.*`.
+The PennPaps storefront/fitter and the resupply automation system now
+share one Express process (resupply-api) and one Drizzle lib
+(resupply-db) on top of the same physical Postgres. The two table
+sets still live in distinct schemas — fitter/storefront in `public.*`,
+resupply in `resupply.*` — and the architecture-check script enforces
+that resupply-* libs do not pull in the storefront UI client.
 
 ## Data flow (Phase 0 baseline)
 

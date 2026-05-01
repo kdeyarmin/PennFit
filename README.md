@@ -9,13 +9,10 @@ top-level structure is:
 
 | Path | What lives here |
 | --- | --- |
-| `artifacts/api-server` | PennPaps storefront / fitter API (Express). |
-| `artifacts/resupply-api` | Resupply automation API + voice WS endpoint (Express). |
+| `artifacts/resupply-api` | Single Express API process — resupply automation + voice WS endpoint AND the storefront/fitter routes (Task #37 merged the former `artifacts/api-server` in here, mounted at both `/resupply-api/*` and `/api/*`). |
 | `artifacts/resupply-worker` | `pg-boss` background worker for reminders and PHI sweeps. |
 | `artifacts/cpap-fitter` | Customer-facing fitter SPA (Vite + React). |
-| `artifacts/resupply-dashboard` | Internal admin console SPA (Vite + React). |
-| `artifacts/mockup-sandbox` | Internal UI/UX mockup playground (Vite + React). |
-| `artifacts/pennpaps-tutorial` | Animated onboarding tutorial app (Vite + React). |
+| `artifacts/resupply-dashboard` | Internal admin console SPA (Vite + React) — also hosts the staff PennPaps order/audit/reminders pages. |
 | `lib/*` | Shared workspace packages (DB, contracts, messaging, etc.). |
 
 ## Prerequisites
@@ -42,9 +39,10 @@ pnpm typecheck
 pnpm build
 
 # 5. Run a specific app (examples)
-pnpm --filter @workspace/api-server dev
 pnpm --filter @workspace/resupply-api dev
 pnpm --filter @workspace/resupply-worker dev
+pnpm --filter @workspace/cpap-fitter dev
+pnpm --filter @workspace/resupply-dashboard dev
 ```
 
 Each long-running service validates its required environment

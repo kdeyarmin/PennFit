@@ -147,29 +147,11 @@ export function HowItWorks() {
       </header>
 
       {/* Tutorial video */}
-      <section className="space-y-4">
-        <div className="space-y-1 text-center">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Watch the 30-Second Tutorial
-          </h2>
-          <p className="text-muted-foreground">
-            A quick visual walkthrough of the entire PennPaps experience.
-          </p>
-        </div>
-        {/* Aspect ratio is portrait on phones (where the tutorial scenes
-            stack vertically and need room to breathe) and 16:9 from sm+
-            up where the scenes lay out side-by-side. */}
-        <div className="relative w-full overflow-hidden rounded-2xl border border-border/60 shadow-lg bg-black aspect-[3/5] sm:aspect-video">
-          <iframe
-            src="/pennpaps-tutorial/"
-            title="PennPaps — How To Use"
-            className="absolute inset-0 w-full h-full"
-            sandbox="allow-scripts allow-same-origin"
-            allow="autoplay; fullscreen"
-            loading="lazy"
-          />
-        </div>
-      </section>
+      {/* Inline tutorial video iframe was removed in the Task #37
+          consolidation along with the standalone pennpaps-tutorial /
+          penn-fit-tutorial artifacts. The step-by-step section below
+          carries the same explanatory weight without the extra build
+          artifact + iframe sandboxing surface. */}
 
       {/* Step-by-step */}
       <section className="space-y-4">

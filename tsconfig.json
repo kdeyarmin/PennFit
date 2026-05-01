@@ -3,7 +3,6 @@
   "compileOnSave": false,
   "files": [],
   "references": [
-    { "path": "./lib/db" },
     { "path": "./lib/api-client-react" },
     { "path": "./lib/api-zod" },
     { "path": "./lib/resupply-api-client" },
@@ -18,7 +17,6 @@
     { "path": "./lib/resupply-ai" },
     { "path": "./lib/resupply-email" },
     { "path": "./lib/resupply-messaging" },
-    { "path": "./lib/resupply-reminders" },
-    { "path": "./lib/resupply-testing" }
+    { "path": "./lib/resupply-reminders" }
   ]
 }

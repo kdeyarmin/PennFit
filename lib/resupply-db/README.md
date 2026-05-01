@@ -19,16 +19,19 @@ exercised by the companion self-test
 `scripts/check-resupply-migration-pair.sh.test`.
 
 The co-change rule is intentionally weaker than the structural
-`scripts/check-drizzle-drift.sh` check that protects the sibling
-`@workspace/db` package. The structural check uses `drizzle-kit
-generate` to byte-compare a regenerated migration tree against what
-is committed, which catches subtle mismatches the co-change rule
-cannot (e.g. "I edited the schema **and** committed an unrelated
-migration in the same commit"). It can't run here because
-`drizzle/meta/_journal.json` already lists every shipped migration
-(0000–0025+) but `drizzle/meta/` only contains snapshot files for tags
-0000–0003. With a discontinuous snapshot chain `drizzle-kit generate`
-short-circuits with a "snapshot collision" before computing a diff.
+`scripts/check-drizzle-drift.sh` check would be if it could run here.
+That structural check uses `drizzle-kit generate` to byte-compare a
+regenerated migration tree against what is committed, which catches
+subtle mismatches the co-change rule cannot (e.g. "I edited the
+schema **and** committed an unrelated migration in the same
+commit"). It can't run here because `drizzle/meta/_journal.json`
+already lists every shipped migration (0000–0027+) but
+`drizzle/meta/` only contains snapshot files for tags 0000–0003. With
+a discontinuous snapshot chain `drizzle-kit generate` short-circuits
+with a "snapshot collision" before computing a diff. (Task #37
+deleted the sibling `@workspace/db` package — its tables now live
+under `src/schema/storefront/` here — so the structural checker has
+no enrolled libs to scan today.)
 
 Path to upgrade: rebuild `drizzle/meta/000N_snapshot.json` for every
 tag listed in `_journal.json` so the chain is continuous, then add

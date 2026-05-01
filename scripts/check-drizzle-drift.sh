@@ -66,18 +66,18 @@ fi
 
 # Format: <pnpm-package-name>|<lib-dir>|<drizzle-out-dir>
 #
-# lib/resupply-db is intentionally NOT in this list yet: its snapshot
-# meta (drizzle/meta/000N_snapshot.json) only covers 0000-0003 while
-# 25+ migration SQL files have shipped — most were hand-authored per
-# ADR 003 without updating the snapshot chain. drizzle-kit generate
-# therefore short-circuits with a "snapshot collision" error before it
-# can compute a diff, so we cannot detect drift there until someone
-# rebuilds the snapshot chain. See follow-up task on this ticket. Once
-# the snapshot chain is repaired, add:
+# Task #37 deleted `@workspace/db` (its tables now live under
+# `@workspace/resupply-db`'s schema/storefront/), so the only entry
+# this script previously tracked is gone. The list is intentionally
+# empty until the resupply-db snapshot chain is repaired:
+#   * resupply-db's snapshot meta (drizzle/meta/000N_snapshot.json)
+#     only covers 0000-0003 while 27+ migration SQL files have
+#     shipped — most are hand-authored per ADR 003 and never updated
+#     the snapshot chain. drizzle-kit generate short-circuits with a
+#     "snapshot collision" error before it can compute a diff.
+# Once the snapshot chain is rebuilt, add:
 #   "@workspace/resupply-db|lib/resupply-db|lib/resupply-db/drizzle"
-LIBS=(
-  "@workspace/db|lib/db|lib/db/drizzle"
-)
+LIBS=()
 
 restore_snapshot() {
   local snap="$1"
@@ -215,6 +215,13 @@ EOF
 }
 
 printf 'Checking drizzle schema drift…\n'
+
+# `${LIBS[@]:-}` keeps the loop safe under `set -u` when LIBS is empty
+# (Task #37 emptied it; see the comment near LIBS=() above).
+if [[ ${#LIBS[@]} -eq 0 ]]; then
+  printf '  (no libs to check — see comment near LIBS=() in this script)\n'
+  exit 0
+fi
 
 failed=0
 for entry in "${LIBS[@]}"; do

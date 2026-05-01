@@ -85,6 +85,39 @@
   );
 }
 
+/*
+ * shadcn-flavoured colour token bridge. The four PennPaps storefront
+ * admin pages ported from cpap-fitter (Task #37 consolidation) were
+ * authored against the shadcn naming convention (`text-muted-
+ * foreground`, `bg-muted`, `border-border`, `text-primary`,
+ * `text-destructive`, …). The dashboard's own design system uses a
+ * different vocabulary (`--ink-2`, `--surface-3`, `--line-1`, …).
+ *
+ * Rather than rewriting the four pages, we map the shadcn token
+ * names onto the dashboard's existing Penn-brand variables via a
+ * small `@theme inline` block. Tailwind v4 picks these up as
+ * first-class colour utilities so `bg-muted`, `text-primary`, etc.
+ * resolve to brand-coherent colours instead of falling through to
+ * an unstyled default.
+ *
+ * Scope: this bridge exists ONLY for the storefront-admin pages.
+ * Dashboard-native components should keep using the explicit
+ * `--ink-*` / `--surface-*` / `--penn-*` vocabulary above; mixing
+ * the two systems in new code defeats the point of the bridge.
+ */
+@theme inline {
+  --color-background: hsl(var(--surface-1));
+  --color-foreground: hsl(var(--ink-1));
+  --color-border: hsl(var(--line-1));
+  --color-input: hsl(var(--line-1));
+  --color-muted: hsl(var(--surface-3));
+  --color-muted-foreground: hsl(var(--ink-3));
+  --color-primary: hsl(var(--penn-navy));
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-destructive: hsl(var(--tone-rose));
+  --color-destructive-foreground: hsl(0 0% 100%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

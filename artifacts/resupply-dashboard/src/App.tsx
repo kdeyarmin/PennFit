@@ -30,6 +30,13 @@ import { AdminSettingsPage } from "./pages/admin-settings";
 import { AdminShopInventoryPage } from "./pages/admin-shop-inventory";
 import { AdminShopProductNewPage } from "./pages/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "./pages/admin-shop-abandoned-carts";
+// PennPaps storefront-admin pages — ported from cpap-fitter as part
+// of the Task #37 consolidation. They speak to the storefront router
+// mounted on resupply-api at `/api/admin/*` (see artifact.toml).
+import { AdminOrders as PennpapsOrdersPage } from "./pages/pennpaps-orders";
+import { AdminOrderDetail as PennpapsOrderDetailPage } from "./pages/pennpaps-order-detail";
+import { AdminAuditLog as PennpapsAuditPage } from "./pages/pennpaps-audit";
+import { AdminReminders as PennpapsRemindersPage } from "./pages/pennpaps-reminders";
 
 // Resupply Admin Console.
 //
@@ -130,6 +137,15 @@ function AdminConsole() {
         />
         <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
         <Route path="/admin/settings" component={AdminSettingsPage} />
+        {/* PennPaps storefront-admin (Task #37 consolidation). The
+            paths live under /admin/pennpaps/* to disambiguate from
+            the existing cash-pay shop admin (/admin/shop/*) so a
+            CSR clicking "Orders" in the sidebar lands on the
+            PennPaps storefront orders, not the Stripe shop orders. */}
+        <Route path="/admin/pennpaps/orders" component={PennpapsOrdersPage} />
+        <Route path="/admin/pennpaps/orders/:id" component={PennpapsOrderDetailPage} />
+        <Route path="/admin/pennpaps/audit" component={PennpapsAuditPage} />
+        <Route path="/admin/pennpaps/reminders" component={PennpapsRemindersPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

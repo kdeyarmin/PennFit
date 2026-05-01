@@ -20,3 +20,6 @@ export * from "./shop-returns";
 export * from "./csr-macros";
 export * from "./admin-users";
 export * from "./auth";
+// Storefront (PennPaps fitter) tables in the `public` schema. See
+// `./storefront/index.ts` for the rationale of co-locating them here.
+export * from "./storefront";

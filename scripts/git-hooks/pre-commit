@@ -12,9 +12,12 @@
 #       * scripts/check-resupply-architecture.sh
 #           when resupply lib/ or artifact code changes
 #       * scripts/check-drizzle-drift.sh
-#           when a @workspace/db schema or migration file changes
-#           (catches schema TS edits that were never followed by
-#           `generate` — full structural diff)
+#           Task #37 emptied this checker's LIBS list (the storefront
+#           lib it tracked, @workspace/db, was deleted). The hook
+#           still wires it up so that when @workspace/resupply-db is
+#           re-enrolled (after its snapshot meta chain is repaired),
+#           no further hook edits are needed; today the checker just
+#           prints a no-op message and exits 0.
 #       * scripts/check-resupply-migration-pair.sh
 #           when a @workspace/resupply-db schema file changes
 #           (co-change rule: any schema TS edit must ship with a new
@@ -73,24 +76,12 @@ while IFS= read -r file; do
       need_arch=1
       ;;
   esac
-  # Drizzle structural drift (storefront DB only). The resupply DB has
-  # an incomplete snapshot chain that prevents drizzle-kit generate
-  # from running clean (see scripts/check-drizzle-drift.sh header), so
-  # it gets the weaker co-change check below instead until the chain
-  # is repaired.
-  #
-  # Bash `case` globs don't cross `/`, so we list each depth
-  # explicitly. drizzle/ has top-level migration .sql files AND a
-  # drizzle/meta/ subdir of snapshot .json files, both of which can
-  # legitimately drift if hand-edited. src/schema/ is currently flat
-  # but we cover one level of subdirs defensively.
-  case "$file" in
-    lib/db/src/schema/*|lib/db/src/schema/*/*|\
-    lib/db/drizzle/*|lib/db/drizzle/*/*|\
-    lib/db/drizzle.config.ts)
-      need_drizzle=1
-      ;;
-  esac
+  # Drizzle structural drift: Task #37 deleted the only lib this
+  # check covered (@workspace/db). The hook keeps the trigger plumbing
+  # in place but currently has no path globs to match — when
+  # @workspace/resupply-db is re-enrolled in the checker, add
+  # `lib/resupply-db/...` patterns here. Until then `need_drizzle`
+  # stays 0 and the check is skipped on every commit.
   # Resupply DB co-change rule: any schema TS edit must ship with a
   # new migration SQL in the same commit. Trigger off the schema dir
   # only — touching a migration file alone is a valid commit shape
