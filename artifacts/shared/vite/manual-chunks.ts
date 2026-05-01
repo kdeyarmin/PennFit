@@ -3,7 +3,10 @@ import path from "path";
 const normalizedNodeModulesSegment = `${path.sep}node_modules${path.sep}`;
 
 export function packageNameFromModulePath(id: string): string | null {
-  const normalized = id.replaceAll("/", path.sep).replaceAll("\\", path.sep);
+  const [withoutQueryOrHash] = id.split(/[?#]/, 1);
+  const normalized = withoutQueryOrHash
+    .replaceAll("/", path.sep)
+    .replaceAll("\\", path.sep);
   const idx = normalized.lastIndexOf(normalizedNodeModulesSegment);
   if (idx === -1) return null;
 

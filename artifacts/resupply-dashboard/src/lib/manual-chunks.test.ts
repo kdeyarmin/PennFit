@@ -35,4 +35,12 @@ describe("packageNameFromModulePath", () => {
       ),
     ).toBe("@tanstack/react-query");
   });
+
+  it("ignores query and hash suffixes", () => {
+    expect(
+      packageNameFromModulePath(
+        "/workspace/node_modules/react/index.js?v=abc123#fragment",
+      ),
+    ).toBe("react");
+  });
 });
