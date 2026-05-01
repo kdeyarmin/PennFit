@@ -14,8 +14,18 @@ run = "pnpm --filter @workspace/api-server run dev"
 
 [services.production]
 
+# Apply checked-in storefront migrations against the production
+# database before building (ADR 003). This mirrors what the
+# resupply-api artifact already does for the resupply DB so prod
+# never lags the schema. The migrator is idempotent and serialized
+# via pg_advisory_lock, so it is safe to run on every deploy. The
+# api-server artifact owns this step (rather than the cpap-fitter
+# static build) because the api-server is the consumer most tightly
+# coupled to the storefront schema. Running it in build (vs. run)
+# means it executes once per deploy instead of once per autoscale
+# instance. A failed migration aborts the deploy.
 [services.production.build]
-args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+args = ["bash", "-c", "node lib/db/scripts/migrate.mjs && pnpm --filter @workspace/api-server run build"]
 
 [services.production.build.env]
 NODE_ENV = "production"
