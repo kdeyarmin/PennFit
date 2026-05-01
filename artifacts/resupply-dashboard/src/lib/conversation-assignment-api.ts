@@ -2,21 +2,6 @@
 // SLA / escalation endpoints. The generated OpenAPI client doesn't
 // include these yet — add them to the spec when the surface stabilizes.
 
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 export type Priority = "low" | "normal" | "high" | "urgent";
 
 async function post(
@@ -29,7 +14,6 @@ async function post(
     headers: {
       Accept: "application/json",
       ...(body ? { "Content-Type": "application/json" } : {}),
-      ...(await authHeaders()),
     },
     body: body ? JSON.stringify(body) : undefined,
   });

@@ -17,7 +17,6 @@
 
 const REQUIRED_ENV_VARS = [
   "PORT",
-  "CLERK_SECRET_KEY",
 ] as const;
 
 export function assertRequiredEnv(): void {

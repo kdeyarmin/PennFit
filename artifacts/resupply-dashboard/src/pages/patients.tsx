@@ -131,10 +131,19 @@ export function PatientsPage() {
     });
   }, [data]);
 
-  const allVisibleSelected =
-    !!data && data.items.length > 0 && data.items.every((r) => selectedIds.has(r.id));
-  const someVisibleSelected =
-    !!data && data.items.some((r) => selectedIds.has(r.id));
+  const { allVisibleSelected, someVisibleSelected } = useMemo(() => {
+    if (!data || data.items.length === 0) {
+      return { allVisibleSelected: false, someVisibleSelected: false };
+    }
+    let selectedCount = 0;
+    for (const item of data.items) {
+      if (selectedIds.has(item.id)) selectedCount += 1;
+    }
+    return {
+      allVisibleSelected: selectedCount === data.items.length,
+      someVisibleSelected: selectedCount > 0,
+    };
+  }, [data, selectedIds]);
 
   function toggleOne(id: string): void {
     setSelectedIds((prev) => {
@@ -226,11 +235,13 @@ export function PatientsPage() {
     }
   }
 
-  // Export CSV. The dashboard talks to the API with a Bearer token
-  // (session), not cookies, so a plain anchor wouldn't carry
-  // auth. We replicate the auth-bearing fetch the orval client
-  // uses — pulling the token off `window.Clerk.session` — and
-  // trigger a browser download from the resulting blob.
+  // Export CSV. The dashboard talks to the API over the
+  // `pf_session` cookie (set by /resupply-api/auth/sign-in), which
+  // the browser sends automatically on same-origin requests — so a
+  // plain `fetch` with default credentials carries auth. We use
+  // fetch + blob (instead of a plain anchor) so we can surface a
+  // friendly error message on 401/5xx instead of a downloaded
+  // error page.
   async function downloadCsv(): Promise<void> {
     setExportError(null);
     setBulkExporting(true);
@@ -243,13 +254,6 @@ export function PatientsPage() {
       if (search) url.searchParams.set("search", search);
 
       const headers: Record<string, string> = { Accept: "text/csv" };
-      const clerk = (
-        globalThis as unknown as {
-          Clerk?: { session?: { getToken: () => Promise<string | null> } | null };
-        }
-      ).Clerk;
-      const token = clerk?.session ? await clerk.session.getToken() : null;
-      if (token) headers.Authorization = `Bearer ${token}`;
 
       const res = await fetch(url.toString(), { headers });
       if (!res.ok) {
@@ -288,7 +292,7 @@ export function PatientsPage() {
     }
   }
 
-  const columns: Column<PatientRow>[] = [
+  const columns: Column<PatientRow>[] = useMemo(() => [
     {
       key: "select",
       // The header checkbox toggles selection across the visible
@@ -413,7 +417,7 @@ export function PatientsPage() {
         </span>
       ),
     },
-  ];
+  ], [allVisibleSelected, someVisibleSelected, selectedIds, data, statusFilter, search]);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -1334,8 +1338,15 @@ function ImportCsvModal({
     e.target.value = "";
   }
 
-  const validRows = rows.filter((r) => r.parsed !== null);
-  const invalidRows = rows.filter((r) => r.error !== null);
+  const { validRows, invalidRows } = useMemo(() => {
+    const valid: ParsedRow[] = [];
+    const invalid: ParsedRow[] = [];
+    for (const row of rows) {
+      if (row.parsed) valid.push(row);
+      if (row.error) invalid.push(row);
+    }
+    return { validRows: valid, invalidRows: invalid };
+  }, [rows]);
 
   async function onSubmit() {
     if (validRows.length === 0) return;

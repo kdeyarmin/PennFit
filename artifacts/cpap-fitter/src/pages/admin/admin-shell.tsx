@@ -17,9 +17,8 @@ import { SignedIn, SignedOut, useShopIdentity } from "@/lib/identity";
  *      We deliberately do NOT redirect from "/" — only from /admin*.
  *
  *   2. Signed-in users hit /api/admin/me to verify they're on the
- *      PENN_ADMIN_EMAILS allowlist (in Clerk mode) or that
- *      auth.users.role is admin/agent (in in-house mode). If not,
- *      we render a "not authorized" page instead of the admin UI.
+ *      admin/agent allowlist. If not, we render a "not authorized"
+ *      page instead of the admin UI.
  *
  * The signed-in admin's email is then passed down to AdminLayout for
  * display in the sidebar.

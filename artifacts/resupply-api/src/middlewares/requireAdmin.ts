@@ -1,7 +1,6 @@
 // requireAdmin — gate for the resupply admin API.
 //
-// Stage 5a — Clerk fall-through retired. The middleware now
-// resolves the session strictly via the in-house pf_session
+// The middleware resolves the session via the in-house pf_session
 // cookie. `auth.users.role` is authoritative: 'admin' or 'agent'
 // passes; 'customer' is rejected as 403; everything else
 // (locked / revoked / unknown) is rejected as 401.

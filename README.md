@@ -69,7 +69,6 @@ commit real secrets.
 | Variable | `api-server` | `resupply-api` | `resupply-worker` | Notes |
 | --- | :---: | :---: | :---: | --- |
 | `PORT` | ✅ | ✅ | — | HTTP listen port. |
-| `CLERK_SECRET_KEY` | ✅ | ✅ | — | Clerk backend auth. |
 | `DATABASE_URL` | — | ✅ | ✅ | Postgres connection string. `pgcrypto` must be enabled. |
 | **Resupply key material** (one of the two options below) | — | ✅ | ✅ | See [Resupply key material](#resupply-key-material). |
 
@@ -124,7 +123,6 @@ Pick **one** of these configurations:
 | `OPENAI_API_KEY` | `resupply-api` | Conversation AI. AI features disable when missing. |
 | `STRIPE_SECRET_KEY` | `resupply-api` | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when missing. |
 | `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS` | `resupply-api`, `resupply-worker` | Object-storage paths for prescription attachments. The implementation uses `@google-cloud/storage`; in production this points at Replit Object Storage's GCS-compatible API, but any GCS-compatible endpoint works. |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Vite apps | Browser-side Clerk publishable key. |
 | `VITE_ENABLE_DEMO`, `VITE_RESUPPLY_CONTACT_EMAIL` | Vite apps | UI feature flags / display values. |
 | `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |
 | `REPL_ID`, `REPLIT_DEV_DOMAIN`, `REPLIT_DOMAINS` | All services | Set automatically on Replit; usually leave blank locally. |

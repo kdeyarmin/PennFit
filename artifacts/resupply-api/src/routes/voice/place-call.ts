@@ -1,7 +1,7 @@
 // POST /voice/place-call — admin-initiated outbound call.
 //
 // Flow:
-//   1. requireAdmin gate (clerk + allowlist).
+//   1. requireAdmin gate (in-house pf_session cookie + role check).
 //   2. Voice config gate — 503 if any required env var is missing.
 //   3. Body validation (zod) — { patientId, episodeId } UUIDs.
 //   4. Patient + episode lookup. Decrypt phone number SQL-side; refuse

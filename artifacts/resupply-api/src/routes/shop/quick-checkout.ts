@@ -120,9 +120,8 @@ router.post(
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
     // Resolve email + display name for Stripe Customer creation.
-    // The helper prefers the in-house path (req.shopCustomerEmail
-    // populated by requireSignedIn) and falls back to
-    // clerkClient.users.getUser for legacy Clerk sessions.
+    // Sourced from req.shopCustomerEmail / req.shopCustomerDisplayName,
+    // populated by requireSignedIn from auth.users.
     const { email, displayName } = await readCustomerProfile(req);
 
     const stripe = getStripeClient(config);

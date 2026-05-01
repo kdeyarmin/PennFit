@@ -1,21 +1,6 @@
 // Hand-rolled fetch wrappers for the admin csr-macros endpoints.
 // Mirrors the shop-reviews/-returns pattern.
 
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 export type MacroChannel = "sms" | "email";
 
 export interface CsrMacro {
@@ -41,7 +26,7 @@ export async function listMacros(opts?: {
   const qs = new URLSearchParams();
   if (opts?.includeInactive) qs.set("includeInactive", "1");
   const res = await fetch(`${BASE}${qs.toString() ? `?${qs.toString()}` : ""}`, {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load macros (${res.status})`);
   return (await res.json()) as { macros: CsrMacro[] };
@@ -61,7 +46,6 @@ export async function createMacro(body: {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(await authHeaders()),
     },
     body: JSON.stringify(body),
   });
@@ -91,7 +75,6 @@ export async function patchMacro(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(await authHeaders()),
     },
     body: JSON.stringify(body),
   });
@@ -109,7 +92,7 @@ export async function deleteMacro(id: string, hard = false): Promise<void> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}${qs}`, {
     method: "DELETE",
     credentials: "include",
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as
