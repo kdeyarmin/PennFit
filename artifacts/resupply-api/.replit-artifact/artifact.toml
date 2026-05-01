@@ -14,8 +14,17 @@ run = "pnpm --filter @workspace/resupply-api run dev"
 
 [services.production]
 
+# Apply checked-in resupply migrations against the production database
+# before building (ADR 003). This mirrors what scripts/post-merge.sh
+# already does for the workspace DB so prod never lags the schema. The
+# migrator is idempotent and serialized via pg_advisory_lock, so it is
+# safe to run on every deploy. The resupply-api artifact owns this
+# step (rather than the worker) because the API is the consumer most
+# tightly coupled to the resupply schema. Running it in build (vs.
+# run) means it executes once per deploy instead of once per autoscale
+# instance. A failed migration aborts the deploy.
 [services.production.build]
-args = ["pnpm", "--filter", "@workspace/resupply-api", "run", "build"]
+args = ["bash", "-c", "node lib/resupply-db/scripts/migrate.mjs && pnpm --filter @workspace/resupply-api run build"]
 
 [services.production.build.env]
 NODE_ENV = "production"
