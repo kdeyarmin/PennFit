@@ -289,7 +289,7 @@ function InviteCard() {
       setDisplayName("");
       setNotes("");
       setRole("agent");
-      if (!result.clerkInviteSent) {
+      if (!result.emailSent) {
         setWarning(
           "We couldn't send the invitation email automatically — share the sign-up link with this person directly.",
         );

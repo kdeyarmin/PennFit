@@ -134,6 +134,13 @@
             "when": 1809849600000,
             "tag": "0022_in_house_auth",
             "breakpoints": true
+        },
+        {
+            "idx": 19,
+            "version": "7",
+            "when": 1809936000000,
+            "tag": "0023_drop_admin_users_clerk_columns",
+            "breakpoints": true
         }
     ]
 }
