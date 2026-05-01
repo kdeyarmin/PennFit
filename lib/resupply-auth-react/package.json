@@ -1,0 +1,27 @@
+{
+  "name": "@workspace/resupply-auth-react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "test:watch": "vitest",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "catalog:"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "react": "catalog:",
+    "vitest": "^2.1.8"
+  }
+}

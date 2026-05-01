@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { ShieldCheck, Menu, X, ShoppingCart, Package } from "lucide-react";
-import { Show } from "@clerk/react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
+import { SignedIn } from "@/lib/identity";
 import { useCart } from "@/hooks/use-cart";
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
+import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -38,7 +39,7 @@ const navLinks = [
 // uncluttered for first-time browsers.
 function YourOrdersNavLink() {
   return (
-    <Show when="signed-in">
+    <SignedIn>
       <Link
         href="/shop/orders"
         className="hidden md:inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-primary hover:bg-secondary/40 transition-colors"
@@ -47,7 +48,7 @@ function YourOrdersNavLink() {
         <Package className="h-4 w-4" aria-hidden="true" />
         Your orders
       </Link>
-    </Show>
+    </SignedIn>
   );
 }
 
@@ -291,6 +292,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </footer>
+      <PwaInstallPrompt />
     </div>
   );
 }

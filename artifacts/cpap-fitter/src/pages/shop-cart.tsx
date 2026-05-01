@@ -40,6 +40,7 @@ import {
   startQuickCheckout,
   type SavedCard,
 } from "@/lib/account-api";
+import { ComfortGuarantee } from "@/components/comfort-guarantee";
 
 // sessionStorage key written by /account when the user clicks
 // "Buy this again". Reading + clearing it here is the only handshake
@@ -628,6 +629,7 @@ export function ShopCart() {
                   {formatMoneyCents(totalCents)}
                 </span>
               </div>
+              <ComfortGuarantee variant="badge" className="mb-4" />
               {error && (
                 <div
                   className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 mb-3 flex items-start gap-2"

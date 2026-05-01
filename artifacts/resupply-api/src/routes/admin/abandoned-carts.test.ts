@@ -266,6 +266,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sent: 2,
       skippedNoConfig: 0,
       skippedFailed: 0,
+      skippedOptOut: 0,
       sendgridConfigured: true,
     });
     expect(sendEmailMock).toHaveBeenCalledTimes(2);
@@ -300,6 +301,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sent: 0,
       skippedNoConfig: 0,
       skippedFailed: 0,
+      skippedOptOut: 0,
       sendgridConfigured: true,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
@@ -331,6 +333,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sent: 0,
       skippedNoConfig: 1,
       skippedFailed: 0,
+      skippedOptOut: 0,
       sendgridConfigured: false,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();

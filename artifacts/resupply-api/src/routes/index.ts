@@ -3,7 +3,17 @@ import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopCustomersAdminRouter from "./admin/customers.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
+import csrMacrosRouter from "./admin/csr-macros.js";
+import shopReturnsAdminRouter from "./admin/shop-returns.js";
+import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
+import teamRouter from "./admin/team.js";
+import opsStatusRouter from "./admin/ops-status.js";
+import reportsRouter from "./admin/reports.js";
+import deliveryFailuresRouter from "./admin/delivery-failures.js";
+import lookupRouter from "./admin/lookup.js";
+import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
+import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -59,6 +69,42 @@ router.use(shopProductsAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shop/returns/* — comfort-guarantee swap / refund / RMA
+// queue. Linear lifecycle (requested → approved → shipped_back →
+// received → refunded|replaced|closed) with strict from-state
+// assertions on every transition.
+router.use(shopReturnsAdminRouter);
+// /admin/csr-macros/* — admin CRUD for the canned-reply library used
+// by the in-thread reply composer. See migration 0017 + the
+// macroMerge helper in the dashboard for the {{namespace.key}}
+// substitution syntax.
+router.use(csrMacrosRouter);
+// /admin/shop/subscriptions/metrics — KPI rollup for the
+// subscription health dashboard. Pure SQL aggregation — no Stripe
+// round-trip on this path.
+router.use(shopSubsMetricsRouter);
+// /admin/shop/review-requests/send-due — manual dispatcher for the
+// post-purchase review-request email. Same atomic-claim pattern as
+// the abandoned-cart dispatcher; comm-prefs + DND aware.
+router.use(shopReviewRequestsRouter);
+// /admin/team/* — DB-backed admin/CSR team management. Supplements
+// (does not replace) the RESUPPLY_ADMIN_EMAILS env var allowlist;
+// see middlewares/requireAdmin.ts for the resolution order.
+router.use(teamRouter);
+// /admin/ops-status — operations center status feed: vendor flags,
+// dispatcher-eligible row counts, team counts. Read-only.
+router.use(opsStatusRouter);
+// /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
+router.use(reportsRouter);
+// /admin/delivery-failures — webhook delivery error triage queue
+// (per-message + audit-log failure events). Read-only.
+router.use(deliveryFailuresRouter);
+// /admin/lookup — global cross-entity lookup bar. Phone (HMAC),
+// email, UUID, and Stripe-session-id-aware. Read-only.
+router.use(lookupRouter);
+// /admin/system-info — read-only env + deployment metadata for ops
+// triage. Never returns env-var values, only "is this set?" booleans.
+router.use(systemInfoRouter);
 // /admin/shop/customers/* — Customer 360 surface (search/list +
 // detail + reorder-on-behalf). Read-mostly; the only write is the
 // reorder action which creates a Stripe Checkout Session. Same

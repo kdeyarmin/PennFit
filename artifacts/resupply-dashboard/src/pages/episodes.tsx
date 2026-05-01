@@ -257,7 +257,7 @@ export function EpisodesPage() {
       key: "patient",
       header: "Patient",
       render: (r) => (
-        <div className="font-semibold" style={{ color: "#0a1f44" }}>
+        <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
           {fullName(r.patientFirstName, r.patientLastName)}
         </div>
       ),
@@ -281,7 +281,7 @@ export function EpisodesPage() {
       key: "due",
       header: "Due",
       render: (r) => (
-        <div className="text-xs" style={{ color: "#374151" }}>
+        <div className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
           {formatDate(r.dueAt)}
           {r.daysOverdue > 0 && (
             <div
@@ -306,11 +306,11 @@ export function EpisodesPage() {
       <header>
         <h1
           className="text-2xl font-semibold mb-1"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Episodes
         </h1>
-        <p className="text-sm" style={{ color: "#374151" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           Resupply queue. Defaults to overdue cycles awaiting outreach.
         </p>
       </header>
@@ -337,7 +337,7 @@ export function EpisodesPage() {
               data-testid="episodes-search-input"
               className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
-            <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+            <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               Substring match on the patient name (case-insensitive),
               or paste an exact patient/episode id.
             </p>
@@ -549,14 +549,14 @@ function BulkSendToolbar({
           style={{
             backgroundColor: "#f8fafc",
             borderColor: "#cbd5e1",
-            color: "#0a1f44",
+            color: "hsl(var(--ink-1))",
           }}
           data-testid="episodes-bulk-toolbar"
         >
           <span className="text-sm font-medium">
             {selectedCount} selected
           </span>
-          <span className="text-xs" style={{ color: "#6b7280" }}>
+          <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Channel:
           </span>
           <Select

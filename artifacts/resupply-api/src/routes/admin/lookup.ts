@@ -1,0 +1,244 @@
+// /admin/lookup — global cross-entity lookup bar.
+//
+// Single endpoint that takes a free-text query and dispatches to the
+// right index based on what the input "looks like":
+//   * 10-15 digits / +E.164 → patient via phone_lookup HMAC
+//   * contains "@"           → shop customer by email_lower
+//   * UUIDv4 shape           → patient / conversation / episode / fulfillment
+//   * starts with "cs_"      → shop order by stripe_session_id
+//   * 12+ hex chars (no @)   → shop order by stripe_session_id LIKE %tail
+//
+// Each hit includes a `kind` and a relative URL the dashboard can
+// turn into a navigable link. PHI policy: phone numbers and email
+// addresses are NEVER echoed back; the response includes only ids,
+// channel labels, and the decrypted patient name (already permitted
+// elsewhere in the admin console).
+
+import { Router, type IRouter } from "express";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+import {
+  conversations,
+  decrypt,
+  episodes,
+  fulfillments,
+  getDbPool,
+  hmacPhone,
+  normalizeE164,
+  patients,
+  phoneLookup,
+  shopCustomers,
+  shopOrders,
+} from "@workspace/resupply-db";
+
+import { requireAdmin } from "../../middlewares/requireAdmin";
+
+const router: IRouter = Router();
+
+interface Hit {
+  kind:
+    | "patient"
+    | "conversation"
+    | "episode"
+    | "fulfillment"
+    | "shop_order"
+    | "shop_customer";
+  id: string;
+  label: string;
+  href: string;
+  hint?: string | null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const STRIPE_SESSION_RE = /^cs_[a-zA-Z0-9_]{20,}$/;
+const HEX_TAIL_RE = /^[A-Za-z0-9_-]{8,40}$/;
+const PHONE_RE = /^\+?\d[\d\s().-]{6,18}$/;
+
+router.get("/admin/lookup", requireAdmin, async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (q.length < 3) {
+    res.json({ q, hits: [] });
+    return;
+  }
+
+  const db = drizzle(getDbPool());
+  const hits: Hit[] = [];
+
+  // Phone? Strip non-digits and check.
+  const digits = q.replace(/\D/g, "");
+  if (PHONE_RE.test(q) && digits.length >= 7) {
+    const e164 = normalizeE164(digits.length === 10 ? `+1${digits}` : `+${digits}`);
+    if (e164) {
+      try {
+        const hash = hmacPhone(e164);
+        const rows = await db
+          .select({
+            patientId: phoneLookup.patientId,
+            firstName: decrypt(patients.legalFirstName),
+            lastName: decrypt(patients.legalLastName),
+            pacwareId: patients.pacwareId,
+          })
+          .from(phoneLookup)
+          .leftJoin(patients, eq(patients.id, phoneLookup.patientId))
+          .where(eq(phoneLookup.hmacPhone, hash))
+          .limit(5);
+        for (const r of rows) {
+          const name = [r.firstName, r.lastName].filter(Boolean).join(" ").trim();
+          hits.push({
+            kind: "patient",
+            id: r.patientId,
+            label: name || "(no name on file)",
+            href: `/patients/${r.patientId}`,
+            hint: r.pacwareId ? `PACware #${r.pacwareId}` : null,
+          });
+        }
+      } catch {
+        // hmac failure (most likely missing PHI_ENCRYPTION_KEY) — skip phone path.
+      }
+    }
+  }
+
+  // Email? Look up by email_lower in shopCustomers (the only place we
+  // store email in plaintext on the cash-pay surface).
+  if (q.includes("@")) {
+    const emailLower = q.toLowerCase();
+    const rows = await db
+      .select({
+        clerkUserId: shopCustomers.clerkUserId,
+        emailLower: shopCustomers.emailLower,
+        displayName: shopCustomers.displayName,
+      })
+      .from(shopCustomers)
+      .where(eq(shopCustomers.emailLower, emailLower))
+      .limit(5);
+    for (const r of rows) {
+      hits.push({
+        kind: "shop_customer",
+        id: r.clerkUserId,
+        label: r.displayName ?? r.emailLower ?? r.clerkUserId,
+        // Customers don't have an admin detail page yet; deep-link to
+        // the abandoned-cart list filtered on the user (close enough).
+        href: `/admin/shop/abandoned-carts?clerkUserId=${encodeURIComponent(r.clerkUserId)}`,
+        hint: "Cash-pay shop customer",
+      });
+    }
+  }
+
+  // UUID? Try patients / conversations / episodes / fulfillments.
+  if (UUID_RE.test(q)) {
+    const [pat] = await db
+      .select({
+        id: patients.id,
+        firstName: decrypt(patients.legalFirstName),
+        lastName: decrypt(patients.legalLastName),
+        pacwareId: patients.pacwareId,
+      })
+      .from(patients)
+      .where(eq(patients.id, q))
+      .limit(1);
+    if (pat) {
+      const name = [pat.firstName, pat.lastName].filter(Boolean).join(" ").trim();
+      hits.push({
+        kind: "patient",
+        id: pat.id,
+        label: name || "(no name on file)",
+        href: `/patients/${pat.id}`,
+        hint: pat.pacwareId ? `PACware #${pat.pacwareId}` : null,
+      });
+    }
+    const [conv] = await db
+      .select({
+        id: conversations.id,
+        patientId: conversations.patientId,
+        channel: conversations.channel,
+        status: conversations.status,
+      })
+      .from(conversations)
+      .where(eq(conversations.id, q))
+      .limit(1);
+    if (conv) {
+      hits.push({
+        kind: "conversation",
+        id: conv.id,
+        label: `Conversation · ${conv.channel} · ${conv.status}`,
+        href: `/conversations/${conv.id}`,
+      });
+    }
+    const [ep] = await db
+      .select({ id: episodes.id, status: episodes.status, dueAt: episodes.dueAt })
+      .from(episodes)
+      .where(eq(episodes.id, q))
+      .limit(1);
+    if (ep) {
+      hits.push({
+        kind: "episode",
+        id: ep.id,
+        label: `Episode · ${ep.status}${ep.dueAt ? ` · due ${ep.dueAt.toISOString().slice(0, 10)}` : ""}`,
+        href: `/episodes`,
+      });
+    }
+    const [fu] = await db
+      .select({ id: fulfillments.id, status: fulfillments.status })
+      .from(fulfillments)
+      .where(eq(fulfillments.id, q))
+      .limit(1);
+    if (fu) {
+      hits.push({
+        kind: "fulfillment",
+        id: fu.id,
+        label: `Fulfillment · ${fu.status}`,
+        // No dedicated fulfillment page yet — link to the patient
+        // detail when we can resolve it (skip for now if unavailable).
+        href: `/episodes`,
+      });
+    }
+  }
+
+  // Stripe Checkout Session id (full or last-12).
+  if (STRIPE_SESSION_RE.test(q)) {
+    const [order] = await db
+      .select({
+        id: shopOrders.id,
+        stripeSessionId: shopOrders.stripeSessionId,
+        status: shopOrders.status,
+        amountTotalCents: shopOrders.amountTotalCents,
+      })
+      .from(shopOrders)
+      .where(eq(shopOrders.stripeSessionId, q))
+      .limit(1);
+    if (order) {
+      hits.push({
+        kind: "shop_order",
+        id: order.id,
+        label: `Shop order · ${order.status}${order.amountTotalCents ? ` · $${(order.amountTotalCents / 100).toFixed(2)}` : ""}`,
+        href: `/admin/shop/returns?orderId=${order.id}`,
+        hint: order.stripeSessionId.slice(-12),
+      });
+    }
+  } else if (HEX_TAIL_RE.test(q) && !UUID_RE.test(q) && !q.includes("@")) {
+    // Last-N tail of a session id — match suffix.
+    const rows = await db
+      .select({
+        id: shopOrders.id,
+        stripeSessionId: shopOrders.stripeSessionId,
+        status: shopOrders.status,
+      })
+      .from(shopOrders)
+      .where(sql`${shopOrders.stripeSessionId} LIKE ${"%" + q}`)
+      .limit(5);
+    for (const order of rows) {
+      hits.push({
+        kind: "shop_order",
+        id: order.id,
+        label: `Shop order · ${order.status}`,
+        href: `/admin/shop/returns?orderId=${order.id}`,
+        hint: order.stripeSessionId.slice(-12),
+      });
+    }
+  }
+
+  res.json({ q, hits });
+});
+
+export default router;

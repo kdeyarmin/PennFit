@@ -4,7 +4,7 @@
 
 The original plan called for Next.js 14 (app router) for the admin
 dashboard. Replit's web scaffold is React + Vite + Tailwind + shadcn/ui,
-and the existing `artifacts/cpap-fitter` (Penn Fit) follows that pattern.
+and the existing `artifacts/cpap-fitter` (the PennPaps fitter) follows that pattern.
 
 Adding Next.js would mean:
 
@@ -20,11 +20,11 @@ Adding Next.js would mean:
 
 Use React + Vite for `artifacts/resupply-dashboard` at `previewPath: "/resupply/"`.
 
-- Routing: `wouter` (matches Penn Fit).
+- Routing: `wouter` (matches the PennPaps fitter).
 - Data fetching: TanStack Query via the auto-generated hooks from
   `lib/resupply-api-client-react` (created in Phase 4 alongside the OpenAPI
   spec for the resupply api).
-- UI: Tailwind + shadcn/ui (matches Penn Fit).
+- UI: Tailwind + shadcn/ui (matches the PennPaps fitter).
 - Auth: Clerk React provider (see ADR 005).
 
 The dashboard is purely an internal admin tool — there is no SEO need,

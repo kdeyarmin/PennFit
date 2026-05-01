@@ -1,0 +1,82 @@
+// Verification + password-reset email templates.
+//
+// Kept inline (not in a separate template engine) for two reasons:
+//   * The email content is short and stable. A renderer would add
+//     a runtime dependency and another piece to test.
+//   * Auth emails go out before the user is verified, so they're
+//     a high-stakes path where "this template failed to load"
+//     would leave the user stuck. Keeping them in TS keeps the
+//     deploy story simple.
+//
+// All copy here is brand-neutral so the same lib can serve both
+// the cpap-fitter shop and the resupply staff dashboard. The
+// product name is passed in by the caller.
+
+export interface AuthEmailContext {
+  /** "PennFit" / "Resupply" — appears in subject + signature. */
+  productName: string;
+  /** Where /verify-email and /reset-password live, no trailing slash. */
+  publicBaseUrl: string;
+}
+
+export interface RenderedEmail {
+  subject: string;
+  html: string;
+  text: string;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function makeLink(base: string, path: string, token: string): string {
+  return `${base}${path}?token=${encodeURIComponent(token)}`;
+}
+
+export function renderVerifyEmail(
+  ctx: AuthEmailContext,
+  rawToken: string,
+): RenderedEmail {
+  const link = makeLink(ctx.publicBaseUrl, "/verify-email", rawToken);
+  const safeLink = escapeHtml(link);
+  const safeName = escapeHtml(ctx.productName);
+  return {
+    subject: `Verify your email — ${ctx.productName}`,
+    html: `<p>Welcome to ${safeName}.</p>
+<p>Click the link below to verify your email address:</p>
+<p><a href="${safeLink}">${safeLink}</a></p>
+<p>This link expires in 24 hours. If you didn't create this account, you can ignore this email.</p>`,
+    text: `Welcome to ${ctx.productName}.
+
+Verify your email address by visiting:
+${link}
+
+This link expires in 24 hours. If you didn't create this account, you can ignore this email.`,
+  };
+}
+
+export function renderPasswordResetEmail(
+  ctx: AuthEmailContext,
+  rawToken: string,
+): RenderedEmail {
+  const link = makeLink(ctx.publicBaseUrl, "/reset-password", rawToken);
+  const safeLink = escapeHtml(link);
+  const safeName = escapeHtml(ctx.productName);
+  return {
+    subject: `Reset your ${ctx.productName} password`,
+    html: `<p>We received a request to reset your ${safeName} password.</p>
+<p>Click the link below to choose a new one:</p>
+<p><a href="${safeLink}">${safeLink}</a></p>
+<p>This link expires in 1 hour. If you didn't request a password reset, you can ignore this email — your current password will keep working.</p>`,
+    text: `We received a request to reset your ${ctx.productName} password.
+
+Choose a new one by visiting:
+${link}
+
+This link expires in 1 hour. If you didn't request a password reset, you can ignore this email — your current password will keep working.`,
+  };
+}

@@ -3,7 +3,7 @@
 ## Context
 
 The original plan called for Prisma. The existing `lib/db` package already
-uses Drizzle with `node-postgres`, and Penn Fit's Drizzle schema is the
+uses Drizzle with `node-postgres`, and the PennPaps fitter's Drizzle schema is the
 template every new contributor in this repo learns first.
 
 Two ORMs in one repo would mean two migration tools, two query languages,
@@ -25,7 +25,7 @@ Use Drizzle for the resupply schema in `lib/resupply-db`.
   throwaway dev DB, but it is documented as unsafe against any DB that
   contains data because it diffs the live schema and can silently rewrite
   columns. Migration history is stored in `drizzle.resupply_migrations`
-  so it does not collide with Penn Fit's `public.*` tables. The first
+  so it does not collide with the PennPaps fitter's `public.*` tables. The first
   migration enables the `pgcrypto` extension and creates the `resupply`
   schema, both with `IF NOT EXISTS` so a re-run against an already-
   bootstrapped DB is a no-op.
@@ -35,7 +35,7 @@ Use Drizzle for the resupply schema in `lib/resupply-db`.
   for the rare reporting query.
 
 The resupply tables live in their own Postgres schema (`resupply.*`) so they
-do not collide with Penn Fit's tables (`public.orders`, `public.patients`
+do not collide with the PennPaps fitter's tables (`public.orders`, `public.patients`
 would conflict otherwise).
 
 ## Consequences

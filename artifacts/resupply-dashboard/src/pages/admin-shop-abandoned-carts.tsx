@@ -131,7 +131,7 @@ export function AdminShopAbandonedCartsPage() {
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Abandoned shop carts
         </h1>
@@ -155,7 +155,7 @@ export function AdminShopAbandonedCartsPage() {
             <div
               key={s}
               className="border rounded-lg p-3 bg-white"
-              style={{ borderColor: "#e5e7eb" }}
+              style={{ borderColor: "hsl(var(--line-1))" }}
               data-testid={`abandoned-count-${s}`}
             >
               <div
@@ -166,7 +166,7 @@ export function AdminShopAbandonedCartsPage() {
               </div>
               <div
                 className="text-2xl font-semibold tabular-nums"
-                style={{ color: "#0a1f44" }}
+                style={{ color: "hsl(var(--ink-1))" }}
               >
                 {counts[s]}
               </div>
@@ -199,7 +199,7 @@ export function AdminShopAbandonedCartsPage() {
           onClick={() => void refetch()}
           disabled={isPending}
           className="px-3 py-2 rounded text-xs font-semibold border bg-white"
-          style={{ color: "#0a1f44", borderColor: "#e5e7eb" }}
+          style={{ color: "hsl(var(--ink-1))", borderColor: "hsl(var(--line-1))" }}
           data-testid="abandoned-refresh-btn"
         >
           Refresh
@@ -242,7 +242,7 @@ export function AdminShopAbandonedCartsPage() {
 
       <div
         className="border rounded-lg bg-white overflow-hidden"
-        style={{ borderColor: "#e5e7eb" }}
+        style={{ borderColor: "hsl(var(--line-1))" }}
       >
         <table className="w-full text-sm">
           <thead style={{ backgroundColor: "#f8fafc" }}>
@@ -290,7 +290,7 @@ export function AdminShopAbandonedCartsPage() {
                   <tr
                     key={r.id}
                     className="border-t"
-                    style={{ borderColor: "#f1f5f9" }}
+                    style={{ borderColor: "hsl(var(--line-1))" }}
                     data-testid={`abandoned-row-${r.id}`}
                   >
                     <td className="px-3 py-2 align-top">
@@ -306,7 +306,7 @@ export function AdminShopAbandonedCartsPage() {
                     </td>
                     <td
                       className="px-3 py-2 align-top font-mono text-xs"
-                      style={{ color: "#0a1f44" }}
+                      style={{ color: "hsl(var(--ink-1))" }}
                     >
                       {r.emailRedacted ?? "—"}
                     </td>
