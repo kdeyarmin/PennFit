@@ -2,7 +2,7 @@
 
 ## Overview
 
-PennPaps is a privacy-first web application designed to simplify CPAP mask selection and ordering. It uses on-device facial measurements and a clinical questionnaire to provide personalized mask recommendations from its product catalog. The application supports both insurance-based and cash-pay customers, aims to improve patient adherence, and includes an internal CPAP Resupply Automation system for patient outreach and management. The project envisions PennPaps as a full storefront for CPAP supplies, encompassing fitting, shopping, and resupply services.
+PennPaps is a privacy-first web application for personalized CPAP mask selection and ordering. It uses on-device facial measurements and a clinical questionnaire to recommend masks from its catalog. The application supports both insurance and cash-pay customers, aiming to improve patient adherence. It includes an internal CPAP Resupply Automation system for patient outreach and management. The vision is to create a comprehensive storefront for CPAP supplies, integrating fitting, shopping, and resupply services.
 
 ## User Preferences
 
@@ -14,112 +14,47 @@ Do not log order request bodies in the application logger (treat every log line 
 
 ## System Architecture
 
-The PennPaps application employs a privacy-first, stateless architecture, prioritizing on-device processing for sensitive data and secure handling of persistent information.
+The PennPaps application uses a privacy-first, stateless architecture with on-device processing for sensitive data.
 
 ### Privacy and Data Handling
 
-Facial image processing occurs entirely on-device using MediaPipe Face Mesh; only numeric measurements are transmitted to the backend. Camera images and video streams are never uploaded or stored. Order data, including PHI, is securely persisted in PostgreSQL.
+Facial image processing is performed entirely on-device using MediaPipe Face Mesh; only numeric measurements are sent to the backend. Camera images and video streams are neither uploaded nor stored. Order data, including PHI, is securely stored in PostgreSQL.
 
 ### Technical Stack
 
-The project utilizes a monorepo with `pnpm workspaces`, `Node.js v24`, `TypeScript v5.9`. The API is built with `Express 5` and `Zod` for validation. The frontend uses `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` manages database interactions. Authentication is handled in-house via `lib/resupply-auth` (argon2id passwords + DB-backed `pf_session` cookies); see ADR 014.
+The project is built as a monorepo using `pnpm workspaces`, `Node.js v24`, and `TypeScript v5.9`. The API uses `Express 5` with `Zod` for validation. The frontend is developed with `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` handles database interactions. Authentication is an in-house solution using `argon2id` and DB-backed `pf_session` cookies.
 
-### Application Flow
+### Application Flow and Design
 
-The user journey includes Home, Consent, Capture (facial scan), Measure (on-device processing), Questionnaire, Results (mask recommendations), Order (intake form), Order Success, Masks (catalog browser), and Privacy policy. Mask recommendations are generated using a weighted scoring formula.
-
-### Visual Design System
-
-The application features a professional aesthetic with Penn's navy and gold brand palette, a light-mode only design, custom CSS brand tokens, and a layered "ambient atmosphere" background. An animated tutorial guides users. Mobile responsiveness is a key design consideration, with careful attention to small screen layouts and touch targets. The site is optimized for performance, SEO, and PWA capabilities.
+The user journey includes stages like Consent, Facial Scan, Questionnaire, Mask Recommendations, and Order placement. Mask recommendations are generated via a weighted scoring formula. The application features a professional design with Penn's brand colors (navy and gold), a light-mode only interface, custom CSS brand tokens, and an animated tutorial. It is optimized for mobile responsiveness, performance, SEO, and PWA capabilities.
 
 ### CPAP Resupply Automation System
 
-A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema and an in-house cookie-session admin auth. Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
+A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard provides tools for managing patients, conversations, and audit logs.
 
 ### Cash-Pay Shop & Customer Accounts
 
-A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Hosted Checkout`. `Stripe` is the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend handles `Stripe` integration for checkout sessions and webhooks. Signed-in customers can save shipping information, view saved card crumbs, and reorder past purchases. The in-house auth (`lib/resupply-auth`) provides customer identity, linking to `Stripe` customer IDs. The shop supports "Subscribe & Save" for recurring purchases.
+A customer-facing `/shop` allows direct purchase of CPAP supplies using `Stripe Hosted Checkout`, with `Stripe` as the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend integrates with `Stripe` for checkout and webhooks. Signed-in customers can save shipping information, view payment details, and reorder. The shop supports "Subscribe & Save" for recurring purchases.
 
-### Cart Abandonment Nudge
+### Admin Console and Team Management
 
-Signed-in shop visitors who leave items in their cart for more than 24 hours receive a single email reminder with a deep link to re-hydrate the cart. This uses a `shop_abandoned_carts` table and SendGrid for delivery.
+The admin console provides a user-friendly interface with simplified labels and improved dashboard summaries for non-technical operators. Admins can manage team members (invite, promote, demote, remove) through a dedicated interface, with roles stored in `admin_users` and linked to `auth.users` tables.
 
-### Customer Product Reviews
+### Outbound Email Management
 
-Signed-in customers can leave one pre-moderated review per product (1–5 stars + optional title/body). Reviews appear publicly only after admin approval. Edits reset the moderation status.
-
-### Admin Console Plain-English Pass
-
-The admin console provides a UX-overhaul layer for non-technical operators, including friendly labels for funnel steps and audit actions, improved dashboard summaries, and clear navigation.
-
-### Admin Team Management (Self-Service)
-
-Admins can invite, promote, demote, and remove teammates from inside the cpap-fitter admin console at `/admin/users` ("Team" nav item, admin-only). Roster lives in the `admin_users` table linked to `auth.users`; audit rows go to the existing `admin_audit_log` table. The `requireAdmin` middleware resolves access from the in-house session cookie (`pf_session`) plus the `RESUPPLY_ADMIN_EMAILS` / `PENN_ADMIN_EMAILS` env allowlists, which are retained as a permanent recovery / bootstrap path and are surfaced read-only on the Team page. A self-revoke / self-demote lockout guard prevents the active admin from removing themselves. Mutating routes (invite / change role / revoke / cancel invite) require `requireAdminOnly`; the GET roster is available to agents read-only.
-
-### Identifier Convention
-
-The user-visible terminology is "team / teammates / members". Internal identifiers were normalized to provider-neutral names: `userId`, `adminUserId`, `authorUserId`, `members`, `AdminTeamMember`, `TeamMemberRow`, `req.adminUserId`. The OpenAPI spec (`lib/resupply-api-spec/openapi.yaml`) and its generated client (`lib/resupply-api-client/src/generated/`) use these names; regenerate with `pnpm --filter @workspace/resupply-api-spec run codegen` after spec edits.
-
-### Mobile Fit-Flow Stepper
-
-A `<FitFlowStepper>` component provides visual progress indication for the mask fitting flow, adapting its display for mobile and desktop screens.
-
-### Prescription Document Attachments (Admin)
-
-Admins can attach a single prescription document (PDF or image, ≤10MB) per prescription row via private GCS. This includes presigned PUT URLs, server-side validation, and secure retrieval/deletion. An asynchronous sweep job cleans up orphaned prescription attachment files.
-
-### Customer-Facing Reminder Subscriptions
-
-A self-serve, opt-in reminder system at `/reminders` allows customers to sign up for email notifications when CPAP supplies are due for replacement. This system is separate from the internal Resupply Automation and includes a `reminder_subscriptions` table, public API endpoints for management, and an admin dispatcher.
-
-### Shop Transactional Emails
-
-Two customer-facing transactional emails close the loop on the cash-pay shop. Both are sent via SendGrid using the same brand styling (cream background + #c9a227 gold) as the cart-abandonment template, and both are idempotent at the database level under concurrency so Stripe re-deliveries, parallel webhook events, or accidental admin re-saves never duplicate.
-
-**Atomic-claim idempotency model.** Both helpers use a single `UPDATE … SET stamp = now() WHERE id = $1 AND stamp IS NULL RETURNING …` to *claim* the right to send. Postgres serializes this row-level UPDATE, so even when `checkout.session.completed` and `checkout.session.async_payment_succeeded` arrive in parallel — or two admins click "save tracking" simultaneously — only one worker wins the row and proceeds to render+send. On any failure path (no recipient, SendGrid not configured, SendGrid 4xx/5xx, helper throw) the claim is *released* by writing the stamp back to NULL, so a Stripe re-delivery (or a manual admin re-save) can retry. This preserves at-most-once *successful* sends while still allowing one retry per failure.
-
-- **Order confirmation** (`send-order-confirmation-email.ts`): triggered from the `checkout.session.completed` branch of `artifacts/resupply-api/src/lib/stripe/webhook-handler.ts`. After `markPaid` and `upsertOrderItemsFromSession`, the exported helper `sendOrderConfirmationIfFirst` performs the atomic claim on `confirmation_email_sent_at` and resolves the recipient as: linked `shop_customers.email_lower` → persisted `shop_orders.customer_email` → `session.customer_details.email`. The persisted column is captured at paid-time inside `markPaid` (lowercased) so guest checkouts have a stable on-row recipient even when the Stripe Session falls out of cache. Failures are logged but never thrown — Stripe must not retry the webhook because of an email outage. Subject: "Your PennPaps order is confirmed". customArgs: `{ kind: "shop_order_confirmation_v1", stripe_session_id }`.
-- **Shipping notification** (`send-shipping-notification-email.ts`): triggered from `POST /admin/shop/orders/:orderId/tracking` in `artifacts/resupply-api/src/routes/admin/shop-orders.ts`. The route's tracking UPDATE both stamps the new `tracking_carrier`/`tracking_number` AND, in the same statement, conditionally clears `shipping_email_sent_at` via `CASE WHEN tracking_carrier IS DISTINCT FROM $new OR tracking_number IS DISTINCT FROM $new THEN NULL ELSE shipping_email_sent_at END`. (Postgres SET clauses see OLD row values, so this compares prior vs new.) The helper `sendShippingNotificationIfNew` then atomically claims on the (possibly cleared) timestamp — first send and genuine re-ships claim and send, identical re-saves find the timestamp non-null and short-circuit. Recipient resolution: linked `shop_customers.email_lower` → persisted `shop_orders.customer_email` → skip silently. Builds a public carrier-tracking URL via `getCarrierTrackingUrl()` (UPS / USPS / FedEx / DHL); unknown carriers fall back to bare number. customArgs: `{ kind: "shop_shipping_notification_v1", stripe_session_id }`.
-
-Schema additions (additive, ADR 003 hand-authored migrations only):
-- `lib/resupply-db/drizzle/0016_shop_orders_email_tracking.sql` — adds `confirmation_email_sent_at` and `shipping_email_sent_at` (both nullable TIMESTAMPTZ).
-- `lib/resupply-db/drizzle/0017_shop_orders_customer_email.sql` — adds `customer_email` (nullable TEXT) for the guest-checkout fallback recipient.
-
-Delivery feedback closes via the existing SendGrid Event Webhook at `POST /email/sendgrid-events` (ECDSA signature verification, mapping to `messages.delivery_status`). The smoke test at `routes/email/sendgrid-events.test.ts` pins the rejection-without-signature path and the processed/delivered/bounce/dropped/deferred → status mappings.
-
-### Outbound email — single integration, single From address
-
-Every outbound email across the entire monorepo is funneled through one place: `createSendgridClient()` in `lib/resupply-email/src/client.ts`. That client is the only direct consumer of the `@sendgrid/mail` SDK in the repo (enforced for resupply packages by Rules 12 + 13 in `scripts/check-resupply-architecture.sh`) and reads `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, and `SENDGRID_FROM_NAME` at call time. Operations sets `SENDGRID_FROM_EMAIL=info@pennpaps.com` so every outbound message — Penn Fit fulfillment, Penn Fit reminders, shop confirmation, shop shipping, cart abandonment, review moderation, resupply reminders, two-way reply — leaves the platform from the same canonical address.
-
-Senders that go through the shared client:
-- `lib/resupply-reminders/src/{send-email,reply}.ts` (resupply outreach)
-- `artifacts/resupply-api/src/lib/order-emails/send-order-confirmation-email.ts`
-- `artifacts/resupply-api/src/lib/order-emails/send-shipping-notification-email.ts`
-- `artifacts/resupply-api/src/lib/cart-abandonment/send-cart-abandonment-email.ts`
-- `artifacts/resupply-api/src/lib/messaging/review-moderation-email.ts`
-- `artifacts/resupply-api/src/lib/storefront/{reminderEmail,orderEmail}.ts` (Penn Fit storefront helpers, moved here from the deleted `artifacts/api-server` in the Task #37 consolidation). These two were originally written before the shared client existed and used raw `fetch` to `https://api.sendgrid.com/v3/mail/send` plus their own `PENN_FROM_EMAIL` env var; the audit on 2026-04-30 migrated them to `createSendgridClient()` so there is no longer any path to SendGrid that bypasses the shared integration. Public function shapes (`sendReminderConfirmation`, `sendReminderManageLink`, `sendReminderDue`, `sendOrderToPenn`, `generateOrderReference`) are unchanged so all callers keep working.
-
-There is no `nodemailer`, no SMTP, and no other raw HTTP path to SendGrid anywhere in the repo. The `mailto:info@pennpaps.com` links in `cpap-fitter/{privacy,terms}.tsx` and `resupply-dashboard/not-authorized.tsx` are user-facing contact links and not outbound email.
+All outbound emails across the monorepo are funneled through a single SendGrid client (`lib/resupply-email/src/client.ts`), ensuring a consistent `From` address (`info@pennpaps.com`) and centralized configuration. This includes order confirmations, shipping notifications, cart abandonment nudges, review moderation emails, and resupply reminders.
 
 ### Customer 360 (Admin)
 
-A "Customers" section in the cpap-fitter admin (`/admin/customers` and `/admin/customers/:userId`) gives staff a single-pane view of every shop customer: search/sort/paginate the directory, then drill into a profile that shows lifetime stats, recent orders, subscriptions, abandoned cart, and product reviews. From a paid order, an admin can click "Reorder for customer" to generate a Stripe Checkout Session (mode `payment`) prefilled with the prior order's line items; the dashboard returns the checkout URL with Copy and Open buttons so the admin can share it with the customer out-of-band (email/SMS).
-
-Architecture notes:
-- Backend lives in `artifacts/resupply-api/src/routes/admin/customers.ts` (mounted at `/resupply-api/admin/shop/customers/*`). Frontend pages call across the shared proxy via `resupplyAdminFetch` in `artifacts/cpap-fitter/src/lib/admin-api.ts`.
-- The new endpoints are intentionally NOT in the OpenAPI spec — this matches the local convention used by the other `/admin/shop/*` endpoints (orders, reviews, inventory), which both dashboards consume via raw fetch.
-- These endpoints log via `req.log` only; no `audit_log` writes. Shop is not patient-PHI surface, so it follows the same posture as the other `/admin/shop/*` routes (audit_log is reserved for `/patients/*` PHI operations).
-- PHI posture: list responses redact email via `redactEmail()`; the detail endpoint returns full email/address. Logs only carry `userId`, counts, and admin identity — never customer email or address.
-- Admin allowlist note: after Task #37 the API was consolidated into a single `resupply-api` process. Both the storefront/fitter admin endpoints (mounted at `/api/admin/*`) and the resupply admin endpoints (mounted at `/resupply-api/admin/*`) are role-gated by the same in-house auth middleware against the unified `admin_users` / `auth.users` tables; the legacy `PENN_ADMIN_EMAILS` allowlist is read by the same process as `RESUPPLY_ADMIN_EMAILS` for backwards compatibility, but new admins should be granted via the dashboard's Team page rather than by editing env allowlists.
-- Auth password hashing (Task #38, May 2026): the `AUTH_PASSWORD_PEPPER` env var was removed. Passwords are now hashed with plain argon2id (no server-side HMAC pepper). `lib/resupply-auth/src/password.ts` exposes `hashPassword(password)` and `verifyPassword(password, storedHash)` with no pepper argument; `readAuthEnv` no longer reads `AUTH_PASSWORD_PEPPER` (any leftover deployed value is silently ignored). The change invalidated every previously stored password hash — pre-launch, so the only impact is that bootstrap/staff accounts must use the password-reset flow once. See `docs/resupply/adr/014-in-house-auth.md` ("Amendment, Task #38") for the full rationale.
+A "Customers" section in the admin interface (`/admin/customers`) provides staff with a comprehensive view of each shop customer, including lifetime stats, orders, subscriptions, abandoned carts, and product reviews. Admins can reorder for customers directly from their profile.
 
 ## External Dependencies
 
-*   **SendGrid:** For emails (order fulfillment, resupply reminders, abandoned cart, review moderation).
-*   **MediaPipe Face Mesh:** Google's on-device facial landmark detection.
-*   **AWS:** Provides production deployment infrastructure.
-*   **PostgreSQL:** Primary database.
+*   **SendGrid:** For all outbound email communications.
+*   **MediaPipe Face Mesh:** For on-device facial landmark detection.
+*   **AWS:** Production deployment infrastructure.
+*   **PostgreSQL:** Primary application database.
 *   **Twilio:** For outbound voice calls and two-way SMS messaging in resupply.
-*   **OpenAI:** Used by Resupply Automation for Realtime API (voice) and chat completions (SMS intent).
-*   **Stripe:** For payment processing, managing the cash-pay shop, and product/price management.
+*   **OpenAI:** Used by Resupply Automation for voice API and chat completions.
+*   **Stripe:** For payment processing, cash-pay shop management, and product/price data.
 *   **Google Cloud Storage (GCS):** For secure storage of prescription document attachments.
