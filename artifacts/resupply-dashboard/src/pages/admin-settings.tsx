@@ -15,21 +15,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 interface SystemInfo {
   server: {
     now: string;
@@ -65,7 +50,7 @@ interface SystemInfo {
 
 async function fetchSystemInfo(): Promise<SystemInfo> {
   const res = await fetch("/resupply-api/admin/system-info", {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load system info (${res.status})`);
   return (await res.json()) as SystemInfo;

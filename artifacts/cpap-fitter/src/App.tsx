@@ -372,11 +372,8 @@ function TopRouter() {
 }
 
 // Inner tree — independent of which auth provider wraps it.
-// Extracted so we can render the same children inside either
-// <ClerkProvider> (Clerk mode) or no provider at all (in_house
-// mode). All components below this point use the identity shim
-// in `@/lib/identity` for auth state, so they don't need to know
-// which provider is mounted.
+// All components below this point use the identity shim
+// in `@/lib/identity` for auth state.
 function AppInner() {
   return (
     <QueryClientProvider client={queryClient}>

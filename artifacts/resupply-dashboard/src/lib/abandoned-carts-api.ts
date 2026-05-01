@@ -7,23 +7,8 @@
 // surface grows; for the v1 admin queue this thin wrapper avoids a
 // codegen cycle for every backend tweak.
 //
-// Auth bridge: same `globalThis.Clerk.session.getToken()` pattern
-// already wired up by api-client.ts.
-
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
+// Auth: the browser sends the `pf_session` cookie automatically on
+// same-origin requests, so no per-call auth header is needed.
 
 export interface AbandonedCartRow {
   id: string;
@@ -53,7 +38,7 @@ export interface SendDueResponse {
 
 export async function listAdminAbandonedCarts(): Promise<ListAbandonedCartsResponse> {
   const res = await fetch(`/resupply-api/admin/shop/abandoned-carts`, {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     throw new Error(`Failed to load abandoned carts (${res.status})`);
@@ -66,7 +51,7 @@ export async function sendDueAbandonedCarts(): Promise<SendDueResponse> {
     `/resupply-api/admin/shop/abandoned-carts/send-due`,
     {
       method: "POST",
-      headers: { Accept: "application/json", ...(await authHeaders()) },
+      headers: { Accept: "application/json" },
     },
   );
   if (!res.ok) {

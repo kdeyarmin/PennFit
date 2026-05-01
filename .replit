@@ -135,7 +135,6 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-VITE_CLERK_PUBLISHABLE_KEY = "pk_test_cGxlYXNpbmctYW5jaG92eS00MS5jbGVyay5hY2NvdW50cy5kZXYk"
 RESUPPLY_ADMIN_EMAILS = "penn-admin-test@example.com"
 
 [userenv.development]

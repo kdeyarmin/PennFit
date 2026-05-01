@@ -160,8 +160,8 @@ export function useCartSnapshotSync(): void {
 }
 
 /**
- * Render-nothing wrapper so App.tsx can mount the sync from inside
- * <ClerkProvider> without restructuring the route tree.
+ * Render-nothing wrapper so App.tsx can mount the sync without
+ * restructuring the route tree.
  */
 export function CartSnapshotSync(): null {
   useCartSnapshotSync();

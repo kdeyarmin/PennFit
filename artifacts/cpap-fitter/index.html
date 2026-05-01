@@ -57,15 +57,14 @@
         - Frame ancestors: 'self' so the Replit preview iframe still works
           but external sites cannot frame the app.
 
-      Clerk hosts (auth UI + image avatars + WS sessions) are the only
-      cross-origin allowances. 'unsafe-inline'/'unsafe-eval' on script-src
-      are required by the Clerk SDK and Vite's dev runtime; they cannot
-      currently be removed without breaking auth, so we keep the rest of
-      the policy as tight as possible.
+      'unsafe-inline'/'unsafe-eval' on script-src are kept for Vite's dev
+      runtime and inline Tailwind styles. We allow Cloudflare Turnstile
+      challenges on script-src + frame-src for bot protection on auth /
+      checkout flows. Everything else is locked to 'self'.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.com; font-src 'self' data:; img-src 'self' data: blob: https://img.clerk.com https://*.clerk.com; media-src 'self' blob:; connect-src 'self' blob: https://*.clerk.accounts.dev https://*.clerk.com wss://*.clerk.accounts.dev; worker-src 'self' blob:; frame-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com; object-src 'none'; base-uri 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self';"
     />
 
     <!-- Favicons + PWA install metadata -->
