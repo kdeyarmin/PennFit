@@ -6,7 +6,7 @@ The original plan specified NestJS for the api and worker apps. NestJS brings
 opinionated DI, decorators, modules, guards, and interceptors that scale well
 in large multi-team backends.
 
-This monorepo already runs an Express + Zod api-server (the Penn Fit api).
+This monorepo already runs an Express + Zod api-server (the PennPaps fitter api).
 Adding NestJS as a second framework would mean two routing models, two
 testing styles, two error-handling conventions, and two ways to mount
 middleware — for a single-team product.
@@ -15,11 +15,11 @@ middleware — for a single-team product.
 
 Use Express 5 + Zod for `artifacts/resupply-api` and `artifacts/resupply-worker`.
 
-- Routing: `express.Router()` per domain area, matching the Penn Fit pattern.
+- Routing: `express.Router()` per domain area, matching the PennPaps fitter pattern.
 - Validation: Zod schemas generated from `lib/api-spec/openapi.yaml` (when
   the api spec is added in Phase 1+).
-- Logging: Pino + pino-http, same as Penn Fit.
-- Auth: Clerk (`@clerk/express`), same as Penn Fit.
+- Logging: Pino + pino-http, same as the PennPaps fitter.
+- Auth: Clerk (`@clerk/express`), same as the PennPaps fitter.
 - Testing: Vitest + supertest.
 
 The existing `artifacts/api-server` shows the canonical pattern.
@@ -32,7 +32,7 @@ The existing `artifacts/api-server` shows the canonical pattern.
   testability, which Vitest's module mocking handles fine. If we hit a real
   growth pain (e.g. needing per-request scoped services), revisit.
 - We give up `@nestjs/swagger` auto-generation. We use Orval against the
-  hand-maintained OpenAPI spec instead — same workflow as Penn Fit.
+  hand-maintained OpenAPI spec instead — same workflow as the PennPaps fitter.
 
 ## Alternatives Considered
 

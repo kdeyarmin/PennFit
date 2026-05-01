@@ -28,7 +28,7 @@ export interface OrderRequest {
    * @maxLength 1000
    */
   notes?: string;
-  /** Optional facial measurements (mm) captured on-device during the Penn Fit flow. Forwarded to Penn so fulfillment can verify size selection. Numeric only — never includes images. */
+  /** Optional facial measurements (mm) captured on-device during the PennPaps fitter flow. Forwarded to Penn so fulfillment can verify size selection. Numeric only — never includes images. */
   measurements?: FacialMeasurements;
   /** Patient consents to be contacted by Penn Home Medical Supply about this order */
   consentToContact: boolean;

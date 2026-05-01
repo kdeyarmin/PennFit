@@ -1,14 +1,14 @@
 // Repo-wide ESLint flat config — scoped to the resupply tree only.
 //
-// Penn Fit predates this config and is intentionally NOT linted here.
-// If/when Penn Fit adopts ESLint, expand the `files` globs below; do
+// The PennPaps fitter predates this config and is intentionally NOT linted
+// here. If/when the fitter adopts ESLint, expand the `files` globs below; do
 // not add a per-package eslint config (this is the single source of
 // truth so the resupply-check validation step can call `eslint`
 // against the whole tree in one pass).
 //
 // Why scoped: the resupply product's `resupply-check` validation gate
-// requires lint + typecheck + test as a single signal. Linting Penn
-// Fit in the same pass would block this gate on unrelated Penn Fit
+// requires lint + typecheck + test as a single signal. Linting the
+// fitter in the same pass would block this gate on unrelated fitter
 // drift, which is the wrong incentive for Phase 0.
 
 import js from "@eslint/js";
