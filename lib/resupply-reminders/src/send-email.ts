@@ -7,21 +7,19 @@
 //   - Vendor-config errors throw — caller must surface to admin.
 //
 // What's different from SMS:
-//   - No phone_lookup upsert (email channel uses signed link tokens
+//   - No phone-uniqueness check (email channel uses signed link tokens
 //     for inbound action, not reverse phone lookup).
 //   - We sign three short-TTL link tokens (confirm/edit/stop) and embed
 //     them in the rendered template.
 //   - SendGrid customArgs carries conversation_id so the event-webhook
 //     can correlate bounces/deliveries back to our row.
 
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 import {
   conversations,
-  decrypt,
-  encrypt,
   episodes,
   messages,
   patients,
@@ -61,8 +59,8 @@ export async function sendReminderEmail(
     .select({
       id: patients.id,
       status: patients.status,
-      email: decrypt(patients.email),
-      legalFirstName: decrypt(patients.legalFirstName),
+      email: patients.email,
+      legalFirstName: patients.legalFirstName,
     })
     .from(patients)
     .where(eq(patients.id, patientId))
@@ -197,7 +195,7 @@ export async function sendReminderEmail(
     conversationId,
     direction: "outbound",
     senderRole: "agent",
-    body: sql`${encrypt(rendered.text)}`,
+    body: rendered.text,
     deliveryStatus: "queued",
     vendorMetadata: {
       sendgrid_message_id: messageId,

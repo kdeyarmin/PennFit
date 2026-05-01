@@ -3,12 +3,14 @@
 // Flow:
 //   1. requireTwilioSignature middleware — reject unsigned/forged requests.
 //   2. Parse body (form-urlencoded → zod) into InboundSmsParams.
-//   3. Hash `From`. Look up patient via phone_lookup.
+//   3. Look up patient by direct phone_e164 equality.
 //      - Unknown number → audit `messaging.inbound.received{outcome:'unknown_phone'}`,
 //        respond with TwiML <Message> opt-out boilerplate.
+//      - Multiple matches → audit `outcome:'ambiguous_phone'` and bail; we can't
+//        safely route an inbound to one of N patients sharing the same number.
 //   4. Find latest open SMS conversation for this patient (or create one
 //      bound to the patient's most recent episode).
-//   5. Persist inbound `messages` row (encrypted body).
+//   5. Persist inbound `messages` row.
 //   6. Run keyword router on `Body`. On `unknown` → AI fallback (mocked
 //      in tests via injectAiFallbackAdapter).
 //   7. Dispatch the resolved intent:
@@ -35,25 +37,22 @@
 //
 // PHI in the audit row:
 //   We NEVER log the inbound body or the From number to the audit
-//   metadata. The body lives encrypted on `messages`; the From lives
-//   only as its HMAC on `phone_lookup`. The audit row carries
-//   structural fields only: conversation_id, patient_id, intent,
-//   outcome, twilio_message_sid.
+//   metadata. The body lives on `messages`; the From lives on
+//   `patients.phone_e164`. The audit row carries structural fields
+//   only: conversation_id, patient_id, intent, outcome,
+//   twilio_message_sid.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
+import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   conversations,
-  decrypt,
-  encrypt,
   episodes,
   getDbPool,
-  hmacPhone,
   messages,
-  normalizeE164,
-  phoneLookup,
+  patients,
   tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
 import {
@@ -221,16 +220,43 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       .send("<Response/>");
     return;
   }
-  const fromHmac = hmacPhone(normalizedFrom);
-
   const pool = getDbPool();
   const db = drizzle(pool);
 
+  // Direct phone lookup. We pull up to 2 rows so we can detect
+  // ambiguous matches — multiple patients sharing one phone (a
+  // family plan) can't be safely auto-routed; we audit and bail.
   const lookupRows = await db
-    .select({ patientId: phoneLookup.patientId })
-    .from(phoneLookup)
-    .where(eq(phoneLookup.hmacPhone, fromHmac))
-    .limit(1);
+    .select({ patientId: patients.id })
+    .from(patients)
+    .where(eq(patients.phoneE164, normalizedFrom))
+    .limit(2);
+  if (lookupRows.length > 1) {
+    await safeAudit({
+      action: "messaging.inbound.received",
+      adminEmail: null,
+      adminUserId: null,
+      targetTable: null,
+      targetId: null,
+      metadata: {
+        channel: "sms",
+        outcome: "ambiguous_phone",
+        twilio_message_sid: parsed.MessageSid,
+        match_count: lookupRows.length,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
+    res
+      .status(200)
+      .type("text/xml")
+      .send(
+        '<Response><Message>This number is on multiple accounts. ' +
+          "Please contact your provider directly so we can route your message correctly. " +
+          "Reply STOP to opt out.</Message></Response>",
+      );
+    return;
+  }
   const patientId = lookupRows[0]?.patientId;
 
   if (!patientId) {
@@ -378,7 +404,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     conversationId,
     direction: "inbound",
     senderRole: "patient",
-    body: sql`${encrypt(parsed.Body)}`,
+    body: parsed.Body,
     deliveryStatus: "received",
     vendorMetadata: { twilio_message_sid: parsed.MessageSid },
     sentAt: inboundAt,
@@ -428,13 +454,12 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
   if (intent === "unknown") {
     const adapter = getAiAdapter();
     if (adapter) {
-      // Pull the last 6 messages as context. Bodies are decrypted at
-      // the SQL site; we never write decrypted text back to disk.
+      // Pull the last 6 messages as context.
       const recent = await db
         .select({
           direction: messages.direction,
           senderRole: messages.senderRole,
-          body: decrypt(messages.body),
+          body: messages.body,
           createdAt: messages.createdAt,
         })
         .from(messages)
@@ -509,7 +534,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     conversationId,
     direction: "outbound",
     senderRole: "agent",
-    body: sql`${encrypt(twimlBody)}`,
+    body: twimlBody,
     deliveryStatus: "queued",
     vendorMetadata: { twiml_inline: true },
     sentAt: replyAt,

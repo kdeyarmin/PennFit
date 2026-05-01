@@ -5,24 +5,20 @@
 //
 // Why "all-or-nothing":
 //   The two channels share the same set of pre-conditions in this v1
-//   (HMAC keys for phone hashing + link signing). A partially configured
-//   path is operationally worse than a clean off — it lets a half-broken
-//   deploy answer real Twilio webhooks with confusing 5xx noise. We turn
-//   the whole feature off at the route layer until every required env
-//   var is present, and surface a single readiness line ("messaging
-//   configured") downstream.
+//   (link-signing HMAC). A partially configured path is operationally
+//   worse than a clean off — it lets a half-broken deploy answer real
+//   Twilio webhooks with confusing 5xx noise. We turn the whole feature
+//   off at the route layer until every required env var is present,
+//   and surface a single readiness line ("messaging configured")
+//   downstream.
 //
 // SMS-only and email-only sub-feature flags:
 //   We expose `readSmsConfigOrNull()` and `readEmailConfigOrNull()`
 //   separately so an admin can ship SMS without SendGrid (or vice
 //   versa). The aggregate `readMessagingConfigOrNull()` is true only
-//   when both are configured AND the two cross-cutting HMAC keys
-//   (phone, link) are set.
+//   when both are configured AND the link-HMAC key is set.
 
-import {
-  hasLinkHmacKey,
-  hasPhoneHmacKey,
-} from "@workspace/resupply-secrets";
+import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 export interface SmsConfig {
   twilioAccountSid: string;
@@ -54,14 +50,6 @@ export interface EmailConfig {
 export interface MessagingConfig {
   sms: SmsConfig;
   email: EmailConfig;
-  /**
-   * Whether the phone-number-lookup HMAC key is sourceable (either
-   * the legacy `RESUPPLY_PHONE_HMAC_KEY` env var or a derivation from
-   * `RESUPPLY_MASTER_KEY` is available). Informational only; the hash
-   * routine in `@workspace/resupply-db` re-reads at call time so
-   * secret rotation doesn't require a process restart.
-   */
-  hasPhoneHmacKey: boolean;
   hasLinkHmacKey: boolean;
   /**
    * Practice name baked into outbound SMS + email templates. Falls
@@ -137,12 +125,10 @@ export function readMessagingConfigOrNull(
   const sms = readSmsConfigOrNull(env);
   const email = readEmailConfigOrNull(env);
   if (!sms || !email) return null;
-  if (!hasPhoneHmacKey(env)) return null;
   if (!hasLinkHmacKey(env)) return null;
   return {
     sms,
     email,
-    hasPhoneHmacKey: true,
     hasLinkHmacKey: true,
     practiceName: env.RESUPPLY_PRACTICE_NAME ?? DEFAULT_PRACTICE_NAME,
   };

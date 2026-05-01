@@ -18,29 +18,22 @@
 //
 // The script is idempotent: any prior `seed-*` patient (and via
 // ON DELETE CASCADE everything below it — episodes, conversations,
-// messages, fulfillments, phone_lookup) is wiped before reseeding,
-// so re-running the script produces the same end state instead of
-// piling up duplicates.
+// messages, fulfillments) is wiped before reseeding, so re-running
+// the script produces the same end state instead of piling up
+// duplicates.
 //
 // Why this script lives in `@workspace/resupply-testing` rather than
-// inside the API or worker: factories that wrap PHI fields in
-// `encrypt(...)` already live here, and the architecture check
-// (Rule 5) forbids production code from importing this package, so
-// keeping the seed beside the factories means we don't grow a
-// parallel set of fixtures. The `scripts/` folder is outside `src/`
-// so it isn't covered by the no-import rule.
+// inside the API or worker: the factories already live here, and the
+// architecture check (Rule 5) forbids production code from importing
+// this package, so keeping the seed beside the factories means we
+// don't grow a parallel set of fixtures. The `scripts/` folder is
+// outside `src/` so it isn't covered by the no-import rule.
 //
 // Run with:
 //   pnpm --filter @workspace/resupply-testing run seed:sample
 //
 // Required env:
-//   DATABASE_URL          — Postgres connection string
-//   RESUPPLY_DATA_KEY     — pgcrypto key used by `encrypt()` helpers
-// Optional env:
-//   RESUPPLY_PHONE_HMAC_KEY — if set, a `phone_lookup` row is also
-//                             written for every SMS-capable seed
-//                             patient so inbound webhook routing works
-//                             end-to-end.
+//   DATABASE_URL  — Postgres connection string
 
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -50,10 +43,8 @@ import {
   episodes,
   fulfillments,
   getDbPool,
-  hmacPhone,
   messages,
   patients,
-  phoneLookup,
   prescriptions,
 } from "@workspace/resupply-db";
 
@@ -681,17 +672,16 @@ async function main(): Promise<void> {
     console.error("DATABASE_URL is required.");
     process.exit(2);
   }
-  if (!process.env.RESUPPLY_DATA_KEY) {
-    console.error("RESUPPLY_DATA_KEY is required (pgcrypto encryption key).");
-    process.exit(2);
-  }
 
   const pool = getDbPool();
   const db = drizzle(pool);
 
   // Wipe prior seed data. ON DELETE CASCADE on every child table
-  // (prescriptions, episodes, conversations, messages, fulfillments,
-  // phone_lookup) means deleting the patient rows is sufficient.
+  // (prescriptions, episodes, conversations, messages, fulfillments)
+  // means deleting the patient rows is sufficient. The inbound-SMS
+  // routing path now resolves the From number directly against
+  // `patients.phone_e164` (indexed btree), so no phone_lookup
+  // bookkeeping is needed.
   const deleted = await db
     .delete(patients)
     .where(sql`${patients.pacwareId} like ${SEED_PREFIX + "%"}`)
@@ -699,9 +689,6 @@ async function main(): Promise<void> {
   if (deleted.length > 0) {
     console.log(`Cleared ${deleted.length} prior seed patients (cascaded).`);
   }
-
-  const phoneKey = process.env.RESUPPLY_PHONE_HMAC_KEY;
-  let phoneLookupCount = 0;
 
   for (const scenario of SCENARIOS) {
     const [patient] = await db
@@ -720,16 +707,6 @@ async function main(): Promise<void> {
 
     await scenario.build({ db, patientId: patient.id, scenario });
 
-    if (phoneKey && scenario.phone) {
-      // Match the worker's behavior: maintain a phone_lookup row so
-      // inbound webhooks could route a reply back to this seed patient.
-      await db.insert(phoneLookup).values({
-        patientId: patient.id,
-        hmacPhone: hmacPhone(scenario.phone),
-      });
-      phoneLookupCount += 1;
-    }
-
     console.log(
       `  ${scenario.pacwareSlug.padEnd(18)} ${scenario.status.padEnd(7)} ${scenario.firstName} ${scenario.lastName}`,
     );
@@ -738,13 +715,6 @@ async function main(): Promise<void> {
   console.log(
     `\nSeeded ${SCENARIOS.length} sample patients with reminders and check-ins.`,
   );
-  if (phoneKey) {
-    console.log(`Wrote ${phoneLookupCount} phone_lookup rows.`);
-  } else {
-    console.log(
-      "Skipped phone_lookup (set RESUPPLY_PHONE_HMAC_KEY to populate).",
-    );
-  }
 
   await pool.end();
 }

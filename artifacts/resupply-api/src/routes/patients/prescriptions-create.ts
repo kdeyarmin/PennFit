@@ -4,10 +4,10 @@
 // What this route owns:
 //   - Validation of the prescription body (SKU, cadence, validity
 //     window, optional doctor metadata).
-//   - Encryption of the prescriber-narrative `details` JSON before
-//     it lands in the column.
+//   - Storing the prescriber-narrative `details` JSON in the
+//     plaintext jsonb column.
 //   - One audit row per create, with field-name list only — never
-//     the encrypted values.
+//     the field values.
 //
 // What this route does NOT own:
 //   - Editing an existing prescription's clinical fields. Once an
@@ -18,14 +18,13 @@
 //     decision — the dashboard should never let one admin
 //     re-write another admin's reading of the doctor's order.
 
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  encryptJson,
   getDbPool,
   patients,
   prescriptions,
@@ -153,7 +152,7 @@ router.post(
         cadenceDays: body.cadenceDays,
         validFrom: body.validFrom,
         validUntil: body.validUntil ?? null,
-        details: detailsBlob ? sql`${encryptJson(detailsBlob)}` : sql`NULL`,
+        details: detailsBlob,
         status: "active",
       })
       .returning({ id: prescriptions.id });

@@ -98,7 +98,6 @@ const BASE_CFG = {
     sendgridEventWebhookPublicKey: undefined,
     publicBaseUrl: "https://x.example",
   },
-  hasPhoneHmacKey: true,
   hasLinkHmacKey: true,
   practiceName: "Test Practice",
 };

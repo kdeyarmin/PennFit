@@ -1,8 +1,7 @@
 import { faker } from "@faker-js/faker";
-import type { PgInsertValue } from "drizzle-orm/pg-core";
-import { encryptJson, prescriptions } from "@workspace/resupply-db";
+import { prescriptions, type InsertPrescriptionRow } from "@workspace/resupply-db";
 
-type PrescriptionInsertValue = PgInsertValue<typeof prescriptions>;
+void prescriptions;
 
 // CPAP-flavored item SKUs the eligibility engine will look for. The
 // list is short on purpose — the schema doesn't manage a catalogue, so
@@ -33,7 +32,7 @@ export interface PrescriptionFixtureSpec {
 
 export function makePrescription(
   args: { patientId: string } & Partial<PrescriptionFixtureSpec>,
-): PrescriptionInsertValue {
+): InsertPrescriptionRow {
   const {
     patientId,
     itemSku,
@@ -72,7 +71,7 @@ export function makePrescription(
     cadenceDays: spec.cadenceDays,
     validFrom: spec.validFrom,
     validUntil: spec.validUntil,
-    details: encryptJson(spec.details),
+    details: spec.details,
     status: spec.status,
   };
 }

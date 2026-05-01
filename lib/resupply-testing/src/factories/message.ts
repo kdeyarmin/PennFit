@@ -1,13 +1,10 @@
 import { faker } from "@faker-js/faker";
-import type { PgInsertValue } from "drizzle-orm/pg-core";
-import { encrypt, messages } from "@workspace/resupply-db";
-
-type MessageInsertValue = PgInsertValue<typeof messages>;
+import { messages, type InsertMessageRow } from "@workspace/resupply-db";
 
 export interface MessageFixtureSpec {
   direction: "inbound" | "outbound";
   senderRole: "patient" | "admin" | "agent" | "system";
-  /** Plaintext body — the factory wraps it in encrypt(). */
+  /** Plaintext body — written verbatim into messages.body. */
   body: string;
   deliveryStatus: string | null;
   deliveryError: string | null;
@@ -16,9 +13,11 @@ export interface MessageFixtureSpec {
   deliveredAt: Date | null;
 }
 
+void messages;
+
 export function makeMessage(
   args: { conversationId: string } & Partial<MessageFixtureSpec>,
-): MessageInsertValue {
+): InsertMessageRow {
   const {
     conversationId,
     direction,
@@ -39,7 +38,7 @@ export function makeMessage(
     conversationId,
     direction: resolvedDirection,
     senderRole: resolvedSenderRole,
-    body: encrypt(body ?? faker.lorem.sentence()),
+    body: body ?? faker.lorem.sentence(),
     deliveryStatus:
       deliveryStatus === undefined
         ? resolvedDirection === "outbound"

@@ -1,8 +1,8 @@
 /**
  * Startup environment validation for the resupply API server.
  *
- * Per-variable lazy throws elsewhere in the codebase (encryption
- * keys, DB pool, etc.) are correct but surface one-at-a-time during
+ * Per-variable lazy throws elsewhere in the codebase (DB pool,
+ * link-HMAC key, etc.) are correct but surface one-at-a-time during
  * request handling, which is painful to chase on a fresh deploy.
  * This helper runs once at boot, collects EVERY missing required
  * variable, and throws a single error listing all of them — so an
@@ -16,20 +16,15 @@
  * every third-party credential. Those vars are documented as
  * optional / feature-gated in the top-level README.
  *
- * Resupply secret keys (PHI encryption + the two HMAC keys) are
- * validated through `@workspace/resupply-secrets`, which accepts
- * either the consolidated `RESUPPLY_MASTER_KEY` (preferred) or all
- * three legacy per-purpose env vars. Without one of those, the very
- * first encrypted-PHI write or phone-lookup query fails with a
- * confusing mid-request error; catching at boot is safer.
+ * `RESUPPLY_LINK_HMAC_KEY` is the only resupply-specific secret left
+ * after migration 0025 stripped pgcrypto column-level encryption.
+ * Validate it here so the very first link-issuing or link-verifying
+ * request doesn't fail mid-flight on a misconfigured deploy.
  */
 
-import { diagnoseSecretConfig } from "@workspace/resupply-secrets";
+import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 
-const REQUIRED_PLAIN_ENV_VARS = [
-  "PORT",
-  "DATABASE_URL",
-] as const;
+const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
 
 export function assertRequiredEnv(): void {
   const missing: string[] = [];
@@ -39,14 +34,11 @@ export function assertRequiredEnv(): void {
       missing.push(name);
     }
   }
-  const secretProblems = diagnoseSecretConfig();
+  if (!hasLinkHmacKey()) missing.push(LINK_HMAC_KEY_ENV);
 
-  if (missing.length === 0 && secretProblems.length === 0) return;
+  if (missing.length === 0) return;
 
-  const parts: string[] = [];
-  if (missing.length > 0) {
-    parts.push(`missing required environment variable(s): ${missing.join(", ")}`);
-  }
-  for (const p of secretProblems) parts.push(p);
-  throw new Error(`resupply-api: ${parts.join("; ")}. See README.md for the full list.`);
+  throw new Error(
+    `resupply-api: missing required environment variable(s): ${missing.join(", ")}. See README.md for the full list.`,
+  );
 }

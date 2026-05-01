@@ -72,7 +72,7 @@ export function Privacy() {
             <p>
               <strong>If you submit an order</strong>, the contact, shipping, insurance, prescription, and notes
               fields you enter — together with the chosen mask, on-device measurements, and an anonymized
-              order reference — are stored in PennPaps's secure HIPAA-aware fulfillment
+              order reference — are stored in PennPaps's secure order-fulfillment
               database. This information is used by PennPaps staff to:
             </p>
             <ul className="list-disc pl-5 mt-2 space-y-1">

@@ -3,13 +3,13 @@ import {
   date,
   index,
   integer,
+  jsonb,
   text,
   timestamp,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { encryptedJson } from "../encryption";
 import { patients } from "./patients";
 import { resupplySchema } from "./_schema";
 
@@ -19,14 +19,13 @@ import { resupplySchema } from "./_schema";
  *
  * Why each column lives where it does:
  *   - `patientId` — owning patient. ON DELETE CASCADE is intentional:
- *     when a patient row is deleted (admin-initiated PHI purge), every
- *     prescription on file is also deleted.
- *   - `itemSku` and `cadenceDays` — the operational fields the eligibility
- *     engine reads on every tick. Plaintext, indexed.
- *   - `validFrom` / `validUntil` — date bounds on the order. Plaintext,
- *     not PHI on their own.
- *   - `details` — encrypted JSON for the doctor-provided narrative
- *     (diagnosis text, fitting notes). PHI per HIPAA, so encrypted.
+ *     when a patient row is deleted, every prescription on file is
+ *     also deleted.
+ *   - `itemSku` and `cadenceDays` — the operational fields the
+ *     eligibility engine reads on every tick. Indexed.
+ *   - `validFrom` / `validUntil` — date bounds on the order.
+ *   - `details` — jsonb blob for the doctor-provided narrative
+ *     (diagnosis text, fitting notes).
  *
  * Multiple prescriptions per patient are allowed; the eligibility engine
  * picks the most recent active prescription for a given SKU.
@@ -52,13 +51,13 @@ export const prescriptions = resupplySchema.table(
     validFrom: date("valid_from").notNull(),
     validUntil: date("valid_until"),
 
-    // Free-form prescriber notes / diagnosis text. Encrypted.
-    details: encryptedJson<{
+    // Free-form prescriber notes / diagnosis text.
+    details: jsonb("details").$type<{
       prescriberName?: string;
       prescriberNpi?: string;
       diagnosis?: string;
       notes?: string;
-    }>("details"),
+    }>(),
 
     // Lifecycle. "active" enters the eligibility engine. "expired" /
     // "revoked" do not. We keep history rather than hard-deleting.

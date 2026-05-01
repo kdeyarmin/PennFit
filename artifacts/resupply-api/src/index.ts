@@ -4,12 +4,7 @@ import { URL } from "node:url";
 
 import { WebSocketServer, type WebSocket } from "ws";
 
-import {
-  PgcryptoNotInstalledError,
-  assertPgcryptoEnabled,
-  getDbPool,
-  setProjectionLogger,
-} from "@workspace/resupply-db";
+import { getDbPool, setProjectionLogger } from "@workspace/resupply-db";
 
 import { assertRequiredEnv } from "./lib/env-check";
 
@@ -252,20 +247,6 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
 async function start(): Promise<void> {
-  try {
-    await assertPgcryptoEnabled(getDbPool());
-  } catch (err) {
-    if (err instanceof PgcryptoNotInstalledError) {
-      logger.fatal({ err: { message: err.message } }, err.message);
-    } else {
-      logger.fatal(
-        { err },
-        "fatal: resupply-api could not run pgcrypto preflight",
-      );
-    }
-    await flushLogsAndExit(1);
-  }
-
   httpServer.listen(port, () => {
     const voiceConfigured = readVoiceConfigOrNull() !== null;
     logger.info(

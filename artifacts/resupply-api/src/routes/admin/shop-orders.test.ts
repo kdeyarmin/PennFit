@@ -191,7 +191,6 @@ const ENV_KEYS = [
   "SENDGRID_FROM_EMAIL",
   "SENDGRID_FROM_NAME",
   "SHOP_PUBLIC_BASE_URL",
-  "RESUPPLY_DATA_KEY",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
@@ -199,8 +198,6 @@ const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 beforeEach(() => {
   for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
   for (const k of ENV_KEYS) delete process.env[k];
-  process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
-
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";

@@ -7,12 +7,7 @@ import { assertRequiredEnv } from "./lib/env-check.js";
 assertRequiredEnv();
 
 import { createServer, type Server } from "node:http";
-import {
-  PgcryptoNotInstalledError,
-  assertPgcryptoEnabled,
-  getDbPool,
-  setProjectionLogger,
-} from "@workspace/resupply-db";
+import { getDbPool, setProjectionLogger } from "@workspace/resupply-db";
 import PgBoss from "pg-boss";
 import { logger } from "./logger.js";
 import { registerReminderJobs } from "./jobs/reminders.js";
@@ -243,25 +238,6 @@ async function main(): Promise<void> {
       { err },
       "fatal: resupply-worker could not apply DB migrations on boot",
     );
-    await flushLogsAndExit(1);
-  }
-
-  // Preflight: any future job handler that touches encrypted PHI
-  // requires pgcrypto. Refuse to start pg-boss if the extension is
-  // missing — much clearer than a job blowing up partway through
-  // execution. The check goes through the shared resupply-db pool,
-  // not pg-boss's internal pool, since pg-boss has not booted yet.
-  try {
-    await assertPgcryptoEnabled(getDbPool());
-  } catch (err) {
-    if (err instanceof PgcryptoNotInstalledError) {
-      logger.fatal({ err: { message: err.message } }, err.message);
-    } else {
-      logger.fatal(
-        { err },
-        "fatal: resupply-worker could not run pgcrypto preflight",
-      );
-    }
     await flushLogsAndExit(1);
   }
 

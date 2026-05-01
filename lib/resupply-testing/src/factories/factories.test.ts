@@ -8,8 +8,6 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   __resetDbPoolForTests,
   conversations,
-  decrypt,
-  decryptJson,
   episodes,
   fulfillments,
   messages,
@@ -31,19 +29,15 @@ const { Pool } = pg;
 
 // Round-trip integration test for the resupply fixture factories.
 //
-// Skipped automatically if either DATABASE_URL or RESUPPLY_DATA_KEY is
-// missing — same skip pattern as encryption.test.ts so a clean checkout
-// without DB credentials still passes `pnpm test`.
+// Skipped automatically if DATABASE_URL is missing, so a clean
+// checkout without DB credentials still passes `pnpm test`.
 //
 // What this test proves:
 //   1. Each factory builds a payload that Drizzle accepts as an
 //      `InsertXRow` for the matching table (compile-time + runtime).
-//   2. PHI fields written by `makePatient`/`makeMessage`/etc. round-trip
-//      cleanly through pgcrypto and come back equal under `decrypt()` /
-//      `decryptJson()`. If a contributor adds a new PHI column to the
-//      schema and forgets to wrap it in `encrypt(...)` inside the
-//      factory, this test will fail at insert time (Drizzle's customType
-//      throws on direct write).
+//   2. Patient/message/prescription columns round-trip cleanly. PHI
+//      is stored as plaintext text/jsonb post-migration 0025; the
+//      assertions are direct equality.
 //   3. Foreign-key wiring works end-to-end: patient → prescription →
 //      episode → conversation → message; patient + episode →
 //      fulfillment.
@@ -55,8 +49,7 @@ const { Pool } = pg;
 // deleted explicitly because the schema deliberately has no FK on them.
 
 const dbUrl = process.env["DATABASE_URL"];
-const dataKey = process.env["RESUPPLY_DATA_KEY"];
-const canRun = Boolean(dbUrl && dataKey);
+const canRun = Boolean(dbUrl);
 const describeIfDb = canRun ? describe : describe.skip;
 
 describeIfDb("resupply fixture factories — DB round-trip", () => {
@@ -72,7 +65,6 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
   beforeAll(async () => {
     pool = new Pool({ connectionString: dbUrl });
     db = drizzle(pool);
-    await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
     await pool.query("CREATE SCHEMA IF NOT EXISTS resupply");
   });
 
@@ -98,15 +90,12 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
     // an open socket and so the next test file gets a fresh pool.
     const sharedPool = (await import("@workspace/resupply-db")).getDbPool();
     await sharedPool.end().catch(() => {
-      // If the shared pool was never lazily constructed (e.g. the
-      // logAudit assertion was skipped), getDbPool() will throw or
-      // return a fresh pool. Either way, swallow — the goal is
-      // best-effort teardown.
+      // Best-effort teardown.
     });
     __resetDbPoolForTests();
   });
 
-  it("inserts and decrypts the full patient -> message -> fulfillment tree", async () => {
+  it("inserts the full patient -> message -> fulfillment tree", async () => {
     // 1. Patient.
     const patientPayload = makePatient({
       legalFirstName: "Maya",
@@ -130,8 +119,7 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
     const patientId = insertedPatient!.id;
     patientIdsToCleanup.push(patientId);
 
-    // 2. Prescription FK'd to the patient. `details` is PHI — pass an
-    //    explicit object so we can decrypt + assert it round-trips.
+    // 2. Prescription FK'd to the patient.
     const rxDetails = {
       prescriberName: "Dr. Patel, MD",
       prescriberNpi: "1234567890",
@@ -173,8 +161,7 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
       .returning({ id: conversations.id });
     const conversationId = insertedConvo!.id;
 
-    // 5. One outbound + one inbound message — outbound has the
-    //    admin-attempted body, inbound is the patient's reply.
+    // 5. One outbound + one inbound message.
     const [insertedOutbound] = await db
       .insert(messages)
       .values(
@@ -211,50 +198,42 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
       .returning({ id: fulfillments.id });
     expect(insertedFulfillment).toBeDefined();
 
-    // Round-trip the patient PHI back through pgcrypto.
-    const decryptedPatient = await db
+    // Read the patient row back; assert plaintext fields match.
+    const fetchedPatient = await db
       .select({
-        firstName: decrypt(patients.legalFirstName),
-        lastName: decrypt(patients.legalLastName),
-        dob: decrypt(patients.dateOfBirth),
-        phone: decrypt(patients.phoneE164),
-        email: decrypt(patients.email),
-        address: decryptJson<{
-          line1: string;
-          city: string;
-          state: string;
-          postalCode: string;
-          country: string;
-        }>(patients.address),
+        firstName: patients.legalFirstName,
+        lastName: patients.legalLastName,
+        dob: patients.dateOfBirth,
+        phone: patients.phoneE164,
+        email: patients.email,
+        address: patients.address,
       })
       .from(patients)
       .where(eq(patients.id, patientId));
-    expect(decryptedPatient[0]?.firstName).toBe("Maya");
-    expect(decryptedPatient[0]?.lastName).toBe("Chen");
-    expect(decryptedPatient[0]?.dob).toBe("1958-11-02");
-    expect(decryptedPatient[0]?.phone).toBe("+12155550181");
-    expect(decryptedPatient[0]?.email).toBe("maya@example.com");
-    expect(decryptedPatient[0]?.address?.city).toBe("Springfield");
+    expect(fetchedPatient[0]?.firstName).toBe("Maya");
+    expect(fetchedPatient[0]?.lastName).toBe("Chen");
+    expect(fetchedPatient[0]?.dob).toBe("1958-11-02");
+    expect(fetchedPatient[0]?.phone).toBe("+12155550181");
+    expect(fetchedPatient[0]?.email).toBe("maya@example.com");
+    expect(fetchedPatient[0]?.address?.city).toBe("Springfield");
 
-    // Round-trip the encrypted prescription details (PHI per schema).
-    const decryptedRx = await db
-      .select({
-        details: decryptJson<typeof rxDetails>(prescriptions.details),
-      })
+    // Read the prescription details back.
+    const fetchedRx = await db
+      .select({ details: prescriptions.details })
       .from(prescriptions)
       .where(eq(prescriptions.id, prescriptionId));
-    expect(decryptedRx[0]?.details).toEqual(rxDetails);
+    expect(fetchedRx[0]?.details).toEqual(rxDetails);
 
-    // Round-trip the encrypted message bodies.
-    const decryptedMessages = await db
+    // Read the message bodies back.
+    const fetchedMessages = await db
       .select({
         id: messages.id,
         direction: messages.direction,
-        body: decrypt(messages.body),
+        body: messages.body,
       })
       .from(messages)
       .where(eq(messages.conversationId, conversationId));
-    const byId = new Map(decryptedMessages.map((m) => [m.id, m]));
+    const byId = new Map(fetchedMessages.map((m) => [m.id, m]));
     expect(byId.get(insertedOutbound!.id)?.body).toBe(
       "Hi Maya, time to refill your CPAP supplies?",
     );
@@ -272,11 +251,6 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
     // bypassed. The factory `makeAuditLog` returns the helper's
     // input shape (`AuditEvent`), which is what makes this idiom
     // ergonomic.
-    //
-    // We tag the row with a process-unique `_factoriesTag` so
-    // afterAll can clean up surgically by metadata tag — logAudit()
-    // intentionally does not return the inserted row's id (most
-    // production callers don't need one).
     const requestId = `req-test-${faker.string.uuid()}`;
     await logAudit(
       makeAuditLog({
@@ -291,10 +265,6 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
       }),
     );
 
-    // Verify via SELECT keyed on the unique requestId. Drizzle's
-    // jsonb querying for `metadata->>'requestId'` is awkward
-    // without the `sql` helper, and a raw pool query is clearer for
-    // a single-row read.
     const result = await pool.query(
       "SELECT action, target_table, target_id, metadata " +
         "FROM resupply.audit_log WHERE metadata->>'requestId' = $1",
@@ -326,19 +296,19 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
       .returning({ id: patients.id });
     patientIdsToCleanup.push(inserted!.id);
 
-    const [decrypted] = await db
+    const [fetched] = await db
       .select({
-        firstName: decrypt(patients.legalFirstName),
-        email: decrypt(patients.email),
-        phone: decrypt(patients.phoneE164),
-        address: decryptJson<unknown>(patients.address),
+        firstName: patients.legalFirstName,
+        email: patients.email,
+        phone: patients.phoneE164,
+        address: patients.address,
       })
       .from(patients)
       .where(eq(patients.id, inserted!.id));
-    expect(decrypted?.firstName).toBe("Null");
-    expect(decrypted?.email).toBeNull();
-    expect(decrypted?.phone).toBeNull();
-    expect(decrypted?.address).toBeNull();
+    expect(fetched?.firstName).toBe("Null");
+    expect(fetched?.email).toBeNull();
+    expect(fetched?.phone).toBeNull();
+    expect(fetched?.address).toBeNull();
   });
 
   it("makePatient defaults produce inserts that round-trip", async () => {
@@ -351,16 +321,16 @@ describeIfDb("resupply fixture factories — DB round-trip", () => {
     expect(inserted).toBeDefined();
     patientIdsToCleanup.push(inserted!.id);
 
-    const [decrypted] = await db
+    const [fetched] = await db
       .select({
-        firstName: decrypt(patients.legalFirstName),
-        dob: decrypt(patients.dateOfBirth),
+        firstName: patients.legalFirstName,
+        dob: patients.dateOfBirth,
       })
       .from(patients)
       .where(eq(patients.id, inserted!.id));
-    expect(typeof decrypted?.firstName).toBe("string");
-    expect(decrypted?.firstName?.length ?? 0).toBeGreaterThan(0);
+    expect(typeof fetched?.firstName).toBe("string");
+    expect(fetched?.firstName?.length ?? 0).toBeGreaterThan(0);
     // YYYY-MM-DD shape sanity.
-    expect(decrypted?.dob).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(fetched?.dob).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });

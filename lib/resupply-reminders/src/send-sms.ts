@@ -10,26 +10,22 @@
 // they indicate a deploy-level misconfiguration the caller wants to
 // see in pino + Sentry rather than swallow.
 //
-// Audit invariants (per ADR 008 / ADR 009 / Rule 8):
+// Audit invariants (per ADR 008 / Rule 8):
 //   - Audit is written from this function for both success and
 //     vendor-failure paths. The caller MUST NOT double-audit.
 //   - Metadata is structural only — never the SMS body, never the
 //     phone number plaintext, never the admin's typed text.
 
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
+import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   conversations,
-  decrypt,
-  encrypt,
   episodes,
-  hmacPhone,
   messages,
-  normalizeE164,
   patients,
-  phoneLookup,
   tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
 import {
@@ -49,7 +45,7 @@ export interface SendReminderSmsInput {
   /**
    * Optional override for the message body. When absent we render a
    * default reminder template. Admin-typed bodies are passed through
-   * verbatim to Twilio (and stored encrypted in `messages.body`).
+   * verbatim to Twilio and stored as-is in `messages.body`.
    */
   body?: string;
   actor: SendActor;
@@ -65,8 +61,8 @@ export async function sendReminderSms(
     .select({
       id: patients.id,
       status: patients.status,
-      phoneE164: decrypt(patients.phoneE164),
-      legalFirstName: decrypt(patients.legalFirstName),
+      phoneE164: patients.phoneE164,
+      legalFirstName: patients.legalFirstName,
     })
     .from(patients)
     .where(eq(patients.id, patientId))
@@ -104,95 +100,38 @@ export async function sendReminderSms(
 
   const normalizedPhone = normalizeE164(patient.phoneE164);
   if (!normalizedPhone) return { status: "patient_phone_unnormalizable" };
-  const hmac = hmacPhone(normalizedPhone);
 
-  // Phone-lookup upsert (safe variant).
+  // Inbound-routing safety check.
   //
-  // The naive `ON CONFLICT (hmac_phone) DO UPDATE SET patient_id = …`
-  // upsert silently REASSIGNS the lookup row's patientId whenever two
-  // patients share a phone number — and that reassignment moves every
-  // subsequent inbound reply (including STOP keywords and order
-  // confirmations) onto the wrong patient. We refuse to do that.
-  //
-  // Correct semantics:
-  //   - If no row exists for this hmac → insert it bound to patientId.
-  //   - If a row exists for this hmac AND it belongs to patientId →
-  //     refresh updated_at (idempotent re-send).
-  //   - If a row exists for this hmac AND it belongs to a DIFFERENT
-  //     patient → CONFLICT. Do NOT overwrite. Audit + abort the send
-  //     so an admin can resolve the data-quality issue.
-  //
-  // We use ON CONFLICT (patient_id) — the table's primary key — which
-  // is the only conflict path we want to silently merge (same patient,
-  // potentially-changed phone). The hmac_phone unique index will fire
-  // a 23505 if a different patient owns the hmac; we trap that as a
-  // belt-and-braces guard against TOCTOU between the read-check and
-  // the upsert.
-  const existingByHmac = await db
-    .select({ patientId: phoneLookup.patientId })
-    .from(phoneLookup)
-    .where(eq(phoneLookup.hmacPhone, hmac))
-    .limit(1);
-  if (existingByHmac[0] && existingByHmac[0].patientId !== patientId) {
+  // The inbound-SMS webhook resolves the From number to a patient via
+  // a direct equality lookup on `patients.phone_e164`. If TWO patient
+  // rows share the same normalized phone number, that lookup becomes
+  // ambiguous and replies (including STOP keywords and order
+  // confirmations) will route to whichever row Postgres returns
+  // first. We refuse to send before the ambiguity exists, audit it,
+  // and let an admin de-duplicate the patient roster.
+  const otherOwners = await db
+    .select({ id: patients.id })
+    .from(patients)
+    .where(eq(patients.phoneE164, normalizedPhone));
+  const otherIds = otherOwners.map((r) => r.id).filter((id) => id !== patientId);
+  if (otherIds.length > 0) {
     await safeAuditFromActor({
       action: "messaging.phone_lookup.conflict",
       actor,
-      targetTable: "phone_lookup",
+      targetTable: "patients",
       targetId: null,
       metadata: {
         channel: "sms",
         patient_id: patientId,
-        existing_patient_id: existingByHmac[0].patientId,
+        existing_patient_id: otherIds[0],
         reason: "phone_in_use_by_other_patient",
       },
     });
     return {
       status: "phone_in_use_by_other_patient",
-      existingPatientId: existingByHmac[0].patientId,
+      existingPatientId: otherIds[0]!,
     };
-  }
-  try {
-    await db
-      .insert(phoneLookup)
-      .values({ patientId, hmacPhone: hmac })
-      .onConflictDoUpdate({
-        target: phoneLookup.patientId,
-        set: { hmacPhone: hmac, updatedAt: new Date() },
-      });
-  } catch (err) {
-    // Postgres unique-violation on hmac_phone — another patient won
-    // the race between our read-check above and this insert. Treat
-    // identically to the read-check path: audit + abort.
-    if (
-      err != null &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code?: unknown }).code === "23505"
-    ) {
-      const reread = await db
-        .select({ patientId: phoneLookup.patientId })
-        .from(phoneLookup)
-        .where(eq(phoneLookup.hmacPhone, hmac))
-        .limit(1);
-      const existingId = reread[0]?.patientId ?? "<unknown>";
-      await safeAuditFromActor({
-        action: "messaging.phone_lookup.conflict",
-        actor,
-        targetTable: "phone_lookup",
-        targetId: null,
-        metadata: {
-          channel: "sms",
-          patient_id: patientId,
-          existing_patient_id: existingId,
-          reason: "phone_in_use_by_other_patient_race",
-        },
-      });
-      return {
-        status: "phone_in_use_by_other_patient",
-        existingPatientId: existingId,
-      };
-    }
-    throw err;
   }
 
   const insertedConv = await db
@@ -270,7 +209,7 @@ export async function sendReminderSms(
     conversationId,
     direction: "outbound",
     senderRole: "agent",
-    body: sql`${encrypt(messageBody)}`,
+    body: messageBody,
     deliveryStatus: "queued",
     vendorMetadata: { twilio_message_sid: messageSid },
     sentAt,

@@ -1,7 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
-import { encrypt } from "../encryption";
 import { conversations } from "../schema/conversations";
 import { patientLatestMessage } from "../schema/patient-latest-message";
 
@@ -15,12 +14,12 @@ import { patientLatestMessage } from "../schema/patient-latest-message";
  * accelerator; the message itself is the source of truth).
  *
  * Patient id is always derived from the conversation. We do NOT
- * accept it as a caller-supplied input on purpose: this is a PHI
- * boundary and a mismatched (conversationId, patientId) tuple from
- * an upstream bug would write THIS conversation's preview onto
- * SOMEONE ELSE'S patient row. The single PK lookup we do here is
- * the cheapest possible safety net (sub-millisecond on an indexed
- * primary key) and removes that footgun entirely.
+ * accept it as a caller-supplied input on purpose: a mismatched
+ * (conversationId, patientId) tuple from an upstream bug would write
+ * THIS conversation's preview onto SOMEONE ELSE'S patient row. The
+ * single PK lookup we do here is the cheapest possible safety net
+ * (sub-millisecond on an indexed primary key) and removes that
+ * footgun entirely.
  *
  * Out-of-order safety:
  *   Webhook redelivery and out-of-order channel callbacks can deliver
@@ -36,15 +35,13 @@ import { patientLatestMessage } from "../schema/patient-latest-message";
  * Preview truncation:
  *   We store at most PREVIEW_MAX_CHARS of plaintext. The preview is
  *   for "last message at a glance" surfaces only — full bodies
- *   render on the conversation page from `messages.body`. Truncating
- *   here keeps the projection row narrow and bounds the encrypted
- *   payload size.
+ *   render on the conversation page from `messages.body`.
  */
 
 /**
- * Maximum plaintext characters stored in the encrypted preview.
- * Exported for tests and for UI clients that want to render an
- * ellipsis only past this length.
+ * Maximum plaintext characters stored in the preview. Exported for
+ * tests and for UI clients that want to render an ellipsis only
+ * past this length.
  */
 export const PREVIEW_MAX_CHARS = 80;
 
@@ -58,8 +55,8 @@ export interface UpsertPatientLatestMessageInput {
    */
   conversationId: string;
   /**
-   * The message body (plaintext, pre-encryption). Will be truncated
-   * to PREVIEW_MAX_CHARS before encryption.
+   * The message body (plaintext). Will be truncated to
+   * PREVIEW_MAX_CHARS before storage.
    */
   body: string;
   /**
@@ -112,7 +109,7 @@ export async function upsertPatientLatestMessage(
   const preview = buildPreview(input.body);
 
   // Always derive patient id from the conversation. See the
-  // module-level comment for the PHI rationale.
+  // module-level comment for the rationale.
   const rows = await db
     .select({ patientId: conversations.patientId })
     .from(conversations)
@@ -127,20 +124,13 @@ export async function upsertPatientLatestMessage(
   }
   const patientId = rows[0]!.patientId;
 
-  // Single-statement upsert with the freshness guard on the conflict
-  // update. Drizzle's ON CONFLICT DO UPDATE supports a `setWhere` on
-  // the *post-update* row, which is exactly the column-vs-EXCLUDED
-  // comparison we need. The `sql\`${encrypt(...)}\`` wrapper is the
-  // canonical shape for an encrypted-column insert (see encryption.ts
-  // and messages.body insert callsites).
-  const previewSql = sql`${encrypt(preview)}`;
   const result = await db
     .insert(patientLatestMessage)
     .values({
       patientId,
       lastMessageAt: input.messageAt,
       lastMessageDirection: input.direction,
-      lastMessagePreview: previewSql,
+      lastMessagePreview: preview,
       lastMessageConversationId: input.conversationId,
     })
     .onConflictDoUpdate({
@@ -148,7 +138,7 @@ export async function upsertPatientLatestMessage(
       set: {
         lastMessageAt: input.messageAt,
         lastMessageDirection: input.direction,
-        lastMessagePreview: previewSql,
+        lastMessagePreview: preview,
         lastMessageConversationId: input.conversationId,
         updatedAt: sql`now()`,
       },
@@ -184,10 +174,7 @@ export interface ProjectionLogger {
 // its own logger at boot via `setProjectionLogger`. Until that
 // happens we fall back to a console.warn shim so projection
 // failures still surface — silent failures here would degrade the
-// patients list with no operational signal. Mirrors the
-// `setPoolErrorLogger` pattern from pool.ts (same ADR 002 boundary
-// — leaf data lib stays dependency-free; the boundary owner
-// supplies the sink at boot).
+// patients list with no operational signal.
 const consoleFallbackLogger: ProjectionLogger = {
   warn(obj, msg) {
     console.warn(msg ?? "patient_latest_message: refresh failed", obj);
@@ -199,8 +186,6 @@ let defaultLogger: ProjectionLogger = consoleFallbackLogger;
 /**
  * Register a process-wide logger for projection failures. Call
  * once at process boot (api-server / resupply-worker entrypoints).
- * Mirrors `setPoolErrorLogger` from ./pool.ts — same dependency-
- * free leaf-lib pattern.
  */
 export function setProjectionLogger(logger: ProjectionLogger): void {
   defaultLogger = logger;

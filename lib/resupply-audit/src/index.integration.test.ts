@@ -1,10 +1,9 @@
 // Integration test for logAudit() against a live Postgres database.
 //
-// Skip-when-unconfigured contract: this suite needs DATABASE_URL +
-// RESUPPLY_DATA_KEY (audit_log is in the resupply schema and the
-// shared pool checks for pgcrypto on first use). When either is
-// unset we skip the suite entirely so `pnpm -r test` stays green
-// in environments without a live db (CI runs that don't set them).
+// Skip-when-unconfigured contract: this suite needs DATABASE_URL.
+// When unset we skip the suite entirely so `pnpm -r test` stays
+// green in environments without a live db (CI runs that don't set
+// it).
 //
 // The suite cleans up after itself: every row inserted gets a
 // random `requestId` in metadata and a deletion in afterEach. We
@@ -14,13 +13,12 @@
 import {
   __resetDbPoolForTests,
   getDbPool,
-  assertPgcryptoEnabled,
 } from "@workspace/resupply-db";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { AuditMetadataPhiError, logAudit } from "./index";
 
-const skip = !process.env.DATABASE_URL || !process.env.RESUPPLY_DATA_KEY;
+const skip = !process.env.DATABASE_URL;
 
 const describeIfDb = skip ? describe.skip : describe;
 
@@ -29,14 +27,6 @@ describeIfDb("logAudit (live db)", () => {
   // surgical and parallel test runs (or other suites running
   // against the same db) don't step on each other.
   const runTag = `audit-helper-test-${Math.random().toString(36).slice(2)}`;
-
-  beforeAll(async () => {
-    // Confirm pgcrypto exists. audit_log itself doesn't need it,
-    // but the shared pool's first use should validate the schema is
-    // healthy — otherwise a missing pgcrypto would surface as a
-    // confusing failure several tests in.
-    await assertPgcryptoEnabled(getDbPool());
-  });
 
   afterEach(async () => {
     // Use a json-path filter so we delete exactly the rows we

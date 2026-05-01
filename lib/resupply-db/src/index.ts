@@ -3,36 +3,21 @@
 //
 // Public surface:
 //   - The `resupply.*` schema and every table defined under `./schema/`.
-//   - The pgcrypto-backed encryption helpers (`encryptedText`,
-//     `encryptedJson`, plus the `encrypt` / `decrypt` SQL helpers used at
-//     query sites). See ADR 007.
+//   - A single shared Postgres pool used by every resupply package
+//     that needs to talk to Postgres. See `./pool.ts` for sizing/
+//     timeout rationale and ADR 003 for the "one pool per process"
+//     rule.
+//   - The patient_latest_message projection helpers.
 //
-// Phase 1: schema + encryption + a single shared Postgres pool used by
-// every resupply package that needs to talk to Postgres. See `./pool.ts`
-// for sizing/timeout rationale and ADR 003 for the "one pool per
-// process" rule.
+// PHI is stored as plaintext (text/jsonb). Earlier revisions used
+// pgcrypto column-level encryption; migration 0025 stripped it.
 
 export * from "./schema/index";
-export {
-  encryptedText,
-  encryptedJson,
-  encrypt,
-  encryptJson,
-  decrypt,
-  decryptJson,
-} from "./encryption";
 export {
   getDbPool,
   setPoolErrorLogger,
   __resetDbPoolForTests,
 } from "./pool";
-export {
-  PgcryptoNotInstalledError,
-  isPgcryptoEnabled,
-  assertPgcryptoEnabled,
-  ensurePgcryptoEnabled,
-} from "./preflight";
-export { normalizeE164, hmacPhone } from "./phone-hash";
 export {
   PREVIEW_MAX_CHARS,
   buildPreview,

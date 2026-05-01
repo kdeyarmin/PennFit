@@ -7,9 +7,9 @@
 // urgent). For non-overdue queries the sort key is createdAt DESC.
 //
 // Joins prescriptions for itemSku + cadenceDays and patients for
-// the decrypted firstName + lastName so the queue table renders
-// without N+1 lookups. PHI surfaced is the same shape as the
-// patient list — name only, never phone or email.
+// firstName + lastName so the queue table renders without N+1
+// lookups. PHI surfaced is the same shape as the patient list —
+// name only, never phone or email.
 
 import { Router, type IRouter } from "express";
 import { and, asc, desc, eq, inArray, lte, sql, type SQL } from "drizzle-orm";
@@ -17,7 +17,6 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
-  decrypt,
   episodes,
   getDbPool,
   patients,
@@ -64,14 +63,12 @@ const listQuery = z
 // both the list endpoint and the counts endpoint so the chips
 // reflect the same row-set as the table. The clause is an
 // OR-union of: exact episode-id (cheap PK lookup), exact
-// patient-id, OR case-insensitive substring against the decrypted
-// first OR last name. Decrypted ILIKE is a full-table scan but
-// admin-only / small dataset keeps it acceptable.
+// patient-id, OR case-insensitive substring against the patient
+// first OR last name. ILIKE is a full-table scan but admin-only /
+// small dataset keeps it acceptable.
 export function episodesSearchClause(needle: string): SQL {
   const pattern = `%${needle}%`;
-  return sql`(${episodes.id} = ${needle} OR ${episodes.patientId} = ${needle} OR ${decrypt(
-    patients.legalFirstName,
-  )} ILIKE ${pattern} OR ${decrypt(patients.legalLastName)} ILIKE ${pattern})`;
+  return sql`(${episodes.id} = ${needle} OR ${episodes.patientId} = ${needle} OR ${patients.legalFirstName} ILIKE ${pattern} OR ${patients.legalLastName} ILIKE ${pattern})`;
 }
 
 const router: IRouter = Router();
@@ -131,8 +128,8 @@ router.get("/episodes", requireAdmin, async (req, res) => {
     .select({
       id: episodes.id,
       patientId: episodes.patientId,
-      patientFirstName: decrypt(patients.legalFirstName),
-      patientLastName: decrypt(patients.legalLastName),
+      patientFirstName: patients.legalFirstName,
+      patientLastName: patients.legalLastName,
       prescriptionId: episodes.prescriptionId,
       itemSku: prescriptions.itemSku,
       cadenceDays: prescriptions.cadenceDays,

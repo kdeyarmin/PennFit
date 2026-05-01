@@ -1,27 +1,16 @@
 import { faker } from "@faker-js/faker";
-import type { PgInsertValue } from "drizzle-orm/pg-core";
-import { encrypt, encryptJson, patients } from "@workspace/resupply-db";
-
-// Drizzle's `$inferInsert` collapses each column to its `data` type
-// (string for `encryptedText`), but `db.insert(...).values({...})`
-// actually accepts `data | SQL<data>`. `PgInsertValue<typeof patients>`
-// is the latter — using it lets factories return values still wrapped in
-// the `encrypt()` SQL fragment without forcing every test to re-cast.
-type PatientInsertValue = PgInsertValue<typeof patients>;
+import { patients, type InsertPatientRow } from "@workspace/resupply-db";
 
 // Factories for the resupply schema. Every factory:
-//   1. Returns an `InsertXRow` ready to drop into `db.insert(table).values(...)`.
-//   2. Wraps PHI fields in `encrypt()` / `encryptJson()` so callers cannot
-//      forget. Tests that hand-roll inserts are how you accidentally write
-//      plaintext PHI to a `bytea` column.
-//   3. Accepts a `Partial<XFixtureSpec>` of *plain* values (string,
-//      object, etc) — the factory does the encryption. This keeps test
-//      sites readable: `makePatient({ legalFirstName: "Alice" })`, not
-//      `{ legalFirstName: encrypt("Alice") }`.
-//   4. Fills any field the test didn't specify with a faker-generated
+//   1. Returns an `InsertPatientRow` ready to drop into `db.insert(table).values(...)`.
+//   2. Accepts a `Partial<PatientFixtureSpec>` of plain values — the
+//      factory wires them straight into the row. PHI columns are
+//      plain `text`/`jsonb` post-migration 0025; there is no
+//      encryption wrapping any more.
+//   3. Fills any field the test didn't specify with a faker-generated
 //      value drawn from a deterministic seedable RNG (faker is already a
 //      dep). Operational fields (status, timestamps) get sane defaults.
-//   5. Defaults `pacwareId` to a unique-per-call string so back-to-back
+//   4. Defaults `pacwareId` to a unique-per-call string so back-to-back
 //      `makePatient()` calls don't collide on the unique index.
 
 export interface PatientFixtureSpec {
@@ -43,9 +32,14 @@ export interface PatientFixtureSpec {
   status: "active" | "paused" | "closed";
 }
 
+// Reference `patients` so the import is exercised — the schema export
+// is the source of truth for the row shape and we want a hard error
+// here if the schema name ever changes.
+void patients;
+
 export function makePatient(
   overrides: Partial<PatientFixtureSpec> = {},
-): PatientInsertValue {
+): InsertPatientRow {
   const spec: PatientFixtureSpec = {
     pacwareId:
       overrides.pacwareId ??
@@ -81,12 +75,12 @@ export function makePatient(
 
   return {
     pacwareId: spec.pacwareId,
-    legalFirstName: encrypt(spec.legalFirstName),
-    legalLastName: encrypt(spec.legalLastName),
-    dateOfBirth: encrypt(spec.dateOfBirth),
-    phoneE164: encrypt(spec.phoneE164),
-    email: encrypt(spec.email),
-    address: encryptJson(spec.address),
+    legalFirstName: spec.legalFirstName,
+    legalLastName: spec.legalLastName,
+    dateOfBirth: spec.dateOfBirth,
+    phoneE164: spec.phoneE164,
+    email: spec.email,
+    address: spec.address,
     status: spec.status,
   };
 }

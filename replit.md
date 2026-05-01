@@ -34,7 +34,7 @@ The application features a professional aesthetic with Penn's navy and gold bran
 
 ### CPAP Resupply Automation System
 
-A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema with encrypted PHI columns and `Clerk` for admin authentication. Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
+A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema and an in-house cookie-session admin auth (Clerk has been removed). Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
 
 ### Cash-Pay Shop & Customer Accounts
 
@@ -120,7 +120,7 @@ Architecture notes:
 
 *   **SendGrid:** For emails (order fulfillment, resupply reminders, abandoned cart, review moderation).
 *   **MediaPipe Face Mesh:** Google's on-device facial landmark detection.
-*   **AWS:** Provides HIPAA-compliant deployment infrastructure.
+*   **AWS:** Provides production deployment infrastructure.
 *   **PostgreSQL:** Primary database.
 *   **Clerk:** Authentication service for admins and customers.
 *   **Twilio:** For outbound voice calls and two-way SMS messaging in resupply.

@@ -1,15 +1,14 @@
 // GET /conversations — paginated conversation queue.
 //
-// Joins patients to surface decrypted firstName + lastName so the
-// queue can render a human-readable label without a second
-// round-trip per row. Sort key: `lastMessageAt DESC NULLS LAST,
-// createdAt DESC` so conversations with fresh activity surface
-// first; brand-new conversations (no messages yet) fall back to
-// createdAt order.
+// Joins patients to surface firstName + lastName so the queue can
+// render a human-readable label without a second round-trip per
+// row. Sort key: `lastMessageAt DESC NULLS LAST, createdAt DESC` so
+// conversations with fresh activity surface first; brand-new
+// conversations (no messages yet) fall back to createdAt order.
 //
 // Like the patient list, no audit row per page-flip — the
 // /conversations/:id detail view is the one that writes the audit
-// row, since that is where decrypted message bodies cross the wire.
+// row, since that is where message bodies cross the wire.
 
 import { Router, type IRouter } from "express";
 import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
@@ -18,7 +17,6 @@ import { z } from "zod";
 
 import {
   conversations,
-  decrypt,
   getDbPool,
   patients,
 } from "@workspace/resupply-db";
@@ -117,8 +115,8 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     .select({
       id: conversations.id,
       patientId: conversations.patientId,
-      patientFirstName: decrypt(patients.legalFirstName),
-      patientLastName: decrypt(patients.legalLastName),
+      patientFirstName: patients.legalFirstName,
+      patientLastName: patients.legalLastName,
       episodeId: conversations.episodeId,
       channel: conversations.channel,
       status: conversations.status,

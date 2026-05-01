@@ -1226,6 +1226,9 @@ importers:
       '@workspace/resupply-db':
         specifier: workspace:*
         version: link:../resupply-db
+      '@workspace/resupply-domain':
+        specifier: workspace:*
+        version: link:../resupply-domain
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../resupply-email
