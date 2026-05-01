@@ -10,6 +10,7 @@
     { "path": "./lib/resupply-contracts" },
     { "path": "./lib/resupply-domain" },
     { "path": "./lib/resupply-db" },
+    { "path": "./lib/resupply-secrets" },
     { "path": "./lib/resupply-audit" },
     { "path": "./lib/resupply-telecom" },
     { "path": "./lib/resupply-ai" },

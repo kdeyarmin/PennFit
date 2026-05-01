@@ -745,6 +745,9 @@ importers:
       '@workspace/resupply-reminders':
         specifier: workspace:*
         version: link:../../lib/resupply-reminders
+      '@workspace/resupply-secrets':
+        specifier: workspace:*
+        version: link:../../lib/resupply-secrets
       '@workspace/resupply-telecom':
         specifier: workspace:*
         version: link:../../lib/resupply-telecom
@@ -921,6 +924,9 @@ importers:
       '@workspace/resupply-reminders':
         specifier: workspace:*
         version: link:../../lib/resupply-reminders
+      '@workspace/resupply-secrets':
+        specifier: workspace:*
+        version: link:../../lib/resupply-secrets
       '@workspace/resupply-telecom':
         specifier: workspace:*
         version: link:../../lib/resupply-telecom
@@ -1061,6 +1067,9 @@ importers:
 
   lib/resupply-db:
     dependencies:
+      '@workspace/resupply-secrets':
+        specifier: workspace:*
+        version: link:../resupply-secrets
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
@@ -1121,6 +1130,9 @@ importers:
 
   lib/resupply-messaging:
     dependencies:
+      '@workspace/resupply-secrets':
+        specifier: workspace:*
+        version: link:../resupply-secrets
       zod:
         specifier: 'catalog:'
         version: 3.25.76
@@ -1162,6 +1174,15 @@ importers:
       '@types/pg':
         specifier: ^8.18.0
         version: 8.18.0
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jiti@2.6.1)(jsdom@25.0.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.3)
+
+  lib/resupply-secrets:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.3.5)(jiti@2.6.1)(jsdom@25.0.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.3)

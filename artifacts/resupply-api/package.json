@@ -21,6 +21,7 @@
     "@workspace/resupply-email": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
+    "@workspace/resupply-secrets": "workspace:*",
     "@workspace/resupply-telecom": "workspace:*",
     "cors": "^2",
     "drizzle-orm": "catalog:",

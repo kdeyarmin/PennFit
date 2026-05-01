@@ -14,30 +14,36 @@
  * don't fill the pg-boss retry queue with permanent failures (see
  * `jobs/reminders.ts`). Those vars are documented as optional in
  * the top-level README.
+ *
+ * Resupply secret keys (PHI encryption + the two HMAC keys) are
+ * validated through `@workspace/resupply-secrets`, which accepts
+ * either the consolidated `RESUPPLY_MASTER_KEY` (preferred) or all
+ * three legacy per-purpose env vars. The worker reads + writes
+ * encrypted PHI as part of every outbound reminder job; without
+ * a usable key the first job to touch PHI throws with a confusing
+ * mid-execution error.
  */
 
-const REQUIRED_ENV_VARS = [
-  "DATABASE_URL",
-  // The worker reads + writes encrypted PHI as part of every
-  // outbound reminder job. Without these keys the first job to
-  // touch PHI throws with a confusing mid-execution error.
-  "RESUPPLY_DATA_KEY",
-  "RESUPPLY_LINK_HMAC_KEY",
-  "RESUPPLY_PHONE_HMAC_KEY",
-] as const;
+import { diagnoseSecretConfig } from "@workspace/resupply-secrets";
+
+const REQUIRED_PLAIN_ENV_VARS = ["DATABASE_URL"] as const;
 
 export function assertRequiredEnv(): void {
   const missing: string[] = [];
-  for (const name of REQUIRED_ENV_VARS) {
+  for (const name of REQUIRED_PLAIN_ENV_VARS) {
     const value = process.env[name];
     if (value === undefined || value.trim() === "") {
       missing.push(name);
     }
   }
+  const secretProblems = diagnoseSecretConfig();
+
+  if (missing.length === 0 && secretProblems.length === 0) return;
+
+  const parts: string[] = [];
   if (missing.length > 0) {
-    throw new Error(
-      `resupply-worker: missing required environment variable(s): ${missing.join(", ")}. ` +
-        `See README.md for the full list.`,
-    );
+    parts.push(`missing required environment variable(s): ${missing.join(", ")}`);
   }
+  for (const p of secretProblems) parts.push(p);
+  throw new Error(`resupply-worker: ${parts.join("; ")}. See README.md for the full list.`);
 }

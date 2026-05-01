@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/resupply-messaging",
+  "name": "@workspace/resupply-secrets",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,6 @@
     "test:watch": "vitest",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json"
-  },
-  "dependencies": {
-    "@workspace/resupply-secrets": "workspace:*",
-    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

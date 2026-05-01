@@ -19,6 +19,11 @@
 //   when both are configured AND the two cross-cutting HMAC keys
 //   (phone, link) are set.
 
+import {
+  hasLinkHmacKey,
+  hasPhoneHmacKey,
+} from "@workspace/resupply-secrets";
+
 export interface SmsConfig {
   twilioAccountSid: string;
   twilioAuthToken: string;
@@ -50,10 +55,11 @@ export interface MessagingConfig {
   sms: SmsConfig;
   email: EmailConfig;
   /**
-   * HMAC key for phone-number lookups (separate from RESUPPLY_DATA_KEY).
-   * Reading the env here is informational; the actual hash routine in
-   * `@workspace/resupply-db` re-reads at call time so secret rotation
-   * doesn't require a process restart.
+   * Whether the phone-number-lookup HMAC key is sourceable (either
+   * the legacy `RESUPPLY_PHONE_HMAC_KEY` env var or a derivation from
+   * `RESUPPLY_MASTER_KEY` is available). Informational only; the hash
+   * routine in `@workspace/resupply-db` re-reads at call time so
+   * secret rotation doesn't require a process restart.
    */
   hasPhoneHmacKey: boolean;
   hasLinkHmacKey: boolean;
@@ -131,8 +137,8 @@ export function readMessagingConfigOrNull(
   const sms = readSmsConfigOrNull(env);
   const email = readEmailConfigOrNull(env);
   if (!sms || !email) return null;
-  if (!env.RESUPPLY_PHONE_HMAC_KEY) return null;
-  if (!env.RESUPPLY_LINK_HMAC_KEY) return null;
+  if (!hasPhoneHmacKey(env)) return null;
+  if (!hasLinkHmacKey(env)) return null;
   return {
     sms,
     email,
