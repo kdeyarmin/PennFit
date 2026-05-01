@@ -225,18 +225,6 @@ export interface AdminTeamMember {
   isSelf: boolean;
   createdAt: number;
   lastSignInAt: number | null;
-  /**
-   * Set if this user's email is also in the server-config env
-   * allowlist. When present, role-change and remove are both no-ops
-   * for effective access (env wins), so the UI should disable those
-   * actions and explain that env access takes precedence.
-   */
-  envOverride: AdminTeamRole | null;
-}
-
-export interface AdminTeamEnvRow {
-  email: string;
-  role: AdminTeamRole;
 }
 
 export interface AdminTeamPendingInvitation {
@@ -251,7 +239,6 @@ export interface AdminTeamResponse {
   role: AdminTeamRole;
   self: { email?: string; userId?: string };
   members: AdminTeamMember[];
-  envAllowlist: AdminTeamEnvRow[];
   pendingInvitations: AdminTeamPendingInvitation[];
 }
 
@@ -324,20 +311,20 @@ export const revokeAdminInvitation = (params: { invitationId: string }) =>
 // These helpers call the resupply-api admin endpoints at
 // `/resupply-api/admin/shop/customers/*` rather than `/api/admin/...`.
 // resupply-api owns the shop tables (shop_customers, shop_orders,
-// shop_subscriptions, shop_reviews, shop_abandoned_carts) and gates
-// requests on its own RESUPPLY_ADMIN_EMAILS allowlist (separate from
-// PENN_ADMIN_EMAILS that gates `/api/admin/*`).
+// shop_subscriptions, shop_reviews, shop_abandoned_carts) and runs its
+// own `requireAdmin` middleware (DB role on `auth.users.role`; the
+// initial admin is bootstrapped separately via `auth:bootstrap-admin`).
 //
 // We deliberately don't add these to the resupply-api OpenAPI spec —
 // no admin shop endpoint is in that spec today (see shop-orders,
 // shop-reviews, shop-inventory consumed via raw fetch from
 // resupply-dashboard). Keeping the convention consistent.
 //
-// Cross-API auth caveat: a user signed in to cpap-fitter as a
-// PENN_ADMIN_EMAILS member will only succeed on these calls if their
-// email is ALSO in RESUPPLY_ADMIN_EMAILS. The 403 we surface from
-// resupply-api becomes an AdminApiError(403) here and the calling page
-// renders an "Add this email to RESUPPLY_ADMIN_EMAILS" hint.
+// Cross-API auth caveat: an admin signed in to cpap-fitter must also
+// be granted admin/agent on the resupply-api side. The 403 we surface
+// from resupply-api becomes an AdminApiError(403) here and the calling
+// page renders a "grant this account admin access on the resupply API"
+// hint.
 
 async function resupplyAdminFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${base}/resupply-api${path}`, {

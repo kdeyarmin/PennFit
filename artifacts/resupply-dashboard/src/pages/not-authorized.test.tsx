@@ -1,26 +1,24 @@
 // Tests for the three failure-mode branches the dashboard funnels
 // into NotAuthorizedPage. Architect review flagged the lack of a
-// regression test for the 502 (Clerk upstream) → "transient" copy
-// path: a future refactor that breaks the reason mapping in the
-// caller could silently downgrade the messaging from "try again"
-// back to "you don't have access" — exactly the auth-flake
+// regression test for the 502 (auth-API upstream) → "transient"
+// copy path: a future refactor that breaks the reason mapping in
+// the caller could silently downgrade the messaging from "try
+// again" back to "you don't have access" — exactly the auth-flake
 // confusion the operational hardening was meant to fix.
 //
 // Render scope is intentionally narrow: this file asserts ONLY the
 // per-reason copy + interaction surface visible on the page itself.
-// The mapping FROM HTTP status TO `reason` lives in `lib/api-client`
-// (or its consumers); when those mapping helpers ship behind their
-// own export, they should grow tests in the same file as the
-// helper, not here.
+// The mapping FROM HTTP status TO `reason` lives in the consumers;
+// when those mapping helpers ship behind their own export, they
+// should grow tests in the same file as the helper, not here.
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { NotAuthorizedPage } from "./not-authorized";
 
-// Mock the identity shim. The page reads `email` and `signOut`
-// off useDashboardIdentity(); the underlying provider (Clerk vs
-// in-house) is invisible at this layer.
+// Mock the identity shim. The page reads `email` and `signOut` off
+// useDashboardIdentity().
 const signOut = vi.fn().mockResolvedValue(undefined);
 vi.mock("../lib/identity", () => ({
   useDashboardIdentity: () => ({

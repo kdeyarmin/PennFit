@@ -139,10 +139,6 @@ router.get("/admin/users", async (req, res) => {
     role: req.adminRole ?? "admin",
     self: { email: req.adminEmail, userId: req.adminUserId },
     members,
-    // Stage 5b retired the env-allowlist UI section. The vars
-    // (PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS) no longer drive
-    // access; bootstrap is via the auth:bootstrap-admin CLI.
-    envAllowlist: [] as Array<{ email: string; role: "admin" | "agent" }>,
     pendingInvitations,
   });
 });

@@ -104,7 +104,7 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
         accountSidConfigured: Boolean(env.TWILIO_ACCOUNT_SID),
         authTokenConfigured: Boolean(env.TWILIO_AUTH_TOKEN),
         messagingServiceConfigured: Boolean(env.TWILIO_MESSAGING_SERVICE_SID),
-        voicePhoneConfigured: Boolean(env.TWILIO_VOICE_PHONE_NUMBER),
+        voicePhoneConfigured: Boolean(env.TWILIO_PHONE_NUMBER),
       },
       stripe: {
         secretKeyConfigured: Boolean(env.STRIPE_SECRET_KEY),
