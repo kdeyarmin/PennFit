@@ -36,6 +36,10 @@ The application features a professional aesthetic with Penn's navy and gold bran
 
 A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema with encrypted PHI columns and `Clerk` for admin authentication. Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
 
+#### resupply-worker as a deployable artifact
+
+The pg-boss worker (`artifacts/resupply-worker`) is registered as a standalone `kind = "api"` artifact (proxy slot `/__resupply-worker-internal`, internal-only). Production runs an `esbuild` bundle (`pnpm --filter @workspace/resupply-worker run build` → `node dist/index.mjs`) instead of `tsx`, mirroring the api-server / resupply-api pattern. A minimal `node:http` server inside the worker exposes `/_internal/healthz` (matched both bare and prefixed with `/__resupply-worker-internal`, since the shared proxy does not rewrite paths). The endpoint returns 503 until pg-boss has bootstrapped its `pgboss_resupply` schema AND every job handler has registered, then flips to 200. The deploy gate uses this as `[services.production.health.startup]`, which prevents a half-initialized deploy from going live.
+
 ### Cash-Pay Shop & Customer Accounts
 
 A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Hosted Checkout`. `Stripe` is the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend handles `Stripe` integration for checkout sessions and webhooks. Signed-in customers can save shipping information, view saved card crumbs, and reorder past purchases. `Clerk` provides customer identity, linking to `Stripe` customer IDs. The shop supports "Subscribe & Save" for recurring purchases.
