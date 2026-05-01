@@ -1,14 +1,15 @@
--- 0001_rename_admin_audit_clerk_id — drop the last Clerk-era
--- column name from the cpap-fitter `admin_audit_log` table.
+-- 0001_normalize_admin_audit_id_column — finish normalising the
+-- admin id column on the cpap-fitter `admin_audit_log` table.
 --
--- The 0000 baseline created `admin_audit_log.admin_clerk_id`
--- back when admin identity came from Clerk. The fitter has since
+-- The 0000 baseline created a legacy admin id column back when
+-- admin identity came from an external SDK. The fitter has since
 -- moved fully to in-house auth (`@workspace/resupply-auth`); the
 -- value stored in this column is now an opaque admin user id, so
--- the legacy name is misleading. This migration retires it.
+-- the legacy name is misleading. This migration brings it in line
+-- with the JS naming.
 --
--- Touched columns:
---   * admin_audit_log.admin_clerk_id -> admin_user_id
+-- Touched columns (rename, no value change):
+--   * admin_audit_log   legacy id  ->  admin_user_id
 --
 -- The column is plain `text NOT NULL` with no FK and no index
 -- whose name embeds the column. Metadata-only rename; no table

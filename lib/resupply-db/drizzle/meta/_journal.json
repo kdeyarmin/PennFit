@@ -202,7 +202,7 @@
       "idx": 28,
       "version": "7",
       "when": 1810195200000,
-      "tag": "0026_rename_legacy_clerk_id_columns",
+      "tag": "0026_normalize_legacy_id_columns",
       "breakpoints": true
     }
   ]
