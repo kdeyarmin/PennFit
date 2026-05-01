@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent } from "../components/ui-shims";
@@ -33,11 +33,16 @@ export function AdminOrders() {
   const pageSize = 25;
 
   // Debounce search input by 300ms so we don't audit-log on every keystroke.
-  // (Search hits the audit table.)
-  if (q !== debouncedQ) {
-    // simple useEffect-less debounce via setTimeout in a microtask.
-    setTimeout(() => setDebouncedQ(q), 300);
-  }
+  // (Search hits the audit table — every fetch triggers an audit row.)
+  // Implemented via useEffect with a clearTimeout cleanup so we never have
+  // multiple in-flight timers and never schedule from inside a render
+  // (the previous implementation called setTimeout directly in the
+  // function body, which scheduled a new timer on every re-render and
+  // caused noisy stale state updates plus duplicate backend calls).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-orders", { q: debouncedQ, status, page, pageSize }],

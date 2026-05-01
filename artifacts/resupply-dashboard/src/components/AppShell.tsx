@@ -106,6 +106,11 @@ const NAV_LINKS: ReadonlyArray<{
     matchPrefix: "/admin/pennpaps/orders",
   },
   {
+    href: "/admin/pennpaps/analytics",
+    label: "PennPaps Analytics",
+    matchPrefix: "/admin/pennpaps/analytics",
+  },
+  {
     href: "/admin/pennpaps/reminders",
     label: "PennPaps Reminders",
     matchPrefix: "/admin/pennpaps/reminders",

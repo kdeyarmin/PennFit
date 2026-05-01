@@ -196,3 +196,37 @@ export interface SendDueRemindersResponse {
 
 export const sendDueReminders = () =>
   adminPost<SendDueRemindersResponse>("/admin/reminders/send-due");
+
+/* ------------------------------ Analytics -------------------------------- */
+
+export interface AdminStatusBreakdown {
+  status: "pending" | "sent" | "failed" | "skipped";
+  count: number;
+}
+
+export interface AdminMaskBreakdown {
+  maskName: string;
+  maskManufacturer: string;
+  count: number;
+}
+
+export interface AdminFunnelStep {
+  step: string;
+  count: number;
+}
+
+export interface AdminOrdersByDay {
+  day: string;
+  count: number;
+}
+
+export interface AdminAnalyticsResponse {
+  totalOrders: number;
+  statusBreakdown: AdminStatusBreakdown[];
+  topMasks: AdminMaskBreakdown[];
+  funnel: AdminFunnelStep[];
+  ordersByDay: AdminOrdersByDay[];
+}
+
+export const fetchAdminAnalytics = () =>
+  adminFetch<AdminAnalyticsResponse>("/admin/analytics");

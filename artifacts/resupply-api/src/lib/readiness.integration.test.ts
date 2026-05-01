@@ -96,9 +96,28 @@ async function checkCreateDatabasePerm(): Promise<void> {
 }
 await checkCreateDatabasePerm();
 
+// Mirror the AUTH_PASSWORD_PEPPER decode rules in lib/resupply-auth/src/env.ts
+// so a misconfigured-but-set pepper skips the suite cleanly instead of crashing
+// the worker during dynamic import of `../app.js`. The skip contract documented
+// at the top of this file ("skips when AUTH_PASSWORD_PEPPER is unset (auth
+// refuses to load)") covers both "unset" and "set-but-invalid" — auth refuses
+// to load in both cases. The previous guard only handled "unset", which let an
+// invalid pepper (e.g. an env that decodes to <32 bytes) propagate as an
+// unhandled exception inside the test harness.
+function pepperDecodesToAtLeast32Bytes(raw: string): boolean {
+  try {
+    const cleaned = raw.replace(/\s+/g, "");
+    return Buffer.from(cleaned, "base64").length >= 32;
+  } catch {
+    return false;
+  }
+}
+
 const skipReason = (() => {
   if (!baseDbUrl) return "DATABASE_URL is not set";
   if (!authPepper) return "AUTH_PASSWORD_PEPPER is not set";
+  if (!pepperDecodesToAtLeast32Bytes(authPepper))
+    return "AUTH_PASSWORD_PEPPER is set but decodes to fewer than 32 bytes (auth would refuse to load)";
   if (permissionCheckErr) return `permission probe failed: ${permissionCheckErr}`;
   if (!canCreateDatabase) return "connecting role lacks CREATE DATABASE";
   return null;

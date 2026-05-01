@@ -37,6 +37,7 @@ import { AdminOrders as PennpapsOrdersPage } from "./pages/pennpaps-orders";
 import { AdminOrderDetail as PennpapsOrderDetailPage } from "./pages/pennpaps-order-detail";
 import { AdminAuditLog as PennpapsAuditPage } from "./pages/pennpaps-audit";
 import { AdminReminders as PennpapsRemindersPage } from "./pages/pennpaps-reminders";
+import { AdminAnalytics as PennpapsAnalyticsPage } from "./pages/pennpaps-analytics";
 
 // Resupply Admin Console.
 //
@@ -146,6 +147,7 @@ function AdminConsole() {
         <Route path="/admin/pennpaps/orders/:id" component={PennpapsOrderDetailPage} />
         <Route path="/admin/pennpaps/audit" component={PennpapsAuditPage} />
         <Route path="/admin/pennpaps/reminders" component={PennpapsRemindersPage} />
+        <Route path="/admin/pennpaps/analytics" component={PennpapsAnalyticsPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>
