@@ -69,7 +69,6 @@ commit real secrets.
 | Variable | `api-server` | `resupply-api` | `resupply-worker` | Notes |
 | --- | :---: | :---: | :---: | --- |
 | `PORT` | ✅ | ✅ | — | HTTP listen port. |
-| `CLERK_SECRET_KEY` | ✅ | ✅ | — | Clerk backend auth. |
 | `DATABASE_URL` | — | ✅ | ✅ | Postgres connection string. `pgcrypto` must be enabled. |
 | **Resupply key material** (one of the two options below) | — | ✅ | ✅ | See [Resupply key material](#resupply-key-material). |
 
@@ -122,9 +121,11 @@ Pick **one** of these configurations:
 | `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS` | `resupply-api` | Comma-separated allowlists for role-gated admin endpoints. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID` | `resupply-api` | SMS + voice. Outbound SMS / voice routes return 503 when missing. |
 | `OPENAI_API_KEY` | `resupply-api` | Conversation AI. AI features disable when missing. |
-| `STRIPE_SECRET_KEY` | `resupply-api` | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when missing. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SIGNING_SECRET`, `STRIPE_PUBLISHABLE_KEY` | `resupply-api` | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when the secret key is missing; webhook verification fails closed without the signing secret. |
+| `RESUPPLY_PUBLIC_BASE_URL` | `resupply-api` | Public origin used to build Stripe Checkout success/cancel redirects. Falls back to `REPLIT_DOMAINS` / `REPLIT_DEV_DOMAIN` when unset. |
+| `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL`, `PENN_ADMIN_PUBLIC_BASE_URL` | `resupply-api`, `api-server` | Public origins of the admin consoles, used to build links into the dashboards from admin-only emails / `/admin/system-info` responses. |
+| `RESUPPLY_PRACTICE_NAME` | `resupply-api`, `resupply-worker` | Practice display name rendered in reminder/voice/messaging copy. Defaults to `PennPaps`. |
 | `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS` | `resupply-api`, `resupply-worker` | Object-storage paths for prescription attachments. The implementation uses `@google-cloud/storage`; in production this points at Replit Object Storage's GCS-compatible API, but any GCS-compatible endpoint works. |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Vite apps | Browser-side Clerk publishable key. |
 | `VITE_ENABLE_DEMO`, `VITE_RESUPPLY_CONTACT_EMAIL` | Vite apps | UI feature flags / display values. |
 | `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |
 | `REPL_ID`, `REPLIT_DEV_DOMAIN`, `REPLIT_DOMAINS` | All services | Set automatically on Replit; usually leave blank locally. |

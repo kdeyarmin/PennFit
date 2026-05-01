@@ -21,7 +21,6 @@ export interface OpsStatus {
     twilioVoice: boolean;
     twilioSms: boolean;
     stripe: boolean;
-    clerk: boolean;
     objectStorage: boolean;
   };
   dispatchers: {

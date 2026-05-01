@@ -18,19 +18,14 @@ once per environment.
 fails the boot if any of these are missing — but the values still
 need to be **correct**, not just present.
 
-### Auth (Clerk)
+### Auth (in-house)
 
-- [ ] `CLERK_SECRET_KEY` — backend secret key for the SAME Clerk app
-      the publishable key on every frontend points at. A mismatched
-      app will pass `getAuth(req).userId` but fail
-      `clerkClient.users.getUser(userId)` with "user not found".
-- [ ] `VITE_CLERK_PUBLISHABLE_KEY` — set on the cpap-fitter and
-      resupply-dashboard frontends.
-- [ ] **Clerk dashboard → Sessions → Customize session token** — add
-      `email` (or `primary_email_address`) to the JWT claims so the
-      `requireAdmin` middleware can read the email from the session
-      JWT directly. With this set, the dashboard survives Clerk
-      Backend API outages without locking admins out.
+- [ ] `AUTH_PASSWORD_PEPPER` — 32+ random bytes (base64). Mixed into
+      bcrypt before hashing customer passwords. Treat as long-lived;
+      rotating it invalidates every stored hash.
+- [ ] `AUTH_SESSION_TTL_DAYS` (default 14), `AUTH_EMAIL_TOKEN_TTL_HOURS`
+      (default 24) — session and verify/reset link lifetimes. Defaults
+      are fine for production unless a security review says otherwise.
 
 ### Database
 
@@ -45,11 +40,16 @@ need to be **correct**, not just present.
 
 ### PHI encryption
 
-- [ ] `RESUPPLY_PHI_ENCRYPTION_KEY` — never rotated without a
-      coordinated re-encryption pass; lost = unrecoverable PHI.
-- [ ] `RESUPPLY_PHONE_HMAC_KEY` — must be DIFFERENT from
-      `RESUPPLY_PHI_ENCRYPTION_KEY` (separate compromise paths per
-      ADR 009).
+- [ ] `RESUPPLY_MASTER_KEY` — single 32+ byte secret; the resupply
+      stack HKDF-derives bulk PHI encryption (pgcrypto), email link
+      HMAC, and phone-lookup HMAC subkeys from it with distinct
+      domain-separated `info` labels. Lost = unrecoverable PHI;
+      rotation requires the `rotate-to-master-key` script.
+- [ ] (Legacy) `RESUPPLY_DATA_KEY`, `RESUPPLY_LINK_HMAC_KEY`,
+      `RESUPPLY_PHONE_HMAC_KEY` — older deployments may still set
+      these explicitly; each takes precedence over the master-derived
+      value for that purpose, so encrypted PHI written under a legacy
+      key keeps decrypting after `RESUPPLY_MASTER_KEY` is added.
 
 ### Admin allowlist
 
@@ -63,16 +63,19 @@ need to be **correct**, not just present.
 ### Vendors (graceful-degrade if missing — dashboard `/admin/operations`
 shows green/red dots per vendor)
 
-- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` — cash-pay shop
-      checkout, refunds, subscription mirror.
+- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SIGNING_SECRET` — cash-pay
+      shop checkout, refunds, subscription mirror. Webhook signature
+      verification fails closed without the signing secret.
 - [ ] `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` + `SENDGRID_FROM_NAME` —
       order receipts, reminder emails, cart-abandonment, review
       requests.
+- [ ] `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` — verifies SendGrid event
+      webhook signatures so bounce / spam-report events are trusted.
 - [ ] `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` +
       `TWILIO_MESSAGING_SERVICE_SID` — outbound SMS.
-- [ ] `TWILIO_VOICE_PHONE_NUMBER` — outbound voice calls.
-- [ ] `ANTHROPIC_API_KEY` — Claude conversation agent.
-- [ ] `OPENAI_API_KEY` — voice realtime transcription.
+- [ ] `TWILIO_PHONE_NUMBER` — outbound voice calls and SMS fallback
+      when no messaging service is configured.
+- [ ] `OPENAI_API_KEY` — conversation AI + voice realtime transcription.
 - [ ] `PRIVATE_OBJECT_DIR` — GCS bucket prefix for prescription
       attachments.
 
@@ -82,7 +85,12 @@ shows green/red dots per vendor)
       review request, order tracking).
 - [ ] `RESUPPLY_VOICE_PUBLIC_BASE_URL` — Twilio webhook target.
 - [ ] `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL` — admin-team invite
-      redirect URL (the link in the Clerk-sent email).
+      redirect URL (the link in admin invitation emails).
+- [ ] `PENN_ADMIN_PUBLIC_BASE_URL` — public origin of the PennPaps
+      admin console; used to build links in admin-only emails.
+- [ ] `RESUPPLY_PUBLIC_BASE_URL` — public origin used for Stripe
+      Checkout success/cancel redirects. Falls back to
+      `REPLIT_DOMAINS` / `REPLIT_DEV_DOMAIN` when unset.
 
 ---
 

@@ -15,10 +15,7 @@
  * documented as optional in the top-level README.
  */
 
-const REQUIRED_ENV_VARS = [
-  "PORT",
-  "CLERK_SECRET_KEY",
-] as const;
+const REQUIRED_ENV_VARS = ["PORT"] as const;
 
 export function assertRequiredEnv(): void {
   const missing: string[] = [];

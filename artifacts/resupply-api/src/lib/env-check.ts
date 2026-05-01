@@ -26,11 +26,7 @@
 
 import { diagnoseSecretConfig } from "@workspace/resupply-secrets";
 
-const REQUIRED_PLAIN_ENV_VARS = [
-  "PORT",
-  "DATABASE_URL",
-  "CLERK_SECRET_KEY",
-] as const;
+const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
 
 export function assertRequiredEnv(): void {
   const missing: string[] = [];

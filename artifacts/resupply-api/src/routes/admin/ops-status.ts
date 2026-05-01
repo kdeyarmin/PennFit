@@ -2,7 +2,7 @@
 //
 // One round-trip that returns the operator-facing health signals the
 // /admin/operations page renders:
-//   * vendor connectivity flags (sendgrid, twilio, stripe, clerk)
+//   * vendor connectivity flags (sendgrid, twilio, stripe, object storage)
 //   * dispatcher-eligible row counts (so admins know whether running
 //     a dispatcher will actually do anything)
 //   * team counts (active admins, active agents, pending invites)
@@ -49,7 +49,6 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
         process.env.TWILIO_MESSAGING_SERVICE_SID,
     ),
     stripe: Boolean(process.env.STRIPE_SECRET_KEY),
-    clerk: Boolean(process.env.CLERK_SECRET_KEY),
     objectStorage: Boolean(process.env.PRIVATE_OBJECT_DIR),
   };
 
