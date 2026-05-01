@@ -2,7 +2,7 @@ modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
 router = "application"
-deploymentTarget = "autoscale"
+deploymentTarget = "gce"
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
@@ -40,10 +40,6 @@ author = "agent"
 task = "shell.exec"
 args = "pnpm install --frozen-lockfile && PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
 
-[workflows.workflow.metadata]
-outputType = "service"
-restartOn = { success = false, failure = true, updateConfig = true }
-
 [[workflows.workflow]]
 name = "Resupply API"
 author = "agent"
@@ -51,9 +47,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=8083 BASE_PATH=/resupply-api pnpm --filter @workspace/resupply-api run dev"
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [[workflows.workflow]]
 name = "Resupply Dashboard"
@@ -63,10 +56,6 @@ author = "agent"
 task = "shell.exec"
 args = "PORT=19334 BASE_PATH=/resupply/ pnpm --filter @workspace/resupply-dashboard run dev"
 
-[workflows.workflow.metadata]
-outputType = "service"
-restartOn = { success = false, failure = true, updateConfig = true }
-
 [[workflows.workflow]]
 name = "Resupply Worker"
 author = "agent"
@@ -75,9 +64,6 @@ author = "agent"
 task = "shell.exec"
 args = "pnpm --filter @workspace/resupply-worker run dev"
 
-[workflows.workflow.metadata]
-outputType = "console"
-
 [[workflows.workflow]]
 name = "resupply-check"
 author = "agent"
@@ -85,9 +71,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bash scripts/check-resupply-architecture.sh --self-test && bash scripts/check-resupply-architecture.sh && bash scripts/check-codegen.sh --self-test && bash scripts/check-codegen.sh && bash scripts/git-hooks/lib-staged-snapshot.test && pnpm run lint:resupply && pnpm -r --filter '@workspace/resupply-*' run typecheck && pnpm -r --filter '@workspace/resupply-*' run test"
-
-[workflows.workflow.metadata]
-isValidation = true
 
 [agent]
 stack = "PNPM_WORKSPACE"
