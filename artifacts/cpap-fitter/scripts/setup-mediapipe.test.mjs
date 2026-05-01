@@ -5,7 +5,9 @@ import { downloadModelWithRetry } from "./setup-mediapipe.mjs";
 
 test("downloadModelWithRetry retries failures and eventually succeeds", async () => {
   const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
   let calls = 0;
+  console.warn = () => {};
 
   globalThis.fetch = async () => {
     calls += 1;
@@ -24,12 +26,15 @@ test("downloadModelWithRetry retries failures and eventually succeeds", async ()
     assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
   }
 });
 
 test("downloadModelWithRetry throws after exhausting retries", async () => {
   const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
   let calls = 0;
+  console.warn = () => {};
 
   globalThis.fetch = async () => {
     calls += 1;
@@ -41,11 +46,14 @@ test("downloadModelWithRetry throws after exhausting retries", async () => {
     assert.equal(calls, 2);
   } finally {
     globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
   }
 });
 
 test("downloadModelWithRetry rejects undersized payload", async () => {
   const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  console.warn = () => {};
 
   globalThis.fetch = async () => ({
     ok: true,
@@ -59,5 +67,6 @@ test("downloadModelWithRetry rejects undersized payload", async () => {
     );
   } finally {
     globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
   }
 });
