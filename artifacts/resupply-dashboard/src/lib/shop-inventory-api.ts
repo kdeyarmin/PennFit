@@ -1,18 +1,16 @@
 // Hand-rolled fetch wrappers for the shop inventory admin endpoints.
 //
-// Mirrors `shop-reviews-api.ts` exactly (same auth bridge pattern,
-// same hand-rolled choice rationale): the v1 inventory endpoint is
-// not in the OpenAPI spec yet because the surface is still tiny
-// (one PATCH against Stripe metadata). We list products via the
-// PUBLIC catalog endpoint — there is no admin-only "list shop
-// products" endpoint and there doesn't need to be: the admin sees
-// the same SKUs the storefront does, plus the live `stockCount`
-// projection that already drops out of the public response.
+// Mirrors `shop-reviews-api.ts` exactly (same hand-rolled choice
+// rationale): the v1 inventory endpoint is not in the OpenAPI spec
+// yet because the surface is still tiny (one PATCH against Stripe
+// metadata). We list products via the PUBLIC catalog endpoint —
+// there is no admin-only "list shop products" endpoint and there
+// doesn't need to be: the admin sees the same SKUs the storefront
+// does, plus the live `stockCount` projection that already drops
+// out of the public response.
 //
-// Auth bridge: same session → Authorization header bridge as
-// shop-reviews-api.ts. The list call is technically public, but
-// sending the bearer token on it is a no-op (the public endpoint
-// doesn't read it), so we do it for free symmetry.
+// Auth: the browser sends the `pf_session` cookie automatically on
+// same-origin requests, so no per-call auth header is needed.
 
 // Subset of `ShopProductView` from products-meta.ts that the
 // inventory editor actually renders. Kept hand-typed (vs imported

@@ -81,8 +81,23 @@ describe("NotAuthorizedPage", () => {
       expect(signOut).toHaveBeenCalledTimes(1);
       // The shim's signOut is provider-agnostic and takes no args.
       // Redirect to /sign-in is handled in the component via
-      // window.location.assign after the promise resolves.
+      // wouter navigation after the promise resolves.
       expect(signOut.mock.calls[0]).toEqual([]);
+    });
+
+
+    it("ignores repeated sign-out clicks while sign-out is in-flight", () => {
+      signOut.mockImplementationOnce(
+        () => new Promise<void>(() => undefined),
+      );
+      render(<NotAuthorizedPage reason="not-authorized" />);
+
+      const button = screen.getByRole("button", { name: /sign out/i });
+      fireEvent.click(button);
+      fireEvent.click(button);
+
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(button.getAttribute("disabled")).not.toBeNull();
     });
   });
 
@@ -143,17 +158,16 @@ describe("NotAuthorizedPage", () => {
     });
 
     it("Try again button is wired to a click handler", () => {
-      // We don't assert that window.location.reload was actually
-      // called: jsdom's `window.location` is non-configurable and
-      // the matrix of replace/redefine workarounds varies across
-      // jsdom versions. The render assertion above already proves
-      // the button exists with the correct role+label; here we
-      // confirm clicking it does not throw (jsdom's reload is a
-      // no-op stub, so a successful click means the inline handler
-      // resolved the function reference correctly).
       render(<NotAuthorizedPage reason="transient" />);
       const button = screen.getByRole("button", { name: /try again/i });
+
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
       expect(() => fireEvent.click(button)).not.toThrow();
+
+      consoleError.mockRestore();
     });
   });
 

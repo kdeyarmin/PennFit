@@ -28,9 +28,10 @@ export default defineConfig({
   base: basePath ?? "/",
   plugins: [
     react(),
-    // optimize:false prevents lightningcss from reordering @layer
-    // imports in production builds. Cheap insurance against any
-    // future @layer-using third-party widget.
+    // optimize:false prevents lightningcss from reordering @layer imports
+    // in production builds. We previously needed this to keep third-party
+    // @layer-using widgets intact; we keep it on as cheap insurance
+    // against any future @layer-using third-party widget.
     tailwindcss({ optimize: false }),
     runtimeErrorOverlay(),
     ...(process.env.NODE_ENV !== "production" &&

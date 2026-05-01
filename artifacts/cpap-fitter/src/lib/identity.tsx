@@ -1,12 +1,9 @@
-// Shop identity shim. Stage 5a retired the kill switch; Stage 5c
-// retired the Clerk implementation. The hook now reads from the
-// in-house /api/auth/me probe via the React Query hook from
-// @workspace/resupply-auth-react.
+// Shop identity shim. Reads from the in-house /api/auth/me probe
+// via the React Query hook from @workspace/resupply-auth-react.
 //
-// Components that previously called Clerk's `useUser` /
-// `useClerk` use `useShopIdentity()` here. Replacements for
-// Clerk's `<Show when="signed-in">` / `<Show when="signed-out">`
-// live as `<SignedIn>` / `<SignedOut>` below.
+// Use `useShopIdentity()` to read the current customer's identity
+// state. Use `<SignedIn>` / `<SignedOut>` to render branches based
+// on whether a session is present.
 
 import type * as React from "react";
 

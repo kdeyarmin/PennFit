@@ -6,8 +6,10 @@
 //   * `authHooks` — React Query hooks (useSession, useSignIn, …).
 //
 // Imported by:
-//   * `lib/identity.tsx` — the shared identity hook surface.
-//   * The in-house sign-in / sign-up / forgot / reset / verify pages.
+//   * `lib/identity.ts` — the identity shim that exposes session
+//     state to the rest of the SPA.
+//   * The in-house sign-in / sign-up / forgot / reset / verify
+//     pages.
 
 import {
   createAuthClient,

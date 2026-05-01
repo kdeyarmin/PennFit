@@ -7,9 +7,8 @@
 //                from /shop/cart lands back on /shop/cart afterwards
 //                instead of the admin dashboard.
 //
-// The dropdown is a vendor-agnostic implementation that calls the
-// identity shim's signOut() (see `@/lib/identity`). It does not
-// depend on any third-party auth widget.
+// The dropdown calls the identity shim's signOut() which clears the
+// in-house pf_session cookie and resets the React Query cache.
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";

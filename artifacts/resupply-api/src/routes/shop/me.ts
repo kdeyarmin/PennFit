@@ -34,9 +34,9 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
     return;
   }
 
-  // Read the email + display name attached by `attachSignedIn`
-  // from auth.users. Both fields degrade to null on lookup failure
-  // rather than blowing up /shop/me.
+  // Pull the email + display name from the request — populated by
+  // requireSignedIn / attachSignedIn from auth.users. Helper degrades
+  // to null on lookup failure rather than blowing up /shop/me.
   const { email, displayName } = await readCustomerProfile(req);
 
   const row = await ensureShopCustomerRow({

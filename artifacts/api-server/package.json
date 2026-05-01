@@ -15,6 +15,7 @@
     "@workspace/db": "workspace:*",
     "@workspace/resupply-auth": "workspace:*",
     "@workspace/resupply-email": "workspace:*",
+    "argon2": "^0.43.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",

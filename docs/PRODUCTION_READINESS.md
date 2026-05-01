@@ -20,10 +20,15 @@ need to be **correct**, not just present.
 
 ### Auth (in-house)
 
-- [ ] `AUTH_PASSWORD_PEPPER` — 32+ random bytes (base64). Mixed into
-      argon2id when hashing customer passwords; bcrypt is only the
-      legacy Clerk import path. Treat as long-lived; rotating it
-      invalidates every stored hash.
+- [ ] `auth.users` table has at least one row with role `admin` and
+      a verified email. Seed the first admin against a fresh DB
+      with `pnpm --filter @workspace/scripts auth:bootstrap-admin
+      --email=<addr> --role=admin`.
+- [ ] `AUTH_PASSWORD_PEPPER` — 32+ random bytes (base64-encoded;
+      `openssl rand -base64 48`). Mixed into argon2id when hashing
+      customer passwords; bcrypt is only the legacy Clerk import path.
+      Without it password hashing refuses to boot in production.
+      Treat as long-lived; rotating it invalidates every stored hash.
 - [ ] `AUTH_SESSION_TTL_DAYS` (default 14), `AUTH_EMAIL_TOKEN_TTL_HOURS`
       (default 24) — session and verify/reset link lifetimes. Defaults
       are fine for production unless a security review says otherwise.
@@ -136,8 +141,8 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
 - [ ] Pino logs route to a long-retention sink (Datadog, CloudWatch,
       Logflare, etc).
 - [ ] Alert on:
-  - `event=resupply_admin_clerk_lookup_failed` (Clerk Backend API
-    health)
+  - `event=resupply_admin_in_house_lookup_failed` (in-house auth
+    lookup health — see requireAdmin)
   - `event=stripe_refund_failed`
   - `event=sms_status_update_failed`
   - any `level=fatal` line (unhandled exception, pgcrypto missing,
@@ -172,8 +177,8 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
 
 - [ ] `GET /resupply-api/healthz` returns 200.
 - [ ] `GET /resupply-api/readyz` returns 200 (preflight succeeded).
-- [ ] An invited admin can sign up via Clerk magic link, sign in,
-      and reach `/admin` with their assigned role.
+- [ ] An invited admin can accept their email invitation, set a
+      password, sign in, and reach `/admin` with their assigned role.
 - [ ] An out-of-allowlist user signing in gets the
       "not authorized" page (not the "transient" one).
 - [ ] The `/admin/operations` page shows GREEN dots for every

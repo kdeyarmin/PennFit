@@ -1,4 +1,7 @@
 // Hand-rolled fetch wrappers for the operations center page.
+//
+// Auth flows over the `pf_session` cookie, sent automatically by
+// the browser on same-origin requests.
 
 export interface OpsStatus {
   vendors: {

@@ -1,8 +1,9 @@
 // Hand-rolled CSV download helper for the audit log.
 //
 // We can't use the OpenAPI codegen client here because the export
-// endpoint streams `text/csv` rather than JSON. Auth travels via the
-// same-origin `pf_session` cookie set by /resupply-api/auth/sign-in.
+// endpoint streams `text/csv` rather than JSON. Auth flows over
+// the `pf_session` cookie, sent automatically by the browser on
+// same-origin requests.
 
 export interface AuditExportFilters {
   action?: string;

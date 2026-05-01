@@ -1,7 +1,6 @@
 // requireAdmin — gate for the PennPaps admin API.
 //
-// Stage 5a — Clerk fall-through retired. The middleware now
-// resolves the session strictly via the in-house pf_session
+// The middleware resolves the session via the in-house pf_session
 // cookie. `auth.users.role` is authoritative: 'admin' or 'agent'
 // passes; 'customer' is rejected as 401; everything else
 // (locked / revoked / unknown) is rejected as 401.
@@ -13,17 +12,10 @@
 //     to `admin` everywhere EXCEPT routes that explicitly opt in
 //     to admin-only via `requireAdminOnly`.
 //
-// First-admin bootstrap: there is no env-var allowlist anymore.
-// Use `pnpm --filter @workspace/scripts auth:bootstrap-admin
+// First-admin bootstrap: there is no env-var allowlist. Use
+// `pnpm --filter @workspace/scripts auth:bootstrap-admin
 // --email=<addr> --role=admin` to seed the very first admin
 // against a fresh DB.
-//
-// Helpers (`readPennRole`, `getEnvAllowlists`, etc.) are
-// preserved on the module's public surface for the legacy
-// `routes/admin-users.ts` team-management endpoints, which still
-// read Clerk publicMetadata. Stage 5b retires those endpoints
-// (they get rewritten against `auth.users` directly), at which
-// point the helpers retire too.
 
 import type { Request, Response, NextFunction } from "express";
 
@@ -122,7 +114,7 @@ export async function requireAdminOnly(
 }
 
 // Stage 5b retired the legacy `readPennRole` / `getEnvAllowlists`
-// / `PENN_ROLE_METADATA_KEY` helpers along with the Clerk-driven
+// / `PENN_ROLE_METADATA_KEY` helpers along with the legacy
 // admin-users.ts route. Identity now lives entirely on
 // `auth.users.role`; PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS env
 // vars are no longer consulted by the middleware. Bootstrap a

@@ -7,9 +7,8 @@
 // surface grows; for the v1 admin queue this thin wrapper avoids a
 // codegen cycle for every backend tweak.
 //
-// Auth: the `pf_session` cookie set by /resupply-api/auth/sign-in
-// is sent automatically on same-origin requests, so these wrappers
-// don't need to attach an Authorization header.
+// Auth: the browser sends the `pf_session` cookie automatically on
+// same-origin requests, so no per-call auth header is needed.
 
 export interface AbandonedCartRow {
   id: string;

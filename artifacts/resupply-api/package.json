@@ -23,6 +23,7 @@
     "@workspace/resupply-reminders": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",
     "@workspace/resupply-telecom": "workspace:*",
+    "argon2": "^0.43.0",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",

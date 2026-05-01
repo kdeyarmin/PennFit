@@ -90,12 +90,11 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function AccountPage() {
   useDocumentTitle("My account");
-  // We render an inline sign-in prompt for signed-out visitors
-  // instead of <Redirect to="/sign-in?…">. Mirroring the
-  // /shop/orders pattern (inline CTA + ?redirect=/account
-  // round-trip) is more graceful UX — the customer sees *why*
-  // they're being asked to sign in instead of a jarring
-  // auto-bounce.
+  // We render an inline sign-in prompt for signed-out visitors instead
+  // of <Redirect to="/sign-in?…">. Mirroring the /shop/orders pattern
+  // (inline CTA + ?redirect=/account round-trip) is more graceful UX:
+  // the customer sees *why* they're being asked to sign in instead of
+  // a jarring auto-bounce.
   return (
     <SignedIn fallback={<SignedOutAccountPrompt />}>
       <AccountInner />

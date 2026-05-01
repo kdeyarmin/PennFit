@@ -20,11 +20,9 @@ this app — no third-party identity vendor in the loop. See
 - `readAuthEnv()` — reads and validates `AUTH_PASSWORD_PEPPER`,
   `AUTH_SESSION_TTL_DAYS` (default 14), and
   `AUTH_EMAIL_TOKEN_TTL_HOURS` (default 24). Throws if the pepper is
-  missing or shorter than 32 bytes.
-
-The legacy `AUTH_PROVIDER` env var is no longer read; `readAuthEnv`
-silently ignores it so deploys that still set `AUTH_PROVIDER=clerk`
-or `AUTH_PROVIDER=dual` from the migration era boot cleanly.
+  missing or shorter than 32 bytes. Accepts and ignores legacy
+  `AUTH_PROVIDER` env values for back-compat with deploys that still
+  set them.
 
 ## Why a separate package
 

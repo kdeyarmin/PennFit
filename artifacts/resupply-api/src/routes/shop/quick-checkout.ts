@@ -119,8 +119,9 @@ router.post(
 
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
-    // Resolve email + display name for Stripe Customer creation,
-    // attached by `requireSignedIn` from auth.users.
+    // Resolve email + display name for Stripe Customer creation.
+    // Sourced from req.shopCustomerEmail / req.shopCustomerDisplayName,
+    // populated by requireSignedIn from auth.users.
     const { email, displayName } = await readCustomerProfile(req);
 
     const stripe = getStripeClient(config);

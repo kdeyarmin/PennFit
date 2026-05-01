@@ -345,7 +345,11 @@ export async function submitReview(
   };
   const res = await fetch(
     `/resupply-api/shop/products/${encodeURIComponent(productId)}/reviews`,
-    { method: "POST", headers, body: JSON.stringify(payload) },
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    },
   );
   if (res.status === 409) return { ok: false, alreadyReviewed: true };
   if (!res.ok) {
@@ -369,7 +373,11 @@ export async function updateMyReview(
   };
   const res = await fetch(
     `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
-    { method: "PATCH", headers, body: JSON.stringify(payload) },
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(payload),
+    },
   );
   if (!res.ok) throw new Error(`Failed to update review (${res.status})`);
   return (await res.json()) as MyReview;

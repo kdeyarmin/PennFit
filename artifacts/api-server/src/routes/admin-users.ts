@@ -5,14 +5,6 @@
  * from inside the cpap-fitter admin console — no engineer / env-
  * var change / restart required for routine staff turnover.
  *
- * Stage 5b — Clerk-Invitations API replaced with the in-house
- * auth flow:
- *   * GET    /admin/users
- *   * POST   /admin/users/invite
- *   * PATCH  /admin/users/:userId/role
- *   * DELETE /admin/users/:userId
- *   * DELETE /admin/users/invitations/:invId
- *
  * The roster lives in `auth.users` directly — there's no Penn-
  * specific admin_users table (that's a Resupply concept).
  * Pending invitations are auth.users rows with status='invited'

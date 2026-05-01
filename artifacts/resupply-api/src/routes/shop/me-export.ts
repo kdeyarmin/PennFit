@@ -1,6 +1,6 @@
 // /shop/me/export — customer self-service data export.
 //
-// Returns every cash-pay datum we hold for the calling user as
+// Returns every cash-pay datum we hold for the calling customer as
 // a single JSON document, suitable for download. Surfaces:
 //   * profile (display name + email + saved address)
 //   * communication preferences
@@ -14,8 +14,8 @@
 //   * No PHI on this surface — the cash-pay shop has no PHI per the
 //     project's design split (PHI lives in the resupply.* schema's
 //     `patients` table, which is keyed by PACware patient id, not by
-//     auth.users id). This export is therefore complete coverage
-//     for the consumer-side data we hold.
+//     customer id). This export is therefore complete coverage for
+//     the consumer-side data we hold.
 //   * Saved card crumbs are returned (brand + last4 + exp month/year)
 //     since those are already stored locally for display; full PAN /
 //     CVC have never been in our possession (Stripe Hosted Checkout
