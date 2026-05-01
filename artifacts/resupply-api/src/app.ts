@@ -137,7 +137,9 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// In-house /auth/* routes. The router is unconditionally mounted.
+// In-house /auth/* routes. The router is unconditionally mounted;
+// any required-env misconfig throws here so it surfaces at boot
+// rather than at the first sign-in attempt.
 const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",
@@ -156,7 +158,7 @@ logger.info(
 // `allowSignUp: true`: the cash-pay storefront accepts customer
 // sign-ups (default role `customer`), while the staff dashboard
 // must remain invite-only (`allowSignUp: false`). All other deps
-// (DB pool, audit, email, pepper, customerIdResolver) are reused
+// (DB pool, audit, email, customerIdResolver) are reused
 // from `getAuthDeps()` so we never have two divergent code paths.
 const storefrontAuthDeps: AuthDeps = { ...authDeps, allowSignUp: true };
 app.use(

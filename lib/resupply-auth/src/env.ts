@@ -17,12 +17,15 @@ const positiveInt = z.coerce
 /**
  * Read the auth env. Pure: takes a NodeJS.ProcessEnv-shaped
  * object so tests can pass a synthetic env without polluting
- * `process.env`. Throws on malformed TTL.
+ * `process.env`. Throws on malformed TTLs.
  *
- * The previous version of this function also required
- * `AUTH_PASSWORD_PEPPER` to be set to a base64 value of 32+ bytes;
- * the pepper was removed in the Task #38 follow-up, so the env no
- * longer carries it. See `password.ts` for the migration note.
+ * Historical note: this used to require AUTH_PASSWORD_PEPPER
+ * (a 32+ byte base64 server-side secret) and decode it into a
+ * Buffer. The pepper was removed in the Task #38 follow-up at
+ * the project owner's direction, so the env reader no longer
+ * touches it. If the variable is still set in your environment
+ * it is simply ignored — no boot-time validation, no runtime
+ * use. See `password.ts` for the migration note.
  */
 export function readAuthEnv(
   source: Partial<NodeJS.ProcessEnv> = process.env,

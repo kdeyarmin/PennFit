@@ -29,7 +29,7 @@ describe("readAuthEnv", () => {
       AUTH_PASSWORD_PEPPER: "anything-or-nothing",
     });
     expect(env).not.toHaveProperty("passwordPepper");
-    expect(env.sessionTtlDays).toBe(14);
+    expect(env).toEqual({ sessionTtlDays: 14, emailTokenTtlHours: 24 });
   });
 
   it("parses positive integer TTLs and rejects bad ones", () => {

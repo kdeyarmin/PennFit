@@ -13,6 +13,14 @@
 //     simultaneously. bcrypt has a 72-byte truncation surprise;
 //     scrypt's parameter tuning is finickier.
 //
+// Historical note: earlier revisions of this module pre-hashed the
+// password with HMAC-SHA256(password, pepper) before feeding it to
+// argon2id, as a defense-in-depth measure against an offline DB
+// dump. The pepper requirement was removed at the project owner's
+// direction; argon2id alone is still a strong KDF, and a stored
+// hash is not by itself a feasible offline crack target with the
+// memory/time parameters we use.
+//
 // Parameter target: ~250ms on prod hardware. Starting values:
 //     memoryCost: 19_456 KiB (~ 19 MiB)
 //     timeCost:   2 iterations
@@ -49,7 +57,8 @@ export interface PasswordHashParams {
  *     rows will NOT validate — affected accounts must use the
  *     password-reset flow once. See ADR 014 "Amendment, Task #38".
  *     The tag column is kept for forward compatibility with future
- *     algorithm rotation.
+ *     algorithm rotation (e.g. an argon2id-v2 with stronger
+ *     parameters).
  */
 export type PasswordAlgo = "argon2id-v1";
 
