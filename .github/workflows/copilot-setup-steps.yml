@@ -23,13 +23,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Enable Corepack and activate pnpm
-        # Run from the repository root so corepack can find the project and avoid
-        # `ERR_PNPM_NO_PKG_MANIFEST` when the default working directory has no package.json.
-        working-directory: ${{ github.workspace }}
+      - name: Install pnpm
+        # Install pnpm globally via npm instead of using corepack. Corepack's
+        # `prepare ... --activate` ends up invoking pnpm in a way that probes the
+        # current working directory for a `package.json`, which fails with
+        # `ERR_PNPM_NO_PKG_MANIFEST` in environments (such as the Copilot agent's
+        # default `/home/user` cwd) where the repository is not the cwd. Using
+        # `npm install -g` does not require any manifest in the cwd.
         run: |
-          corepack enable
-          corepack prepare pnpm@10.33.2 --activate
+          npm install -g pnpm@10.33.2
           pnpm --version
 
       - name: Set up Node.js
