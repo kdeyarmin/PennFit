@@ -26,10 +26,10 @@ docs/resupply/
   adr/                  Architectural Decision Records (000–012).
 ```
 
-The Penn Fit product (`artifacts/api-server`, `artifacts/cpap-fitter`,
-`artifacts/penn-fit-tutorial`) is a separate product and shares only
+The PennPaps fitter product (`artifacts/api-server`, `artifacts/cpap-fitter`,
+`artifacts/pennpaps-tutorial`) is a separate product and shares only
 `lib/db`'s connection pool. The two products' tables live in different
-Postgres schemas — Penn Fit in `public.*`, resupply in `resupply.*`.
+Postgres schemas — the fitter in `public.*`, resupply in `resupply.*`.
 
 ## Data flow (Phase 0 baseline)
 
@@ -99,7 +99,7 @@ which runs as part of the `resupply-check` validation step.
   if they need to share something, factor it into `resupply-domain`.
 - Any production code → `resupply-testing`. Testing utilities are devDeps
   in every consumer.
-- Any resupply package → Penn Fit's `lib/db`, `lib/api-zod`, or
+- Any resupply package → the PennPaps fitter's `lib/db`, `lib/api-zod`, or
   `lib/api-client-react`. These are separate products. The dashboard
   ships `@workspace/resupply-api-client` (generated from
   `lib/resupply-api-spec/openapi.yaml`) and is swept by the check

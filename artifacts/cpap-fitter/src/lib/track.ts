@@ -7,7 +7,7 @@
  * or interfere with the patient flow.
  */
 
-const SESSION_KEY = "penn_fit_track_session";
+const SESSION_KEY = "pennpaps_track_session";
 
 function getSessionId(): string {
   try {

@@ -2,7 +2,9 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
+import { makeAuthRouter } from "@workspace/resupply-auth";
 import router from "./routes";
+import { getAuthDepsOrNull } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 import { errorHandler } from "./middlewares/errorHandler";
 import { securityHeaders } from "./middlewares/securityHeaders";
@@ -143,6 +145,22 @@ app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 // at all. We mount it BEFORE the route tree so every nested router
 // inherits it without needing per-router wiring.
 app.use(clerkMiddleware());
+
+// In-house /auth/* routes — only mounted when AUTH_PROVIDER is
+// "dual" or "in_house". The default ("clerk") leaves the in-house
+// path entirely off the wire so a misconfig can't accidentally
+// expose it. See ADR 014 + docs/resupply/AUTH-MIGRATION-PLAN.md.
+const authDeps = getAuthDepsOrNull();
+if (authDeps) {
+  app.use(
+    "/resupply-api/auth",
+    makeAuthRouter(authDeps, { productName: "Resupply" }),
+  );
+  logger.info(
+    { event: "auth_in_house_mounted", provider: authDeps.env.provider },
+    "in-house auth routes mounted at /resupply-api/auth",
+  );
+}
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,

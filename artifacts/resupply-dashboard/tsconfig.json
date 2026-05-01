@@ -17,6 +17,9 @@
   "references": [
     {
       "path": "../../lib/resupply-api-client"
+    },
+    {
+      "path": "../../lib/resupply-auth-react"
     }
   ]
 }

@@ -11,6 +11,7 @@
     { "path": "../../lib/resupply-domain" },
     { "path": "../../lib/resupply-db" },
     { "path": "../../lib/resupply-audit" },
+    { "path": "../../lib/resupply-auth" },
     { "path": "../../lib/resupply-telecom" },
     { "path": "../../lib/resupply-email" },
     { "path": "../../lib/resupply-messaging" },

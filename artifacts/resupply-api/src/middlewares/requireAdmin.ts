@@ -4,7 +4,14 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import { adminUsers, getDbPool } from "@workspace/resupply-db";
+import {
+  SESSION_COOKIE,
+  hashToken,
+  isExpired,
+  readCookie,
+} from "@workspace/resupply-auth";
 
+import { getAuthDepsOrNull } from "../lib/auth-deps";
 import { logger } from "../lib/logger";
 
 /**
@@ -143,6 +150,21 @@ export async function requireAdmin(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  // In-house auth path. When AUTH_PROVIDER is "dual" or "in_house"
+  // and the request carries a valid pf_session cookie, derive
+  // adminEmail / adminUserId / adminRole from auth.users and skip
+  // the entire Clerk path. The role on auth.users is authoritative
+  // (admin > agent > customer); env allow-lists no longer gate.
+  // See ADR 014 + docs/resupply/AUTH-MIGRATION-PLAN.md (Stage 3).
+  const inHouse = await tryInHouseAdmin(req);
+  if (inHouse) {
+    req.adminEmail = inHouse.email;
+    req.adminUserId = inHouse.userId;
+    req.adminRole = inHouse.role;
+    next();
+    return;
+  }
+
   const auth = getAuth(req);
   const userId = auth?.userId;
   if (!userId) {
@@ -424,6 +446,66 @@ export async function requireAdmin(
  * response) from "requireAdmin succeeded and called next()" (we
  * then check the role).
  */
+/**
+ * Attempt to authenticate the request using the in-house auth
+ * cookie. Returns the resolved admin context on success, null
+ * when the in-house path is not configured (AUTH_PROVIDER=clerk),
+ * the cookie is missing, or the session is invalid / expired /
+ * belongs to a non-staff user. The Clerk path takes over from
+ * there.
+ *
+ * Customer-role users are deliberately rejected — the dashboard
+ * is staff-only, even when a customer has a valid cookie from the
+ * shop. Returning null here causes the middleware to fall through
+ * to the Clerk path, which then returns 401/403 as it would for
+ * any non-admin Clerk identity.
+ */
+async function tryInHouseAdmin(req: Request): Promise<{
+  email: string;
+  userId: string;
+  role: "admin" | "agent";
+} | null> {
+  const deps = getAuthDepsOrNull();
+  if (!deps) return null;
+  const raw = readCookie(req, SESSION_COOKIE);
+  if (!raw) return null;
+  const tokenHash = hashToken(raw);
+  if (!tokenHash) return null;
+  try {
+    const session = await deps.repo.findSessionByTokenHash(tokenHash);
+    if (!session) return null;
+    if (
+      isExpired(
+        { expiresAt: session.expiresAt, revokedAt: session.revokedAt },
+        new Date(),
+      )
+    ) {
+      return null;
+    }
+    const user = await deps.repo.findUserById(session.userId);
+    if (!user) return null;
+    if (user.status === "locked" || user.status === "revoked") return null;
+    if (user.role !== "admin" && user.role !== "agent") return null;
+    return {
+      email: user.emailLower,
+      userId: user.id,
+      role: user.role,
+    };
+  } catch (err) {
+    // Don't fail the request on a transient repo error — fall
+    // through to the Clerk path. The Clerk path itself returns a
+    // structured error for upstream issues.
+    logger.warn(
+      {
+        event: "resupply_admin_in_house_lookup_failed",
+        err: err instanceof Error ? err.message : "unknown",
+      },
+      "requireAdmin: in-house session lookup failed; falling back to Clerk",
+    );
+    return null;
+  }
+}
+
 export async function requireAdminOnly(
   req: Request,
   res: Response,

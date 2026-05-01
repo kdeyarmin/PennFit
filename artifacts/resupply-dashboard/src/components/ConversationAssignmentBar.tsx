@@ -11,7 +11,7 @@
 // header.
 
 import { useEffect, useState } from "react";
-import { useUser } from "@clerk/react";
+import { useDashboardIdentity } from "../lib/identity";
 import {
   type Priority,
   claimConversation,
@@ -49,8 +49,8 @@ export function ConversationAssignmentBar({
   status: string;
   onChange: () => void;
 }) {
-  const { user } = useUser();
-  const callerId = user?.id ?? null;
+  const { userId } = useDashboardIdentity();
+  const callerId = userId;
   const isMine = !!assignedAdminClerkId && assignedAdminClerkId === callerId;
   const isUnassigned = !assignedAdminClerkId;
 

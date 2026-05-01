@@ -1,4 +1,4 @@
-# PennFit / PennPaps
+# PennPaps
 
 Privacy-first CPAP fitting, ordering, and resupply automation for
 Penn Home Medical Supply. See [`replit.md`](./replit.md) for the
@@ -9,13 +9,13 @@ top-level structure is:
 
 | Path | What lives here |
 | --- | --- |
-| `artifacts/api-server` | Penn-Fit storefront / fitter API (Express). |
+| `artifacts/api-server` | PennPaps storefront / fitter API (Express). |
 | `artifacts/resupply-api` | Resupply automation API + voice WS endpoint (Express). |
 | `artifacts/resupply-worker` | `pg-boss` background worker for reminders and PHI sweeps. |
 | `artifacts/cpap-fitter` | Customer-facing fitter SPA (Vite + React). |
 | `artifacts/resupply-dashboard` | Internal admin console SPA (Vite + React). |
 | `artifacts/mockup-sandbox` | Internal UI/UX mockup playground (Vite + React). |
-| `artifacts/penn-fit-tutorial` | Animated onboarding tutorial app (Vite + React). |
+| `artifacts/pennpaps-tutorial` | Animated onboarding tutorial app (Vite + React). |
 | `lib/*` | Shared workspace packages (DB, contracts, messaging, etc.). |
 
 ## Prerequisites
@@ -84,8 +84,8 @@ never commit real secrets.
 | `PENN_ALLOWED_ORIGINS` | `api-server` | CORS allowlist. Falls back to Replit dev domain + localhost. |
 | `RESUPPLY_ALLOWED_ORIGINS` | `resupply-api` | CORS allowlist. Falls back to Replit dev domain + localhost. |
 | `SHOP_PUBLIC_BASE_URL`, `REMINDER_PUBLIC_BASE_URL`, `RESUPPLY_VOICE_PUBLIC_BASE_URL` | `resupply-api` | Public base URLs used in outbound deep links. Cart-recovery + reminder emails fall through `SHOP → RESUPPLY_VOICE → https://pennpaps.com` in order. |
-| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `api-server`, `resupply-api`, `resupply-worker` | Outbound email + delivery webhooks. Email features log-and-skip when missing. |
-| `PENN_FROM_EMAIL`, `PENN_FULFILLMENT_EMAIL` | `api-server` | Storefront notification senders. |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `api-server`, `resupply-api`, `resupply-worker` | Outbound email + delivery webhooks. Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
+| `PENN_FULFILLMENT_EMAIL` | `api-server` | Where Penn Fit fulfillment receives new mask orders (this is the recipient, not the sender). |
 | `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS` | `resupply-api` | Comma-separated allowlists for role-gated admin endpoints. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID` | `resupply-api` | SMS + voice. Outbound SMS / voice routes return 503 when missing. |
 | `OPENAI_API_KEY` | `resupply-api` | Conversation AI. AI features disable when missing. |
@@ -93,7 +93,7 @@ never commit real secrets.
 | `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS` | `resupply-api`, `resupply-worker` | Replit Object Storage paths for prescription attachments. |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Vite apps | Browser-side Clerk publishable key. |
 | `VITE_ENABLE_DEMO`, `VITE_RESUPPLY_CONTACT_EMAIL` | Vite apps | UI feature flags / display values. |
-| `CODEGEN_OUT_PENN_FIT_CLIENT`, `CODEGEN_OUT_PENN_FIT_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |
+| `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |
 | `REPL_ID`, `REPLIT_DEV_DOMAIN`, `REPLIT_DOMAINS` | All services | Set automatically on Replit; usually leave blank locally. |
 
 ## Useful scripts

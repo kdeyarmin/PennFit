@@ -128,6 +128,37 @@ export const shopOrders = resupplySchema.table(
     reviewRequestSentAt: timestamp("review_request_sent_at", {
       withTimezone: true,
     }),
+    /**
+     * Idempotency stamp for the order-confirmation email sent from
+     * the Stripe webhook on checkout.session.completed. NULL means
+     * "no confirmation email recorded for this order"; once non-null
+     * the webhook short-circuits on Stripe re-deliveries so the
+     * customer never receives a duplicate. Migration 0016.
+     */
+    confirmationEmailSentAt: timestamp("confirmation_email_sent_at", {
+      withTimezone: true,
+    }),
+    /**
+     * Idempotency stamp for the shipping-notification email sent
+     * from the admin "enter tracking" endpoint. The endpoint clears
+     * + re-stamps this on a genuine re-ship (carrier or number
+     * actually changed) so a replacement-label workflow notifies
+     * the customer again, but a no-op re-entry of the same tracking
+     * does not. Migration 0016.
+     */
+    shippingEmailSentAt: timestamp("shipping_email_sent_at", {
+      withTimezone: true,
+    }),
+    /**
+     * Email captured from the Stripe Session at paid-time
+     * (`session.customer_details.email`). Persisted on the order row
+     * so the admin shipping-notification flow can reach guest
+     * checkouts where there is no `shop_customers` row to join
+     * against on `clerk_user_id`. Lower-cased before write to match
+     * the `shop_customers.email_lower` convention. NULL on
+     * pre-migration historical orders. Migration 0017.
+     */
+    customerEmail: text("customer_email"),
   },
   (t) => ({
     statusIdx: index("shop_orders_status_idx").on(t.status),

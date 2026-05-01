@@ -80,6 +80,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@clerk/react": "^6.4.5"
+    "@clerk/react": "^6.4.5",
+    "@workspace/resupply-auth-react": "workspace:*"
   }
 }
