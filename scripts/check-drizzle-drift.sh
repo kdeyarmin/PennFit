@@ -106,15 +106,26 @@ check_lib() {
   local snap
   snap="$(mktemp -d -t drizzle-drift.XXXXXX)"
   cp -a "$REPO_ROOT/$out_dir/." "$snap/"
+  local generate_log="$snap.log"
+  local diff_file="$snap.diff"
+
+  # Signal-safe restoration: if the script is interrupted (Ctrl-C,
+  # SIGTERM) between snapshot and the explicit restore on the normal
+  # exit path, we still need the working tree to look exactly as it
+  # did before this function ran. The trap restores the out_dir from
+  # the snapshot and removes the temp paths, then re-raises the signal
+  # so the parent shell sees the right exit status. The trap is
+  # cleared at the bottom of the function so subsequent libs
+  # (or other shell work) don't inherit it.
+  # shellcheck disable=SC2064 # intentional: capture out_dir/snap NOW.
+  trap "restore_snapshot '$snap' '$out_dir'; rm -rf '$snap' '$generate_log' '$diff_file'; trap - INT TERM EXIT; exit 130" INT TERM
 
   # Capture combined stdout+stderr so we can detect drizzle-kit's
-  # known exit-0-on-error quirk: it prints "Error: ..." and exits 0
-  # when its snapshot meta chain is inconsistent. If we trusted the
-  # exit code alone, a corrupted meta dir would silently look like
-  # "no drift". Disable -e for the call so we can react to a non-zero
-  # rc ourselves.
-  local generate_log
-  generate_log="$snap.log"
+  # known exit-0-on-error quirk: it prints an "Error: ..." line and
+  # exits 0 when its snapshot meta chain is inconsistent. If we
+  # trusted the exit code alone, a corrupted meta dir would silently
+  # look like "no drift". Disable -e for the call so we can react to
+  # a non-zero rc ourselves.
   set +e
   ( cd "$REPO_ROOT/$lib_dir" \
       && pnpm exec drizzle-kit generate --config ./drizzle.config.ts ) \
@@ -122,10 +133,15 @@ check_lib() {
   local rc=$?
   set -e
 
-  # Treat both an explicit non-zero exit AND a stdout `Error:` line as
-  # a tool failure. The "Error:" guard is what catches the drizzle-kit
-  # quirk above.
-  if [[ $rc -ne 0 ]] || grep -qE '^Error:' "$generate_log"; then
+  # Treat both an explicit non-zero exit AND any case-insensitive
+  # `Error:` line in the captured output as a tool failure. The
+  # case-insensitive variant catches both `Error:` (drizzle-kit
+  # today) and `error:` (some node tracebacks) without depending on
+  # exact framing. We strip ANSI color codes first so a TTY-detected
+  # \e[31mError:\e[0m on stderr still matches.
+  if [[ $rc -ne 0 ]] \
+      || sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g' "$generate_log" \
+         | grep -qiE '^[[:space:]]*error:'; then
     restore_snapshot "$snap" "$out_dir"
     cat >&2 <<EOF
 
@@ -143,10 +159,10 @@ drizzle-kit output:
 EOF
     sed 's/^/    /' "$generate_log" >&2
     rm -rf "$snap" "$generate_log"
+    trap - INT TERM
     return 1
   fi
 
-  local diff_file="$snap.diff"
   set +e
   diff -ruN "$snap" "$REPO_ROOT/$out_dir" > "$diff_file"
   local drift=$?
@@ -157,6 +173,10 @@ EOF
   # copy. This must happen whether we detected drift or not.
   restore_snapshot "$snap" "$out_dir"
   rm -f "$generate_log"
+  # Per-lib trap done; unwire it before we exit the function so the
+  # next iteration installs its own with the right snap/out_dir
+  # captured.
+  trap - INT TERM
 
   if [[ $drift -ne 0 ]]; then
     cat >&2 <<EOF

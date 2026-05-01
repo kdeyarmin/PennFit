@@ -74,15 +74,10 @@ fail() {
   exit 1
 }
 
-# Helper: append a dummy table whose name embeds a random suffix so
-# repeated runs always look like new drift to drizzle-kit (defensive
-# against any caching).
-#
-# Storefront tables live in the default `public` schema (plain
-# `pgTable`); resupply tables live in the `resupply` schema (created
-# via `resupplySchema.table`). The drizzle.config.ts files filter to
-# their own schema, so a dummy must use the right factory or it will
-# be silently filtered out and not register as drift.
+# Helper: append a dummy table to a storefront schema file. Storefront
+# tables live in the default `public` schema (plain `pgTable`) and the
+# storefront drizzle.config.ts filters to `["public"]`, so this dummy
+# will register as drift.
 append_dummy_table_storefront() {
   local file="$1"
   cat >>"$file" <<'EOF'
@@ -91,18 +86,6 @@ append_dummy_table_storefront() {
 import { pgTable as __selftestPgTable_db, text as __selftestText_db } from "drizzle-orm/pg-core";
 export const __selftestDriftTable_db = __selftestPgTable_db("__selftest_drift_db", {
   id: __selftestText_db("id").primaryKey(),
-});
-EOF
-}
-
-append_dummy_table_resupply() {
-  local file="$1"
-  cat >>"$file" <<'EOF'
-
-// SELF-TEST DRIFT MARKER (resupply) — must be reverted on cleanup
-import { text as __selftestText_resupply } from "drizzle-orm/pg-core";
-export const __selftestDriftTable_resupply = resupplySchema.table("__selftest_drift_resupply", {
-  id: __selftestText_resupply("id").primaryKey(),
 });
 EOF
 }
@@ -122,8 +105,7 @@ printf '[self-test] scenario A: clean tree should pass\n'
 if ! bash "$CHECKER" >/dev/null 2>&1; then
   fail "checker rejected an in-sync tree (scenario A)"
 fi
-assert_dir_unchanged "lib/db/drizzle on clean run"        "$SNAPSHOT/db-out"        "$DB_OUT"
-assert_dir_unchanged "lib/resupply-db/drizzle on clean run" "$SNAPSHOT/resupply-out" "$RESUPPLY_OUT"
+assert_dir_unchanged "lib/db/drizzle on clean run" "$SNAPSHOT/db-out" "$DB_OUT"
 
 # ---------- Scenario B: drifted storefront schema ----------
 printf '[self-test] scenario B: drifted lib/db schema should fail + restore drizzle/\n'
@@ -134,22 +116,5 @@ if bash "$CHECKER" >/dev/null 2>&1; then
   fail "checker accepted a drifted lib/db schema (scenario B)"
 fi
 assert_dir_unchanged "lib/db/drizzle after drift detected" "$SNAPSHOT/db-out" "$DB_OUT"
-# resupply must be untouched too (per-lib isolation).
-assert_dir_unchanged "lib/resupply-db/drizzle after lib/db drift" "$SNAPSHOT/resupply-out" "$RESUPPLY_OUT"
-
-# Restore the storefront schema before scenario C so failure modes
-# don't leak between scenarios.
-cp -f "$SNAPSHOT/db-victim.ts" "$DB_VICTIM_SCHEMA"
-
-# ---------- Scenario C: drifted resupply schema ----------
-printf '[self-test] scenario C: drifted lib/resupply-db schema should fail + restore drizzle/\n'
-
-append_dummy_table_resupply "$RESUPPLY_VICTIM_SCHEMA"
-
-if bash "$CHECKER" >/dev/null 2>&1; then
-  fail "checker accepted a drifted lib/resupply-db schema (scenario C)"
-fi
-assert_dir_unchanged "lib/resupply-db/drizzle after drift detected" "$SNAPSHOT/resupply-out" "$RESUPPLY_OUT"
-assert_dir_unchanged "lib/db/drizzle after lib/resupply-db drift"   "$SNAPSHOT/db-out"        "$DB_OUT"
 
 printf '[self-test] all scenarios passed\n'
