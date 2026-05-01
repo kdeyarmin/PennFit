@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  hashPassword,
+  needsRehash,
+  pepperPassword,
+  verifyPassword,
+} from "./password";
+
+const PEPPER = Buffer.from(
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "hex",
+);
+const PEPPER_2 = Buffer.from(
+  "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+  "hex",
+);
+
+// Argon2 hashing is intentionally slow. Use weak params for tests so
+// the suite stays fast — we only care about correctness here, not
+// the production parameter values (which are tested by the
+// `PASSWORD_HASH_DEFAULTS` snapshot in env.test.ts indirectly).
+const FAST_PARAMS = { memoryCost: 1024, timeCost: 1, parallelism: 1 };
+
+describe("pepperPassword", () => {
+  it("rejects pepper shorter than 32 bytes", () => {
+    expect(() => pepperPassword("hunter2", Buffer.alloc(16))).toThrow(
+      /at least 32 bytes/,
+    );
+  });
+
+  it("is deterministic for the same input", () => {
+    expect(pepperPassword("hunter2", PEPPER)).toBe(
+      pepperPassword("hunter2", PEPPER),
+    );
+  });
+
+  it("produces different output for different peppers", () => {
+    expect(pepperPassword("hunter2", PEPPER)).not.toBe(
+      pepperPassword("hunter2", PEPPER_2),
+    );
+  });
+});
+
+describe("hashPassword + verifyPassword", () => {
+  it("verifies a correct password", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    expect(hash.startsWith("$argon2id$")).toBe(true);
+    await expect(verifyPassword("hunter2", PEPPER, hash)).resolves.toBe(true);
+  });
+
+  it("rejects an incorrect password", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    await expect(verifyPassword("wrong", PEPPER, hash)).resolves.toBe(false);
+  });
+
+  it("rejects when the pepper changes (offline crack defense)", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    await expect(verifyPassword("hunter2", PEPPER_2, hash)).resolves.toBe(
+      false,
+    );
+  });
+
+  it("returns false (not throws) on malformed stored hash", async () => {
+    await expect(
+      verifyPassword("hunter2", PEPPER, "not-an-argon2-hash"),
+    ).resolves.toBe(false);
+  });
+});
+
+describe("needsRehash", () => {
+  it("flags a hash produced with weaker params than the current target", async () => {
+    const weak = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    // Default target is much stronger than FAST_PARAMS, so it
+    // should report "needs rehash".
+    expect(needsRehash(weak)).toBe(true);
+  });
+
+  it("does not flag a hash produced with the current target", async () => {
+    const target = { memoryCost: 4096, timeCost: 2, parallelism: 1 };
+    const fresh = await hashPassword("hunter2", PEPPER, target);
+    expect(needsRehash(fresh, target)).toBe(false);
+  });
+});

@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
+import { IS_IN_HOUSE_AUTH } from "@/lib/identity";
 
 // Eagerly imported pages — small, public, and likely entry points.
 // Splitting them out of the initial chunk would only add latency to
@@ -94,6 +95,34 @@ const SignInPage = lazy(() =>
 );
 const SignUpPage = lazy(() =>
   import("@/pages/sign-up").then((m) => ({ default: m.SignUpPage })),
+);
+// In-house auth pages (rendered only when VITE_AUTH_PROVIDER ===
+// "in_house"). Lazy so the chunks aren't shipped on a Clerk-mode
+// build.
+const InHouseSignInPage = lazy(() =>
+  import("@/pages/in-house-sign-in").then((m) => ({
+    default: m.InHouseSignInPage,
+  })),
+);
+const InHouseSignUpPage = lazy(() =>
+  import("@/pages/in-house-sign-up").then((m) => ({
+    default: m.InHouseSignUpPage,
+  })),
+);
+const ForgotPasswordPage = lazy(() =>
+  import("@/pages/forgot-password").then((m) => ({
+    default: m.ForgotPasswordPage,
+  })),
+);
+const ResetPasswordPage = lazy(() =>
+  import("@/pages/reset-password").then((m) => ({
+    default: m.ResetPasswordPage,
+  })),
+);
+const VerifyEmailPage = lazy(() =>
+  import("@/pages/verify-email").then((m) => ({
+    default: m.VerifyEmailPage,
+  })),
 );
 const AdminShell = lazy(() =>
   import("@/pages/admin/admin-shell").then((m) => ({ default: m.AdminShell })),
@@ -311,10 +340,29 @@ function TopRouter() {
     */
     <Suspense fallback={<RouteFallback />}>
       <Switch>
-        <Route path="/sign-in" component={SignInPage} />
-        <Route path="/sign-in/:rest*" component={SignInPage} />
-        <Route path="/sign-up" component={SignUpPage} />
-        <Route path="/sign-up/:rest*" component={SignUpPage} />
+        <Route
+          path="/sign-in"
+          component={IS_IN_HOUSE_AUTH ? InHouseSignInPage : SignInPage}
+        />
+        <Route
+          path="/sign-in/:rest*"
+          component={IS_IN_HOUSE_AUTH ? InHouseSignInPage : SignInPage}
+        />
+        <Route
+          path="/sign-up"
+          component={IS_IN_HOUSE_AUTH ? InHouseSignUpPage : SignUpPage}
+        />
+        <Route
+          path="/sign-up/:rest*"
+          component={IS_IN_HOUSE_AUTH ? InHouseSignUpPage : SignUpPage}
+        />
+        {IS_IN_HOUSE_AUTH && (
+          <>
+            <Route path="/forgot-password" component={ForgotPasswordPage} />
+            <Route path="/reset-password" component={ResetPasswordPage} />
+            <Route path="/verify-email" component={VerifyEmailPage} />
+          </>
+        )}
 
         <Route path="/admin">
           <AdminShell>
@@ -364,9 +412,46 @@ function TopRouter() {
   );
 }
 
+// Inner tree — independent of which auth provider wraps it.
+// Extracted so we can render the same children inside either
+// <ClerkProvider> (Clerk mode) or no provider at all (in_house
+// mode). All components below this point use the identity shim
+// in `@/lib/identity` for auth state, so they don't need to know
+// which provider is mounted.
+function AppInner() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <FitterProvider>
+          {/*
+            ErrorBoundary wraps the router so any thrown render error in a
+            page falls back to a recoverable on-brand screen instead of a
+            blank white page.
+          */}
+          <ErrorBoundary>
+            <WouterRouter base={basePath}>
+              <TopRouter />
+            </WouterRouter>
+          </ErrorBoundary>
+          <Toaster />
+        </FitterProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
 function App() {
-  // Build absolute URLs for the auth provider so the auth provider's redirects respect our base
-  // path (they need to be browser-absolute paths, not React route paths).
+  // In-house mode skips ClerkProvider entirely — none of @clerk/react's
+  // hooks fire and we avoid loading the SDK script on first paint.
+  // The identity shim picks the in-house implementation at module
+  // load.
+  if (IS_IN_HOUSE_AUTH) {
+    return <AppInner />;
+  }
+
+  // Clerk mode (default). Build absolute URLs for the auth
+  // provider so its redirects respect our base path (they need to
+  // be browser-absolute paths, not React route paths).
   return (
     <ClerkProvider
       publishableKey={CLERK_PUBLISHABLE_KEY!}
@@ -381,11 +466,6 @@ function App() {
       signInFallbackRedirectUrl={`${basePath}/account`}
       signUpFallbackRedirectUrl={`${basePath}/account`}
       localization={{
-        // Override Clerk's "{{applicationName}}" interpolation so the
-        // hosted sign-in / sign-up cards display our real brand name
-        // instead of whatever is set in the auth provider dashboard. Updating the
-        // dashboard is the canonical fix (and would also affect emails),
-        // but this guarantees the in-app text is always on-brand.
         signIn: {
           start: {
             title: "Sign in to Penn Home Medical Supply",
@@ -400,9 +480,6 @@ function App() {
         },
       }}
       appearance={{
-        // PennPaps brand: navy primary + gold accent. The CSS @layer order in
-        // index.css ensures Tailwind's utilities don't clobber Clerk's
-        // internal styles.
         variables: {
           colorPrimary: "hsl(213 47% 24%)",
           colorText: "hsl(220 25% 12%)",
@@ -418,26 +495,7 @@ function App() {
         },
       }}
     >
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <FitterProvider>
-            {/*
-              ErrorBoundary wraps the router so any thrown render error in a
-              page falls back to a recoverable on-brand screen instead of a
-              blank white page. Sits inside ClerkProvider/QueryClient so the
-              fallback can still navigate (the <a href="/"> in the fallback
-              triggers a real reload, which is intentional — it gives the
-              shop a clean React tree on recovery).
-            */}
-            <ErrorBoundary>
-              <WouterRouter base={basePath}>
-                <TopRouter />
-              </WouterRouter>
-            </ErrorBoundary>
-            <Toaster />
-          </FitterProvider>
-        </TooltipProvider>
-      </QueryClientProvider>
+      <AppInner />
     </ClerkProvider>
   );
 }

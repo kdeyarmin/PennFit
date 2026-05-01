@@ -4,8 +4,14 @@ import { useGetAdminMe, ApiError } from "@workspace/resupply-api-client";
 import NotFound from "./pages/not-found";
 import { SignInPage } from "./pages/sign-in";
 import { SignUpPage } from "./pages/sign-up";
+import { InHouseSignInPage } from "./pages/in-house-sign-in";
+import { ForgotPasswordPage } from "./pages/forgot-password";
+import { ResetPasswordPage } from "./pages/reset-password";
+import { VerifyEmailPage } from "./pages/verify-email";
 import { NotAuthorizedPage } from "./pages/not-authorized";
 import { useApiAuthBridge } from "./lib/api-client";
+import { IS_IN_HOUSE_AUTH } from "./lib/identity";
+import { authHooks } from "./lib/auth-hooks";
 import { AppShell } from "./components/AppShell";
 import { Spinner } from "./components/Spinner";
 import { DashboardPage } from "./pages/dashboard";
@@ -135,7 +141,8 @@ function AdminConsole() {
   );
 }
 
-function ConsoleRoute() {
+// Clerk-mode console gate (default).
+function ClerkConsoleRoute() {
   return (
     <>
       <Show when="signed-out">
@@ -148,13 +155,46 @@ function ConsoleRoute() {
   );
 }
 
+// In-house console gate — selected when VITE_AUTH_PROVIDER ===
+// "in_house". Probes /resupply-api/auth/me; redirects to the
+// in-house sign-in page when there's no session.
+function InHouseConsoleRoute() {
+  const { data, isPending } = authHooks.useSession();
+  if (isPending) return null;
+  if (!data) return <Redirect to="/sign-in" />;
+  return <AdminConsole />;
+}
+
+const ConsoleRoute = IS_IN_HOUSE_AUTH ? InHouseConsoleRoute : ClerkConsoleRoute;
+
 function Router() {
   return (
     <Switch>
-      <Route path="/sign-in" component={SignInPage} />
-      <Route path="/sign-in/:rest*" component={SignInPage} />
-      <Route path="/sign-up" component={SignUpPage} />
-      <Route path="/sign-up/:rest*" component={SignUpPage} />
+      <Route
+        path="/sign-in"
+        component={IS_IN_HOUSE_AUTH ? InHouseSignInPage : SignInPage}
+      />
+      {/* Clerk's hosted SignIn uses sub-paths for verify-email /
+          MFA / etc. In Clerk mode the wildcard captures those.
+          In in_house mode the wildcard still matches; the
+          InHouseSignInPage ignores any sub-path. */}
+      <Route
+        path="/sign-in/:rest*"
+        component={IS_IN_HOUSE_AUTH ? InHouseSignInPage : SignInPage}
+      />
+      {!IS_IN_HOUSE_AUTH && (
+        <>
+          <Route path="/sign-up" component={SignUpPage} />
+          <Route path="/sign-up/:rest*" component={SignUpPage} />
+        </>
+      )}
+      {IS_IN_HOUSE_AUTH && (
+        <>
+          <Route path="/forgot-password" component={ForgotPasswordPage} />
+          <Route path="/reset-password" component={ResetPasswordPage} />
+          <Route path="/verify-email" component={VerifyEmailPage} />
+        </>
+      )}
       {/* Every other route — including the bare "/" landing page
           and all detail pages — gets gated by ConsoleRoute.
           ConsoleRoute itself renders a nested <Switch> with the
@@ -173,10 +213,17 @@ function Router() {
   );
 }
 
+// In Clerk mode the bridge wires Clerk's getToken() into the API
+// client's bearer-token getter (must live INSIDE ClerkProvider).
+// In in_house mode the API uses session cookies (sent
+// automatically with `credentials: "include"`), so the bridge has
+// nothing to wire — we point at a no-op hook picked at module
+// load so the rules-of-hooks invariant holds every render.
+const useAuthBridgeForMode = IS_IN_HOUSE_AUTH ? noOpBridge : useApiAuthBridge;
+function noOpBridge(): void {}
+
 function App() {
-  // Register the auth → API bridge once for the lifetime of
-  // the app. Must live INSIDE ClerkProvider (in main.tsx).
-  useApiAuthBridge();
+  useAuthBridgeForMode();
 
   return (
     <WouterRouter base={basePath}>

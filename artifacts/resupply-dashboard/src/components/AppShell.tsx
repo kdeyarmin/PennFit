@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { useClerk } from "@clerk/react";
+import { useDashboardIdentity } from "../lib/identity";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { ConsoleSwitcher } from "./ConsoleSwitcher";
 import { GlobalLookup } from "./GlobalLookup";
@@ -96,8 +96,6 @@ const NAV_LINKS: ReadonlyArray<{
   },
 ];
 
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 function NavItem({
   href,
   label,
@@ -137,7 +135,8 @@ export function AdminHeaderChip({
   email: string;
   role: AdminRole;
 }) {
-  const { signOut } = useClerk();
+  const { signOut } = useDashboardIdentity();
+  const [, setShellLocation] = useLocation();
   // The role badge uses different chrome colours for the two roles
   // so an operator can tell at a glance whether they're signed in
   // as a full admin (navy) or a customer-service agent (gold). We
@@ -184,7 +183,13 @@ export function AdminHeaderChip({
           // workstation. Must happen BEFORE signOut: once the auth provider
           // navigates away we lose the chance to run cleanup.
           clearAllDrafts();
-          void signOut({ redirectUrl: `${basePath}/sign-in` });
+          // Sign out via the identity shim, then navigate to
+          // /sign-in. Soft-navigate via wouter so jsdom doesn't
+          // refuse the navigation in tests; the cookie + cache
+          // cleanup happens inside the identity shim's signOut().
+          void signOut().finally(() => {
+            setShellLocation("/sign-in");
+          });
         }}
         className="text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors"
         style={{

@@ -22,7 +22,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Show } from "@clerk/react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -57,6 +56,7 @@ import {
   type OrderHistoryItem,
   type OrderShippingAddress,
 } from "@/lib/shop-api";
+import { SignedIn } from "@/lib/identity";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -86,12 +86,9 @@ export function ShopOrders() {
           Past purchases from the PennPaps cash-pay shop.
         </p>
       </header>
-      <Show
-        when="signed-in"
-        fallback={<SignedOutPrompt />}
-      >
+      <SignedIn fallback={<SignedOutPrompt />}>
         <SignedInOrders />
-      </Show>
+      </SignedIn>
     </main>
   );
 }

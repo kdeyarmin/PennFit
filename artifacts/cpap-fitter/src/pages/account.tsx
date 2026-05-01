@@ -23,8 +23,8 @@
 
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Show, useUser } from "@clerk/react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   AlertCircle,
   CalendarClock,
@@ -99,9 +99,9 @@ export function AccountPage() {
   // is more graceful UX anyway — the customer sees *why* they're being
   // asked to sign in instead of a jarring auto-bounce.
   return (
-    <Show when="signed-in" fallback={<SignedOutAccountPrompt />}>
+    <SignedIn fallback={<SignedOutAccountPrompt />}>
       <AccountInner />
-    </Show>
+    </SignedIn>
   );
 }
 
@@ -138,7 +138,7 @@ function SignedOutAccountPrompt() {
 }
 
 function AccountInner() {
-  const { user } = useUser();
+  const { displayName, isLoaded: isUserLoaded } = useShopIdentity();
   const [data, setData] = useState<ShopMeResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
@@ -175,8 +175,15 @@ function AccountInner() {
   }, []);
 
   useEffect(() => {
+    // Wait for the auth provider to finish hydrating before calling
+    // /shop/me. Otherwise the request can race ahead of the session
+    // cookie/token, the server sees an unauthenticated request and
+    // returns {signedIn:false}, and we'd render the misleading
+    // "Your session expired" copy for a user we KNOW is signed in
+    // (the outer <SignedIn> already gated on this).
+    if (!isUserLoaded) return;
     void reload();
-  }, [reload]);
+  }, [reload, isUserLoaded]);
 
   if (loadError) {
     return (
@@ -230,9 +237,9 @@ function AccountInner() {
             We can&apos;t see your sign-in anymore — sign back in and
             you&apos;ll land right back here.
           </p>
-          <Link href="/sign-in?redirect=/account">
-            <Button>Sign in</Button>
-          </Link>
+          <Button asChild data-testid="account-resignin-btn">
+            <Link href="/sign-in?redirect=/account">Sign in</Link>
+          </Button>
         </div>
       </div>
     );
@@ -254,7 +261,9 @@ function AccountInner() {
   }
 
   const greeting =
-    user?.firstName ?? data.profile.displayName?.split(" ")[0] ?? "there";
+    (displayName ?? "").trim().split(/\s+/)[0] ||
+    data.profile.displayName?.split(" ")[0] ||
+    "there";
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-4xl">
