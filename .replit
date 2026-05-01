@@ -58,10 +58,11 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-RESUPPLY_ADMIN_EMAILS = "penn-admin-test@example.com"
+RESUPPLY_ADMIN_EMAILS = "info@pennpaps.com"
+RESUPPLY_OPERATOR_EMAILS = "info@pennpaps.com"
 
 [userenv.development]
-PENN_ADMIN_EMAILS = "penn-admin-test@example.com"
+PENN_ADMIN_EMAILS = "info@pennpaps.com"
 
 [objectStorage]
 defaultBucketID = "replit-objstore-a89f4666-9708-424b-b390-3f9949919d52"
