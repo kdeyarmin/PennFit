@@ -16,10 +16,9 @@ import { SignedIn, SignedOut, useShopIdentity } from "@/lib/identity";
  *      identity shim's <SignedOut>).
  *      We deliberately do NOT redirect from "/" — only from /admin*.
  *
- *   2. Signed-in users hit /api/admin/me to verify they're on the
- *      PENN_ADMIN_EMAILS allowlist (in Clerk mode) or that
- *      auth.users.role is admin/agent (in in-house mode). If not,
- *      we render a "not authorized" page instead of the admin UI.
+ *   2. Signed-in users hit /api/admin/me to verify their
+ *      auth.users.role is admin/agent. If not, we render a
+ *      "not authorized" page instead of the admin UI.
  *
  * The signed-in admin's email is then passed down to AdminLayout for
  * display in the sidebar.
@@ -138,8 +137,9 @@ function NotAuthorized({ status, message }: { status: number; message: string })
         <CardContent className="space-y-4 text-center">
           <p className="text-muted-foreground">{message}</p>
           <p className="text-sm text-muted-foreground">
-            If you should have access, ask your PennPaps administrator to add
-            your email to the <code className="font-mono">PENN_ADMIN_EMAILS</code> allowlist.
+            If you should have access, ask your PennPaps administrator to
+            grant your account the admin or agent role from the team
+            management page.
           </p>
           <Link href="/">
             <Button variant="outline">Back to PennPaps</Button>
