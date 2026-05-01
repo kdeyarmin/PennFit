@@ -21,14 +21,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 function fluent(result: unknown) {
   const obj: Record<string, unknown> = {
@@ -124,17 +127,11 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = [
@@ -187,8 +184,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     updateQueue.length = 0;
     executeQueue.length = 0;
     lastExecuteSql = null;
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     sendEmailMock.mockReset();
     createSendgridClientMock.mockReset();
     createSendgridClientMock.mockImplementation(() => ({
@@ -266,6 +262,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sent: 2,
       skippedNoConfig: 0,
       skippedFailed: 0,
+      skippedOptOut: 0,
       sendgridConfigured: true,
     });
     expect(sendEmailMock).toHaveBeenCalledTimes(2);
@@ -300,6 +297,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sent: 0,
       skippedNoConfig: 0,
       skippedFailed: 0,
+      skippedOptOut: 0,
       sendgridConfigured: true,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
@@ -331,6 +329,7 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sent: 0,
       skippedNoConfig: 1,
       skippedFailed: 0,
+      skippedOptOut: 0,
       sendgridConfigured: false,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
@@ -373,8 +372,7 @@ describe("GET /admin/shop/abandoned-carts", () => {
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
     updateQueue.length = 0;
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     dbStub.select.mockClear();
     dbStub.update.mockClear();
   });
@@ -391,7 +389,7 @@ describe("GET /admin/shop/abandoned-carts", () => {
     selectQueue.push([
       {
         id: ROW_A,
-        clerkUserId: "user_a",
+        customerId: "user_a",
         email: "joan@example.com",
         items: [
           { quantity: 2, name: "Headgear" },

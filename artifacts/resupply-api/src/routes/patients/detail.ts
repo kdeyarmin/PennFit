@@ -176,7 +176,7 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
     await logAudit({
       action: "patient.view",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "patients",
       targetId: id,
       ip: req.ip ?? null,

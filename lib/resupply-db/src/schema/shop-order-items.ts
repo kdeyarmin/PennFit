@@ -3,10 +3,10 @@
 //
 // Why we store line items locally now (we deliberately did NOT before):
 //   * The verified-purchaser badge on /shop/p/:productId needs to ask
-//     "has this clerk_user_id ever paid for this product_id?" once per
+//     "has this customer_id ever paid for this product_id?" once per
 //     review-list page load. Doing that against Stripe per request
 //     means an O(reviews-displayed) fanout of API calls — far too
-//     expensive. A single indexed `(clerk_user_id, product_id)`
+//     expensive. A single indexed `(customer_id, product_id)`
 //     lookup on this table answers it in microseconds.
 //   * The customer order-history page (/shop/orders) wants to render
 //     order line items without paying a separate Stripe call per
@@ -21,7 +21,7 @@
 //     `onConflictDoNothing()` — webhook idempotency.
 //   * `paid_at` is denormalised from shop_orders.paid_at so order-
 //     history can sort/page on it without a join.
-//   * `clerk_user_id` is denormalised from shop_orders.clerk_user_id
+//   * `customer_id` is denormalised from shop_orders.customer_id
 //     for the same reason — and is nullable because guest checkouts
 //     are still supported by the rest of the shop pipeline (even
 //     though the verified-purchaser badge skips guest rows by design).
@@ -60,12 +60,12 @@ export const shopOrderItems = resupplySchema.table(
      */
     stripeSessionId: text("stripe_session_id").notNull(),
     /**
-     * Denormalised buyer Clerk id (mirrors shop_orders.clerk_user_id).
+     * Denormalised shop-customer key (mirrors shop_orders.customer_id).
      * Nullable for guest checkouts. Indexed for the verified-
-     * purchaser hot path: `WHERE clerk_user_id = $1 AND product_id IN
+     * purchaser hot path: `WHERE customer_id = $1 AND product_id IN
      * ($2..)` runs as one composite-index lookup.
      */
-    clerkUserId: text("clerk_user_id"),
+    customerId: text("customer_id"),
     /** Stripe product id this line item refers to. */
     productId: text("product_id").notNull(),
     /**
@@ -108,12 +108,12 @@ export const shopOrderItems = resupplySchema.table(
       "shop_order_items_session_product_price_unique",
     ).on(t.stripeSessionId, t.productId, t.priceId),
     /**
-     * Verified-purchaser hot path: `WHERE clerk_user_id = $1 AND
+     * Verified-purchaser hot path: `WHERE customer_id = $1 AND
      * product_id IN ($2..$N)` runs once per review-list page load.
      * Compound index covers both predicates.
      */
-    userProductIdx: index("shop_order_items_clerk_user_id_product_id_idx").on(
-      t.clerkUserId,
+    userProductIdx: index("shop_order_items_customer_id_product_id_idx").on(
+      t.customerId,
       t.productId,
     ),
     /** Order-history join target: items by order id. */

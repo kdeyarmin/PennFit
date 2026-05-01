@@ -1,4 +1,4 @@
-// shop_customers — local mirror of "this Clerk user has a Stripe Customer
+// shop_customers — local mirror of "this auth user has a Stripe Customer
 // + saved info" for the PennPaps cash-pay shop.
 //
 // Why a local table at all (Stripe is source of truth for Customers):
@@ -6,7 +6,7 @@
 //     card brand/last4?" in one DB query — without it we'd hit Stripe
 //     on every account-page render.
 //   * Order-history queries need a stable foreign key from
-//     shop_orders.clerk_user_id back to "the Stripe Customer ID we
+//     shop_orders.customer_id back to "the Stripe Customer ID we
 //     used for that purchase". Storing the mapping locally avoids
 //     a Stripe customer-search per order.
 //   * Quick-checkout / one-click reorder needs to find the user's
@@ -16,13 +16,15 @@
 //   * Card numbers, CVCs, full PANs — never. Only display crumbs
 //     (brand, last4, exp month/year) so we can render
 //     "Visa •••• 4242 — expires 04/29" without a Stripe round-trip.
-//   * Billing email — Clerk owns that. We store `email_lower` only
-//     for support lookups + audit; primary identity is `clerk_user_id`.
+//   * Billing email — the auth provider owns that. We store
+//     `email_lower` only for support lookups + audit; primary
+//     identity is `customer_id`.
 //
-// PK = clerk_user_id: stable for the user's lifetime in Clerk and
-// already the natural identifier for every signed-in shop request.
-// Using it directly (instead of an auto-generated id) eliminates a
-// lookup hop on every /shop/me call.
+// PK = customer_id: an opaque shop-customer key (sourced from
+// `auth.users.id` post-cutover) that is stable for the user's
+// lifetime and the natural identifier for every signed-in shop
+// request. Using it directly (instead of an auto-generated id)
+// eliminates a lookup hop on every /shop/me call.
 
 import { sql } from "drizzle-orm";
 import { index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
@@ -43,10 +45,53 @@ export interface SavedShippingAddress {
   country: "US";
 }
 
+/**
+ * Per-customer communication preferences for the cash-pay shop.
+ * Every flag is opt-OUT (defaults to true on first account hit) for
+ * the transactional channels and opt-IN (defaults to false) for the
+ * marketing-style channels. Dispatchers consult this object before
+ * sending — see the abandonment-cart and order-tracking helpers.
+ */
+export interface CommunicationPreferences {
+  /** Marketing emails (new product announcements, promotions). */
+  emailMarketing: boolean;
+  /** Resupply / restock reminder emails. */
+  emailResupplyReminders: boolean;
+  /** Cart-abandonment recovery emails. */
+  emailAbandonedCart: boolean;
+  /** Post-purchase review-request emails. */
+  emailReviewRequests: boolean;
+  /** Marketing SMS. Promotions etc. */
+  smsMarketing: boolean;
+  /** Transactional SMS (order shipped, delivered). Off by default. */
+  smsTransactional: boolean;
+  /** Channel preference when both apply (e.g. shipped events). */
+  preferredChannel: "email" | "sms";
+  /** DND start (0-23, customer's local timezone). null = no DND. */
+  dndStartHour: number | null;
+  /** DND end (0-23, exclusive). null = no DND. */
+  dndEndHour: number | null;
+  /** IANA timezone ID for evaluating DND windows server-side. */
+  timezone: string | null;
+}
+
+export const DEFAULT_COMMUNICATION_PREFERENCES: CommunicationPreferences = {
+  emailMarketing: false,
+  emailResupplyReminders: true,
+  emailAbandonedCart: true,
+  emailReviewRequests: true,
+  smsMarketing: false,
+  smsTransactional: false,
+  preferredChannel: "email",
+  dndStartHour: null,
+  dndEndHour: null,
+  timezone: null,
+};
+
 export const shopCustomers = resupplySchema.table(
   "shop_customers",
   {
-    clerkUserId: text("clerk_user_id").primaryKey(),
+    customerId: text("customer_id").primaryKey(),
     /**
      * Stripe Customer ID once we've created one. Nullable because the
      * row is created on first /shop/me hit (so we always have a place
@@ -56,10 +101,10 @@ export const shopCustomers = resupplySchema.table(
     stripeCustomerId: text("stripe_customer_id").unique(),
     displayName: text("display_name"),
     /**
-     * Clerk's primary email at row-creation time, lowercased. Lets
-     * support search "what shop customer is anna@example.com?" without
-     * a Clerk Backend API call. Refreshed opportunistically on each
-     * /shop/me hit.
+     * The auth user's primary email at row-creation time,
+     * lowercased. Lets support search "what shop customer is
+     * anna@example.com?" without a join. Refreshed
+     * opportunistically on each /shop/me hit.
      */
     emailLower: text("email_lower"),
     shippingAddress: jsonb("shipping_address_json").$type<SavedShippingAddress | null>(),
@@ -76,6 +121,14 @@ export const shopCustomers = resupplySchema.table(
     defaultPaymentMethodLast4: text("default_payment_method_last4"),
     defaultPaymentMethodExpMonth: integer("default_payment_method_exp_month"),
     defaultPaymentMethodExpYear: integer("default_payment_method_exp_year"),
+    /**
+     * Per-customer comm prefs JSONB. Nullable in the DB; the API
+     * coalesces missing keys to DEFAULT_COMMUNICATION_PREFERENCES on
+     * read so callers can rely on a fully-populated object.
+     */
+    communicationPreferences: jsonb("communication_preferences").$type<
+      CommunicationPreferences | null
+    >(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

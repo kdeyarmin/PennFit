@@ -1,6 +1,6 @@
 // shop_reviews — customer-submitted product reviews for the cash-pay
-// shop. Any signed-in Clerk customer can submit one review per
-// product (UNIQUE on clerk_user_id + product_id). Every review is
+// shop. Any signed-in customer can submit one review per
+// product (UNIQUE on customer_id + product_id). Every review is
 // PENDING by default and only becomes publicly visible after an
 // admin approves it (status='approved'). Edits to an approved review
 // reset status back to 'pending' so the moderator re-vets the change.
@@ -37,11 +37,11 @@ export const shopReviews = resupplySchema.table(
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
     /**
-     * Clerk user ID of the review author. Required — anonymous /
-     * guest reviews are out of scope (no stable identity for
-     * one-per-user enforcement or moderation appeals).
+     * Shop-customer key of the review author. Required —
+     * anonymous / guest reviews are out of scope (no stable
+     * identity for one-per-user enforcement or moderation appeals).
      */
-    clerkUserId: text("clerk_user_id").notNull(),
+    customerId: text("customer_id").notNull(),
     /**
      * Stripe product ID this review is about. Not a foreign key —
      * Stripe is the catalog source of truth and product IDs can
@@ -57,9 +57,9 @@ export const shopReviews = resupplySchema.table(
     /**
      * Public display name, denormalized at submit time as
      * "FirstName L." (e.g. "Sarah K."). Falls back to "PennPaps
-     * customer" when the Clerk profile lacks a first name. Stored
-     * here so public reads never need a Clerk lookup AND so a
-     * later Clerk profile rename doesn't silently rewrite already-
+     * customer" when the the auth provider profile lacks a first name. Stored
+     * here so public reads never need a auth lookup AND so a
+     * later the auth provider profile rename doesn't silently rewrite already-
      * approved review attribution.
      */
     authorDisplayName: text("author_display_name").notNull(),
@@ -75,7 +75,7 @@ export const shopReviews = resupplySchema.table(
     moderationNote: text("moderation_note"),
     /** When the most recent moderation decision was applied. */
     moderatedAt: timestamp("moderated_at", { withTimezone: true }),
-    /** Clerk user ID of the moderating admin. */
+    /** auth user ID of the moderating admin. */
     moderatedBy: text("moderated_by"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -93,8 +93,8 @@ export const shopReviews = resupplySchema.table(
      * product?" lookups for the product detail page.
      */
     authorProductUnique: uniqueIndex(
-      "shop_reviews_clerk_user_id_product_id_unique",
-    ).on(t.clerkUserId, t.productId),
+      "shop_reviews_customer_id_product_id_unique",
+    ).on(t.customerId, t.productId),
     /**
      * Public reads filter by `product_id = $1 AND status = 'approved'`
      * with newest-first ordering. Compound index covers the predicate

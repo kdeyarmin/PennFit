@@ -1,9 +1,12 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
+import { makeAuthRouter } from "@workspace/resupply-auth";
 import router from "./routes";
+import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
+import { errorHandler } from "./middlewares/errorHandler";
+import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
 const app: Express = express();
@@ -12,6 +15,12 @@ const app: Express = express();
 // looks like it came from 127.0.0.1, which breaks rate limiting and
 // audit-log IP capture.
 app.set("trust proxy", 1);
+
+// Security headers — mounted FIRST so every response (including the
+// Stripe webhook below, every CORS preflight, and every error handler
+// response) carries them. See middlewares/securityHeaders.ts for the
+// header set + per-header rationale.
+app.use(securityHeaders);
 
 // CORS allowlist resolution, in priority order:
 //   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Use this
@@ -74,16 +83,13 @@ const allowedOrigins = (() => {
   return dev;
 })();
 
-// `credentials` is intentionally OFF: the dashboard authenticates with
-// `Authorization: Bearer <clerk_token>`, never cookies. Setting
-// `credentials: true` would oblige us to keep an exact-match Origin
-// allowlist forever (browsers refuse `Access-Control-Allow-Origin: *`
-// when credentials are enabled) AND would unlock cookie-based CSRF
-// attack surface that we don't actually use. Bearer tokens are
-// immune to classic CSRF because the browser does not auto-attach
-// them — JS code must read and send them deliberately. Leaving
-// credentials off is the simpler, safer default for a Bearer-only
-// API.
+// `credentials: true` is required for the in-house auth path —
+// the dashboard sends the `pf_session` cookie cross-origin, and
+// browsers strip Set-Cookie / Cookie when credentials aren't
+// allowed. The exact-match Origin allowlist above is what makes
+// this safe (browsers refuse `Access-Control-Allow-Origin: *`
+// when credentials are enabled, so every allowed origin is
+// vetted hostname-by-hostname).
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -91,6 +97,7 @@ app.use(
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
     },
+    credentials: true,
   }),
 );
 
@@ -128,18 +135,30 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// Clerk session middleware — attaches auth state (`getAuth(req)`) to
-// every request so downstream admin-gated routes can read it. Safe
-// to mount globally: it's a no-op for unauthenticated requests, and
-// the unauthenticated /healthz, /readyz probes don't read auth state
-// at all. We mount it BEFORE the route tree so every nested router
-// inherits it without needing per-router wiring.
-app.use(clerkMiddleware());
+// In-house /auth/* routes. The router is unconditionally mounted;
+// a missing AUTH_PASSWORD_PEPPER throws here so the misconfig
+// surfaces at boot rather than at the first sign-in attempt.
+const authDeps = getAuthDeps();
+app.use(
+  "/resupply-api/auth",
+  makeAuthRouter(authDeps, { productName: "Resupply" }),
+);
+logger.info(
+  { event: "auth_in_house_mounted" },
+  "in-house auth routes mounted at /resupply-api/auth",
+);
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,
 // and the admin smoke endpoint /resupply-api/me; richer endpoints
 // land in later phases.
 app.use("/resupply-api", router);
+
+// Top-level error handler — MUST be the last middleware mounted on
+// the app. Catches any error a route handler throws (or passes via
+// next(err)), emits ONE structured log line, and returns a generic
+// JSON envelope so we never leak stack traces or PHI-adjacent
+// identifiers in error responses. See middlewares/errorHandler.ts.
+app.use(errorHandler);
 
 export default app;

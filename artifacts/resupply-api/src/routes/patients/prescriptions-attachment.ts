@@ -28,7 +28,7 @@
 //     and content-type against the bucket's metadata (rejects and
 //     deletes on mismatch — the client-declared values from
 //     /upload-url are advisory only), sets ACL
-//     {owner: adminClerkId, visibility:"private"}, persists the
+//     {owner: adminUserId, visibility:"private"}, persists the
 //     GCS-confirmed metadata. If a previous attachment existed on
 //     this prescription, the old object's bytes are deleted best-
 //     effort after the row is updated.
@@ -196,7 +196,7 @@ router.post(
       await logAudit({
         action: "patient.prescription.attachment.upload_url_issued",
         adminEmail: req.adminEmail ?? null,
-        adminClerkId: req.adminClerkId ?? null,
+        adminUserId: req.adminUserId ?? null,
         targetTable: "prescriptions",
         targetId: rx.id,
         metadata: {
@@ -274,7 +274,7 @@ router.post(
       normalizedPath = await objectStorage.trySetObjectEntityAclPolicy(
         body.data.objectPath,
         {
-          owner: req.adminClerkId ?? "unknown",
+          owner: req.adminUserId ?? "unknown",
           visibility: "private",
         },
       );
@@ -409,7 +409,7 @@ router.post(
     await logAudit({
       action: "patient.prescription.attachment.upload",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "prescriptions",
       targetId: rx.id,
       metadata: {
@@ -478,7 +478,7 @@ router.get(
     await logAudit({
       action: "patient.prescription.attachment.download",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "prescriptions",
       targetId: rx.id,
       metadata: { patient_id: ids.data.id },
@@ -609,7 +609,7 @@ router.delete(
     await logAudit({
       action: "patient.prescription.attachment.remove",
       adminEmail: req.adminEmail ?? null,
-      adminClerkId: req.adminClerkId ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "prescriptions",
       targetId: rx.id,
       metadata: {

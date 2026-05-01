@@ -1,72 +1,88 @@
-import type { Request, Response, NextFunction } from "express";
-import { getAuth, clerkClient } from "@clerk/express";
+// requireAdmin — gate for the PennPaps admin API.
+//
+// Stage 5a — Clerk fall-through retired. The middleware now
+// resolves the session strictly via the in-house pf_session
+// cookie. `auth.users.role` is authoritative: 'admin' or 'agent'
+// passes; 'customer' is rejected as 401; everything else
+// (locked / revoked / unknown) is rejected as 401.
+//
+// Roles:
+//   - `admin` — full privileges. Includes the team-management
+//     endpoints in `routes/admin-users.ts`.
+//   - `agent` — junior role for customer-service staff. Identical
+//     to `admin` everywhere EXCEPT routes that explicitly opt in
+//     to admin-only via `requireAdminOnly`.
+//
+// First-admin bootstrap: there is no env-var allowlist anymore.
+// Use `pnpm --filter @workspace/scripts auth:bootstrap-admin
+// --email=<addr> --role=admin` to seed the very first admin
+// against a fresh DB.
+//
+// Helpers (`readPennRole`, `getEnvAllowlists`, etc.) are
+// preserved on the module's public surface for the legacy
+// `routes/admin-users.ts` team-management endpoints, which still
+// read Clerk publicMetadata. Stage 5b retires those endpoints
+// (they get rewritten against `auth.users` directly), at which
+// point the helpers retire too.
 
-/**
- * requireAdmin — gate for the admin API.
- *
- * Three checks, in order:
- *   1. The request has a valid Clerk session (user is signed in).
- *   2. The signed-in user's primary email is verified.
- *   3. That email is in the `PENN_ADMIN_EMAILS` OR `PENN_AGENT_EMAILS`
- *      allowlist.
- *
- * The allowlists are comma-separated env vars, e.g.
- *   PENN_ADMIN_EMAILS="dr.smith@pennhomemedical.com,billing@pennhomemedical.com"
- *   PENN_AGENT_EMAILS="csr1@pennhomemedical.com,csr2@pennhomemedical.com"
- *
- * Roles:
- *   - `admin` — full privileges. Membership in `PENN_ADMIN_EMAILS`
- *     wins over `PENN_AGENT_EMAILS` if both contain the same email.
- *   - `agent` — junior-admin role used by customer-service staff.
- *     Identical to `admin` everywhere EXCEPT routes that explicitly
- *     opt in to admin-only via `requireAdminOnly`. The cpap-fitter
- *     admin currently has no admin-only routes (no destructive
- *     deletes), so in practice agents see the same surface as
- *     admins; the role distinction is wired so future destructive
- *     operations can gate cleanly.
- *
- * Behavior when neither allowlist is set:
- *   - In `NODE_ENV=development` we allow any signed-in user as
- *     `admin`. This makes the local dev loop bearable — no env vars
- *     to manage.
- *   - In production we DENY all requests with a 503 "admin not
- *     configured" response. Better to have no admin than an
- *     accidentally world-open admin if a deploy ships without the
- *     env var. An agent-only deployment is intentionally not
- *     supported — every prod deploy MUST have at least one admin.
- *
- * On success we attach `req.adminEmail`, `req.adminClerkId`, and
- * `req.adminRole` so route handlers can write audit-log rows
- * without re-fetching the user.
- */
+import type { Request, Response, NextFunction } from "express";
+
+import {
+  SESSION_COOKIE,
+  hashToken,
+  isExpired,
+  readCookie,
+} from "@workspace/resupply-auth";
+
+import { getAuthDeps } from "../lib/auth-deps";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       adminEmail?: string;
-      adminClerkId?: string;
+      adminUserId?: string;
       adminRole?: "admin" | "agent";
     }
   }
 }
 
-function parseEmailList(envVar: string): string[] | null {
-  const raw = process.env[envVar];
+interface ResolvedAdmin {
+  email: string;
+  userId: string;
+  role: "admin" | "agent";
+}
+
+async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
+  const deps = getAuthDeps();
+  const raw = readCookie(req, SESSION_COOKIE);
   if (!raw) return null;
-  const list = raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  return list.length > 0 ? list : null;
-}
-
-function parseAdminAllowlist(): string[] | null {
-  return parseEmailList("PENN_ADMIN_EMAILS");
-}
-
-function parseAgentAllowlist(): string[] | null {
-  return parseEmailList("PENN_AGENT_EMAILS");
+  const tokenHash = hashToken(raw);
+  if (!tokenHash) return null;
+  try {
+    const session = await deps.repo.findSessionByTokenHash(tokenHash);
+    if (
+      !session ||
+      isExpired(
+        { expiresAt: session.expiresAt, revokedAt: session.revokedAt },
+        new Date(),
+      )
+    ) {
+      return null;
+    }
+    const user = await deps.repo.findUserById(session.userId);
+    if (!user || user.status === "locked" || user.status === "revoked") {
+      return null;
+    }
+    if (user.role !== "admin" && user.role !== "agent") {
+      return null;
+    }
+    return { email: user.emailLower, userId: user.id, role: user.role };
+  } catch {
+    // Transient repo error → 401. The SPA reloads /me, the next
+    // attempt sees a healthier DB.
+    return null;
+  }
 }
 
 export async function requireAdmin(
@@ -74,85 +90,17 @@ export async function requireAdmin(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const auth = getAuth(req);
-  const userId = auth?.userId;
-  if (!userId) {
+  const admin = await resolveAdmin(req);
+  if (!admin) {
     res.status(401).json({ error: "Sign in required" });
     return;
   }
-
-  // Look up the user to get their primary verified email. We could also
-  // stash email in session claims via Clerk's "Customize session" feature,
-  // but that requires a dashboard change — fetching here keeps setup simple
-  // (the call is cached aggressively by @clerk/express).
-  //
-  // We REQUIRE the primary email to be verified — otherwise an attacker
-  // who can sign up with someone else's address (without proving control)
-  // could match the allowlist. Clerk marks an email "verified" only after
-  // the user clicks the verification link or enters the code.
-  let email: string | undefined;
-  try {
-    const user = await clerkClient.users.getUser(userId);
-    const primaryId = user.primaryEmailAddressId;
-    const primary =
-      user.emailAddresses.find((e) => e.id === primaryId) ??
-      user.emailAddresses[0];
-    if (primary?.verification?.status !== "verified") {
-      res.status(403).json({
-        error:
-          "Your primary email address is not verified. Please verify it from your account settings before accessing the admin.",
-      });
-      return;
-    }
-    email = primary.emailAddress?.toLowerCase();
-  } catch (_err) {
-    res.status(401).json({ error: "Could not verify your identity. Please sign in again." });
-    return;
-  }
-
-  if (!email) {
-    res.status(403).json({ error: "Your account has no verified email address." });
-    return;
-  }
-
-  const adminAllowlist = parseAdminAllowlist();
-  const agentAllowlist = parseAgentAllowlist();
-
-  let role: "admin" | "agent";
-  if (adminAllowlist === null) {
-    if (process.env.NODE_ENV === "production") {
-      res.status(503).json({
-        error:
-          "Admin access is not configured on this server. Set PENN_ADMIN_EMAILS to a comma-separated list of admin emails.",
-      });
-      return;
-    }
-    // dev fallback — any signed-in user is an admin
-    role = "admin";
-  } else if (adminAllowlist.includes(email)) {
-    role = "admin";
-  } else if (agentAllowlist !== null && agentAllowlist.includes(email)) {
-    role = "agent";
-  } else {
-    res.status(403).json({ error: "This account is not authorized for admin access." });
-    return;
-  }
-
-  req.adminEmail = email;
-  req.adminClerkId = userId;
-  req.adminRole = role;
+  req.adminEmail = admin.email;
+  req.adminUserId = admin.userId;
+  req.adminRole = admin.role;
   next();
 }
 
-/**
- * requireAdminOnly — stricter gate that admits only `role === "admin"`.
- *
- * Wraps `requireAdmin` so all the spoofing defenses and Clerk error
- * handling stay in one place. Use on routes whose effects are not
- * safely reversible by a customer-service agent. The cpap-fitter
- * admin has no such routes today; this is wired in advance so future
- * destructive operations can opt in cleanly.
- */
 export async function requireAdminOnly(
   req: Request,
   res: Response,
@@ -172,3 +120,11 @@ export async function requireAdminOnly(
   }
   next();
 }
+
+// Stage 5b retired the legacy `readPennRole` / `getEnvAllowlists`
+// / `PENN_ROLE_METADATA_KEY` helpers along with the Clerk-driven
+// admin-users.ts route. Identity now lives entirely on
+// `auth.users.role`; PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS env
+// vars are no longer consulted by the middleware. Bootstrap a
+// fresh DB with `pnpm --filter @workspace/scripts auth:bootstrap-admin
+// --email=<addr> --role=admin`.

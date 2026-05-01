@@ -1,0 +1,56 @@
+name: "Copilot Setup Steps"
+
+# Automatically run the setup steps when they are changed to allow for easy validation, and
+# allow manual testing through the repository's "Actions" tab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        # Install pnpm globally via npm instead of using corepack. Corepack's
+        # `prepare ... --activate` ends up invoking pnpm in a way that probes the
+        # current working directory for a `package.json`, which fails with
+        # `ERR_PNPM_NO_PKG_MANIFEST` in environments (such as the Copilot agent's
+        # default `/home/user` cwd) where the repository is not the cwd. Using
+        # `npm install -g` does not require any manifest in the cwd.
+        #
+        # We also explicitly disable any pre-existing Corepack `pnpm` shim. The
+        # Copilot agent environment ships Node with a Corepack-managed `pnpm`
+        # shim on PATH; if that shim wins over the npm-global binary, invoking
+        # `pnpm` re-triggers the same `ERR_PNPM_NO_PKG_MANIFEST` failure in
+        # `/home/user`. Running from `${{ github.workspace }}` (which contains a
+        # `package.json`) is an additional safety net so any Corepack probe of
+        # the cwd succeeds.
+        working-directory: ${{ github.workspace }}
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@10.33.2
+          pnpm --version
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile

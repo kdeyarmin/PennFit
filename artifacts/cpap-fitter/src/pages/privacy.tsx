@@ -98,7 +98,7 @@ export function Privacy() {
               PennPaps uses Google's MediaPipe technology for on-device landmark detection. This operates
               entirely within your browser environment. Order emails are delivered to PennPaps
               through SendGrid, our transactional email provider. Authentication for PennPaps staff
-              is provided by Clerk.
+              is handled by a third-party identity service.
             </p>
           </section>
 

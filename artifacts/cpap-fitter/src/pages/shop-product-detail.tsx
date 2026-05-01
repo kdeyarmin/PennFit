@@ -13,12 +13,11 @@
 //     "edit and resubmit" UI.
 //
 // Auth: review reads work for everyone. Write/edit/delete require a
-// Clerk session — the page swaps the form for a "Sign in to write a
-// review" prompt for signed-out visitors via Clerk's <Show>.
+// session — the page swaps the form for a "Sign in to write a
+// review" prompt for signed-out visitors via the auth provider's <Show>.
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Show, useUser } from "@clerk/react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -38,6 +37,8 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
+import { ComfortGuarantee } from "@/components/comfort-guarantee";
+import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   DEFAULT_LOW_STOCK_THRESHOLD,
   fetchProductReviews,
@@ -188,10 +189,9 @@ export function ShopProductDetail({ productId }: { productId: string }) {
     };
   }, [productId]);
 
-  // Load the caller's own review for this product when Clerk is ready.
+  // Load the caller's own review for this product when the auth provider is ready.
   // Refetches on sign-in/out via the user-id key dep below.
-  const { isSignedIn, user } = useUser();
-  const userId = user?.id ?? null;
+  const { isSignedIn, userId } = useShopIdentity();
   const refetchMine = useCallback(() => {
     if (!isSignedIn) {
       setMine(null);
@@ -514,6 +514,9 @@ function Hero({
           <ShieldCheck className="w-3.5 h-3.5" /> Or use insurance — $0 with
           prescription
         </Link>
+        <div className="mt-4">
+          <ComfortGuarantee variant="badge" />
+        </div>
       </div>
     </div>
   );
@@ -545,8 +548,7 @@ function ReviewsSection({
       </div>
       <AggregateBlock aggregate={reviews.aggregate} />
       <div className="mt-10">
-        <Show
-          when="signed-in"
+        <SignedIn
           fallback={
             <div
               className="glass-card rounded-2xl p-6 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4"
@@ -588,7 +590,7 @@ function ReviewsSection({
               review status…
             </div>
           )}
-        </Show>
+        </SignedIn>
       </div>
       <ReviewList items={reviews.items} />
       {reviews.nextCursor && (

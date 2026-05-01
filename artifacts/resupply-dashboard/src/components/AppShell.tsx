@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { useClerk } from "@clerk/react";
+import { useDashboardIdentity } from "../lib/identity";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { ConsoleSwitcher } from "./ConsoleSwitcher";
+import { GlobalLookup } from "./GlobalLookup";
 import { RoleProvider, type AdminRole } from "../lib/role-context";
 import { clearAllDrafts } from "../lib/use-draft-autosave";
 
@@ -48,9 +49,52 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Abandoned Carts",
     matchPrefix: "/admin/shop/abandoned-carts",
   },
+  {
+    href: "/admin/shop/returns",
+    label: "Returns & RMAs",
+    matchPrefix: "/admin/shop/returns",
+  },
+  {
+    href: "/admin/macros",
+    label: "Canned Replies",
+    matchPrefix: "/admin/macros",
+  },
+  {
+    href: "/admin/shop/subscriptions",
+    label: "Subscription Health",
+    matchPrefix: "/admin/shop/subscriptions",
+  },
+  {
+    href: "/admin/team",
+    label: "Team",
+    matchPrefix: "/admin/team",
+  },
+  {
+    href: "/admin/operations",
+    label: "Operations",
+    matchPrefix: "/admin/operations",
+  },
+  {
+    href: "/admin/reports",
+    label: "Reports",
+    matchPrefix: "/admin/reports",
+  },
+  {
+    href: "/admin/delivery-failures",
+    label: "Delivery Failures",
+    matchPrefix: "/admin/delivery-failures",
+  },
+  {
+    href: "/admin/rule-tester",
+    label: "Rule Tester",
+    matchPrefix: "/admin/rule-tester",
+  },
+  {
+    href: "/admin/settings",
+    label: "Settings",
+    matchPrefix: "/admin/settings",
+  },
 ];
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function NavItem({
   href,
@@ -61,22 +105,16 @@ function NavItem({
   label: string;
   isActive: boolean;
 }) {
+  // The nav-item-active / nav-item-idle utilities live in index.css —
+  // active state is navy fill + gold leading accent, idle hovers to a
+  // surface-3 wash with a faint gold leading hint, which gives the
+  // sidebar a more refined sense of focus than the old static border.
   return (
     <Link
       href={href}
-      className="block px-4 py-2 text-sm rounded font-medium transition-colors"
-      style={
-        isActive
-          ? {
-              backgroundColor: "#0a1f44",
-              color: "#ffffff",
-              borderLeft: "3px solid #c9a24a",
-            }
-          : {
-              color: "#0a1f44",
-              borderLeft: "3px solid transparent",
-            }
-      }
+      className={`block px-4 py-2 text-sm rounded-md font-medium ${
+        isActive ? "nav-item-active" : "nav-item-idle"
+      }`}
       aria-current={isActive ? "page" : undefined}
     >
       {label}
@@ -97,7 +135,8 @@ export function AdminHeaderChip({
   email: string;
   role: AdminRole;
 }) {
-  const { signOut } = useClerk();
+  const { signOut } = useDashboardIdentity();
+  const [, setShellLocation] = useLocation();
   // The role badge uses different chrome colours for the two roles
   // so an operator can tell at a glance whether they're signed in
   // as a full admin (navy) or a customer-service agent (gold). We
@@ -108,14 +147,16 @@ export function AdminHeaderChip({
   const isAdmin = role === "admin";
   const badgeStyle = isAdmin
     ? {
-        backgroundColor: "#0a1f44",
+        backgroundColor: "hsl(var(--penn-navy-deep))",
         color: "#ffffff",
-        border: "1px solid #0a1f44",
+        border: "1px solid hsl(var(--penn-gold) / 0.6)",
+        boxShadow: "0 0 0 2px hsl(var(--penn-gold) / 0.15)",
       }
     : {
-        backgroundColor: "#fff7e0",
-        color: "#0a1f44",
-        border: "1px solid #c9a24a",
+        background:
+          "linear-gradient(135deg, hsl(var(--penn-gold) / 0.30), hsl(var(--penn-gold) / 0.10))",
+        color: "hsl(var(--penn-navy-deep))",
+        border: "1px solid hsl(var(--penn-gold))",
       };
   return (
     <div className="flex items-center gap-3">
@@ -139,16 +180,22 @@ export function AdminHeaderChip({
         onClick={() => {
           // Drop any half-typed reply drafts before sign-out so PHI
           // doesn't survive across admin sessions on a shared
-          // workstation. Must happen BEFORE signOut: once Clerk
+          // workstation. Must happen BEFORE signOut: once the auth provider
           // navigates away we lose the chance to run cleanup.
           clearAllDrafts();
-          void signOut({ redirectUrl: `${basePath}/sign-in` });
+          // Sign out via the identity shim, then navigate to
+          // /sign-in. Soft-navigate via wouter so jsdom doesn't
+          // refuse the navigation in tests; the cookie + cache
+          // cleanup happens inside the identity shim's signOut().
+          void signOut().finally(() => {
+            setShellLocation("/sign-in");
+          });
         }}
-        className="text-xs font-semibold px-3 py-1.5 rounded border"
+        className="text-xs font-semibold px-3 py-1.5 rounded-md border transition-colors"
         style={{
-          color: "#0a1f44",
+          color: "hsl(var(--penn-navy-deep))",
           backgroundColor: "#ffffff",
-          borderColor: "#c9a24a",
+          borderColor: "hsl(var(--penn-gold))",
         }}
       >
         Sign out
@@ -170,26 +217,23 @@ export function AppShell({
 
   return (
     <RoleProvider role={adminRole}>
-    <div
-      className="min-h-screen flex flex-col"
-      style={{ backgroundColor: "#f7f8fb" }}
-    >
+    <div className="min-h-screen flex flex-col">
       <BrandHeader
         rightSlot={
           adminEmail ? (
-            <AdminHeaderChip email={adminEmail} role={adminRole} />
+            <div className="flex items-center gap-3">
+              <GlobalLookup />
+              <AdminHeaderChip email={adminEmail} role={adminRole} />
+            </div>
           ) : undefined
         }
       />
       <div className="flex-1 flex">
-        <aside
-          className="w-56 shrink-0 border-r p-3 flex flex-col gap-1"
-          style={{ backgroundColor: "#ffffff", borderColor: "#e5e7eb" }}
-        >
+        <aside className="sidebar-surface w-60 shrink-0 p-3 flex flex-col gap-1">
           <ConsoleSwitcher />
           <p
-            className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-2 px-2 mt-1"
-            style={{ color: "#c9a24a" }}
+            className="text-[10px] uppercase tracking-[0.22em] font-semibold mb-2 px-2 mt-2"
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
           >
             Navigation
           </p>

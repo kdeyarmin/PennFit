@@ -113,6 +113,41 @@
             "when": 1778436000000,
             "tag": "0015_prescription_attachments",
             "breakpoints": true
+        },
+        {
+            "idx": 16,
+            "version": "7",
+            "when": 1778522400000,
+            "tag": "0016_shop_orders_email_tracking",
+            "breakpoints": true
+        },
+        {
+            "idx": 17,
+            "version": "7",
+            "when": 1778608800000,
+            "tag": "0017_shop_orders_customer_email",
+            "breakpoints": true
+        },
+        {
+            "idx": 18,
+            "version": "7",
+            "when": 1809849600000,
+            "tag": "0022_in_house_auth",
+            "breakpoints": true
+        },
+        {
+            "idx": 19,
+            "version": "7",
+            "when": 1809936000000,
+            "tag": "0023_drop_admin_users_clerk_columns",
+            "breakpoints": true
+        },
+        {
+            "idx": 20,
+            "version": "7",
+            "when": 1810022400000,
+            "tag": "0024_rename_shop_customer_id",
+            "breakpoints": true
         }
     ]
 }

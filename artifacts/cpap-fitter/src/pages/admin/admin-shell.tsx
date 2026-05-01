@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Redirect } from "wouter";
-import { Show, useUser } from "@clerk/react";
+import { Link, Redirect, useLocation } from "wouter";
 import { fetchAdminMe, AdminApiError } from "@/lib/admin-api";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,39 +7,55 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ShieldOff } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+import { SignedIn, SignedOut, useShopIdentity } from "@/lib/identity";
 
 /**
  * AdminShell — wraps an admin page with two layered checks:
  *
- *   1. Signed-out users get redirected to /sign-in (Clerk's `<Show>`).
+ *   1. Signed-out users get redirected to /sign-in (via the
+ *      identity shim's <SignedOut>).
  *      We deliberately do NOT redirect from "/" — only from /admin*.
  *
  *   2. Signed-in users hit /api/admin/me to verify they're on the
- *      PENN_ADMIN_EMAILS allowlist. If not, we render a "not authorized"
- *      page instead of the admin UI. This second check is the
- *      authoritative one — Clerk gives us identity, the server gives us
- *      authorization.
+ *      PENN_ADMIN_EMAILS allowlist (in Clerk mode) or that
+ *      auth.users.role is admin/agent (in in-house mode). If not,
+ *      we render a "not authorized" page instead of the admin UI.
  *
  * The signed-in admin's email is then passed down to AdminLayout for
  * display in the sidebar.
  */
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  // Capture the admin path the user is trying to reach so re-auth
+  // returns them here instead of falling through to the patient
+  // /account page. Without this query param the sign-in page may
+  // use a default fallback redirect, landing stale-session admins
+  // on /account where /shop/me also returns signedIn:false and
+  // renders a confusing "Your account info couldn't load" error
+  // that the Try again button can't recover from.
+  const [location] = useLocation();
+  const signInHref = `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
   return (
     <>
-      <Show when="signed-out">
-        <Redirect to="/sign-in" />
-      </Show>
-      <Show when="signed-in">
-        <AdminAuthorizedShell>{children}</AdminAuthorizedShell>
-      </Show>
+      <SignedOut>
+        <Redirect to={signInHref} />
+      </SignedOut>
+      <SignedIn>
+        <AdminAuthorizedShell signInHref={signInHref}>
+          {children}
+        </AdminAuthorizedShell>
+      </SignedIn>
     </>
   );
 }
 
-function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
-  const { isLoaded } = useUser();
+function AdminAuthorizedShell({
+  children,
+  signInHref,
+}: {
+  children: React.ReactNode;
+  signInHref: string;
+}) {
+  const { isLoaded } = useShopIdentity();
   const me = useQuery({
     queryKey: ["admin-me"],
     queryFn: fetchAdminMe,
@@ -67,7 +82,7 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
       return <NotAuthorized status={status} message={(me.error as Error).message} />;
     }
     if (status === 401) {
-      return <Redirect to="/sign-in" />;
+      return <Redirect to={signInHref} />;
     }
     return <AdminErrorShell error={me.error as Error} />;
   }

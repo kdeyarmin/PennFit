@@ -1,77 +1,115 @@
-import { SignIn } from "@clerk/react";
-import { useDocumentTitle } from "@/hooks/use-document-title";
+// Sign-in page for the cpap-fitter shop.
+//
+// On success we redirect to /account so a returning shopper
+// lands on their order history. New customers should use
+// /sign-up instead — there's a link below the form.
+
+import { useState, type FormEvent } from "react";
+import { Link, useLocation } from "wouter";
+
+import { AuthError } from "@workspace/resupply-auth-react";
+
+import { authHooks } from "@/lib/auth-hooks";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-/**
- * Pull a `?redirect=` target out of the current URL. We use this to
- * support BOTH the admin flow (legacy `/admin` destination) and the
- * patient flow (return-to-where-I-was). The query string is read at
- * render time — Clerk handles the rest of the auth dance and lands
- * the user at this URL on success.
- *
- * Validation: only allow same-origin paths starting with `/`. This
- * prevents an open-redirect (`?redirect=https://evil.com`) and also
- * rejects empty / accidental absolute URLs.
- */
-function readRedirect(): string {
-  if (typeof window === "undefined") return `${basePath}/admin`;
-  const usp = new URLSearchParams(window.location.search);
-  const raw = usp.get("redirect");
-  if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
-    // The Wouter base path is already on the page; redirect targets
-    // come in as Wouter-relative (e.g. "/account"). Make them
-    // browser-absolute by prepending basePath, but don't double up
-    // when the caller already prepended.
-    if (basePath && raw.startsWith(basePath)) return raw;
-    return `${basePath}${raw}`;
-  }
-  return `${basePath}/admin`;
-}
-
-/**
- * Branding note: the sign-in widget itself is rendered by Clerk and
- * its title (e.g. "Sign in to <app name>") is set in the Clerk
- * dashboard, NOT in code. Rename the Clerk application there if you
- * want a different headline inside the box.
- *
- * The `appearance.elements.footer` override hides the
- * "Secured by Clerk" badge so the footer chrome doesn't leak the
- * vendor's name to non-technical operators. The wrapping <div>
- * below adds our own page-level identity above the widget so
- * shoppers and operators always see "Penn Home Medical Supply"
- * regardless of the Clerk-side configuration.
- */
-const HIDE_CLERK_BRANDING = {
-  elements: {
-    footer: { display: "none" as const },
-  },
-} as const;
-
 export function SignInPage() {
-  useDocumentTitle("Sign in");
-  const redirectUrl = readRedirect();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const signIn = authHooks.useSignIn();
+  const [, setLocation] = useLocation();
+
+  function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitError(null);
+    signIn.mutate(
+      { email: email.trim(), password },
+      {
+        onSuccess: () => setLocation("/account"),
+        onError: (err) => {
+          setSubmitError(
+            err instanceof AuthError ? err.userMessage : "Sign-in failed.",
+          );
+        },
+      },
+    );
+  }
+
   return (
-    <div className="flex min-h-[calc(100dvh-5rem)] flex-col items-center justify-center px-4 py-12">
-      <div className="mb-6 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Sign in to Penn Home Medical Supply
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Use your work email to access the admin console.
-        </p>
-      </div>
-      <SignIn
-        appearance={HIDE_CLERK_BRANDING}
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up?redirect=${encodeURIComponent(
-          redirectUrl.startsWith(basePath)
-            ? redirectUrl.slice(basePath.length) || "/"
-            : redirectUrl,
-        )}`}
-        forceRedirectUrl={redirectUrl}
-      />
+    <div className="min-h-screen flex items-center justify-center px-4 py-12">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4"
+      >
+        <div>
+          <h1 className="text-xl font-semibold">Sign in</h1>
+          <p className="text-sm text-muted-foreground">
+            Sign in to view your orders and saved shipping info.
+          </p>
+        </div>
+
+        <label className="block text-sm">
+          <span className="font-medium">Email</span>
+          <input
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="block text-sm">
+          <span className="font-medium">Password</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </label>
+
+        {submitError && (
+          <p
+            role="alert"
+            className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-900"
+          >
+            {submitError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={signIn.isPending}
+          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm"
+        >
+          {signIn.isPending ? "Signing in…" : "Sign in"}
+        </button>
+
+        <div className="text-xs text-center space-y-1">
+          <p>
+            <Link
+              href={`${basePath}/forgot-password`}
+              className="underline text-[hsl(var(--penn-navy-deep))]"
+            >
+              Forgot your password?
+            </Link>
+          </p>
+          <p>
+            New here?{" "}
+            <Link
+              href={`${basePath}/sign-up`}
+              className="underline text-[hsl(var(--penn-navy-deep))]"
+            >
+              Create an account
+            </Link>
+          </p>
+        </div>
+      </form>
     </div>
   );
 }

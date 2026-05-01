@@ -8,9 +8,13 @@
 // THAT.
 //
 // Two safety properties:
-//   1. The HMAC key is SEPARATE from the bulk PHI encryption key
-//      (RESUPPLY_PHONE_HMAC_KEY vs RESUPPLY_DATA_KEY). Compromise of
-//      one does not yield the other.
+//   1. The HMAC key is cryptographically SEPARATE from the bulk PHI
+//      encryption key — both are sourced through
+//      `@workspace/resupply-secrets`, which either reads two distinct
+//      legacy env vars (`RESUPPLY_PHONE_HMAC_KEY` vs
+//      `RESUPPLY_DATA_KEY`) or HKDF-derives two distinct subkeys from
+//      the consolidated `RESUPPLY_MASTER_KEY` using domain-separated
+//      `info` labels. Compromise of one does not yield the other.
 //   2. The key is read at CALL TIME, not at module load. That keeps
 //      every test that does not exercise this code path free of an
 //      env-var setup requirement, and surfaces a missing key as a
@@ -21,20 +25,7 @@
 
 import { createHmac } from "node:crypto";
 
-const HMAC_KEY_ENV = "RESUPPLY_PHONE_HMAC_KEY";
-
-function phoneHmacKey(): string {
-  const key = process.env[HMAC_KEY_ENV];
-  if (!key) {
-    throw new Error(
-      `${HMAC_KEY_ENV} is not set — refusing to HMAC patient phone numbers. ` +
-        "Set it via Replit secrets (32-byte hex; see ADR 009). It must be " +
-        "different from RESUPPLY_DATA_KEY so a compromise of one does not " +
-        "unlock the other.",
-    );
-  }
-  return key;
-}
+import { getPhoneHmacKey } from "@workspace/resupply-secrets";
 
 /**
  * Normalize an arbitrary phone-number string to strict E.164 (`+<digits>`).
@@ -100,5 +91,5 @@ export function hmacPhone(input: string): Buffer {
         "normalizeE164() first and branch on null at the call site.",
     );
   }
-  return createHmac("sha256", phoneHmacKey()).update(normalized).digest();
+  return createHmac("sha256", getPhoneHmacKey()).update(normalized).digest();
 }

@@ -16,20 +16,20 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 //       hides/disables Delete buttons so customer-service agents
 //       never see a control they cannot use.
 //
-//   We deliberately do NOT echo the Clerk session token, the full
-//   Clerk user object, or the admin allowlist — only the three
+//   We deliberately do NOT echo the session token, the full
+//   auth user object, or the admin allowlist — only the three
 //   identifiers the UI legitimately needs to render. Even an attacker
 //   who steals a session cookie should learn nothing from /me beyond
-//   what they already know (their own email + Clerk id + role).
+//   what they already know (their own email + the auth provider id + role).
 //
 // Auth:
 //   `requireAdmin` runs first. By the time the handler executes,
 //   it has already proven:
-//     1. There is a valid Clerk session (else 401),
+//     1. There is a valid session (else 401),
 //     2. The session's primary email is verified (else 403),
 //     3. The email is on the admin OR agent allowlist (else 403),
-//   AND attached `adminEmail`, `adminClerkId`, and `adminRole` to
-//   `req`. The handler itself never reaches Clerk and never
+//   AND attached `adminEmail`, `adminUserId`, and `adminRole` to
+//   `req`. The handler itself never reaches the auth provider and never
 //   re-validates.
 
 const router: IRouter = Router();
@@ -42,7 +42,7 @@ router.get("/me", requireAdmin, (req, res) => {
   // error in the email case, and a safe default in the role case)
   // rather than as `undefined` serialized to `null`.
   res.json({
-    clerkId: req.adminClerkId ?? "",
+    userId: req.adminUserId ?? "",
     email: req.adminEmail ?? "",
     role: req.adminRole ?? "admin",
   });

@@ -67,8 +67,9 @@ router.post(
         "vars are missing. Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, " +
         "TWILIO_PHONE_NUMBER or TWILIO_MESSAGING_SERVICE_SID, SENDGRID_API_KEY, " +
         "SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME, " +
-        "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, RESUPPLY_PHONE_HMAC_KEY, " +
-        "RESUPPLY_LINK_HMAC_KEY.",
+        "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and the resupply secret key " +
+        "(RESUPPLY_MASTER_KEY, or both legacy RESUPPLY_PHONE_HMAC_KEY + " +
+        "RESUPPLY_LINK_HMAC_KEY).",
     });
     return;
   }
@@ -99,7 +100,7 @@ router.post(
       actor: {
         kind: "admin",
         adminEmail: req.adminEmail ?? null,
-        adminClerkId: req.adminClerkId ?? null,
+        adminUserId: req.adminUserId ?? null,
         ip: req.ip ?? null,
         userAgent: req.get("user-agent") ?? null,
       },

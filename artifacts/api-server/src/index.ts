@@ -1,3 +1,10 @@
+import { assertRequiredEnv } from "./lib/env-check";
+
+// Fail fast on a misconfigured deploy. Runs before importing app
+// so a missing var surfaces as a single clear startup error rather
+// than a confusing mid-request throw deep in a route handler.
+assertRequiredEnv();
+
 import app from "./app";
 import { logger } from "./lib/logger";
 

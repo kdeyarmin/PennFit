@@ -1,12 +1,12 @@
 /**
- * Admin API — Clerk-gated endpoints for Penn staff.
+ * Admin API — auth-gated endpoints for Penn staff.
  *
  * NOT exposed in the public OpenAPI spec on purpose: the public spec
  * advertises a stateless, no-PHI-stored service to patients. The admin
  * surface is an internal extension that lives off the same Express tree.
  *
  * Auth: every route runs through `requireAdmin`, which:
- *   1. Checks Clerk session
+ *   1. Checks session
  *   2. Validates the signed-in user's email against PENN_ADMIN_EMAILS
  *
  * Audit: every route that returns full PHI (currently only the order
@@ -28,6 +28,7 @@ import { desc, eq, ilike, or, and, sql, count, lte } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/requireAdmin.js";
 import { logger } from "../lib/logger.js";
 import { sendReminderDue, type ReminderItemForEmail } from "../lib/reminderEmail.js";
+import adminUsersRouter from "./admin-users.js";
 
 const router = Router();
 
@@ -37,6 +38,12 @@ const router = Router();
 // parent router) and reject them with 401 — even though those routes
 // are intentionally public.
 router.use("/admin", requireAdmin);
+
+// Team-management routes live in their own file (admin-users.ts) but
+// share this router so they inherit the requireAdmin gate above. The
+// individual mutating routes additionally apply requireAdminOnly
+// internally so agents can read the roster but not modify it.
+router.use(adminUsersRouter);
 
 // ---------- GET /admin/orders ----------
 
@@ -98,7 +105,7 @@ router.get("/admin/orders", async (req, res) => {
   // which are PHI under HIPAA. The action string captures whichever
   // filter was applied so an investigator can reconstruct the exact
   // query without us also storing the full result set.
-  if (req.adminEmail && req.adminClerkId) {
+  if (req.adminEmail && req.adminUserId) {
     const filterParts: string[] = [];
     if (q) filterParts.push(`q=${q}`);
     if (status) filterParts.push(`status=${status}`);
@@ -107,7 +114,7 @@ router.get("/admin/orders", async (req, res) => {
     try {
       await db.insert(adminAuditLogTable).values({
         adminEmail: req.adminEmail,
-        adminClerkId: req.adminClerkId,
+        adminUserId: req.adminUserId,
         action,
         ip: req.ip ?? null,
       });
@@ -143,11 +150,11 @@ router.get("/admin/orders/:id", async (req, res) => {
   // Audit BEFORE returning. If the audit insert fails we still serve the
   // request (the admin shouldn't be locked out due to logging trouble),
   // but we surface it via server logs.
-  if (req.adminEmail && req.adminClerkId) {
+  if (req.adminEmail && req.adminUserId) {
     try {
       await db.insert(adminAuditLogTable).values({
         adminEmail: req.adminEmail,
-        adminClerkId: req.adminClerkId,
+        adminUserId: req.adminUserId,
         action: "view_order_detail",
         targetOrderId: row.id,
         ip: req.ip ?? null,
@@ -247,7 +254,7 @@ router.get("/admin/me", (req, res) => {
   // silently downgrade real admins to agents.
   res.json({
     email: req.adminEmail,
-    clerkId: req.adminClerkId,
+    userId: req.adminUserId,
     role: req.adminRole ?? "admin",
   });
 });
@@ -361,7 +368,7 @@ router.post("/admin/reminders/send-due", async (req, res) => {
     try {
       await db.insert(adminAuditLogTable).values({
         adminEmail: req.adminEmail ?? "system",
-        adminClerkId: req.adminClerkId ?? "system",
+        adminUserId: req.adminUserId ?? "system",
         action: `reminder.send_batch sent=${sent} failed=${failed}`,
         ip: req.ip ?? null,
       });
@@ -380,7 +387,12 @@ router.post("/admin/reminders/send-due", async (req, res) => {
     candidateCount: candidates.length,
     // Surface this so the admin UI can warn "configure SendGrid to actually
     // send" instead of silently reporting `sent: 0`.
-    sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY && process.env.PENN_FROM_EMAIL),
+    // Read the same env vars the shared SendGrid integration reads, so
+    // this readiness flag matches what `createSendgridClient()` will
+    // actually do. There is no longer a separate PENN_FROM_EMAIL — every
+    // outbound mail uses SENDGRID_FROM_EMAIL (operations sets this to
+    // info@pennpaps.com).
+    sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL),
   });
   // lte unused-import guard — referenced for future range queries
   void lte;

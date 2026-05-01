@@ -102,7 +102,7 @@ router.post(
       await safeAudit({
         action: "messaging.delivery.failed",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: "messages",
         targetId: null,
         metadata: {

@@ -29,7 +29,7 @@
 // sensitive. We log event id + type + amount only.
 
 import type { Request, RequestHandler, Response } from "express";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
@@ -49,6 +49,30 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 import { getStripeClient, readStripeConfigOrNull, type StripeConfig } from "./config";
 import { readDefaultPaymentMethod } from "./customer";
 import { formatIntervalLabel } from "./products-meta";
+import {
+  sendOrderConfirmationEmail,
+  type OrderConfirmationLineItem,
+} from "../order-emails/send-order-confirmation-email";
+
+/**
+ * Pull our shop-customer id out of Stripe metadata, accepting
+ * either the current `customer_id` key or the legacy
+ * `clerk_user_id` key that pre-cutover Stripe Sessions /
+ * Subscriptions / Customers may still carry. Returns null if
+ * neither is present.
+ */
+function readCustomerIdFromMetadata(
+  meta: Stripe.Metadata | null | undefined,
+): string | null {
+  if (!meta) return null;
+  if (typeof meta.customer_id === "string" && meta.customer_id) {
+    return meta.customer_id;
+  }
+  if (typeof meta.clerk_user_id === "string" && meta.clerk_user_id) {
+    return meta.clerk_user_id;
+  }
+  return null;
+}
 
 /**
  * Extract a shipping address from a Checkout Session into our
@@ -178,9 +202,15 @@ export const stripeWebhookHandler: RequestHandler = async (
         // throw out of the webhook — the parent order is already
         // paid; the badge degrades gracefully if the items are
         // missing (one re-delivery later it'll fill in).
+        let emailItems: OrderConfirmationLineItem[] = [];
         if (paidRow) {
           try {
-            await upsertOrderItemsFromSession(config, session, paidRow, log);
+            emailItems = await upsertOrderItemsFromSession(
+              config,
+              session,
+              paidRow,
+              log,
+            );
           } catch (itemsErr) {
             log?.warn?.(
               {
@@ -216,6 +246,34 @@ export const stripeWebhookHandler: RequestHandler = async (
             { err: recErr instanceof Error ? recErr.message : String(recErr) },
             "stripe webhook: cart recovery mark failed (non-fatal)",
           );
+        }
+        // Best-effort: send the order confirmation email. Idempotent
+        // via shop_orders.confirmation_email_sent_at — a Stripe re-
+        // delivery (or the async_payment_succeeded shadow on the same
+        // session) sees the timestamp set and short-circuits.
+        // Failures here MUST NOT throw out of the webhook —
+        // SendGrid being temporarily down (or unconfigured) must not
+        // cause Stripe to retry the entire webhook, which would
+        // re-fire markPaid and the customer-sync side-effects.
+        if (paidRow) {
+          try {
+            await sendOrderConfirmationIfFirst({
+              session,
+              paidOrderId: paidRow.id,
+              items: emailItems,
+              log,
+            });
+          } catch (emailErr) {
+            log?.warn?.(
+              {
+                err:
+                  emailErr instanceof Error
+                    ? emailErr.message
+                    : String(emailErr),
+              },
+              "stripe webhook: order confirmation email failed (non-fatal)",
+            );
+          }
         }
         break;
       }
@@ -281,7 +339,7 @@ export const stripeWebhookHandler: RequestHandler = async (
 
 interface PaidOrderRow {
   id: string;
-  clerkUserId: string | null;
+  customerId: string | null;
   paidAt: Date;
 }
 
@@ -295,14 +353,11 @@ async function markPaid(
       ? session.payment_intent
       : session.payment_intent?.id ?? null;
 
-  // Re-stamp clerk_user_id from session metadata. The route that
+  // Re-stamp customer_id from session metadata. The route that
   // created this Session also wrote it locally — this is belt-and-
   // suspenders in case the local write was lost (crash mid-request,
   // sequencing issue, etc.).
-  const clerkUserId =
-    (typeof session.metadata?.clerk_user_id === "string" &&
-      session.metadata.clerk_user_id) ||
-    null;
+  const customerId = readCustomerIdFromMetadata(session.metadata);
 
   // Per-order shipping address snapshot (W3 T-C7). Reading from the
   // session at paid-time captures the address-as-shipped, which is
@@ -313,8 +368,16 @@ async function markPaid(
   // admin "edit address" endpoint can fill it in later.
   const shippingAddress = extractShippingAddressFromSession(session);
 
+  // Capture the buyer's email at paid-time. Lower-cased to match the
+  // shop_customers.email_lower convention used elsewhere. We persist
+  // this on the order row (rather than chasing the Stripe Session
+  // again at admin-shipping time) so guest checkouts can still
+  // receive shipping notifications. See migration 0017.
+  const sessionEmailRaw = session.customer_details?.email?.trim();
+  const customerEmail = sessionEmailRaw ? sessionEmailRaw.toLowerCase() : null;
+
   // Returning the row so the line-item upsert downstream can copy
-  // (orderId, clerkUserId, paidAt) without a second SELECT.
+  // (orderId, customerId, paidAt) without a second SELECT.
   const updated = await db
     .update(shopOrders)
     .set({
@@ -322,18 +385,20 @@ async function markPaid(
       stripePaymentIntentId: paymentIntentId,
       amountTotalCents: session.amount_total ?? null,
       currency: session.currency ?? null,
-      ...(clerkUserId ? { clerkUserId } : {}),
+      ...(customerId ? { customerId } : {}),
       // Only write the snapshot if Stripe actually gave us one.
       // Skipping the key on null preserves any later admin edit on
       // a Stripe re-delivery (charge.refunded → no shipping_details).
       ...(shippingAddress ? { shippingAddress } : {}),
+      // Same posture for customer_email: only write when present.
+      ...(customerEmail ? { customerEmail } : {}),
       paidAt: sql`now()`,
       updatedAt: sql`now()`,
     })
     .where(eq(shopOrders.stripeSessionId, session.id))
     .returning({
       id: shopOrders.id,
-      clerkUserId: shopOrders.clerkUserId,
+      customerId: shopOrders.customerId,
       paidAt: shopOrders.paidAt,
     });
 
@@ -346,7 +411,7 @@ async function markPaid(
   if (!row) return null;
   return {
     id: row.id,
-    clerkUserId: row.clerkUserId,
+    customerId: row.customerId,
     // paidAt was just set to now() above and is non-null on the
     // returned row.
     paidAt: row.paidAt ?? new Date(),
@@ -378,7 +443,7 @@ async function upsertOrderItemsFromSession(
   log:
     | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
     | undefined,
-): Promise<void> {
+): Promise<OrderConfirmationLineItem[]> {
   const stripe = getStripeClient(config);
   const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
     limit: 100,
@@ -386,6 +451,13 @@ async function upsertOrderItemsFromSession(
   });
 
   const rows: InsertShopOrderItemRow[] = [];
+  // Built alongside `rows` so the email can reuse the line items we
+  // just paid Stripe a single round-trip to fetch — instead of
+  // making the same expanded listLineItems call again from the email
+  // helper. Product names are deliberately NOT mirrored into
+  // shop_order_items (see schema comment), so the email path picks
+  // them up here from the live Stripe catalog rendering.
+  const emailItems: OrderConfirmationLineItem[] = [];
   for (const li of lineItems.data) {
     const price = li.price ?? null;
     const product = price?.product ?? null;
@@ -404,7 +476,7 @@ async function upsertOrderItemsFromSession(
     rows.push({
       orderId: order.id,
       stripeSessionId: session.id,
-      clerkUserId: order.clerkUserId,
+      customerId: order.customerId,
       productId,
       // Use '' (not null) so the (stripe_session_id, product_id,
       // price_id) UNIQUE actually dedupes redeliveries — Postgres
@@ -416,6 +488,21 @@ async function upsertOrderItemsFromSession(
       currency: price?.currency ?? null,
       paidAt: order.paidAt,
     });
+
+    // Stripe gives us a description on the LineItem itself (matches
+    // what the customer saw in Hosted Checkout). Fall back to the
+    // expanded product name if for some reason description is empty.
+    const productName =
+      product && typeof product === "object" && !product.deleted
+        ? product.name
+        : null;
+    const displayName = li.description?.trim() || productName?.trim() || "Item";
+    emailItems.push({
+      name: displayName,
+      quantity: li.quantity ?? 1,
+      unitAmountCents: price?.unit_amount ?? 0,
+      currency: price?.currency ?? "usd",
+    });
   }
 
   if (rows.length === 0) {
@@ -423,7 +510,7 @@ async function upsertOrderItemsFromSession(
       { sessionId: session.id },
       "stripe webhook: no insertable line items for session",
     );
-    return;
+    return emailItems;
   }
 
   const db = drizzle(getDbPool());
@@ -442,13 +529,14 @@ async function upsertOrderItemsFromSession(
     { sessionId: session.id, count: rows.length },
     "shop_order_items upserted",
   );
+  return emailItems;
 }
 
 /**
  * Sync the buyer's saved card + shipping address back to
  * shop_customers so the next /shop/me render includes the freshly
  * saved details. Runs only when the Session has both a
- * `clerk_user_id` in metadata AND a `customer` attached.
+ * `customer_id` in metadata AND a `customer` attached.
  *
  * Order of operations:
  *   1. Best-effort: read the Customer's default payment method and
@@ -463,15 +551,12 @@ async function syncCustomerAfterCheckout(
   session: Stripe.Checkout.Session,
   log: { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void } | undefined,
 ): Promise<void> {
-  const clerkUserId =
-    typeof session.metadata?.clerk_user_id === "string"
-      ? session.metadata.clerk_user_id
-      : null;
+  const customerId = readCustomerIdFromMetadata(session.metadata);
   const stripeCustomerId =
     typeof session.customer === "string"
       ? session.customer
       : session.customer?.id ?? null;
-  if (!clerkUserId || !stripeCustomerId) return;
+  if (!customerId || !stripeCustomerId) return;
 
   const db = drizzle(getDbPool());
 
@@ -486,7 +571,7 @@ async function syncCustomerAfterCheckout(
       stripeCustomerId: shopCustomers.stripeCustomerId,
     })
     .from(shopCustomers)
-    .where(eq(shopCustomers.clerkUserId, clerkUserId))
+    .where(eq(shopCustomers.customerId, customerId))
     .limit(1);
   const existing = existingRows[0];
 
@@ -517,7 +602,7 @@ async function syncCustomerAfterCheckout(
   await db
     .insert(shopCustomers)
     .values({
-      clerkUserId,
+      customerId,
       stripeCustomerId,
       defaultPaymentMethodId: updates.defaultPaymentMethodId ?? null,
       defaultPaymentMethodBrand: updates.defaultPaymentMethodBrand ?? null,
@@ -527,13 +612,13 @@ async function syncCustomerAfterCheckout(
       shippingAddress: updates.shippingAddress ?? null,
     })
     .onConflictDoUpdate({
-      target: shopCustomers.clerkUserId,
+      target: shopCustomers.customerId,
       set: updates,
     });
 
   log?.info?.(
     {
-      clerkUserId,
+      customerId,
       hasCard: !!dpm,
       savedShipping: shouldSetShipping,
     },
@@ -542,7 +627,7 @@ async function syncCustomerAfterCheckout(
 }
 
 /**
- * Mark the abandoned-cart row for this Clerk user as recovered so the
+ * Mark the abandoned-cart row for this auth user as recovered so the
  * dispatcher never nudges a customer who already converted. Called
  * from `checkout.session.completed`.
  *
@@ -553,7 +638,7 @@ async function syncCustomerAfterCheckout(
  * subtotal so a stale items list cannot leak into a future "we
  * restored your cart from the email" rehydration after the purchase.
  *
- * Guest checkouts (no `clerk_user_id` in session metadata) are a
+ * Guest checkouts (no `customer_id` in session metadata) are a
  * no-op — there's no abandoned-cart row to update because guests
  * never write one.
  */
@@ -563,11 +648,8 @@ export async function markCartRecovered(
     | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
     | undefined,
 ): Promise<void> {
-  const clerkUserId =
-    typeof session.metadata?.clerk_user_id === "string"
-      ? session.metadata.clerk_user_id
-      : null;
-  if (!clerkUserId) return;
+  const customerId = readCustomerIdFromMetadata(session.metadata);
+  if (!customerId) return;
   const db = drizzle(getDbPool());
   const updated = await db
     .update(shopAbandonedCarts)
@@ -578,12 +660,12 @@ export async function markCartRecovered(
       updatedAt: new Date(),
     })
     .where(
-      sql`${shopAbandonedCarts.clerkUserId} = ${clerkUserId} AND ${shopAbandonedCarts.recoveredAt} IS NULL`,
+      sql`${shopAbandonedCarts.customerId} = ${customerId} AND ${shopAbandonedCarts.recoveredAt} IS NULL`,
     )
     .returning({ id: shopAbandonedCarts.id });
   if (updated.length > 0) {
     log?.info?.(
-      { clerkUserId, rowId: updated[0]!.id },
+      { customerId, rowId: updated[0]!.id },
       "abandoned cart marked recovered",
     );
   }
@@ -605,14 +687,14 @@ async function markStatus(
 /**
  * Upsert one customer.subscription.* event into shop_subscriptions.
  *
- * `clerk_user_id` is recovered from the subscription's metadata
- * (stamped at Session creation time in checkout.ts). If it's
- * missing — which can happen for legacy subscriptions or for events
- * Stripe emits without our prior context — we still insert the row
- * with a synthetic placeholder so we don't lose the Stripe-side
- * source of truth, but log a warning. The /shop/me/subscriptions
- * endpoint filters by clerk_user_id, so an unowned row won't
- * accidentally surface to the wrong patient.
+ * The shop customer id is recovered from the subscription's
+ * metadata (stamped at Session creation time in checkout.ts).
+ * If it's missing — which can happen for legacy subscriptions or
+ * for events Stripe emits without our prior context — we still
+ * insert the row with a synthetic placeholder so we don't lose
+ * the Stripe-side source of truth, but log a warning. The
+ * /shop/me/subscriptions endpoint filters by customer_id, so an
+ * unowned row won't accidentally surface to the wrong patient.
  */
 async function upsertSubscription(
   subscription: Stripe.Subscription,
@@ -621,15 +703,11 @@ async function upsertSubscription(
 ): Promise<void> {
   const db = drizzle(getDbPool());
 
-  const clerkUserId =
-    typeof subscription.metadata?.clerk_user_id === "string" &&
-    subscription.metadata.clerk_user_id.length > 0
-      ? subscription.metadata.clerk_user_id
-      : null;
-  if (!clerkUserId) {
+  const customerId = readCustomerIdFromMetadata(subscription.metadata);
+  if (!customerId) {
     log?.warn?.(
       { subscriptionId: subscription.id },
-      "stripe subscription event missing clerk_user_id metadata; storing with __unknown placeholder",
+      "stripe subscription event missing customer_id metadata; storing with __unknown placeholder",
     );
   }
 
@@ -703,7 +781,7 @@ async function upsertSubscription(
   const result = await db
     .insert(shopSubscriptions)
     .values({
-      clerkUserId: clerkUserId ?? "__unknown",
+      customerId: customerId ?? "__unknown",
       stripeSubscriptionId: subscription.id,
       stripeCustomerId,
       status: subscription.status,
@@ -717,10 +795,10 @@ async function upsertSubscription(
     .onConflictDoUpdate({
       target: shopSubscriptions.stripeSubscriptionId,
       set: {
-        // Don't overwrite a known clerk_user_id with __unknown — the
+        // Don't overwrite a known customer_id with __unknown — the
         // creation event always carries it; later updates may come
         // from system events (e.g. invoice retry) that may not.
-        ...(clerkUserId ? { clerkUserId } : {}),
+        ...(customerId ? { customerId } : {}),
         stripeCustomerId,
         status: subscription.status,
         items,
@@ -767,4 +845,174 @@ async function markStatusByPaymentIntent(
     .set({ status, updatedAt: sql`now()` })
     .where(eq(shopOrders.stripePaymentIntentId, paymentIntentId));
   log?.info?.({ status }, "shop order marked refunded");
+}
+
+/**
+ * Send the post-purchase confirmation email exactly once per order.
+ *
+ * Called after `markPaid` + `upsertOrderItemsFromSession` in the
+ * checkout-completed branch. Idempotency is enforced by an ATOMIC
+ * CLAIM on `shop_orders.confirmation_email_sent_at`:
+ *   1. `UPDATE … SET confirmation_email_sent_at = now() WHERE id = $1
+ *      AND confirmation_email_sent_at IS NULL RETURNING …` — only
+ *      one worker can win the row even if Stripe fires
+ *      `checkout.session.completed` and
+ *      `checkout.session.async_payment_succeeded` concurrently.
+ *   2. If no row was returned, another worker already claimed the
+ *      send (or it was previously sent); short-circuit.
+ *   3. If we won the claim, resolve recipient (linked
+ *      `shop_customers.email_lower` joined on `customer_id`,
+ *      falling back to `session.customer_details.email` for guests),
+ *      render, and send.
+ *   4. ON SEND FAILURE, RELEASE THE CLAIM by writing
+ *      `confirmation_email_sent_at = NULL` so a Stripe re-delivery
+ *      (or manual replay) can retry — preserving the at-most-once
+ *      *successful* send while still allowing one retry per failure.
+ *
+ * Errors are swallowed — the caller wraps in try/catch as a second
+ * line of defence. SendGrid being misconfigured or returning a 5xx
+ * must NOT cause Stripe to retry the entire webhook (which would
+ * re-fire markPaid + the customer/cart sync side-effects).
+ */
+export async function sendOrderConfirmationIfFirst(args: {
+  session: Stripe.Checkout.Session;
+  paidOrderId: string;
+  items: readonly OrderConfirmationLineItem[];
+  log:
+    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | undefined;
+}): Promise<{ skipped: true; reason: string } | { skipped: false; delivered: boolean }> {
+  const { session, paidOrderId, items, log } = args;
+  const db = drizzle(getDbPool());
+
+  // Atomic claim: stamp the timestamp ONLY if it is currently NULL.
+  // The RETURNING gives back the canonical row fields the email needs
+  // (avoiding a separate SELECT). If `claimed` is undefined either
+  // (a) the row doesn't exist or (b) another worker already stamped.
+  // Both are "skip" outcomes for this send.
+  const claimedRows = await db
+    .update(shopOrders)
+    .set({ confirmationEmailSentAt: sql`now()`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(shopOrders.id, paidOrderId),
+        isNull(shopOrders.confirmationEmailSentAt),
+      ),
+    )
+    .returning({
+      id: shopOrders.id,
+      stripeSessionId: shopOrders.stripeSessionId,
+      customerId: shopOrders.customerId,
+      amountTotalCents: shopOrders.amountTotalCents,
+      currency: shopOrders.currency,
+      shippingAddress: shopOrders.shippingAddress,
+      customerEmail: shopOrders.customerEmail,
+    });
+  const claimed = claimedRows[0];
+
+  if (!claimed) {
+    log?.info?.(
+      { orderId: paidOrderId },
+      "order confirmation email skipped — already sent or row missing",
+    );
+    return { skipped: true, reason: "already_sent_or_missing" };
+  }
+
+  // From here on, ANY failure path MUST release the claim by writing
+  // confirmation_email_sent_at = NULL so a future redelivery can retry.
+  // Idempotent: safe to call multiple times (sets stamp back to NULL).
+  // The outer try/catch below guarantees release on ANY thrown error
+  // anywhere in the post-claim block — including transient DB errors
+  // during the customer lookup — so a transient failure can never
+  // permanently lock out the email.
+  const releaseClaim = async (): Promise<void> => {
+    try {
+      await db
+        .update(shopOrders)
+        .set({ confirmationEmailSentAt: null, updatedAt: sql`now()` })
+        .where(eq(shopOrders.id, claimed.id));
+    } catch (releaseErr) {
+      log?.warn?.(
+        {
+          orderId: claimed.id,
+          err: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+        },
+        "order confirmation email claim release failed",
+      );
+    }
+  };
+
+  try {
+    // Recipient resolution: linked customer first, persisted
+    // `customer_email` (captured at paid-time) next, Stripe Session
+    // fallback last. We never log any of these values.
+    let toEmail: string | null = null;
+    if (claimed.customerId) {
+      const [cust] = await db
+        .select({ email: shopCustomers.emailLower })
+        .from(shopCustomers)
+        .where(eq(shopCustomers.customerId, claimed.customerId))
+        .limit(1);
+      if (cust?.email) toEmail = cust.email;
+    }
+    if (!toEmail && claimed.customerEmail) {
+      toEmail = claimed.customerEmail;
+    }
+    if (!toEmail) {
+      const sessionEmail = session.customer_details?.email?.trim();
+      if (sessionEmail) toEmail = sessionEmail.toLowerCase();
+    }
+    if (!toEmail) {
+      await releaseClaim();
+      log?.warn?.(
+        { orderId: claimed.id },
+        "order confirmation email skipped — no recipient on file",
+      );
+      return { skipped: true, reason: "no_email_on_file" };
+    }
+
+    const result = await sendOrderConfirmationEmail({
+      toEmail,
+      stripeSessionId: claimed.stripeSessionId,
+      items,
+      amountTotalCents: claimed.amountTotalCents ?? session.amount_total ?? 0,
+      currency: claimed.currency ?? session.currency ?? "usd",
+      shippingAddress: claimed.shippingAddress ?? null,
+    });
+
+    if (!result.configured) {
+      await releaseClaim();
+      log?.info?.(
+        { orderId: claimed.id },
+        "order confirmation email skipped — sendgrid not configured",
+      );
+      return { skipped: true, reason: "not_configured" };
+    }
+    if (!result.delivered) {
+      await releaseClaim();
+      log?.warn?.(
+        { orderId: claimed.id, error: result.error },
+        "order confirmation email send failed (non-fatal, claim released)",
+      );
+      return { skipped: false, delivered: false };
+    }
+
+    log?.info?.(
+      { orderId: claimed.id, messageId: result.messageId ?? null },
+      "order confirmation email delivered",
+    );
+    return { skipped: false, delivered: true };
+  } catch (err) {
+    // Catch-all: ANY uncaught error after the claim acquisition
+    // (transient DB read failure, unexpected throw inside the email
+    // helper, etc.) must release the claim so the next webhook
+    // redelivery can retry — otherwise a single transient failure
+    // would permanently suppress the confirmation email.
+    await releaseClaim();
+    log?.warn?.(
+      { orderId: claimed.id, err: err instanceof Error ? err.message : String(err) },
+      "order confirmation email post-claim threw (non-fatal, claim released)",
+    );
+    return { skipped: false, delivered: false };
+  }
 }

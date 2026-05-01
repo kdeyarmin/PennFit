@@ -13,6 +13,7 @@ import { ErrorPanel } from "../components/ErrorPanel";
 import { Pagination } from "../components/Pagination";
 import { Input, Label, Select } from "../components/Input";
 import { Button } from "../components/Button";
+import { humanizeAction } from "../components/Badge";
 import { formatDateTime } from "../lib/format";
 import { downloadAuditExport } from "../lib/audit-export";
 
@@ -54,12 +55,12 @@ const DISPLAY_KEY_ALLOWLIST: ReadonlyArray<string> = [
 // because the schema is `varchar` and new tables show up over time;
 // the dropdown here is just a convenience for the most common picks.
 const TARGET_TABLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "patients", label: "patients" },
-  { value: "episodes", label: "episodes" },
-  { value: "conversations", label: "conversations" },
-  { value: "messages", label: "messages" },
-  { value: "fulfillments", label: "fulfillments" },
-  { value: "prescriptions", label: "prescriptions" },
+  { value: "patients", label: "Patients" },
+  { value: "episodes", label: "Episodes" },
+  { value: "conversations", label: "Conversations" },
+  { value: "messages", label: "Messages" },
+  { value: "fulfillments", label: "Fulfillments" },
+  { value: "prescriptions", label: "Prescriptions" },
 ];
 
 type Row = {
@@ -158,7 +159,7 @@ export function AuditPage() {
       key: "occurred",
       header: "When",
       render: (r) => (
-        <span className="text-xs whitespace-nowrap" style={{ color: "#374151" }}>
+        <span className="text-xs whitespace-nowrap" style={{ color: "hsl(var(--ink-2))" }}>
           {formatDateTime(r.occurredAt)}
         </span>
       ),
@@ -167,7 +168,7 @@ export function AuditPage() {
       key: "admin",
       header: "Admin",
       render: (r) => (
-        <span className="text-xs" style={{ color: "#0a1f44" }}>
+        <span className="text-xs" style={{ color: "hsl(var(--ink-1))" }}>
           {r.adminEmail ?? "—"}
         </span>
       ),
@@ -193,16 +194,17 @@ export function AuditPage() {
                 PHI
               </span>
             )}
-            <code
+            <span
               className="text-xs px-1.5 py-0.5 rounded"
               style={{
                 backgroundColor: phi ? "#fffbeb" : "#f1f5f9",
-                color: "#0a1f44",
+                color: "hsl(var(--ink-1))",
                 border: phi ? "1px solid #fde68a" : "1px solid transparent",
               }}
+              title={r.action}
             >
-              {r.action}
-            </code>
+              {humanizeAction(r.action)}
+            </span>
           </div>
         );
       },
@@ -212,10 +214,10 @@ export function AuditPage() {
       header: "Target",
       render: (r) =>
         r.targetTable ? (
-          <span className="text-xs" style={{ color: "#374151" }}>
-            <code>{r.targetTable}</code>
+          <span className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
+            <span title={r.targetTable}>{humanizeAction(r.targetTable)}</span>
             {r.targetId && (
-              <span className="text-[10px] block" style={{ color: "#6b7280" }}>
+              <span className="text-[10px] block" style={{ color: "hsl(var(--ink-3))" }}>
                 {r.targetId.slice(0, 8)}…
               </span>
             )}
@@ -238,11 +240,11 @@ export function AuditPage() {
       <header>
         <h1
           className="text-2xl font-semibold mb-1"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Audit log
         </h1>
-        <p className="text-sm" style={{ color: "#374151" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           Admin-visible action history. Only allowlisted metadata keys are
           rendered to prevent accidental PHI surface.
         </p>
@@ -404,17 +406,20 @@ export function SafeMetadata({
           className="text-[10px] px-1.5 py-0.5 rounded border"
           style={{
             backgroundColor: "#f8fafc",
-            borderColor: "#e5e7eb",
-            color: "#0a1f44",
+            borderColor: "hsl(var(--line-1))",
+            color: "hsl(var(--ink-1))",
           }}
         >
-          <span style={{ color: "#6b7280" }}>{k}</span>={renderPrimitive(v)}
+          <span style={{ color: "hsl(var(--ink-3))" }} title={k}>
+            {humanizeAction(k)}
+          </span>
+          ={renderPrimitive(v)}
         </span>
       ))}
       {hiddenCount > 0 && (
         <span
           className="text-[10px] px-1.5 py-0.5 rounded"
-          style={{ backgroundColor: "#f1f5f9", color: "#6b7280" }}
+          style={{ backgroundColor: "#f1f5f9", color: "hsl(var(--ink-3))" }}
           title="Hidden by allowlist"
         >
           +{hiddenCount} hidden

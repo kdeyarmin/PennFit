@@ -1,4 +1,6 @@
-import { useClerk, useUser } from "@clerk/react";
+import { useLocation } from "wouter";
+
+import { useDashboardIdentity } from "../lib/identity";
 import { clearAllDrafts } from "../lib/use-draft-autosave";
 
 // Friendly "you can't see the admin console" screen.
@@ -8,7 +10,7 @@ import { clearAllDrafts } from "../lib/use-draft-autosave";
 // follow-ups:
 //
 //   reason="not-authorized" (HTTP 401/403/most 4xx)
-//     The signed-in user passed Clerk's session check but is not on
+//     The signed-in user passed the session check but is not on
 //     the RESUPPLY_ADMIN_EMAILS allowlist. Resolution is "ask an
 //     admin to add me" — so we show the email, tell them to contact
 //     the resupply admin, and offer a sign-out button so they can
@@ -30,15 +32,13 @@ import { clearAllDrafts } from "../lib/use-draft-autosave";
 // raw error string. The API never includes the user's id, the
 // allowlist contents, or any environment fragment in its 4xx/5xx
 // bodies (see /me OpenAPI definition + requireAdmin.ts), but
-// belt-and-braces: we only render Clerk-side data the user already
+// belt-and-braces: we only render auth-provider-side data the user already
 // owns.
 
 export type NotAuthorizedReason =
   | "not-authorized"
   | "not-configured"
   | "transient";
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // Admin-facing contact address. Override per environment with
 // VITE_RESUPPLY_CONTACT_EMAIL so a production cutover (mailbox
@@ -56,9 +56,10 @@ export function NotAuthorizedPage({
   reason: NotAuthorizedReason;
   contactEmail?: string;
 }) {
-  const { user } = useUser();
-  const { signOut } = useClerk();
-  const email = user?.primaryEmailAddress?.emailAddress ?? "your account";
+  const identity = useDashboardIdentity();
+  const { signOut } = identity;
+  const email = identity.email ?? "your account";
+  const [, setNotAuthLocation] = useLocation();
 
   const isConfigError = reason === "not-configured";
   const isTransient = reason === "transient";
@@ -89,7 +90,7 @@ export function NotAuthorizedPage({
         <div className="flex items-center gap-3">
           <div
             className="h-8 w-8 rounded flex items-center justify-center font-bold"
-            style={{ backgroundColor: "#c9a24a", color: "#0a1f44" }}
+            style={{ backgroundColor: "#c9a24a", color: "hsl(var(--ink-1))" }}
             aria-hidden="true"
           >
             P
@@ -98,7 +99,7 @@ export function NotAuthorizedPage({
             <div className="text-white font-semibold tracking-tight">
               PennPaps Console
             </div>
-            <div className="text-xs" style={{ color: "#c9a24a" }}>
+            <div className="text-xs" style={{ color: "hsl(var(--penn-gold-deep))" }}>
               {isTransient ? "Access pending" : "Access denied"}
             </div>
           </div>
@@ -111,7 +112,7 @@ export function NotAuthorizedPage({
       <main className="flex-1 flex items-center justify-center p-6">
         <div
           className="max-w-xl w-full bg-white border rounded-lg p-8 shadow-sm"
-          style={{ borderColor: "#e5e7eb" }}
+          style={{ borderColor: "hsl(var(--line-1))" }}
           role="alert"
           aria-live="polite"
         >
@@ -123,7 +124,7 @@ export function NotAuthorizedPage({
           </p>
           <h1
             className="text-2xl font-semibold mb-3"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             {headline}
           </h1>
@@ -132,7 +133,7 @@ export function NotAuthorizedPage({
             <>
               <p
                 className="text-sm leading-relaxed mb-4"
-                style={{ color: "#374151" }}
+                style={{ color: "hsl(var(--ink-2))" }}
               >
                 The resupply API doesn't have an admin allowlist
                 configured, so it's refusing every sign-in until an
@@ -141,7 +142,7 @@ export function NotAuthorizedPage({
               </p>
               <p
                 className="text-sm leading-relaxed mb-2"
-                style={{ color: "#374151" }}
+                style={{ color: "hsl(var(--ink-2))" }}
               >
                 Please contact your PennPaps IT
                 administrator and reference{" "}
@@ -155,7 +156,7 @@ export function NotAuthorizedPage({
             <>
               <p
                 className="text-sm leading-relaxed mb-4"
-                style={{ color: "#374151" }}
+                style={{ color: "hsl(var(--ink-2))" }}
               >
                 The dashboard couldn't confirm your admin access just
                 now — the server may be restarting, or your connection
@@ -164,14 +165,14 @@ export function NotAuthorizedPage({
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"
-                style={{ color: "#374151" }}
+                style={{ color: "hsl(var(--ink-2))" }}
               >
                 Try refreshing the page in a moment. If it keeps
                 happening, contact{" "}
                 <a
                   href={`mailto:${contactEmail}`}
                   className="underline font-semibold"
-                  style={{ color: "#0a1f44" }}
+                  style={{ color: "hsl(var(--ink-1))" }}
                 >
                   {contactEmail}
                 </a>
@@ -192,7 +193,7 @@ export function NotAuthorizedPage({
             <>
               <p
                 className="text-sm leading-relaxed mb-4"
-                style={{ color: "#374151" }}
+                style={{ color: "hsl(var(--ink-2))" }}
               >
                 You're signed in as{" "}
                 <span className="font-semibold">{email}</span>, but that
@@ -200,13 +201,13 @@ export function NotAuthorizedPage({
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"
-                style={{ color: "#374151" }}
+                style={{ color: "hsl(var(--ink-2))" }}
               >
                 If you believe you should have access, please contact{" "}
                 <a
                   href={`mailto:${contactEmail}`}
                   className="underline font-semibold"
-                  style={{ color: "#0a1f44" }}
+                  style={{ color: "hsl(var(--ink-1))" }}
                 >
                   {contactEmail}
                 </a>{" "}
@@ -214,7 +215,7 @@ export function NotAuthorizedPage({
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"
-                style={{ color: "#374151" }}
+                style={{ color: "hsl(var(--ink-2))" }}
               >
                 Already approved under a different email? Sign out and
                 sign back in with the right account.
@@ -226,8 +227,13 @@ export function NotAuthorizedPage({
                     // Drop any persisted reply drafts before sign-out so
                     // PHI doesn't survive across admin sessions.
                     clearAllDrafts();
-                    void signOut({
-                      redirectUrl: `${basePath}/sign-in`,
+                    void signOut().finally(() => {
+                      // Soft navigate via wouter. The Clerk path
+                      // previously did `signOut({ redirectUrl })`
+                      // which forced a full document load — the
+                      // identity shim now handles cookie + cache
+                      // cleanup on its own, so a soft nav is enough.
+                      setNotAuthLocation("/sign-in");
                     });
                   }}
                   className="text-sm font-semibold px-4 py-2 rounded text-white"
@@ -244,9 +250,9 @@ export function NotAuthorizedPage({
       <footer
         className="text-xs px-6 py-3 border-t text-center"
         style={{
-          color: "#6b7280",
+          color: "hsl(var(--ink-3))",
           backgroundColor: "#ffffff",
-          borderColor: "#e5e7eb",
+          borderColor: "hsl(var(--line-1))",
         }}
       >
         PennPaps · Internal tooling · Not for patient use

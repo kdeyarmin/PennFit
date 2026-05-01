@@ -26,7 +26,7 @@ import type { AuditEvent } from "@workspace/resupply-audit";
 
 export interface AuditLogFixtureSpec {
   adminEmail: string | null;
-  adminClerkId: string | null;
+  adminUserId: string | null;
   action: string;
   targetTable: string | null;
   targetId: string | null;
@@ -43,10 +43,10 @@ export function makeAuditLog(
       overrides.adminEmail === undefined
         ? faker.internet.email().toLowerCase()
         : overrides.adminEmail,
-    adminClerkId:
-      overrides.adminClerkId === undefined
+    adminUserId:
+      overrides.adminUserId === undefined
         ? `user_${faker.string.alphanumeric({ length: 24, casing: "lower" })}`
-        : overrides.adminClerkId,
+        : overrides.adminUserId,
     action: overrides.action ?? "patient.view",
     targetTable:
       overrides.targetTable === undefined ? "patients" : overrides.targetTable,

@@ -72,6 +72,14 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   list_orders: "Searched the orders list",
   view_order_detail: "Opened a patient record",
   "reminder.send_batch": "Sent reminder batch",
+  // Team-management actions written by routes/admin-users.ts. The
+  // suffix (role=..., email=...) is stripped before lookup so a
+  // single label covers every variant of the same action kind.
+  "team.list": "Viewed the team list",
+  "team.invite": "Invited a teammate",
+  "team.role_change": "Changed a teammate's role",
+  "team.revoke": "Removed a teammate",
+  "team.invitation_revoke": "Cancelled a pending invitation",
 };
 
 export function auditActionLabel(action: string): string {

@@ -177,7 +177,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       await safeAudit({
         action: "messaging.inbound.received",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: null,
         targetId: null,
         metadata: {
@@ -204,7 +204,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     await safeAudit({
       action: "messaging.inbound.received",
       adminEmail: null,
-      adminClerkId: null,
+      adminUserId: null,
       targetTable: null,
       targetId: null,
       metadata: {
@@ -244,7 +244,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       await safeAudit({
         action: "messaging.inbound.received",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: null,
         targetId: null,
         metadata: {
@@ -271,7 +271,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
     await safeAudit({
       action: "messaging.inbound.received",
       adminEmail: null,
-      adminClerkId: null,
+      adminUserId: null,
       targetTable: null,
       targetId: null,
       metadata: {
@@ -333,7 +333,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       await safeAudit({
         action: "messaging.inbound.received",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: null,
         targetId: null,
         metadata: {
@@ -403,7 +403,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
   await safeAudit({
     action: "messaging.inbound.received",
     adminEmail: null,
-    adminClerkId: null,
+    adminUserId: null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {
@@ -463,7 +463,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
   await safeAudit({
     action: "messaging.intent.parsed",
     adminEmail: null,
-    adminClerkId: null,
+    adminUserId: null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {
@@ -559,7 +559,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
         await safeAudit({
           action: "messaging.order.confirmed",
           adminEmail: null,
-          adminClerkId: null,
+          adminUserId: null,
           targetTable: "episodes",
           targetId: result.episodeId,
           metadata: {
@@ -601,7 +601,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: "conversations",
         targetId: input.conversationId,
         metadata: {
@@ -628,7 +628,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: "patients",
         targetId: input.patientId,
         metadata: {
@@ -658,7 +658,7 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
-        adminClerkId: null,
+        adminUserId: null,
         targetTable: "conversations",
         targetId: input.conversationId,
         metadata: {

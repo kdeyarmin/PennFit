@@ -1,6 +1,6 @@
 // /shop/me/subscriptions — patient-facing subscription management.
 //
-// Endpoints, all Clerk-gated (signed-in users only):
+// Endpoints, all auth-gated (signed-in users only):
 //   GET  /shop/me/subscriptions               → list this user's subs
 //   POST /shop/me/subscriptions/:id/cancel    → flip cancel_at_period_end
 //   POST /shop/me/subscriptions/:id/pause     → pause_collection { void }
@@ -68,7 +68,7 @@ import { requireSignedIn } from "../../middlewares/requireSignedIn";
 const router: IRouter = Router();
 
 // Shared owner-lookup. Returns the subscription row matched on BOTH
-// (id, clerkUserId) so a leaked id from another patient can't be
+// (id, customerId) so a leaked id from another patient can't be
 // targeted. Returns null if not found OR not owned — caller maps to
 // 404 to avoid leaking ownership. Drizzle infers `items` from the
 // schema's `$type<ShopSubscriptionItemSnapshot[]>()` annotation, so
@@ -76,7 +76,7 @@ const router: IRouter = Router();
 async function findOwnedSubscription(
   db: ReturnType<typeof drizzle>,
   localId: string,
-  clerkUserId: string,
+  customerId: string,
 ) {
   const rows = await db
     .select({
@@ -90,7 +90,7 @@ async function findOwnedSubscription(
     .where(
       and(
         eq(shopSubscriptions.id, localId),
-        eq(shopSubscriptions.clerkUserId, clerkUserId),
+        eq(shopSubscriptions.customerId, customerId),
       ),
     )
     .limit(1);
@@ -100,8 +100,8 @@ async function findOwnedSubscription(
 // Read-only list. No rate limit required — same shape and cost as
 // /shop/me/orders, which is also unrate-limited at the route level.
 router.get("/me/subscriptions", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     // requireSignedIn should have already 401'd, but a belt-and-
     // suspenders guard avoids a TypeScript narrowing escape if the
     // middleware ever changes shape.
@@ -122,7 +122,7 @@ router.get("/me/subscriptions", requireSignedIn, async (req, res) => {
       createdAt: shopSubscriptions.createdAt,
     })
     .from(shopSubscriptions)
-    .where(eq(shopSubscriptions.clerkUserId, clerkUserId))
+    .where(eq(shopSubscriptions.customerId, customerId))
     .orderBy(desc(shopSubscriptions.createdAt))
     .limit(50);
 
@@ -149,8 +149,8 @@ router.post(
   requireSignedIn,
   rateLimit({ windowMs: 60_000, max: 5, name: "shop:cancel-sub" }),
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -165,7 +165,7 @@ router.post(
     // Look up the row by our local id AND owner — never by stripe
     // subscription id directly, to make IDOR via guessing
     // sub_xxx values impossible. Belt-and-suspenders: also gate on
-    // clerk_user_id match, so a stolen id from one patient can't
+    // customer_id match, so a stolen id from one patient can't
     // cancel another's auto-ship.
     const rows = await db
       .select({
@@ -178,7 +178,7 @@ router.post(
       .where(
         and(
           eq(shopSubscriptions.id, localId),
-          eq(shopSubscriptions.clerkUserId, clerkUserId),
+          eq(shopSubscriptions.customerId, customerId),
         ),
       )
       .limit(1);
@@ -252,8 +252,8 @@ router.get(
   "/me/subscriptions/:id/cadence-options",
   requireSignedIn,
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -264,7 +264,7 @@ router.get(
     }
 
     const db = drizzle(getDbPool());
-    const sub = await findOwnedSubscription(db, localId, clerkUserId);
+    const sub = await findOwnedSubscription(db, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });
       return;
@@ -364,8 +364,8 @@ async function handlePauseOrResume(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
@@ -377,7 +377,7 @@ async function handlePauseOrResume(
   }
 
   const db = drizzle(getDbPool());
-  const sub = await findOwnedSubscription(db, localId, clerkUserId);
+  const sub = await findOwnedSubscription(db, localId, customerId);
   if (!sub) {
     res.status(404).json({ error: "subscription_not_found" });
     return;
@@ -461,8 +461,8 @@ router.post(
   requireSignedIn,
   rateLimit({ windowMs: 60_000, max: 5, name: "shop:cadence-sub" }),
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -484,7 +484,7 @@ router.post(
     const { priceId: newPriceId } = parsed.data;
 
     const db = drizzle(getDbPool());
-    const sub = await findOwnedSubscription(db, localId, clerkUserId);
+    const sub = await findOwnedSubscription(db, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });
       return;

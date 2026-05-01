@@ -49,16 +49,16 @@ export interface AuditEvent {
   action: string;
 
   /**
-   * Admin email at write time, denormalized from Clerk so the
-   * row remains readable if the Clerk user is later deleted. Null
+   * Admin email at write time, denormalized from the auth provider so the
+   * row remains readable if the auth user is later deleted. Null
    * for system actions (cron jobs, queue workers).
    */
   adminEmail?: string | null;
 
   /**
-   * Admin's Clerk user id. Null for system actions.
+   * Admin's auth user id. Null for system actions.
    */
-  adminClerkId?: string | null;
+  adminUserId?: string | null;
 
   /**
    * Logical pointer to the row this action touched. Opaque — see
@@ -104,7 +104,7 @@ export async function logAudit(event: AuditEvent): Promise<void> {
       "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)",
     [
       event.adminEmail ?? null,
-      event.adminClerkId ?? null,
+      event.adminUserId ?? null,
       event.action,
       event.targetTable ?? null,
       event.targetId ?? null,

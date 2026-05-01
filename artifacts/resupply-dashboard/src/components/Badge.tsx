@@ -6,13 +6,41 @@
 
 type Variant = "neutral" | "info" | "success" | "warning" | "danger" | "muted";
 
+// Status badges. neutral / info pull from the brand tokens so a
+// "navy" badge always matches the rest of the chrome; success /
+// warning / danger keep their semantic palettes (green / amber /
+// rose) so a "Failed" badge reads as alarm regardless of theme tweaks.
 const VARIANTS: Record<Variant, { bg: string; fg: string; border: string }> = {
-  neutral: { bg: "#f1f5f9", fg: "#0a1f44", border: "#e5e7eb" },
-  info: { bg: "#e0eaff", fg: "#1e3a8a", border: "#bfd1ff" },
-  success: { bg: "#dcfce7", fg: "#166534", border: "#bbf7d0" },
-  warning: { bg: "#fef3c7", fg: "#854d0e", border: "#fde68a" },
-  danger: { bg: "#fee2e2", fg: "#991b1b", border: "#fecaca" },
-  muted: { bg: "#f3f4f6", fg: "#6b7280", border: "#e5e7eb" },
+  neutral: {
+    bg: "hsl(var(--penn-navy) / 0.06)",
+    fg: "hsl(var(--penn-navy-deep))",
+    border: "hsl(var(--penn-navy) / 0.18)",
+  },
+  info: {
+    bg: "hsl(213 80% 50% / 0.10)",
+    fg: "hsl(213 80% 32%)",
+    border: "hsl(213 80% 50% / 0.30)",
+  },
+  success: {
+    bg: "hsl(152 60% 38% / 0.12)",
+    fg: "hsl(152 70% 24%)",
+    border: "hsl(152 60% 38% / 0.30)",
+  },
+  warning: {
+    bg: "hsl(38 95% 48% / 0.14)",
+    fg: "hsl(38 80% 28%)",
+    border: "hsl(38 95% 48% / 0.40)",
+  },
+  danger: {
+    bg: "hsl(354 75% 50% / 0.10)",
+    fg: "hsl(354 75% 38%)",
+    border: "hsl(354 75% 50% / 0.30)",
+  },
+  muted: {
+    bg: "hsl(var(--surface-3))",
+    fg: "hsl(var(--ink-3))",
+    border: "hsl(var(--line-1))",
+  },
 };
 
 export function Badge({
@@ -121,5 +149,75 @@ export function humanizeStatus(s: string | null | undefined): string {
   return s
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+// Acronyms we keep in their canonical uppercase form when humanising
+// action / metadata strings. "Sid" is the Twilio resource-identifier
+// suffix (callSid, messageSid). "Id" is the generic database
+// identifier suffix (patientId, episodeId). The rest are common
+// industry acronyms that show up in audit metadata.
+const HUMANIZE_ACRONYMS = new Set([
+  "ID",
+  "SID",
+  "CSV",
+  "SMS",
+  "MMS",
+  "URL",
+  "API",
+  "HTTP",
+  "JSON",
+  "PHI",
+  "IVR",
+  "DTMF",
+  "CRM",
+  "EHR",
+]);
+
+function titleCaseWord(word: string): string {
+  if (word.length === 0) return word;
+  const upper = word.toUpperCase();
+  if (HUMANIZE_ACRONYMS.has(upper)) return upper;
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+// Humanise an audit-log action code, target table name, or metadata
+// key into a readable label the operator can scan. Examples:
+//   "patient.prescription.status_changed" → "Patient Prescription Status Changed"
+//   "voice.call.placed"                   → "Voice Call Placed"
+//   "messaging.handoff.escalated"         → "Messaging Handoff Escalated"
+//   "messageSid"                          → "Message SID"
+//   "patientId"                           → "Patient ID"
+//   "audit.export.csv"                    → "Audit Export CSV"
+//
+// Splits on three boundaries: "." (namespace separator), "_" (snake_
+// case word break), and camelCase transitions (e.g. messageCount →
+// "Message Count"). Strips any trailing key=value args because those
+// belong in a metadata chip, not in the headline. Preserves a small
+// set of well-known acronyms (see HUMANIZE_ACRONYMS). The raw
+// machine code should still be surfaced via a `title` tooltip on the
+// rendered element so engineers and auditors can grep / cross-
+// reference the original key.
+export function humanizeAction(action: string | null | undefined): string {
+  if (!action) return "—";
+  const trimmed = action.trim();
+  if (trimmed.length === 0) return "—";
+  // Strip trailing key=value args (used by cpap-fitter admin_audit_log
+  // entries for context).
+  const head = trimmed.split(/\s+/)[0] ?? trimmed;
+  return head
+    .split(/[._]/)
+    .filter(Boolean)
+    .flatMap((segment) =>
+      // Split camelCase: insert spaces at lower→upper and ACR→Word
+      // boundaries so "messageSid" → ["message", "Sid"] and
+      // "HTTPRequest" → ["HTTP", "Request"].
+      segment
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+        .split(/\s+/)
+        .filter(Boolean),
+    )
+    .map(titleCaseWord)
     .join(" ");
 }

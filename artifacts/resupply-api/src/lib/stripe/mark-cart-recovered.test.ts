@@ -2,10 +2,12 @@
 // checkout.session.completed branch of the Stripe webhook handler.
 //
 // Coverage:
-//   * Session WITH metadata.clerk_user_id → UPDATE shop_abandoned_carts
+//   * Session WITH metadata.customer_id → UPDATE shop_abandoned_carts
 //     (recovered_at = now, items = [], subtotal = 0).
-//   * Session WITHOUT metadata.clerk_user_id (guest checkout) → no-op
-//     (no DB update, no logging surface beyond debug).
+//   * Session WITH the legacy metadata.clerk_user_id key (pre-cutover
+//     in-flight Sessions) → same UPDATE — the helper accepts either.
+//   * Session WITHOUT a customer-id metadata key (guest checkout) →
+//     no-op (no DB update, no logging surface beyond debug).
 //
 // We intentionally do NOT exercise the full webhook-handler entry
 // point here (that requires Stripe signature construction). The
@@ -72,22 +74,34 @@ describe("markCartRecovered", () => {
     dbStub.update.mockClear();
   });
 
-  it("issues an UPDATE when session.metadata.clerk_user_id is present", async () => {
+  it("issues an UPDATE when session.metadata.customer_id is present", async () => {
     const log = makeLog();
     // Drizzle .returning() returns [{ id }] when a row was matched.
     updateQueue.push([{ id: "row_aaa" }]);
     await markCartRecovered(
-      makeSession({ clerk_user_id: "user_signed_in_42" }),
+      makeSession({ customer_id: "user_signed_in_42" }),
       log,
     );
     expect(dbStub.update).toHaveBeenCalledTimes(1);
     expect(log.info).toHaveBeenCalledTimes(1);
     const [meta, msg] = log.info.mock.calls[0];
-    expect(meta).toEqual({ clerkUserId: "user_signed_in_42", rowId: "row_aaa" });
+    expect(meta).toEqual({ customerId: "user_signed_in_42", rowId: "row_aaa" });
     expect(msg).toBe("abandoned cart marked recovered");
   });
 
-  it("is a silent no-op when session has no clerk_user_id (guest checkout)", async () => {
+  it("falls back to the legacy clerk_user_id metadata key for in-flight pre-cutover Sessions", async () => {
+    const log = makeLog();
+    updateQueue.push([{ id: "row_legacy" }]);
+    await markCartRecovered(
+      makeSession({ clerk_user_id: "user_legacy_99" }),
+      log,
+    );
+    expect(dbStub.update).toHaveBeenCalledTimes(1);
+    const [meta] = log.info.mock.calls[0];
+    expect(meta).toEqual({ customerId: "user_legacy_99", rowId: "row_legacy" });
+  });
+
+  it("is a silent no-op when session has no customer_id (guest checkout)", async () => {
     const log = makeLog();
     await markCartRecovered(makeSession(null), log);
     await markCartRecovered(makeSession({}), log);
@@ -101,7 +115,7 @@ describe("markCartRecovered", () => {
     const log = makeLog();
     updateQueue.push([]); // no row updated
     await markCartRecovered(
-      makeSession({ clerk_user_id: "user_no_cart" }),
+      makeSession({ customer_id: "user_no_cart" }),
       log,
     );
     expect(dbStub.update).toHaveBeenCalledTimes(1);

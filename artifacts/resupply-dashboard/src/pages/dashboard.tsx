@@ -69,11 +69,11 @@ export function DashboardPage() {
       <header>
         <h1
           className="text-2xl font-semibold mb-1"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Dashboard
         </h1>
-        <p className="text-sm" style={{ color: "#374151" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
           Live counters across the resupply pipeline. Each tile links to
           its filtered queue.
         </p>
@@ -106,11 +106,11 @@ export function DashboardPage() {
 
       <section
         className="bg-white border rounded-lg p-5"
-        style={{ borderColor: "#e5e7eb" }}
+        style={{ borderColor: "hsl(var(--line-1))" }}
       >
         <h2
           className="text-base font-semibold mb-3"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Quick links
         </h2>
@@ -119,7 +119,7 @@ export function DashboardPage() {
             <Link
               href="/conversations?status=awaiting_admin"
               className="underline"
-              style={{ color: "#0a1f44" }}
+              style={{ color: "hsl(var(--ink-1))" }}
             >
               Conversations awaiting admin →
             </Link>
@@ -128,7 +128,7 @@ export function DashboardPage() {
             <Link
               href="/episodes?status=overdue"
               className="underline"
-              style={{ color: "#0a1f44" }}
+              style={{ color: "hsl(var(--ink-1))" }}
             >
               Overdue episode queue →
             </Link>
@@ -137,7 +137,7 @@ export function DashboardPage() {
             <Link
               href="/patients?status=active"
               className="underline"
-              style={{ color: "#0a1f44" }}
+              style={{ color: "hsl(var(--ink-1))" }}
             >
               Active patients →
             </Link>
@@ -146,7 +146,7 @@ export function DashboardPage() {
             <Link
               href="/admin/shop/abandoned-carts"
               className="underline"
-              style={{ color: "#0a1f44" }}
+              style={{ color: "hsl(var(--ink-1))" }}
             >
               Abandoned shop carts →
             </Link>
@@ -155,7 +155,7 @@ export function DashboardPage() {
             <Link
               href="/audit"
               className="underline"
-              style={{ color: "#0a1f44" }}
+              style={{ color: "hsl(var(--ink-1))" }}
             >
               Recent audit activity →
             </Link>

@@ -4,7 +4,7 @@
 //   * Admins routinely re-categorise dozens of patients after a payer
 //     contract change ("close all patients on Plan X"). Issuing N
 //     sequential PATCHes from the dashboard is slow, exhausts the
-//     Clerk session token's per-second budget, and produces N audit
+//     session token's per-second budget, and produces N audit
 //     rows with no batch-summary to show "I changed 47 in one click".
 //   * One server-side loop also keeps the audit trail honest: a
 //     summary `patient.bulk_status_change` row records the admin's
@@ -23,7 +23,7 @@
 // Why max 100 ids per call:
 //   * 100 patients × ~1ms per UPDATE in a single statement is
 //     comfortably under the express body-parser timeout AND the
-//     Clerk session refresh window. Larger batches need to be
+//     session refresh window. Larger batches need to be
 //     chunked client-side.
 //
 // Errors:
@@ -130,7 +130,7 @@ router.post(
         await logAudit({
           action: "patient.update",
           adminEmail: req.adminEmail ?? null,
-          adminClerkId: req.adminClerkId ?? null,
+          adminUserId: req.adminUserId ?? null,
           targetTable: "patients",
           targetId: row.id,
           ip: req.ip ?? null,
@@ -149,7 +149,7 @@ router.post(
       await logAudit({
         action: "patient.bulk_status_change",
         adminEmail: req.adminEmail ?? null,
-        adminClerkId: req.adminClerkId ?? null,
+        adminUserId: req.adminUserId ?? null,
         targetTable: "patients",
         targetId: null,
         ip: req.ip ?? null,

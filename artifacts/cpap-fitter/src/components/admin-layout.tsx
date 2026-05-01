@@ -1,11 +1,9 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { useClerk, useUser } from "@clerk/react";
-import { LayoutDashboard, ListOrdered, ScrollText, LogOut, ShieldCheck, Bell } from "lucide-react";
+import { LayoutDashboard, ListOrdered, ScrollText, LogOut, ShieldCheck, Bell, Users, Users2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminConsoleSwitcher } from "@/components/admin-console-switcher";
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+import { useShopIdentity } from "@/lib/identity";
 
 /**
  * Sidebar nav items.
@@ -17,10 +15,14 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * they click, instead of forcing them to learn the layout by
  * exploration.
  *
- * Ordering reflects daily usage: the dashboard is the landing
- * surface, orders is where most of the work happens, reminders is
- * the recurring outbound action, and the audit log is the read-only
- * paper trail you check when something looks off.
+ * Ordering reflects daily usage: dashboard → orders → reminders →
+ * team → audit log.
+ *
+ * `adminOnly: true` items are filtered out of the sidebar when the
+ * caller's role is "agent". The page itself still renders read-only
+ * if an agent navigates there directly via URL — hiding it from the
+ * nav just keeps the daily-use surface uncluttered for roles that
+ * can't act on it.
  */
 const navItems: ReadonlyArray<{
   href: string;
@@ -28,6 +30,7 @@ const navItems: ReadonlyArray<{
   description: string;
   icon: typeof LayoutDashboard;
   exact: boolean;
+  adminOnly?: boolean;
 }> = [
   {
     href: "/admin",
@@ -44,11 +47,26 @@ const navItems: ReadonlyArray<{
     exact: false,
   },
   {
+    href: "/admin/customers",
+    label: "Customers",
+    description: "See lifetime history and reorder for any shopper.",
+    icon: Users2,
+    exact: false,
+  },
+  {
     href: "/admin/reminders",
     label: "Reminders",
     description: "Send batched email or text reminders.",
     icon: Bell,
     exact: false,
+  },
+  {
+    href: "/admin/users",
+    label: "Team",
+    description: "Invite teammates and manage who has access.",
+    icon: Users,
+    exact: false,
+    adminOnly: true,
   },
   {
     href: "/admin/audit",
@@ -80,14 +98,9 @@ export function AdminLayout({
    */
   adminRole?: "admin" | "agent";
 }) {
-  const [location] = useLocation();
-  const { signOut } = useClerk();
-  const { user } = useUser();
-  const displayEmail =
-    adminEmail ??
-    user?.primaryEmailAddress?.emailAddress ??
-    user?.emailAddresses[0]?.emailAddress ??
-    "";
+  const [location, setLocation] = useLocation();
+  const { signOut, email: identityEmail } = useShopIdentity();
+  const displayEmail = adminEmail ?? identityEmail ?? "";
   const isAdmin = adminRole === "admin";
 
   return (
@@ -124,7 +137,9 @@ export function AdminLayout({
             </div>
             <AdminConsoleSwitcher />
             <nav className="space-y-1" aria-label="Admin navigation">
-              {navItems.map((item) => {
+              {navItems
+                .filter((item) => !item.adminOnly || isAdmin)
+                .map((item) => {
                 const active = isActive(location, item.href, item.exact);
                 const Icon = item.icon;
                 return (
@@ -164,7 +179,14 @@ export function AdminLayout({
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start gap-2 text-muted-foreground"
-                onClick={() => signOut({ redirectUrl: basePath || "/" })}
+                onClick={() => {
+                  // Sign out via the shim, then soft-navigate to
+                  // root. Same semantics in both modes; the shim
+                  // owns cookie / cache cleanup.
+                  void signOut().finally(() => {
+                    setLocation("/");
+                  });
+                }}
                 data-testid="button-admin-signout"
               >
                 <LogOut className="w-4 h-4" />

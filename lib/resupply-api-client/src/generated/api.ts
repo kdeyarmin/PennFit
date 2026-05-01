@@ -256,7 +256,7 @@ export function useReadinessCheck<
 }
 
 /**
- * Returns the signed-in admin's Clerk id and verified primary
+ * Returns the signed-in admin's the auth provider id and verified primary
 email when the caller is on the `RESUPPLY_ADMIN_EMAILS`
 allowlist. The dashboard calls this immediately after sign-in
 to decide whether to render the admin console (200), the
@@ -450,8 +450,9 @@ On success returns `{conversationId, messageSid}` — the
 patient phone number is NEVER returned to the dashboard.
 
 Returns 503 when SMS+Email is not configured (any of
-TWILIO_*, SENDGRID_*, RESUPPLY_PHONE_HMAC_KEY,
-RESUPPLY_LINK_HMAC_KEY missing). Feature-flagged on env
+TWILIO_*, SENDGRID_*, or the resupply secret key
+(RESUPPLY_MASTER_KEY, or both legacy RESUPPLY_PHONE_HMAC_KEY
++ RESUPPLY_LINK_HMAC_KEY) missing). Feature-flagged on env
 presence — published behaviour.
 
  * @summary Admin-initiated outbound SMS resupply reminder
@@ -642,7 +643,7 @@ export const useSendEmailReminder = <
 /**
  * Public endpoint hit by patients clicking the Confirm /
 Change-address / Stop links inside an outbound reminder
-email. Authenticated by HMAC-signed token (NOT Clerk). The
+email. Authenticated by HMAC-signed token (NOT a session check). The
 dashboard MUST NOT call this — it's published only so
 consumers of the spec can see it exists.
 
@@ -751,7 +752,7 @@ export function useHandleEmailClick<
  * Webhook called BY TWILIO (never by the dashboard) on every call
 lifecycle transition: initiated, ringing, answered, completed,
 failed, busy, no-answer, canceled. Authenticated via the Twilio
-request signature, NOT by Clerk. The dashboard MUST NOT call
+request signature, NOT by the auth provider. The dashboard MUST NOT call
 this — it's published here only so consumers of the spec can see
 it exists and understand the audit trail.
 

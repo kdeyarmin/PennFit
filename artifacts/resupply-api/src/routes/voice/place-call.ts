@@ -213,7 +213,7 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
       await safeAudit({
         action: "voice.call.placed",
         adminEmail: req.adminEmail ?? null,
-        adminClerkId: req.adminClerkId ?? null,
+        adminUserId: req.adminUserId ?? null,
         targetTable: "conversations",
         targetId: conversationId,
         metadata: {
@@ -246,7 +246,7 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
   await safeAudit({
     action: "voice.call.placed",
     adminEmail: req.adminEmail ?? null,
-    adminClerkId: req.adminClerkId ?? null,
+    adminUserId: req.adminUserId ?? null,
     targetTable: "conversations",
     targetId: conversationId,
     metadata: {

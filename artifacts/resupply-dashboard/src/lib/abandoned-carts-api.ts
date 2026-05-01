@@ -27,7 +27,7 @@ async function authHeaders(): Promise<Record<string, string>> {
 
 export interface AbandonedCartRow {
   id: string;
-  clerkUserId: string | null;
+  customerId: string | null;
   emailRedacted: string | null;
   itemCount: number;
   subtotalCents: number;
