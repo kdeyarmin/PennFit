@@ -110,67 +110,85 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 210 25% 99%;
-  --foreground: 213 45% 15%;
+  /* ──────────────────────────────────────────────────────────────────
+   * Refined "quiet luxury" palette. Pulled the navy a touch deeper +
+   * cooler (more midnight, less royal) and re-tuned the accent from
+   * a honey-gold to a champagne-brass: less saturation, slightly
+   * warmer hue, reads as metallic rather than candy. Paper white is
+   * imperceptibly cooler so the gold pops without ever shouting.
+   *
+   * Single source of truth — surface tokens below resolve through
+   * these brand primitives, so changing one value here updates every
+   * card, button, badge, sidebar, and chart in the app.
+   * ────────────────────────────────────────────────────────────────── */
+  --penn-navy: 218 58% 21%;
+  --penn-navy-deep: 220 64% 13%;
+  --penn-navy-soft: 216 32% 42%;
+  --penn-gold: 38 62% 56%;
+  --penn-gold-soft: 38 70% 80%;
+  --penn-gold-deep: 36 55% 42%;
+  --penn-mist: 210 36% 96%;
+  --penn-platinum: 215 18% 88%;
+  --glass-bg: 255 255 255;
+  --glass-stroke: 218 30% 88%;
+
+  --background: 220 30% 99%;
+  --foreground: 220 50% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --card-border: 214.3 31.8% 91.4%;
+  --card-foreground: 220 50% 11%;
+  --card-border: 218 26% 91%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --popover-border: 214.3 31.8% 91.4%;
-  --primary: 213 51% 25%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 30% 94%;
-  --secondary-foreground: 213 45% 15%;
-  --muted: 210 30% 94%;
-  --muted-foreground: 215 16% 42%;
-  --accent: 41 86% 59%;
-  --accent-foreground: 213 51% 18%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214 28% 88%;
-  --input: 214 28% 88%;
-  --ring: 213 51% 25%;
+  --popover-foreground: 220 50% 11%;
+  --popover-border: 218 26% 91%;
+  --primary: var(--penn-navy);
+  --primary-foreground: 220 30% 99%;
+  --secondary: 218 26% 95%;
+  --secondary-foreground: 220 50% 14%;
+  --muted: 218 24% 95%;
+  --muted-foreground: 218 14% 42%;
+  --accent: var(--penn-gold);
+  --accent-foreground: var(--penn-navy-deep);
+  --destructive: 354 70% 49%;
+  --destructive-foreground: 220 30% 99%;
+  --border: 218 22% 89%;
+  --input: 218 22% 89%;
+  --ring: var(--penn-navy);
 
-  --chart-1: 213 51% 25%;
-  --chart-2: 41 86% 59%;
-  --chart-3: 197 37% 35%;
-  --chart-4: 43 74% 66%;
-  --chart-5: 27 87% 67%;
+  --chart-1: var(--penn-navy);
+  --chart-2: var(--penn-gold);
+  --chart-3: 200 35% 38%;
+  --chart-4: 38 70% 70%;
+  --chart-5: 215 25% 55%;
 
-  --sidebar: 210 30% 98%;
-  --sidebar-foreground: 213 45% 15%;
-  --sidebar-border: 214 28% 88%;
-  --sidebar-primary: 213 51% 25%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 41 86% 59%;
-  --sidebar-accent-foreground: 213 51% 18%;
-  --sidebar-ring: 213 51% 25%;
+  --sidebar: 220 28% 98%;
+  --sidebar-foreground: 220 50% 12%;
+  --sidebar-border: 218 22% 89%;
+  --sidebar-primary: var(--penn-navy);
+  --sidebar-primary-foreground: 220 30% 99%;
+  --sidebar-accent: var(--penn-gold);
+  --sidebar-accent-foreground: var(--penn-navy-deep);
+  --sidebar-ring: var(--penn-navy);
 
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: Menlo, monospace;
+  --app-font-mono: 'JetBrains Mono', Menlo, monospace;
   --radius: 0.75rem;
-  
-  --shadow-2xs: 0 1px 1px hsl(213 40% 20% / 0.04);
-  --shadow-xs: 0 1px 2px hsl(213 40% 20% / 0.05);
-  --shadow-sm: 0 1px 2px hsl(213 40% 20% / 0.06), 0 1px 3px hsl(213 40% 20% / 0.04);
-  --shadow: 0 2px 4px hsl(213 40% 20% / 0.06), 0 4px 8px hsl(213 40% 20% / 0.04);
-  --shadow-md: 0 4px 8px hsl(213 40% 20% / 0.06), 0 8px 16px hsl(213 40% 20% / 0.05);
-  --shadow-lg: 0 8px 16px hsl(213 40% 20% / 0.07), 0 16px 32px hsl(213 40% 20% / 0.06);
-  --shadow-xl: 0 16px 32px hsl(213 40% 20% / 0.09), 0 24px 48px hsl(213 40% 20% / 0.07);
-  --shadow-2xl: 0 24px 48px hsl(213 40% 20% / 0.12), 0 40px 80px hsl(213 40% 20% / 0.10);
-  --tracking-normal: 0em;
-  --spacing: 0.25rem;
 
-  /* High-end accents */
-  --penn-navy: 213 51% 25%;
-  --penn-navy-deep: 213 60% 18%;
-  --penn-gold: 41 86% 59%;
-  --penn-gold-soft: 41 90% 78%;
-  --penn-mist: 200 50% 96%;
-  --glass-bg: 255 255 255;
-  --glass-stroke: 213 40% 88%;
+  /* Layered, blue-tinted shadow stack. Two layers per step (a tight
+     inner shadow for crispness + a soft outer for ambient lift) gives
+     surfaces that "Stripe / Linear / Apple" floating quality without
+     ever looking heavy. Tint is the brand navy at low alpha so
+     everything stays visually unified. */
+  --shadow-2xs: 0 1px 1px hsl(220 50% 14% / 0.04);
+  --shadow-xs: 0 1px 2px hsl(220 50% 14% / 0.05);
+  --shadow-sm: 0 1px 2px hsl(220 50% 14% / 0.06), 0 1px 3px hsl(220 50% 14% / 0.04);
+  --shadow: 0 2px 4px hsl(220 50% 14% / 0.06), 0 4px 10px hsl(220 50% 14% / 0.04);
+  --shadow-md: 0 4px 10px hsl(220 50% 14% / 0.07), 0 10px 22px hsl(220 50% 14% / 0.05);
+  --shadow-lg: 0 8px 20px hsl(220 50% 14% / 0.08), 0 18px 36px hsl(220 50% 14% / 0.06);
+  --shadow-xl: 0 16px 36px hsl(220 50% 14% / 0.10), 0 28px 56px hsl(220 50% 14% / 0.08);
+  --shadow-2xl: 0 28px 56px hsl(220 50% 14% / 0.14), 0 48px 88px hsl(220 50% 14% / 0.10);
+  --tracking-normal: -0.01em;
+  --spacing: 0.25rem;
 
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
   --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
@@ -204,26 +222,28 @@
   body {
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
-    /* Cutting-edge premium atmosphere — pulled back to whisper-quiet.
-       The page reads as a clean off-white sheet with two faint brand
-       aurorae tucked into opposite corners (well outside the reading
-       column) and a soft cool plinth grounding the very bottom. The
-       brand should announce itself in interactions (buttons, hover
-       states, accents) — not in giant atmospheric color washes that
-       fight content for attention.
+    font-feature-settings: "ss01", "cv11", "tnum" 0;
+    /* Cutting-edge premium atmosphere — three corner aurorae plus a
+       soft horizon plinth, all tuned to "whisper" rather than
+       "shout". Brand should land in interactions (buttons, hover,
+       accents) rather than a giant atmospheric wash that competes
+       with content.
 
-       Order back-to-front:
-         1. Top-right: warm gold aurora (10% opacity, in the corner).
-         2. Bottom-left: cool navy aurora (8% opacity, in the corner).
-         3. Bottom plinth: faint mist anchors the page floor.
+       Layer stack, back-to-front:
+         1. Top-right: champagne-gold aurora (warmth in the corner).
+         2. Bottom-left: deep-navy aurora (cool counterweight).
+         3. Top-left: faint platinum aurora (subtle metallic tint
+            across the brow of the page).
+         4. Bottom plinth: cool mist that anchors the page floor.
 
-       The whole stack still breathes via `body-bloom-drift` (90s now,
-       slower than before — feels more sophisticated than the 60s
-       cadence), so the surface remains alive without distracting. */
+       The 90s alternate `body-bloom-drift` keeps the canvas alive
+       without ever drawing the eye — a slow inhale rather than the
+       60s "metronome" the previous version had. */
     background-image:
-      radial-gradient(ellipse 55% 45% at 95% 5%, hsl(var(--penn-gold) / 0.10), transparent 70%),
-      radial-gradient(ellipse 55% 45% at 5% 95%, hsl(var(--penn-navy) / 0.08), transparent 70%),
-      radial-gradient(ellipse 100% 40% at 50% 110%, hsl(var(--penn-mist) / 0.55), transparent 70%);
+      radial-gradient(ellipse 55% 45% at 96% 4%, hsl(var(--penn-gold) / 0.09), transparent 72%),
+      radial-gradient(ellipse 55% 50% at 4% 96%, hsl(var(--penn-navy) / 0.085), transparent 72%),
+      radial-gradient(ellipse 35% 30% at 8% 6%, hsl(var(--penn-platinum) / 0.55), transparent 70%),
+      radial-gradient(ellipse 100% 38% at 50% 108%, hsl(var(--penn-mist) / 0.55), transparent 70%);
     background-attachment: fixed;
     background-size: 110% 110%;
     animation: body-bloom-drift 90s ease-in-out infinite alternate;
@@ -368,39 +388,53 @@
     pointer-events: none;
   }
 
-  /* Glass card — premium frosted surface */
+  /* Glass card — premium frosted surface. Three-stop vertical
+     gradient (bright top → muted middle → cool foot) gives the card
+     a faint "specular" sheen as if catching light from above. The
+     1px hairline highlight inside the top edge is what sells the
+     glass illusion — never remove it. */
   .glass-card {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.65) 100%);
-    backdrop-filter: blur(14px) saturate(180%);
-    -webkit-backdrop-filter: blur(14px) saturate(180%);
-    border: 1px solid hsl(var(--glass-stroke) / 0.7);
+    background:
+      linear-gradient(180deg,
+        rgba(255, 255, 255, 0.92) 0%,
+        rgba(255, 255, 255, 0.78) 55%,
+        rgba(248, 250, 253, 0.72) 100%);
+    backdrop-filter: blur(16px) saturate(185%);
+    -webkit-backdrop-filter: blur(16px) saturate(185%);
+    border: 1px solid hsl(var(--glass-stroke) / 0.75);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.8) inset,
-      0 1px 2px hsl(var(--penn-navy) / 0.04),
-      0 8px 24px hsl(var(--penn-navy) / 0.06),
-      0 24px 48px hsl(var(--penn-navy) / 0.04);
+      0 1px 0 rgba(255, 255, 255, 0.95) inset,
+      0 0 0 1px hsl(var(--penn-navy) / 0.02),
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.05),
+      0 10px 28px hsl(var(--penn-navy-deep) / 0.07),
+      0 28px 56px hsl(var(--penn-navy-deep) / 0.05);
   }
 
   .glass-panel {
-    background: rgba(255, 255, 255, 0.6);
-    backdrop-filter: blur(10px) saturate(160%);
-    -webkit-backdrop-filter: blur(10px) saturate(160%);
-    border: 1px solid hsl(var(--glass-stroke) / 0.5);
+    background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0.58) 100%);
+    backdrop-filter: blur(12px) saturate(165%);
+    -webkit-backdrop-filter: blur(12px) saturate(165%);
+    border: 1px solid hsl(var(--glass-stroke) / 0.55);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.04);
   }
 
   /* Brand-tinted hover lift for cards */
   .lift-on-hover {
-    transition: transform 250ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                box-shadow 250ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                border-color 250ms ease;
+    transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                box-shadow 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                border-color 280ms ease;
   }
   .lift-on-hover:hover {
     transform: translateY(-3px);
-    border-color: hsl(var(--penn-navy) / 0.25);
+    border-color: hsl(var(--penn-navy) / 0.28);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.9) inset,
-      0 12px 28px hsl(var(--penn-navy) / 0.10),
-      0 32px 64px hsl(var(--penn-navy) / 0.08);
+      0 1px 0 rgba(255, 255, 255, 0.95) inset,
+      0 14px 32px hsl(var(--penn-navy-deep) / 0.12),
+      0 36px 72px hsl(var(--penn-navy-deep) / 0.08);
   }
 
   /* Iconographic halos — gold and navy */
@@ -440,20 +474,67 @@
     color: transparent;
   }
 
-  /* Premium primary button glow on hover */
+  /* Premium primary button — subtle navy gradient + champagne halo.
+     The vertical gradient (deep → mid navy) gives the surface a
+     forged-metal feel; the 1px white inner highlight reads as
+     polished bevel; on hover the gold halo blooms 4px out so the
+     button looks genuinely lit rather than just elevated. */
   .btn-primary-glow {
+    background-image: linear-gradient(180deg,
+      hsl(var(--penn-navy)) 0%,
+      hsl(var(--penn-navy-deep)) 100%);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.18) inset,
-      0 8px 20px hsl(var(--penn-navy) / 0.30),
-      0 4px 8px hsl(var(--penn-navy) / 0.20);
-    transition: box-shadow 220ms ease, transform 220ms ease;
+      0 1px 0 rgba(255, 255, 255, 0.22) inset,
+      0 -1px 0 hsl(var(--penn-navy-deep)) inset,
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.30),
+      0 8px 20px hsl(var(--penn-navy-deep) / 0.32),
+      0 4px 8px hsl(var(--penn-navy-deep) / 0.20);
+    transition: box-shadow 220ms ease,
+                transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                background-image 220ms ease;
   }
   .btn-primary-glow:hover {
+    transform: translateY(-1px);
+    background-image: linear-gradient(180deg,
+      hsl(var(--penn-navy-soft)) 0%,
+      hsl(var(--penn-navy)) 100%);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.18) inset,
-      0 14px 32px hsl(var(--penn-navy) / 0.40),
-      0 6px 12px hsl(var(--penn-navy) / 0.25),
-      0 0 0 4px hsl(var(--penn-gold) / 0.18);
+      0 1px 0 rgba(255, 255, 255, 0.28) inset,
+      0 -1px 0 hsl(var(--penn-navy-deep)) inset,
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.30),
+      0 14px 32px hsl(var(--penn-navy-deep) / 0.42),
+      0 6px 12px hsl(var(--penn-navy-deep) / 0.28),
+      0 0 0 4px hsl(var(--penn-gold) / 0.22);
+  }
+  .btn-primary-glow:active {
+    transform: translateY(0);
+  }
+
+  /* Champagne CTA — gold-on-navy companion to btn-primary-glow.
+     Use sparingly: hero CTAs, "complete fit", premium upsell. */
+  .btn-gold-glow {
+    background-image: linear-gradient(180deg,
+      hsl(var(--penn-gold-soft)) 0%,
+      hsl(var(--penn-gold)) 55%,
+      hsl(var(--penn-gold-deep)) 100%);
+    color: hsl(var(--penn-navy-deep));
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.55) inset,
+      0 -1px 0 hsl(var(--penn-gold-deep)) inset,
+      0 1px 2px hsl(var(--penn-gold-deep) / 0.30),
+      0 8px 20px hsl(var(--penn-gold) / 0.35);
+    transition: box-shadow 220ms ease,
+                transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                background-image 220ms ease;
+  }
+  .btn-gold-glow:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.65) inset,
+      0 -1px 0 hsl(var(--penn-gold-deep)) inset,
+      0 14px 32px hsl(var(--penn-gold) / 0.45),
+      0 6px 12px hsl(var(--penn-gold-deep) / 0.30),
+      0 0 0 4px hsl(var(--penn-navy) / 0.16);
   }
 
   /* Aurora highlight strip — for header / dividers */
