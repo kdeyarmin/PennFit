@@ -10,7 +10,7 @@
 //
 // Behavior:
 //   * 401 if there's no session on the request.
-//   * Otherwise sets `req.userClerkId` and continues.
+//   * Otherwise sets `req.userCustomerId` and continues.
 //
 // Why we DON'T require a verified email here: a freshly-signed-up
 // shopper should be able to start placing orders immediately. The
@@ -18,22 +18,17 @@
 // case) doesn't apply — there's no allowlist to spoof past for the
 // patient surface.
 //
-// Provider resolution: the in-house pf_session cookie is checked
-// first; if present and valid, the auth.users row is run through
-// the configured `customerIdResolver` (see
-// `artifacts/resupply-api/src/lib/auth-deps.ts`) which maps it to
-// the legacy `shop_customers.clerk_user_id` value so every
-// downstream FK keeps working unchanged after Stage 4c. The
-// resolver also returns the user's email + display name, which
-// the middleware attaches to the request for the 5 shop
-// endpoints that previously called `clerkClient.users.getUser`.
-// If the in-house path doesn't apply (AUTH_PROVIDER=clerk, no
-// cookie, invalid cookie, locked/revoked user, repo error), we
-// fall through to the existing Clerk getAuth() lookup; in that
-// case the request gets only `req.userClerkId` and no profile.
+// Session resolution:
+//   The middleware resolves the session via the in-house pf_session
+//   cookie. A request that doesn't carry one (or carries an
+//   expired / revoked / locked cookie) gets a 401. The
+//   `customerIdResolver` in api-server's auth-deps maps the
+//   resolved auth.users.id to `shop_customers.customer_id` so
+//   every downstream join keeps working. The resolver also
+//   returns the user's email + display name, which the middleware
+//   attaches to the request for the shop endpoints that need them.
 
 import type { NextFunction, Request, Response } from "express";
-import { getAuth } from "@clerk/express";
 
 import {
   SESSION_COOKIE,
@@ -42,20 +37,18 @@ import {
   readCookie,
 } from "@workspace/resupply-auth";
 
-import { getAuthDepsOrNull } from "../lib/auth-deps";
+import { getAuthDeps } from "../lib/auth-deps";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      userClerkId?: string;
+      userCustomerId?: string;
       /**
-       * Optional customer profile attached when the in-house auth
-       * path resolved the session AND a customerIdResolver is
-       * configured. Handlers that previously called
-       * `clerkClient.users.getUser(req.userClerkId)` should prefer
-       * these fields when present and fall back to the Clerk
-       * lookup when they're absent.
+       * Customer profile attached by `customerIdResolver` after
+       * an in-house cookie has been validated. Handlers that need
+       * the email / display name should read these fields rather
+       * than re-querying.
        */
       shopCustomerEmail?: string | null;
       shopCustomerDisplayName?: string | null;
@@ -70,78 +63,60 @@ interface Resolved {
 }
 
 /**
- * Resolve the current customer identifier from EITHER the in-house
- * pf_session cookie OR a Clerk session, whichever exists. Returns
- * the resolved customer details or null when no auth path
- * succeeds. Errors in the in-house repo lookup fall through to
- * Clerk so a transient DB blip doesn't 500 every shop request.
+ * Resolve the current customer identifier from the in-house
+ * pf_session cookie. Returns null when no cookie is present or
+ * the cookie is invalid (expired / revoked / unknown user /
+ * locked / repo error).
  */
 async function resolveCustomer(req: Request): Promise<Resolved | null> {
-  const deps = getAuthDepsOrNull();
-  if (deps) {
-    const raw = readCookie(req, SESSION_COOKIE);
-    if (raw) {
-      const tokenHash = hashToken(raw);
-      if (tokenHash) {
-        try {
-          const session = await deps.repo.findSessionByTokenHash(tokenHash);
-          if (
-            session &&
-            !isExpired(
-              { expiresAt: session.expiresAt, revokedAt: session.revokedAt },
-              new Date(),
-            )
-          ) {
-            const user = await deps.repo.findUserById(session.userId);
-            if (
-              user &&
-              user.status !== "locked" &&
-              user.status !== "revoked"
-            ) {
-              if (deps.customerIdResolver) {
-                const r = await deps.customerIdResolver({
-                  authUserId: user.id,
-                  emailLower: user.emailLower,
-                  displayName: user.displayName,
-                });
-                return {
-                  customerKey: r.customerKey,
-                  email: r.email,
-                  displayName: r.displayName,
-                };
-              }
-              // No resolver — pass auth.users.id through and surface
-              // the email + display name from the auth row directly.
-              return {
-                customerKey: user.id,
-                email: user.emailLower,
-                displayName: user.displayName,
-              };
-            }
-          }
-        } catch {
-          // Repo error — fall through to Clerk rather than 5xx.
-        }
-      }
+  const deps = getAuthDeps();
+  const raw = readCookie(req, SESSION_COOKIE);
+  if (!raw) return null;
+  const tokenHash = hashToken(raw);
+  if (!tokenHash) return null;
+  try {
+    const session = await deps.repo.findSessionByTokenHash(tokenHash);
+    if (
+      !session ||
+      isExpired(
+        { expiresAt: session.expiresAt, revokedAt: session.revokedAt },
+        new Date(),
+      )
+    ) {
+      return null;
     }
+    const user = await deps.repo.findUserById(session.userId);
+    if (!user || user.status === "locked" || user.status === "revoked") {
+      return null;
+    }
+    if (deps.customerIdResolver) {
+      const r = await deps.customerIdResolver({
+        authUserId: user.id,
+        emailLower: user.emailLower,
+        displayName: user.displayName,
+      });
+      return {
+        customerKey: r.customerKey,
+        email: r.email,
+        displayName: r.displayName,
+      };
+    }
+    return {
+      customerKey: user.id,
+      email: user.emailLower,
+      displayName: user.displayName,
+    };
+  } catch {
+    // Repo error — return null. Handler will 401 the request, the
+    // SPA reloads /me, and the next attempt sees a healthier DB.
+    return null;
   }
-
-  const auth = getAuth(req);
-  if (auth?.userId) {
-    // Clerk path — handlers do their own enrichment via
-    // clerkClient.users.getUser. We don't pre-populate the profile
-    // fields here.
-    return { customerKey: auth.userId, email: null, displayName: null };
-  }
-  return null;
 }
 
 function attach(req: Request, r: Resolved): void {
-  req.userClerkId = r.customerKey;
-  if (r.email !== null || r.displayName !== null) {
-    req.shopCustomerEmail = r.email;
-    req.shopCustomerDisplayName = r.displayName;
-  }
+  req.userCustomerId = r.customerKey;
+  req.shopCustomerEmail = r.email;
+  req.shopCustomerDisplayName = r.displayName;
 }
 
 export async function requireSignedIn(
@@ -160,7 +135,7 @@ export async function requireSignedIn(
 
 /**
  * Soft variant: never blocks the request. Just attaches
- * `req.userClerkId` (and the optional profile fields) if a session
+ * `req.userCustomerId` (and the optional profile fields) if a session
  * exists. Used by `GET /shop/me` which must always 200 (so the
  * frontend can render a "signed-out" state without an error
  * toast) and by `POST /shop/checkout` which supports both guest

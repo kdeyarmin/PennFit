@@ -36,8 +36,8 @@ import { requireSignedIn } from "../../middlewares/requireSignedIn";
 const router: IRouter = Router();
 
 router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
@@ -57,7 +57,7 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
       items: shopSubscriptions.items,
     })
     .from(shopSubscriptions)
-    .where(eq(shopSubscriptions.clerkUserId, clerkUserId));
+    .where(eq(shopSubscriptions.customerId, customerId));
 
   const liveStatuses = new Set(["active", "trialing", "past_due"]);
   const liveSubs = subRows.filter((r) => liveStatuses.has(r.status));
@@ -95,7 +95,7 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
     .from(shopOrders)
     .where(
       and(
-        eq(shopOrders.clerkUserId, clerkUserId),
+        eq(shopOrders.customerId, customerId),
         eq(shopOrders.status, "paid"),
       ),
     )
@@ -121,7 +121,7 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
     .from(shopOrders)
     .where(
       and(
-        eq(shopOrders.clerkUserId, clerkUserId),
+        eq(shopOrders.customerId, customerId),
         eq(shopOrders.status, "paid"),
         isNull(shopOrders.shippedAt),
       ),
@@ -136,7 +136,7 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
       clearedAt: shopAbandonedCarts.clearedAt,
     })
     .from(shopAbandonedCarts)
-    .where(eq(shopAbandonedCarts.clerkUserId, clerkUserId))
+    .where(eq(shopAbandonedCarts.customerId, customerId))
     .limit(1);
 
   const cartRow = cartRows[0];

@@ -1,4 +1,4 @@
-// In-house auth wiring for the resupply-dashboard.
+// Auth wiring for the resupply-dashboard.
 //
 // Constructed once at module load:
 //   * `authClient` — the fetch wrapper bound to /resupply-api/auth.
@@ -6,9 +6,9 @@
 //     bound to that client.
 //
 // Imported by:
-//   * `lib/identity.ts` — the shim that picks Clerk vs in-house
-//     at app boot.
-//   * The new in-house sign-in / forgot / reset / verify pages.
+//   * `lib/identity.ts` — the identity shim that exposes session
+//     state to the rest of the SPA.
+//   * The in-house sign-in / forgot / reset / verify pages.
 //
 // The Vite SPA serves under a base path (the artifact dir under
 // the deploy URL). Auth requests, however, MUST hit the API at

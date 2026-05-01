@@ -164,7 +164,7 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
   lines.push("─── CONSENT ───");
   lines.push(`Patient consents to be contacted about this order: ${order.consentToContact ? "YES" : "NO"}`);
   lines.push("");
-  lines.push("This order was submitted through Penn Fit. No data is stored on the server.");
+  lines.push("This order was submitted through PennPaps. No data is stored on the server.");
   return lines.join("\n");
 }
 
@@ -231,7 +231,7 @@ export async function sendOrderToPenn(
   }
 
   const body = composeEmailBody(order, orderReference);
-  const subject = `Penn Fit Order ${orderReference} — ${order.chosenMask.modelNumber} for ${order.patient.lastName}`;
+  const subject = `PennPaps Order ${orderReference} — ${order.chosenMask.modelNumber} for ${order.patient.lastName}`;
 
   // Set the patient as the reply-to so the fulfillment team can reply
   // directly. SendGrid accepts the standard "Name <email>" string format,

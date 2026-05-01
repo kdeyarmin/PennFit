@@ -6,8 +6,9 @@
 //   * `authHooks` — React Query hooks (useSession, useSignIn, …).
 //
 // Imported by:
-//   * `lib/identity.ts` — picks Clerk vs in-house at module load.
-//   * The new in-house sign-in / sign-up / forgot / reset / verify
+//   * `lib/identity.ts` — the identity shim that exposes session
+//     state to the rest of the SPA.
+//   * The in-house sign-in / sign-up / forgot / reset / verify
 //     pages.
 
 import {

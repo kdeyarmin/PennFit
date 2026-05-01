@@ -1,11 +1,22 @@
-// In-house implementation of useShopIdentity / SignedIn /
-// SignedOut. Selected by `lib/identity.ts` when
-// VITE_AUTH_PROVIDER === "in_house".
+// Shop identity shim. Reads from the in-house /api/auth/me probe
+// via the React Query hook from @workspace/resupply-auth-react.
+//
+// Use `useShopIdentity()` to read the current customer's identity
+// state. Use `<SignedIn>` / `<SignedOut>` to render branches based
+// on whether a session is present.
 
 import type * as React from "react";
 
-import { authHooks, authClient } from "./auth-hooks";
-import type { ShopIdentity } from "./identity";
+import { authClient, authHooks } from "./auth-hooks";
+
+export interface ShopIdentity {
+  email: string | null;
+  userId: string | null;
+  displayName: string | null;
+  isSignedIn: boolean;
+  isLoaded: boolean;
+  signOut: () => Promise<void>;
+}
 
 export function useShopIdentity(): ShopIdentity {
   const { data, isPending } = authHooks.useSession();
@@ -39,11 +50,11 @@ export const SignedOut: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
   const { data, isPending } = authHooks.useSession();
-  // Mirror Clerk's <Show when="signed-out">: render only when we
-  // KNOW the user is signed out. While the probe is pending, we
-  // don't render — that avoids a flash of "signed-out" UI for a
-  // user who turns out to be signed in.
+  // Render only when we KNOW the user is signed out. While the
+  // probe is pending, render nothing — avoids a flash of
+  // "signed-out" UI for a user who turns out to be signed in.
   if (isPending) return null;
   if (data) return null;
   return <>{children}</>;
 };
+

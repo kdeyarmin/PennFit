@@ -1,6 +1,6 @@
 // /shop/me/export — customer self-service data export.
 //
-// Returns every cash-pay datum we hold for the calling Clerk user as
+// Returns every cash-pay datum we hold for the calling customer as
 // a single JSON document, suitable for download. Surfaces:
 //   * profile (display name + email + saved address)
 //   * communication preferences
@@ -14,7 +14,7 @@
 //   * No PHI on this surface — the cash-pay shop has no PHI per the
 //     project's design split (PHI lives in the resupply.* schema's
 //     `patients` table, which is keyed by PACware patient id, not by
-//     Clerk user id). This export is therefore complete coverage for
+//     customer id). This export is therefore complete coverage for
 //     the consumer-side data we hold.
 //   * Saved card crumbs are returned (brand + last4 + exp month/year)
 //     since those are already stored locally for display; full PAN /
@@ -48,7 +48,7 @@ import { requireSignedIn } from "../../middlewares/requireSignedIn";
 const router: IRouter = Router();
 
 router.get("/shop/me/export", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId!;
+  const customerId = req.userCustomerId!;
   const db = drizzle(getDbPool());
 
   const [customers, orders, items, subs, returns, reviews, carts] =
@@ -56,35 +56,35 @@ router.get("/shop/me/export", requireSignedIn, async (req, res) => {
       db
         .select()
         .from(shopCustomers)
-        .where(eq(shopCustomers.clerkUserId, clerkUserId))
+        .where(eq(shopCustomers.customerId, customerId))
         .limit(1),
       db
         .select()
         .from(shopOrders)
-        .where(eq(shopOrders.clerkUserId, clerkUserId))
+        .where(eq(shopOrders.customerId, customerId))
         .orderBy(desc(shopOrders.createdAt)),
       db
         .select()
         .from(shopOrderItems)
-        .where(eq(shopOrderItems.clerkUserId, clerkUserId)),
+        .where(eq(shopOrderItems.customerId, customerId)),
       db
         .select()
         .from(shopSubscriptions)
-        .where(eq(shopSubscriptions.clerkUserId, clerkUserId))
+        .where(eq(shopSubscriptions.customerId, customerId))
         .orderBy(desc(shopSubscriptions.createdAt)),
       db
         .select()
         .from(shopReturns)
-        .where(eq(shopReturns.clerkUserId, clerkUserId))
+        .where(eq(shopReturns.customerId, customerId))
         .orderBy(desc(shopReturns.createdAt)),
       db
         .select()
         .from(shopReviews)
-        .where(eq(shopReviews.clerkUserId, clerkUserId)),
+        .where(eq(shopReviews.customerId, customerId)),
       db
         .select()
         .from(shopAbandonedCarts)
-        .where(eq(shopAbandonedCarts.clerkUserId, clerkUserId))
+        .where(eq(shopAbandonedCarts.customerId, customerId))
         .limit(1),
     ]);
 
@@ -96,7 +96,7 @@ router.get("/shop/me/export", requireSignedIn, async (req, res) => {
   }
 
   const exportedAt = new Date().toISOString();
-  const filename = `pennpaps-export-${clerkUserId.slice(-8)}-${exportedAt
+  const filename = `pennpaps-export-${customerId.slice(-8)}-${exportedAt
     .slice(0, 10)
     .replace(/-/g, "")}.json`;
 
@@ -110,7 +110,7 @@ router.get("/shop/me/export", requireSignedIn, async (req, res) => {
     JSON.stringify(
       {
         exportedAt,
-        clerkUserId,
+        customerId,
         profile: customers[0] ?? null,
         orders: orders.map((o) => ({
           ...o,

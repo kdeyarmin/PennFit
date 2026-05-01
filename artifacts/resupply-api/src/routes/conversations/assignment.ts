@@ -5,7 +5,7 @@
 //                                          unless `?force=1`
 //   POST /conversations/:id/release     — unassign (own claim or admin
 //                                          override)
-//   POST /conversations/:id/assign      — assign to a specific clerk
+//   POST /conversations/:id/assign      — assign to a specific admin/agent
 //                                          user id (admin-only)
 //   POST /conversations/:id/priority    — set priority + recompute SLA
 //   POST /conversations/:id/escalate    — flag for supervisor with note

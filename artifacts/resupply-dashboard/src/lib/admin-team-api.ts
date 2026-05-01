@@ -1,19 +1,6 @@
 // Hand-rolled fetch wrappers for the admin team management endpoints.
-
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
+// Auth rides on the in-house `pf_session` cookie via
+// `credentials: "include"` — no bearer token bridge.
 
 export type TeamRole = "admin" | "agent";
 export type TeamStatus = "pending" | "active" | "revoked";
@@ -21,7 +8,7 @@ export type TeamStatus = "pending" | "active" | "revoked";
 export interface TeamMember {
   id: string;
   email: string;
-  clerkUserId: string | null;
+  authUserId: string | null;
   role: TeamRole;
   status: TeamStatus;
   displayName: string | null;
@@ -34,11 +21,18 @@ export interface TeamMember {
   lastLoginAt: string | null;
 }
 
+interface InviteResponse {
+  member: TeamMember;
+  emailSent: boolean;
+  inviteLink: string | null;
+}
+
 const BASE = "/resupply-api/admin/team";
 
 export async function listTeam(): Promise<{ members: TeamMember[] }> {
   const res = await fetch(BASE, {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    credentials: "include",
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load team (${res.status})`);
   return (await res.json()) as { members: TeamMember[] };
@@ -49,19 +43,18 @@ export async function inviteMember(body: {
   role: TeamRole;
   displayName?: string | null;
   notes?: string | null;
-}): Promise<{ member: TeamMember; clerkInviteSent: boolean }> {
+}): Promise<InviteResponse> {
   const res = await fetch(`${BASE}/invite`, {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(await authHeaders()),
     },
     body: JSON.stringify(body),
   });
   const json = (await res.json()) as
-    | { member: TeamMember; clerkInviteSent: boolean }
+    | InviteResponse
     | { error?: string; message?: string; memberId?: string };
   if (!res.ok || !("member" in json)) {
     const errMsg =
@@ -73,11 +66,11 @@ export async function inviteMember(body: {
   return json;
 }
 
-export async function resendInvite(id: string): Promise<{ member: TeamMember; clerkInviteSent: boolean }> {
+export async function resendInvite(id: string): Promise<InviteResponse> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/resend`, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as
@@ -85,14 +78,14 @@ export async function resendInvite(id: string): Promise<{ member: TeamMember; cl
       | null;
     throw new Error(json?.message ?? json?.error ?? `Resend failed (${res.status})`);
   }
-  return (await res.json()) as { member: TeamMember; clerkInviteSent: boolean };
+  return (await res.json()) as InviteResponse;
 }
 
 export async function revokeMember(id: string): Promise<{ member: TeamMember }> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/revoke`, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as
@@ -117,7 +110,6 @@ export async function patchMember(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(await authHeaders()),
     },
     body: JSON.stringify(body),
   });

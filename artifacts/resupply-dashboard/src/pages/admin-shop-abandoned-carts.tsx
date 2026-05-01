@@ -15,7 +15,7 @@
 //
 // Privacy: emails are already redacted server-side (head 2 chars +
 // asterisks) so the rendered table never shows a usable contact list.
-// We never log clerkUserId to the page either — only the emailRedacted
+// We never log customerId to the page either — only the emailRedacted
 // string is shown.
 //
 // Dispatcher: the "Send due reminders" button POSTs send-due, which

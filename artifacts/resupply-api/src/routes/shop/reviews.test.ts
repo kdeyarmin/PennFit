@@ -5,7 +5,7 @@
 //   * unauthenticated POST/PATCH/DELETE → 401
 //   * POST creates with status='pending' (admin must approve before
 //     a review goes public)
-//   * POST 409 on UNIQUE (clerk_user_id, product_id) violation
+//   * POST 409 on UNIQUE (customer_id, product_id) violation
 //   * POST strips HTML from title + body before insert
 //   * PATCH always resets status to 'pending' (re-moderate every edit)
 //   * DELETE is idempotent (200 even with zero rows deleted)
@@ -15,14 +15,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
+import {
+  makeRequireSignedInMock,
+  type MockSignedInProfile,
+} from "../../test-helpers/auth-mocks";
+
+const { mockSignedIn } = vi.hoisted(() => ({
+  mockSignedIn: {
+    current: null as string | MockSignedInProfile | null,
   },
 }));
+vi.mock("../../middlewares/requireSignedIn", () =>
+  makeRequireSignedInMock(mockSignedIn),
+);
 
 function fluent(result: unknown) {
   const obj: Record<string, unknown> = {
@@ -55,7 +60,7 @@ const dbStub = {
   select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
   // selectDistinct is used by the public reviews list to compute the
   // verified-purchaser flag — one query per page that returns the
-  // distinct clerk_user_ids on the page that have a paid order item
+  // distinct customer_ids on the page that have a paid order item
   // for the requested product. Same fluent shape as `select`.
   selectDistinct: vi.fn(() => fluent(selectDistinctQueue.shift() ?? [])),
   insert: vi.fn(() => {
@@ -112,13 +117,11 @@ function makeApp(): Express {
 }
 
 function stubSignedIn(userId = "user_alice"): void {
-  getAuthMock.mockReturnValue({ userId });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [{ id: "eml_1", emailAddress: "alice@example.com" }],
-    firstName: "Alice",
-    lastName: "Walker",
-  });
+  mockSignedIn.current = {
+    customerId: userId,
+    email: "alice@example.com",
+    displayName: "Alice Walker",
+  };
 }
 
 beforeEach(() => {
@@ -130,8 +133,7 @@ beforeEach(() => {
   insertErrorQueue.length = 0;
   lastInsertValues = null;
   lastUpdateSet = null;
-  getAuthMock.mockReset();
-  getUserMock.mockReset();
+  mockSignedIn.current = null;
   dbStub.select.mockClear();
   dbStub.selectDistinct.mockClear();
   dbStub.insert.mockClear();
@@ -147,7 +149,6 @@ const VALID_BODY = {
 
 describe("POST /shop/products/:productId/reviews", () => {
   it("rejects unauthenticated requests with 401", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp())
       .post("/resupply-api/shop/products/prod_1/reviews")
       .send(VALID_BODY);
@@ -221,7 +222,7 @@ describe("POST /shop/products/:productId/reviews", () => {
     stubSignedIn();
     insertErrorQueue.push(
       new Error(
-        'duplicate key value violates unique constraint "shop_reviews_clerk_user_id_product_id_unique"',
+        'duplicate key value violates unique constraint "shop_reviews_customer_id_product_id_unique"',
       ),
     );
     const res = await request(makeApp())
@@ -306,7 +307,6 @@ describe("DELETE /shop/me/reviews/:productId", () => {
   });
 
   it("rejects unauthenticated DELETE", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp()).delete(
       "/resupply-api/shop/me/reviews/prod_1",
     );
@@ -316,12 +316,11 @@ describe("DELETE /shop/me/reviews/:productId", () => {
 
 describe("GET /shop/products/:productId/reviews (public)", () => {
   it("requires no auth and returns approved reviews + aggregate", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const createdAt = new Date("2026-01-01T00:00:00Z");
     selectQueue.push([
       {
         id: "rev_1",
-        clerkUserId: "user_bob",
+        customerId: "user_bob",
         rating: 5,
         title: "Great",
         body: "Loved it. Five stars from me on this one.",
@@ -331,7 +330,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     ]);
     // Verified-purchaser query: bob has bought this product so the
     // verified pill should light up.
-    selectDistinctQueue.push([{ clerkUserId: "user_bob" }]);
+    selectDistinctQueue.push([{ customerId: "user_bob" }]);
     selectQueue.push([
       { rating: 5, n: 4 },
       { rating: 4, n: 1 },
@@ -344,7 +343,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     expect(res.body.items[0].authorDisplayName).toBe("Bob R.");
     // Public reads never expose the author's email or clerk id
     expect(res.body.items[0].authorEmail).toBeUndefined();
-    expect(res.body.items[0].clerkUserId).toBeUndefined();
+    expect(res.body.items[0].customerId).toBeUndefined();
     expect(res.body.items[0].verifiedPurchaser).toBe(true);
     expect(res.body.aggregate.count).toBe(5);
     expect(res.body.aggregate.averageRating).toBe(4.8);
@@ -352,11 +351,10 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
   });
 
   it("marks verifiedPurchaser=false when the reviewer has not bought the product", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     selectQueue.push([
       {
         id: "rev_2",
-        clerkUserId: "user_charlie",
+        customerId: "user_charlie",
         rating: 4,
         title: "Decent",
         body: "Fine for the price, took a couple nights to get used to.",
@@ -375,7 +373,6 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
   });
 
   it("does not crash when there are no reviews on the page (empty IN list)", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     selectQueue.push([]); // no reviews
     // selectDistinct is NOT called when the page is empty (route
     // short-circuits the IN lookup) but we push a sentinel anyway so

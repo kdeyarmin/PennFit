@@ -26,13 +26,13 @@ title = "generated_image"
 
 [[generated]]
 id = "INSet_19mx8Hl34bSsTua"
-uri = "file://artifacts/penn-fit-tutorial/public/images/bg-abstract.png"
+uri = "file://artifacts/pennpaps-tutorial/public/images/bg-abstract.png"
 type = "image"
 title = "abstract smooth light gradient background"
 
 [[generated]]
 id = "su5mOQ48j4-SJpGvmyrPA"
-uri = "file://artifacts/penn-fit-tutorial/public/images/face-mesh.png"
+uri = "file://artifacts/pennpaps-tutorial/public/images/face-mesh.png"
 type = "image"
 title = "face wireframe tech graphic"
 

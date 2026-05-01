@@ -39,7 +39,7 @@ const CATEGORY_CADENCE_DAYS: Partial<Record<ShopCategory, number>> = {
 const DUE_SOON_LEAD_DAYS = 7;
 
 router.get("/shop/me/reorder-suggestions", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId!;
+  const customerId = req.userCustomerId!;
   const db = drizzle(getDbPool());
 
   // Per-product last purchase, scoped to PAID orders only. We
@@ -55,7 +55,7 @@ router.get("/shop/me/reorder-suggestions", requireSignedIn, async (req, res) => 
     .innerJoin(shopOrders, eq(shopOrderItems.orderId, shopOrders.id))
     .where(
       and(
-        eq(shopOrderItems.clerkUserId, clerkUserId),
+        eq(shopOrderItems.customerId, customerId),
         eq(shopOrders.status, "paid"),
       ),
     )

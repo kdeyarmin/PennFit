@@ -14,10 +14,10 @@
 //                                                      admins can)
 //
 // Why we keep this in one file:
-//   Both endpoints are scoped by the same "rows where clerk_user_id
+//   Both endpoints are scoped by the same "rows where customer_id
 //   matches the caller" rule. Centralising the WHERE clause + the
 //   row projection avoids the most common scope-bleed bug — a new
-//   endpoint forgetting the clerkUserId filter and exposing other
+//   endpoint forgetting the customerId filter and exposing other
 //   shoppers' orders.
 //
 // What GET returns:
@@ -41,7 +41,7 @@
 //
 // Privacy:
 //   Both handlers ONLY ever return / mutate rows where
-//   `clerk_user_id` matches the caller's auth user id. This is the
+//   `customer_id` matches the caller's auth user id. This is the
 //   core scope rule — no admin override path through this module.
 
 import { Router, type IRouter } from "express";
@@ -159,7 +159,7 @@ router.get("/shop/me/orders", requireSignedIn, async (req, res) => {
   // are operational noise the customer never asked to see; they'll be
   // re-presented through the /shop/quick-checkout flow if relevant.
   const baseFilter = and(
-    eq(shopOrders.clerkUserId, req.userClerkId!),
+    eq(shopOrders.customerId, req.userCustomerId!),
     eq(shopOrders.status, "paid"),
   );
   // Composite cursor predicate: `paidAt < ts OR (paidAt = ts AND id < cursorId)`.
@@ -340,7 +340,7 @@ router.post(
     const existingRows = await db
       .select({
         id: shopOrders.id,
-        clerkUserId: shopOrders.clerkUserId,
+        customerId: shopOrders.customerId,
         status: shopOrders.status,
         shippedAt: shopOrders.shippedAt,
       })
@@ -351,7 +351,7 @@ router.post(
     // 404 covers both "no such order" and "order belongs to another
     // shopper" — collapsing them avoids leaking the existence of a
     // foreign order id to a brute-force attacker.
-    if (!existing || existing.clerkUserId !== req.userClerkId) {
+    if (!existing || existing.customerId !== req.userCustomerId) {
       res.status(404).json({ error: "order_not_found" });
       return;
     }
@@ -380,7 +380,7 @@ router.post(
       .where(
         and(
           eq(shopOrders.id, orderId),
-          eq(shopOrders.clerkUserId, req.userClerkId!),
+          eq(shopOrders.customerId, req.userCustomerId!),
           eq(shopOrders.status, "paid"),
           isNull(shopOrders.shippedAt),
         ),
@@ -397,7 +397,7 @@ router.post(
       return;
     }
     req.log?.info?.(
-      { orderId, clerkUserId: req.userClerkId },
+      { orderId, customerId: req.userCustomerId },
       "shop/me/orders: shipping address updated by customer",
     );
     res.json({

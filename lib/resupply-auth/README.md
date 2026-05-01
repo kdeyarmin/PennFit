@@ -17,14 +17,10 @@ What lands in Stage 1:
 - Pure helpers: password hashing (argon2id + pepper), opaque session
   token generation + hashing, session expiry math, email-token
   generation.
-- `readAuthEnv()` — reads and validates `AUTH_PROVIDER`,
-  `AUTH_PASSWORD_PEPPER`, `AUTH_SESSION_TTL_DAYS`,
-  `AUTH_EMAIL_TOKEN_TTL_HOURS`. Defaults `AUTH_PROVIDER=clerk` so
-  Stage 1 is a no-op at runtime.
-
-What does NOT land in Stage 1: HTTP routes, middleware, or any
-production code path that flips off Clerk. Those arrive in Stage 2 —
-behind the `AUTH_PROVIDER=dual` flag — per the migration plan.
+- `readAuthEnv()` — reads and validates `AUTH_PASSWORD_PEPPER`,
+  `AUTH_SESSION_TTL_DAYS`, `AUTH_EMAIL_TOKEN_TTL_HOURS`. Accepts
+  and ignores legacy `AUTH_PROVIDER` env values for back-compat
+  with deploys that still set them.
 
 ## Why a separate package
 

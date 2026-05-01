@@ -90,8 +90,8 @@ function itemsSignature(items: readonly ShopAbandonedCartItem[]): string {
 }
 
 router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
@@ -124,7 +124,7 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
         clearedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(shopAbandonedCarts.clerkUserId, clerkUserId));
+      .where(eq(shopAbandonedCarts.customerId, customerId));
     res.json({ ok: true, items: [], subtotalCents: 0 });
     return;
   }
@@ -136,24 +136,23 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   const existingRows = await db
     .select({ items: shopAbandonedCarts.items, email: shopAbandonedCarts.email })
     .from(shopAbandonedCarts)
-    .where(eq(shopAbandonedCarts.clerkUserId, clerkUserId))
+    .where(eq(shopAbandonedCarts.customerId, customerId))
     .limit(1);
   const existing = existingRows[0];
   const materiallyChanged =
     !existing || itemsSignature(existing.items) !== itemsSignature(items);
 
-  // Refresh the denormalized email on every PUT — but never overwrite
-  // a known email with null on an auth-provider blip. The helper
-  // prefers the in-house path (req.shopCustomerEmail set by
-  // requireSignedIn) and falls back to clerkClient.users.getUser
-  // for legacy Clerk sessions.
-  const profile = await readCustomerProfile(req, clerkUserId);
+  // Refresh the denormalized email from the request (set by
+  // requireSignedIn from auth.users). Never overwrite a known
+  // email with null on a missing-profile case — keep the prior
+  // value so the dispatcher can still find the row.
+  const profile = await readCustomerProfile(req);
   const freshEmail = profile.email?.toLowerCase() ?? null;
   const email = freshEmail ?? existing?.email ?? null;
 
   const now = new Date();
   const insertRow: InsertShopAbandonedCartRow = {
-    clerkUserId,
+    customerId,
     email,
     items,
     subtotalCents,
@@ -174,7 +173,7 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     .insert(shopAbandonedCarts)
     .values(insertRow)
     .onConflictDoUpdate({
-      target: shopAbandonedCarts.clerkUserId,
+      target: shopAbandonedCarts.customerId,
       set: {
         email: sql`excluded.email`,
         items: sql`excluded.items`,
@@ -195,8 +194,8 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
 });
 
 router.delete("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
@@ -213,13 +212,13 @@ router.delete("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
       clearedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(shopAbandonedCarts.clerkUserId, clerkUserId));
+    .where(eq(shopAbandonedCarts.customerId, customerId));
   res.json({ ok: true });
 });
 
 router.get("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
@@ -232,7 +231,7 @@ router.get("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
       updatedAt: shopAbandonedCarts.updatedAt,
     })
     .from(shopAbandonedCarts)
-    .where(eq(shopAbandonedCarts.clerkUserId, clerkUserId))
+    .where(eq(shopAbandonedCarts.customerId, customerId))
     .limit(1);
   const row = rows[0];
   if (!row) {

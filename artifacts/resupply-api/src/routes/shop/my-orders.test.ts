@@ -20,10 +20,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
+import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+
+const { mockSignedIn } = vi.hoisted(() => ({
+  mockSignedIn: { current: null as string | null },
 }));
+vi.mock("../../middlewares/requireSignedIn", () =>
+  makeRequireSignedInMock(mockSignedIn),
+);
 
 // Two-stage select: the route does
 //   1. SELECT ... FROM shop_orders WHERE ... ORDER BY ... LIMIT n+1
@@ -94,13 +98,13 @@ function makeApp(): Express {
 }
 
 function stubSignedIn(userId: string): void {
-  getAuthMock.mockReturnValue({ userId });
+  mockSignedIn.current = userId;
 }
 
 beforeEach(() => {
   selectQueue.length = 0;
   updateQueue.length = 0;
-  getAuthMock.mockReset();
+  mockSignedIn.current = null;
   dbStub.select.mockClear();
   dbStub.update.mockClear();
 });
@@ -112,7 +116,6 @@ afterEach(() => {
 
 describe("GET /shop/me/orders", () => {
   it("returns 401 when the caller has no session", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp()).get("/resupply-api/shop/me/orders");
     expect(res.status).toBe(401);
   });
@@ -299,7 +302,6 @@ const validAddress = {
 
 describe("POST /shop/me/orders/:orderId/shipping-address", () => {
   it("returns 401 when the caller has no session", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp())
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
@@ -342,7 +344,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_bob",
+        customerId: "user_bob",
         status: "paid",
         shippedAt: null,
       },
@@ -362,7 +364,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "pending",
         shippedAt: null,
       },
@@ -380,7 +382,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "paid",
         shippedAt: new Date("2026-04-25T09:00:00Z"),
       },
@@ -398,7 +400,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "paid",
         shippedAt: null,
       },
@@ -434,7 +436,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "paid",
         shippedAt: null,
       },

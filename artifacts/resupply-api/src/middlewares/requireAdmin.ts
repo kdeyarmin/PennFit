@@ -1,9 +1,30 @@
-import type { Request, Response, NextFunction } from "express";
-import { getAuth, clerkClient } from "@clerk/express";
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
+// requireAdmin — gate for the resupply admin API.
+//
+// The middleware resolves the session via the in-house pf_session
+// cookie. `auth.users.role` is authoritative: 'admin' or 'agent'
+// passes; 'customer' is rejected as 403; everything else
+// (locked / revoked / unknown) is rejected as 401.
+//
+// Roles:
+//   - `admin` — full privileges. Includes the team-management
+//     endpoints in `routes/admin/team.ts`.
+//   - `agent` — junior role for customer-service staff. Identical
+//     to `admin` everywhere EXCEPT routes that explicitly opt in
+//     to admin-only via `requireAdminOnly` (e.g. team management,
+//     destructive deletes such as `DELETE /rules/:id`).
+//
+// On success we attach `req.adminEmail`, `req.adminUserId`, and
+// `req.adminRole` so route handlers and the audit logger can
+// record "who did this and at what privilege level" without
+// re-fetching the user.
+//
+// First-admin bootstrap: there is no env-var allowlist anymore.
+// Use `pnpm --filter @workspace/scripts auth:bootstrap-admin
+// --email=<addr>` (see scripts/src/auth-bootstrap-admin.ts) to
+// seed the very first admin against a fresh DB.
 
-import { adminUsers, getDbPool } from "@workspace/resupply-db";
+import type { Request, Response, NextFunction } from "express";
+
 import {
   SESSION_COOKIE,
   hashToken,
@@ -11,77 +32,8 @@ import {
   readCookie,
 } from "@workspace/resupply-auth";
 
-import { getAuthDepsOrNull } from "../lib/auth-deps";
+import { getAuthDeps } from "../lib/auth-deps";
 import { logger } from "../lib/logger";
-
-/**
- * requireAdmin — gate for the resupply admin API.
- *
- * This is the resupply equivalent of PennPaps's `requireAdmin`. The two
- * products run on the same the auth provider instance but use disjoint allowlists,
- * so a PennPaps admin is NOT automatically a resupply admin and vice
- * versa. Keeping the two env vars separate means rotating one product's
- * staff list cannot accidentally grant access to the other product's
- * console.
- *
- * Three checks, in order:
- *   1. The request has a valid session (user is signed in).
- *   2. (Allowlist mode only.) The signed-in user's primary email is
- *      verified.
- *   3. (Allowlist mode only.) That email is in the
- *      `RESUPPLY_ADMIN_EMAILS` OR `RESUPPLY_AGENT_EMAILS` allowlist.
- *
- * The allowlists are comma-separated env vars, e.g.
- *   RESUPPLY_ADMIN_EMAILS="info@pennpaps.com,billing@pennpaps.com"
- *   RESUPPLY_AGENT_EMAILS="csr1@pennpaps.com,csr2@pennpaps.com"
- *
- * Roles:
- *   - `admin` — full privileges. Membership in `RESUPPLY_ADMIN_EMAILS`
- *     always wins over `RESUPPLY_AGENT_EMAILS` if both contain the
- *     same email (a defensive choice — promoting an agent to admin
- *     should never silently downgrade them).
- *   - `agent` — junior-admin role used by customer-service staff.
- *     Identical to `admin` everywhere EXCEPT routes that explicitly
- *     opt in to admin-only via `requireAdminOnly` (currently:
- *     destructive deletes such as `DELETE /rules/:id`). Agents
- *     receive 403 from those routes.
- *   - In dev fallback (no allowlist configured, NODE_ENV=development)
- *     callers are admitted as `admin`. Dev DBs never carry real PHI.
- *
- * Behavior when neither allowlist is set:
- *   - In `NODE_ENV=development` we allow any signed-in user — verified
- *     email or not — and assign role `admin`. This makes the local
- *     dev loop bearable: you can poke the admin console without
- *     managing env vars, and the end-to-end testing harness (which
- *     creates auth users via the Backend API and does NOT mark their
- *     primary email as verified) can exercise the admin console
- *     happy path. Skipping the verification check is safe in this
- *     mode because there is NO allowlist to spoof past.
- *   - In production we DENY all requests with a 503 "admin allowlist
- *     not configured" response. This is the single most important
- *     rule in this file: better to have NO admins than an
- *     accidentally world-open console if a deploy ships without the
- *     env var. Endpoints behind this middleware will read and write
- *     PHI; a missing env var must fail closed. Note that an
- *     agent-only deployment is intentionally not supported — every
- *     production deploy MUST have at least one admin to cover
- *     destructive operations.
- *
- * Why the verified-email check matters in allowlist mode: the auth provider lets
- * users add unverified email addresses to their profile. Without this
- * guard, an attacker who could sign up claiming someone else's address
- * (without proving control of the inbox) could match the allowlist.
- * The check below requires `verification.status === "verified"` for
- * the *primary* email — the one the auth provider has confirmed via a click-
- * through link or code.
- *
- * On success we attach `req.adminEmail`, `req.adminUserId`, and
- * `req.adminRole` so route handlers and the audit logger can record
- * "who did this and at what privilege level" without re-fetching the
- * user from the auth provider on every write. In the dev fallback branch we
- * still attach all three fields so audit logs and the /me endpoint
- * have something to display.
- */
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -94,387 +46,30 @@ declare global {
   }
 }
 
-const ADMIN_ENV_VAR = "RESUPPLY_ADMIN_EMAILS";
-const AGENT_ENV_VAR = "RESUPPLY_AGENT_EMAILS";
-// Pre-rename name for the admin allowlist. Read-only fallback so
-// existing production deployments keep working until ops flips the
-// var name. NEVER rename to RESUPPLY_ADMIN_EMAILS — that would
-// silently turn the fallback into a no-op.
-const LEGACY_ADMIN_ENV_VAR = "RESUPPLY_OPERATOR_EMAILS";
-
-let legacyEnvWarned = false;
-
-function parseEmailList(raw: string | undefined): string[] | null {
-  if (!raw) return null;
-  const list = raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  // Treat "set to whitespace/commas only" the same as "unset" — the env
-  // var must contain at least one parseable address to count.
-  return list.length > 0 ? list : null;
-}
-
-function parseAdminAllowlist(): string[] | null {
-  // Prefer the new var; fall back to the legacy name so existing
-  // deployments don't 503 the moment this code lands. Warn once per
-  // process when only the legacy var is set so admins see the
-  // signal in production logs and can rotate config at their own pace.
-  let raw = process.env[ADMIN_ENV_VAR];
-  if (!raw) {
-    const legacy = process.env[LEGACY_ADMIN_ENV_VAR];
-    if (legacy) {
-      if (!legacyEnvWarned) {
-        legacyEnvWarned = true;
-        logger.warn(
-          {
-            event: "resupply_admin_legacy_env_var_in_use",
-            legacy: LEGACY_ADMIN_ENV_VAR,
-            current: ADMIN_ENV_VAR,
-          },
-          `${LEGACY_ADMIN_ENV_VAR} is deprecated; rename it to ${ADMIN_ENV_VAR}.`,
-        );
-      }
-      raw = legacy;
-    }
-  }
-  return parseEmailList(raw);
-}
-
-function parseAgentAllowlist(): string[] | null {
-  return parseEmailList(process.env[AGENT_ENV_VAR]);
-}
-
-export async function requireAdmin(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  // In-house auth path. When AUTH_PROVIDER is "dual" or "in_house"
-  // and the request carries a valid pf_session cookie, derive
-  // adminEmail / adminUserId / adminRole from auth.users and skip
-  // the entire Clerk path. The role on auth.users is authoritative
-  // (admin > agent > customer); env allow-lists no longer gate.
-  // See ADR 014 + docs/resupply/AUTH-MIGRATION-PLAN.md (Stage 3).
-  const inHouse = await tryInHouseAdmin(req);
-  if (inHouse) {
-    req.adminEmail = inHouse.email;
-    req.adminUserId = inHouse.userId;
-    req.adminRole = inHouse.role;
-    next();
-    return;
-  }
-
-  const auth = getAuth(req);
-  const userId = auth?.userId;
-  if (!userId) {
-    res.status(401).json({ error: "Sign in required" });
-    return;
-  }
-
-  // Decide the auth mode up front so we know whether email verification
-  // is load-bearing for this request. In production an unset admin
-  // allowlist is a hard 503 — handle that before touching the auth provider so a
-  // misconfig returns instantly without consuming a the auth provider API call per
-  // request. The agent allowlist is optional: a deploy with admins but
-  // no agents is valid (no CSR seats). A deploy with agents but no
-  // admins is NOT valid — every production deploy MUST have at least
-  // one admin to cover destructive operations, so we fail closed on
-  // an admin-empty deploy regardless of the agent allowlist.
-  const adminAllowlist = parseAdminAllowlist();
-  const agentAllowlist = parseAgentAllowlist();
-  const isProduction = process.env.NODE_ENV === "production";
-  if (adminAllowlist === null && isProduction) {
-    res.status(503).json({
-      error:
-        "Admin access is not configured on this server. Set " +
-        `${ADMIN_ENV_VAR} to a comma-separated list of admin emails.`,
-    });
-    return;
-  }
-
-  // Resolve the caller's primary email. Two-tier strategy:
-  //
-  //   1. Read `sessionClaims.email` (or the standard `email_address` /
-  //      `primary_email_address` claim names). Clerk's session JWT
-  //      already carries the verified primary email when the Clerk
-  //      dashboard's session-token customization includes it — which
-  //      is the recommended setup for any consumer that gates on
-  //      email. When present, this path is INSTANT and INDEPENDENT of
-  //      Clerk Backend availability. An admin should never be locked
-  //      out of the dashboard because the Backend API is having a
-  //      bad day.
-  //
-  //   2. Fall back to `clerkClient.users.getUser(userId)` only when
-  //      session claims don't carry the email. Same code as before —
-  //      surfaces verification.status, fails closed with 502 if the
-  //      Backend API throws.
-  //
-  // We treat any email arriving via session claims as VERIFIED.
-  // Clerk only emits the primary-email claim AFTER it's been
-  // verified, so this is safe; the alternative (treating claim-
-  // sourced emails as unverified) would refuse access to every admin
-  // every time Clerk is having a slow day.
-  let email: string | undefined;
-  let primaryEmailVerified = false;
-  const claims = (auth?.sessionClaims ?? {}) as Record<string, unknown>;
-  const claimEmail =
-    (typeof claims.email === "string" && claims.email) ||
-    (typeof claims.primary_email_address === "string" &&
-      claims.primary_email_address) ||
-    (typeof claims.email_address === "string" && claims.email_address) ||
-    undefined;
-  if (claimEmail) {
-    email = claimEmail.toLowerCase();
-    primaryEmailVerified = true;
-  }
-  try {
-    if (!email) {
-      const user = await clerkClient.users.getUser(userId);
-      const primaryId = user.primaryEmailAddressId;
-      const primary =
-        user.emailAddresses.find((e) => e.id === primaryId) ??
-        user.emailAddresses[0];
-      if (primary) {
-        email = primary.emailAddress?.toLowerCase();
-        primaryEmailVerified = primary.verification?.status === "verified";
-      }
-    }
-  } catch (err) {
-    // Distinguish "the auth provider says you have no session" (already handled by
-    // the !userId guard above) from "auth provider API errored mid-
-    // request" (this branch). The user's session is fine; it's our
-    // upstream call to the auth provider that failed — a 5xx, throttle, or
-    // network blip. Returning 401 here would tell a perfectly-valid
-    // admin to "sign in again", which is wrong AND confusing —
-    // they're already signed in and signing in again won't fix
-    // anything when the auth provider itself is unhealthy.
-    //
-    // We use 502 Bad Gateway: an upstream service we depend on is
-    // unhealthy. We deliberately do NOT use 503 here because the
-    // dashboard reserves 503 for the "admin allowlist not
-    // configured" case (a deploy-side problem with a different
-    // remediation). The dashboard maps any non-503 5xx to a
-    // "transient — please retry" screen, which is exactly what an
-    // admin should see during a auth provider API blip.
-    //
-    // The log line emits the error CLASS name and Clerk's HTTP
-    // status (when available) — never the raw message. Clerk's
-    // error strings can echo the userId we just queried with, and
-    // we treat every log line as world-readable.
-    const errName = err instanceof Error ? err.name : "unknown";
-    const clerkStatus = (err as { status?: number } | null | undefined)
-      ?.status;
-    logger.warn(
-      {
-        event: "resupply_admin_clerk_lookup_failed",
-        errName,
-        clerkStatus,
-        usedSessionClaim: Boolean(email),
-      },
-      "requireAdmin: Auth provider lookup failed",
-    );
-    // Only 502 if we have NO email at all. If session claims already
-    // gave us a verified primary email, the Backend API call was a
-    // best-effort enrichment — its failure is not a request-level
-    // error. This makes the dashboard resilient to Clerk Backend API
-    // outages as long as the session JWT carries the email claim.
-    if (!email) {
-      res.status(502).json({
-        error:
-          "Could not verify your identity right now. Please try again in a moment.",
-      });
-      return;
-    }
-  }
-
-  if (adminAllowlist === null) {
-    // Dev fallback (production was rejected above): trust any signed-
-    // in session, regardless of email verification. We still record
-    // the email for the audit trail / /me display when one exists.
-    // Intentionally ignore `primaryEmailVerified` here — see the
-    // file header.
-    //
-    // Dev fallback always assigns role `admin` so the dev loop has
-    // full privileges. The agent role only exists in environments
-    // where ops has explicitly configured an agent allowlist.
-    //
-    // Log every dev-fallback request at WARN. Defense-in-depth: if a
-    // real deployment ever ships with NODE_ENV unset (or set to
-    // anything other than the literal string "production") AND
-    // RESUPPLY_ADMIN_EMAILS unset — two missing env vars at once,
-    // which is plausible for a junior admin's first deploy — this
-    // line is the grep-able signal that the gate has degraded to
-    // "any signed-in auth user". A loud WARN per request makes the
-    // misconfiguration impossible to miss in production logs.
-    logger.warn(
-      {
-        event: "resupply_admin_dev_fallback_active",
-        userId,
-        emailVerified: primaryEmailVerified,
-        nodeEnv: process.env.NODE_ENV ?? "(unset)",
-      },
-      `requireAdmin: ${ADMIN_ENV_VAR} is unset; allowing any signed-in user (dev fallback). This MUST NOT happen in production.`,
-    );
-    req.adminEmail = email ?? `user:${userId}`;
-    req.adminUserId = userId;
-    req.adminRole = "admin";
-    next();
-    return;
-  }
-
-  // Allowlist mode (production always; dev when explicitly configured).
-  // Email verification is mandatory here — see the file header for the
-  // spoofing-defense rationale.
-  if (!email) {
-    res
-      .status(403)
-      .json({ error: "Your account has no verified email address." });
-    return;
-  }
-  if (!primaryEmailVerified) {
-    res.status(403).json({
-      error:
-        "Your primary email address is not verified. Please verify it from your account settings before accessing the admin console.",
-    });
-    return;
-  }
-
-  // Admin membership wins over agent membership when both lists
-  // contain the same email — promoting an agent to admin should
-  // never silently downgrade their privileges. Env-var allowlists are
-  // checked FIRST as the bootstrap layer that always works regardless
-  // of DB state.
-  let role: "admin" | "agent" | null = null;
-  if (adminAllowlist.includes(email)) {
-    role = "admin";
-  } else if (agentAllowlist !== null && agentAllowlist.includes(email)) {
-    role = "agent";
-  } else {
-    // Fall through to the DB-backed admin_users table. This is the
-    // path for CSRs invited through the in-app /admin/team flow —
-    // they don't appear in the env allowlists. Match by clerk_user_id
-    // (preferred — stable identity) OR email_lower (first-login link).
-    // Revoked rows are excluded from the WHERE clause so a previously
-    // active user who was removed can't slip back in via cached email.
-    try {
-      const db = drizzle(getDbPool());
-      const rows = await db
-        .select({
-          id: adminUsers.id,
-          emailLower: adminUsers.emailLower,
-          clerkUserId: adminUsers.clerkUserId,
-          role: adminUsers.role,
-          status: adminUsers.status,
-        })
-        .from(adminUsers)
-        .where(eq(adminUsers.emailLower, email))
-        .limit(1);
-      const row = rows[0];
-      if (row && row.status !== "revoked") {
-        role = row.role === "admin" ? "admin" : "agent";
-        // First-login linking: stamp clerk_user_id + accepted_at +
-        // last_login_at + flip pending → active. Subsequent logins
-        // just bump last_login_at. We tolerate concurrent first-
-        // login races by always going through this UPDATE — every
-        // caller will end up at status='active' with a recent
-        // last_login_at.
-        const now = new Date();
-        const updates: Partial<typeof adminUsers.$inferInsert> & {
-          updatedAt: Date;
-          lastLoginAt: Date;
-        } = {
-          updatedAt: now,
-          lastLoginAt: now,
-        };
-        if (!row.clerkUserId) updates.clerkUserId = userId;
-        if (row.status === "pending") {
-          updates.status = "active";
-          updates.acceptedAt = now;
-        }
-        await db
-          .update(adminUsers)
-          .set(updates)
-          .where(
-            and(
-              eq(adminUsers.id, row.id),
-              // Defensive: never re-activate a row that was revoked
-              // between SELECT and UPDATE.
-              eq(adminUsers.emailLower, email),
-            ),
-          );
-      }
-    } catch (err) {
-      logger.warn(
-        {
-          event: "resupply_admin_db_lookup_failed",
-          err: err instanceof Error ? err.message : "unknown",
-        },
-        "requireAdmin: admin_users DB lookup failed; falling back to env allowlist only",
-      );
-      // Continue with role still null — caller will get 403 below.
-    }
-  }
-
-  if (role === null) {
-    res
-      .status(403)
-      .json({ error: "This account is not authorized for admin access." });
-    return;
-  }
-
-  req.adminEmail = email;
-  req.adminUserId = userId;
-  req.adminRole = role;
-  next();
-}
-
-/**
- * requireAdminOnly — stricter gate that admits only `role === "admin"`.
- *
- * Layered on top of `requireAdmin`: first the standard auth checks
- * run (sign-in + verified email + allowlist membership), then we
- * additionally reject `agent` callers with 403. Use on routes whose
- * effects are not safely reversible by a customer-service agent
- * (currently: `DELETE /rules/:id`).
- *
- * Wraps `requireAdmin` rather than re-implementing it so all the
- * spoofing defenses, dev fallback, env var fallbacks, and the auth provider
- * error handling stay in one place. The `inner advanced` flag
- * disambiguates "requireAdmin already responded with a 4xx/5xx"
- * (we must not call next() — the inner middleware owns the
- * response) from "requireAdmin succeeded and called next()" (we
- * then check the role).
- */
-/**
- * Attempt to authenticate the request using the in-house auth
- * cookie. Returns the resolved admin context on success, null
- * when the in-house path is not configured (AUTH_PROVIDER=clerk),
- * the cookie is missing, or the session is invalid / expired /
- * belongs to a non-staff user. The Clerk path takes over from
- * there.
- *
- * Customer-role users are deliberately rejected — the dashboard
- * is staff-only, even when a customer has a valid cookie from the
- * shop. Returning null here causes the middleware to fall through
- * to the Clerk path, which then returns 401/403 as it would for
- * any non-admin Clerk identity.
- */
-async function tryInHouseAdmin(req: Request): Promise<{
+interface ResolvedAdmin {
   email: string;
   userId: string;
   role: "admin" | "agent";
-} | null> {
-  const deps = getAuthDepsOrNull();
-  if (!deps) return null;
+}
+
+/**
+ * Resolve the request's admin context from the in-house
+ * pf_session cookie. Returns null when no cookie is present, the
+ * cookie is invalid (expired / revoked / unknown user), the user
+ * is locked / revoked, or the user is a `customer` (not staff).
+ * On a transient repo error we log and return null — the
+ * middleware translates that to 401.
+ */
+async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
+  const deps = getAuthDeps();
   const raw = readCookie(req, SESSION_COOKIE);
   if (!raw) return null;
   const tokenHash = hashToken(raw);
   if (!tokenHash) return null;
   try {
     const session = await deps.repo.findSessionByTokenHash(tokenHash);
-    if (!session) return null;
     if (
+      !session ||
       isExpired(
         { expiresAt: session.expiresAt, revokedAt: session.revokedAt },
         new Date(),
@@ -483,29 +78,46 @@ async function tryInHouseAdmin(req: Request): Promise<{
       return null;
     }
     const user = await deps.repo.findUserById(session.userId);
-    if (!user) return null;
-    if (user.status === "locked" || user.status === "revoked") return null;
-    if (user.role !== "admin" && user.role !== "agent") return null;
-    return {
-      email: user.emailLower,
-      userId: user.id,
-      role: user.role,
-    };
+    if (!user || user.status === "locked" || user.status === "revoked") {
+      return null;
+    }
+    if (user.role !== "admin" && user.role !== "agent") {
+      return null;
+    }
+    return { email: user.emailLower, userId: user.id, role: user.role };
   } catch (err) {
-    // Don't fail the request on a transient repo error — fall
-    // through to the Clerk path. The Clerk path itself returns a
-    // structured error for upstream issues.
     logger.warn(
       {
         event: "resupply_admin_in_house_lookup_failed",
         err: err instanceof Error ? err.message : "unknown",
       },
-      "requireAdmin: in-house session lookup failed; falling back to Clerk",
+      "requireAdmin: in-house session lookup failed",
     );
     return null;
   }
 }
 
+export async function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const admin = await resolveAdmin(req);
+  if (!admin) {
+    res.status(401).json({ error: "Sign in required" });
+    return;
+  }
+  req.adminEmail = admin.email;
+  req.adminUserId = admin.userId;
+  req.adminRole = admin.role;
+  next();
+}
+
+/**
+ * requireAdminOnly — stricter gate that admits only
+ * `role === "admin"`. Wraps `requireAdmin` so a single source of
+ * truth handles the resolve + the `req` attach.
+ */
 export async function requireAdminOnly(
   req: Request,
   res: Response,

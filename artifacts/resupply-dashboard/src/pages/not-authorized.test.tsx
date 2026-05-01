@@ -30,7 +30,6 @@ vi.mock("../lib/identity", () => ({
     userId: null,
     signOut,
   }),
-  IS_IN_HOUSE_AUTH: false,
 }));
 
 afterEach(() => {

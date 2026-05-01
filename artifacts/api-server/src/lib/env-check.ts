@@ -1,5 +1,5 @@
 /**
- * Startup environment validation for the penn-fit API server.
+ * Startup environment validation for the PennPaps fitter API server.
  *
  * The codebase already throws helpful per-variable errors at the point
  * of first use (e.g. `getDbPool()` for `DATABASE_URL`, the explicit
@@ -17,7 +17,6 @@
 
 const REQUIRED_ENV_VARS = [
   "PORT",
-  "CLERK_SECRET_KEY",
 ] as const;
 
 export function assertRequiredEnv(): void {

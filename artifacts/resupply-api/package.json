@@ -11,7 +11,6 @@
     "test": "vitest run --passWithNoTests --config vitest.config.ts"
   },
   "dependencies": {
-    "@clerk/express": "^2.1.9",
     "@google-cloud/storage": "^7.19.0",
     "@workspace/resupply-ai": "workspace:*",
     "@workspace/resupply-audit": "workspace:*",
@@ -22,6 +21,7 @@
     "@workspace/resupply-email": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
+    "@workspace/resupply-secrets": "workspace:*",
     "@workspace/resupply-telecom": "workspace:*",
     "cors": "^2",
     "drizzle-orm": "catalog:",

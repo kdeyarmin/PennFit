@@ -1,10 +1,7 @@
 // requireSession — load the current local session and attach the
-// user + session id to `req`. Replaces (eventually) the Clerk
-// `getAuth(req)` call in the existing requireAdmin middleware.
-//
-// In Stage 2a this is shipped as a building block; nothing in the
-// production API uses it yet. Stage 3 wires it into the dashboard's
-// admin gate behind `AUTH_PROVIDER=dual`.
+// user + session id to `req`. Used by the in-house auth flow as a
+// building block; consumers compose it with role checks (see
+// `requireAdmin` in api-server / resupply-api).
 
 import type { NextFunction, Request, Response } from "express";
 

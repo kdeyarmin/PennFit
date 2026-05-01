@@ -29,16 +29,16 @@ import {
 
 import { logger } from "./logger";
 
-let cachedDeps: AuthDeps | null | undefined;
+let cachedDeps: AuthDeps | undefined;
 
-export function getAuthDepsOrNull(): AuthDeps | null {
+/**
+ * Build (and memoize) the AuthDeps. Always returns a value after
+ * Stage 5a — the kill switch is gone. A missing
+ * AUTH_PASSWORD_PEPPER throws at first call.
+ */
+export function getAuthDeps(): AuthDeps {
   if (cachedDeps !== undefined) return cachedDeps;
   const env = readAuthEnv(process.env);
-  if (env.provider === "clerk") {
-    cachedDeps = null;
-    return null;
-  }
-
   const repo = pgAuthRepository(pool);
 
   const audit: AuthDeps["audit"] = (event) => {

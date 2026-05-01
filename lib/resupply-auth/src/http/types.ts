@@ -39,18 +39,19 @@ export type EmailSender = (input: {
  * Stage 4c — opaque customer-id remapping for the in-house
  * sign-in path.
  *
- * Some products carry a separate customer table whose primary key
- * was historically a Clerk user id (e.g. `shop_customers.clerk_user_id`).
- * After cutover, an in-house auth user's id is a UUID, and every
- * downstream FK that keys off "the customer's clerk_user_id"
- * would mismatch.
+ * Some products carry a separate customer table whose primary
+ * key (`shop_customers.customer_id`) was preserved across the
+ * Clerk → in-house cutover so downstream joins kept working.
+ * After cutover, an in-house auth user's id is a UUID, and that
+ * stable customer key may differ from `auth.users.id` for
+ * pre-cutover rows.
  *
  * The resolver bridges that. Given an authenticated `auth.users`
  * row, it returns the string the rest of the API should treat
  * as the customer key — typically:
  *
  *   * For an existing customer the Stage 4c backfill linked, the
- *     legacy `shop_customers.clerk_user_id` value.
+ *     `shop_customers.customer_id` value.
  *   * For a brand-new in-house sign-up, a freshly minted
  *     customer-table row keyed by `auth.users.id` (the resolver
  *     does the upsert).
@@ -65,7 +66,7 @@ export type CustomerIdResolver = (input: {
   emailLower: string;
   displayName: string | null;
 }) => Promise<{
-  /** Value to put in `req.userClerkId` after resolution. */
+  /** Value to put in `req.userCustomerId` after resolution. */
   customerKey: string;
   /** Email surfaced to enrichment-aware shop endpoints. */
   email: string | null;
@@ -127,7 +128,7 @@ export interface AuthDeps {
    * Optional. When supplied, the customer-auth middleware
    * (`requireSignedIn` / `attachSignedIn`) calls this AFTER an
    * in-house cookie has been resolved to an `auth.users` row.
-   * The resolved `customerKey` lands in `req.userClerkId` instead
+   * The resolved `customerKey` lands in `req.userCustomerId` instead
    * of the raw `auth.users.id`. Default: pass-through.
    *
    * Wired on api-server only; resupply-dashboard has no shop

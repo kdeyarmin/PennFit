@@ -228,11 +228,8 @@ export function NotAuthorizedPage({
                     // PHI doesn't survive across admin sessions.
                     clearAllDrafts();
                     void signOut().finally(() => {
-                      // Soft navigate via wouter. The Clerk path
-                      // previously did `signOut({ redirectUrl })`
-                      // which forced a full document load — the
-                      // identity shim now handles cookie + cache
-                      // cleanup on its own, so a soft nav is enough.
+                      // Soft navigate via wouter — the identity shim
+                      // handles cookie + cache cleanup on its own.
                       setNotAuthLocation("/sign-in");
                     });
                   }}

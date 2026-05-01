@@ -263,7 +263,7 @@ router.post(
       return;
     }
 
-    // Set the ACL with the admin's clerk id as owner. Even though
+    // Set the ACL with the admin's user id as owner. Even though
     // download is currently gated only by `requireAdmin` (anyone on
     // the allowlist can read any prescription scan, mirroring the
     // existing rule for `details` PHI), recording an owner gives us

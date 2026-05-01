@@ -91,13 +91,10 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 export function AccountPage() {
   useDocumentTitle("My account");
   // We render an inline sign-in prompt for signed-out visitors instead
-  // of <Redirect to="/sign-in?…">. Wouter's <Redirect> wrapped inside
-  // Clerk's <Show fallback> renders during the brief Clerk-boot window
-  // and then again on the signed-out branch; the double-mount caused
-  // the page to render blank instead of navigating. Mirroring the
-  // /shop/orders pattern (inline CTA + ?redirect=/account round-trip)
-  // is more graceful UX anyway — the customer sees *why* they're being
-  // asked to sign in instead of a jarring auto-bounce.
+  // of <Redirect to="/sign-in?…">. Mirroring the /shop/orders pattern
+  // (inline CTA + ?redirect=/account round-trip) is more graceful UX:
+  // the customer sees *why* they're being asked to sign in instead of
+  // a jarring auto-bounce.
   return (
     <SignedIn fallback={<SignedOutAccountPrompt />}>
       <AccountInner />
@@ -138,7 +135,7 @@ function SignedOutAccountPrompt() {
 }
 
 function AccountInner() {
-  const { displayName } = useShopIdentity();
+  const { displayName, isLoaded: isUserLoaded } = useShopIdentity();
   const [data, setData] = useState<ShopMeResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
@@ -175,8 +172,15 @@ function AccountInner() {
   }, []);
 
   useEffect(() => {
+    // Wait for the auth provider to finish hydrating before calling
+    // /shop/me. Otherwise the request can race ahead of the session
+    // cookie/token, the server sees an unauthenticated request and
+    // returns {signedIn:false}, and we'd render the misleading
+    // "Your session expired" copy for a user we KNOW is signed in
+    // (the outer <SignedIn> already gated on this).
+    if (!isUserLoaded) return;
     void reload();
-  }, [reload]);
+  }, [reload, isUserLoaded]);
 
   if (loadError) {
     return (
@@ -208,9 +212,9 @@ function AccountInner() {
   //
   //   data.signedIn === true && !data.profile  → the API saw the
   //     session but couldn't materialize a profile row. This IS
-  //     usually a momentary hiccup — Clerk Backend API blip,
-  //     transient DB error during ensureShopCustomerRow, etc.
-  //     "Try again" is the right call here.
+  //     usually a momentary hiccup — transient DB error during
+  //     ensureShopCustomerRow, etc. "Try again" is the right call
+  //     here.
   //
   // The two need different copy + actions because retry-first vs
   // sign-in-first matters: telling someone whose session cookie is
@@ -230,9 +234,9 @@ function AccountInner() {
             We can&apos;t see your sign-in anymore — sign back in and
             you&apos;ll land right back here.
           </p>
-          <Link href="/sign-in?redirect=/account">
-            <Button>Sign in</Button>
-          </Link>
+          <Button asChild data-testid="account-resignin-btn">
+            <Link href="/sign-in?redirect=/account">Sign in</Link>
+          </Button>
         </div>
       </div>
     );

@@ -3,7 +3,8 @@
 // Two reports today (orders, returns), date-bounded. Each is a
 // direct browser-side <a download> on the API endpoint so the
 // browser handles the file save without a JS fetch loop. Auth
-// rides on the existing Clerk session cookie.
+// rides on the `pf_session` cookie sent automatically with the
+// download request.
 
 import { useState } from "react";
 
@@ -19,8 +20,9 @@ export function AdminReportsPage() {
   const [from, setFrom] = useState(isoDate(defaultFrom));
   const [to, setTo] = useState(isoDate(today));
 
-  const ordersUrl = `/resupply-api/admin/reports/orders.csv?from=${from}&to=${to}`;
-  const returnsUrl = `/resupply-api/admin/reports/returns.csv?from=${from}&to=${to}`;
+  const params = new URLSearchParams({ from, to }).toString();
+  const ordersUrl = `/resupply-api/admin/reports/orders.csv?${params}`;
+  const returnsUrl = `/resupply-api/admin/reports/returns.csv?${params}`;
 
   return (
     <div className="space-y-6 max-w-3xl" data-testid="admin-reports-page">

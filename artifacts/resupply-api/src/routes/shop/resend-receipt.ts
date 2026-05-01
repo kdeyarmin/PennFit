@@ -12,8 +12,8 @@
 //   one-click button on the order history card.
 //
 // Ownership rule (HARD):
-//   The handler ONLY proceeds when shop_orders.clerk_user_id
-//   equals the caller's clerk id AND the order is `paid`.
+//   The handler ONLY proceeds when shop_orders.customer_id
+//   equals the caller's customer id AND the order is `paid`.
 //   Anything else returns 404 to avoid leaking the existence of
 //   another user's session id by id-probing.
 //
@@ -49,7 +49,7 @@ import {
 
 const router: IRouter = Router();
 
-// In-process rate limit: { key: sessionId+clerkId } -> sliding window of timestamps.
+// In-process rate limit: { key: sessionId+customerId } -> sliding window of timestamps.
 // 10 min window, 5 sends max. Cleared lazily on next access of the
 // same key — we don't sweep the whole map periodically because the
 // memory cost of a stale entry is ~80 bytes and it gets garbage
@@ -85,7 +85,7 @@ router.post(
     const rawSessionId = req.params.sessionId;
     const sessionId =
       typeof rawSessionId === "string" ? rawSessionId : (rawSessionId?.[0] ?? "");
-    const clerkId = req.userClerkId!;
+    const customerId = req.userCustomerId!;
 
     // sessionId is path-segment-bounded by Express but we still
     // sanity-check shape — Stripe ids are URL-safe ASCII and short
@@ -120,7 +120,7 @@ router.post(
       .where(
         and(
           eq(shopOrders.stripeSessionId, sessionId),
-          eq(shopOrders.clerkUserId, clerkId),
+          eq(shopOrders.customerId, customerId),
           eq(shopOrders.status, "paid"),
         ),
       )
@@ -131,7 +131,7 @@ router.post(
       return;
     }
 
-    const rateKey = `${clerkId}|${sessionId}`;
+    const rateKey = `${customerId}|${sessionId}`;
     if (rateLimited(rateKey)) {
       res.status(429).json({ error: "rate_limited" });
       return;

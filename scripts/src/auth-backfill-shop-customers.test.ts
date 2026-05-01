@@ -123,7 +123,7 @@ describe("normalizeRows", () => {
     ];
     const rows = normalizeRows(grid);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.clerkUserId).toBe("user_x");
+    expect(rows[0]!.customerId).toBe("user_x");
   });
 
   it("returns [] for an empty header", () => {

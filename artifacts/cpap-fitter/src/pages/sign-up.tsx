@@ -1,51 +1,142 @@
-import { SignUp } from "@clerk/react";
-import { useDocumentTitle } from "@/hooks/use-document-title";
+// Customer self-serve sign-up page for the cpap-fitter shop.
+//
+// The api-server mounts /api/auth with `allowSignUp: true`
+// (admin-only resupply-dashboard sets it to false), so this is
+// the supported path for new shoppers.
+//
+// Server response is "always 200, no enumeration" — we render a
+// friendly success state regardless of whether the email was new
+// or already existed (in which case no email goes out for an
+// already-verified account).
+
+import { useState, type FormEvent } from "react";
+import { Link } from "wouter";
+
+import { AuthError } from "@workspace/resupply-auth-react";
+
+import { authHooks } from "@/lib/auth-hooks";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-/** Mirrors readRedirect() in sign-in.tsx — see that file for rationale. */
-function readRedirect(): string {
-  if (typeof window === "undefined") return `${basePath}/admin`;
-  const usp = new URLSearchParams(window.location.search);
-  const raw = usp.get("redirect");
-  if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
-    if (basePath && raw.startsWith(basePath)) return raw;
-    return `${basePath}${raw}`;
-  }
-  return `${basePath}/admin`;
-}
-
-/** See sign-in.tsx for the rationale on hiding the the auth provider footer. */
-const HIDE_CLERK_BRANDING = {
-  elements: {
-    footer: { display: "none" as const },
-  },
-} as const;
-
 export function SignUpPage() {
-  useDocumentTitle("Create your account");
-  const redirectUrl = readRedirect();
-  return (
-    <div className="flex min-h-[calc(100dvh-5rem)] flex-col items-center justify-center px-4 py-12">
-      <div className="mb-6 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Create your Penn Home Medical Supply account
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          New here? Set up your account in a few seconds to get started.
-        </p>
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const signUp = authHooks.useSignUp();
+
+  function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitError(null);
+    signUp.mutate(
+      { email: email.trim(), password },
+      {
+        onSuccess: () => setSubmitted(true),
+        onError: (err) => {
+          setSubmitError(
+            err instanceof AuthError
+              ? err.userMessage
+              : "Could not create the account.",
+          );
+        },
+      },
+    );
+  }
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-3 text-sm">
+          <h1 className="text-xl font-semibold">Check your email</h1>
+          <p>
+            We've sent a verification link to <strong>{email}</strong>. Click
+            it to finish setting up your account. The link expires in 24
+            hours.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Didn't get it? Check your spam folder, or{" "}
+            <Link
+              href={`${basePath}/sign-in`}
+              className="underline text-[hsl(var(--penn-navy-deep))]"
+            >
+              sign in
+            </Link>{" "}
+            if you already have an account.
+          </p>
+        </div>
       </div>
-      <SignUp
-        appearance={HIDE_CLERK_BRANDING}
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in?redirect=${encodeURIComponent(
-          redirectUrl.startsWith(basePath)
-            ? redirectUrl.slice(basePath.length) || "/"
-            : redirectUrl,
-        )}`}
-        forceRedirectUrl={redirectUrl}
-      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4 py-12">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4"
+      >
+        <div>
+          <h1 className="text-xl font-semibold">Create your account</h1>
+          <p className="text-sm text-muted-foreground">
+            Save your shipping info, view past orders, and manage your
+            subscriptions.
+          </p>
+        </div>
+
+        <label className="block text-sm">
+          <span className="font-medium">Email</span>
+          <input
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="block text-sm">
+          <span className="font-medium">Password</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            minLength={12}
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          />
+          <span className="block text-xs mt-1 text-muted-foreground">
+            At least 12 characters.
+          </span>
+        </label>
+
+        {submitError && (
+          <p
+            role="alert"
+            className="text-sm rounded-md px-3 py-2 bg-red-50 text-red-900"
+          >
+            {submitError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={signUp.isPending}
+          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm"
+        >
+          {signUp.isPending ? "Creating account…" : "Create account"}
+        </button>
+
+        <p className="text-xs text-center">
+          Already have an account?{" "}
+          <Link
+            href={`${basePath}/sign-in`}
+            className="underline text-[hsl(var(--penn-navy-deep))]"
+          >
+            Sign in
+          </Link>
+        </p>
+      </form>
     </div>
   );
 }

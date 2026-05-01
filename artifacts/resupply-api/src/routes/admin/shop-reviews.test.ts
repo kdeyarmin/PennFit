@@ -10,14 +10,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 const updateQueue: unknown[] = [];
 let lastUpdateSet: Record<string, unknown> | null = null;
@@ -62,32 +65,27 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_admin" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_admin",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
 beforeEach(() => {
   for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
   for (const k of ENV_KEYS) delete process.env[k];
+  process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
+
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   updateQueue.length = 0;
   lastUpdateSet = null;
-  getAuthMock.mockReset();
-  getUserMock.mockReset();
+    mockAdmin.current = null;
   dbStub.update.mockClear();
 });
 
@@ -99,9 +97,7 @@ afterEach(() => {
 });
 
 describe("POST /admin/shop/reviews/:id/approve", () => {
-  it("rejects callers without admin sign-in", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const res = await request(makeApp()).post(
+  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp()).post(
       "/resupply-api/admin/shop/reviews/rev_1/approve",
     );
     expect([401, 403]).toContain(res.status);

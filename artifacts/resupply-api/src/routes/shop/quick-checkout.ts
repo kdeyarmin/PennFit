@@ -120,9 +120,8 @@ router.post(
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
     // Resolve email + display name for Stripe Customer creation.
-    // The helper prefers the in-house path (req.shopCustomerEmail
-    // populated by requireSignedIn) and falls back to
-    // clerkClient.users.getUser for legacy Clerk sessions.
+    // Sourced from req.shopCustomerEmail / req.shopCustomerDisplayName,
+    // populated by requireSignedIn from auth.users.
     const { email, displayName } = await readCustomerProfile(req);
 
     const stripe = getStripeClient(config);
@@ -147,7 +146,7 @@ router.post(
         .where(
           and(
             eq(shopOrders.stripeSessionId, reorderSessionId!),
-            eq(shopOrders.clerkUserId, req.userClerkId!),
+            eq(shopOrders.customerId, req.userCustomerId!),
           ),
         )
         .limit(1);
@@ -196,7 +195,7 @@ router.post(
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
-      clerkUserId: req.userClerkId!,
+      customerId: req.userCustomerId!,
       email,
       displayName,
     });
@@ -216,7 +215,7 @@ router.post(
     // (set above), so this branch only triggers for fresh "Subscribe
     // & ship" express checkouts. We MUST drop
     // payment_intent_data.setup_future_usage in subscription mode
-    // (Stripe rejects it) and stamp clerk_user_id onto
+    // (Stripe rejects it) and stamp customer_id onto
     // subscription_data.metadata so the customer.subscription.*
     // webhook can recover the buyer without a Session lookup.
     const isSubscription = basket.some((b) => b.mode === "subscription");
@@ -228,7 +227,7 @@ router.post(
         : reorderSessionId
           ? "reorder"
           : "express",
-      clerk_user_id: req.userClerkId!,
+      customer_id: req.userCustomerId!,
       ...(reorderSessionId ? { reorder_of_session: reorderSessionId } : {}),
     };
 
@@ -268,7 +267,7 @@ router.post(
             // always needs a saved payment method.
             subscription_data: {
               metadata: {
-                clerk_user_id: req.userClerkId!,
+                customer_id: req.userCustomerId!,
                 source: "pennpaps-shop",
               },
             },
@@ -313,14 +312,14 @@ router.post(
       return;
     }
 
-    // Mirror to shop_orders with clerk_user_id pre-stamped.
+    // Mirror to shop_orders with customer_id pre-stamped.
     const db = drizzle(getDbPool());
     await db
       .insert(shopOrders)
       .values({
         stripeSessionId: session.id,
         status: "pending",
-        clerkUserId: req.userClerkId!,
+        customerId: req.userCustomerId!,
       })
       .onConflictDoUpdate({
         target: shopOrders.stripeSessionId,

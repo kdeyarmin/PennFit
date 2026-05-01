@@ -13,7 +13,7 @@
 //                      so on success NO additional UPDATEs are issued.
 //   * Stripe re-delivery → atomic CLAIM returns no rows (timestamp
 //                      already non-null), helper short-circuits.
-//   * Guest checkout (clerk_user_id null, customer_details.email
+//   * Guest checkout (customer_id null, customer_details.email
 //                      present) → falls back to Stripe-provided email.
 //   * SendGrid failure → claim is RELEASED (timestamp re-NULLED) so a
 //                      future redelivery can retry.
@@ -136,7 +136,7 @@ function claimedOrderRow(over: Record<string, unknown> = {}) {
   return {
     id: "ord_aaa",
     stripeSessionId: "cs_test_X",
-    clerkUserId: "user_alice",
+    customerId: "user_alice",
     amountTotalCents: 9000,
     currency: "usd",
     shippingAddress: null,
@@ -229,14 +229,14 @@ describe("sendOrderConfirmationIfFirst", () => {
     expect(updateBareCalls.count).toBe(0);
   });
 
-  it("falls back to session.customer_details.email for guest checkouts (no clerk_user_id, no persisted customer_email)", async () => {
+  it("falls back to session.customer_details.email for guest checkouts (no customer_id, no persisted customer_email)", async () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
 
-    // clerkUserId null AND customerEmail null → skip both lookups,
+    // customerId null AND customerEmail null → skip both lookups,
     // fall back to the Stripe-provided email on the Session.
     updateReturningQueue.push([
-      claimedOrderRow({ clerkUserId: null, customerEmail: null }),
+      claimedOrderRow({ customerId: null, customerEmail: null }),
     ]);
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_guest" });
 
@@ -250,7 +250,7 @@ describe("sendOrderConfirmationIfFirst", () => {
     expect(result).toEqual({ skipped: false, delivered: true });
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     expect(sendEmailMock.mock.calls[0]![0].to).toBe("guest@example.com");
-    // Customer lookup skipped (clerkUserId null), so no SELECTs.
+    // Customer lookup skipped (customerId null), so no SELECTs.
     expect(dbStub.select).not.toHaveBeenCalled();
     // One UPDATE — the atomic claim. No release.
     expect(dbStub.update).toHaveBeenCalledTimes(1);
@@ -266,7 +266,7 @@ describe("sendOrderConfirmationIfFirst", () => {
     // captured at paid-time.
     updateReturningQueue.push([
       claimedOrderRow({
-        clerkUserId: null,
+        customerId: null,
         customerEmail: "persisted@example.com",
       }),
     ]);
@@ -366,7 +366,7 @@ describe("sendOrderConfirmationIfFirst", () => {
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
 
     updateReturningQueue.push([
-      claimedOrderRow({ clerkUserId: null, customerEmail: null }),
+      claimedOrderRow({ customerId: null, customerEmail: null }),
     ]);
     const session = makeSession({
       customer_details: null as unknown as Stripe.Checkout.Session["customer_details"],

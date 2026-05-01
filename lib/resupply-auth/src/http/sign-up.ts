@@ -42,11 +42,6 @@ export function makeSignUpHandler(
   deps: AuthDeps,
   options: MakeSignUpHandlerOptions,
 ) {
-  if (!deps.env.passwordPepper) {
-    throw new Error(
-      "auth sign-up handler requires AUTH_PASSWORD_PEPPER (provider must be 'dual' or 'in_house')",
-    );
-  }
   const pepper = deps.env.passwordPepper;
   const role = deps.signUpRole ?? "customer";
   const now = deps.now ?? (() => new Date());

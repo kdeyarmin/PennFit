@@ -30,7 +30,7 @@
 //      mid-migration; their argon2 hash supersedes any earlier
 //      bcrypt one).
 //   4. UPDATE `resupply.shop_customers` SET auth_user_id = …
-//      WHERE clerk_user_id = $csvRowId. No-op if no row exists
+//      WHERE customer_id = $csvRowId. No-op if no row exists
 //      (e.g. an admin who never bought anything).
 //
 // Idempotency:
@@ -70,9 +70,9 @@ interface ParsedArgs {
 
 interface CsvRow {
   /** Original Clerk user id from the export. Used as the
-   * shop_customers PK (clerk_user_id) — that's the existing
+   * shop_customers PK (customer_id) — that's the existing
    * value, no rewrite needed. */
-  clerkUserId: string;
+  customerId: string;
   primaryEmail: string | null;
   primaryEmailVerified: boolean;
   firstName: string | null;
@@ -221,7 +221,7 @@ function normalizeRows(grid: string[][]): CsvRow[] {
       primaryEmail !== null &&
       verifiedList.includes(primaryEmail.toLowerCase());
     out.push({
-      clerkUserId: id,
+      customerId: id,
       primaryEmail,
       primaryEmailVerified,
       firstName: (idxFirst >= 0 ? (row[idxFirst] ?? "").trim() : "") || null,
@@ -278,17 +278,17 @@ async function processRow(ctx: BackfillContext, row: CsvRow): Promise<void> {
   if (existing.rows[0]) {
     const u = existing.rows[0];
     // If a shop_customers row already points at a DIFFERENT auth
-    // user for this clerkUserId, that's a collision.
+    // user for this customerId, that's a collision.
     const link = await ctx.pool.query<{ auth_user_id: string | null }>(
       `SELECT auth_user_id FROM resupply.shop_customers
-        WHERE clerk_user_id = $1 LIMIT 1`,
-      [row.clerkUserId],
+        WHERE customer_id = $1 LIMIT 1`,
+      [row.customerId],
     );
     const currentAuth = link.rows[0]?.auth_user_id ?? null;
     if (currentAuth !== null && currentAuth !== u.id) {
       ctx.counters.skipped_collision++;
       process.stderr.write(
-        `[skip] ${row.clerkUserId} (${emailLower}): shop_customers.auth_user_id=` +
+        `[skip] ${row.customerId} (${emailLower}): shop_customers.auth_user_id=` +
           `${currentAuth} differs from auth.users.id=${u.id}\n`,
       );
       return;
@@ -311,7 +311,7 @@ async function processRow(ctx: BackfillContext, row: CsvRow): Promise<void> {
     if (ctx.dryRun) {
       // Synthesize a placeholder id so the rest of the dry-run
       // can pretend the insert happened.
-      authUserId = `would-create-${row.clerkUserId}`;
+      authUserId = `would-create-${row.customerId}`;
     } else {
       const inserted = await ctx.pool.query<{ id: string }>(
         `INSERT INTO auth.users
@@ -363,9 +363,9 @@ async function processRow(ctx: BackfillContext, row: CsvRow): Promise<void> {
       `UPDATE resupply.shop_customers
           SET auth_user_id = $2,
               updated_at = NOW()
-        WHERE clerk_user_id = $1
+        WHERE customer_id = $1
           AND (auth_user_id IS NULL OR auth_user_id = $2)`,
-      [row.clerkUserId, authUserId],
+      [row.customerId, authUserId],
     );
     if (result.rowCount && result.rowCount > 0) {
       ctx.counters.linked++;
@@ -375,10 +375,10 @@ async function processRow(ctx: BackfillContext, row: CsvRow): Promise<void> {
     const result = await ctx.pool.query<{ exists: boolean }>(
       `SELECT EXISTS(
          SELECT 1 FROM resupply.shop_customers
-          WHERE clerk_user_id = $1
+          WHERE customer_id = $1
             AND (auth_user_id IS NULL OR auth_user_id = $2)
         ) AS exists`,
-      [row.clerkUserId, authUserId],
+      [row.customerId, authUserId],
     );
     if (result.rows[0]?.exists) ctx.counters.linked++;
   }
@@ -423,7 +423,7 @@ async function main(): Promise<void> {
       } catch (err) {
         counters.errors++;
         process.stderr.write(
-          `[error] ${row.clerkUserId}: ${
+          `[error] ${row.customerId}: ${
             err instanceof Error ? err.message : String(err)
           }\n`,
         );

@@ -11,7 +11,7 @@
 //   * paid_at <= now() - 14 days  (give the customer time to actually
 //     receive + use the supplies)
 //   * review_request_sent_at IS NULL
-//   * clerk_user_id IS NOT NULL  (need the user to look up email +
+//   * customer_id IS NOT NULL  (need the user to look up email +
 //     comm prefs)
 // Plus per-customer post-claim filters:
 //   * customer's emailReviewRequests preference is true
@@ -24,7 +24,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
@@ -57,7 +56,7 @@ router.post(
         WHERE ${shopOrders.status} = 'paid'
           AND ${shopOrders.paidAt} <= now() - (${REVIEW_REQUEST_AGE_DAYS} || ' days')::interval
           AND ${shopOrders.reviewRequestSentAt} IS NULL
-          AND ${shopOrders.clerkUserId} IS NOT NULL
+          AND ${shopOrders.customerId} IS NOT NULL
         ORDER BY ${shopOrders.paidAt} ASC
         LIMIT ${SCAN_LIMIT}
         FOR UPDATE SKIP LOCKED
@@ -65,11 +64,11 @@ router.post(
       UPDATE ${shopOrders}
       SET review_request_sent_at = now()
       WHERE id IN (SELECT id FROM eligible)
-      RETURNING id, clerk_user_id AS "clerkUserId"
+      RETURNING id, customer_id AS "customerId"
     `);
     const claimed = (claimedRaw.rows ?? []) as Array<{
       id: string;
-      clerkUserId: string;
+      customerId: string;
     }>;
 
     if (claimed.length === 0) {
@@ -84,18 +83,18 @@ router.post(
     }
 
     // Batch-fetch comm prefs for every claimed user.
-    const userIds = Array.from(new Set(claimed.map((r) => r.clerkUserId)));
+    const userIds = Array.from(new Set(claimed.map((r) => r.customerId)));
     const customerRows = await db
       .select({
-        clerkUserId: shopCustomers.clerkUserId,
+        customerId: shopCustomers.customerId,
         email: shopCustomers.emailLower,
         prefs: shopCustomers.communicationPreferences,
       })
       .from(shopCustomers)
-      .where(sql`${shopCustomers.clerkUserId} = ANY(${userIds})`);
+      .where(sql`${shopCustomers.customerId} = ANY(${userIds})`);
     const customerMap = new Map(
       customerRows.map((r) => [
-        r.clerkUserId,
+        r.customerId,
         {
           email: r.email,
           prefs: { ...DEFAULT_COMMUNICATION_PREFERENCES, ...(r.prefs ?? {}) },
@@ -136,9 +135,9 @@ router.post(
       "https://pennpaps.com";
 
     for (const row of claimed) {
-      const cust = customerMap.get(row.clerkUserId);
+      const cust = customerMap.get(row.customerId);
       const prefs = cust?.prefs ?? { ...DEFAULT_COMMUNICATION_PREFERENCES };
-      let email = cust?.email ?? null;
+      const email = cust?.email ?? null;
 
       // Comm-prefs gate.
       if (!prefs.emailReviewRequests || isInDndWindow(prefs)) {
@@ -150,18 +149,6 @@ router.post(
         continue;
       }
 
-      // If we don't have an email cached, look it up from Clerk.
-      if (!email) {
-        try {
-          const user = await clerkClient.users.getUser(row.clerkUserId);
-          const primary =
-            user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId) ??
-            user.emailAddresses[0];
-          email = primary?.emailAddress?.toLowerCase() ?? null;
-        } catch {
-          email = null;
-        }
-      }
       if (!email) {
         await db
           .update(shopOrders)

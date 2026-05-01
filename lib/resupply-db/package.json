@@ -14,9 +14,11 @@
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push:force": "drizzle-kit push --force --config ./drizzle.config.ts",
     "generate": "drizzle-kit generate --config ./drizzle.config.ts",
-    "migrate": "node scripts/migrate.mjs"
+    "migrate": "node scripts/migrate.mjs",
+    "rotate-to-master-key": "node scripts/rotate-to-master-key.mjs"
   },
   "dependencies": {
+    "@workspace/resupply-secrets": "workspace:*",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.20.0",

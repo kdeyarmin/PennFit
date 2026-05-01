@@ -2,21 +2,6 @@
 // Mirrors shop-reviews-api.ts — the v1 returns surface is not yet in
 // the OpenAPI spec; promote it once the workflow stabilizes.
 
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 export type ReturnStatus =
   | "requested"
   | "approved"
@@ -38,7 +23,7 @@ export type ReturnResolution = "refund" | "exchange" | "store_credit" | null;
 
 export interface AdminReturn {
   id: string;
-  clerkUserId: string;
+  customerId: string;
   orderId: string;
   sessionId: string;
   status: ReturnStatus;
@@ -82,7 +67,7 @@ export async function listAdminShopReturns(params: {
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit) qs.set("limit", String(params.limit));
   const res = await fetch(`${BASE}?${qs.toString()}`, {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load returns (${res.status})`);
   return (await res.json()) as AdminReturnListResponse;
@@ -137,7 +122,6 @@ async function action(
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(await authHeaders()),
     },
     body: JSON.stringify(body),
   });

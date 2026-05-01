@@ -69,14 +69,6 @@ function hashUserAgent(req: Request): Buffer | null {
 }
 
 export function makeSignInHandler(deps: AuthDeps) {
-  if (!deps.env.passwordPepper) {
-    // Stage 1 / 2 contract: routes are mounted only when the
-    // in-house path is configured. Throwing here at handler
-    // construction surfaces the misconfig at boot.
-    throw new Error(
-      "auth sign-in handler requires AUTH_PASSWORD_PEPPER (provider must be 'dual' or 'in_house')",
-    );
-  }
   const pepper = deps.env.passwordPepper;
   const now = deps.now ?? (() => new Date());
   const rateConfig = deps.rateLimit ?? DEFAULT_RATE_LIMIT;

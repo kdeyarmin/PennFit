@@ -152,14 +152,22 @@ describeIfDb("pgcrypto round-trip", () => {
     }
   });
 
-  it("refuses to encrypt or decrypt without RESUPPLY_DATA_KEY", () => {
-    const original = process.env.RESUPPLY_DATA_KEY;
+  it("refuses to encrypt or decrypt when no data key is configured", () => {
+    // Need both env vars cleared — `getDataKey()` falls back to
+    // RESUPPLY_MASTER_KEY when RESUPPLY_DATA_KEY is absent, so to
+    // exercise the throw we have to ensure neither is set.
+    const originalKey = process.env.RESUPPLY_DATA_KEY;
+    const originalMaster = process.env.RESUPPLY_MASTER_KEY;
     delete process.env.RESUPPLY_DATA_KEY;
+    delete process.env.RESUPPLY_MASTER_KEY;
     try {
       expect(() => encrypt("anything")).toThrow(/RESUPPLY_DATA_KEY/);
       expect(() => decrypt(sql`'\\x00'::bytea`)).toThrow(/RESUPPLY_DATA_KEY/);
     } finally {
-      process.env.RESUPPLY_DATA_KEY = original;
+      if (originalKey === undefined) delete process.env.RESUPPLY_DATA_KEY;
+      else process.env.RESUPPLY_DATA_KEY = originalKey;
+      if (originalMaster === undefined) delete process.env.RESUPPLY_MASTER_KEY;
+      else process.env.RESUPPLY_MASTER_KEY = originalMaster;
     }
   });
 });

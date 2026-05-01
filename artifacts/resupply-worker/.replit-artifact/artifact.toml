@@ -1,0 +1,37 @@
+kind = "api"
+previewPath = "/__resupply-worker-internal" # Internal-only background worker — never user-visible. The path slot exists only because the artifact platform requires every artifact to claim a unique routing slot, even ones that should never be hit by external traffic.
+title = "Resupply Worker"
+version = "1.0.0"
+id = "resupply-worker-K8r3pVnB7sQmL2hYxTjW9"
+
+[[services]]
+localPort = 8085
+name = "Resupply Worker"
+paths = ["/__resupply-worker-internal"]
+
+[services.development]
+run = "pnpm --filter @workspace/resupply-worker run dev"
+
+[services.production]
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/resupply-worker", "run", "build"]
+
+[services.production.build.env]
+NODE_ENV = "production"
+
+[services.production.run]
+args = ["node", "--enable-source-maps", "artifacts/resupply-worker/dist/index.mjs"]
+
+[services.production.run.env]
+PORT = "8085"
+NODE_ENV = "production"
+
+# The worker hosts pg-boss; "ready" means pg-boss has bootstrapped its
+# schema (pgboss_resupply.version exists) AND every job handler has
+# been registered. Until that's true the endpoint returns 503, which
+# tells the orchestrator to keep waiting. The api-server's /readyz
+# depends on pg-boss being up, so failing this gate is the only thing
+# that prevents a half-initialized deploy from going live.
+[services.production.health.startup]
+path = "/__resupply-worker-internal/_internal/healthz"

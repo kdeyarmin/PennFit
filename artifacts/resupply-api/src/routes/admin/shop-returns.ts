@@ -560,7 +560,7 @@ function formatCents(cents: number): string {
 function serializeReturnRow(r: typeof shopReturns.$inferSelect) {
   return {
     id: r.id,
-    clerkUserId: r.clerkUserId,
+    customerId: r.customerId,
     orderId: r.orderId,
     sessionId: r.stripeSessionId,
     status: r.status,

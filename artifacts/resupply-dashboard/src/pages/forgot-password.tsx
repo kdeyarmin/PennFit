@@ -1,9 +1,6 @@
-// Forgot-password page. Renders only when VITE_AUTH_PROVIDER ===
-// "in_house"; in Clerk mode the dashboard never reaches this route
-// (Clerk owns the recovery flow inside its hosted SignIn component).
-//
-// Server contract is "always 200, no enumeration" — we render the
-// success state regardless of whether the email matches an account.
+// Forgot-password page. Server contract is "always 200, no
+// enumeration" — we render the success state regardless of whether
+// the email matches an account.
 
 import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
