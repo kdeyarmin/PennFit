@@ -15,14 +15,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
+import {
+  makeRequireSignedInMock,
+  type MockSignedInProfile,
+} from "../../test-helpers/auth-mocks";
+
+const { mockSignedIn } = vi.hoisted(() => ({
+  mockSignedIn: {
+    current: null as string | MockSignedInProfile | null,
   },
 }));
+vi.mock("../../middlewares/requireSignedIn", () =>
+  makeRequireSignedInMock(mockSignedIn),
+);
 
 function fluent(result: unknown) {
   const obj: Record<string, unknown> = {
@@ -112,13 +117,11 @@ function makeApp(): Express {
 }
 
 function stubSignedIn(userId = "user_alice"): void {
-  getAuthMock.mockReturnValue({ userId });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [{ id: "eml_1", emailAddress: "alice@example.com" }],
-    firstName: "Alice",
-    lastName: "Walker",
-  });
+  mockSignedIn.current = {
+    customerId: userId,
+    email: "alice@example.com",
+    displayName: "Alice Walker",
+  };
 }
 
 beforeEach(() => {
@@ -130,8 +133,7 @@ beforeEach(() => {
   insertErrorQueue.length = 0;
   lastInsertValues = null;
   lastUpdateSet = null;
-  getAuthMock.mockReset();
-  getUserMock.mockReset();
+  mockSignedIn.current = null;
   dbStub.select.mockClear();
   dbStub.selectDistinct.mockClear();
   dbStub.insert.mockClear();
@@ -147,7 +149,6 @@ const VALID_BODY = {
 
 describe("POST /shop/products/:productId/reviews", () => {
   it("rejects unauthenticated requests with 401", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp())
       .post("/resupply-api/shop/products/prod_1/reviews")
       .send(VALID_BODY);
@@ -306,7 +307,6 @@ describe("DELETE /shop/me/reviews/:productId", () => {
   });
 
   it("rejects unauthenticated DELETE", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp()).delete(
       "/resupply-api/shop/me/reviews/prod_1",
     );
@@ -316,7 +316,6 @@ describe("DELETE /shop/me/reviews/:productId", () => {
 
 describe("GET /shop/products/:productId/reviews (public)", () => {
   it("requires no auth and returns approved reviews + aggregate", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const createdAt = new Date("2026-01-01T00:00:00Z");
     selectQueue.push([
       {
@@ -352,7 +351,6 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
   });
 
   it("marks verifiedPurchaser=false when the reviewer has not bought the product", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     selectQueue.push([
       {
         id: "rev_2",
@@ -375,7 +373,6 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
   });
 
   it("does not crash when there are no reviews on the page (empty IN list)", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     selectQueue.push([]); // no reviews
     // selectDistinct is NOT called when the page is empty (route
     // short-circuits the IN lookup) but we push a sentinel anyway so

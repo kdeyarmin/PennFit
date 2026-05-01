@@ -47,10 +47,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
+import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+
+const { mockSignedIn } = vi.hoisted(() => ({
+  mockSignedIn: { current: null as string | null },
 }));
+vi.mock("../../middlewares/requireSignedIn", () =>
+  makeRequireSignedInMock(mockSignedIn),
+);
 
 // Drizzle stub. Two query shapes used by this router:
 //   1. SELECT → .from() → .where() → .orderBy()? → .limit() → Promise<rows>
@@ -147,7 +151,7 @@ function get(app: Express, path: string) {
 }
 
 function stubSignedIn(userId: string): void {
-  getAuthMock.mockReturnValue({ userId });
+  mockSignedIn.current = userId;
 }
 
 function activeSubRow(over: Partial<Record<string, unknown>> = {}): Record<
@@ -177,7 +181,7 @@ function activeSubRow(over: Partial<Record<string, unknown>> = {}): Record<
 beforeEach(() => {
   selectQueue.length = 0;
   stripeConfigured = true;
-  getAuthMock.mockReset();
+  mockSignedIn.current = null;
   dbStub.select.mockClear();
   dbStub.update.mockClear();
   stripeSubscriptionsUpdateMock.mockReset();
@@ -194,7 +198,6 @@ afterEach(() => {
 
 describe("POST /shop/me/subscriptions/:id/pause", () => {
   it("401 when unsigned", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)
       .send({});
     expect(r.status).toBe(401);
@@ -295,7 +298,6 @@ describe("POST /shop/me/subscriptions/:id/resume", () => {
 
 describe("POST /shop/me/subscriptions/:id/cadence", () => {
   it("401 when unsigned", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
       .send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(401);
@@ -462,7 +464,6 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
 describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
   it("401 when unsigned", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const r = await get(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
@@ -592,7 +593,6 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
 
 describe("GET /shop/me/subscriptions (smoke)", () => {
   it("401 when unsigned", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const r = await get(makeApp(), "/resupply-api/me/subscriptions");
     expect(r.status).toBe(401);
   });

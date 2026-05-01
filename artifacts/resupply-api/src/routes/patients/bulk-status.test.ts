@@ -4,14 +4,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 // Drizzle stubs: the route only issues an UPDATE...RETURNING and
 // (via the audit module) writes audit rows. We don't exercise the
@@ -83,17 +86,11 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
@@ -105,8 +102,7 @@ describe("POST /patients/bulk-status", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     process.env.NODE_ENV = "test";
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     updateReturning.mockReset();
     logAuditMock.mockClear();
     dbStub.update.mockClear();
@@ -215,7 +211,7 @@ describe("POST /patients/bulk-status", () => {
   });
 
   it("rejects unauthenticated callers with 401", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
+    mockAdmin.current = null;
     const res = await request(makeApp())
       .post("/resupply-api/patients/bulk-status")
       .send({ ids: [PATIENT_A], status: "active" });

@@ -25,14 +25,17 @@ import {
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 const queryMock: Mock = vi.fn();
 vi.mock("@workspace/resupply-db", async () => {
@@ -108,17 +111,11 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ORIGINAL_ADMIN_EMAILS = process.env.RESUPPLY_ADMIN_EMAILS;
@@ -139,8 +136,6 @@ afterEach(() => {
 
 describe("POST /episodes/bulk-send", () => {
   it("requires admin auth", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-
     const res = await request(makeApp())
       .post("/resupply-api/episodes/bulk-send")
       .send({ episodeIds: [EP1], channel: "sms" });

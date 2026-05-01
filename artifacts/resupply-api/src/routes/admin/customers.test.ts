@@ -28,14 +28,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 // Drizzle stub. The customers list handler uses db.execute(sql`...`)
 // (NOT the fluent select/from chain), so the stub only needs an
@@ -89,17 +92,11 @@ function makeApp(router: import("express").IRouter): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_admin" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
@@ -115,8 +112,7 @@ beforeEach(() => {
   dbStub.execute.mockClear();
   stripeCheckoutCreateMock.mockReset();
   stripeConfigured = true;
-  getAuthMock.mockReset();
-  getUserMock.mockReset();
+    mockAdmin.current = null;
 });
 
 afterEach(() => {
@@ -133,9 +129,7 @@ async function loadRouter() {
 }
 
 describe("GET /admin/shop/customers — auth gate", () => {
-  it("rejects callers without sign-in (no userId)", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const router = await loadRouter();
+  it("rejects callers without sign-in (no userId)", async () => {    const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
     );
@@ -144,22 +138,11 @@ describe("GET /admin/shop/customers — auth gate", () => {
   });
 
   it("rejects non-admin callers (verified email not on allowlist)", async () => {
-    getAuthMock.mockReturnValue({ userId: "user_outsider" });
-    getUserMock.mockResolvedValue({
-      primaryEmailAddressId: "eml_x",
-      emailAddresses: [
-        {
-          id: "eml_x",
-          emailAddress: "stranger@example.com",
-          verification: { status: "verified" },
-        },
-      ],
-    });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
     expect(dbStub.execute).not.toHaveBeenCalled();
   });
 });
@@ -373,9 +356,7 @@ function pushDetailQueue(opts: {
 }
 
 describe("GET /admin/shop/customers/:userId — auth + validation", () => {
-  it("rejects unauthenticated callers", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const router = await loadRouter();
+  it("rejects unauthenticated callers", async () => {    const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
     );
@@ -384,22 +365,11 @@ describe("GET /admin/shop/customers/:userId — auth + validation", () => {
   });
 
   it("rejects non-admin callers", async () => {
-    getAuthMock.mockReturnValue({ userId: "user_outsider" });
-    getUserMock.mockResolvedValue({
-      primaryEmailAddressId: "eml_x",
-      emailAddresses: [
-        {
-          id: "eml_x",
-          emailAddress: "stranger@example.com",
-          verification: { status: "verified" },
-        },
-      ],
-    });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
   });
 
   it("rejects malformed user ids", async () => {
@@ -724,23 +694,12 @@ function pushReorderQueue({
 }
 
 describe("POST /admin/shop/customers/:userId/reorder — auth & validation", () => {
-  it("rejects non-admin callers", async () => {
-    getAuthMock.mockReturnValue({ userId: "user_outsider" });
-    getUserMock.mockResolvedValue({
-      primaryEmailAddressId: "eml_x",
-      emailAddresses: [
-        {
-          id: "eml_x",
-          emailAddress: "stranger@example.com",
-          verification: { status: "verified" },
-        },
-      ],
-    });
+  it("rejects unauthenticated callers", async () => {
     const router = await loadRouter();
     const res = await request(makeApp(router))
       .post(`/resupply-api/admin/shop/customers/${VALID_USER_ID}/reorder`)
       .send({ sourceOrderId: SOURCE_ORDER_ID });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
     expect(dbStub.execute).not.toHaveBeenCalled();
     expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
