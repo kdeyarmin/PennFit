@@ -26,9 +26,15 @@
 
 import { diagnoseSecretConfig } from "@workspace/resupply-secrets";
 
+// AUTH_PASSWORD_PEPPER is consumed by `readAuthEnv` (resupply-auth)
+// during `getAuthDeps()`, which app.ts calls at module init. Without
+// it the server crashes before binding to PORT, so the Replit gateway
+// can only return 502 to the SPA. Listing it here means the error
+// surfaces as a clean missing-env message alongside any others.
 const REQUIRED_PLAIN_ENV_VARS = [
   "PORT",
   "DATABASE_URL",
+  "AUTH_PASSWORD_PEPPER",
 ] as const;
 
 export function assertRequiredEnv(): void {

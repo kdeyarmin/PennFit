@@ -21,8 +21,8 @@
 //     it expects each query to see, in order.
 //   * Stripe is mocked at the lib/stripe/config layer; only refunds
 //     are exercised here.
-//   * the auth provider is mocked at the @clerk/express layer; the admin gate
-//     resolves a verified email matching RESUPPLY_ADMIN_EMAILS.
+//   * the requireAdmin middleware is mocked via test-helpers/auth-mocks
+//     so each test can pin the admin context (email, userId, role).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";

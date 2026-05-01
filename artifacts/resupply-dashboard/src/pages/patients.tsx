@@ -253,9 +253,9 @@ export function PatientsPage() {
       if (statusFilter) url.searchParams.set("status", statusFilter);
       if (search) url.searchParams.set("search", search);
 
-      const headers: Record<string, string> = { Accept: "text/csv" };
-
-      const res = await fetch(url.toString(), { headers });
+      const res = await fetch(url.toString(), {
+        headers: { Accept: "text/csv" },
+      });
       if (!res.ok) {
         throw new Error(
           res.status === 401
