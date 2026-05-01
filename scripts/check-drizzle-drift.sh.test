@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Self-test for scripts/check-drizzle-drift.sh.
+#
+# Strategy: run the checker in-place against the actual repo with two
+# scenarios:
+#
+#   Scenario A — clean tree:
+#     The committed migrations match the storefront lib's TypeScript
+#     schema. The checker must exit 0 and leave the drizzle output
+#     dir byte-identical.
+#
+#   Scenario B — drifted storefront schema:
+#     Append a dummy table to lib/db/src/schema/admin-audit-log.ts
+#     (re-exported from the schema barrel). The checker must (a) exit
+#     non-zero (drift detected) and (b) leave lib/db/drizzle
+#     byte-identical to its pre-test snapshot — drizzle-kit's
+#     generated migration files use random-word filenames, so leaving
+#     a stray new SQL file in the working tree would clobber the next
+#     real migration's auto-numbering and confuse contributors.
+#
+# (lib/resupply-db is intentionally excluded from the checker today —
+# its snapshot meta chain is broken, see header of check-drizzle-drift.sh
+# — so there's no scenario C in this self-test. When the chain is
+# repaired and the lib is re-added, mirror scenario B for the resupply
+# schema here.)
+#
+# These scenarios guard:
+#   - The checker silently passing when schema and migrations diverge.
+#   - The checker leaving the working tree dirty after a failure.
+#
+# DATABASE_URL is required (the drizzle.config.ts files throw on
+# import if it is unset). If the env doesn't have one, the test
+# self-skips so this file is safe to wire into the same validation
+# step that runs the rest of the resupply checks.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CHECKER="$REPO_ROOT/scripts/check-drizzle-drift.sh"
+
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  printf '[self-test] DATABASE_URL not set, skipping (drizzle.config.ts requires it)\n'
+  exit 0
+fi
+
+DB_VICTIM_SCHEMA="$REPO_ROOT/lib/db/src/schema/admin-audit-log.ts"
+DB_OUT="$REPO_ROOT/lib/db/drizzle"
+
+for v in "$DB_VICTIM_SCHEMA" "$DB_OUT"; do
+  if [[ ! -e "$v" ]]; then
+    printf 'self-test setup error: %s missing\n' "$v" >&2
+    exit 2
+  fi
+done
+
+# Snapshot every directory + file we mutate so we can guarantee
+# restoration on any exit path (success, failure, ctrl-c).
+SNAPSHOT="$(mktemp -d -t drizzle-drift-selftest.XXXXXX)"
+mkdir -p "$SNAPSHOT/db-out"
+cp -a "$DB_OUT/." "$SNAPSHOT/db-out/"
+cp -a "$DB_VICTIM_SCHEMA" "$SNAPSHOT/db-victim.ts"
+
+restore_all() {
+  rm -rf "$DB_OUT"
+  mkdir -p "$DB_OUT"
+  cp -a "$SNAPSHOT/db-out/." "$DB_OUT/"
+  cp -f "$SNAPSHOT/db-victim.ts" "$DB_VICTIM_SCHEMA"
+  rm -rf "$SNAPSHOT"
+}
+trap restore_all EXIT
+
+fail() {
+  printf 'self-test FAIL: %s\n' "$*" >&2
+  exit 1
+}
+
+# Helper: append a dummy table whose name embeds a random suffix so
+# repeated runs always look like new drift to drizzle-kit (defensive
+# against any caching).
+#
+# Storefront tables live in the default `public` schema (plain
+# `pgTable`); resupply tables live in the `resupply` schema (created
+# via `resupplySchema.table`). The drizzle.config.ts files filter to
+# their own schema, so a dummy must use the right factory or it will
+# be silently filtered out and not register as drift.
+append_dummy_table_storefront() {
+  local file="$1"
+  cat >>"$file" <<'EOF'
+
+// SELF-TEST DRIFT MARKER (db) — must be reverted on cleanup
+import { pgTable as __selftestPgTable_db, text as __selftestText_db } from "drizzle-orm/pg-core";
+export const __selftestDriftTable_db = __selftestPgTable_db("__selftest_drift_db", {
+  id: __selftestText_db("id").primaryKey(),
+});
+EOF
+}
+
+append_dummy_table_resupply() {
+  local file="$1"
+  cat >>"$file" <<'EOF'
+
+// SELF-TEST DRIFT MARKER (resupply) — must be reverted on cleanup
+import { text as __selftestText_resupply } from "drizzle-orm/pg-core";
+export const __selftestDriftTable_resupply = resupplySchema.table("__selftest_drift_resupply", {
+  id: __selftestText_resupply("id").primaryKey(),
+});
+EOF
+}
+
+# Helper: assert a directory is byte-identical to its snapshot.
+assert_dir_unchanged() {
+  local label="$1"
+  local snap="$2"
+  local live="$3"
+  if ! diff -rq "$snap" "$live" >/dev/null; then
+    fail "checker mutated $label (expected snapshot to be restored)"
+  fi
+}
+
+# ---------- Scenario A: clean tree ----------
+printf '[self-test] scenario A: clean tree should pass\n'
+if ! bash "$CHECKER" >/dev/null 2>&1; then
+  fail "checker rejected an in-sync tree (scenario A)"
+fi
+assert_dir_unchanged "lib/db/drizzle on clean run"        "$SNAPSHOT/db-out"        "$DB_OUT"
+assert_dir_unchanged "lib/resupply-db/drizzle on clean run" "$SNAPSHOT/resupply-out" "$RESUPPLY_OUT"
+
+# ---------- Scenario B: drifted storefront schema ----------
+printf '[self-test] scenario B: drifted lib/db schema should fail + restore drizzle/\n'
+
+append_dummy_table_storefront "$DB_VICTIM_SCHEMA"
+
+if bash "$CHECKER" >/dev/null 2>&1; then
+  fail "checker accepted a drifted lib/db schema (scenario B)"
+fi
+assert_dir_unchanged "lib/db/drizzle after drift detected" "$SNAPSHOT/db-out" "$DB_OUT"
+# resupply must be untouched too (per-lib isolation).
+assert_dir_unchanged "lib/resupply-db/drizzle after lib/db drift" "$SNAPSHOT/resupply-out" "$RESUPPLY_OUT"
+
+# Restore the storefront schema before scenario C so failure modes
+# don't leak between scenarios.
+cp -f "$SNAPSHOT/db-victim.ts" "$DB_VICTIM_SCHEMA"
+
+# ---------- Scenario C: drifted resupply schema ----------
+printf '[self-test] scenario C: drifted lib/resupply-db schema should fail + restore drizzle/\n'
+
+append_dummy_table_resupply "$RESUPPLY_VICTIM_SCHEMA"
+
+if bash "$CHECKER" >/dev/null 2>&1; then
+  fail "checker accepted a drifted lib/resupply-db schema (scenario C)"
+fi
+assert_dir_unchanged "lib/resupply-db/drizzle after drift detected" "$SNAPSHOT/resupply-out" "$RESUPPLY_OUT"
+assert_dir_unchanged "lib/db/drizzle after lib/resupply-db drift"   "$SNAPSHOT/db-out"        "$DB_OUT"
+
+printf '[self-test] all scenarios passed\n'
