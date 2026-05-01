@@ -8,21 +8,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 interface Hit {
   kind: string;
   id: string;
@@ -60,7 +45,7 @@ export function GlobalLookup() {
       try {
         const res = await fetch(
           `/resupply-api/admin/lookup?q=${encodeURIComponent(q.trim())}`,
-          { headers: { Accept: "application/json", ...(await authHeaders()) } },
+          { headers: { Accept: "application/json" } },
         );
         if (cancelled) return;
         if (res.ok) {

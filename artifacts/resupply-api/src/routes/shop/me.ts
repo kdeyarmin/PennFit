@@ -34,11 +34,9 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
     return;
   }
 
-  // Source-aware enrichment. In-house mode: read the email +
-  // display name from the request, populated by requireSignedIn /
-  // attachSignedIn from auth.users. Clerk mode: fall through to
-  // clerkClient.users.getUser. Either way the helper degrades to
-  // null on lookup failure rather than blowing up /shop/me.
+  // Pull the email + display name from the request — populated by
+  // requireSignedIn / attachSignedIn from auth.users. Helper degrades
+  // to null on lookup failure rather than blowing up /shop/me.
   const { email, displayName } = await readCustomerProfile(req);
 
   const row = await ensureShopCustomerRow({

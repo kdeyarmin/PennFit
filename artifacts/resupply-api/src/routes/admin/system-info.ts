@@ -110,12 +110,6 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
         secretKeyConfigured: Boolean(env.STRIPE_SECRET_KEY),
         webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SIGNING_SECRET),
       },
-      clerk: {
-        publishableKeyConfigured: Boolean(
-          env.VITE_CLERK_PUBLISHABLE_KEY ?? env.CLERK_PUBLISHABLE_KEY,
-        ),
-        secretKeyConfigured: Boolean(env.CLERK_SECRET_KEY),
-      },
       objectStorage: {
         privateBucketConfigured: Boolean(env.PRIVATE_OBJECT_DIR),
       },

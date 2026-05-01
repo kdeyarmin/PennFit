@@ -18,19 +18,15 @@ once per environment.
 fails the boot if any of these are missing — but the values still
 need to be **correct**, not just present.
 
-### Auth (Clerk)
+### Auth (in-house)
 
-- [ ] `CLERK_SECRET_KEY` — backend secret key for the SAME Clerk app
-      the publishable key on every frontend points at. A mismatched
-      app will pass `getAuth(req).userId` but fail
-      `clerkClient.users.getUser(userId)` with "user not found".
-- [ ] `VITE_CLERK_PUBLISHABLE_KEY` — set on the cpap-fitter and
-      resupply-dashboard frontends.
-- [ ] **Clerk dashboard → Sessions → Customize session token** — add
-      `email` (or `primary_email_address`) to the JWT claims so the
-      `requireAdmin` middleware can read the email from the session
-      JWT directly. With this set, the dashboard survives Clerk
-      Backend API outages without locking admins out.
+- [ ] `auth.users` table has at least one row with role `admin` and
+      a verified email. Seed the first admin against a fresh DB
+      with `pnpm --filter @workspace/scripts auth:bootstrap-admin
+      --email=<addr> --role=admin`.
+- [ ] `AUTH_PASSWORD_PEPPER` set (32+ random bytes, base64-encoded;
+      `openssl rand -base64 48`). Without it password hashing falls
+      back to a dev default and refuses to boot in production.
 
 ### Database
 
@@ -82,7 +78,7 @@ shows green/red dots per vendor)
       review request, order tracking).
 - [ ] `RESUPPLY_VOICE_PUBLIC_BASE_URL` — Twilio webhook target.
 - [ ] `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL` — admin-team invite
-      redirect URL (the link in the Clerk-sent email).
+      redirect URL (the link in the invitation email).
 
 ---
 
@@ -117,8 +113,8 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
 - [ ] Pino logs route to a long-retention sink (Datadog, CloudWatch,
       Logflare, etc).
 - [ ] Alert on:
-  - `event=resupply_admin_clerk_lookup_failed` (Clerk Backend API
-    health)
+  - `event=resupply_admin_in_house_lookup_failed` (in-house auth
+    lookup health — see requireAdmin)
   - `event=stripe_refund_failed`
   - `event=sms_status_update_failed`
   - any `level=fatal` line (unhandled exception, pgcrypto missing,
@@ -153,8 +149,8 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
 
 - [ ] `GET /resupply-api/healthz` returns 200.
 - [ ] `GET /resupply-api/readyz` returns 200 (preflight succeeded).
-- [ ] An invited admin can sign up via Clerk magic link, sign in,
-      and reach `/admin` with their assigned role.
+- [ ] An invited admin can accept their email invitation, set a
+      password, sign in, and reach `/admin` with their assigned role.
 - [ ] An out-of-allowlist user signing in gets the
       "not authorized" page (not the "transient" one).
 - [ ] The `/admin/operations` page shows GREEN dots for every

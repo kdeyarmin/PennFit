@@ -2,7 +2,7 @@
 //
 // Three sections:
 //   1. Vendor connectivity strip — green/red dot per integration
-//      (SendGrid, Twilio Voice/SMS, Stripe, Clerk, GCS object store).
+//      (SendGrid, Twilio Voice/SMS, Stripe, GCS object store).
 //   2. Dispatchers — manual "Run now" buttons for the cart-abandonment
 //      and review-request dispatchers, with the eligible-row counter
 //      so admins know whether running will actually do anything.
@@ -88,11 +88,6 @@ function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
     { key: "twilioSms", label: "Twilio SMS", hint: "Outbound resupply SMS" },
     { key: "twilioVoice", label: "Twilio Voice", hint: "Outbound voice calls" },
     { key: "stripe", label: "Stripe", hint: "Cash-pay shop checkout + refunds" },
-    {
-      key: "clerk",
-      label: "Clerk",
-      hint: "Customer + admin auth, team invitations",
-    },
     {
       key: "objectStorage",
       label: "Object storage (GCS)",

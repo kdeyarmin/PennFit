@@ -1,20 +1,5 @@
 // Hand-rolled fetch wrapper for the /rules/test simulator.
 
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 export type Channel = "sms" | "email" | "voice";
 
 export interface RuleTestInput {
@@ -81,7 +66,6 @@ export async function testRules(input: RuleTestInput): Promise<RuleTestResponse>
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      ...(await authHeaders()),
     },
     body: JSON.stringify(input),
   });

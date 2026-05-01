@@ -1,19 +1,7 @@
 // Hand-rolled fetch wrappers for the operations center page.
-
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
+//
+// Auth flows over the `pf_session` cookie, sent automatically by
+// the browser on same-origin requests.
 
 export interface OpsStatus {
   vendors: {
@@ -21,7 +9,6 @@ export interface OpsStatus {
     twilioVoice: boolean;
     twilioSms: boolean;
     stripe: boolean;
-    clerk: boolean;
     objectStorage: boolean;
   };
   dispatchers: {
@@ -38,7 +25,7 @@ export interface OpsStatus {
 
 export async function fetchOpsStatus(): Promise<OpsStatus> {
   const res = await fetch("/resupply-api/admin/ops-status", {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Failed to load ops status (${res.status})`);
   return (await res.json()) as OpsStatus;
@@ -65,7 +52,7 @@ async function postDispatcher(url: string): Promise<DispatcherResult> {
   const res = await fetch(url, {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as

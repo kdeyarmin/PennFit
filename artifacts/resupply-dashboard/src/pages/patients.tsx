@@ -226,11 +226,13 @@ export function PatientsPage() {
     }
   }
 
-  // Export CSV. The dashboard talks to the API with a Bearer token
-  // (session), not cookies, so a plain anchor wouldn't carry
-  // auth. We replicate the auth-bearing fetch the orval client
-  // uses — pulling the token off `window.Clerk.session` — and
-  // trigger a browser download from the resulting blob.
+  // Export CSV. The dashboard talks to the API over the
+  // `pf_session` cookie (set by /resupply-api/auth/sign-in), which
+  // the browser sends automatically on same-origin requests — so a
+  // plain `fetch` with default credentials carries auth. We use
+  // fetch + blob (instead of a plain anchor) so we can surface a
+  // friendly error message on 401/5xx instead of a downloaded
+  // error page.
   async function downloadCsv(): Promise<void> {
     setExportError(null);
     setBulkExporting(true);
@@ -243,13 +245,6 @@ export function PatientsPage() {
       if (search) url.searchParams.set("search", search);
 
       const headers: Record<string, string> = { Accept: "text/csv" };
-      const clerk = (
-        globalThis as unknown as {
-          Clerk?: { session?: { getToken: () => Promise<string | null> } | null };
-        }
-      ).Clerk;
-      const token = clerk?.session ? await clerk.session.getToken() : null;
-      if (token) headers.Authorization = `Bearer ${token}`;
 
       const res = await fetch(url.toString(), { headers });
       if (!res.ok) {
