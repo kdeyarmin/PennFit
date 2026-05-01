@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { packageNameFromModulePath } from "../shared/vite/manual-chunks";
+import { dashboardChunkForPackage } from "../shared/vite/chunk-groups";
 
 const isBuild = process.argv.includes("build");
 
@@ -74,6 +76,7 @@ const baseTrailingSlashRedirect = {
   },
 };
 
+
 export default defineConfig({
   base: basePath ?? "/resupply/",
   plugins: [
@@ -106,6 +109,15 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const packageName = packageNameFromModulePath(id);
+          if (!packageName) return;
+          return dashboardChunkForPackage(packageName);
+        },
+      },
+    },
   },
   server: {
     port,
