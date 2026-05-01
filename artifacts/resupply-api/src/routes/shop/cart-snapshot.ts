@@ -32,7 +32,7 @@
 import { Router, type IRouter } from "express";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
+import { readCustomerProfile } from "../../lib/customer-profile";
 import { z } from "zod";
 
 import { getDbPool, shopAbandonedCarts } from "@workspace/resupply-db";
@@ -89,33 +89,6 @@ function itemsSignature(items: readonly ShopAbandonedCartItem[]): string {
   return JSON.stringify(norm);
 }
 
-/**
- * Best-effort the auth provider email lookup. Returns lowercase email or null.
- * Never throws — a auth provider API blip should NOT fail the snapshot
- * write (the cart is public catalog data; missing email just means
- * the dispatcher will skip this row until the next PUT succeeds).
- */
-async function fetchClerkEmail(
-  clerkUserId: string,
-  log?: { warn?: (...a: unknown[]) => void },
-): Promise<string | null> {
-  try {
-    const user = await clerkClient.users.getUser(clerkUserId);
-    const primaryId = user.primaryEmailAddressId;
-    const primary =
-      user.emailAddresses.find((e) => e.id === primaryId) ??
-      user.emailAddresses[0];
-    const raw = primary?.emailAddress ?? null;
-    return raw ? raw.toLowerCase() : null;
-  } catch (err) {
-    log?.warn?.(
-      { err: err instanceof Error ? err.message : String(err) },
-      "shop/me/cart-snapshot: clerk user lookup failed; keeping prior email",
-    );
-    return null;
-  }
-}
-
 router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   const clerkUserId = req.userClerkId;
   if (!clerkUserId) {
@@ -170,8 +143,12 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     !existing || itemsSignature(existing.items) !== itemsSignature(items);
 
   // Refresh the denormalized email on every PUT — but never overwrite
-  // a known email with null on a the auth provider blip.
-  const freshEmail = await fetchClerkEmail(clerkUserId, req.log);
+  // a known email with null on an auth-provider blip. The helper
+  // prefers the in-house path (req.shopCustomerEmail set by
+  // requireSignedIn) and falls back to clerkClient.users.getUser
+  // for legacy Clerk sessions.
+  const profile = await readCustomerProfile(req, clerkUserId);
+  const freshEmail = profile.email?.toLowerCase() ?? null;
   const email = freshEmail ?? existing?.email ?? null;
 
   const now = new Date();

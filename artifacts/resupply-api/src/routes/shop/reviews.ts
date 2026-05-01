@@ -30,7 +30,7 @@
 import { Router, type IRouter } from "express";
 import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
+import { readCustomerProfile } from "../../lib/customer-profile";
 import { z } from "zod";
 
 import { getDbPool, shopOrderItems, shopReviews } from "@workspace/resupply-db";
@@ -141,25 +141,26 @@ interface ReviewAuthorIdentity {
  * a way for the moderator to follow up.
  */
 async function resolveAuthorIdentity(
-  clerkUserId: string,
+  req: import("express").Request,
 ): Promise<ReviewAuthorIdentity> {
-  const user = await clerkClient.users.getUser(clerkUserId);
-  const primaryId = user.primaryEmailAddressId;
-  const primary =
-    user.emailAddresses.find((e) => e.id === primaryId) ??
-    user.emailAddresses[0];
-  const rawEmail = primary?.emailAddress ?? null;
+  const profile = await readCustomerProfile(req);
+  const rawEmail = profile.email;
   if (!rawEmail) {
-    throw new Error("clerk_user_missing_email");
+    throw new Error("customer_missing_email");
   }
 
-  const first = (user.firstName ?? "").trim();
-  const last = (user.lastName ?? "").trim();
+  // Reviews show "First L." rather than the full name to keep the
+  // public review list's signal-to-noise low. Split the displayName
+  // on whitespace; the first token is the given name, and the
+  // first letter of the LAST token is treated as the last initial.
+  // Falls through to "PennPaps customer" when displayName is null
+  // or unparseable — same as the legacy Clerk path.
+  const tokens = (profile.displayName ?? "").trim().split(/\s+/).filter(Boolean);
   let displayName: string;
-  if (first.length > 0 && last.length > 0) {
-    displayName = `${first} ${last[0]}.`;
-  } else if (first.length > 0) {
-    displayName = first;
+  if (tokens.length >= 2) {
+    displayName = `${tokens[0]} ${tokens[tokens.length - 1]![0]}.`;
+  } else if (tokens.length === 1) {
+    displayName = tokens[0]!;
   } else {
     displayName = "PennPaps customer";
   }
@@ -431,11 +432,11 @@ router.post(
 
     let identity: ReviewAuthorIdentity;
     try {
-      identity = await resolveAuthorIdentity(clerkUserId);
+      identity = await resolveAuthorIdentity(req);
     } catch (err) {
       req.log?.warn?.(
         { err: err instanceof Error ? err.message : String(err) },
-        "shop/reviews: clerk identity lookup failed",
+        "shop/reviews: customer identity lookup failed",
       );
       res.status(400).json({ error: "author_identity_unavailable" });
       return;

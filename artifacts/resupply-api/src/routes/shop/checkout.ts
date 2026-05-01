@@ -32,14 +32,13 @@ import { z } from "zod";
 
 import { getDbPool, shopOrders } from "@workspace/resupply-db";
 
-import { clerkClient } from "@clerk/express";
-
 import {
   SHOP_UNAVAILABLE_BODY,
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { attachSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -181,20 +180,12 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
   let customerEmail: string | null = null;
   if (req.userClerkId) {
     try {
-      const user = await clerkClient.users.getUser(req.userClerkId);
-      const primaryId = user.primaryEmailAddressId;
-      const primary =
-        user.emailAddresses.find((e) => e.id === primaryId) ??
-        user.emailAddresses[0];
-      customerEmail = primary?.emailAddress ?? null;
-      const fullName = [user.firstName, user.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
+      const profile = await readCustomerProfile(req);
+      customerEmail = profile.email;
       const mapping = await getOrCreateStripeCustomer(config, {
         clerkUserId: req.userClerkId,
         email: customerEmail,
-        displayName: fullName.length > 0 ? fullName : null,
+        displayName: profile.displayName,
       });
       stripeCustomerId = mapping.stripeCustomerId;
     } catch (err) {

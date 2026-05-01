@@ -7,12 +7,15 @@
     "hello": "tsx ./src/hello.ts",
     "seed:shop": "tsx ./src/seed-stripe-products.ts",
     "auth:bootstrap-admin": "tsx ./src/auth-bootstrap-admin.ts",
+    "auth:backfill-shop-customers": "tsx ./src/auth-backfill-shop-customers.ts",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "^8.18.0",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "vitest": "^2.1.8"
   },
   "dependencies": {
     "@workspace/resupply-auth": "workspace:*",

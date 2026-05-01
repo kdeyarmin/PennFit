@@ -36,7 +36,11 @@ import {
   appendSetCookie,
 } from "../cookies";
 import { normalizeEmail } from "../email";
-import { verifyPassword } from "../password";
+import {
+  hashPassword,
+  verifyPassword,
+  verifyPasswordCredential,
+} from "../password";
 import { checkLoginRateLimit, DEFAULT_RATE_LIMIT } from "../rate-limit";
 import { issueWindow } from "../session";
 import { issueToken } from "../token";
@@ -162,12 +166,12 @@ export function makeSignInHandler(deps: AuthDeps) {
       return;
     }
 
-    const ok = await verifyPassword(
+    const verify = await verifyPasswordCredential(
       parsed.data.password,
       pepper,
-      cred.passwordHash,
+      cred,
     );
-    if (!ok) {
+    if (!verify.ok) {
       await deps.repo.recordLoginAttempt({
         emailLower,
         ip,
@@ -181,6 +185,37 @@ export function makeSignInHandler(deps: AuthDeps) {
       });
       genericFail(res);
       return;
+    }
+
+    // Stage 4c — transparent algorithm upgrade. The verify step
+    // returns needsRehash:true when the credential matched via a
+    // legacy algorithm (today: clerk-bcrypt-v1 from the Stage 4c
+    // backfill). Rehash with our standard argon2id+pepper so the
+    // next sign-in takes the fast path. Best-effort: if the write
+    // fails we still admit the user, and the next sign-in retries
+    // the upgrade.
+    if (verify.needsRehash) {
+      try {
+        const upgraded = await hashPassword(
+          parsed.data.password,
+          pepper,
+          deps.passwordHashParams,
+        );
+        await deps.repo.upsertCredential({
+          userId: user.id,
+          passwordHash: upgraded,
+          mustChange: cred.mustChange,
+        });
+        void deps.audit({
+          action: "auth.password_algo_upgraded",
+          adminEmail: emailLower,
+          adminUserId: user.id,
+          metadata: { from: cred.algo, to: "argon2id-v1" },
+        });
+      } catch {
+        // Swallow — sign-in succeeded; an upgrade failure is not
+        // a user-visible problem and will be retried next time.
+      }
     }
 
     if (!user.emailVerifiedAt) {

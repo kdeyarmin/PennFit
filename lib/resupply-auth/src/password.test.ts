@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,6 +6,7 @@ import {
   needsRehash,
   pepperPassword,
   verifyPassword,
+  verifyPasswordCredential,
 } from "./password";
 
 const PEPPER = Buffer.from(
@@ -65,6 +67,82 @@ describe("hashPassword + verifyPassword", () => {
     await expect(
       verifyPassword("hunter2", PEPPER, "not-an-argon2-hash"),
     ).resolves.toBe(false);
+  });
+});
+
+describe("verifyPasswordCredential — algo dispatch", () => {
+  it("verifies argon2id-v1 credentials with the peppered argon2 path", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
+      passwordHash: hash,
+      algo: "argon2id-v1",
+    });
+    expect(result).toEqual({ ok: true, needsRehash: false });
+  });
+
+  it("treats a missing algo as argon2id-v1 (back-compat with pre-Stage-4c rows)", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
+      passwordHash: hash,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("verifies a clerk-bcrypt-v1 credential WITHOUT applying the pepper", async () => {
+    // Mimic a Clerk export: bare bcrypt of the raw password.
+    const bcryptHash = await bcrypt.hash("hunter2", 4);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
+      passwordHash: bcryptHash,
+      algo: "clerk-bcrypt-v1",
+    });
+    expect(result.ok).toBe(true);
+    // Successful bcrypt verify ALWAYS asks for a rehash so the
+    // sign-in handler upgrades the row to argon2id-v1.
+    expect(result.needsRehash).toBe(true);
+  });
+
+  it("rejects a wrong password against a clerk-bcrypt-v1 hash", async () => {
+    const bcryptHash = await bcrypt.hash("hunter2", 4);
+    const result = await verifyPasswordCredential("WRONG", PEPPER, {
+      passwordHash: bcryptHash,
+      algo: "clerk-bcrypt-v1",
+    });
+    expect(result).toEqual({ ok: false, needsRehash: false });
+  });
+
+  it("normalizes a malformed clerk-bcrypt-v1 hash to a clean fail (no throw)", async () => {
+    const result = await verifyPasswordCredential(
+      "hunter2",
+      PEPPER,
+      {
+        passwordHash: "not-a-bcrypt-hash",
+        algo: "clerk-bcrypt-v1",
+      },
+    );
+    expect(result).toEqual({ ok: false, needsRehash: false });
+  });
+
+  it("fails closed on an unknown algo tag", async () => {
+    const result = await verifyPasswordCredential("anything", PEPPER, {
+      passwordHash: "anything",
+      algo: "wat" as unknown as "argon2id-v1",
+    });
+    expect(result).toEqual({ ok: false, needsRehash: false });
+  });
+
+  it("a clerk-bcrypt-v1 row does NOT verify when peppered (because Clerk hashes weren't peppered)", async () => {
+    // Sanity check that we're not accidentally peppering bcrypt
+    // input. Hash "hunter2" peppered, then try to verify "hunter2"
+    // against that hash via the bcrypt path — should fail because
+    // the bcrypt path doesn't apply the pepper but the hash was
+    // computed over the peppered string.
+    const peppered = pepperPassword("hunter2", PEPPER);
+    const bcryptOfPeppered = await bcrypt.hash(peppered, 4);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
+      passwordHash: bcryptOfPeppered,
+      algo: "clerk-bcrypt-v1",
+    });
+    expect(result.ok).toBe(false);
   });
 });
 

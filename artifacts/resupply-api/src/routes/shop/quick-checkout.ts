@@ -32,7 +32,7 @@ import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
+import { readCustomerProfile } from "../../lib/customer-profile";
 import type Stripe from "stripe";
 import { z } from "zod";
 
@@ -119,27 +119,11 @@ router.post(
 
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
-    // Resolve email + display name from the auth provider for Customer creation.
-    let email: string | null = null;
-    let displayName: string | null = null;
-    try {
-      const user = await clerkClient.users.getUser(req.userClerkId!);
-      const primaryId = user.primaryEmailAddressId;
-      const primary =
-        user.emailAddresses.find((e) => e.id === primaryId) ??
-        user.emailAddresses[0];
-      email = primary?.emailAddress ?? null;
-      const fullName = [user.firstName, user.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-      displayName = fullName.length > 0 ? fullName : null;
-    } catch (err) {
-      req.log?.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        "quick-checkout: clerk user lookup failed",
-      );
-    }
+    // Resolve email + display name for Stripe Customer creation.
+    // The helper prefers the in-house path (req.shopCustomerEmail
+    // populated by requireSignedIn) and falls back to
+    // clerkClient.users.getUser for legacy Clerk sessions.
+    const { email, displayName } = await readCustomerProfile(req);
 
     const stripe = getStripeClient(config);
 

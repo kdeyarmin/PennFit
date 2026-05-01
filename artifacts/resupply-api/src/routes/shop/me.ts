@@ -16,12 +16,12 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
 import { z } from "zod";
 
 import { getDbPool, shopOrders, shopCustomers } from "@workspace/resupply-db";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
+import { readCustomerProfile } from "../../lib/customer-profile";
 import { attachSignedIn, requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
@@ -34,33 +34,12 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
     return;
   }
 
-  // Fetch auth user to seed display name + email on first hit.
-  // We do this on every GET because the user can rename themselves
-  // in the auth provider and we want the local row to drift toward the source
-  // of truth without a webhook subscription.
-  let email: string | null = null;
-  let displayName: string | null = null;
-  try {
-    const user = await clerkClient.users.getUser(req.userClerkId);
-    const primaryId = user.primaryEmailAddressId;
-    const primary =
-      user.emailAddresses.find((e) => e.id === primaryId) ??
-      user.emailAddresses[0];
-    email = primary?.emailAddress ?? null;
-    const fullName = [user.firstName, user.lastName]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-    displayName = fullName.length > 0 ? fullName : null;
-  } catch (err) {
-    // auth provider API blip — degrade to "no email" rather than
-    // failing the whole /shop/me call. The /me UI is a read-mostly
-    // surface and a missing email here is non-fatal.
-    req.log?.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      "shop/me: clerk user lookup failed; serving without enrichment",
-    );
-  }
+  // Source-aware enrichment. In-house mode: read the email +
+  // display name from the request, populated by requireSignedIn /
+  // attachSignedIn from auth.users. Clerk mode: fall through to
+  // clerkClient.users.getUser. Either way the helper degrades to
+  // null on lookup failure rather than blowing up /shop/me.
+  const { email, displayName } = await readCustomerProfile(req);
 
   const row = await ensureShopCustomerRow({
     clerkUserId: req.userClerkId,
