@@ -9,7 +9,7 @@ import {
   clerkProxyMiddleware,
 } from "./middlewares/clerkProxyMiddleware.js";
 import router from "./routes";
-import { getAuthDepsOrNull } from "./lib/auth-deps";
+import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -122,21 +122,15 @@ const usageEventLimiter = rateLimit({
 });
 app.use("/api/usage-events", usageEventLimiter);
 
-// In-house /api/auth/* routes — only mounted when AUTH_PROVIDER is
-// "dual" or "in_house". The default ("clerk") leaves the in-house
-// path entirely off the wire so a misconfig can't accidentally
-// expose it. See ADR 014 + docs/resupply/AUTH-MIGRATION-PLAN.md.
-const authDeps = getAuthDepsOrNull();
-if (authDeps) {
-  app.use(
-    "/api/auth",
-    makeAuthRouter(authDeps, { productName: "PennFit" }),
-  );
-  logger.info(
-    { event: "auth_in_house_mounted", provider: authDeps.env.provider },
-    "in-house auth routes mounted at /api/auth",
-  );
-}
+// In-house /api/auth/* routes. Unconditionally mounted after
+// Stage 5a — a missing AUTH_PASSWORD_PEPPER throws here so the
+// misconfig surfaces at boot.
+const authDeps = getAuthDeps();
+app.use("/api/auth", makeAuthRouter(authDeps, { productName: "PennFit" }));
+logger.info(
+  { event: "auth_in_house_mounted" },
+  "in-house auth routes mounted at /api/auth",
+);
 
 app.use("/api", router);
 

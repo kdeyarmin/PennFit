@@ -24,7 +24,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
@@ -138,7 +137,7 @@ router.post(
     for (const row of claimed) {
       const cust = customerMap.get(row.clerkUserId);
       const prefs = cust?.prefs ?? { ...DEFAULT_COMMUNICATION_PREFERENCES };
-      let email = cust?.email ?? null;
+      const email = cust?.email ?? null;
 
       // Comm-prefs gate.
       if (!prefs.emailReviewRequests || isInDndWindow(prefs)) {
@@ -150,18 +149,6 @@ router.post(
         continue;
       }
 
-      // If we don't have an email cached, look it up from Clerk.
-      if (!email) {
-        try {
-          const user = await clerkClient.users.getUser(row.clerkUserId);
-          const primary =
-            user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId) ??
-            user.emailAddresses[0];
-          email = primary?.emailAddress?.toLowerCase() ?? null;
-        } catch {
-          email = null;
-        }
-      }
       if (!email) {
         await db
           .update(shopOrders)

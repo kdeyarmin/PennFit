@@ -1,61 +1,54 @@
 // Environment surface for the in-house auth library.
 //
-// Stage 1 contract:
-//   * AUTH_PROVIDER defaults to "clerk" so this module is a no-op
-//     at runtime until Stage 3+. Code paths that branch on the
-//     provider must default to the Clerk path.
-//   * AUTH_PASSWORD_PEPPER is REQUIRED whenever AUTH_PROVIDER is
-//     "dual" or "in_house". For "clerk", we don't even read it —
-//     the lib is dormant. This is what lets Stage 1 land in
-//     production safely without anyone scrambling for a secret.
+// Stage 5a — AUTH_PROVIDER kill switch retired. The flag lives on
+// in `.env.example` as a no-op (set it to anything; it's ignored)
+// to keep deploys with the legacy var set from crashing at boot,
+// but the library always behaves as if `AUTH_PROVIDER=in_house`.
+// Customer + staff cutovers (Stages 3–4c) shipped earlier; the
+// flag was the rollback lever, and the rollback window has
+// closed. AUTH_PASSWORD_PEPPER is now unconditionally required.
 
 import { z } from "zod";
 
-export type AuthProvider = "clerk" | "dual" | "in_house";
+/**
+ * Historical type — preserved on the public surface so existing
+ * callers' destructuring keeps working through the Stage 5a /
+ * Stage 5d transition. The only valid runtime value is "in_house";
+ * we map any other input to that.
+ */
+export type AuthProvider = "in_house";
 
-export const AUTH_PROVIDER_VALUES = [
-  "clerk",
-  "dual",
-  "in_house",
-] as const satisfies readonly AuthProvider[];
+export const AUTH_PROVIDER_VALUES = ["in_house"] as const satisfies readonly AuthProvider[];
 
 export interface AuthEnv {
-  /** Active auth provider. Defaults to "clerk" until cutover. */
+  /**
+   * Always "in_house" after Stage 5a. Kept on the type for
+   * back-compat with the few callers (e.g. `app.ts`'s log line)
+   * that introspect the field.
+   */
   provider: AuthProvider;
   /**
    * 32+ random bytes (base64). HMAC-SHA256(password, pepper) is
-   * what gets fed to argon2id. Required only when the in-house
-   * password path is live.
+   * what gets fed to argon2id. UNCONDITIONALLY required.
    */
-  passwordPepper: Buffer | null;
+  passwordPepper: Buffer;
   /** Sliding session lifetime. Default 14 days. */
   sessionTtlDays: number;
   /** Default email-token lifetime. Reset / verify TTLs override. */
   emailTokenTtlHours: number;
 }
 
-const providerSchema = z.enum(AUTH_PROVIDER_VALUES).default("clerk");
-
 const positiveInt = z.coerce
   .number()
   .int("must be an integer")
   .positive("must be > 0");
 
-/**
- * Decode a base64 / base64url pepper. Pepper is REQUIRED when the
- * in-house password path is active. Length must be >= 32 bytes.
- */
-function parsePepper(raw: string | undefined, provider: AuthProvider): Buffer | null {
-  if (provider === "clerk") {
-    return null;
-  }
+/** Decode a base64 / base64url pepper. Length must be >= 32 bytes. */
+function parsePepper(raw: string | undefined): Buffer {
   if (!raw || raw.trim() === "") {
-    throw new Error(
-      `AUTH_PASSWORD_PEPPER is required when AUTH_PROVIDER="${provider}"`,
-    );
+    throw new Error("AUTH_PASSWORD_PEPPER is required");
   }
-  // Accept base64 or base64url (which Buffer parses with the same call
-  // when standard base64 chars are present). Strip whitespace first.
+  // Accept base64 or base64url. Strip whitespace first.
   const cleaned = raw.replace(/\s+/g, "");
   const buf = Buffer.from(cleaned, "base64");
   if (buf.length < 32) {
@@ -67,29 +60,36 @@ function parsePepper(raw: string | undefined, provider: AuthProvider): Buffer | 
 }
 
 /**
- * Read the auth env. Pure: takes a NodeJS.ProcessEnv-shaped object so
- * tests can pass a synthetic env without polluting `process.env`.
- *
- * Throws on invalid input (`AUTH_PROVIDER` not in the union, missing
- * pepper when required, malformed numeric TTL). Validation lives here
- * — not at first-use — so misconfiguration crashes at boot rather
- * than at the first sign-in attempt.
+ * Read the auth env. Pure: takes a NodeJS.ProcessEnv-shaped
+ * object so tests can pass a synthetic env without polluting
+ * `process.env`. Throws on missing pepper or malformed TTL.
  */
 export function readAuthEnv(
   source: Partial<NodeJS.ProcessEnv> = process.env,
 ): AuthEnv {
-  const provider = providerSchema.parse(source.AUTH_PROVIDER ?? "clerk");
   const sessionTtlDays = positiveInt.parse(
     source.AUTH_SESSION_TTL_DAYS ?? "14",
   );
   const emailTokenTtlHours = positiveInt.parse(
     source.AUTH_EMAIL_TOKEN_TTL_HOURS ?? "24",
   );
-  const passwordPepper = parsePepper(source.AUTH_PASSWORD_PEPPER, provider);
-  return { provider, passwordPepper, sessionTtlDays, emailTokenTtlHours };
+  const passwordPepper = parsePepper(source.AUTH_PASSWORD_PEPPER);
+  return {
+    provider: "in_house",
+    passwordPepper,
+    sessionTtlDays,
+    emailTokenTtlHours,
+  };
 }
 
-/** True when local sessions should be issued / accepted. */
-export function isInHouseAuthActive(env: AuthEnv): boolean {
-  return env.provider !== "clerk";
+/**
+ * Historical helper. Always true after Stage 5a — kept on the
+ * surface so existing call sites compile. New code should NOT
+ * branch on this; the in-house path is the only path.
+ *
+ * @deprecated Always true; remove when Stage 5d retires the
+ *   AUTH_PROVIDER flag entirely.
+ */
+export function isInHouseAuthActive(_env: AuthEnv): boolean {
+  return true;
 }

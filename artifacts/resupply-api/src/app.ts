@@ -4,7 +4,7 @@ import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { makeAuthRouter } from "@workspace/resupply-auth";
 import router from "./routes";
-import { getAuthDepsOrNull } from "./lib/auth-deps";
+import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
@@ -130,29 +130,27 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// session middleware — attaches auth state (`getAuth(req)`) to
-// every request so downstream admin-gated routes can read it. Safe
-// to mount globally: it's a no-op for unauthenticated requests, and
-// the unauthenticated /healthz, /readyz probes don't read auth state
-// at all. We mount it BEFORE the route tree so every nested router
-// inherits it without needing per-router wiring.
+// Clerk's session middleware is still mounted because a small
+// number of legacy admin routes (admin/team, audit/export,
+// admin-shop/review-requests) still call clerkClient. They get
+// retired in Stage 5b — the mount goes away then. The middleware
+// is a no-op for unauthenticated requests, and the unauthenticated
+// /healthz, /readyz probes don't read auth state at all.
 app.use(clerkMiddleware());
 
-// In-house /auth/* routes — only mounted when AUTH_PROVIDER is
-// "dual" or "in_house". The default ("clerk") leaves the in-house
-// path entirely off the wire so a misconfig can't accidentally
-// expose it. See ADR 014 + docs/resupply/AUTH-MIGRATION-PLAN.md.
-const authDeps = getAuthDepsOrNull();
-if (authDeps) {
-  app.use(
-    "/resupply-api/auth",
-    makeAuthRouter(authDeps, { productName: "Resupply" }),
-  );
-  logger.info(
-    { event: "auth_in_house_mounted", provider: authDeps.env.provider },
-    "in-house auth routes mounted at /resupply-api/auth",
-  );
-}
+// In-house /auth/* routes. After Stage 5a the kill switch is
+// retired — the router is unconditionally mounted. A missing
+// AUTH_PASSWORD_PEPPER throws here so the misconfig surfaces at
+// boot rather than at the first sign-in attempt.
+const authDeps = getAuthDeps();
+app.use(
+  "/resupply-api/auth",
+  makeAuthRouter(authDeps, { productName: "Resupply" }),
+);
+logger.info(
+  { event: "auth_in_house_mounted" },
+  "in-house auth routes mounted at /resupply-api/auth",
+);
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,

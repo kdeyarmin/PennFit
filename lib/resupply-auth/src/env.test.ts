@@ -5,40 +5,33 @@ import { isInHouseAuthActive, readAuthEnv } from "./env";
 const PEPPER_BASE64 =
   "Zm9yIHRlc3Rpbmcgb25seSBwbGVhc2UgZG8gbm90IHJldXNlIGFhYWFhYWE="; // 40 bytes when decoded
 
-describe("readAuthEnv", () => {
-  it("defaults provider to 'clerk' and skips pepper", () => {
-    const env = readAuthEnv({});
-    expect(env.provider).toBe("clerk");
-    expect(env.passwordPepper).toBeNull();
+describe("readAuthEnv (post-Stage-5a)", () => {
+  it("returns provider='in_house' regardless of input (kill switch retired)", () => {
+    const env = readAuthEnv({ AUTH_PASSWORD_PEPPER: PEPPER_BASE64 });
+    expect(env.provider).toBe("in_house");
     expect(env.sessionTtlDays).toBe(14);
     expect(env.emailTokenTtlHours).toBe(24);
   });
 
-  it("isInHouseAuthActive is false for clerk and true otherwise", () => {
-    expect(isInHouseAuthActive(readAuthEnv({}))).toBe(false);
+  it("ignores any AUTH_PROVIDER value the caller sets", () => {
+    // Legacy deploys may still have AUTH_PROVIDER=clerk in their
+    // env. We accept and ignore — the in-house path is the only
+    // path now.
+    const env = readAuthEnv({
+      AUTH_PROVIDER: "clerk",
+      AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
+    });
+    expect(env.provider).toBe("in_house");
+  });
+
+  it("isInHouseAuthActive is always true (helper kept for back-compat)", () => {
     expect(
-      isInHouseAuthActive(
-        readAuthEnv({
-          AUTH_PROVIDER: "dual",
-          AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      isInHouseAuthActive(
-        readAuthEnv({
-          AUTH_PROVIDER: "in_house",
-          AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
-        }),
-      ),
+      isInHouseAuthActive(readAuthEnv({ AUTH_PASSWORD_PEPPER: PEPPER_BASE64 })),
     ).toBe(true);
   });
 
-  it("requires pepper when provider is dual or in_house", () => {
-    expect(() => readAuthEnv({ AUTH_PROVIDER: "dual" })).toThrow(
-      /AUTH_PASSWORD_PEPPER is required/,
-    );
-    expect(() => readAuthEnv({ AUTH_PROVIDER: "in_house" })).toThrow(
+  it("requires AUTH_PASSWORD_PEPPER unconditionally", () => {
+    expect(() => readAuthEnv({})).toThrow(
       /AUTH_PASSWORD_PEPPER is required/,
     );
   });
@@ -47,38 +40,42 @@ describe("readAuthEnv", () => {
     // 16 bytes when decoded
     const tooShort = Buffer.from("a".repeat(16)).toString("base64");
     expect(() =>
-      readAuthEnv({
-        AUTH_PROVIDER: "in_house",
-        AUTH_PASSWORD_PEPPER: tooShort,
-      }),
+      readAuthEnv({ AUTH_PASSWORD_PEPPER: tooShort }),
     ).toThrow(/at least 32 bytes/);
-  });
-
-  it("rejects unknown provider values", () => {
-    expect(() => readAuthEnv({ AUTH_PROVIDER: "supabase" })).toThrow();
   });
 
   it("parses positive integer TTLs and rejects bad ones", () => {
     const env = readAuthEnv({
+      AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
       AUTH_SESSION_TTL_DAYS: "30",
       AUTH_EMAIL_TOKEN_TTL_HOURS: "2",
     });
     expect(env.sessionTtlDays).toBe(30);
     expect(env.emailTokenTtlHours).toBe(2);
 
-    expect(() => readAuthEnv({ AUTH_SESSION_TTL_DAYS: "0" })).toThrow();
-    expect(() => readAuthEnv({ AUTH_SESSION_TTL_DAYS: "-1" })).toThrow();
     expect(() =>
-      readAuthEnv({ AUTH_SESSION_TTL_DAYS: "two weeks" }),
+      readAuthEnv({
+        AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
+        AUTH_SESSION_TTL_DAYS: "0",
+      }),
+    ).toThrow();
+    expect(() =>
+      readAuthEnv({
+        AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
+        AUTH_SESSION_TTL_DAYS: "-1",
+      }),
+    ).toThrow();
+    expect(() =>
+      readAuthEnv({
+        AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
+        AUTH_SESSION_TTL_DAYS: "two weeks",
+      }),
     ).toThrow();
   });
 
   it("decodes a 32+ byte pepper into a Buffer", () => {
-    const env = readAuthEnv({
-      AUTH_PROVIDER: "in_house",
-      AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
-    });
+    const env = readAuthEnv({ AUTH_PASSWORD_PEPPER: PEPPER_BASE64 });
     expect(env.passwordPepper).toBeInstanceOf(Buffer);
-    expect(env.passwordPepper!.length).toBeGreaterThanOrEqual(32);
+    expect(env.passwordPepper.length).toBeGreaterThanOrEqual(32);
   });
 });

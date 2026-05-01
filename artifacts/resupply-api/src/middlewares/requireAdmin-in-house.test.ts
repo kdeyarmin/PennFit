@@ -40,6 +40,12 @@ vi.mock("@clerk/express", () => ({
 // and drive role / status / session state from each test.
 let mockDeps: AuthDeps | null = null;
 vi.mock("../lib/auth-deps", () => ({
+  // After Stage 5a getAuthDeps always returns. We throw rather
+  // than return null in tests so the failure mode is loud.
+  getAuthDeps: () => {
+    if (!mockDeps) throw new Error("test: mockDeps not set");
+    return mockDeps;
+  },
   getAuthDepsOrNull: () => mockDeps,
 }));
 
@@ -221,7 +227,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     expect(res.status).toBe(403);
   });
 
-  it("falls through to Clerk when the user is a customer (not staff)", async () => {
+  it("rejects a customer-role user with 401 (dashboard is staff-only)", async () => {
     const { deps, repo } = await buildDepsWithRepo();
     mockDeps = deps;
     const { cookie } = await seedSignedInUser(repo, {
@@ -229,16 +235,15 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       email: "shopper@example.com",
       role: "customer",
     });
-    // No Clerk session either → Clerk path returns 401.
-    getAuthMock.mockReturnValue({ userId: null });
 
     const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
 
     expect(res.status).toBe(401);
-    expect(getAuthMock).toHaveBeenCalled();
+    // Stage 5a — Clerk is no longer consulted at all.
+    expect(getAuthMock).not.toHaveBeenCalled();
   });
 
-  it("falls through to Clerk when the session is expired", async () => {
+  it("returns 401 when the session is expired", async () => {
     const { deps, repo } = await buildDepsWithRepo();
     mockDeps = deps;
     const { cookie } = await seedSignedInUser(repo, {
@@ -247,14 +252,13 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       role: "admin",
       expiresAt: new Date(Date.now() - 1000),
     });
-    getAuthMock.mockReturnValue({ userId: null });
 
     const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
 
     expect(res.status).toBe(401);
   });
 
-  it("falls through to Clerk when the session has been revoked", async () => {
+  it("returns 401 when the session has been revoked", async () => {
     const { deps, repo } = await buildDepsWithRepo();
     mockDeps = deps;
     const { cookie } = await seedSignedInUser(repo, {
@@ -263,14 +267,13 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       role: "admin",
       revokedAt: new Date(),
     });
-    getAuthMock.mockReturnValue({ userId: null });
 
     const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
 
     expect(res.status).toBe(401);
   });
 
-  it("falls through to Clerk when the user is locked", async () => {
+  it("returns 401 when the user is locked", async () => {
     const { deps, repo } = await buildDepsWithRepo();
     mockDeps = deps;
     const { cookie } = await seedSignedInUser(repo, {
@@ -279,23 +282,15 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       role: "admin",
       status: "locked",
     });
-    getAuthMock.mockReturnValue({ userId: null });
 
     const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
 
     expect(res.status).toBe(401);
   });
 
-  it("falls through to Clerk when the cookie value is malformed", async () => {
-    const { deps, repo } = await buildDepsWithRepo();
+  it("returns 401 when the cookie value is malformed", async () => {
+    const { deps } = await buildDepsWithRepo();
     mockDeps = deps;
-    await seedSignedInUser(repo, {
-      id: "u_g",
-      email: "g@example.com",
-      role: "admin",
-    });
-    // The seeded user has a valid token, but we send a junk value.
-    getAuthMock.mockReturnValue({ userId: null });
 
     const res = await request(makeApp())
       .get("/protected")
@@ -304,26 +299,26 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     expect(res.status).toBe(401);
   });
 
-  it("falls through to Clerk when AUTH_PROVIDER=clerk (deps null)", async () => {
-    mockDeps = null;
-    getAuthMock.mockReturnValue({ userId: null });
+  it("returns 401 when the session cookie value is unrecognised", async () => {
+    const { deps } = await buildDepsWithRepo();
+    mockDeps = deps;
 
     const res = await request(makeApp())
       .get("/protected")
       .set("Cookie", "pf_session=anything");
 
     expect(res.status).toBe(401);
-    expect(getAuthMock).toHaveBeenCalled();
+    expect(getAuthMock).not.toHaveBeenCalled();
   });
 
-  it("does NOT short-circuit when no cookie is sent (Clerk path runs)", async () => {
+  it("returns 401 when no cookie is present (no Clerk fall-through)", async () => {
     const { deps } = await buildDepsWithRepo();
     mockDeps = deps;
-    getAuthMock.mockReturnValue({ userId: null });
 
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(401);
-    expect(getAuthMock).toHaveBeenCalled();
+    // Stage 5a — the middleware no longer consults Clerk at all.
+    expect(getAuthMock).not.toHaveBeenCalled();
   });
 });

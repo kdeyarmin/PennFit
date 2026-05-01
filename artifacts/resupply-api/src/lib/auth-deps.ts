@@ -15,12 +15,10 @@
 //     dashboard auth pages.
 //
 // The module is lazy: nothing here runs until the API server
-// asks for `getAuthDepsOrNull()`. When AUTH_PROVIDER=clerk (the
-// Stage 1/2a default), the function returns null and the API
-// does not mount the in-house auth router. That's the kill
-// switch ADR 014 describes — it stays in the codebase as a
-// runtime-flag-only difference, not an env-var-controlled
-// dead-code conditional.
+// asks for `getAuthDeps()`. After Stage 5a the function always
+// returns a value (the kill switch is gone); a misconfigured
+// AUTH_PASSWORD_PEPPER throws at first call so the misconfig
+// surfaces at boot instead of on the first sign-in attempt.
 
 import {
   createSendgridClient,
@@ -39,23 +37,18 @@ import {
 
 import { logger } from "./logger";
 
-let cachedDeps: AuthDeps | null | undefined;
+let cachedDeps: AuthDeps | undefined;
 
 /**
- * Build (and memoize) the AuthDeps. Returns null when the in-house
- * path is dormant (`AUTH_PROVIDER=clerk`). Returns AuthDeps
- * otherwise. Exceptions during construction (e.g. missing pepper
- * for `in_house` mode) propagate — the API server should fail to
- * boot rather than silently disable auth.
+ * Build (and memoize) the AuthDeps. Always returns a value after
+ * Stage 5a — the kill switch is gone. Exceptions during
+ * construction (missing AUTH_PASSWORD_PEPPER, missing DB pool,
+ * etc.) propagate so a misconfigured deploy fails LOUD at first
+ * call rather than at the first sign-in attempt.
  */
-export function getAuthDepsOrNull(): AuthDeps | null {
+export function getAuthDeps(): AuthDeps {
   if (cachedDeps !== undefined) return cachedDeps;
   const env = readAuthEnv(process.env);
-  if (env.provider === "clerk") {
-    cachedDeps = null;
-    return null;
-  }
-
   const repo = pgAuthRepository(getDbPool());
 
   const audit: AuthDeps["audit"] = (event) => {
@@ -208,6 +201,16 @@ function makeSendgridSender(): EmailSender {
       throw err;
     }
   };
+}
+
+/**
+ * Stage 5a back-compat alias. New callers should use `getAuthDeps`.
+ * Kept while in-flight call sites and tests migrate.
+ *
+ * @deprecated Use `getAuthDeps`. Removed in Stage 5d.
+ */
+export function getAuthDepsOrNull(): AuthDeps {
+  return getAuthDeps();
 }
 
 /** Reset for tests. */

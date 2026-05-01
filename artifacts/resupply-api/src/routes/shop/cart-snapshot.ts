@@ -142,12 +142,11 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   const materiallyChanged =
     !existing || itemsSignature(existing.items) !== itemsSignature(items);
 
-  // Refresh the denormalized email on every PUT — but never overwrite
-  // a known email with null on an auth-provider blip. The helper
-  // prefers the in-house path (req.shopCustomerEmail set by
-  // requireSignedIn) and falls back to clerkClient.users.getUser
-  // for legacy Clerk sessions.
-  const profile = await readCustomerProfile(req, clerkUserId);
+  // Refresh the denormalized email from the request (set by
+  // requireSignedIn from auth.users). Never overwrite a known
+  // email with null on a missing-profile case — keep the prior
+  // value so the dispatcher can still find the row.
+  const profile = await readCustomerProfile(req);
   const freshEmail = profile.email?.toLowerCase() ?? null;
   const email = freshEmail ?? existing?.email ?? null;
 
