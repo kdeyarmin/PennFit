@@ -12,7 +12,6 @@
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
-    "@clerk/react": "^6.4.5",
     "@tanstack/react-query": "catalog:",
     "@workspace/resupply-auth-react": "workspace:*"
   },

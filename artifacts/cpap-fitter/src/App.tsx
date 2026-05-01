@@ -1,14 +1,12 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ClerkProvider } from "@clerk/react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { Layout } from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { CartSnapshotSync } from "@/hooks/use-cart-snapshot";
-import { IS_IN_HOUSE_AUTH } from "@/lib/identity";
 
 // Eagerly imported pages — small, public, and likely entry points.
 // Splitting them out of the initial chunk would only add latency to
@@ -96,19 +94,6 @@ const SignInPage = lazy(() =>
 const SignUpPage = lazy(() =>
   import("@/pages/sign-up").then((m) => ({ default: m.SignUpPage })),
 );
-// In-house auth pages (rendered only when VITE_AUTH_PROVIDER ===
-// "in_house"). Lazy so the chunks aren't shipped on a Clerk-mode
-// build.
-const InHouseSignInPage = lazy(() =>
-  import("@/pages/in-house-sign-in").then((m) => ({
-    default: m.InHouseSignInPage,
-  })),
-);
-const InHouseSignUpPage = lazy(() =>
-  import("@/pages/in-house-sign-up").then((m) => ({
-    default: m.InHouseSignUpPage,
-  })),
-);
 const ForgotPasswordPage = lazy(() =>
   import("@/pages/forgot-password").then((m) => ({
     default: m.ForgotPasswordPage,
@@ -190,16 +175,6 @@ function RouteFallback() {
 }
 
 const queryClient = new QueryClient();
-
-const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
-  | string
-  | undefined;
-
-if (!CLERK_PUBLISHABLE_KEY) {
-  console.error(
-    "VITE_CLERK_PUBLISHABLE_KEY is not set — auth features will be unavailable.",
-  );
-}
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -340,29 +315,13 @@ function TopRouter() {
     */
     <Suspense fallback={<RouteFallback />}>
       <Switch>
-        <Route
-          path="/sign-in"
-          component={IS_IN_HOUSE_AUTH ? InHouseSignInPage : SignInPage}
-        />
-        <Route
-          path="/sign-in/:rest*"
-          component={IS_IN_HOUSE_AUTH ? InHouseSignInPage : SignInPage}
-        />
-        <Route
-          path="/sign-up"
-          component={IS_IN_HOUSE_AUTH ? InHouseSignUpPage : SignUpPage}
-        />
-        <Route
-          path="/sign-up/:rest*"
-          component={IS_IN_HOUSE_AUTH ? InHouseSignUpPage : SignUpPage}
-        />
-        {IS_IN_HOUSE_AUTH && (
-          <>
-            <Route path="/forgot-password" component={ForgotPasswordPage} />
-            <Route path="/reset-password" component={ResetPasswordPage} />
-            <Route path="/verify-email" component={VerifyEmailPage} />
-          </>
-        )}
+        <Route path="/sign-in" component={SignInPage} />
+        <Route path="/sign-in/:rest*" component={SignInPage} />
+        <Route path="/sign-up" component={SignUpPage} />
+        <Route path="/sign-up/:rest*" component={SignUpPage} />
+        <Route path="/forgot-password" component={ForgotPasswordPage} />
+        <Route path="/reset-password" component={ResetPasswordPage} />
+        <Route path="/verify-email" component={VerifyEmailPage} />
 
         <Route path="/admin">
           <AdminShell>
@@ -441,63 +400,7 @@ function AppInner() {
 }
 
 function App() {
-  // In-house mode skips ClerkProvider entirely — none of @clerk/react's
-  // hooks fire and we avoid loading the SDK script on first paint.
-  // The identity shim picks the in-house implementation at module
-  // load.
-  if (IS_IN_HOUSE_AUTH) {
-    return <AppInner />;
-  }
-
-  // Clerk mode (default). Build absolute URLs for the auth
-  // provider so its redirects respect our base path (they need to
-  // be browser-absolute paths, not React route paths).
-  return (
-    <ClerkProvider
-      publishableKey={CLERK_PUBLISHABLE_KEY!}
-      signInUrl={`${basePath}/sign-in`}
-      signUpUrl={`${basePath}/sign-up`}
-      // Fallback only — used when no explicit ?redirect_url= is given.
-      // Shop customers are the dominant audience here; admin links
-      // already supply their own redirect, so defaulting unauthenticated
-      // visitors to /account is correct (admins land in /admin via the
-      // admin-link redirect_url, while shoppers don't get dumped into a
-      // 403'd /admin shell after signing in to view their orders).
-      signInFallbackRedirectUrl={`${basePath}/account`}
-      signUpFallbackRedirectUrl={`${basePath}/account`}
-      localization={{
-        signIn: {
-          start: {
-            title: "Sign in to Penn Home Medical Supply",
-            subtitle: "Welcome back! Please sign in to continue",
-          },
-        },
-        signUp: {
-          start: {
-            title: "Create your Penn Home Medical Supply account",
-            subtitle: "Welcome! Please fill in the details to get started.",
-          },
-        },
-      }}
-      appearance={{
-        variables: {
-          colorPrimary: "hsl(213 47% 24%)",
-          colorText: "hsl(220 25% 12%)",
-          colorBackground: "#ffffff",
-          fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-          borderRadius: "0.75rem",
-        },
-        layout: {
-          logoImageUrl: `${basePath}/logo.svg`,
-          logoPlacement: "inside",
-          showOptionalFields: true,
-          socialButtonsPlacement: "top",
-        },
-      }}
-    >
-      <AppInner />
-    </ClerkProvider>
-  );
+  return <AppInner />;
 }
 
 export default App;
