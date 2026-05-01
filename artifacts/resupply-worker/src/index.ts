@@ -224,13 +224,12 @@ async function main(): Promise<void> {
   // starting" (retry) from "process crashed" (fail deploy).
   startHealthServer();
 
-  // Apply DB migrations BEFORE pgcrypto preflight + pg-boss start.
-  // Migration 0001 creates the pgcrypto extension, so running migrate
-  // first makes preflight a clean post-condition check rather than a
-  // race. If migrate fails (bad SQL, permissions, lost lock), throw
-  // up to the top-level main().catch() which logs fatal and exits 1
-  // — the orchestrator then sees healthz never flips to 200 and
-  // marks the deploy failed instead of half-promoting it.
+  // Apply DB migrations BEFORE pg-boss start so a partially-migrated
+  // schema never serves traffic. If migrate fails (bad SQL,
+  // permissions, lost lock), throw up to the top-level main().catch()
+  // which logs fatal and exits 1 — the orchestrator then sees healthz
+  // never flips to 200 and marks the deploy failed instead of
+  // half-promoting it.
   try {
     await applyResupplyMigrationsOnBoot();
   } catch (err) {
@@ -323,11 +322,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // Use the same flush helper as the in-main preflight path so the
-  // fatal line isn't dropped by pino's transport worker buffer.
-  // Without an awaited delay before exit, this terminal log can
-  // vanish, leaving admins with a process that died for no
-  // visible reason.
+  // Use the flush helper so the fatal line isn't dropped by pino's
+  // transport worker buffer. Without an awaited delay before exit,
+  // this terminal log can vanish, leaving admins with a process that
+  // died for no visible reason.
   logger.fatal({ err }, "fatal: resupply-worker failed to start");
   void flushLogsAndExit(1);
 });

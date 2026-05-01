@@ -22,8 +22,9 @@ top-level structure is:
 
 - Node.js **v24**
 - pnpm **v9+**
-- Postgres (with the `pgcrypto` extension installed; the resupply
-  services refuse to start without it)
+- Postgres **v14+** (we run v16). No extensions required — the
+  active resupply schema only relies on `gen_random_uuid()`, which
+  has been built into Postgres core since v13.
 
 ## Getting started
 
@@ -69,7 +70,7 @@ commit real secrets.
 | Variable | `api-server` | `resupply-api` | `resupply-worker` | Notes |
 | --- | :---: | :---: | :---: | --- |
 | `PORT` | ✅ | ✅ | — | HTTP listen port. |
-| `DATABASE_URL` | — | ✅ | ✅ | Postgres connection string. `pgcrypto` must be enabled. |
+| `DATABASE_URL` | — | ✅ | ✅ | Postgres connection string (v14+). No extensions required. |
 | `AUTH_PASSWORD_PEPPER` | ✅ | ✅ | — | 32+ random bytes (base64). HMAC-SHA256 input to argon2id for password hashing. Generate with `openssl rand -base64 48`. **Never rotate after real users exist** — every stored password hash depends on it. |
 | `RESUPPLY_LINK_HMAC_KEY` | — | ✅ | ✅ | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links. |
 

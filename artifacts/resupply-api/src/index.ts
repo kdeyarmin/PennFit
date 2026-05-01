@@ -157,12 +157,6 @@ function serializeErr(err: unknown): { name: string; message?: string } {
   return { name: "unknown" };
 }
 
-// Preflight: refuse to listen if pgcrypto is missing. Without the
-// extension, any subsequent encrypted PHI write would fail at SQL
-// time with a confusing "function pgp_sym_encrypt does not exist"
-// error. Failing fast here turns that into a clear, actionable boot
-// error and keeps a half-broken process out of the load balancer.
-//
 // Why we sleep before exit: pino with a transport (pino-pretty in
 // dev, any worker-thread destination in prod) buffers log writes in
 // a worker thread. A bare `process.exit(1)` immediately after

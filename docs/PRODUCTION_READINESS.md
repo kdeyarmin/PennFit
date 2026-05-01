@@ -6,9 +6,8 @@ record at the resupply-api or rolling a customer-facing release.
 
 The list is deliberately short — runtime guards already cover most
 classes of misconfiguration (the `assertRequiredEnv` boot check,
-`assertPgcryptoEnabled` preflight, `requireAdmin` failure modes).
-What's left is the human-in-the-loop work an operator has to confirm
-once per environment.
+`requireAdmin` failure modes). What's left is the human-in-the-loop
+work an operator has to confirm once per environment.
 
 ---
 
@@ -30,9 +29,10 @@ need to be **correct**, not just present.
 
 ### Database
 
-- [ ] `DATABASE_URL` — Postgres connection string with the `pgcrypto`
-      extension installed. The boot will fail with
-      `PgcryptoNotInstalledError` if the extension is missing.
+- [ ] `DATABASE_URL` — Postgres v14+ connection string. No
+      extensions are required: the active resupply schema only
+      uses `gen_random_uuid()`, which has been built into Postgres
+      core since v13.
 - [ ] All migrations applied in order:
       `pnpm --filter @workspace/resupply-db run migrate`
 - [ ] Migrations 0016–0021 applied if rolling forward from before
@@ -121,8 +121,7 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
     lookup health — see requireAdmin)
   - `event=stripe_refund_failed`
   - `event=sms_status_update_failed`
-  - any `level=fatal` line (unhandled exception, pgcrypto missing,
-    boot failure)
+  - any `level=fatal` line (unhandled exception, boot failure)
 
 ---
 
@@ -152,7 +151,8 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
 ## 7. Smoke tests after deploy
 
 - [ ] `GET /resupply-api/healthz` returns 200.
-- [ ] `GET /resupply-api/readyz` returns 200 (preflight succeeded).
+- [ ] `GET /resupply-api/readyz` returns 200 (DB pool + worker
+      bootstrap succeeded).
 - [ ] An invited admin can accept their email invitation, set a
       password, sign in, and reach `/admin` with their assigned role.
 - [ ] An out-of-allowlist user signing in gets the
