@@ -68,15 +68,18 @@ commit real secrets.
 After Task #37 the previous `api-server` artifact was folded into
 `resupply-api`, so the table below has two service columns instead of
 three. Variables that used to be required by the legacy `api-server`
-(e.g. `AUTH_PASSWORD_PEPPER`, `PENN_ALLOWED_ORIGINS`,
-`PENN_FULFILLMENT_EMAIL`) are now read by the same single
-`resupply-api` process.
+(e.g. `PENN_ALLOWED_ORIGINS`, `PENN_FULFILLMENT_EMAIL`) are now read
+by the same single `resupply-api` process.
+
+The Task #38 follow-up removed `AUTH_PASSWORD_PEPPER`. Passwords are
+hashed with plain argon2id; if you still have an `AUTH_PASSWORD_PEPPER`
+secret in your environment from an earlier deploy, it is silently
+ignored — feel free to delete it.
 
 | Variable | `resupply-api` | `resupply-worker` | Notes |
 | --- | :---: | :---: | --- |
 | `PORT` | ✅ | — | HTTP listen port. |
 | `DATABASE_URL` | ✅ | ✅ | Postgres connection string (v14+). No extensions required. |
-| `AUTH_PASSWORD_PEPPER` | ✅ | — | 32+ random bytes (base64). HMAC-SHA256 input to argon2id for password hashing. Generate with `openssl rand -base64 48`. **Never rotate after real users exist** — every stored password hash depends on it. |
 | `RESUPPLY_LINK_HMAC_KEY` | ✅ | ✅ | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links. |
 
 > Migration 0025 stripped pgcrypto column-level PHI encryption and

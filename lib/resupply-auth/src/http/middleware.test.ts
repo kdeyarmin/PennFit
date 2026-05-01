@@ -15,16 +15,10 @@ import { issueToken } from "../token";
 import { makeRequireRole, makeRequireSession } from "./middleware";
 import type { AuthDeps } from "./types";
 
-const PEPPER_BASE64 = Buffer.from(
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "hex",
-).toString("base64");
-
 function harness() {
   const repo = makeMemoryRepo();
   const env = readAuthEnv({
     AUTH_PROVIDER: "in_house",
-    AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
   });
   const deps: AuthDeps = {
     env,
@@ -66,7 +60,6 @@ describe("requireSession", () => {
       id: "u_e",
       emailLower: "e@example.com",
       password: "p",
-      pepper: Buffer.from(PEPPER_BASE64, "base64"),
     });
     const tok = issueToken();
     await repo.insertSession({
@@ -94,7 +87,6 @@ describe("requireSession", () => {
       emailLower: "l@example.com",
       status: "locked",
       password: "p",
-      pepper: Buffer.from(PEPPER_BASE64, "base64"),
     });
     const tok = issueToken();
     await repo.insertSession({
@@ -121,7 +113,6 @@ describe("requireSession", () => {
       id: "u_a",
       emailLower: "a@example.com",
       password: "p",
-      pepper: Buffer.from(PEPPER_BASE64, "base64"),
     });
     const tok = issueToken();
     const before = new Date(Date.now() + 60_000); // expires soon

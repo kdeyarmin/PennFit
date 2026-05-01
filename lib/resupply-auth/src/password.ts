@@ -1,15 +1,11 @@
-// Password hashing — argon2id with a server-side pepper.
+// Password hashing — argon2id.
 //
-// Why pepper-then-argon2 (and not argon2-with-secret):
-//   * The `argon2` npm package's "secret" parameter is supported by
-//     the underlying library but is not always plumbed through
-//     consistently across versions and platforms. HMAC'ing the
-//     password with the pepper before hashing achieves the same
-//     security property (DB-only leak doesn't yield offline crack
-//     candidates) using a primitive that's stable across every
-//     argon2 release we'll touch.
-//   * Pepper rotation, when it happens, is a one-shot re-hash on
-//     next sign-in — same shape as a parameter drift.
+// The previous implementation HMAC'd the password with a server-side
+// "pepper" before feeding it to argon2id. The pepper was removed in
+// the Task #38 follow-up because the env-config requirement was
+// causing repeated boot failures and the security uplift it provided
+// (extra protection against an offline crack of a leaked DB) was not
+// worth the operational cost for this app's threat model.
 //
 // Why argon2id specifically:
 //   * It's the OWASP-recommended password hash and the only one of
@@ -24,7 +20,7 @@
 // These match OWASP's 2024 cheatsheet baseline for argon2id and are
 // what we encode into stored hashes via the algo tag "argon2id-v1".
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 
 import argon2 from "argon2";
 
@@ -43,10 +39,17 @@ export interface PasswordHashParams {
  * hash itself, so verifyPasswordCredential can pick the right
  * verifier without parsing the hash string.
  *
- * "argon2id-v1" — peppered argon2id, the current and only
- *     algorithm. The tag column is kept for forward compatibility
- *     with future algorithm rotation (e.g. an argon2id-v2 with
- *     stronger parameters).
+ * "argon2id-v1" — argon2id, the current and only algorithm. The tag
+ *     value was kept stable across the Task #38 pepper removal so
+ *     the schema does not change, but be aware: hashes written
+ *     before that removal were produced from
+ *     `HMAC-SHA256(plaintext, pepper)` as the argon2id input, while
+ *     hashes written after are produced from `plaintext` directly.
+ *     `verifyPassword` no longer applies a pepper, so pre-removal
+ *     rows will NOT validate — affected accounts must use the
+ *     password-reset flow once. See ADR 014 "Amendment, Task #38".
+ *     The tag column is kept for forward compatibility with future
+ *     algorithm rotation.
  */
 export type PasswordAlgo = "argon2id-v1";
 
@@ -61,29 +64,14 @@ const DEFAULT_PARAMS = {
 } as const;
 
 /**
- * Pre-hash step: HMAC-SHA256(password, pepper). The result is
- * 32 bytes; we hex-encode it before passing to argon2 so the hash
- * input is always a stable 64-char ASCII string regardless of the
- * user's password contents.
- */
-export function pepperPassword(password: string, pepper: Buffer): string {
-  if (pepper.length < 32) {
-    throw new Error("pepper must be at least 32 bytes");
-  }
-  return createHmac("sha256", pepper).update(password, "utf8").digest("hex");
-}
-
-/**
  * Hash a plaintext password. Returns the encoded argon2id string —
  * algo+params+salt+hash all in one column-friendly value.
  */
 export async function hashPassword(
   password: string,
-  pepper: Buffer,
   params: PasswordHashParams = {},
 ): Promise<string> {
-  const peppered = pepperPassword(password, pepper);
-  return argon2.hash(peppered, {
+  return argon2.hash(password, {
     type: argon2.argon2id,
     ...DEFAULT_PARAMS,
     ...params,
@@ -102,12 +90,10 @@ export async function hashPassword(
  */
 export async function verifyPassword(
   password: string,
-  pepper: Buffer,
   storedHash: string,
 ): Promise<boolean> {
-  const peppered = pepperPassword(password, pepper);
   try {
-    return await argon2.verify(storedHash, peppered);
+    return await argon2.verify(storedHash, password);
   } catch {
     return false;
   }
@@ -145,13 +131,12 @@ export interface VerifyCredentialResult {
  */
 export async function verifyPasswordCredential(
   password: string,
-  pepper: Buffer,
   credential: CredentialLike,
 ): Promise<VerifyCredentialResult> {
   const algo = (credential.algo ?? "argon2id-v1") as PasswordAlgo;
   switch (algo) {
     case "argon2id-v1": {
-      const ok = await verifyPassword(password, pepper, credential.passwordHash);
+      const ok = await verifyPassword(password, credential.passwordHash);
       return { ok, needsRehash: false };
     }
     default: {

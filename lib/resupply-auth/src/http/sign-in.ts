@@ -69,7 +69,6 @@ function hashUserAgent(req: Request): Buffer | null {
 }
 
 export function makeSignInHandler(deps: AuthDeps) {
-  const pepper = deps.env.passwordPepper;
   const now = deps.now ?? (() => new Date());
   const rateConfig = deps.rateLimit ?? DEFAULT_RATE_LIMIT;
   const ttlDays = deps.env.sessionTtlDays;
@@ -121,7 +120,6 @@ export function makeSignInHandler(deps: AuthDeps) {
     if (!user) {
       await verifyPassword(
         parsed.data.password,
-        pepper,
         // Cheap argon2id placeholder — not a real credential. Verify
         // will fail and we treat it as "wrong password".
         "$argon2id$v=19$m=1024,t=1,p=1$YWFhYWFhYWFhYWFhYWFhYQ$xx",
@@ -160,7 +158,6 @@ export function makeSignInHandler(deps: AuthDeps) {
 
     const verify = await verifyPasswordCredential(
       parsed.data.password,
-      pepper,
       cred,
     );
     if (!verify.ok) {
@@ -191,7 +188,6 @@ export function makeSignInHandler(deps: AuthDeps) {
       try {
         const upgraded = await hashPassword(
           parsed.data.password,
-          pepper,
           deps.passwordHashParams,
         );
         await deps.repo.upsertCredential({

@@ -22,7 +22,10 @@ Build and own the authentication stack inside the monorepo:
   email-verification, and rate-limiting primitives.
 - Identity is stored in a Postgres `auth` schema (Drizzle migrations
   in `lib/resupply-db`).
-- Passwords are hashed with argon2id and a server-side pepper.
+- Passwords are hashed with argon2id. (The original cut HMAC'd
+  the plaintext with a server-side pepper before argon2id; the
+  Task #38 follow-up dropped the pepper — see "Amendment, Task #38"
+  below.)
 - Sessions are opaque server-issued tokens stored hashed in Postgres,
   delivered to browsers as `httpOnly; Secure; SameSite=Lax` cookies.
 - Roles (`customer`, `agent`, `admin`) live on `auth.users`. The
@@ -61,3 +64,48 @@ Build and own the authentication stack inside the monorepo:
 ## Status
 
 Accepted. Supersedes ADR 005.
+
+## Amendment, Task #38 — pepper removed (May 2026)
+
+The original cut required an `AUTH_PASSWORD_PEPPER` env var
+(32+ random bytes, base64-encoded). The `password.ts` helper
+HMAC-SHA256'd the user's plaintext password with the pepper and
+fed the result into argon2id. Goal: an attacker who exfiltrates
+the DB rows but not the env still cannot mount an offline brute
+force.
+
+In practice this caused two recurring incidents:
+
+1. The pepper got rotated or set incorrectly during a deploy,
+   instantly invalidating every existing password without anyone
+   realising until users tried to sign in.
+2. Boot would fail loudly on a missing/short pepper, blocking
+   shipping unrelated changes while operators tracked down the
+   secret.
+
+After Task #37 the API consolidated onto a single
+`resupply-api` service, and the env-config noise around the
+pepper became the long pole on shipping the consolidation. We
+chose to drop the pepper rather than continue paying the
+operational cost. Practical impact:
+
+- `password.ts` exports `hashPassword(password)` and
+  `verifyPassword(password, storedHash)` with no pepper
+  argument.
+- `readAuthEnv` no longer reads `AUTH_PASSWORD_PEPPER`. Existing
+  deployed values are silently ignored.
+- All previously stored argon2id hashes (which incorporated the
+  pepper into the input) will no longer validate. Affected
+  users go through the password-reset flow once. The system was
+  pre-launch at the time of removal (staff and bootstrap admin
+  accounts only — no patient-facing logins yet), so the blast
+  radius is intentionally bounded.
+- The `argon2id-v1` algorithm tag in stored hashes is kept for
+  forward compatibility — the schema does not change, only the
+  preimage.
+
+If/when we want a defence-in-depth equivalent again, the
+preferred replacement is a server-side encryption-at-rest layer
+on the `password_credentials.hash` column rather than a
+hash-time pepper, because that decouples the secret's lifecycle
+from the validity of every stored hash.

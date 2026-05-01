@@ -3,11 +3,6 @@
 import { z } from "zod";
 
 export interface AuthEnv {
-  /**
-   * 32+ random bytes (base64). HMAC-SHA256(password, pepper) is
-   * what gets fed to argon2id.
-   */
-  passwordPepper: Buffer;
   /** Sliding session lifetime. Default 14 days. */
   sessionTtlDays: number;
   /** Default email-token lifetime. Reset / verify TTLs override. */
@@ -19,26 +14,15 @@ const positiveInt = z.coerce
   .int("must be an integer")
   .positive("must be > 0");
 
-/** Decode a base64 / base64url pepper. Length must be >= 32 bytes. */
-function parsePepper(raw: string | undefined): Buffer {
-  if (!raw || raw.trim() === "") {
-    throw new Error("AUTH_PASSWORD_PEPPER is required");
-  }
-  // Accept base64 or base64url. Strip whitespace first.
-  const cleaned = raw.replace(/\s+/g, "");
-  const buf = Buffer.from(cleaned, "base64");
-  if (buf.length < 32) {
-    throw new Error(
-      `AUTH_PASSWORD_PEPPER must decode to at least 32 bytes (got ${buf.length})`,
-    );
-  }
-  return buf;
-}
-
 /**
  * Read the auth env. Pure: takes a NodeJS.ProcessEnv-shaped
  * object so tests can pass a synthetic env without polluting
- * `process.env`. Throws on missing pepper or malformed TTL.
+ * `process.env`. Throws on malformed TTL.
+ *
+ * The previous version of this function also required
+ * `AUTH_PASSWORD_PEPPER` to be set to a base64 value of 32+ bytes;
+ * the pepper was removed in the Task #38 follow-up, so the env no
+ * longer carries it. See `password.ts` for the migration note.
  */
 export function readAuthEnv(
   source: Partial<NodeJS.ProcessEnv> = process.env,
@@ -49,6 +33,5 @@ export function readAuthEnv(
   const emailTokenTtlHours = positiveInt.parse(
     source.AUTH_EMAIL_TOKEN_TTL_HOURS ?? "24",
   );
-  const passwordPepper = parsePepper(source.AUTH_PASSWORD_PEPPER);
-  return { passwordPepper, sessionTtlDays, emailTokenTtlHours };
+  return { sessionTtlDays, emailTokenTtlHours };
 }

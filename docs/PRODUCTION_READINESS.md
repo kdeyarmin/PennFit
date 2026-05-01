@@ -23,9 +23,13 @@ need to be **correct**, not just present.
       a verified email. Seed the first admin against a fresh DB
       with `pnpm --filter @workspace/scripts auth:bootstrap-admin
       --email=<addr> --role=admin`.
-- [ ] `AUTH_PASSWORD_PEPPER` set (32+ random bytes, base64-encoded;
-      `openssl rand -base64 48`). Without it password hashing falls
-      back to a dev default and refuses to boot in production.
+- [ ] No `AUTH_PASSWORD_PEPPER` env var is required. The Task #38
+      follow-up removed the server-side pepper; passwords are now
+      hashed with plain argon2id. Any leftover `AUTH_PASSWORD_PEPPER`
+      secret from an earlier deploy is silently ignored and can be
+      deleted. NB: the removal invalidated every previously stored
+      password hash — existing users must go through the password
+      reset flow once.
 
 ### Database
 

@@ -44,16 +44,10 @@ function makeApp(): Express {
   return app;
 }
 
-const PEPPER = Buffer.from(
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "hex",
-);
-
 function buildDeps(): { deps: AuthDeps; repo: MemoryRepo } {
   const repo = makeMemoryRepo();
   const deps: AuthDeps = {
     env: {
-      passwordPepper: PEPPER,
       sessionTtlDays: 14,
       emailTokenTtlHours: 24,
     },

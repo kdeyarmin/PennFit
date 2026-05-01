@@ -50,11 +50,6 @@ function makeApp(): Express {
   return app;
 }
 
-const PEPPER = Buffer.from(
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "hex",
-);
-
 async function buildDepsWithRepo(): Promise<{
   deps: AuthDeps;
   repo: MemoryRepo;
@@ -62,7 +57,6 @@ async function buildDepsWithRepo(): Promise<{
   const repo = makeMemoryRepo();
   const deps: AuthDeps = {
     env: {
-      passwordPepper: PEPPER,
       sessionTtlDays: 14,
       emailTokenTtlHours: 24,
     },
@@ -108,7 +102,7 @@ async function seedSignedInUser(
   // We don't need a password credential for any of these tests —
   // the middleware doesn't read it. Plant one anyway so the user
   // looks complete (would never sign in without one).
-  const hash = await hashPassword("placeholder", PEPPER, {
+  const hash = await hashPassword("placeholder", {
     memoryCost: 1024,
     timeCost: 1,
     parallelism: 1,

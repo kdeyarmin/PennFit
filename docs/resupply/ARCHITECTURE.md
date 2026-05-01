@@ -132,8 +132,9 @@ which runs as part of the `resupply-check` validation step.
 ## Auth model
 
 - Admins authenticate via the in-house auth library
-  (`lib/resupply-auth`) — argon2id-hashed passwords with a
-  process-wide pepper (`AUTH_PASSWORD_PEPPER`), DB-backed sliding
+  (`lib/resupply-auth`) — argon2id-hashed passwords (the
+  process-wide `AUTH_PASSWORD_PEPPER` was removed in the Task #38
+  follow-up; see ADR 014 for the rationale), DB-backed sliding
   sessions, email-token flows for invite / reset / verify. ADR 005
   is marked superseded; see ADR 014 for the current design.
 - The api enforces a `requireAdmin` middleware that checks DB

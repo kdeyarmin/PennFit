@@ -14,13 +14,22 @@ What lands in Stage 1:
   `auth.email_tokens`, `auth.login_attempts`). Tables are created by
   the hand-written migration `0022_in_house_auth.sql` in
   `lib/resupply-db/drizzle/`.
-- Pure helpers: password hashing (argon2id + pepper), opaque session
+- Pure helpers: password hashing (argon2id), opaque session
   token generation + hashing, session expiry math, email-token
   generation.
-- `readAuthEnv()` — reads and validates `AUTH_PASSWORD_PEPPER`,
-  `AUTH_SESSION_TTL_DAYS`, `AUTH_EMAIL_TOKEN_TTL_HOURS`. Accepts
-  and ignores legacy `AUTH_PROVIDER` env values for back-compat
-  with deploys that still set them.
+- `readAuthEnv()` — reads and validates the optional
+  `AUTH_SESSION_TTL_DAYS` and `AUTH_EMAIL_TOKEN_TTL_HOURS`. Accepts
+  and ignores legacy `AUTH_PROVIDER` and `AUTH_PASSWORD_PEPPER`
+  env values for back-compat with deploys that still set them.
+
+> **Task #38 follow-up:** the previous version of `password.ts`
+> HMAC'd the password with a server-side `AUTH_PASSWORD_PEPPER`
+> before feeding it into argon2id. The pepper was removed for
+> operational reasons (deploys silently breaking when the secret
+> was missing/invalid). Argon2id alone is the password-hashing
+> primitive now. Stored hashes from before the removal will no
+> longer validate; affected users have to use the password-reset
+> flow once.
 
 ## Why a separate package
 

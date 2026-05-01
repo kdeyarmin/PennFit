@@ -137,9 +137,7 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// In-house /auth/* routes. The router is unconditionally mounted;
-// a missing AUTH_PASSWORD_PEPPER throws here so the misconfig
-// surfaces at boot rather than at the first sign-in attempt.
+// In-house /auth/* routes. The router is unconditionally mounted.
 const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",

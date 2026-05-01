@@ -11,7 +11,6 @@
 // script is it.
 //
 // Usage:
-//   AUTH_PASSWORD_PEPPER=<...> AUTH_PROVIDER=in_house \
 //   DATABASE_URL=postgres://... \
 //   pnpm --filter @workspace/scripts auth:bootstrap-admin \
 //     --email=alice@example.com --role=admin
@@ -32,7 +31,7 @@
 // Exit codes:
 //   0 — success
 //   1 — invalid args / db error / unexpected
-//   2 — DATABASE_URL / AUTH_PASSWORD_PEPPER not set
+//   2 — DATABASE_URL not set
 
 import pg from "pg";
 
@@ -103,15 +102,12 @@ async function main(): Promise<void> {
     fail("DATABASE_URL is not set.", 2);
   }
 
-  // Force the env reader into "in_house" so it requires the
-  // pepper. The migration script can run before the API server
-  // has been flipped; that's fine — the script still needs the
-  // pepper to mint a password hash later (when the user
-  // consumes the reset token).
-  const env = readAuthEnv({
-    ...process.env,
-    AUTH_PROVIDER: "in_house",
-  });
+  // The previous version of this script forced the env reader
+  // into "in_house" because the env reader required the password
+  // pepper. The pepper was removed in the Task #38 follow-up so
+  // the AUTH_PROVIDER override is no longer load-bearing — the
+  // env reader only validates the optional TTL knobs now.
+  const env = readAuthEnv(process.env);
 
   let emailLower: string;
   try {
