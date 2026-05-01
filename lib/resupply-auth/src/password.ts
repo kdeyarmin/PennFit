@@ -23,30 +23,10 @@
 //     parallelism: 1
 // These match OWASP's 2024 cheatsheet baseline for argon2id and are
 // what we encode into stored hashes via the algo tag "argon2id-v1".
-//
-// Stage 4c — multi-algorithm verify:
-//   The Clerk-to-in-house migration imports bcrypt password hashes
-//   from Clerk's user-export CSV and stores them with
-//   algo='clerk-bcrypt-v1'. verifyPasswordCredential() dispatches on
-//   the algo tag: argon2id for new credentials, bcrypt-compare for
-//   imported ones. On a successful bcrypt verify the result carries
-//   `needsRehash: true` so the sign-in handler can transparently
-//   upgrade the row to argon2id. After every imported user has
-//   signed in once, no clerk-bcrypt-v1 rows remain and the bridge
-//   is dead code (we keep it indefinitely; the cost is one
-//   import + a small switch).
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import argon2 from "argon2";
-// bcryptjs (pure JS) instead of native `bcrypt`. Bcrypt verification
-// here is a one-shot migration path — every imported credential is
-// rehashed to argon2id on first successful sign-in (see
-// verifyPasswordCredential), so a sign-in costs ONE bcrypt compare
-// per user lifetime. The native binding's speed advantage isn't
-// worth the build-tooling dependency. Both libraries accept every
-// $2a/$2b/$2y variant Clerk emits.
-import bcrypt from "bcryptjs";
 
 export interface PasswordHashParams {
   /** KiB of memory. Default 19_456 (≈19 MiB). */
@@ -63,18 +43,15 @@ export interface PasswordHashParams {
  * hash itself, so verifyPasswordCredential can pick the right
  * verifier without parsing the hash string.
  *
- * "argon2id-v1" — peppered argon2id, the current default.
- * "clerk-bcrypt-v1" — bare bcrypt, NO pepper. Imported from a
- *     Clerk user-export CSV during the Stage 4c backfill. On a
- *     successful verify the credential is rehashed to
- *     argon2id-v1 (peppered) so subsequent sign-ins use the
- *     standard path.
+ * "argon2id-v1" — peppered argon2id, the current and only
+ *     algorithm. The tag column is kept for forward compatibility
+ *     with future algorithm rotation (e.g. an argon2id-v2 with
+ *     stronger parameters).
  */
-export type PasswordAlgo = "argon2id-v1" | "clerk-bcrypt-v1";
+export type PasswordAlgo = "argon2id-v1";
 
 export const PASSWORD_ALGOS: readonly PasswordAlgo[] = [
   "argon2id-v1",
-  "clerk-bcrypt-v1",
 ] as const;
 
 const DEFAULT_PARAMS = {
@@ -149,10 +126,10 @@ export interface VerifyCredentialResult {
    * AND should be upgraded by the caller. Always false on a
    * verification failure.
    *
-   * The caller upgrades by computing `hashPassword(plaintext)` and
-   * writing the new hash + algo='argon2id-v1' to the row. The
-   * upgrade is best-effort: if the write fails, the next sign-in
-   * triggers another rehash attempt.
+   * Today there is exactly one algorithm (argon2id-v1) so this
+   * field is always false on a successful verify; it's preserved
+   * in the result shape so a future algorithm rotation can flip it
+   * without a call-site change.
    */
   needsRehash: boolean;
 }
@@ -176,20 +153,6 @@ export async function verifyPasswordCredential(
     case "argon2id-v1": {
       const ok = await verifyPassword(password, pepper, credential.passwordHash);
       return { ok, needsRehash: false };
-    }
-    case "clerk-bcrypt-v1": {
-      // Bcrypt's compare() accepts $2a$ / $2b$ / $2y$ variants and
-      // reads the cost out of the digest itself, so we don't need
-      // to know the cost factor Clerk used. NO pepper here — Clerk
-      // hashes are unpeppered (see Stage 4c plan + WorkOS / Better
-      // Auth / PropelAuth migration guides).
-      let ok: boolean;
-      try {
-        ok = await bcrypt.compare(password, credential.passwordHash);
-      } catch {
-        ok = false;
-      }
-      return { ok, needsRehash: ok };
     }
     default: {
       // Unknown algo — fail closed.

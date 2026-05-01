@@ -1,6 +1,5 @@
-// Tests for the in-house pf_session cookie path on requireAdmin.
-// The existing requireAdmin.test.ts covers the Clerk path; this
-// file covers the new short-circuit added in Stage 3b.
+// Tests for the in-house pf_session cookie path on requireAdmin —
+// the only path the middleware supports.
 
 import express, { type Express } from "express";
 import request from "supertest";
@@ -22,19 +21,6 @@ import {
   makeMemoryRepo,
   type MemoryRepo,
 } from "@workspace/resupply-auth/test-helpers";
-
-// Mock @clerk/express so a missing or default Clerk path doesn't
-// reach out to the network. The in-house tests below all expect
-// the in-house branch to short-circuit BEFORE the Clerk branch
-// runs, so the mocks here are mostly for safety.
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...args: unknown[]) => getAuthMock(...args),
-  clerkClient: {
-    users: { getUser: (...args: unknown[]) => getUserMock(...args) },
-  },
-}));
 
 // Mock the auth-deps module so we can inject an in-memory repo
 // and drive role / status / session state from each test.
@@ -152,8 +138,6 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
   let originalEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
     mockDeps = null;
     originalEnv = {
       RESUPPLY_ADMIN_EMAILS: process.env.RESUPPLY_ADMIN_EMAILS,
@@ -170,7 +154,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     }
   });
 
-  it("admits an active admin via pf_session cookie without touching Clerk", async () => {
+  it("admits an active admin via pf_session cookie", async () => {
     const { deps, repo } = await buildDepsWithRepo();
     mockDeps = deps;
     const { cookie } = await seedSignedInUser(repo, {
@@ -188,8 +172,8 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       adminUserId: "u_admin",
       adminRole: "admin",
     });
-    expect(getAuthMock).not.toHaveBeenCalled();
-    expect(getUserMock).not.toHaveBeenCalled();
+
+
   });
 
   it("admits an agent via pf_session cookie", async () => {
@@ -235,8 +219,8 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
 
     expect(res.status).toBe(401);
-    // Stage 5a — Clerk is no longer consulted at all.
-    expect(getAuthMock).not.toHaveBeenCalled();
+
+
   });
 
   it("returns 401 when the session is expired", async () => {
@@ -304,17 +288,17 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       .set("Cookie", "pf_session=anything");
 
     expect(res.status).toBe(401);
-    expect(getAuthMock).not.toHaveBeenCalled();
+
   });
 
-  it("returns 401 when no cookie is present (no Clerk fall-through)", async () => {
+  it("returns 401 when no cookie is present", async () => {
     const { deps } = await buildDepsWithRepo();
     mockDeps = deps;
 
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(401);
-    // Stage 5a — the middleware no longer consults Clerk at all.
-    expect(getAuthMock).not.toHaveBeenCalled();
+
+
   });
 });

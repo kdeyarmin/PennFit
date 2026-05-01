@@ -11,9 +11,10 @@ import {
  * we write a row here. Required by HIPAA "access tracking" expectations.
  *
  * What we log:
- *   - admin_email + admin_clerk_id (auth user id, so we can prove WHO viewed it)
- *     (the column name is kept as `admin_clerk_id` for back-compat — the
- *     JS field is exposed as `adminUserId`)
+ *   - admin_email + admin user id (so we can prove WHO viewed it).
+ *     The underlying column is named `admin_clerk_id` for back-compat
+ *     with the already-applied schema; the JS field is exposed as
+ *     `adminUserId`.
  *   - action (e.g. "view_order_detail", "search_orders")
  *   - target_order_id (when applicable)
  *   - ip (request IP at view time)

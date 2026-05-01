@@ -341,7 +341,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     expect(res.status).toBe(200);
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0].authorDisplayName).toBe("Bob R.");
-    // Public reads never expose the author's email or clerk id
+    // Public reads never expose the author's email or user id
     expect(res.body.items[0].authorEmail).toBeUndefined();
     expect(res.body.items[0].customerId).toBeUndefined();
     expect(res.body.items[0].verifiedPurchaser).toBe(true);

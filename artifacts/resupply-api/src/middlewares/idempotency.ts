@@ -7,8 +7,9 @@
 //   * Header present + no stored row → run the handler, then
 //     persist the response (status + body) under
 //     (admin_clerk_id, endpoint, key) on `res.on("finish")`. The
-//     column name retains the historical `clerk` prefix; today
-//     it stores the in-house auth.users.id of the calling admin.
+//     column name is preserved verbatim from the original schema
+//     for back-compat; today it stores the in-house
+//     auth.users.id of the calling admin.
 //   * Header present + stored row + matching `request_hash` → replay
 //     the stored response without invoking the handler.
 //   * Header present + stored row + DIFFERENT `request_hash` → 422

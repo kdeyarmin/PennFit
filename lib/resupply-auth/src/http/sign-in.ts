@@ -179,13 +179,14 @@ export function makeSignInHandler(deps: AuthDeps) {
       return;
     }
 
-    // Stage 4c — transparent algorithm upgrade. The verify step
-    // returns needsRehash:true when the credential matched via a
-    // legacy algorithm (today: clerk-bcrypt-v1 from the Stage 4c
-    // backfill). Rehash with our standard argon2id+pepper so the
-    // next sign-in takes the fast path. Best-effort: if the write
-    // fails we still admit the user, and the next sign-in retries
-    // the upgrade.
+    // Transparent algorithm upgrade. The verify step returns
+    // needsRehash:true when the credential matched via a non-
+    // current algorithm — today there's only argon2id-v1 so this
+    // branch is reserved for future algorithm rotation (e.g. an
+    // argon2id-v2 with stronger parameters). Rehash with the
+    // current default so the next sign-in takes the fast path.
+    // Best-effort: if the write fails we still admit the user, and
+    // the next sign-in retries the upgrade.
     if (verify.needsRehash) {
       try {
         const upgraded = await hashPassword(
@@ -202,7 +203,7 @@ export function makeSignInHandler(deps: AuthDeps) {
           action: "auth.password_algo_upgraded",
           adminEmail: emailLower,
           adminUserId: user.id,
-          metadata: { from: cred.algo, to: "argon2id-v1" },
+          metadata: { from: cred.algo ?? "unknown", to: "argon2id-v1" },
         });
       } catch {
         // Swallow — sign-in succeeded; an upgrade failure is not

@@ -78,13 +78,13 @@ router.get("/conversations", requireAdmin, async (req, res) => {
   if (priority) filters.push(eq(conversations.priority, priority));
   if (view === "mine") {
     if (req.adminUserId) {
-      filters.push(eq(conversations.assignedAdminClerkId, req.adminUserId));
+      filters.push(eq(conversations.assignedAdminUserId, req.adminUserId));
       filters.push(
         sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
       );
     }
   } else if (view === "unassigned") {
-    filters.push(isNull(conversations.assignedAdminClerkId));
+    filters.push(isNull(conversations.assignedAdminUserId));
     filters.push(
       sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
     );
@@ -100,7 +100,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
       sql`${conversations.status} IN ('open','awaiting_admin')`,
     );
   } else if (assignedTo) {
-    filters.push(eq(conversations.assignedAdminClerkId, assignedTo));
+    filters.push(eq(conversations.assignedAdminUserId, assignedTo));
   }
   const whereClause = filters.length ? and(...filters) : undefined;
 
@@ -122,7 +122,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
       status: conversations.status,
       lastMessageAt: conversations.lastMessageAt,
       createdAt: conversations.createdAt,
-      assignedAdminClerkId: conversations.assignedAdminClerkId,
+      assignedAdminUserId: conversations.assignedAdminUserId,
       assignedAt: conversations.assignedAt,
       priority: conversations.priority,
       slaDueAt: conversations.slaDueAt,
@@ -162,7 +162,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
       status: r.status,
       lastMessageAt: toIso(r.lastMessageAt),
       createdAt: toIsoRequired(r.createdAt),
-      assignedAdminClerkId: r.assignedAdminClerkId ?? null,
+      assignedAdminUserId: r.assignedAdminUserId ?? null,
       assignedAt: toIso(r.assignedAt),
       priority: r.priority ?? "normal",
       slaDueAt: toIso(r.slaDueAt),

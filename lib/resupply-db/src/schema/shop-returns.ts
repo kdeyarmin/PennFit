@@ -59,8 +59,14 @@ export const shopReturns = resupplySchema.table(
     returnTrackingNumber: text("return_tracking_number"),
     /** Free-form admin notes; concatenated, latest first. ≤8KB. */
     adminNote: text("admin_note"),
-    /** Last admin who touched the row, for accountability in the queue. */
-    adminClerkId: text("admin_clerk_id"),
+    /**
+     * Last admin who touched the row, for accountability in the
+     * queue. The underlying column name is left as `admin_clerk_id`
+     * for back-compat with the already-applied schema; the JS-side
+     * property name is the authoritative identifier. Per ADR 003 we
+     * never `db:push` rename a column in production.
+     */
+    adminUserId: text("admin_clerk_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

@@ -23,7 +23,7 @@ The following substitutions are made for the Phase 0 build:
 | Prisma | Drizzle (matches existing `lib/db`) | Stay with Drizzle long-term | 003 |
 | Temporal | pg-boss (Postgres-backed jobs + state-machine workflows in DB) | Move to Temporal at production hosting if multi-day workflow visibility becomes a real need | 002 |
 | AWS KMS | ~~pgcrypto + `RESUPPLY_DATA_KEY`~~ — **superseded.** Migration `0025_strip_phi_encryption` removed column-level PHI encryption entirely; PHI is now plaintext at the column level, protected by Postgres authn + storage-layer encryption-at-rest. | Add managed KMS / column encryption back if a vendor BAA requires it | 007 (superseded) |
-| AWS Cognito | ~~Clerk~~ — **superseded.** Auth migrated to in-house argon2id + DB-backed sessions (`lib/resupply-auth`). | — | 005 (superseded), `docs/resupply/AUTH-MIGRATION-PLAN.md` |
+| AWS Cognito | In-house argon2id + DB-backed sessions (`lib/resupply-auth`). | — | 005 (superseded), 014 |
 | Datadog / Honeycomb / Sentry | Pino structured logs (stdout) for v1; Sentry (BAA) added later | Add Sentry before Phase 9 production hardening | (no dedicated ADR; see ARCHITECTURE.md "Observability") |
 | Twilio (SMS / Voice / SendGrid) | Twilio (unchanged — Twilio runs fine from Replit, BAA required) | — | 004 |
 | Anthropic Claude | Anthropic Claude (unchanged — BAA required before any PHI in prompts) | — | 006 |

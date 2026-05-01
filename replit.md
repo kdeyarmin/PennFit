@@ -22,7 +22,7 @@ Facial image processing occurs entirely on-device using MediaPipe Face Mesh; onl
 
 ### Technical Stack
 
-The project utilizes a monorepo with `pnpm workspaces`, `Node.js v24`, `TypeScript v5.9`. The API is built with `Express 5` and `Zod` for validation. The frontend uses `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` manages database interactions. `Clerk` handles admin and customer authentication.
+The project utilizes a monorepo with `pnpm workspaces`, `Node.js v24`, `TypeScript v5.9`. The API is built with `Express 5` and `Zod` for validation. The frontend uses `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` manages database interactions. Authentication is handled in-house via `lib/resupply-auth` (argon2id passwords + DB-backed `pf_session` cookies); see ADR 014.
 
 ### Application Flow
 
@@ -34,11 +34,11 @@ The application features a professional aesthetic with Penn's navy and gold bran
 
 ### CPAP Resupply Automation System
 
-A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema and an in-house cookie-session admin auth (Clerk has been removed). Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
+A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It uses a `resupply` schema and an in-house cookie-session admin auth. Outreach integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard offers comprehensive tools for patient, conversation, episode, and audit log management.
 
 ### Cash-Pay Shop & Customer Accounts
 
-A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Hosted Checkout`. `Stripe` is the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend handles `Stripe` integration for checkout sessions and webhooks. Signed-in customers can save shipping information, view saved card crumbs, and reorder past purchases. `Clerk` provides customer identity, linking to `Stripe` customer IDs. The shop supports "Subscribe & Save" for recurring purchases.
+A customer-facing `/shop` allows direct purchase of CPAP supplies via `Stripe Hosted Checkout`. `Stripe` is the source of truth for products and prices. The frontend manages product display and a localStorage-backed cart. The backend handles `Stripe` integration for checkout sessions and webhooks. Signed-in customers can save shipping information, view saved card crumbs, and reorder past purchases. The in-house auth (`lib/resupply-auth`) provides customer identity, linking to `Stripe` customer IDs. The shop supports "Subscribe & Save" for recurring purchases.
 
 ### Cart Abandonment Nudge
 
@@ -54,15 +54,13 @@ The admin console provides a UX-overhaul layer for non-technical operators, incl
 
 ### Admin Team Management (Self-Service)
 
-Admins can invite, promote, demote, and remove teammates from inside the cpap-fitter admin console at `/admin/users` ("Team" nav item, admin-only). Implemented via Clerk invitations + a `pennRole` claim on Clerk `publicMetadata`, with no schema changes (audit rows go to the existing `admin_audit_log` table). The `requireAdmin` middleware resolves access in priority order: `PENN_ADMIN_EMAILS` env → `PENN_AGENT_EMAILS` env → `publicMetadata.pennRole` → 403. The env allowlists are intentionally retained as a permanent recovery / bootstrap path and are surfaced read-only on the Team page. A self-revoke / self-demote lockout guard prevents the active admin from removing themselves. Mutating routes (invite / change role / revoke / cancel invite) require `requireAdminOnly`; the GET roster is available to agents read-only.
+Admins can invite, promote, demote, and remove teammates from inside the cpap-fitter admin console at `/admin/users` ("Team" nav item, admin-only). Roster lives in the `admin_users` table linked to `auth.users`; audit rows go to the existing `admin_audit_log` table. The `requireAdmin` middleware resolves access from the in-house session cookie (`pf_session`) plus the `RESUPPLY_ADMIN_EMAILS` / `PENN_ADMIN_EMAILS` env allowlists, which are retained as a permanent recovery / bootstrap path and are surfaced read-only on the Team page. A self-revoke / self-demote lockout guard prevents the active admin from removing themselves. Mutating routes (invite / change role / revoke / cancel invite) require `requireAdminOnly`; the GET roster is available to agents read-only.
 
-### Auth-Provider Branding & Identifier Convention
+### Identifier Convention
 
-User-facing strings, comments, and internal DTO field names no longer say "Clerk" — the codebase refers to it as "the auth provider" or just "auth". The user-visible terminology is "team / teammates / members" instead of "Clerk users". Identifier-rename cascade applied across the resupply stack and the cpap-fitter admin surface: `clerkId → userId`, `adminClerkId → adminUserId`, `authorClerkId → authorUserId`, `clerkUsers → members`, `AdminTeamClerkUser → AdminTeamMember`, `ClerkUserRow → TeamMemberRow`, `req.adminClerkId → req.adminUserId`. The OpenAPI spec (`lib/resupply-api-spec/openapi.yaml`) and its generated client (`lib/resupply-api-client/src/generated/`) use the new names; regenerate with `pnpm --filter @workspace/resupply-api-spec run codegen` after spec edits.
+The user-visible terminology is "team / teammates / members". Internal identifiers were normalized to provider-neutral names: `userId`, `adminUserId`, `authorUserId`, `members`, `AdminTeamMember`, `TeamMemberRow`, `req.adminUserId`. The OpenAPI spec (`lib/resupply-api-spec/openapi.yaml`) and its generated client (`lib/resupply-api-client/src/generated/`) use these names; regenerate with `pnpm --filter @workspace/resupply-api-spec run codegen` after spec edits.
 
-The following are intentionally left as-is because they are SDK-bound (renaming them would change behavior, not branding): npm package names `@clerk/*`, exports `ClerkProvider` / `useClerk` / `clerkClient` / `clerkMiddleware`, the `Clerk-Proxy-Url` and `Clerk-Secret-Key` HTTP headers (Clerk SDK protocol), the `*.clerk.com` CSP whitelist, the `@layer clerk` CSS layer, and any `console.log("Clerk: …")` lines emitted by the SDK at runtime. These cannot be removed without replacing the auth provider entirely.
-
-**Drizzle JS-field rename convention**: when renaming an internal identifier whose underlying Postgres column is named `*_clerk_id` (e.g. `admin_clerk_id`, `operator_clerk_id`, `author_clerk_id`), only the JS property is renamed; the column-name string passed to `text("…")` stays unchanged. Drizzle binds via the column-name string, so this is wire-compatible. Renaming the column would require a hand-authored migration per ADR 003 (we never `db:push` schema changes against production data). The convention is documented in JSDoc on `lib/db/src/schema/admin-audit-log.ts`, `lib/resupply-db/src/schema/audit-log.ts`, and `lib/resupply-db/src/schema/patient-notes.ts`.
+**Drizzle JS-field rename convention**: when renaming an internal identifier whose underlying Postgres column is named `*_clerk_id` (e.g. `admin_clerk_id`, `operator_clerk_id`, `author_clerk_id`), only the JS property is renamed; the column-name string passed to `text("…")` stays unchanged. Drizzle binds via the column-name string, so this is wire-compatible. Renaming the column would require a hand-authored migration per ADR 003 (we never `db:push` schema changes against production data). The convention is documented in JSDoc on `lib/db/src/schema/admin-audit-log.ts`, `lib/resupply-db/src/schema/audit-log.ts`, and `lib/resupply-db/src/schema/patient-notes.ts`. The legacy column names are an artifact of the prior schema and will be renamed in a future hand-authored migration if needed.
 
 ### Mobile Fit-Flow Stepper
 
@@ -122,7 +120,6 @@ Architecture notes:
 *   **MediaPipe Face Mesh:** Google's on-device facial landmark detection.
 *   **AWS:** Provides production deployment infrastructure.
 *   **PostgreSQL:** Primary database.
-*   **Clerk:** Authentication service for admins and customers.
 *   **Twilio:** For outbound voice calls and two-way SMS messaging in resupply.
 *   **OpenAI:** Used by Resupply Automation for Realtime API (voice) and chat completions (SMS intent).
 *   **Stripe:** For payment processing, managing the cash-pay shop, and product/price management.

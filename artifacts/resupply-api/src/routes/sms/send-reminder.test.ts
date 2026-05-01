@@ -1,7 +1,7 @@
 // Route tests for POST /sms/send-reminder.
 //
 // Same mocking strategy as voice/place-call.test.ts:
-//   - Mock @clerk/express so requireAdmin is exercisable.
+//   - Mock the auth-deps module so requireAdmin is exercisable.
 //   - Mock drizzle so we stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioSmsClient so we
 //     never hit Twilio.

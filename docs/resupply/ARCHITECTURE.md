@@ -8,9 +8,9 @@ must obey. The "why" for each major choice lives in `docs/resupply/adr/`.
 
 ```
 artifacts/
-  resupply-api/         Express + Zod HTTP API (Clerk-protected)
+  resupply-api/         Express + Zod HTTP API (in-house cookie auth)
   resupply-worker/      pg-boss background worker (durable jobs)
-  resupply-dashboard/   React + Vite admin console (Clerk auth)
+  resupply-dashboard/   React + Vite admin console (in-house cookie auth)
 lib/
   resupply-contracts/   Zod schemas + DTOs (shared over the wire)
   resupply-domain/      Pure business logic — no I/O
@@ -41,9 +41,9 @@ move bytes today.
 ```
                      ┌────────────────────────────┐
                      │  resupply-dashboard (web)  │
-                     │  React + Vite + Clerk      │
+                     │  React + Vite              │
                      └──────────────┬─────────────┘
-                                    │ HTTPS (Clerk JWT)
+                                    │ HTTPS (pf_session cookie)
                                     ▼
                      ┌────────────────────────────┐
                      │  resupply-api (Express)    │
@@ -120,9 +120,8 @@ which runs as part of the `resupply-check` validation step.
 - Admins authenticate via the in-house auth library
   (`lib/resupply-auth`) — argon2id-hashed passwords with a
   process-wide pepper (`AUTH_PASSWORD_PEPPER`), DB-backed sliding
-  sessions, email-token flows for invite / reset / verify. Clerk is
-  fully decommissioned (see `docs/resupply/AUTH-MIGRATION-PLAN.md`);
-  ADR 005 is marked superseded.
+  sessions, email-token flows for invite / reset / verify. ADR 005
+  is marked superseded; see ADR 014 for the current design.
 - The api enforces a `requireAdmin` middleware that checks DB
   membership in `auth.users` plus the `RESUPPLY_ADMIN_EMAILS`
   allowlist (comma-separated env var).

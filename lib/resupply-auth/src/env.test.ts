@@ -13,11 +13,11 @@ describe("readAuthEnv", () => {
   });
 
   it("ignores any AUTH_PROVIDER value the caller sets (legacy compat)", () => {
-    // Legacy deploys may still have AUTH_PROVIDER=clerk in their
-    // env. We accept and ignore — the in-house path is the only
-    // path now.
+    // Legacy deploys may still have a stale AUTH_PROVIDER value in
+    // their env. We accept and ignore — the in-house path is the
+    // only path now.
     const env = readAuthEnv({
-      AUTH_PROVIDER: "clerk",
+      AUTH_PROVIDER: "external",
       AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
     });
     expect(env.passwordPepper.length).toBeGreaterThanOrEqual(32);

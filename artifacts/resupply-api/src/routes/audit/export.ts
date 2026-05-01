@@ -53,7 +53,7 @@ interface AuditRow {
   id: string;
   occurred_at: Date | string | null;
   operator_email: string | null;
-  operator_clerk_id: string | null;
+  operator_user_id: string | null;
   action: string;
   target_table: string | null;
   target_id: string | null;
@@ -139,7 +139,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
   const limitIdx = params.length;
 
   const sql = (
-    `SELECT id, occurred_at, operator_email, operator_clerk_id, ` +
+    `SELECT id, occurred_at, operator_email, operator_clerk_id AS operator_user_id, ` +
     `action, target_table, target_id, metadata, ip, user_agent ` +
     `FROM resupply.audit_log ${whereSql} ` +
     `ORDER BY occurred_at DESC ` +
@@ -178,7 +178,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
           ? r.occurred_at.toISOString()
           : r.occurred_at ?? "",
         r.operator_email,
-        r.operator_clerk_id,
+        r.operator_user_id,
         r.action,
         r.target_table,
         r.target_id,

@@ -1,6 +1,6 @@
 // Tests for the three failure-mode branches the dashboard funnels
 // into NotAuthorizedPage. Architect review flagged the lack of a
-// regression test for the 502 (Clerk upstream) → "transient" copy
+// regression test for the 502 (auth upstream) → "transient" copy
 // path: a future refactor that breaks the reason mapping in the
 // caller could silently downgrade the messaging from "try again"
 // back to "you don't have access" — exactly the auth-flake
@@ -19,8 +19,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotAuthorizedPage } from "./not-authorized";
 
 // Mock the identity shim. The page reads `email` and `signOut`
-// off useDashboardIdentity(); the underlying provider (Clerk vs
-// in-house) is invisible at this layer.
+// off useDashboardIdentity(); the underlying provider is invisible
+// at this layer.
 const signOut = vi.fn().mockResolvedValue(undefined);
 vi.mock("../lib/identity", () => ({
   useDashboardIdentity: () => ({

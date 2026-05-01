@@ -39,7 +39,7 @@ export interface AdminReturn {
   returnCarrier: string | null;
   returnTrackingNumber: string | null;
   adminNote: string | null;
-  adminClerkId: string | null;
+  adminUserId: string | null;
   createdAt: string;
   updatedAt: string;
   approvedAt: string | null;

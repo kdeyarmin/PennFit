@@ -21,7 +21,7 @@
 //     it expects each query to see, in order.
 //   * Stripe is mocked at the lib/stripe/config layer; only refunds
 //     are exercised here.
-//   * the auth provider is mocked at the @clerk/express layer; the admin gate
+//   * the auth provider is mocked via auth-deps; the admin gate
 //     resolves a verified email matching RESUPPLY_ADMIN_EMAILS.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
