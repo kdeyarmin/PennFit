@@ -312,8 +312,8 @@ export const revokeAdminInvitation = (params: { invitationId: string }) =>
 // `/resupply-api/admin/shop/customers/*` rather than `/api/admin/...`.
 // resupply-api owns the shop tables (shop_customers, shop_orders,
 // shop_subscriptions, shop_reviews, shop_abandoned_carts) and runs its
-// own `requireAdmin` middleware (DB role on `auth.users.role`, plus
-// the `RESUPPLY_ADMIN_EMAILS` env-var bootstrap).
+// own `requireAdmin` middleware (DB role on `auth.users.role`; the
+// initial admin is bootstrapped separately via `auth:bootstrap-admin`).
 //
 // We deliberately don't add these to the resupply-api OpenAPI spec —
 // no admin shop endpoint is in that spec today (see shop-orders,
