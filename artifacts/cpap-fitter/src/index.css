@@ -110,65 +110,65 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 210 25% 99%;
-  --foreground: 213 45% 15%;
+  --background: 220 30% 97%;
+  --foreground: 220 45% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
+  --card-foreground: 220 45% 11%;
   --card-border: 214.3 31.8% 91.4%;
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 84% 4.9%;
   --popover-border: 214.3 31.8% 91.4%;
-  --primary: 213 51% 25%;
+  --primary: 217 91% 56%;
   --primary-foreground: 210 40% 98%;
-  --secondary: 210 30% 94%;
-  --secondary-foreground: 213 45% 15%;
-  --muted: 210 30% 94%;
-  --muted-foreground: 215 16% 42%;
-  --accent: 41 86% 59%;
-  --accent-foreground: 213 51% 18%;
+  --secondary: 215 35% 92%;
+  --secondary-foreground: 220 40% 16%;
+  --muted: 215 35% 94%;
+  --muted-foreground: 220 14% 40%;
+  --accent: 217 91% 62%;
+  --accent-foreground: 0 0% 100%;
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
-  --border: 214 28% 88%;
-  --input: 214 28% 88%;
-  --ring: 213 51% 25%;
+  --border: 216 24% 89%;
+  --input: 216 24% 89%;
+  --ring: 217 91% 56%;
 
-  --chart-1: 213 51% 25%;
-  --chart-2: 41 86% 59%;
-  --chart-3: 197 37% 35%;
-  --chart-4: 43 74% 66%;
-  --chart-5: 27 87% 67%;
+  --chart-1: 217 91% 56%;
+  --chart-2: 200 90% 48%;
+  --chart-3: 230 70% 50%;
+  --chart-4: 195 78% 42%;
+  --chart-5: 210 86% 62%;
 
-  --sidebar: 210 30% 98%;
-  --sidebar-foreground: 213 45% 15%;
-  --sidebar-border: 214 28% 88%;
-  --sidebar-primary: 213 51% 25%;
+  --sidebar: 220 35% 98%;
+  --sidebar-foreground: 220 45% 12%;
+  --sidebar-border: 216 24% 89%;
+  --sidebar-primary: 217 91% 56%;
   --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 41 86% 59%;
-  --sidebar-accent-foreground: 213 51% 18%;
-  --sidebar-ring: 213 51% 25%;
+  --sidebar-accent: 214 95% 93%;
+  --sidebar-accent-foreground: 220 45% 18%;
+  --sidebar-ring: 217 91% 56%;
 
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: Menlo, monospace;
   --radius: 0.75rem;
   
-  --shadow-2xs: 0 1px 1px hsl(213 40% 20% / 0.04);
-  --shadow-xs: 0 1px 2px hsl(213 40% 20% / 0.05);
-  --shadow-sm: 0 1px 2px hsl(213 40% 20% / 0.06), 0 1px 3px hsl(213 40% 20% / 0.04);
-  --shadow: 0 2px 4px hsl(213 40% 20% / 0.06), 0 4px 8px hsl(213 40% 20% / 0.04);
-  --shadow-md: 0 4px 8px hsl(213 40% 20% / 0.06), 0 8px 16px hsl(213 40% 20% / 0.05);
-  --shadow-lg: 0 8px 16px hsl(213 40% 20% / 0.07), 0 16px 32px hsl(213 40% 20% / 0.06);
-  --shadow-xl: 0 16px 32px hsl(213 40% 20% / 0.09), 0 24px 48px hsl(213 40% 20% / 0.07);
-  --shadow-2xl: 0 24px 48px hsl(213 40% 20% / 0.12), 0 40px 80px hsl(213 40% 20% / 0.10);
+  --shadow-2xs: 0 1px 1px hsl(220 45% 12% / 0.03);
+  --shadow-xs: 0 1px 2px hsl(220 45% 12% / 0.04);
+  --shadow-sm: 0 1px 2px hsl(220 45% 12% / 0.05), 0 1px 3px hsl(220 45% 12% / 0.03);
+  --shadow: 0 2px 4px hsl(220 45% 12% / 0.05), 0 4px 8px hsl(220 45% 12% / 0.04);
+  --shadow-md: 0 4px 8px hsl(220 45% 12% / 0.06), 0 8px 16px hsl(220 45% 12% / 0.04);
+  --shadow-lg: 0 8px 16px hsl(220 45% 12% / 0.07), 0 16px 32px hsl(220 45% 12% / 0.05);
+  --shadow-xl: 0 16px 32px hsl(220 45% 12% / 0.08), 0 24px 48px hsl(220 45% 12% / 0.06);
+  --shadow-2xl: 0 24px 48px hsl(220 45% 12% / 0.10), 0 40px 80px hsl(220 45% 12% / 0.08);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
   /* High-end accents */
-  --penn-navy: 213 51% 25%;
-  --penn-navy-deep: 213 60% 18%;
-  --penn-gold: 41 86% 59%;
-  --penn-gold-soft: 41 90% 78%;
-  --penn-mist: 200 50% 96%;
+  --penn-navy: 217 91% 56%;
+  --penn-navy-deep: 221 83% 40%;
+  --penn-gold: 212 100% 68%;
+  --penn-gold-soft: 212 100% 86%;
+  --penn-mist: 210 60% 95%;
   --glass-bg: 255 255 255;
   --glass-stroke: 213 40% 88%;
 
@@ -221,9 +221,9 @@
        slower than before — feels more sophisticated than the 60s
        cadence), so the surface remains alive without distracting. */
     background-image:
-      radial-gradient(ellipse 55% 45% at 95% 5%, hsl(var(--penn-gold) / 0.10), transparent 70%),
-      radial-gradient(ellipse 55% 45% at 5% 95%, hsl(var(--penn-navy) / 0.08), transparent 70%),
-      radial-gradient(ellipse 100% 40% at 50% 110%, hsl(var(--penn-mist) / 0.55), transparent 70%);
+      radial-gradient(ellipse 55% 45% at 95% 5%, hsl(var(--penn-gold) / 0.09), transparent 72%),
+      radial-gradient(ellipse 55% 45% at 5% 95%, hsl(var(--penn-navy) / 0.09), transparent 72%),
+      radial-gradient(ellipse 100% 40% at 50% 110%, hsl(var(--penn-mist) / 0.52), transparent 72%);
     background-attachment: fixed;
     background-size: 110% 110%;
     animation: body-bloom-drift 90s ease-in-out infinite alternate;
