@@ -57,9 +57,11 @@ import {
 /**
  * Pull our shop-customer id out of Stripe metadata, accepting
  * either the current `customer_id` key or the legacy
- * `clerk_user_id` key that pre-cutover Stripe Sessions /
- * Subscriptions / Customers may still carry. Returns null if
- * neither is present.
+ * `clerk_user_id` metadata key that pre-cutover Stripe Sessions /
+ * Subscriptions / Customers may still carry. The legacy key name
+ * is preserved to recover historical Stripe objects created before
+ * the in-house auth cutover; it does not imply Clerk is in use
+ * today. Returns null if neither is present.
  */
 function readCustomerIdFromMetadata(
   meta: Stripe.Metadata | null | undefined,

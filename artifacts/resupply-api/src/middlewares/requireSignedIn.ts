@@ -18,16 +18,15 @@
 // case) doesn't apply — there's no allowlist to spoof past for the
 // patient surface.
 //
-// Stage 5a — Clerk fall-through retired:
-//   The middleware now resolves the session strictly via the
-//   in-house pf_session cookie. A request that doesn't carry one
-//   (or carries an expired / revoked / locked cookie) gets a 401.
-//   The `customerIdResolver` in api-server's auth-deps maps the
+// Session resolution:
+//   The middleware resolves the session via the in-house pf_session
+//   cookie. A request that doesn't carry one (or carries an
+//   expired / revoked / locked cookie) gets a 401. The
+//   `customerIdResolver` in api-server's auth-deps maps the
 //   resolved auth.users.id to `shop_customers.customer_id` so
 //   every downstream join keeps working. The resolver also
 //   returns the user's email + display name, which the middleware
-//   attaches to the request for the 5 shop endpoints that
-//   previously called `clerkClient.users.getUser`.
+//   attaches to the request for the shop endpoints that need them.
 
 import type { NextFunction, Request, Response } from "express";
 

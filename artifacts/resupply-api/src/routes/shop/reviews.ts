@@ -154,7 +154,7 @@ async function resolveAuthorIdentity(
   // on whitespace; the first token is the given name, and the
   // first letter of the LAST token is treated as the last initial.
   // Falls through to "PennPaps customer" when displayName is null
-  // or unparseable — same as the legacy Clerk path.
+  // or unparseable.
   const tokens = (profile.displayName ?? "").trim().split(/\s+/).filter(Boolean);
   let displayName: string;
   if (tokens.length >= 2) {

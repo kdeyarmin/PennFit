@@ -3,7 +3,8 @@
 // Two reports today (orders, returns), date-bounded. Each is a
 // direct browser-side <a download> on the API endpoint so the
 // browser handles the file save without a JS fetch loop. Auth
-// rides on the existing Clerk session cookie.
+// rides on the `pf_session` cookie sent automatically with the
+// download request.
 
 import { useState } from "react";
 

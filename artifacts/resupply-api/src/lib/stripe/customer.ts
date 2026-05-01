@@ -16,7 +16,8 @@
 //     the mapping later (e.g. for ops queries against the Stripe
 //     dashboard) without our DB. Pre-cutover Stripe Customers may
 //     still carry a legacy `clerk_user_id` metadata key with the
-//     same value — readers are expected to fall back to it.
+//     same value — readers fall back to it to recover historical
+//     records created before the in-house auth cutover.
 //
 // Why we set Customer.email + Customer.metadata.customer_id:
 //   * Email gives Stripe Hosted Checkout a prefilled email field —

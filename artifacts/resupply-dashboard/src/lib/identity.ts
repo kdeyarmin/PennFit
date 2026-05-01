@@ -2,8 +2,8 @@
 // /resupply-api/auth/me via the React Query hook from
 // @workspace/resupply-auth-react.
 //
-// Components that previously called `useUser()` / `useClerk()`
-// import `useDashboardIdentity` from here instead.
+// Use `useDashboardIdentity()` to read the current admin/agent's
+// session state.
 
 import { authHooks, authClient } from "./auth-hooks";
 
