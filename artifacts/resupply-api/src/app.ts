@@ -1,7 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
 import { makeAuthRouter } from "@workspace/resupply-auth";
 import router from "./routes";
 import { getAuthDeps } from "./lib/auth-deps";
@@ -76,16 +75,13 @@ const allowedOrigins = (() => {
   return dev;
 })();
 
-// `credentials` is intentionally OFF: the dashboard authenticates with
-// `Authorization: Bearer <clerk_token>`, never cookies. Setting
-// `credentials: true` would oblige us to keep an exact-match Origin
-// allowlist forever (browsers refuse `Access-Control-Allow-Origin: *`
-// when credentials are enabled) AND would unlock cookie-based CSRF
-// attack surface that we don't actually use. Bearer tokens are
-// immune to classic CSRF because the browser does not auto-attach
-// them — JS code must read and send them deliberately. Leaving
-// credentials off is the simpler, safer default for a Bearer-only
-// API.
+// `credentials: true` is required for the in-house auth path —
+// the dashboard sends the `pf_session` cookie cross-origin, and
+// browsers strip Set-Cookie / Cookie when credentials aren't
+// allowed. The exact-match Origin allowlist above is what makes
+// this safe (browsers refuse `Access-Control-Allow-Origin: *`
+// when credentials are enabled, so every allowed origin is
+// vetted hostname-by-hostname).
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -93,6 +89,7 @@ app.use(
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
     },
+    credentials: true,
   }),
 );
 
@@ -130,18 +127,9 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// Clerk's session middleware is still mounted because a small
-// number of legacy admin routes (admin/team, audit/export,
-// admin-shop/review-requests) still call clerkClient. They get
-// retired in Stage 5b — the mount goes away then. The middleware
-// is a no-op for unauthenticated requests, and the unauthenticated
-// /healthz, /readyz probes don't read auth state at all.
-app.use(clerkMiddleware());
-
-// In-house /auth/* routes. After Stage 5a the kill switch is
-// retired — the router is unconditionally mounted. A missing
-// AUTH_PASSWORD_PEPPER throws here so the misconfig surfaces at
-// boot rather than at the first sign-in attempt.
+// In-house /auth/* routes. The router is unconditionally mounted;
+// a missing AUTH_PASSWORD_PEPPER throws here so the misconfig
+// surfaces at boot rather than at the first sign-in attempt.
 const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",

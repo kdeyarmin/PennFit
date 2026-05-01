@@ -121,38 +121,10 @@ export async function requireAdminOnly(
   next();
 }
 
-// ---------- Legacy helpers (Stage 5b retires these) ----------
-//
-// `readPennRole` and `getEnvAllowlists` are still imported by
-// `routes/admin-users.ts`, the legacy team-management endpoint
-// that round-trips through Clerk publicMetadata + the env
-// allowlists. Stage 5b rewrites that endpoint against `auth.users`
-// directly, after which these helpers go away.
-
-export type PennRole = "admin" | "agent";
-
-export const PENN_ROLE_METADATA_KEY = "pennRole" as const;
-
-export function readPennRole(metadata: unknown): PennRole | undefined {
-  if (typeof metadata !== "object" || metadata === null) return undefined;
-  const raw = (metadata as Record<string, unknown>).pennRole;
-  if (raw === "admin" || raw === "agent") return raw;
-  return undefined;
-}
-
-function parseEmailList(envVar: string): string[] | null {
-  const raw = process.env[envVar];
-  if (!raw) return null;
-  const list = raw
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  return list.length > 0 ? list : null;
-}
-
-export function getEnvAllowlists(): { admins: string[]; agents: string[] } {
-  return {
-    admins: parseEmailList("PENN_ADMIN_EMAILS") ?? [],
-    agents: parseEmailList("PENN_AGENT_EMAILS") ?? [],
-  };
-}
+// Stage 5b retired the legacy `readPennRole` / `getEnvAllowlists`
+// / `PENN_ROLE_METADATA_KEY` helpers along with the Clerk-driven
+// admin-users.ts route. Identity now lives entirely on
+// `auth.users.role`; PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS env
+// vars are no longer consulted by the middleware. Bootstrap a
+// fresh DB with `pnpm --filter @workspace/scripts auth:bootstrap-admin
+// --email=<addr> --role=admin`.

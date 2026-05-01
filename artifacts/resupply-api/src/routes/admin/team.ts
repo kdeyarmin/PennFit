@@ -4,7 +4,7 @@
 //   GET    /admin/team                  — list members (active + pending +
 //                                           recently revoked)
 //   POST   /admin/team/invite           — invite a new admin/agent by email
-//   POST   /admin/team/:id/resend       — resend the Clerk invitation
+//   POST   /admin/team/:id/resend       — resend the invite email
 //   POST   /admin/team/:id/revoke       — revoke membership; future logins
 //                                           are denied immediately
 //   PATCH  /admin/team/:id              — update role / display name / notes
@@ -13,36 +13,41 @@
 // auth-changing operation and shouldn't be available to agents
 // (CSRs); same posture as DELETE /rules/:id.
 //
-// Invite flow:
+// Stage 5b — invitations now go through the in-house auth path:
 //   1. Admin POSTs /admin/team/invite { email, role, displayName?, notes? }
-//   2. We INSERT an admin_users row (status='pending', clerk_user_id=null).
-//   3. We ask Clerk to create an Invitation. The Clerk invitation email
-//      contains a magic link to our sign-up page; clicking it routes
-//      the user through Clerk's sign-up flow with the invited email
-//      pre-filled.
-//   4. When the user later signs in, requireAdmin matches the email,
-//      flips the row to status='active', and stamps clerk_user_id +
-//      accepted_at + last_login_at.
+//   2. We INSERT/UPDATE an `auth.users` row (role=admin|agent,
+//      status='invited') AND an `admin_users` row linked via
+//      `auth_user_id`.
+//   3. We issue a 7-day `password_reset` email-token and send a
+//      "set your PennPaps password" email via SendGrid.
+//   4. The user clicks the link, sets a password through the
+//      existing /auth/reset-password handler, and signs in.
 //
-// If the Clerk SDK isn't configured (missing CLERK_SECRET_KEY in
-// preview / dev), we still create the DB row — the user just has to
-// sign up manually. The endpoint surfaces a `clerkInviteSent: false`
-// flag so the UI can show "We couldn't send the invite email — share
-// the sign-up link with this person directly".
+// If SendGrid isn't configured (e.g. preview / dev), the auth
+// row + token are still created; the response carries `emailSent:
+// false` and an `inviteLink` field so the operator can share the
+// link out-of-band.
 
 import { Router, type IRouter } from "express";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
 import { z } from "zod";
 
 import {
   adminUsers,
   type AdminRole,
   type AdminStatus,
+  authUsers,
   getDbPool,
 } from "@workspace/resupply-db";
 
+import {
+  inviteTeamMember,
+  revokeTeamMember,
+  updateTeamMemberRole,
+} from "@workspace/resupply-auth";
+
+import { getAuthDeps } from "../../lib/auth-deps";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -65,11 +70,43 @@ const patchBody = z
   })
   .strict();
 
+// Effective status returned to the team UI is computed from
+// admin_users.status PLUS the linked auth.users row:
+//   * admin_users.status='revoked'           → 'revoked'
+//   * auth.users.email_verified_at IS NOT NULL → 'active'
+//   * else                                    → 'pending'
+function effectiveStatus(
+  storedStatus: string,
+  emailVerifiedAt: Date | null,
+): AdminStatus {
+  if (storedStatus === "revoked") return "revoked";
+  if (emailVerifiedAt) return "active";
+  return "pending";
+}
+
 router.get("/admin/team", requireAdminOnly, async (_req, res) => {
   const db = drizzle(getDbPool());
   const rows = await db
-    .select()
+    .select({
+      // admin_users fields
+      id: adminUsers.id,
+      emailLower: adminUsers.emailLower,
+      authUserId: adminUsers.authUserId,
+      role: adminUsers.role,
+      storedStatus: adminUsers.status,
+      displayName: adminUsers.displayName,
+      notes: adminUsers.notes,
+      invitedBy: adminUsers.invitedBy,
+      invitedAt: adminUsers.invitedAt,
+      acceptedAt: adminUsers.acceptedAt,
+      revokedAt: adminUsers.revokedAt,
+      revokedBy: adminUsers.revokedBy,
+      lastLoginAt: adminUsers.lastLoginAt,
+      // joined auth.users field used to compute "active" status
+      authEmailVerifiedAt: authUsers.emailVerifiedAt,
+    })
     .from(adminUsers)
+    .leftJoin(authUsers, eq(adminUsers.authUserId, authUsers.id))
     .orderBy(desc(adminUsers.invitedAt));
   res.json({ members: rows.map(serialize) });
 });
@@ -89,10 +126,10 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
   const { email, role, displayName, notes } = parsed.data;
   const inviterId = req.adminUserId ?? null;
   const db = drizzle(getDbPool());
+  const deps = getAuthDeps();
 
-  // Reuse the existing row if one is already there for this email.
-  // Three legitimate reuse cases:
-  //   * pending  → the invite expired or was lost; resend.
+  // Reuse logic — three legitimate cases:
+  //   * pending  → invite expired or was lost; resend.
   //   * revoked  → admin is re-inviting someone who was previously
   //                removed. Allowed; flip back to pending and clear
   //                the revoke fields.
@@ -103,34 +140,34 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
     .where(eq(adminUsers.emailLower, email))
     .limit(1);
   const prior = existing[0];
-  if (prior && prior.status === "active") {
-    res.status(409).json({
-      error: "already_active_member",
-      message: `${email} is already an active member. Use PATCH /admin/team/:id to change their role.`,
-      memberId: prior.id,
-    });
-    return;
+  if (prior) {
+    // Block if the user has already accepted (auth.users row's
+    // email_verified_at is non-null) — re-inviting an already-
+    // active member is a role change, not an invite.
+    if (prior.authUserId) {
+      const auth = await db
+        .select({ verified: authUsers.emailVerifiedAt })
+        .from(authUsers)
+        .where(eq(authUsers.id, prior.authUserId))
+        .limit(1);
+      if (auth[0]?.verified) {
+        res.status(409).json({
+          error: "already_active_member",
+          message: `${email} is already an active member. Use PATCH /admin/team/:id to change their role.`,
+          memberId: prior.id,
+        });
+        return;
+      }
+    }
   }
 
-  // Create the Clerk invitation. Returning a successful response
-  // even if Clerk fails (clerkInviteSent: false) — admins can resend
-  // later or share the sign-up link manually.
-  let clerkInvitationId: string | null = null;
-  let clerkInviteSent = false;
-  try {
-    const inv = await clerkClient.invitations.createInvitation({
-      emailAddress: email,
-      redirectUrl: deriveRedirectUrl(),
-      publicMetadata: { resupplyRole: role, invitedBy: inviterId ?? "" },
-    });
-    clerkInvitationId = inv.id;
-    clerkInviteSent = true;
-  } catch (err) {
-    req.log?.warn(
-      { event: "team_invite_clerk_failed", err: err instanceof Error ? err.message : String(err) },
-      "Clerk invitation API failed",
-    );
-  }
+  // Mint or refresh the auth row + send the invite email.
+  const invite = await inviteTeamMember(getDbPool(), deps, {
+    emailLower: email,
+    role,
+    displayName: displayName ?? prior?.displayName ?? null,
+    productName: "Resupply",
+  });
 
   const now = new Date();
   if (prior) {
@@ -139,7 +176,7 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
       .set({
         role,
         status: "pending",
-        clerkInvitationId,
+        authUserId: invite.authUserId,
         displayName: displayName ?? prior.displayName,
         notes: notes ?? prior.notes,
         invitedBy: inviterId,
@@ -147,16 +184,15 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
         revokedAt: null,
         revokedBy: null,
         acceptedAt: null,
-        // clerk_user_id stays as-is — if the user previously accepted
-        // and was later revoked, we keep the linkage so re-acceptance
-        // doesn't double-create a Clerk user.
         updatedAt: now,
       })
       .where(eq(adminUsers.id, prior.id))
       .returning();
-    res
-      .status(200)
-      .json({ member: serialize(updated[0]!), clerkInviteSent });
+    res.status(200).json({
+      member: await serializeWithAuthLookup(db, updated[0]!),
+      emailSent: invite.emailSent,
+      inviteLink: invite.emailSent ? null : invite.inviteLink,
+    });
     return;
   }
 
@@ -166,7 +202,7 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
       emailLower: email,
       role,
       status: "pending",
-      clerkInvitationId,
+      authUserId: invite.authUserId,
       displayName: displayName ?? null,
       notes: notes ?? null,
       invitedBy: inviterId,
@@ -174,7 +210,11 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
       updatedAt: now,
     })
     .returning();
-  res.status(201).json({ member: serialize(inserted[0]!), clerkInviteSent });
+  res.status(201).json({
+    member: await serializeWithAuthLookup(db, inserted[0]!),
+    emailSent: invite.emailSent,
+    inviteLink: invite.emailSent ? null : invite.inviteLink,
+  });
 });
 
 router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
@@ -202,47 +242,29 @@ router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
     return;
   }
 
-  // Revoke the old Clerk invite if we had one (Clerk doesn't allow
-  // two open invites for the same email), then issue a fresh one.
-  if (row.clerkInvitationId) {
-    try {
-      await clerkClient.invitations.revokeInvitation(row.clerkInvitationId);
-    } catch (err) {
-      req.log?.warn(
-        { event: "team_resend_revoke_old_failed", err: err instanceof Error ? err.message : String(err) },
-        "Could not revoke prior Clerk invitation; creating new one anyway",
-      );
-    }
-  }
-
-  let clerkInvitationId: string | null = null;
-  let clerkInviteSent = false;
-  try {
-    const inv = await clerkClient.invitations.createInvitation({
-      emailAddress: row.emailLower,
-      redirectUrl: deriveRedirectUrl(),
-      publicMetadata: { resupplyRole: row.role, invitedBy: req.adminUserId ?? "" },
-    });
-    clerkInvitationId = inv.id;
-    clerkInviteSent = true;
-  } catch (err) {
-    req.log?.warn(
-      { event: "team_resend_create_failed", err: err instanceof Error ? err.message : String(err) },
-      "Clerk invitation API failed on resend",
-    );
-  }
+  const deps = getAuthDeps();
+  const invite = await inviteTeamMember(getDbPool(), deps, {
+    emailLower: row.emailLower,
+    role: row.role as AdminRole,
+    displayName: row.displayName,
+    productName: "Resupply",
+  });
 
   const updated = await db
     .update(adminUsers)
     .set({
-      clerkInvitationId,
+      authUserId: invite.authUserId,
       invitedAt: new Date(),
       invitedBy: req.adminUserId ?? null,
       updatedAt: new Date(),
     })
     .where(eq(adminUsers.id, id))
     .returning();
-  res.json({ member: serialize(updated[0]!), clerkInviteSent });
+  res.json({
+    member: await serializeWithAuthLookup(db, updated[0]!),
+    emailSent: invite.emailSent,
+    inviteLink: invite.emailSent ? null : invite.inviteLink,
+  });
 });
 
 router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
@@ -263,13 +285,16 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
     return;
   }
   if (row.status === "revoked") {
-    res.status(200).json({ member: serialize(row), alreadyRevoked: true });
+    res.status(200).json({
+      member: await serializeWithAuthLookup(db, row),
+      alreadyRevoked: true,
+    });
     return;
   }
-  // Defensive: don't let an admin revoke themselves — that locks them
-  // out of the very console they're using. They'd recover via the env-
-  // var bootstrap, but only if env vars are configured.
-  if (row.clerkUserId && row.clerkUserId === req.adminUserId) {
+  // Defensive: don't let an admin revoke themselves — that locks
+  // them out of the very console they're using. They'd recover
+  // via the auth:bootstrap-admin CLI.
+  if (row.authUserId && row.authUserId === req.adminUserId) {
     res.status(409).json({
       error: "cannot_revoke_self",
       message: "You can't revoke your own admin access. Have another admin revoke your seat.",
@@ -277,15 +302,8 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
     return;
   }
 
-  if (row.clerkInvitationId && row.status === "pending") {
-    try {
-      await clerkClient.invitations.revokeInvitation(row.clerkInvitationId);
-    } catch (err) {
-      req.log?.warn(
-        { event: "team_revoke_clerk_failed", err: err instanceof Error ? err.message : String(err) },
-        "Could not revoke Clerk invitation; row will be marked revoked anyway",
-      );
-    }
+  if (row.authUserId) {
+    await revokeTeamMember(getDbPool(), row.authUserId);
   }
 
   const now = new Date();
@@ -299,7 +317,9 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
     })
     .where(and(eq(adminUsers.id, id), ne(adminUsers.status, "revoked")))
     .returning();
-  res.json({ member: serialize(updated[0] ?? row) });
+  res.json({
+    member: await serializeWithAuthLookup(db, updated[0] ?? row),
+  });
 });
 
 router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
@@ -314,12 +334,12 @@ router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
     return;
   }
   const db = drizzle(getDbPool());
-  // Refuse to demote yourself from admin to agent — same self-lock-out
-  // concern as revoke.
+  // Refuse to demote yourself from admin to agent — same self-
+  // lock-out concern as revoke.
   if (parsed.data.role === "agent") {
     const rows = await db
       .select({
-        clerkUserId: adminUsers.clerkUserId,
+        authUserId: adminUsers.authUserId,
         currentRole: adminUsers.role,
       })
       .from(adminUsers)
@@ -329,7 +349,7 @@ router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
     if (
       row &&
       row.currentRole === "admin" &&
-      row.clerkUserId === req.adminUserId
+      row.authUserId === req.adminUserId
     ) {
       res.status(409).json({
         error: "cannot_demote_self",
@@ -347,24 +367,46 @@ router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
     res.status(404).json({ error: "member_not_found" });
     return;
   }
-  res.json({ member: serialize(updated[0]!) });
+  // Mirror the role change on auth.users so requireAdmin sees it.
+  if (parsed.data.role && updated[0]!.authUserId) {
+    await updateTeamMemberRole(
+      getDbPool(),
+      updated[0]!.authUserId,
+      parsed.data.role,
+    );
+  }
+  res.json({ member: await serializeWithAuthLookup(db, updated[0]!) });
 });
 
-function deriveRedirectUrl(): string {
-  const base =
-    process.env.RESUPPLY_DASHBOARD_PUBLIC_BASE_URL ??
-    process.env.SHOP_PUBLIC_BASE_URL ??
-    "https://pennpaps.com";
-  return `${base.replace(/\/$/, "")}/admin/sign-up`;
+type Db = ReturnType<typeof drizzle>;
+
+interface SerializableRow {
+  id: string;
+  emailLower: string;
+  authUserId: string | null;
+  role: string;
+  storedStatus?: string;
+  status?: string;
+  displayName: string | null;
+  notes: string | null;
+  invitedBy: string | null;
+  invitedAt: Date;
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  revokedBy: string | null;
+  lastLoginAt: Date | null;
+  authEmailVerifiedAt?: Date | null;
 }
 
-function serialize(row: typeof adminUsers.$inferSelect) {
+function serialize(row: SerializableRow) {
+  const stored = row.storedStatus ?? row.status ?? "pending";
+  const status = effectiveStatus(stored, row.authEmailVerifiedAt ?? null);
   return {
     id: row.id,
     email: row.emailLower,
-    clerkUserId: row.clerkUserId,
+    authUserId: row.authUserId,
     role: row.role as AdminRole,
-    status: row.status as AdminStatus,
+    status,
     displayName: row.displayName,
     notes: row.notes,
     invitedBy: row.invitedBy,
@@ -374,6 +416,29 @@ function serialize(row: typeof adminUsers.$inferSelect) {
     revokedBy: row.revokedBy,
     lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
   };
+}
+
+/**
+ * Variant for handlers that just received an UPDATE / INSERT
+ * RETURNING result — those rows don't carry the joined
+ * auth.users.email_verified_at field, so we look it up here.
+ * One extra query per response is fine — these are admin actions,
+ * not hot-path reads.
+ */
+async function serializeWithAuthLookup(
+  db: Db,
+  row: typeof adminUsers.$inferSelect,
+): Promise<ReturnType<typeof serialize>> {
+  let emailVerifiedAt: Date | null = null;
+  if (row.authUserId) {
+    const auth = await db
+      .select({ verified: authUsers.emailVerifiedAt })
+      .from(authUsers)
+      .where(eq(authUsers.id, row.authUserId))
+      .limit(1);
+    emailVerifiedAt = auth[0]?.verified ?? null;
+  }
+  return serialize({ ...row, authEmailVerifiedAt: emailVerifiedAt });
 }
 
 export default router;
