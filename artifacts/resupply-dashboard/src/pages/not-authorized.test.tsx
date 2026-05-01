@@ -83,8 +83,23 @@ describe("NotAuthorizedPage", () => {
       expect(signOut).toHaveBeenCalledTimes(1);
       // The shim's signOut is provider-agnostic and takes no args.
       // Redirect to /sign-in is handled in the component via
-      // window.location.assign after the promise resolves.
+      // wouter navigation after the promise resolves.
       expect(signOut.mock.calls[0]).toEqual([]);
+    });
+
+
+    it("ignores repeated sign-out clicks while sign-out is in-flight", () => {
+      signOut.mockImplementationOnce(
+        () => new Promise<void>(() => undefined),
+      );
+      render(<NotAuthorizedPage reason="not-authorized" />);
+
+      const button = screen.getByRole("button", { name: /sign out/i });
+      fireEvent.click(button);
+      fireEvent.click(button);
+
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(button.getAttribute("disabled")).not.toBeNull();
     });
   });
 
