@@ -3,19 +3,20 @@
   "compileOnSave": false,
   "files": [],
   "references": [
-    { "path": "./lib/db" },
     { "path": "./lib/api-client-react" },
     { "path": "./lib/api-zod" },
     { "path": "./lib/resupply-api-client" },
     { "path": "./lib/resupply-contracts" },
     { "path": "./lib/resupply-domain" },
     { "path": "./lib/resupply-db" },
+    { "path": "./lib/resupply-secrets" },
     { "path": "./lib/resupply-audit" },
+    { "path": "./lib/resupply-auth" },
+    { "path": "./lib/resupply-auth-react" },
     { "path": "./lib/resupply-telecom" },
     { "path": "./lib/resupply-ai" },
     { "path": "./lib/resupply-email" },
     { "path": "./lib/resupply-messaging" },
-    { "path": "./lib/resupply-reminders" },
-    { "path": "./lib/resupply-testing" }
+    { "path": "./lib/resupply-reminders" }
   ]
 }

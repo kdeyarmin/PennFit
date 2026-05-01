@@ -1,8 +1,8 @@
 // Route tests for POST /voice/place-call.
 //
 // Mocking strategy:
-//   - Mock @clerk/express so requireAdmin can be exercised without
-//     a real auth lookup.
+//   - Mock the auth-deps module so requireAdmin can be exercised
+//     without a real auth lookup.
 //   - Mock drizzle so we can stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioClient so we
 //     never try to dial a real number.
@@ -19,14 +19,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 // Drizzle stub. Each terminal method (limit / returning / awaited
 // where) resolves with the value at the front of `selectResults` /
@@ -104,17 +107,11 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(email = ALLOWED_EMAIL): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: email,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = [
@@ -147,8 +144,7 @@ describe("POST /voice/place-call", () => {
     selectQueue.length = 0;
     insertQueue.length = 0;
     updateQueue.length = 0;
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     placeCallMock.mockReset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
     dbStub.select.mockClear();
@@ -175,9 +171,7 @@ describe("POST /voice/place-call", () => {
   });
 
   it("returns 401 when there is no session", async () => {
-    setVoiceEnv();
-    getAuthMock.mockReturnValue({ userId: null });
-    const res = await request(makeApp())
+    setVoiceEnv();    const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
     expect(res.status).toBe(401);

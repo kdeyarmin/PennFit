@@ -27,6 +27,7 @@ import {
 import { track } from "@/lib/track";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { MaskRecommendationCard } from "@/components/mask-recommendation-card";
+import { ComfortGuarantee } from "@/components/comfort-guarantee";
 
 export function Results() {
   useDocumentTitle("Your mask matches");
@@ -160,6 +161,9 @@ export function Results() {
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Based on your precise facial measurements and clinical preferences, here are the best fits for you.
         </p>
+        <div className="flex justify-center pt-2">
+          <ComfortGuarantee variant="badge" />
+        </div>
       </div>
 
       {/* Patient measurements panel — collapsible, builds trust by showing exactly what was measured */}
@@ -236,6 +240,8 @@ export function Results() {
           />
         ))}
       </div>
+
+      <ComfortGuarantee variant="callout" className="mb-8" />
 
       <div className="glass-card rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 mb-12">
         <div className="space-y-2">

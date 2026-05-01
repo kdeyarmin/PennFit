@@ -9,14 +9,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 const selectQueue: unknown[] = [];
 function fluentSelect(rows: unknown): unknown {
@@ -76,17 +79,11 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
@@ -117,8 +114,7 @@ describe("GET /patients/export.csv", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     process.env.NODE_ENV = "test";
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     selectQueue.length = 0;
     logAuditMock.mockClear();
     dbStub.select.mockClear();
@@ -195,7 +191,7 @@ describe("GET /patients/export.csv", () => {
   });
 
   it("rejects unauthenticated callers with 401", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
+    mockAdmin.current = null;
     const res = await request(makeApp()).get("/resupply-api/patients/export.csv");
     expect(res.status).toBe(401);
   });

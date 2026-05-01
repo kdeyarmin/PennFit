@@ -33,12 +33,18 @@ export function Table<Row>({
     <div className="overflow-x-auto">
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr className="border-b" style={{ borderColor: "#e5e7eb" }}>
+          <tr
+            className="border-b"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`text-left px-5 py-3 text-xs font-semibold uppercase tracking-wider ${col.className ?? ""}`}
-                style={{ color: "#6b7280", backgroundColor: "#f9fafb" }}
+                className={`text-left px-5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${col.className ?? ""}`}
+                style={{
+                  color: "hsl(var(--ink-3))",
+                  backgroundColor: "hsl(var(--surface-1))",
+                }}
                 scope="col"
               >
                 {col.header}
@@ -52,8 +58,11 @@ export function Table<Row>({
             return (
               <tr
                 key={rowKey(row)}
-                className={`border-b ${clickable ? "cursor-pointer hover:bg-slate-50" : ""}`}
-                style={{ borderColor: "#f1f5f9" }}
+                className={`border-b transition-colors ${clickable ? "cursor-pointer" : ""}`}
+                style={{
+                  borderColor: "hsl(var(--line-1) / 0.6)",
+                  backgroundColor: "transparent",
+                }}
                 onClick={clickable ? () => onRowClick!(row) : undefined}
                 tabIndex={clickable ? 0 : undefined}
                 onKeyDown={
@@ -66,12 +75,25 @@ export function Table<Row>({
                       }
                     : undefined
                 }
+                onMouseEnter={
+                  clickable
+                    ? (e) =>
+                        (e.currentTarget.style.backgroundColor =
+                          "hsl(var(--surface-3))")
+                    : undefined
+                }
+                onMouseLeave={
+                  clickable
+                    ? (e) =>
+                        (e.currentTarget.style.backgroundColor = "transparent")
+                    : undefined
+                }
               >
                 {columns.map((col) => (
                   <td
                     key={col.key}
                     className={`px-5 py-3 align-middle ${col.className ?? ""}`}
-                    style={{ color: "#0a1f44" }}
+                    style={{ color: "hsl(var(--ink-1))" }}
                   >
                     {col.render(row)}
                   </td>

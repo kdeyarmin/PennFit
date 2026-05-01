@@ -84,15 +84,13 @@ if [[ -d lib/resupply-contracts/src ]]; then
   fi
 fi
 
-# Rule 2: resupply-domain must be pure — no I/O packages, no vendor SDKs,
-# and no testing utilities.
+# Rule 2: resupply-domain must be pure — no I/O packages and no vendor SDKs.
 forbid_imports_in lib/resupply-domain/src \
-  "lib/resupply-domain must not import I/O packages (db/telecom/ai/audit) or testing utilities" \
+  "lib/resupply-domain must not import I/O packages (db/telecom/ai/audit)" \
   '@workspace/resupply-db' \
   '@workspace/resupply-telecom' \
   '@workspace/resupply-ai' \
   '@workspace/resupply-audit' \
-  '@workspace/resupply-testing' \
   "['\"]drizzle-orm" \
   "['\"]pg['\"]" \
   "['\"]@anthropic-ai/sdk['\"]" \
@@ -145,36 +143,26 @@ forbid_imports_in lib/resupply-telecom/src \
   "['\"]openai['\"]" \
   "@anthropic-ai/sdk['\"]"
 
-# Rule 5: resupply-testing must not be imported by production code (api,
-# worker, dashboard, or any non-test file in libs).
-for prod in artifacts/resupply-api/src artifacts/resupply-worker/src artifacts/resupply-dashboard/src; do
-  forbid_imports_in "$prod" \
-    "$prod must not import @workspace/resupply-testing (testing helpers are devDeps only)" \
-    '@workspace/resupply-testing'
-done
-for libdir in lib/resupply-contracts/src lib/resupply-domain/src lib/resupply-db/src lib/resupply-audit/src lib/resupply-telecom/src lib/resupply-ai/src; do
-  if [[ -d "$libdir" ]]; then
-    bad="$(rg --no-messages -l "${RG_TYPES[@]}" \
-      -e '@workspace/resupply-testing' "$libdir" 2>/dev/null \
-      | rg -v '\.test\.|__tests__|/test/' || true)"
-    if [[ -n "$bad" ]]; then
-      fail "$libdir: non-test files import @workspace/resupply-testing"
-      echo "$bad" | sed 's/^/    /' >&2
-    fi
-  fi
-done
+# Rule 5: removed in Task #37 — @workspace/resupply-testing was deleted as
+# part of the consolidation sweep (it had zero importers).
 
-# Rule 6: resupply packages must not import Penn Fit's lib/db, lib/api-zod,
-# or lib/api-client-react. Different product, different schema. The
-# dashboard now ships @workspace/resupply-api-client and is included in
-# this sweep — the Phase 0 carve-out documented in earlier revisions of
-# docs/resupply/ARCHITECTURE.md was retired in Phase 4.
+# Rule 6: the resupply-* libraries, the dashboard/worker artifacts, AND
+# the resupply-api server itself must not import the storefront's UI
+# client (`@workspace/api-client-react`). That client is generated from
+# the storefront OpenAPI spec and is meant for the customer-facing
+# cpap-fitter SPA only — it is React-Query React code, not server code.
+#
+# The storefront's Zod SCHEMAS (`@workspace/api-zod`) are a different
+# package and are not banned anywhere; resupply-api's storefront router
+# (folded in by Task #37) imports them directly to validate request /
+# response bodies. There is no need for an explicit "carve-out" because
+# Rule 6 only enumerates packages that ARE forbidden — not listing
+# `@workspace/api-zod` already permits it everywhere.
+#
 # Quote-agnostic: forbid both single- and double-quoted forms.
-for resdir in lib/resupply-contracts/src lib/resupply-domain/src lib/resupply-db/src lib/resupply-audit/src lib/resupply-telecom/src lib/resupply-ai/src lib/resupply-testing/src artifacts/resupply-api/src artifacts/resupply-worker/src artifacts/resupply-dashboard/src; do
+for resdir in lib/resupply-contracts/src lib/resupply-domain/src lib/resupply-db/src lib/resupply-audit/src lib/resupply-telecom/src lib/resupply-ai/src artifacts/resupply-api/src artifacts/resupply-worker/src artifacts/resupply-dashboard/src; do
   forbid_imports_in "$resdir" \
-    "$resdir must not import Penn Fit packages (use the resupply-* equivalents)" \
-    "@workspace/db['\"]" \
-    "@workspace/api-zod['\"]" \
+    "$resdir must not import the storefront UI client (@workspace/api-client-react is for cpap-fitter only)" \
     "@workspace/api-client-react['\"]"
 done
 

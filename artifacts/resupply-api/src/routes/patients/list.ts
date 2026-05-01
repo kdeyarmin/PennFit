@@ -1,12 +1,11 @@
 // GET /patients — paginated patient list for the admin console.
 //
-// Decrypts firstName + lastName for display via the existing
-// `decrypt(...)` SQL helper so plaintext PHI never crosses the
-// process boundary into Node memory between Postgres and the JSON
-// response. Phone + email are never returned — they are surfaced
-// as boolean `hasPhone` / `hasEmail` markers (CASE WHEN NOT NULL)
-// so the admin can see "this patient is reachable on SMS" without
-// the page itself rendering the number.
+// All PHI columns are stored as plaintext after migration 0025; we
+// select them directly. Phone + email values themselves are never
+// returned in the list response — they are surfaced as boolean
+// `hasPhone` / `hasEmail` markers (CASE WHEN NOT NULL) so the admin
+// can see "this patient is reachable on SMS" without the page itself
+// rendering the number.
 //
 // Search semantics:
 //   The single `search` box accepts any of:
@@ -14,15 +13,10 @@
 //     - patient name fragment: "alice", "smith"
 //     - email fragment: "@gmail.com", "alice@"
 //     - phone number in any format: "+14155551212", "(415) 555-1212",
-//       "4155551212". Treated specially via the phone_lookup HMAC
-//       index for an O(1) exact match — the encrypted phone column
-//       has random IV, so equality search isn't possible without it.
-//
-//   When the input normalizes to a valid E.164, we go through the
-//   HMAC index. Otherwise we do the existing decrypt+ILIKE union,
-//   now extended to also cover the email column. The decrypted
-//   union is a Postgres-side full scan; admin-only access + small
-//   steady-state row count make this acceptable.
+//       "4155551212". When the input normalizes to a valid E.164,
+//       we do an exact-match against `patients.phone_e164` (now
+//       indexed btree). Otherwise we fall through to the ILIKE
+//       union below.
 //
 // We do NOT write an audit row per list-view: list pages are
 // page-flipped many times during normal admin workflow and one
@@ -34,14 +28,11 @@ import { and, eq, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
+import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  decrypt,
   getDbPool,
-  hmacPhone,
-  normalizeE164,
   patientLatestMessage,
   patients,
-  phoneLookup,
 } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -76,31 +67,15 @@ router.get("/patients", requireAdmin, async (req, res) => {
     filters.push(eq(patients.status, status));
   }
   if (search) {
-    // Phone-shaped input → exact-match via the HMAC lookup table.
-    // We try this BEFORE the decrypt-ILIKE branch so that a
-    // perfectly-formatted phone number never accidentally lands in
-    // the slow path. `normalizeE164` returns null for anything that
-    // doesn't parse as a real phone; treat that as "this is a name
-    // or email or pacware id" and fall through.
+    // Phone-shaped input → exact-match against the indexed
+    // `phone_e164` column. We try this BEFORE the ILIKE branch so
+    // that a perfectly-formatted phone number lands in the index
+    // path. `normalizeE164` returns null for anything that doesn't
+    // parse as a real phone; treat that as "this is a name or
+    // email or pacware id" and fall through.
     const normalizedPhone = normalizeE164(search);
     if (normalizedPhone) {
-      // hmacPhone() throws if RESUPPLY_PHONE_HMAC_KEY is unset. In
-      // that case fall back to the decrypt-ILIKE union rather than
-      // crashing the list endpoint — admins should still be able to
-      // search by name/email when phone search isn't configured.
-      try {
-        const hash = hmacPhone(normalizedPhone);
-        filters.push(
-          sql`${patients.id} IN (SELECT patient_id FROM ${phoneLookup} WHERE hmac_phone = ${hash})`,
-        );
-      } catch (err) {
-        req.log?.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          "patients/list: phone HMAC search unavailable, falling back to text search",
-        );
-        const needle = `%${search}%`;
-        filters.push(textSearchClause(needle));
-      }
+      filters.push(eq(patients.phoneE164, normalizedPhone));
     } else {
       const needle = `%${search}%`;
       filters.push(textSearchClause(needle));
@@ -122,18 +97,12 @@ router.get("/patients", requireAdmin, async (req, res) => {
   // multiplication, no GROUP BY needed. Patients with no messages
   // yet land with NULLs across the three lastMessage* columns,
   // exactly matching the API contract.
-  //
-  // The preview column is bytea-encrypted (the schema's customType
-  // refuses Drizzle's default decoder); decrypt(...) routes through
-  // the same SQL helper used for legalFirstName/legalLastName so
-  // plaintext PHI never crosses the Node boundary except inside the
-  // already-authenticated admin response.
   const rows = await db
     .select({
       id: patients.id,
       pacwareId: patients.pacwareId,
-      firstName: decrypt(patients.legalFirstName),
-      lastName: decrypt(patients.legalLastName),
+      firstName: patients.legalFirstName,
+      lastName: patients.legalLastName,
       status: patients.status,
       hasPhone: sql<boolean>`(${patients.phoneE164} IS NOT NULL)`,
       hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
@@ -141,7 +110,7 @@ router.get("/patients", requireAdmin, async (req, res) => {
       updatedAt: patients.updatedAt,
       lastMessageAt: patientLatestMessage.lastMessageAt,
       lastMessageDirection: patientLatestMessage.lastMessageDirection,
-      lastMessagePreview: decrypt(patientLatestMessage.lastMessagePreview),
+      lastMessagePreview: patientLatestMessage.lastMessagePreview,
     })
     .from(patients)
     .leftJoin(
@@ -179,18 +148,14 @@ router.get("/patients", requireAdmin, async (req, res) => {
   });
 });
 
-// Build the OR-union of decrypt-ILIKE clauses for the
-// non-phone-shaped search path. Pacware id is plaintext and indexed
-// (cheap); the rest are full-table decrypted scans (acceptable for
+// Build the OR-union of ILIKE clauses for the non-phone-shaped
+// search path. Pacware id is plaintext and indexed (cheap); the
+// rest are full-table scans on plaintext columns (acceptable for
 // admin-only / small dataset). Email is included so an admin can
 // look up a patient by partial email when they don't have the
 // pacware id handy.
 function textSearchClause(needle: string): SQL {
-  return sql`(${patients.pacwareId} ILIKE ${needle} OR ${decrypt(
-    patients.legalFirstName,
-  )} ILIKE ${needle} OR ${decrypt(patients.legalLastName)} ILIKE ${needle} OR ${decrypt(
-    patients.email,
-  )} ILIKE ${needle})`;
+  return sql`(${patients.pacwareId} ILIKE ${needle} OR ${patients.legalFirstName} ILIKE ${needle} OR ${patients.legalLastName} ILIKE ${needle} OR ${patients.email} ILIKE ${needle})`;
 }
 
 export default router;

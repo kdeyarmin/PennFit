@@ -2,9 +2,9 @@
 //
 // Thin wrapper around `sendReminderSms` from @workspace/resupply-reminders.
 // Both the API route and the worker's reminders.send-sms job call the
-// same helper — the helper owns conversation creation, phone_lookup
-// upsert, Twilio invocation, message-row persistence, and audit
-// emission. This route's job is just:
+// same helper — the helper owns conversation creation, Twilio
+// invocation, message-row persistence, and audit emission. This
+// route's job is just:
 //   1. requireAdmin gate.
 //   2. Messaging-config readiness gate (503 with stable error code).
 //   3. Body validation (zod).
@@ -37,7 +37,7 @@ const sendBody = z
     /**
      * Optional override for the message body. When absent the helper
      * renders a default reminder template. Admin-typed bodies are
-     * passed through verbatim (encrypted at rest in `messages.body`).
+     * passed through verbatim and stored on `messages.body`.
      */
     body: z.string().min(1).max(1600).optional(),
   })
@@ -55,8 +55,7 @@ router.post("/sms/send-reminder", requireAdmin, async (req, res) => {
         "vars are missing. Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, " +
         "TWILIO_PHONE_NUMBER or TWILIO_MESSAGING_SERVICE_SID, SENDGRID_API_KEY, " +
         "SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME, " +
-        "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, RESUPPLY_PHONE_HMAC_KEY, " +
-        "RESUPPLY_LINK_HMAC_KEY.",
+        "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and RESUPPLY_LINK_HMAC_KEY.",
     });
     return;
   }

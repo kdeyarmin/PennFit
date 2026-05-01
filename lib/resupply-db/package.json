@@ -17,6 +17,7 @@
     "migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
+    "@workspace/resupply-secrets": "workspace:*",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.20.0",

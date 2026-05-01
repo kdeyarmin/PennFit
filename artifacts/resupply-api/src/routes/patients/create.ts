@@ -9,8 +9,9 @@
 //
 // PHI handling:
 //   - First name, last name, DOB, phone, email, and address are
-//     pgcrypto-encrypted at the SQL site via encrypt() / encryptJson()
-//     helpers. They never land in plaintext in any column.
+//     stored as plaintext text/jsonb columns. The application is
+//     no longer HIPAA-grade — see ADR notes in repo root for the
+//     decision to strip the pgcrypto layer.
 //   - The audit row records WHICH fields were provided (so the
 //     auditor can reconstruct intake completeness) but NEVER the
 //     values themselves — those exist in the patient row, sanitised
@@ -21,26 +22,18 @@
 //     the dashboard can render as "this Pacware id already exists".
 //
 // Why we don't accept dateOfBirth as a Date object:
-//   The patients table stores DOB as a YYYY-MM-DD encrypted string.
-//   Coercing through a Date introduces timezone bugs (a birthday
-//   set at midnight UTC can render as the prior day in eastern
-//   browsers). The string-only contract makes the storage
-//   representation explicit at the API boundary.
+//   The patients table stores DOB as a YYYY-MM-DD string. Coercing
+//   through a Date introduces timezone bugs (a birthday set at
+//   midnight UTC can render as the prior day in eastern browsers).
+//   The string-only contract makes the storage representation
+//   explicit at the API boundary.
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  encrypt,
-  encryptJson,
-  getDbPool,
-  hmacPhone,
-  normalizeE164,
-  patients,
-  phoneLookup,
-} from "@workspace/resupply-db";
+import { getDbPool, patients } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { withIdempotency } from "../../middlewares/idempotency";
@@ -122,24 +115,22 @@ router.post(
 
   const db = drizzle(getDbPool());
 
-  // Build the insert payload. Encrypted columns are SQL fragments
-  // (encrypt() / encryptJson() return SQL); plaintext columns pass
-  // through as-is. `status` defaults to active when the body omits it
-  // — same default as the schema's `.default("active")`.
+  // Build the insert payload. PHI columns are plaintext text/jsonb
+  // post-migration 0025, so values pass through directly. `status`
+  // defaults to active when the body omits it — same default as
+  // the schema's `.default("active")`.
   const now = new Date();
   try {
     const inserted = await db
       .insert(patients)
       .values({
         pacwareId: body.pacwareId,
-        legalFirstName: encrypt(body.legalFirstName),
-        legalLastName: encrypt(body.legalLastName),
-        dateOfBirth: encrypt(body.dateOfBirth),
-        phoneE164: encrypt(body.phoneE164 ?? null),
-        email: encrypt(body.email ?? null),
-        address: body.address
-          ? encryptJson(body.address)
-          : encryptJson(null),
+        legalFirstName: body.legalFirstName,
+        legalLastName: body.legalLastName,
+        dateOfBirth: body.dateOfBirth,
+        phoneE164: body.phoneE164 ?? null,
+        email: body.email ?? null,
+        address: body.address ?? null,
         status: body.status ?? "active",
         insurancePayer: body.insurancePayer ?? null,
         cadenceOverrideDays: body.cadenceOverrideDays ?? null,
@@ -157,37 +148,9 @@ router.post(
       throw new Error("INSERT returned no rows");
     }
 
-    // Backfill phone_lookup so the admin can search by phone
-    // immediately after intake (before any outbound SMS goes out
-    // and lazily populates the index). Failure here is loud-but-
-    // non-fatal: the patient row exists; phone search will just
-    // be unavailable until the first SMS lazily upserts it.
-    if (body.phoneE164) {
-      const normalized = normalizeE164(body.phoneE164);
-      if (normalized) {
-        try {
-          const hash = hmacPhone(normalized);
-          await db
-            .insert(phoneLookup)
-            .values({ patientId: id, hmacPhone: hash })
-            .onConflictDoUpdate({
-              target: phoneLookup.patientId,
-              set: { hmacPhone: hash, updatedAt: new Date() },
-            });
-        } catch (err) {
-          // Two real-world causes:
-          //   1. RESUPPLY_PHONE_HMAC_KEY isn't set (dev environment).
-          //   2. Another patient already owns this hmac (data quality
-          //      issue surfaced by the unique index — admin will need
-          //      to triage). Either way, we don't want to fail the
-          //      whole create.
-          logger.warn(
-            { err, patient_id: id },
-            "patients.create: phone_lookup backfill failed",
-          );
-        }
-      }
-    }
+    // Phone search now hits the indexed `patients.phone_e164`
+    // column directly (see ./list.ts), so there's no separate
+    // lookup table to backfill on intake.
 
     // Audit: list of fields the admin actually populated. NO PHI
     // values; the column names alone are safe — they're enums of

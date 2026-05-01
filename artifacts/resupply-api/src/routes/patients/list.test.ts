@@ -4,14 +4,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 function fluent(result: unknown) {
   const obj: Record<string, unknown> = {
@@ -58,24 +61,14 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
-const ENV_KEYS = [
-  "RESUPPLY_ADMIN_EMAILS",
-  "NODE_ENV",
-  "RESUPPLY_PHONE_HMAC_KEY",
-] as const;
+const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -86,8 +79,7 @@ describe("GET /patients", () => {
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     selectQueue.length = 0;
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     dbStub.select.mockClear();
   });
   afterEach(() => {
@@ -98,7 +90,6 @@ describe("GET /patients", () => {
   });
 
   it("returns 401 with no session", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp()).get("/resupply-api/patients");
     expect(res.status).toBe(401);
   });
@@ -197,14 +188,14 @@ describe("GET /patients", () => {
 
   // ----- Search by phone (HMAC-indexed, exact match) -----------------
   // The route detects a phone-shaped search via normalizeE164 and
-  // routes through the phone_lookup HMAC subquery instead of the
-  // decrypt+ILIKE path. We don't assert on Drizzle's SQL fragments
-  // here — that's testing implementation detail. Instead we assert
-  // that the response shape is correct under both "patient found"
-  // and "no match" conditions, which catches any wiring regression.
+  // routes through a direct equality query on patients.phone_e164
+  // instead of the ILIKE substring path. We don't assert on Drizzle's
+  // SQL fragments here — that's testing implementation detail. Instead
+  // we assert that the response shape is correct under both
+  // "patient found" and "no match" conditions, which catches any
+  // wiring regression.
   it("returns the matched patient when search is a valid E.164 phone", async () => {
     stubVerifiedAdmin();
-    process.env.RESUPPLY_PHONE_HMAC_KEY = "x".repeat(64);
     selectQueue.push([{ count: 1 }]);
     selectQueue.push([
       {
@@ -233,9 +224,8 @@ describe("GET /patients", () => {
     });
   });
 
-  it("returns empty page when phone search has no HMAC match", async () => {
+  it("returns empty page when phone search has no match", async () => {
     stubVerifiedAdmin();
-    process.env.RESUPPLY_PHONE_HMAC_KEY = "x".repeat(64);
     selectQueue.push([{ count: 0 }]);
     selectQueue.push([]);
 
@@ -248,14 +238,13 @@ describe("GET /patients", () => {
   });
 
   // Loose-format phone (no +, parens + dashes) must also normalize
-  // and use the HMAC path. We don't see the SQL — but if the route
+  // and use the equality path. We don't see the SQL — but if the route
   // wired the wrong branch, the count call would still resolve from
   // the queue and the test would still pass. The intent here is to
   // pin the behavior: any of these formats yields a 200 with the
-  // expected shape, no crash on hmacPhone or normalizeE164.
-  it("accepts loose-formatted phone input via the HMAC path", async () => {
+  // expected shape, no crash on normalizeE164.
+  it("accepts loose-formatted phone input via the equality path", async () => {
     stubVerifiedAdmin();
-    process.env.RESUPPLY_PHONE_HMAC_KEY = "x".repeat(64);
     selectQueue.push([{ count: 0 }]);
     selectQueue.push([]);
 
@@ -266,12 +255,12 @@ describe("GET /patients", () => {
     expect(res.body.total).toBe(0);
   });
 
-  // ----- Search by email substring (decrypt-ILIKE union path) --------
+  // ----- Search by email substring (ILIKE union path) ----------------
   // Email is non-phone-shaped so it goes through the text-search
   // union. We just need to assert the route doesn't crash and
   // returns a well-shaped page when the search is an email
   // fragment. The actual SQL is exercised in integration / the DB.
-  it("accepts email-fragment search via the decrypt+ILIKE path", async () => {
+  it("accepts email-fragment search via the ILIKE path", async () => {
     stubVerifiedAdmin();
     selectQueue.push([{ count: 1 }]);
     selectQueue.push([
@@ -297,21 +286,5 @@ describe("GET /patients", () => {
       id: PATIENT_B,
       hasEmail: true,
     });
-  });
-
-  it("falls back to text search when phone HMAC key is unset", async () => {
-    // RESUPPLY_PHONE_HMAC_KEY is intentionally NOT set. The route
-    // should catch hmacPhone()'s throw, log a warn, and fall back
-    // to the decrypt+ILIKE branch — yielding a normal 200, not a
-    // 500.
-    stubVerifiedAdmin();
-    selectQueue.push([{ count: 0 }]);
-    selectQueue.push([]);
-
-    const res = await request(makeApp()).get(
-      "/resupply-api/patients?search=%2B14155551212",
-    );
-    expect(res.status).toBe(200);
-    expect(res.body.items).toEqual([]);
   });
 });

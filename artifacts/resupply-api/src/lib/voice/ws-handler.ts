@@ -28,7 +28,6 @@ import type { WebSocket } from "ws";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   conversations,
-  encrypt,
   getDbPool,
   messages,
   tryUpsertPatientLatestMessage,
@@ -274,13 +273,13 @@ async function persistTranscript(
     conversationId,
     direction,
     senderRole: turn.source === "input" ? "patient" : "agent",
-    body: encrypt(turn.text),
+    body: turn.text,
     sentAt,
   });
 
   // Refresh latest-message projection (best-effort). Voice transcripts
-  // can be long — `tryUpsert` truncates internally before encryption,
-  // so we don't need to pre-truncate here.
+  // can be long — `tryUpsert` truncates internally, so we don't need
+  // to pre-truncate here.
   await tryUpsertPatientLatestMessage(db, {
     conversationId,
     body: turn.text,

@@ -16,27 +16,26 @@ import { ExternalLink } from "lucide-react";
  * and either NotFound or push the URL without loading the other
  * bundle. The external-link icon visually signals the navigation
  * cost so operators aren't surprised by the brief reload.
+ *
+ * Active vs idle styling reuses the `.nav-item-active` /
+ * `.nav-item-idle` utilities defined in index.css so the switcher
+ * matches the main nav rail visually.
  */
 export function ConsoleSwitcher() {
   return (
     <div
       className="border-b mb-3 pb-3"
-      style={{ borderColor: "#e5e7eb" }}
+      style={{ borderColor: "hsl(var(--line-1))" }}
       data-testid="console-switcher"
     >
       <p
-        className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-2 px-2"
-        style={{ color: "#c9a24a" }}
+        className="text-[10px] uppercase tracking-[0.22em] font-semibold mb-2 px-2"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
       >
         Console
       </p>
       <div
-        className="block px-4 py-2 text-sm rounded font-medium mb-1"
-        style={{
-          backgroundColor: "#0a1f44",
-          color: "#ffffff",
-          borderLeft: "3px solid #c9a24a",
-        }}
+        className="block px-4 py-2 text-sm rounded-md font-medium mb-1 nav-item-active"
         aria-current="page"
         data-testid="console-switcher-current"
       >
@@ -44,8 +43,7 @@ export function ConsoleSwitcher() {
       </div>
       <a
         href="/admin"
-        className="flex items-center justify-between px-4 py-2 text-sm rounded font-medium transition-colors hover:bg-gray-100"
-        style={{ color: "#0a1f44", borderLeft: "3px solid transparent" }}
+        className="flex items-center justify-between px-4 py-2 text-sm rounded-md font-medium nav-item-idle"
         data-testid="console-switcher-link-shop"
       >
         <span>Shop &amp; Fittings</span>

@@ -1,9 +1,14 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { makeAuthRouter, type AuthDeps } from "@workspace/resupply-auth";
 import router from "./routes";
+import storefrontRouter from "./routes/storefront";
+import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
+import { errorHandler } from "./middlewares/errorHandler";
+import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
 const app: Express = express();
@@ -12,6 +17,12 @@ const app: Express = express();
 // looks like it came from 127.0.0.1, which breaks rate limiting and
 // audit-log IP capture.
 app.set("trust proxy", 1);
+
+// Security headers — mounted FIRST so every response (including the
+// Stripe webhook below, every CORS preflight, and every error handler
+// response) carries them. See middlewares/securityHeaders.ts for the
+// header set + per-header rationale.
+app.use(securityHeaders);
 
 // CORS allowlist resolution, in priority order:
 //   1. RESUPPLY_ALLOWED_ORIGINS — explicit comma-separated list. Use this
@@ -74,16 +85,13 @@ const allowedOrigins = (() => {
   return dev;
 })();
 
-// `credentials` is intentionally OFF: the dashboard authenticates with
-// `Authorization: Bearer <clerk_token>`, never cookies. Setting
-// `credentials: true` would oblige us to keep an exact-match Origin
-// allowlist forever (browsers refuse `Access-Control-Allow-Origin: *`
-// when credentials are enabled) AND would unlock cookie-based CSRF
-// attack surface that we don't actually use. Bearer tokens are
-// immune to classic CSRF because the browser does not auto-attach
-// them — JS code must read and send them deliberately. Leaving
-// credentials off is the simpler, safer default for a Bearer-only
-// API.
+// `credentials: true` is required for the in-house auth path —
+// the dashboard sends the `pf_session` cookie cross-origin, and
+// browsers strip Set-Cookie / Cookie when credentials aren't
+// allowed. The exact-match Origin allowlist above is what makes
+// this safe (browsers refuse `Access-Control-Allow-Origin: *`
+// when credentials are enabled, so every allowed origin is
+// vetted hostname-by-hostname).
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -91,6 +99,7 @@ app.use(
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`Origin ${origin} not allowed by CORS policy`));
     },
+    credentials: true,
   }),
 );
 
@@ -128,18 +137,90 @@ app.post(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// session middleware — attaches auth state (`getAuth(req)`) to
-// every request so downstream admin-gated routes can read it. Safe
-// to mount globally: it's a no-op for unauthenticated requests, and
-// the unauthenticated /healthz, /readyz probes don't read auth state
-// at all. We mount it BEFORE the route tree so every nested router
-// inherits it without needing per-router wiring.
-app.use(clerkMiddleware());
+// In-house /auth/* routes. The router is unconditionally mounted;
+// any required-env misconfig throws here so it surfaces at boot
+// rather than at the first sign-in attempt.
+const authDeps = getAuthDeps();
+app.use(
+  "/resupply-api/auth",
+  makeAuthRouter(authDeps, { productName: "Resupply" }),
+);
+logger.info(
+  { event: "auth_in_house_mounted" },
+  "in-house auth routes mounted at /resupply-api/auth",
+);
+
+// Second mount of the same auth router under /api/auth, used by the
+// patient-facing storefront (cpap-fitter). It shares the same
+// `pf_session` cookie + `auth.users` table as the dashboard mount
+// above — sign in once on either surface, the session works on the
+// other. The only difference vs. the dashboard mount is
+// `allowSignUp: true`: the cash-pay storefront accepts customer
+// sign-ups (default role `customer`), while the staff dashboard
+// must remain invite-only (`allowSignUp: false`). All other deps
+// (DB pool, audit, email, customerIdResolver) are reused
+// from `getAuthDeps()` so we never have two divergent code paths.
+const storefrontAuthDeps: AuthDeps = { ...authDeps, allowSignUp: true };
+app.use(
+  "/api/auth",
+  makeAuthRouter(storefrontAuthDeps, {
+    productName: "Penn Home Medical Supply",
+  }),
+);
+logger.info(
+  { event: "auth_in_house_storefront_mounted" },
+  "in-house auth routes mounted at /api/auth (storefront, allowSignUp=true)",
+);
+
+// Storefront-specific rate limits (lifted from the deleted
+// `api-server` artifact). Orders cost Penn an email + a fulfillment
+// workflow per request — throttle hard. Usage events are anonymous
+// telemetry — looser limit. Both are keyed by IP via `ipKeyGenerator`
+// for IPv6-safe normalisation. `app.set("trust proxy", 1)` above is
+// what makes the IP key honest behind Replit's reverse proxy.
+const storefrontOrderLimiter = expressRateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many order attempts from this network. Please wait a few minutes and try again, or call Penn Home Medical Supply directly.",
+  },
+});
+app.use("/api/orders", storefrontOrderLimiter);
+
+const storefrontUsageEventLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "Too many tracking events" },
+});
+app.use("/api/usage-events", storefrontUsageEventLimiter);
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,
 // and the admin smoke endpoint /resupply-api/me; richer endpoints
 // land in later phases.
 app.use("/resupply-api", router);
+
+// Storefront routes (lifted in from the deleted `api-server`
+// artifact). Mounted under /api so the cpap-fitter SPA's existing
+// fetch calls — `/api/orders`, `/api/recommend`, `/api/admin/*`,
+// `/api/usage-events`, `/api/reminders`, `/api/healthz` — keep
+// working unchanged. Both `/api` and `/resupply-api` are advertised
+// in this artifact's artifact.toml `paths` so the Replit reverse
+// proxy routes both prefixes to this same Express process.
+app.use("/api", storefrontRouter);
+
+// Top-level error handler — MUST be the last middleware mounted on
+// the app. Catches any error a route handler throws (or passes via
+// next(err)), emits ONE structured log line, and returns a generic
+// JSON envelope so we never leak stack traces or PHI-adjacent
+// identifiers in error responses. See middlewares/errorHandler.ts.
+app.use(errorHandler);
 
 export default app;

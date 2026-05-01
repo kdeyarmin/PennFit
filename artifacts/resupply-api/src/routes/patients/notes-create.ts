@@ -5,17 +5,17 @@
 // moment", and rewriting history defeats its operational purpose.
 //
 // PHI: the body almost certainly carries PHI (call summaries quote
-// the patient verbatim, family situation, etc). Encrypt at write,
-// never log the plaintext, and never echo it back into the audit
-// metadata.
+// the patient verbatim, family situation, etc). Stored as plaintext
+// text post-migration 0025; never log the plaintext, and never echo
+// it back into the audit metadata.
 
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { encrypt, getDbPool, patientNotes, patients } from "@workspace/resupply-db";
+import { getDbPool, patientNotes, patients } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -74,7 +74,7 @@ router.post("/patients/:id/notes", requireAdmin, async (req, res) => {
     .insert(patientNotes)
     .values({
       patientId,
-      body: sql`${encrypt(body)}`,
+      body,
       authorEmail: req.adminEmail ?? "<unknown>",
       authorUserId: req.adminUserId ?? null,
     })

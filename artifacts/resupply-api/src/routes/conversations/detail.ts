@@ -1,9 +1,7 @@
-// GET /conversations/:id — conversation detail with decrypted messages.
+// GET /conversations/:id — conversation detail with full message body.
 //
-// This is the only endpoint that surfaces decrypted message bodies to
-// the admin console. Decryption happens in the SELECT projection
-// via `decrypt(messages.body)` so plaintext PHI never lives in Node
-// memory between Postgres and the JSON serialiser.
+// This is the only endpoint that surfaces full message bodies to
+// the admin console.
 //
 // Writes one `conversation.view` audit row with the conversation id
 // as target. The metadata records the conversation channel + status
@@ -18,7 +16,6 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   conversations,
-  decrypt,
   getDbPool,
   messages,
   patients,
@@ -45,13 +42,20 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     .select({
       id: conversations.id,
       patientId: conversations.patientId,
-      patientFirstName: decrypt(patients.legalFirstName),
-      patientLastName: decrypt(patients.legalLastName),
+      patientFirstName: patients.legalFirstName,
+      patientLastName: patients.legalLastName,
       episodeId: conversations.episodeId,
       channel: conversations.channel,
       status: conversations.status,
       lastMessageAt: conversations.lastMessageAt,
       createdAt: conversations.createdAt,
+      assignedAdminUserId: conversations.assignedAdminUserId,
+      assignedAt: conversations.assignedAt,
+      priority: conversations.priority,
+      slaDueAt: conversations.slaDueAt,
+      escalatedAt: conversations.escalatedAt,
+      escalatedTo: conversations.escalatedTo,
+      escalationReason: conversations.escalationReason,
     })
     .from(conversations)
     .leftJoin(patients, eq(patients.id, conversations.patientId))
@@ -69,7 +73,7 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
       id: messages.id,
       direction: messages.direction,
       senderRole: messages.senderRole,
-      body: decrypt(messages.body),
+      body: messages.body,
       deliveryStatus: messages.deliveryStatus,
       sentAt: messages.sentAt,
       deliveredAt: messages.deliveredAt,
@@ -120,6 +124,13 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     status: header.status,
     lastMessageAt: toIso(header.lastMessageAt),
     createdAt: toIsoRequired(header.createdAt),
+    assignedAdminUserId: header.assignedAdminUserId ?? null,
+    assignedAt: toIso(header.assignedAt),
+    priority: header.priority ?? "normal",
+    slaDueAt: toIso(header.slaDueAt),
+    escalatedAt: toIso(header.escalatedAt),
+    escalatedTo: header.escalatedTo ?? null,
+    escalationReason: header.escalationReason ?? null,
     messages: messageRows.map((m) => ({
       id: m.id,
       direction: m.direction,

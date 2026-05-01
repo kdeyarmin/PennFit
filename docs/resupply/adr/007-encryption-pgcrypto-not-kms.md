@@ -1,5 +1,27 @@
 # ADR 007 — pgcrypto (not AWS KMS) for PHI encryption in dev
 
+> **Status: Superseded.** Migration
+> [`0025_strip_phi_encryption`](../../../lib/resupply-db/drizzle/0025_strip_phi_encryption.sql)
+> removed column-level pgcrypto encryption from the resupply schema
+> entirely. PHI is now stored as plaintext `text` / `jsonb` and
+> protected by Postgres authn + storage-layer encryption-at-rest
+> instead. The `RESUPPLY_DATA_KEY` env var is no longer read by any
+> code path. This ADR is preserved as historical record only — see
+> `docs/PRODUCTION_READINESS.md` and `ARCHITECTURE.md` for the
+> current model.
+>
+> **Task #29 / #32 follow-up.** The pgcrypto extension itself is no
+> longer a runtime requirement. The active schema only uses
+> `gen_random_uuid()`, which has been in Postgres core since v13.
+> Migration
+> [`0000_plain_bloodstorm`](../../../lib/resupply-db/drizzle/0000_plain_bloodstorm.sql)
+> wraps `CREATE EXTENSION pgcrypto` in a tolerant DO/EXCEPTION block,
+> and `0025_strip_phi_encryption` only resolves `pgp_sym_decrypt`
+> when it actually needs to decrypt rows — so a fresh deploy against
+> a Postgres flavor that does not ship pgcrypto rolls forward
+> cleanly. The from-scratch path is exercised by
+> [`lib/resupply-db/scripts/migrate.test.ts`](../../../lib/resupply-db/scripts/migrate.test.ts).
+
 ## Context
 
 The original plan called for AWS KMS-backed envelope encryption on

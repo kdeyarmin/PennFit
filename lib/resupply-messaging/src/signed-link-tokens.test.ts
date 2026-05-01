@@ -9,16 +9,16 @@ import {
 const KEY_ENV = "RESUPPLY_LINK_HMAC_KEY";
 
 describe("signLinkToken / verifyLinkToken", () => {
-  let saved: string | undefined;
+  let savedKey: string | undefined;
 
   beforeEach(() => {
-    saved = process.env[KEY_ENV];
+    savedKey = process.env[KEY_ENV];
     process.env[KEY_ENV] = "test-key-aaaa";
   });
 
   afterEach(() => {
-    if (saved === undefined) delete process.env[KEY_ENV];
-    else process.env[KEY_ENV] = saved;
+    if (savedKey === undefined) delete process.env[KEY_ENV];
+    else process.env[KEY_ENV] = savedKey;
   });
 
   it("round-trips a valid token", () => {
@@ -165,5 +165,12 @@ describe("signLinkToken / verifyLinkToken", () => {
     expect(() =>
       signLinkToken({ conversationId: "", action: "confirm" }),
     ).toThrow(/conversationId/);
+  });
+
+  it("throws when RESUPPLY_LINK_HMAC_KEY is unset", () => {
+    delete process.env[KEY_ENV];
+    expect(() =>
+      signLinkToken({ conversationId: "conv-x", action: "confirm" }),
+    ).toThrow(/RESUPPLY_LINK_HMAC_KEY/);
   });
 });

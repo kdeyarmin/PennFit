@@ -4,12 +4,7 @@ import { URL } from "node:url";
 
 import { WebSocketServer, type WebSocket } from "ws";
 
-import {
-  PgcryptoNotInstalledError,
-  assertPgcryptoEnabled,
-  getDbPool,
-  setProjectionLogger,
-} from "@workspace/resupply-db";
+import { getDbPool, setProjectionLogger } from "@workspace/resupply-db";
 
 import { assertRequiredEnv } from "./lib/env-check";
 
@@ -162,12 +157,6 @@ function serializeErr(err: unknown): { name: string; message?: string } {
   return { name: "unknown" };
 }
 
-// Preflight: refuse to listen if pgcrypto is missing. Without the
-// extension, any subsequent encrypted PHI write would fail at SQL
-// time with a confusing "function pgp_sym_encrypt does not exist"
-// error. Failing fast here turns that into a clear, actionable boot
-// error and keeps a half-broken process out of the load balancer.
-//
 // Why we sleep before exit: pino with a transport (pino-pretty in
 // dev, any worker-thread destination in prod) buffers log writes in
 // a worker thread. A bare `process.exit(1)` immediately after
@@ -181,21 +170,77 @@ async function flushLogsAndExit(code: number): Promise<never> {
   process.exit(code);
 }
 
-async function start(): Promise<void> {
+// Process-level error traps. Without these, an unhandled promise
+// rejection in a fire-and-forget caller (a void-prefixed
+// req.log.warn(...) or an audit-write that races a request close)
+// would either silently exit the process (Node 15+ default) or
+// surface only as a generic Node warning. We log structured context
+// + flush logs + exit so the orchestrator restarts us cleanly.
+process.on("uncaughtException", (err) => {
+  logger.fatal(
+    { err: { name: err.name, message: err.message, stack: err.stack } },
+    "uncaughtException — exiting",
+  );
+  void flushLogsAndExit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  logger.fatal(
+    {
+      err:
+        reason instanceof Error
+          ? { name: reason.name, message: reason.message, stack: reason.stack }
+          : { name: "non_error_rejection", value: String(reason) },
+    },
+    "unhandledRejection — exiting",
+  );
+  void flushLogsAndExit(1);
+});
+
+// Graceful shutdown: drain HTTP, close the WS server, close the DB
+// pool, exit. Without this, SIGTERM kills in-flight requests
+// mid-flight (the orchestrator's deploy-rollover signal). The
+// 25-second cap is below typical orchestrator grace periods (30s on
+// Replit, K8s default) so we always abort cleanly before the kernel
+// SIGKILLs us — better to drop a stuck connection than have the
+// kernel interrupt a half-written DB transaction.
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) {
+    logger.warn(
+      { signal },
+      "second shutdown signal — exiting immediately",
+    );
+    await flushLogsAndExit(0);
+  }
+  shuttingDown = true;
+  logger.info({ signal }, "shutdown: draining in-flight requests");
+
+  const httpClosed = new Promise<void>((resolve) => {
+    httpServer.close(() => resolve());
+  });
+  wss.close();
+
+  const timeout = new Promise<void>((resolve) =>
+    setTimeout(resolve, 25_000),
+  );
+  await Promise.race([httpClosed, timeout]);
+
   try {
-    await assertPgcryptoEnabled(getDbPool());
+    await getDbPool().end();
   } catch (err) {
-    if (err instanceof PgcryptoNotInstalledError) {
-      logger.fatal({ err: { message: err.message } }, err.message);
-    } else {
-      logger.fatal(
-        { err },
-        "fatal: resupply-api could not run pgcrypto preflight",
-      );
-    }
-    await flushLogsAndExit(1);
+    logger.warn(
+      { err: serializeErr(err) },
+      "shutdown: db pool close errored",
+    );
   }
 
+  logger.info({ signal }, "shutdown: complete");
+  await flushLogsAndExit(0);
+}
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
+
+async function start(): Promise<void> {
   httpServer.listen(port, () => {
     const voiceConfigured = readVoiceConfigOrNull() !== null;
     logger.info(

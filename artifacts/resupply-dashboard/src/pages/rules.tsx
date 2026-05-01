@@ -128,11 +128,11 @@ function Header({ onCreate }: { onCreate: () => void }) {
       <div>
         <h1
           className="text-2xl font-semibold mb-1"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Frequency rules
         </h1>
-        <p className="text-sm" style={{ color: "#6b7280" }}>
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           Default reminder cadences and channels by therapy type,
           payer, and customer tenure. Per-patient overrides always
           win.
@@ -163,13 +163,13 @@ function RulesTable({
       header: "Name",
       render: (r) => (
         <div>
-          <div className="font-semibold" style={{ color: "#0a1f44" }}>
+          <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
             {r.name}
           </div>
           {r.notes && (
             <div
               className="text-xs whitespace-pre-wrap"
-              style={{ color: "#6b7280" }}
+              style={{ color: "hsl(var(--ink-3))" }}
             >
               {r.notes}
             </div>
@@ -210,7 +210,7 @@ function RulesTable({
       key: "updated",
       header: "Updated",
       render: (r) => (
-        <span className="text-xs" style={{ color: "#6b7280" }}>
+        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {formatDateTime(r.updatedAt)}
         </span>
       ),
@@ -219,7 +219,7 @@ function RulesTable({
       key: "actions",
       header: "",
       render: () => (
-        <span className="text-xs underline" style={{ color: "#0a1f44" }}>
+        <span className="text-xs underline" style={{ color: "hsl(var(--ink-1))" }}>
           Edit →
         </span>
       ),
@@ -256,7 +256,7 @@ function MatchSummary({ rule }: { rule: FrequencyRule }) {
     );
   }
   return (
-    <ul className="text-xs space-y-0.5" style={{ color: "#374151" }}>
+    <ul className="text-xs space-y-0.5" style={{ color: "hsl(var(--ink-2))" }}>
       {parts.map((p) => (
         <li key={p}>{p}</li>
       ))}
@@ -506,7 +506,7 @@ function RuleFormModal({
           <h2
             id="rule-form-title"
             className="text-lg font-semibold"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             {mode === "create" ? "New frequency rule" : "Edit frequency rule"}
           </h2>
@@ -535,7 +535,7 @@ function RuleFormModal({
                 required
                 disabled={isPending}
               />
-              <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+              <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                 Lower runs first.
               </p>
             </div>
@@ -624,7 +624,7 @@ function RuleFormModal({
                 maxLength={2000}
                 rows={3}
                 className="block w-full rounded border px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2"
-                style={{ borderColor: "#d1d5db", color: "#0a1f44" }}
+                style={{ borderColor: "#d1d5db", color: "hsl(var(--ink-1))" }}
                 disabled={isPending}
               />
             </div>
@@ -639,7 +639,7 @@ function RuleFormModal({
               <label
                 htmlFor="rule-active"
                 className="text-sm"
-                style={{ color: "#0a1f44" }}
+                style={{ color: "hsl(var(--ink-1))" }}
               >
                 Active — eligible for matching
               </label>
@@ -656,7 +656,7 @@ function RuleFormModal({
             </p>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t" style={{ borderColor: "#e5e7eb" }}>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t" style={{ borderColor: "hsl(var(--line-1))" }}>
             <div className="flex gap-2">
               {mode === "edit" && initial && (
                 <Button

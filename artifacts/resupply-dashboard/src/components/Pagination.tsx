@@ -33,7 +33,10 @@ export function Pagination({
   return (
     <div
       className="flex items-center justify-between px-5 py-3 border-t text-xs"
-      style={{ borderColor: "#e5e7eb", color: "#374151" }}
+      style={{
+        borderColor: "hsl(var(--line-1))",
+        color: "hsl(var(--ink-2))",
+      }}
     >
       <span>
         {safeTotal === 0

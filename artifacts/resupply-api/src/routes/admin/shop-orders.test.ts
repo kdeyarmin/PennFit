@@ -21,21 +21,24 @@
 //     it expects each query to see, in order.
 //   * Stripe is mocked at the lib/stripe/config layer; only refunds
 //     are exercised here.
-//   * the auth provider is mocked at the @clerk/express layer; the admin gate
+//   * the auth provider is mocked via auth-deps; the admin gate
 //     resolves a verified email matching RESUPPLY_ADMIN_EMAILS.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 // Drizzle stub. Three query shapes are exercised by this router:
 //   1. SELECT → .from() → .where() → .limit() → Promise<rows>
@@ -149,17 +152,11 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_admin" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 function paidOrderRow(over: Partial<Record<string, unknown>> = {}): Record<
@@ -173,7 +170,7 @@ function paidOrderRow(over: Partial<Record<string, unknown>> = {}): Record<
     status: "paid",
     amountTotalCents: 4998,
     currency: "usd",
-    clerkUserId: "user_alice",
+    customerId: "user_alice",
     createdAt: new Date("2026-04-20T12:00:00Z"),
     paidAt: new Date("2026-04-20T12:01:00Z"),
     shippingAddress: null,
@@ -216,8 +213,7 @@ beforeEach(() => {
   createSendgridClientMock.mockImplementation(() => ({
     sendEmail: sendEmailMock,
   }));
-  getAuthMock.mockReset();
-  getUserMock.mockReset();
+    mockAdmin.current = null;
 });
 
 afterEach(() => {
@@ -233,9 +229,7 @@ afterEach(() => {
 // POST /admin/shop/orders/:orderId/tracking
 // =====================================================================
 describe("POST /admin/shop/orders/:orderId/tracking", () => {
-  it("rejects callers without admin sign-in", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
       .send({ carrier: "UPS", number: "1Z999AA1" });
     expect([401, 403]).toContain(res.status);
@@ -492,7 +486,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(updateBareCalls.count).toBe(0);
   });
 
-  it("falls back to persisted customer_email when clerk_user_id is null (guest re-ship)", async () => {
+  it("falls back to persisted customer_email when customer_id is null (guest re-ship)", async () => {
     stubVerifiedAdmin();
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
@@ -500,11 +494,11 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
 
     const shippedAt = new Date("2026-04-30T09:00:00Z");
     selectQueue.push([
-      paidOrderRow({ clerkUserId: null, customerEmail: "guest@example.com" }),
+      paidOrderRow({ customerId: null, customerEmail: "guest@example.com" }),
     ]); // loadOrder
     updateQueue.push([
       paidOrderRow({
-        clerkUserId: null,
+        customerId: null,
         customerEmail: "guest@example.com",
         trackingCarrier: "UPS",
         trackingNumber: "1Z-GUEST",
@@ -513,14 +507,14 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     ]); // tracking UPDATE
     updateQueue.push([
       paidOrderRow({
-        clerkUserId: null,
+        customerId: null,
         customerEmail: "guest@example.com",
         trackingCarrier: "UPS",
         trackingNumber: "1Z-GUEST",
         shippedAt,
       }),
     ]); // atomic claim
-    // No shop_customers SELECT expected — clerkUserId is null.
+    // No shop_customers SELECT expected — customerId is null.
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -612,9 +606,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
 // POST /admin/shop/orders/:orderId/delivered
 // =====================================================================
 describe("POST /admin/shop/orders/:orderId/delivered", () => {
-  it("rejects callers without admin sign-in", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const res = await request(makeApp()).post(
+  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp()).post(
       `/resupply-api/admin/shop/orders/${VALID_ID}/delivered`,
     );
     expect([401, 403]).toContain(res.status);
@@ -684,9 +676,7 @@ describe("PATCH /admin/shop/orders/:orderId/shipping-address", () => {
     country: "US",
   };
 
-  it("rejects callers without admin sign-in", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
       .patch(`/resupply-api/admin/shop/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
     expect([401, 403]).toContain(res.status);
@@ -749,9 +739,7 @@ describe("PATCH /admin/shop/orders/:orderId/shipping-address", () => {
 // POST /admin/shop/orders/:orderId/refund
 // =====================================================================
 describe("POST /admin/shop/orders/:orderId/refund", () => {
-  it("rejects callers without admin sign-in", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
-    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({});
     expect([401, 403]).toContain(res.status);

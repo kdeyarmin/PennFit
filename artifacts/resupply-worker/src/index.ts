@@ -7,12 +7,7 @@ import { assertRequiredEnv } from "./lib/env-check.js";
 assertRequiredEnv();
 
 import { createServer, type Server } from "node:http";
-import {
-  PgcryptoNotInstalledError,
-  assertPgcryptoEnabled,
-  getDbPool,
-  setProjectionLogger,
-} from "@workspace/resupply-db";
+import { getDbPool, setProjectionLogger } from "@workspace/resupply-db";
 import PgBoss from "pg-boss";
 import { logger } from "./logger.js";
 import { registerReminderJobs } from "./jobs/reminders.js";
@@ -115,6 +110,108 @@ function startHealthServer(): void {
   });
 }
 
+// Apply pending resupply DB migrations on boot, in production only.
+//
+// Why here?
+//   The deploy lifecycle runs every artifact's build + start in
+//   parallel with no shared "post-build" hook we can edit (the
+//   workspace gates direct .replit edits). The worker is the natural
+//   place: it's the resupply system's ops process, already requires
+//   DATABASE_URL, and reports readiness via healthz so the orchestrator
+//   correctly waits for migrations before flipping traffic on. The
+//   api-server's /readyz also waits on pg-boss bootstrap, so api
+//   queries stay 503 until the schema is up to date — no risk of a
+//   stale-code/new-schema crash window.
+//
+// Why subprocess and not in-process?
+//   Reuses the proven, advisory-locked `lib/resupply-db/scripts/migrate.mjs`
+//   verbatim — same exit codes, same logging, same lock key — without
+//   bundling SQL files into the worker artifact. Drizzle's migration
+//   .sql files live in lib/resupply-db/drizzle/ and ship to production
+//   as part of the workspace deploy (see artifact.toml run command,
+//   which references `artifacts/resupply-worker/dist/...`).
+//
+// Path resolution: derived from `import.meta.url` (NOT process.cwd())
+//   so the lookup is independent of however the deploy orchestrator
+//   chooses to set CWD. Both `src/index.ts` (dev under tsx) and
+//   `dist/index.mjs` (prod, bundled) live three directory levels deep
+//   from the workspace root (`artifacts/resupply-worker/{src,dist}/`),
+//   so the same `../../..` walk works in both modes.
+//
+// Why production-gated?
+//   In dev, devs apply migrations explicitly via `pnpm --filter
+//   @workspace/resupply-db run migrate` and don't want a watch-restart
+//   re-running migrations on every code edit. SKIP_BOOT_MIGRATIONS=1
+//   is a BREAK-GLASS override for rollback scenarios where an operator
+//   needs to boot worker code WITHOUT applying new migrations. It logs
+//   a warn so it shows up in any "migrations skipped in prod" alert.
+async function applyResupplyMigrationsOnBoot(): Promise<void> {
+  if (process.env.SKIP_BOOT_MIGRATIONS === "1") {
+    logger.warn(
+      "SKIP_BOOT_MIGRATIONS=1; skipping resupply DB migrations on boot. " +
+        "This is a break-glass override and should not be set in normal operation.",
+    );
+    return;
+  }
+  if (process.env.NODE_ENV !== "production") {
+    logger.info(
+      "NODE_ENV != production; skipping resupply DB migrations on boot " +
+        "(apply manually in dev via `pnpm --filter @workspace/resupply-db run migrate`).",
+    );
+    return;
+  }
+
+  const { spawn } = await import("node:child_process");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const { existsSync } = await import("node:fs");
+
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const workspaceRoot = path.resolve(here, "..", "..", "..");
+  const migrateScript = path.resolve(
+    workspaceRoot,
+    "lib/resupply-db/scripts/migrate.mjs",
+  );
+
+  // Fail with a clear error BEFORE spawn if the script isn't where we
+  // expect — much more debuggable than a node ENOENT against a path
+  // that may not be obvious from a stack trace.
+  if (!existsSync(migrateScript)) {
+    throw new Error(
+      `resupply migrate script not found at ${migrateScript}. ` +
+        `This usually means the workspace layout changed (resupply-worker ` +
+        `is no longer 3 directory levels deep from the workspace root) ` +
+        `or the resupply-db package was not shipped with the deploy.`,
+    );
+  }
+
+  logger.info(
+    { migrateScript },
+    "applying resupply DB migrations on boot (advisory-locked, idempotent)",
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("node", [migrateScript], {
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("error", (err) => reject(err));
+    child.on("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `resupply migrate.mjs exited with code=${code} signal=${signal}`,
+        ),
+      );
+    });
+  });
+
+  logger.info("resupply DB migrations complete");
+}
+
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -127,22 +224,19 @@ async function main(): Promise<void> {
   // starting" (retry) from "process crashed" (fail deploy).
   startHealthServer();
 
-  // Preflight: any future job handler that touches encrypted PHI
-  // requires pgcrypto. Refuse to start pg-boss if the extension is
-  // missing — much clearer than a job blowing up partway through
-  // execution. The check goes through the shared resupply-db pool,
-  // not pg-boss's internal pool, since pg-boss has not booted yet.
+  // Apply DB migrations BEFORE pg-boss start so a partially-migrated
+  // schema never serves traffic. If migrate fails (bad SQL,
+  // permissions, lost lock), throw up to the top-level main().catch()
+  // which logs fatal and exits 1 — the orchestrator then sees healthz
+  // never flips to 200 and marks the deploy failed instead of
+  // half-promoting it.
   try {
-    await assertPgcryptoEnabled(getDbPool());
+    await applyResupplyMigrationsOnBoot();
   } catch (err) {
-    if (err instanceof PgcryptoNotInstalledError) {
-      logger.fatal({ err: { message: err.message } }, err.message);
-    } else {
-      logger.fatal(
-        { err },
-        "fatal: resupply-worker could not run pgcrypto preflight",
-      );
-    }
+    logger.fatal(
+      { err },
+      "fatal: resupply-worker could not apply DB migrations on boot",
+    );
     await flushLogsAndExit(1);
   }
 
@@ -228,11 +322,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // Use the same flush helper as the in-main preflight path so the
-  // fatal line isn't dropped by pino's transport worker buffer.
-  // Without an awaited delay before exit, this terminal log can
-  // vanish, leaving admins with a process that died for no
-  // visible reason.
+  // Use the flush helper so the fatal line isn't dropped by pino's
+  // transport worker buffer. Without an awaited delay before exit,
+  // this terminal log can vanish, leaving admins with a process that
+  // died for no visible reason.
   logger.fatal({ err }, "fatal: resupply-worker failed to start");
   void flushLogsAndExit(1);
 });

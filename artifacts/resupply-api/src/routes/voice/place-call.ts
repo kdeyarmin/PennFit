@@ -1,10 +1,10 @@
 // POST /voice/place-call — admin-initiated outbound call.
 //
 // Flow:
-//   1. requireAdmin gate (clerk + allowlist).
+//   1. requireAdmin gate (in-house pf_session cookie + role check).
 //   2. Voice config gate — 503 if any required env var is missing.
 //   3. Body validation (zod) — { patientId, episodeId } UUIDs.
-//   4. Patient + episode lookup. Decrypt phone number SQL-side; refuse
+//   4. Patient + episode lookup. Read phone number directly; refuse
 //      if the patient row carries no phone or the episode doesn't
 //      belong to the patient.
 //   5. Insert a `conversations` row (channel='voice', status='open').
@@ -25,8 +25,7 @@
 // We deliberately do NOT roll back the conversations row on Twilio
 // failure: the audit log + the dashboard timeline both need to show
 // "the admin tried to call at T". Rolling back would erase that
-// trail — exactly the wrong instinct for HIPAA-bound admin action
-// audits.
+// trail — exactly the wrong instinct for an admin-action audit.
 
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
@@ -36,7 +35,6 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   conversations,
-  decrypt,
   episodes,
   getDbPool,
   patients,
@@ -98,12 +96,12 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
   const pool = getDbPool();
   const db = drizzle(pool);
 
-  // Single round-trip: confirm patient exists, decrypt phone, confirm
+  // Single round-trip: confirm patient exists, read phone, confirm
   // the episode belongs to the same patient.
   const patientRows = await db
     .select({
       id: patients.id,
-      phoneE164: decrypt(patients.phoneE164),
+      phoneE164: patients.phoneE164,
       status: patients.status,
     })
     .from(patients)

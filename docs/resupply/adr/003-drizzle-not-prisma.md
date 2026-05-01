@@ -3,7 +3,7 @@
 ## Context
 
 The original plan called for Prisma. The existing `lib/db` package already
-uses Drizzle with `node-postgres`, and Penn Fit's Drizzle schema is the
+uses Drizzle with `node-postgres`, and the PennPaps fitter's Drizzle schema is the
 template every new contributor in this repo learns first.
 
 Two ORMs in one repo would mean two migration tools, two query languages,
@@ -25,17 +25,60 @@ Use Drizzle for the resupply schema in `lib/resupply-db`.
   throwaway dev DB, but it is documented as unsafe against any DB that
   contains data because it diffs the live schema and can silently rewrite
   columns. Migration history is stored in `drizzle.resupply_migrations`
-  so it does not collide with Penn Fit's `public.*` tables. The first
+  so it does not collide with the PennPaps fitter's `public.*` tables. The first
   migration enables the `pgcrypto` extension and creates the `resupply`
   schema, both with `IF NOT EXISTS` so a re-run against an already-
   bootstrapped DB is a no-op.
+
+### Storefront database (`lib/db`)
+
+The same policy applies to the storefront / PennPaps fitter database
+(`lib/db`, used by `artifacts/api-server` and `artifacts/cpap-fitter`).
+It originally shipped schema changes via `drizzle-kit push` from
+`scripts/post-merge.sh`, with no schema step at all on production
+deploys — leaving prod exposed to the same silent-column-rewrite
+failure mode this ADR rules out for the resupply schema, and to
+straightforward schema drift between dev and prod.
+
+- Migrations: checked-in versioned SQL files. NOTE (Task #37,
+  2026-05): the historical `@workspace/db` package was deleted and
+  its schema folded into `@workspace/resupply-db/src/schema/storefront/`,
+  so the storefront tables are now generated and migrated by the
+  resupply-db lib alongside the resupply schema. The old
+  `pnpm --filter @workspace/db generate|migrate` commands and the
+  `lib/db/scripts/migrate.mjs` runner no longer exist; the same
+  `pg_advisory_lock` discipline applies via the resupply migrator,
+  which now owns the entire `public.*` storefront table set as well.
+- The storefront tables stay in the default `public` schema, so the
+  drizzle config sets `schemaFilter: ["public"]` to keep generated
+  migrations from touching resupply tables.
+- Migration history is stored in `drizzle.storefront_migrations` —
+  same `drizzle` schema as the resupply history, different table — so
+  the two libraries never share or overwrite each other's state.
+- The cutover migration (`0000_baseline.sql`) writes every statement
+  with `IF NOT EXISTS` (or wrapped in a `DO` block for the unique
+  constraint) so it is a no-op against environments that already had
+  the schema applied via the prior `push` flow. Future migrations
+  should NOT do this — they should be sequential and assume the prior
+  state.
+- Deploy wiring: `scripts/post-merge.sh` invokes the storefront
+  migrator (replacing the prior `pnpm --filter db push` call), and
+  `artifacts/api-server/.replit-artifact/artifact.toml`'s production
+  build step runs the migrator before building the server — mirroring
+  what `artifacts/resupply-api/.replit-artifact/artifact.toml` already
+  does for the resupply DB. The api-server artifact owns the deploy-
+  time migrate (rather than the cpap-fitter static build) because it
+  is the consumer most tightly coupled to the storefront schema.
+- `push` and `push-force` remain in `lib/db/package.json` strictly as
+  developer conveniences against a throwaway dev DB, with the same
+  caveats noted above.
 - Encryption for PHI fields: implemented as a Drizzle column transform that
   wraps pgcrypto's `pgp_sym_encrypt` / `pgp_sym_decrypt`. See ADR 007.
 - Query patterns: relational queries via Drizzle's `with` builder; raw SQL
   for the rare reporting query.
 
 The resupply tables live in their own Postgres schema (`resupply.*`) so they
-do not collide with Penn Fit's tables (`public.orders`, `public.patients`
+do not collide with the PennPaps fitter's tables (`public.orders`, `public.patients`
 would conflict otherwise).
 
 ## Consequences

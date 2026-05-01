@@ -12,6 +12,7 @@
   "references": [
     { "path": "../resupply-audit" },
     { "path": "../resupply-db" },
+    { "path": "../resupply-domain" },
     { "path": "../resupply-email" },
     { "path": "../resupply-messaging" },
     { "path": "../resupply-telecom" }

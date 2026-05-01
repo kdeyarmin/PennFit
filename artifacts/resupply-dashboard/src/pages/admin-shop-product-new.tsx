@@ -41,13 +41,13 @@ const FIELD_LABEL_STYLE: React.CSSProperties = {
   display: "block",
   fontSize: 13,
   fontWeight: 600,
-  color: "#0a1f44",
+  color: "hsl(var(--ink-1))",
   marginBottom: 4,
 };
 
 const FIELD_HINT_STYLE: React.CSSProperties = {
   fontSize: 12,
-  color: "#6b7280",
+  color: "hsl(var(--ink-3))",
   marginTop: 4,
   lineHeight: 1.4,
 };
@@ -81,7 +81,7 @@ const SECTION_TITLE_STYLE: React.CSSProperties = {
   margin: "0 0 12px",
   fontSize: 15,
   fontWeight: 600,
-  color: "#0a1f44",
+  color: "hsl(var(--ink-1))",
 };
 
 interface FormState {
@@ -308,7 +308,7 @@ export function AdminShopProductNewPage() {
         <a
           href={`${import.meta.env.BASE_URL}admin/shop/inventory`}
           style={{
-            color: "#0a1f44",
+            color: "hsl(var(--ink-1))",
             fontSize: 13,
             textDecoration: "none",
             display: "inline-block",
@@ -322,7 +322,7 @@ export function AdminShopProductNewPage() {
             margin: 0,
             fontSize: 24,
             fontWeight: 600,
-            color: "#0a1f44",
+            color: "hsl(var(--ink-1))",
           }}
         >
           Add Shop Product
@@ -330,7 +330,7 @@ export function AdminShopProductNewPage() {
         <p
           style={{
             margin: "8px 0 0",
-            color: "#374151",
+            color: "hsl(var(--ink-2))",
             fontSize: 14,
             lineHeight: 1.5,
           }}
@@ -373,7 +373,7 @@ export function AdminShopProductNewPage() {
               {" — "}
               <a
                 href={`${import.meta.env.BASE_URL}admin/shop/inventory`}
-                style={{ color: "#0a1f44" }}
+                style={{ color: "hsl(var(--ink-1))" }}
               >
                 edit it on the inventory page
               </a>
@@ -724,7 +724,7 @@ export function AdminShopProductNewPage() {
             onClick={() => setLocation("/admin/shop/inventory")}
             style={{
               background: "#fff",
-              color: "#374151",
+              color: "hsl(var(--ink-2))",
               border: "1px solid #d1d5db",
               padding: "10px 20px",
               fontSize: 14,

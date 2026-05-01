@@ -6,7 +6,6 @@ import {
   ScanFace,
   ClipboardList,
   Zap,
-  PlayCircle,
   ArrowRight,
   BookOpen,
   HelpCircle,
@@ -15,6 +14,7 @@ import {
   PackageCheck,
   UserCircle2,
 } from "lucide-react";
+import { HomeStatusBanner } from "@/components/home-status-banner";
 
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
@@ -23,6 +23,7 @@ export function Home() {
   useDocumentTitle("");
   return (
     <div className="flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-28">
+      <HomeStatusBanner />
       {/* Hero */}
       <div className="text-center max-w-4xl mb-12 md:mb-16 animate-shimmer-in">
         <div className="flex justify-center mb-5">
@@ -72,13 +73,10 @@ export function Home() {
               Shop CPAP supplies
             </Button>
           </Link>
-          <Button asChild size="lg" variant="ghost" className="h-14 px-4 text-base rounded-full text-muted-foreground hover:text-primary gap-2">
-            <a href="/penn-fit-tutorial/" target="_blank" rel="noopener noreferrer">
-              <PlayCircle className="w-5 h-5" />
-              Watch the tutorial
-              <span className="sr-only">(opens in a new tab)</span>
-            </a>
-          </Button>
+          {/* "Watch the tutorial" button removed in the Task #37
+              consolidation along with the standalone pennpaps-tutorial
+              artifact. Patients now see the inline how-it-works copy
+              and animated step rail on /how-it-works instead. */}
         </div>
 
       </div>

@@ -47,29 +47,36 @@ for "comms with patient", not two divergent ones.
 
 ### 2. Phone → patient lookup via a separate `phone_lookup` table
 
-The patients table already stores the phone number encrypted with
-pgcrypto (ADR 007). Encrypted ciphertext is *not* indexable for equality
-lookup, so we cannot answer "what patient does +12155551234 belong to?"
-directly from the patients table.
+> **Section status: Superseded by migration 0025.** When pgcrypto
+> column-level PHI encryption was stripped, the patients table's
+> `phone_e164` became a queryable plaintext column and the
+> `phone_lookup` table + its `RESUPPLY_PHONE_HMAC_KEY` secret were
+> dropped. Inbound-SMS routing now indexes `phone_e164` directly. The
+> original rationale below is preserved for context.
+
+The patients table used to store the phone number encrypted with
+pgcrypto (ADR 007, also superseded). Encrypted ciphertext is *not*
+indexable for equality lookup, so we couldn't answer "what patient
+does +12155551234 belong to?" directly from the patients table.
 
 We added `phone_lookup(patient_id PK→patients.id, hmac_phone bytea
-unique not null, created_at timestamptz)`. `hmac_phone` is
+unique not null, created_at timestamptz)`. `hmac_phone` was
 HMAC-SHA256(normalized E.164) keyed on a NEW secret
 `RESUPPLY_PHONE_HMAC_KEY` — distinct from `RESUPPLY_DATA_KEY` so a
-leaked phone-lookup key can't decrypt anything else. The HMAC is
-deterministic (no salt) so the unique-index lookup works in a single
-SQL query; this is an acceptable trade-off because the ciphertext is
+leaked phone-lookup key couldn't decrypt anything else. The HMAC was
+deterministic (no salt) so the unique-index lookup worked in a single
+SQL query; this was an acceptable trade-off because the ciphertext was
 already protected by the secret key, and an attacker with read access
-to the table but NOT the key can only do a small offline rainbow-table
+to the table but NOT the key could only do a small offline rainbow-table
 attack against E.164 phone numbers (~10^10 keyspace) — slow at
-HMAC-SHA256 cost per guess and only useful if they ALSO have the
-encrypted patient row (which doesn't include the patient's phone in
+HMAC-SHA256 cost per guess and only useful if they ALSO had the
+encrypted patient row (which didn't include the patient's phone in
 plaintext anywhere).
 
-The patients-table phone column was NOT changed; the new table is purely
-additive. If a patient's phone changes, we insert a new
-`phone_lookup` row on the next outbound send and leave the old one in
-place (so old inbound replies still route correctly).
+The patients-table phone column was NOT changed by this ADR; the new
+table was purely additive. If a patient's phone changed, we inserted
+a new `phone_lookup` row on the next outbound send and left the old
+one in place (so old inbound replies still routed correctly).
 
 ### 3. Hybrid scripted-keyword + AI-fallback router
 
@@ -192,16 +199,19 @@ All three rules have positive AND negative self-tests in
 - Each new package boundary is enforced by an architecture self-test
   so a future contributor cannot silently bypass it.
 - All new secrets are namespaced and rotatable independently
-  (`RESUPPLY_PHONE_HMAC_KEY`, `RESUPPLY_LINK_HMAC_KEY`).
+  (`RESUPPLY_LINK_HMAC_KEY`; the `RESUPPLY_PHONE_HMAC_KEY` was
+  retired alongside `phone_lookup` in migration 0025).
 
 ### Negative / Trade-offs
 
-- The `phone_lookup` HMAC is deterministic (required for unique-index
+- (Historical, no longer applies after migration 0025.) The
+  `phone_lookup` HMAC was deterministic (required for unique-index
   equality lookup), so an attacker with both DB read access AND the
-  HMAC key could enumerate the E.164 keyspace offline. Mitigation:
-  the key is a separate secret from `RESUPPLY_DATA_KEY`, the keyspace
-  is bounded, and the attack only links phone → opaque patient_id
-  with no PHI attached.
+  HMAC key could enumerate the E.164 keyspace offline. Mitigation at
+  the time: the key was a separate secret from `RESUPPLY_DATA_KEY`,
+  the keyspace was bounded, and the attack only linked phone →
+  opaque patient_id with no PHI attached. Both the table and the key
+  are gone now.
 - AI fallback is best-effort. If OpenAI is down or slow, we degrade
   to "admin queue, no auto-action" — the conversation is parked
   and the patient gets a "we'll get back to you" reply rather than

@@ -527,8 +527,8 @@ export function Order() {
             <div className="flex items-start gap-3 text-xs text-muted-foreground">
               <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
               <p>
-                Your order is sent securely to Penn Home Medical Supply and stored in their HIPAA-aware
-                fulfillment database, including the contact, shipping, insurance, and prescription details
+                Your order is sent securely to Penn Home Medical Supply and stored in their secure
+                order-fulfillment database, including the contact, shipping, insurance, and prescription details
                 above plus the numeric facial measurements that were used to recommend your mask. Your
                 camera image and video stream were never uploaded — only the measurement numbers leave your
                 device. By submitting, you agree to our{" "}

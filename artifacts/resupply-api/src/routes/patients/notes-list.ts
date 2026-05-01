@@ -5,9 +5,9 @@
 // memory aid, not a long-term archive, and the timeline UI on the
 // patient detail page renders inline rather than virtualising.
 //
-// PHI: the note `body` is encrypted at rest and decrypted server-side
-// before the response. The audit row records the patient_id and the
-// number of rows returned, never the bodies.
+// PHI: the note `body` is stored as plaintext text. The audit row
+// records the patient_id and the number of rows returned, never the
+// bodies.
 
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { decrypt, getDbPool, patientNotes, patients } from "@workspace/resupply-db";
+import { getDbPool, patientNotes, patients } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -49,7 +49,7 @@ router.get("/patients/:id/notes", requireAdmin, async (req, res) => {
   const rows = await db
     .select({
       id: patientNotes.id,
-      body: decrypt(patientNotes.body),
+      body: patientNotes.body,
       authorEmail: patientNotes.authorEmail,
       authorUserId: patientNotes.authorUserId,
       createdAt: patientNotes.createdAt,

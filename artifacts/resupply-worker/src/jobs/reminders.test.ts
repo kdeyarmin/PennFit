@@ -94,28 +94,15 @@ describe("readWorkerMessagingConfig (worker env preflight)", () => {
     expect(cfg.email).toBeNull();
   });
 
-  it("hmacKeysReady is false when either HMAC key is missing", () => {
+  it("hmacKeysReady is false when RESUPPLY_LINK_HMAC_KEY is missing", () => {
     expect(
       readWorkerMessagingConfigForTest({ ...baseEnv }).hmacKeysReady,
     ).toBe(false);
-    expect(
-      readWorkerMessagingConfigForTest({
-        ...baseEnv,
-        RESUPPLY_PHONE_HMAC_KEY: "k",
-      }).hmacKeysReady,
-    ).toBe(false);
-    expect(
-      readWorkerMessagingConfigForTest({
-        ...baseEnv,
-        RESUPPLY_LINK_HMAC_KEY: "k",
-      }).hmacKeysReady,
-    ).toBe(false);
   });
 
-  it("hmacKeysReady is true when both HMAC keys are set", () => {
+  it("hmacKeysReady is true when RESUPPLY_LINK_HMAC_KEY is set", () => {
     const cfg = readWorkerMessagingConfigForTest({
       ...baseEnv,
-      RESUPPLY_PHONE_HMAC_KEY: "k1",
       RESUPPLY_LINK_HMAC_KEY: "k2",
     });
     expect(cfg.hmacKeysReady).toBe(true);

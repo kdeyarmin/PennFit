@@ -1,4 +1,9 @@
-// Route tests for GET /email/click.
+// Route tests for /email/click.
+//
+// Forward-port of main commit 63de00e (Task #20) — the route is now a
+// two-step GET landing + POST action flow. GET renders an HTML form
+// and audits an `email.link.opened` event; POST verifies the token
+// again and performs the side-effect.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -72,7 +77,6 @@ const ENV_KEYS = [
   "SENDGRID_FROM_EMAIL",
   "SENDGRID_FROM_NAME",
   "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY",
-  "RESUPPLY_PHONE_HMAC_KEY",
   "RESUPPLY_LINK_HMAC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
 ] as const;
@@ -87,23 +91,26 @@ function setMessagingEnv(): void {
   process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
   process.env.SENDGRID_FROM_NAME = "Penn Sleep";
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
-  process.env.RESUPPLY_PHONE_HMAC_KEY = "phone-hmac-test-key-32bytesXXXXXX";
   process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
 }
 
-describe("GET /email/click", () => {
+function resetMocks(): void {
+  selectQueue.length = 0;
+  updateQueue.length = 0;
+  logAuditMock.mockReset().mockResolvedValue(undefined);
+  placeOrderMock.mockReset();
+  pausePatientMock.mockReset().mockResolvedValue(undefined);
+  dbStub.select.mockClear();
+  dbStub.insert.mockClear();
+  dbStub.update.mockClear();
+}
+
+describe("GET /email/click (landing page — no side effects)", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
-    selectQueue.length = 0;
-    updateQueue.length = 0;
-    logAuditMock.mockReset().mockResolvedValue(undefined);
-    placeOrderMock.mockReset();
-    pausePatientMock.mockReset().mockResolvedValue(undefined);
-    dbStub.select.mockClear();
-    dbStub.insert.mockClear();
-    dbStub.update.mockClear();
+    resetMocks();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -132,7 +139,6 @@ describe("GET /email/click", () => {
       conversationId: CONVERSATION_ID,
       action: "confirm",
     });
-    // Mutate one char of the signature segment.
     const [payload, sig] = good.split(".");
     const bad =
       payload + "." + (sig.charAt(0) === "A" ? "B" : "A") + sig.slice(1);
@@ -173,6 +179,69 @@ describe("GET /email/click", () => {
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
+  it("renders the landing page with a POST <form> and never mutates state", async () => {
+    setMessagingEnv();
+    const token = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "confirm",
+    });
+    selectQueue.push([{ id: CONVERSATION_ID }]);
+
+    const res = await request(makeApp()).get(
+      `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    // Crucial: the landing page contains a POST form so a mail-scanner
+    // pre-fetch (which only issues GETs) cannot trigger the action.
+    expect(res.text).toContain('method="POST"');
+    expect(res.text).toContain(encodeURIComponent(token));
+
+    // GET must NEVER touch the order-flow / patient-pause helpers.
+    expect(placeOrderMock).not.toHaveBeenCalled();
+    expect(pausePatientMock).not.toHaveBeenCalled();
+    expect(dbStub.update).not.toHaveBeenCalled();
+
+    // The link-open is audited (informational, no PHI mutation).
+    const audits = logAuditMock.mock.calls.map((c) => c[0]);
+    expect(audits.find((a) => a.action === "email.link.opened")).toBeDefined();
+    expect(
+      audits.find((a) => a.action === "messaging.order.confirmed"),
+    ).toBeUndefined();
+  });
+});
+
+describe("POST /email/click (signed action)", () => {
+  beforeEach(() => {
+    for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
+    for (const k of ENV_KEYS) delete process.env[k];
+    resetMocks();
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (originalEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = originalEnv[k];
+    }
+  });
+
+  it("rejects POST with a tampered token", async () => {
+    setMessagingEnv();
+    const good = signLinkToken({
+      conversationId: CONVERSATION_ID,
+      action: "confirm",
+    });
+    const [payload, sig] = good.split(".");
+    const bad =
+      payload + "." + (sig.charAt(0) === "A" ? "B" : "A") + sig.slice(1);
+
+    const res = await request(makeApp()).post(
+      `/resupply-api/email/click?t=${encodeURIComponent(bad)}`,
+    );
+    expect(res.status).toBe(400);
+    expect(placeOrderMock).not.toHaveBeenCalled();
+  });
+
   it("confirm: places order, closes conversation, audits, returns 200", async () => {
     setMessagingEnv();
     const token = signLinkToken({
@@ -189,7 +258,7 @@ describe("GET /email/click", () => {
       fulfillmentIds: ["f1"],
     });
 
-    const res = await request(makeApp()).get(
+    const res = await request(makeApp()).post(
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
     );
     expect(res.status).toBe(200);
@@ -214,7 +283,7 @@ describe("GET /email/click", () => {
       { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
     ]);
 
-    const res = await request(makeApp()).get(
+    const res = await request(makeApp()).post(
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
     );
     expect(res.status).toBe(200);
@@ -239,7 +308,7 @@ describe("GET /email/click", () => {
       { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
     ]);
 
-    const res = await request(makeApp()).get(
+    const res = await request(makeApp()).post(
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
     );
     expect(res.status).toBe(200);

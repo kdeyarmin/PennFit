@@ -8,28 +8,42 @@ must obey. The "why" for each major choice lives in `docs/resupply/adr/`.
 
 ```
 artifacts/
-  resupply-api/         Express + Zod HTTP API (Clerk-protected)
+  resupply-api/         Express + Zod HTTP API (in-house cookie auth) —
+                        also hosts the storefront/fitter routes mounted
+                        at /api/* (Task #37 merged the former api-server
+                        process in here).
   resupply-worker/      pg-boss background worker (durable jobs)
-  resupply-dashboard/   React + Vite admin console (Clerk auth)
+  resupply-dashboard/   React + Vite admin console (in-house cookie auth) —
+                        also hosts the staff PennPaps order/audit/reminders
+                        pages under /admin/pennpaps/*.
+  cpap-fitter/          Customer-facing PennPaps fitter SPA (Vite + React).
 lib/
   resupply-contracts/   Zod schemas + DTOs (shared over the wire)
   resupply-domain/      Pure business logic — no I/O
-  resupply-db/          Drizzle schema + connection
+  resupply-db/          Drizzle schema + connection. Owns BOTH the
+                        resupply schema (resupply.*) and the storefront
+                        schema (public.orders, public.usage_events,
+                        public.admin_audit_log, public.reminder_subscriptions)
+                        under src/schema/storefront/.
   resupply-audit/       Append-only audit logger + helpers
   resupply-telecom/     Twilio (SMS, Voice) + SendGrid (Email) adapters
   resupply-ai/          Anthropic Claude adapter for the conversation agent
-  resupply-testing/     Fixtures, factories, mock vendors (devDeps only)
-  resupply-api-spec/    OpenAPI spec + orval config for the admin API
   resupply-api-client/  Generated React-Query client consumed by the dashboard
+  api-zod / api-client-react
+                        Storefront OpenAPI + generated React-Query client
+                        consumed by cpap-fitter (and api-zod by resupply-api
+                        for storefront route validation).
 docs/resupply/
   ARCHITECTURE.md       This file.
-  adr/                  Architectural Decision Records (000–012).
+  adr/                  Architectural Decision Records.
 ```
 
-The Penn Fit product (`artifacts/api-server`, `artifacts/cpap-fitter`,
-`artifacts/penn-fit-tutorial`) is a separate product and shares only
-`lib/db`'s connection pool. The two products' tables live in different
-Postgres schemas — Penn Fit in `public.*`, resupply in `resupply.*`.
+The PennPaps storefront/fitter and the resupply automation system now
+share one Express process (resupply-api) and one Drizzle lib
+(resupply-db) on top of the same physical Postgres. The two table
+sets still live in distinct schemas — fitter/storefront in `public.*`,
+resupply in `resupply.*` — and the architecture-check script enforces
+that resupply-* libs do not pull in the storefront UI client.
 
 ## Data flow (Phase 0 baseline)
 
@@ -41,9 +55,9 @@ move bytes today.
 ```
                      ┌────────────────────────────┐
                      │  resupply-dashboard (web)  │
-                     │  React + Vite + Clerk      │
+                     │  React + Vite              │
                      └──────────────┬─────────────┘
-                                    │ HTTPS (Clerk JWT)
+                                    │ HTTPS (pf_session cookie)
                                     ▼
                      ┌────────────────────────────┐
                      │  resupply-api (Express)    │
@@ -99,28 +113,36 @@ which runs as part of the `resupply-check` validation step.
   if they need to share something, factor it into `resupply-domain`.
 - Any production code → `resupply-testing`. Testing utilities are devDeps
   in every consumer.
-- Any resupply package → Penn Fit's `lib/db`, `lib/api-zod`, or
+- Any resupply package → the PennPaps fitter's `lib/db`, `lib/api-zod`, or
   `lib/api-client-react`. These are separate products. The dashboard
   ships `@workspace/resupply-api-client` (generated from
   `lib/resupply-api-spec/openapi.yaml`) and is swept by the check
   alongside every other resupply source dir.
 
-## Schema and encryption
+## Schema
 
 - All resupply tables live in the Postgres `resupply` schema (created by
   the first migration in Phase 1). pg-boss tables live in `pgboss_resupply`.
-- Encrypted columns use the `encryptedText()` / `encryptedJson()` Drizzle
-  helpers from `lib/resupply-db`, backed by pgcrypto + `RESUPPLY_DATA_KEY`
-  in dev. See ADR 007 for the migration path to managed KMS before launch.
+- PHI columns (legal name, DOB, phone, email, address) are stored as
+  plaintext `text` / `jsonb`. Migration `0025_strip_phi_encryption`
+  removed the prior pgcrypto column-level encryption and the
+  `RESUPPLY_DATA_KEY` it depended on; ADR 007 has the historical context
+  and is marked superseded.
 
 ## Auth model
 
-- Admins authenticate via Clerk (ADR 005). The api enforces a
-  `requireAdmin` middleware that checks the admin allowlist
-  (`RESUPPLY_ADMIN_EMAILS` env var, comma-separated).
-- Patients do NOT have Clerk accounts. Patient-facing endpoints use
-  short-lived signed links delivered via SMS or email, plus device-side
-  session tokens. Patient auth lands in Phase 10.
+- Admins authenticate via the in-house auth library
+  (`lib/resupply-auth`) — argon2id-hashed passwords (the
+  process-wide `AUTH_PASSWORD_PEPPER` was removed in the Task #38
+  follow-up; see ADR 014 for the rationale), DB-backed sliding
+  sessions, email-token flows for invite / reset / verify. ADR 005
+  is marked superseded; see ADR 014 for the current design.
+- The api enforces a `requireAdmin` middleware that checks DB
+  membership in `auth.users` plus the `RESUPPLY_ADMIN_EMAILS`
+  allowlist (comma-separated env var).
+- Patients do NOT have admin accounts. Patient-facing endpoints use
+  short-lived signed links delivered via SMS or email, signed with
+  `RESUPPLY_LINK_HMAC_KEY`, plus device-side session tokens.
 
 ## Observability
 

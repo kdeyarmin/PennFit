@@ -20,16 +20,14 @@
 //     reviewing the audit log can spot suspiciously empty / long
 //     replies without exposing PHI.
 
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
+import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   conversations,
-  decrypt,
-  encrypt,
   messages,
-  normalizeE164,
   patients,
   tryUpsertPatientLatestMessage,
 } from "@workspace/resupply-db";
@@ -115,8 +113,8 @@ export async function replyInConversation(
   const patientRows = await db
     .select({
       id: patients.id,
-      phoneE164: decrypt(patients.phoneE164),
-      email: decrypt(patients.email),
+      phoneE164: patients.phoneE164,
+      email: patients.email,
     })
     .from(patients)
     .where(eq(patients.id, conv.patientId))
@@ -246,7 +244,7 @@ export async function replyInConversation(
       conversationId,
       direction: "outbound",
       senderRole: "admin",
-      body: sql`${encrypt(body)}`,
+      body,
       deliveryStatus: "queued",
       vendorMetadata:
         conv.channel === "sms"

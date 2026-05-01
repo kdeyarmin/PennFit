@@ -193,7 +193,7 @@ function StockCell({
           style={{
             padding: "6px 12px",
             background: "transparent",
-            color: "#6b7280",
+            color: "hsl(var(--ink-3))",
             border: "1px solid #d1d5db",
             borderRadius: 4,
             fontSize: 13,
@@ -233,7 +233,7 @@ function StockBadge({
 }) {
   if (count === null) {
     return (
-      <span style={{ color: "#6b7280", fontSize: 12 }}>Not tracked</span>
+      <span style={{ color: "hsl(var(--ink-3))", fontSize: 12 }}>Not tracked</span>
     );
   }
   if (count === 0) {
@@ -270,7 +270,7 @@ function StockBadge({
     );
   }
   return (
-    <span style={{ color: "#374151", fontSize: 13 }}>{count} in stock</span>
+    <span style={{ color: "hsl(var(--ink-2))", fontSize: 13 }}>{count} in stock</span>
   );
 }
 
@@ -529,7 +529,7 @@ function BulkStockBar({
           borderRadius: 4,
           fontSize: 14,
           background: "#ffffff",
-          color: "#0a1f44",
+          color: "hsl(var(--ink-1))",
           fontFamily: "inherit",
         }}
       />
@@ -541,7 +541,7 @@ function BulkStockBar({
         style={{
           padding: "6px 14px",
           background: "#ffffff",
-          color: "#0a1f44",
+          color: "hsl(var(--ink-1))",
           border: "none",
           borderRadius: 4,
           fontSize: 13,
@@ -635,7 +635,7 @@ export function AdminShopInventoryPage() {
               margin: 0,
               fontSize: 24,
               fontWeight: 600,
-              color: "#0a1f44",
+              color: "hsl(var(--ink-1))",
             }}
           >
             Shop Inventory
@@ -664,7 +664,7 @@ export function AdminShopInventoryPage() {
         <p
           style={{
             margin: "8px 0 0",
-            color: "#374151",
+            color: "hsl(var(--ink-2))",
             fontSize: 14,
             lineHeight: 1.5,
           }}
@@ -698,13 +698,13 @@ export function AdminShopInventoryPage() {
       ) : null}
 
       {isLoading ? (
-        <div style={{ color: "#6b7280" }}>Loading…</div>
+        <div style={{ color: "hsl(var(--ink-3))" }}>Loading…</div>
       ) : isError ? (
         <div role="alert" style={{ color: "#b91c1c" }}>
           {error instanceof Error ? error.message : "Failed to load inventory."}
         </div>
       ) : !data || data.products.length === 0 ? (
-        <div style={{ color: "#6b7280" }}>No products found.</div>
+        <div style={{ color: "hsl(var(--ink-3))" }}>No products found.</div>
       ) : (
         <>
           <BulkStockBar
@@ -734,7 +734,7 @@ export function AdminShopInventoryPage() {
                     padding: "10px 12px",
                     fontSize: 12,
                     fontWeight: 600,
-                    color: "#374151",
+                    color: "hsl(var(--ink-2))",
                     width: 36,
                   }}
                 >
@@ -751,19 +751,19 @@ export function AdminShopInventoryPage() {
                     onChange={(e) => toggleAll(e.target.checked)}
                   />
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
                   Product
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
                   Price
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
                   Stock
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
                   Edit stock
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
                   Low-stock threshold
                 </th>
               </tr>
@@ -790,10 +790,10 @@ export function AdminShopInventoryPage() {
                       />
                     </td>
                     <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      <div style={{ fontWeight: 500, color: "#0a1f44" }}>
+                      <div style={{ fontWeight: 500, color: "hsl(var(--ink-1))" }}>
                         {p.name}
                       </div>
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                      <div style={{ fontSize: 12, color: "hsl(var(--ink-3))", marginTop: 2 }}>
                         {p.category} · {p.id}
                       </div>
                     </td>

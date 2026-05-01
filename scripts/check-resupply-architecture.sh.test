@@ -202,46 +202,52 @@ echo 'import twilio from "twilio";' > "$WORK"/lib/resupply-telecom/src/ok.ts
 assert_pass "telecom importing twilio (its own vendor)"
 rm "$WORK"/lib/resupply-telecom/src/ok.ts
 
-echo "[self-test] Rule 5: api may not import resupply-testing"
-echo 'import { x } from "@workspace/resupply-testing";' > "$WORK"/artifacts/resupply-api/src/bad.ts
-assert_fail_with "api importing resupply-testing" \
-  "must not import @workspace/resupply-testing"
-rm "$WORK"/artifacts/resupply-api/src/bad.ts
-
-echo "[self-test] Rule 6: api may not import Penn Fit lib/db"
-echo 'import { db } from "@workspace/db";' > "$WORK"/artifacts/resupply-api/src/bad.ts
-assert_fail_with "api importing @workspace/db" \
-  "must not import Penn Fit packages"
-rm "$WORK"/artifacts/resupply-api/src/bad.ts
-
-echo "[self-test] Rule 6: api may not import Penn Fit lib/api-zod"
-echo "import { x } from '@workspace/api-zod';" > "$WORK"/artifacts/resupply-api/src/bad.ts
-assert_fail_with "api importing @workspace/api-zod (single-quoted)" \
-  "must not import Penn Fit packages"
-rm "$WORK"/artifacts/resupply-api/src/bad.ts
+# Rule 5 was removed in Task #37 — @workspace/resupply-testing was
+# deleted from the workspace, so there is nothing left to enforce.
 
 echo "[self-test] Rule 6: dashboard may not import @workspace/api-client-react"
-# Phase 4 retired the dashboard carve-out. The dashboard now ships
-# @workspace/resupply-api-client and is swept by Rule 6 like every
-# other resupply source dir.
+# The storefront UI client is generated for the customer-facing
+# cpap-fitter SPA only. Resupply surfaces use @workspace/resupply-api-client.
 echo 'import { healthCheck } from "@workspace/api-client-react";' \
   > "$WORK"/artifacts/resupply-dashboard/src/bad.ts
 assert_fail_with "dashboard importing @workspace/api-client-react" \
-  "must not import Penn Fit packages"
+  "must not import the storefront UI client"
 rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
 
-echo "[self-test] Rule 6: dashboard may not import @workspace/db"
-echo "import { db } from '@workspace/db';" \
-  > "$WORK"/artifacts/resupply-dashboard/src/bad.ts
-assert_fail_with "dashboard importing @workspace/db (single-quoted)" \
-  "must not import Penn Fit packages"
-rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
+echo "[self-test] Rule 6: worker may not import @workspace/api-client-react"
+echo "import { x } from '@workspace/api-client-react';" \
+  > "$WORK"/artifacts/resupply-worker/src/bad.ts
+assert_fail_with "worker importing @workspace/api-client-react (single-quoted)" \
+  "must not import the storefront UI client"
+rm "$WORK"/artifacts/resupply-worker/src/bad.ts
 
 echo "[self-test] Rule 6: dashboard may import @workspace/resupply-api-client"
 echo 'import { healthCheck } from "@workspace/resupply-api-client";' \
   > "$WORK"/artifacts/resupply-dashboard/src/ok.ts
 assert_pass "dashboard importing resupply-api-client"
 rm "$WORK"/artifacts/resupply-dashboard/src/ok.ts
+
+echo "[self-test] Rule 6: resupply-api may not import @workspace/api-client-react"
+# Regression guard for the architect-flagged Rule 6 carve-out. The
+# storefront router was merged into resupply-api in Task #37 and may
+# import the storefront's Zod schemas (`@workspace/api-zod`, asserted
+# below) — but it must still NEVER import the storefront's React
+# Query CLIENT (`@workspace/api-client-react`), which is React UI
+# code that has no business running on the server.
+echo 'import { useFoo } from "@workspace/api-client-react";' \
+  > "$WORK"/artifacts/resupply-api/src/bad.ts
+assert_fail_with "resupply-api importing @workspace/api-client-react" \
+  "must not import the storefront UI client"
+rm "$WORK"/artifacts/resupply-api/src/bad.ts
+
+echo "[self-test] Rule 6: api MAY import @workspace/api-zod (storefront merged in Task #37)"
+# Companion to the test above: api-zod is the schema package and is
+# explicitly NOT banned anywhere — resupply-api's storefront router
+# uses it for request/response validation. This test pins that the
+# Rule 6 ban list does not accidentally widen to the schema package.
+echo "import { x } from '@workspace/api-zod';" > "$WORK"/artifacts/resupply-api/src/ok.ts
+assert_pass "api importing api-zod (schema package, not the React client)"
+rm "$WORK"/artifacts/resupply-api/src/ok.ts
 
 echo "[self-test] Rule 7: api may not construct 'new Pool('"
 echo "import { Pool } from 'pg';" > "$WORK"/artifacts/resupply-api/src/bad.ts

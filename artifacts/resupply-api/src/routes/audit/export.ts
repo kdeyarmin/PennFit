@@ -33,7 +33,6 @@
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { getAuth, clerkClient } from "@clerk/express";
 
 import { getDbPool } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
@@ -54,7 +53,7 @@ interface AuditRow {
   id: string;
   occurred_at: Date | string | null;
   operator_email: string | null;
-  operator_clerk_id: string | null;
+  operator_user_id: string | null;
   action: string;
   target_table: string | null;
   target_id: string | null;
@@ -140,7 +139,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
   const limitIdx = params.length;
 
   const sql = (
-    `SELECT id, occurred_at, operator_email, operator_clerk_id, ` +
+    `SELECT id, occurred_at, operator_email, operator_user_id, ` +
     `action, target_table, target_id, metadata, ip, user_agent ` +
     `FROM resupply.audit_log ${whereSql} ` +
     `ORDER BY occurred_at DESC ` +
@@ -179,7 +178,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
           ? r.occurred_at.toISOString()
           : r.occurred_at ?? "",
         r.operator_email,
-        r.operator_clerk_id,
+        r.operator_user_id,
         r.action,
         r.target_table,
         r.target_id,
@@ -206,25 +205,15 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
   res.end();
 
   // Best-effort audit trail of the export. Do this AFTER the
-  // response so a logging hiccup never bricks the download.
+  // response so a logging hiccup never bricks the download. The
+  // requireAdmin middleware has already attached adminEmail and
+  // adminUserId to the request, so no auth-provider round-trip
+  // is needed here.
   try {
-    const auth = getAuth(req);
-    let adminEmail: string | null = null;
-    if (auth.userId) {
-      try {
-        const u = await clerkClient.users.getUser(auth.userId);
-        const primary = u.emailAddresses.find(
-          (e) => e.id === u.primaryEmailAddressId,
-        );
-        adminEmail = primary?.emailAddress ?? null;
-      } catch {
-        adminEmail = null;
-      }
-    }
     await logAudit({
       action: "audit.export.csv",
-      adminEmail,
-      adminUserId: auth.userId ?? null,
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
       targetTable: "audit_log",
       targetId: null,
       metadata: {

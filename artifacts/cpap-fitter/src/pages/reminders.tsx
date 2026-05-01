@@ -36,6 +36,9 @@ function buildInitialState(): Record<ReminderSku, ItemState> {
   return out;
 }
 
+// Forward-port of main commit 1e50795 (Task #18) — the API no longer
+// returns `manageToken` or `alreadySubscribed`; both new + existing
+// branches share the same "check your inbox" success shape.
 interface SuccessState {
   emailStatus: "sent" | "skipped" | "failed";
   message: string;

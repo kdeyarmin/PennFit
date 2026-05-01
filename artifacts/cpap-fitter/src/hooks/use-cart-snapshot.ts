@@ -23,8 +23,8 @@
 // (close tab, walk away) gets recorded before the close.
 
 import { useEffect, useRef } from "react";
-import { useUser } from "@clerk/react";
 
+import { useShopIdentity } from "@/lib/identity";
 import { useCart, type CartItem } from "./use-cart";
 
 const DEBOUNCE_MS = 3000;
@@ -91,7 +91,7 @@ function signature(items: CartItem[]): string {
 }
 
 export function useCartSnapshotSync(): void {
-  const { isSignedIn, isLoaded } = useUser();
+  const { isSignedIn, isLoaded } = useShopIdentity();
   const { items } = useCart();
 
   const lastSentSig = useRef<string | null>(null);
@@ -160,8 +160,8 @@ export function useCartSnapshotSync(): void {
 }
 
 /**
- * Render-nothing wrapper so App.tsx can mount the sync from inside
- * <ClerkProvider> without restructuring the route tree.
+ * Render-nothing wrapper so App.tsx can mount the sync without
+ * restructuring the route tree.
  */
 export function CartSnapshotSync(): null {
   useCartSnapshotSync();

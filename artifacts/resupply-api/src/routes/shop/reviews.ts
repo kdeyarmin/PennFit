@@ -30,7 +30,7 @@
 import { Router, type IRouter } from "express";
 import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { clerkClient } from "@clerk/express";
+import { readCustomerProfile } from "../../lib/customer-profile";
 import { z } from "zod";
 
 import { getDbPool, shopOrderItems, shopReviews } from "@workspace/resupply-db";
@@ -141,25 +141,26 @@ interface ReviewAuthorIdentity {
  * a way for the moderator to follow up.
  */
 async function resolveAuthorIdentity(
-  clerkUserId: string,
+  req: import("express").Request,
 ): Promise<ReviewAuthorIdentity> {
-  const user = await clerkClient.users.getUser(clerkUserId);
-  const primaryId = user.primaryEmailAddressId;
-  const primary =
-    user.emailAddresses.find((e) => e.id === primaryId) ??
-    user.emailAddresses[0];
-  const rawEmail = primary?.emailAddress ?? null;
+  const profile = await readCustomerProfile(req);
+  const rawEmail = profile.email;
   if (!rawEmail) {
-    throw new Error("clerk_user_missing_email");
+    throw new Error("customer_missing_email");
   }
 
-  const first = (user.firstName ?? "").trim();
-  const last = (user.lastName ?? "").trim();
+  // Reviews show "First L." rather than the full name to keep the
+  // public review list's signal-to-noise low. Split the displayName
+  // on whitespace; the first token is the given name, and the
+  // first letter of the LAST token is treated as the last initial.
+  // Falls through to "PennPaps customer" when displayName is null
+  // or unparseable.
+  const tokens = (profile.displayName ?? "").trim().split(/\s+/).filter(Boolean);
   let displayName: string;
-  if (first.length > 0 && last.length > 0) {
-    displayName = `${first} ${last[0]}.`;
-  } else if (first.length > 0) {
-    displayName = first;
+  if (tokens.length >= 2) {
+    displayName = `${tokens[0]} ${tokens[tokens.length - 1]![0]}.`;
+  } else if (tokens.length === 1) {
+    displayName = tokens[0]!;
   } else {
     displayName = "PennPaps customer";
   }
@@ -250,10 +251,10 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   const items = await db
     .select({
       id: shopReviews.id,
-      // clerkUserId is selected only to drive the verified-purchaser
+      // customerId is selected only to drive the verified-purchaser
       // join below — we MUST NOT echo it back in the public response
       // (it would let any visitor scrape per-review identity).
-      clerkUserId: shopReviews.clerkUserId,
+      customerId: shopReviews.customerId,
       rating: shopReviews.rating,
       title: shopReviews.title,
       body: shopReviews.body,
@@ -275,31 +276,31 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
 
   // Verified-purchaser join. One indexed lookup per page (NOT per
   // row) against shop_order_items: ask Postgres for the distinct
-  // clerk_user_ids on the page that have at least one paid item for
+  // customer_ids on the page that have at least one paid item for
   // this product. We don't care about quantities or order ids — only
-  // membership. Anonymous reviewers (clerkUserId === null) are never
+  // membership. Anonymous reviewers (customerId === null) are never
   // verified by definition. If the table has no rows yet (fresh
   // install) the IN list yields an empty set and every flag is false.
   const reviewerIds = Array.from(
     new Set(
       trimmed
-        .map((it) => it.clerkUserId)
+        .map((it) => it.customerId)
         .filter((v): v is string => typeof v === "string" && v.length > 0),
     ),
   );
   const verifiedSet = new Set<string>();
   if (reviewerIds.length > 0) {
     const verifiedRows = await db
-      .selectDistinct({ clerkUserId: shopOrderItems.clerkUserId })
+      .selectDistinct({ customerId: shopOrderItems.customerId })
       .from(shopOrderItems)
       .where(
         and(
           eq(shopOrderItems.productId, productId),
-          inArray(shopOrderItems.clerkUserId, reviewerIds),
+          inArray(shopOrderItems.customerId, reviewerIds),
         ),
       );
     for (const row of verifiedRows) {
-      if (row.clerkUserId) verifiedSet.add(row.clerkUserId);
+      if (row.customerId) verifiedSet.add(row.customerId);
     }
   }
 
@@ -325,7 +326,7 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
       body: it.body,
       authorDisplayName: it.authorDisplayName,
       verifiedPurchaser:
-        it.clerkUserId != null && verifiedSet.has(it.clerkUserId),
+        it.customerId != null && verifiedSet.has(it.customerId),
       createdAt: it.createdAt.toISOString(),
     })),
     nextCursor,
@@ -403,8 +404,8 @@ router.post(
   "/shop/products/:productId/reviews",
   requireSignedIn,
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -431,11 +432,11 @@ router.post(
 
     let identity: ReviewAuthorIdentity;
     try {
-      identity = await resolveAuthorIdentity(clerkUserId);
+      identity = await resolveAuthorIdentity(req);
     } catch (err) {
       req.log?.warn?.(
         { err: err instanceof Error ? err.message : String(err) },
-        "shop/reviews: clerk identity lookup failed",
+        "shop/reviews: customer identity lookup failed",
       );
       res.status(400).json({ error: "author_identity_unavailable" });
       return;
@@ -449,7 +450,7 @@ router.post(
     }
 
     const insertRow: InsertShopReviewRow = {
-      clerkUserId,
+      customerId,
       productId,
       rating,
       title: cleanTitle,
@@ -474,12 +475,12 @@ router.post(
         createdAt: inserted.createdAt.toISOString(),
       });
     } catch (err) {
-      // UNIQUE (clerk_user_id, product_id) violation → caller already
+      // UNIQUE (customer_id, product_id) violation → caller already
       // has a review for this product. The frontend should swap to the
       // edit affordance.
       const msg = err instanceof Error ? err.message : String(err);
       if (
-        msg.includes("shop_reviews_clerk_user_id_product_id_unique") ||
+        msg.includes("shop_reviews_customer_id_product_id_unique") ||
         msg.includes("duplicate key")
       ) {
         res.status(409).json({ error: "already_reviewed" });
@@ -511,8 +512,8 @@ async function db_insert(row: InsertShopReviewRow) {
 }
 
 router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
@@ -536,7 +537,7 @@ router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
     .from(shopReviews)
     .where(
       and(
-        eq(shopReviews.clerkUserId, clerkUserId),
+        eq(shopReviews.customerId, customerId),
         eq(shopReviews.productId, productIdParse.data),
       ),
     )
@@ -562,8 +563,8 @@ router.patch(
   "/shop/me/reviews/:productId",
   requireSignedIn,
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -611,7 +612,7 @@ router.patch(
       })
       .where(
         and(
-          eq(shopReviews.clerkUserId, clerkUserId),
+          eq(shopReviews.customerId, customerId),
           eq(shopReviews.productId, productId),
         ),
       )
@@ -643,8 +644,8 @@ router.delete(
   "/shop/me/reviews/:productId",
   requireSignedIn,
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -662,7 +663,7 @@ router.delete(
       .delete(shopReviews)
       .where(
         and(
-          eq(shopReviews.clerkUserId, clerkUserId),
+          eq(shopReviews.customerId, customerId),
           eq(shopReviews.productId, productIdParse.data),
         ),
       )

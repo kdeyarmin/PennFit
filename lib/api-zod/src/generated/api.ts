@@ -173,7 +173,7 @@ export const SubmitOrderBody = zod
       })
       .optional()
       .describe(
-        "Optional facial measurements (mm) captured on-device during the Penn Fit flow. Forwarded to Penn so fulfillment can verify size selection. Numeric only — never includes images.",
+        "Optional facial measurements (mm) captured on-device during the PennPaps fitter flow. Forwarded to Penn so fulfillment can verify size selection. Numeric only — never includes images.",
       ),
     consentToContact: zod
       .boolean()

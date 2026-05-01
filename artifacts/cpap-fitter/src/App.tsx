@@ -1,7 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ClerkProvider } from "@clerk/react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -52,6 +51,11 @@ const Order = lazy(() =>
 const OrderSuccess = lazy(() =>
   import("@/pages/order-success").then((m) => ({ default: m.OrderSuccess })),
 );
+const ComfortGuaranteePage = lazy(() =>
+  import("@/pages/comfort-guarantee").then((m) => ({
+    default: m.ComfortGuaranteePage,
+  })),
+);
 const ReplacementSchedule = lazy(() =>
   import("@/pages/replacement-schedule").then((m) => ({
     default: m.ReplacementSchedule,
@@ -90,43 +94,25 @@ const SignInPage = lazy(() =>
 const SignUpPage = lazy(() =>
   import("@/pages/sign-up").then((m) => ({ default: m.SignUpPage })),
 );
-const AdminShell = lazy(() =>
-  import("@/pages/admin/admin-shell").then((m) => ({ default: m.AdminShell })),
-);
-const AdminDashboard = lazy(() =>
-  import("@/pages/admin/dashboard").then((m) => ({
-    default: m.AdminDashboard,
+const ForgotPasswordPage = lazy(() =>
+  import("@/pages/forgot-password").then((m) => ({
+    default: m.ForgotPasswordPage,
   })),
 );
-const AdminOrders = lazy(() =>
-  import("@/pages/admin/orders").then((m) => ({ default: m.AdminOrders })),
-);
-const AdminOrderDetail = lazy(() =>
-  import("@/pages/admin/order-detail").then((m) => ({
-    default: m.AdminOrderDetail,
+const ResetPasswordPage = lazy(() =>
+  import("@/pages/reset-password").then((m) => ({
+    default: m.ResetPasswordPage,
   })),
 );
-const AdminCustomers = lazy(() =>
-  import("@/pages/admin/customers").then((m) => ({
-    default: m.AdminCustomers,
+const VerifyEmailPage = lazy(() =>
+  import("@/pages/verify-email").then((m) => ({
+    default: m.VerifyEmailPage,
   })),
 );
-const AdminCustomerDetailPage = lazy(() =>
-  import("@/pages/admin/customer-detail").then((m) => ({
-    default: m.AdminCustomerDetailPage,
-  })),
-);
-const AdminAuditLog = lazy(() =>
-  import("@/pages/admin/audit").then((m) => ({ default: m.AdminAuditLog })),
-);
-const AdminReminders = lazy(() =>
-  import("@/pages/admin/reminders").then((m) => ({
-    default: m.AdminReminders,
-  })),
-);
-const AdminUsers = lazy(() =>
-  import("@/pages/admin/users").then((m) => ({ default: m.AdminUsers })),
-);
+// Admin pages were lifted out of the cpap-fitter storefront during the
+// Task #37 consolidation. Staff now use the Penn Resupply Console
+// (`artifacts/resupply-dashboard`) — the storefront only renders
+// patient-facing routes (shop, fitter, account, auth).
 const Reminders = lazy(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -156,16 +142,6 @@ function RouteFallback() {
 }
 
 const queryClient = new QueryClient();
-
-const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
-  | string
-  | undefined;
-
-if (!CLERK_PUBLISHABLE_KEY) {
-  console.error(
-    "VITE_CLERK_PUBLISHABLE_KEY is not set — auth features will be unavailable.",
-  );
-}
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -256,6 +232,7 @@ function PatientRouter() {
           <Route path="/learn" component={Learn} />
           <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
           <Route path="/learn/device-setup" component={DeviceSetup} />
+          <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/shop" component={Shop} />
           <Route path="/shop/p/:productId">
@@ -309,47 +286,21 @@ function TopRouter() {
         <Route path="/sign-in/:rest*" component={SignInPage} />
         <Route path="/sign-up" component={SignUpPage} />
         <Route path="/sign-up/:rest*" component={SignUpPage} />
+        <Route path="/forgot-password" component={ForgotPasswordPage} />
+        <Route path="/reset-password" component={ResetPasswordPage} />
+        <Route path="/verify-email" component={VerifyEmailPage} />
 
-        <Route path="/admin">
-          <AdminShell>
-            <AdminDashboard />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/orders">
-          <AdminShell>
-            <AdminOrders />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/orders/:id">
-          <AdminShell>
-            <AdminOrderDetail />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/customers">
-          <AdminShell>
-            <AdminCustomers />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/customers/:userId">
-          <AdminShell>
-            <AdminCustomerDetailPage />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/audit">
-          <AdminShell>
-            <AdminAuditLog />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/reminders">
-          <AdminShell>
-            <AdminReminders />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/users">
-          <AdminShell>
-            <AdminUsers />
-          </AdminShell>
-        </Route>
+        {/*
+          Admin / staff routes were lifted out of the storefront in
+          the Task #37 consolidation. Penn staff sign in at the
+          Penn Resupply Console (`artifacts/resupply-dashboard`),
+          which shares the same `pf_session` cookie as the storefront
+          via the unified `/api/auth` + `/resupply-api/auth` mount.
+          A patient who lands on `/admin/*` here falls through to
+          the catch-all <PatientRouter> below and ends up on the
+          NotFound page, which is the desired UX for a wrong-app
+          deep link.
+        */}
 
         {/* Everything else falls through to the patient experience. */}
         <Route component={PatientRouter} />
@@ -358,82 +309,33 @@ function TopRouter() {
   );
 }
 
-function App() {
-  // Build absolute URLs for the auth provider so the auth provider's redirects respect our base
-  // path (they need to be browser-absolute paths, not React route paths).
+// Inner tree — independent of which auth provider wraps it.
+// All components below this point use the identity shim
+// in `@/lib/identity` for auth state.
+function AppInner() {
   return (
-    <ClerkProvider
-      publishableKey={CLERK_PUBLISHABLE_KEY!}
-      signInUrl={`${basePath}/sign-in`}
-      signUpUrl={`${basePath}/sign-up`}
-      // Fallback only — used when no explicit ?redirect_url= is given.
-      // Shop customers are the dominant audience here; admin links
-      // already supply their own redirect, so defaulting unauthenticated
-      // visitors to /account is correct (admins land in /admin via the
-      // admin-link redirect_url, while shoppers don't get dumped into a
-      // 403'd /admin shell after signing in to view their orders).
-      signInFallbackRedirectUrl={`${basePath}/account`}
-      signUpFallbackRedirectUrl={`${basePath}/account`}
-      localization={{
-        // Override Clerk's "{{applicationName}}" interpolation so the
-        // hosted sign-in / sign-up cards display our real brand name
-        // instead of whatever is set in the auth provider dashboard. Updating the
-        // dashboard is the canonical fix (and would also affect emails),
-        // but this guarantees the in-app text is always on-brand.
-        signIn: {
-          start: {
-            title: "Sign in to Penn Home Medical Supply",
-            subtitle: "Welcome back! Please sign in to continue",
-          },
-        },
-        signUp: {
-          start: {
-            title: "Create your Penn Home Medical Supply account",
-            subtitle: "Welcome! Please fill in the details to get started.",
-          },
-        },
-      }}
-      appearance={{
-        // PennPaps brand: navy primary + gold accent. The CSS @layer order in
-        // index.css ensures Tailwind's utilities don't clobber Clerk's
-        // internal styles.
-        variables: {
-          colorPrimary: "hsl(213 47% 24%)",
-          colorText: "hsl(220 25% 12%)",
-          colorBackground: "#ffffff",
-          fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-          borderRadius: "0.75rem",
-        },
-        layout: {
-          logoImageUrl: `${basePath}/logo.svg`,
-          logoPlacement: "inside",
-          showOptionalFields: true,
-          socialButtonsPlacement: "top",
-        },
-      }}
-    >
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <FitterProvider>
-            {/*
-              ErrorBoundary wraps the router so any thrown render error in a
-              page falls back to a recoverable on-brand screen instead of a
-              blank white page. Sits inside ClerkProvider/QueryClient so the
-              fallback can still navigate (the <a href="/"> in the fallback
-              triggers a real reload, which is intentional — it gives the
-              shop a clean React tree on recovery).
-            */}
-            <ErrorBoundary>
-              <WouterRouter base={basePath}>
-                <TopRouter />
-              </WouterRouter>
-            </ErrorBoundary>
-            <Toaster />
-          </FitterProvider>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <FitterProvider>
+          {/*
+            ErrorBoundary wraps the router so any thrown render error in a
+            page falls back to a recoverable on-brand screen instead of a
+            blank white page.
+          */}
+          <ErrorBoundary>
+            <WouterRouter base={basePath}>
+              <TopRouter />
+            </WouterRouter>
+          </ErrorBoundary>
+          <Toaster />
+        </FitterProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
   );
+}
+
+function App() {
+  return <AppInner />;
 }
 
 export default App;

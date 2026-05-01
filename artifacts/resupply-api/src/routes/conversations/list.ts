@@ -1,24 +1,22 @@
 // GET /conversations — paginated conversation queue.
 //
-// Joins patients to surface decrypted firstName + lastName so the
-// queue can render a human-readable label without a second
-// round-trip per row. Sort key: `lastMessageAt DESC NULLS LAST,
-// createdAt DESC` so conversations with fresh activity surface
-// first; brand-new conversations (no messages yet) fall back to
-// createdAt order.
+// Joins patients to surface firstName + lastName so the queue can
+// render a human-readable label without a second round-trip per
+// row. Sort key: `lastMessageAt DESC NULLS LAST, createdAt DESC` so
+// conversations with fresh activity surface first; brand-new
+// conversations (no messages yet) fall back to createdAt order.
 //
 // Like the patient list, no audit row per page-flip — the
 // /conversations/:id detail view is the one that writes the audit
-// row, since that is where decrypted message bodies cross the wire.
+// row, since that is where message bodies cross the wire.
 
 import { Router, type IRouter } from "express";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
   conversations,
-  decrypt,
   getDbPool,
   patients,
 } from "@workspace/resupply-db";
@@ -32,6 +30,17 @@ const listQuery = z
       .optional(),
     channel: z.enum(["sms", "voice", "email"]).optional(),
     patientId: z.string().uuid().optional(),
+    /**
+     * Inbox view — orthogonal to status. Predefined buckets:
+     *   - mine       → assigned to caller, status active
+     *   - unassigned → no assignee, status active
+     *   - escalated  → escalated_at IS NOT NULL
+     *   - breaching  → SLA breach within next 30 minutes (or already)
+     */
+    view: z.enum(["mine", "unassigned", "escalated", "breaching"]).optional(),
+    /** Filter to a specific assignee. Mutually exclusive with view=mine. */
+    assignedTo: z.string().min(1).optional(),
+    priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
   })
@@ -51,12 +60,48 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     });
     return;
   }
-  const { status, channel, patientId, limit, offset } = parsed.data;
+  const {
+    status,
+    channel,
+    patientId,
+    view,
+    assignedTo,
+    priority,
+    limit,
+    offset,
+  } = parsed.data;
 
   const filters: SQL[] = [];
   if (status) filters.push(eq(conversations.status, status));
   if (channel) filters.push(eq(conversations.channel, channel));
   if (patientId) filters.push(eq(conversations.patientId, patientId));
+  if (priority) filters.push(eq(conversations.priority, priority));
+  if (view === "mine") {
+    if (req.adminUserId) {
+      filters.push(eq(conversations.assignedAdminUserId, req.adminUserId));
+      filters.push(
+        sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
+      );
+    }
+  } else if (view === "unassigned") {
+    filters.push(isNull(conversations.assignedAdminUserId));
+    filters.push(
+      sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
+    );
+  } else if (view === "escalated") {
+    filters.push(isNotNull(conversations.escalatedAt));
+  } else if (view === "breaching") {
+    // SLA breach within 30 min OR already breached.
+    filters.push(isNotNull(conversations.slaDueAt));
+    filters.push(
+      sql`${conversations.slaDueAt} <= now() + interval '30 minutes'`,
+    );
+    filters.push(
+      sql`${conversations.status} IN ('open','awaiting_admin')`,
+    );
+  } else if (assignedTo) {
+    filters.push(eq(conversations.assignedAdminUserId, assignedTo));
+  }
   const whereClause = filters.length ? and(...filters) : undefined;
 
   const db = drizzle(getDbPool());
@@ -70,19 +115,30 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     .select({
       id: conversations.id,
       patientId: conversations.patientId,
-      patientFirstName: decrypt(patients.legalFirstName),
-      patientLastName: decrypt(patients.legalLastName),
+      patientFirstName: patients.legalFirstName,
+      patientLastName: patients.legalLastName,
       episodeId: conversations.episodeId,
       channel: conversations.channel,
       status: conversations.status,
       lastMessageAt: conversations.lastMessageAt,
       createdAt: conversations.createdAt,
+      assignedAdminUserId: conversations.assignedAdminUserId,
+      assignedAt: conversations.assignedAt,
+      priority: conversations.priority,
+      slaDueAt: conversations.slaDueAt,
+      escalatedAt: conversations.escalatedAt,
+      escalationReason: conversations.escalationReason,
     })
     .from(conversations)
     .leftJoin(patients, eq(patients.id, conversations.patientId))
     .where(whereClause)
+    // Sort: breaching/escalated first (NULLS LAST so non-SLA threads
+    // don't push themselves to the top), then last-message recency.
     .orderBy(
-      sql`${conversations.lastMessageAt} DESC NULLS LAST, ${conversations.createdAt} DESC`,
+      sql`${conversations.escalatedAt} DESC NULLS LAST`,
+      sql`${conversations.slaDueAt} ASC NULLS LAST`,
+      sql`${conversations.lastMessageAt} DESC NULLS LAST`,
+      sql`${conversations.createdAt} DESC`,
     )
     .limit(limit)
     .offset(offset);
@@ -106,6 +162,12 @@ router.get("/conversations", requireAdmin, async (req, res) => {
       status: r.status,
       lastMessageAt: toIso(r.lastMessageAt),
       createdAt: toIsoRequired(r.createdAt),
+      assignedAdminUserId: r.assignedAdminUserId ?? null,
+      assignedAt: toIso(r.assignedAt),
+      priority: r.priority ?? "normal",
+      slaDueAt: toIso(r.slaDueAt),
+      escalatedAt: toIso(r.escalatedAt),
+      escalationReason: r.escalationReason ?? null,
     })),
     total: totalRow?.count ?? 0,
     limit,

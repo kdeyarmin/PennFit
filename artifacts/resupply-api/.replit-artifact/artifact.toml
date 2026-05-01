@@ -7,15 +7,29 @@ id = "resupply-api-3xQ7pK9wLm2nHvB8tYj4f"
 [[services]]
 localPort = 8083
 name = "Resupply API"
-paths = ["/resupply-api"]
+# Serves both `/resupply-api/*` (staff dashboard + worker callbacks)
+# and `/api/*` (PennPaps storefront, lifted in from the deleted
+# api-server artifact during the Task #37 consolidation). Both
+# prefixes route to the same Express process so we run one Node
+# server, share one Postgres pool, and share one auth session.
+paths = ["/resupply-api", "/api"]
 
 [services.development]
 run = "pnpm --filter @workspace/resupply-api run dev"
 
 [services.production]
 
+# Apply checked-in resupply migrations against the production database
+# before building (ADR 003). This mirrors what scripts/post-merge.sh
+# already does for the workspace DB so prod never lags the schema. The
+# migrator is idempotent and serialized via pg_advisory_lock, so it is
+# safe to run on every deploy. After Task #37 this single migrator
+# also owns the four PennPaps storefront tables (orders, usage_events,
+# admin_audit_log, reminder_subscriptions) — the legacy
+# `lib/db/scripts/migrate.mjs` was deleted alongside the api-server
+# artifact.
 [services.production.build]
-args = ["pnpm", "--filter", "@workspace/resupply-api", "run", "build"]
+args = ["bash", "-c", "node lib/resupply-db/scripts/migrate.mjs && pnpm --filter @workspace/resupply-api run build"]
 
 [services.production.build.env]
 NODE_ENV = "production"

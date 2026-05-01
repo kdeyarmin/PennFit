@@ -1,8 +1,8 @@
 /**
  * Startup environment validation for the resupply API server.
  *
- * Per-variable lazy throws elsewhere in the codebase (encryption
- * keys, DB pool, etc.) are correct but surface one-at-a-time during
+ * Per-variable lazy throws elsewhere in the codebase (DB pool,
+ * link-HMAC key, etc.) are correct but surface one-at-a-time during
  * request handling, which is painful to chase on a fresh deploy.
  * This helper runs once at boot, collects EVERY missing required
  * variable, and throws a single error listing all of them — so an
@@ -15,32 +15,30 @@
  * partially-configured state so dev/preview environments don't need
  * every third-party credential. Those vars are documented as
  * optional / feature-gated in the top-level README.
+ *
+ * `RESUPPLY_LINK_HMAC_KEY` is the only resupply-specific secret left
+ * after migration 0025 stripped pgcrypto column-level encryption.
+ * Validate it here so the very first link-issuing or link-verifying
+ * request doesn't fail mid-flight on a misconfigured deploy.
  */
 
-const REQUIRED_ENV_VARS = [
-  "PORT",
-  "DATABASE_URL",
-  "CLERK_SECRET_KEY",
-  // PHI encryption + lookup HMAC keys. Without these, the very
-  // first encrypted-PHI write or phone-lookup query fails with a
-  // confusing mid-request error. Catching at boot is safer.
-  "RESUPPLY_DATA_KEY",
-  "RESUPPLY_LINK_HMAC_KEY",
-  "RESUPPLY_PHONE_HMAC_KEY",
-] as const;
+import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
+
+const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
 
 export function assertRequiredEnv(): void {
   const missing: string[] = [];
-  for (const name of REQUIRED_ENV_VARS) {
+  for (const name of REQUIRED_PLAIN_ENV_VARS) {
     const value = process.env[name];
     if (value === undefined || value.trim() === "") {
       missing.push(name);
     }
   }
-  if (missing.length > 0) {
-    throw new Error(
-      `resupply-api: missing required environment variable(s): ${missing.join(", ")}. ` +
-        `See README.md for the full list.`,
-    );
-  }
+  if (!hasLinkHmacKey()) missing.push(LINK_HMAC_KEY_ENV);
+
+  if (missing.length === 0) return;
+
+  throw new Error(
+    `resupply-api: missing required environment variable(s): ${missing.join(", ")}. See README.md for the full list.`,
+  );
 }
