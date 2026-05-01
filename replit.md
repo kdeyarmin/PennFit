@@ -110,7 +110,7 @@ Architecture notes:
 - The new endpoints are intentionally NOT in the OpenAPI spec — this matches the local convention used by the other `/admin/shop/*` endpoints (orders, reviews, inventory), which both dashboards consume via raw fetch.
 - These endpoints log via `req.log` only; no `audit_log` writes. Shop is not patient-PHI surface, so it follows the same posture as the other `/admin/shop/*` routes (audit_log is reserved for `/patients/*` PHI operations).
 - PHI posture: list responses redact email via `redactEmail()`; the detail endpoint returns full email/address. Logs only carry `userId`, counts, and admin identity — never customer email or address.
-- Cross-API admin allowlist caveat: the cpap-fitter admin guard reads `PENN_ADMIN_EMAILS` (api-server) but the new endpoints are gated by `RESUPPLY_ADMIN_EMAILS` (resupply-api). For an account to actually use the Customers page in any environment (dev, preview, or prod), its email must be present in BOTH allowlists.
+- Admin allowlist note: after Task #37 the API was consolidated into a single `resupply-api` process. Both the storefront/fitter admin endpoints (mounted at `/api/admin/*`) and the resupply admin endpoints (mounted at `/resupply-api/admin/*`) are role-gated by the same in-house auth middleware against the unified `admin_users` / `auth.users` tables; the legacy `PENN_ADMIN_EMAILS` allowlist is read by the same process as `RESUPPLY_ADMIN_EMAILS` for backwards compatibility, but new admins should be granted via the dashboard's Team page rather than by editing env allowlists.
 
 ## External Dependencies
 
