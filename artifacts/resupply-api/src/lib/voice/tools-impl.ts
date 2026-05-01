@@ -23,10 +23,12 @@
 //   the API process. Drizzle's select projection would let us do the
 //   same thing, but the parameterised SQL is shorter, easier to
 //   audit, and avoids an extra import. The data key flows through the
-//   shared encryption helpers' source of truth — we read it via
-//   `getDataKey()` rather than `process.env.RESUPPLY_DATA_KEY`
-//   directly so a missing key throws the same descriptive error from
-//   here as from a Drizzle-side encrypt() call.
+//   shared `@workspace/resupply-db` encryption helpers, which in turn
+//   read the key via `@workspace/resupply-secrets`'s `getDataKey()`
+//   (legacy RESUPPLY_DATA_KEY or HKDF-derived from RESUPPLY_MASTER_KEY)
+//   rather than `process.env.RESUPPLY_DATA_KEY` directly, so a missing
+//   key throws the same descriptive error from here as from a
+//   Drizzle-side encrypt() call.
 
 import { eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";

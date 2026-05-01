@@ -1,8 +1,10 @@
 import { sql, type SQL } from "drizzle-orm";
 import { customType, type PgColumn } from "drizzle-orm/pg-core";
 
+import { getDataKey } from "@workspace/resupply-secrets";
+
 /**
- * PHI encryption — pgcrypto + RESUPPLY_DATA_KEY.
+ * PHI encryption — pgcrypto + the resupply data key.
  *
  * See ADR 007 for the full story; the short version:
  *   - Encrypted columns are stored as `bytea` and produced by
@@ -12,6 +14,12 @@ import { customType, type PgColumn } from "drizzle-orm/pg-core";
  *     callers pass into `db.insert(...).values({ col: encrypt(value) })`.
  *   - Reads decrypt with `pgp_sym_decrypt(col, key)` via `decrypt()` /
  *     `decryptJson()` SQL helpers used inside select projections.
+ *
+ * The data key itself is sourced from `@workspace/resupply-secrets`
+ * which prefers the legacy `RESUPPLY_DATA_KEY` env var (so existing
+ * pgp_sym_encrypt blobs decrypt unchanged) and falls back to an
+ * HKDF-derived subkey of `RESUPPLY_MASTER_KEY`. See that package for
+ * the consolidation rationale and migration path.
  *
  * Why not "transparent" via Drizzle's customType serializers?
  *   Drizzle's `toDriver` / `fromDriver` hooks only return Node values that
@@ -26,24 +34,6 @@ import { customType, type PgColumn } from "drizzle-orm/pg-core";
  * blocked at runtime so that nobody accidentally pipes plaintext PHI
  * through Drizzle without going through the helpers.
  */
-
-const DATA_KEY_ENV = "RESUPPLY_DATA_KEY";
-
-/**
- * Read the active data key. We read at call time (not at module load) so
- * that tests can mutate the env before invoking and so that a missing key
- * surfaces as a clear error at the SQL site rather than at import time.
- */
-function dataKey(): string {
-  const key = process.env[DATA_KEY_ENV];
-  if (!key) {
-    throw new Error(
-      `${DATA_KEY_ENV} is not set — refusing to encrypt or decrypt PHI. ` +
-        "Set it via Replit secrets (32-byte hex; see ADR 007).",
-    );
-  }
-  return key;
-}
 
 const REFUSE_DIRECT_READ = (column: string) =>
   `Refusing to read encrypted column "${column}" through Drizzle's default ` +
@@ -105,7 +95,7 @@ export function encrypt(value: string | null | undefined): SQL<string> {
   if (value == null) {
     return sql`NULL`;
   }
-  return sql`pgp_sym_encrypt(${value}::text, ${dataKey()})`;
+  return sql`pgp_sym_encrypt(${value}::text, ${getDataKey()})`;
 }
 
 /**
@@ -118,7 +108,7 @@ export function encryptJson<T = unknown>(value: T | null | undefined): SQL<T> {
   if (value == null) {
     return sql`NULL`;
   }
-  return sql`pgp_sym_encrypt(${JSON.stringify(value)}::text, ${dataKey()})`;
+  return sql`pgp_sym_encrypt(${JSON.stringify(value)}::text, ${getDataKey()})`;
 }
 
 /**
@@ -126,7 +116,7 @@ export function encryptJson<T = unknown>(value: T | null | undefined): SQL<T> {
  * a select projection: `db.select({ dob: decrypt(patients.dob) }).from(...)`.
  */
 export function decrypt(column: PgColumn | SQL): SQL<string | null> {
-  return sql<string | null>`pgp_sym_decrypt(${column}, ${dataKey()})`;
+  return sql<string | null>`pgp_sym_decrypt(${column}, ${getDataKey()})`;
 }
 
 /**
@@ -138,5 +128,5 @@ export function decrypt(column: PgColumn | SQL): SQL<string | null> {
 export function decryptJson<T = unknown>(
   column: PgColumn | SQL,
 ): SQL<T | null> {
-  return sql<T | null>`pgp_sym_decrypt(${column}, ${dataKey()})::jsonb`;
+  return sql<T | null>`pgp_sym_decrypt(${column}, ${getDataKey()})::jsonb`;
 }

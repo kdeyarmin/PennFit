@@ -57,10 +57,12 @@ every third-party credential.
 
 ## Environment variables
 
-The full template lives in [`.env.example`](./.env.example). The
-table below shows which variables each service **requires** to
-boot, and which it consumes when configured. `.env` is git-ignored —
-never commit real secrets.
+The full template lives in [`.env.example`](./.env.example), organised
+into **secrets** (credentials, signing/encryption keys) and
+**configuration** (ports, URLs, addresses, allow-lists, paths). The
+table below shows which variables each service **requires** to boot,
+and which it consumes when configured. `.env` is git-ignored — never
+commit real secrets.
 
 ### Required at boot (services refuse to start if missing)
 
@@ -69,11 +71,42 @@ never commit real secrets.
 | `PORT` | ✅ | ✅ | — | HTTP listen port. |
 | `CLERK_SECRET_KEY` | ✅ | ✅ | — | Clerk backend auth. |
 | `DATABASE_URL` | — | ✅ | ✅ | Postgres connection string. `pgcrypto` must be enabled. |
-| `RESUPPLY_DATA_KEY` | — | ✅ | ✅ | 32+ byte secret. PHI bulk-encryption key (`pgp_sym_*`). |
-| `RESUPPLY_LINK_HMAC_KEY` | — | ✅ | ✅ | 32+ byte secret. Signs reminder/email deep-links. |
-| `RESUPPLY_PHONE_HMAC_KEY` | — | ✅ | ✅ | 32+ byte secret. Phone-number lookup HMAC (separate from the bulk key on purpose — see `lib/resupply-db/src/phone-hash.ts`). |
+| **Resupply key material** (one of the two options below) | — | ✅ | ✅ | See [Resupply key material](#resupply-key-material). |
 
-> Generate any of the secret keys with `openssl rand -base64 48`.
+#### Resupply key material
+
+The resupply stack uses three cryptographic subkeys: a bulk PHI
+encryption key (pgcrypto), a link-signing HMAC key (email CTAs), and a
+phone-number-lookup HMAC key. They must remain cryptographically
+separate so a leak of one does not unlock the others.
+
+Pick **one** of these configurations:
+
+- **Preferred — single master key.** Set `RESUPPLY_MASTER_KEY` to a
+  32+ byte secret. The three subkeys are HKDF-SHA256-derived from it
+  with distinct domain-separated `info` labels (`data`, `link-hmac`,
+  `phone-hmac`); cryptographic separation is preserved. One secret
+  to generate, store, and rotate.
+- **Legacy — three per-purpose keys.** Set all three of
+  `RESUPPLY_DATA_KEY`, `RESUPPLY_LINK_HMAC_KEY`, and
+  `RESUPPLY_PHONE_HMAC_KEY`. When any legacy var is present it takes
+  precedence over the master-derived value for that specific purpose
+  — that's how PHI already encrypted under a legacy key keeps
+  decrypting after you start setting `RESUPPLY_MASTER_KEY`.
+
+> Generate any of these with `openssl rand -base64 48`.
+
+> **Migrating from legacy to master:** set `RESUPPLY_MASTER_KEY`
+> alongside the existing three legacy vars, then run
+> `pnpm --filter @workspace/resupply-db rotate-to-master-key`
+> (re-encrypts PHI and re-HMACs `phone_lookup` rows under the
+> master-derived subkeys, inside one transaction). After it commits,
+> drop `RESUPPLY_DATA_KEY` and `RESUPPLY_PHONE_HMAC_KEY` from your
+> secrets store. Leave `RESUPPLY_LINK_HMAC_KEY` in place for one full
+> link-token TTL (default 7 days) so any in-flight email CTAs still
+> verify, then drop it too. See
+> `lib/resupply-db/scripts/rotate-to-master-key.mjs` for the full
+> dry-run / commit flow.
 
 ### Optional / feature-gated (degrade gracefully when unset)
 
