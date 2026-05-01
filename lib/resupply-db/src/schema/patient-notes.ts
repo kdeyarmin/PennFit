@@ -34,7 +34,7 @@ export const patientNotes = resupplySchema.table(
     // Who wrote it. Denormalized from the auth provider; same rationale as
     // audit_log.adminEmail / adminUserId.
     authorEmail: text("author_email").notNull(),
-    authorUserId: text("author_clerk_id"),
+    authorUserId: text("author_user_id"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

@@ -99,7 +99,7 @@ export async function logAudit(event: AuditEvent): Promise<void> {
 
   await getDbPool().query(
     "INSERT INTO resupply.audit_log " +
-      "(operator_email, operator_clerk_id, action, " +
+      "(operator_email, operator_user_id, action, " +
       " target_table, target_id, metadata, ip, user_agent) " +
       "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)",
     [

@@ -139,7 +139,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
   const limitIdx = params.length;
 
   const sql = (
-    `SELECT id, occurred_at, operator_email, operator_clerk_id AS operator_user_id, ` +
+    `SELECT id, occurred_at, operator_email, operator_user_id, ` +
     `action, target_table, target_id, metadata, ip, user_agent ` +
     `FROM resupply.audit_log ${whereSql} ` +
     `ORDER BY occurred_at DESC ` +

@@ -55,14 +55,7 @@ export const conversations = resupplySchema.table(
     // mirrors the auth user id directly (no FK) so threads handled by
     // bootstrap env-var admins still work — those admins don't have
     // rows in admin_users yet.
-    //
-    // The underlying column name is left as `assigned_admin_clerk_id`
-    // for back-compat with the already-applied migration 0021; the
-    // JS-side property name is the authoritative identifier. Per
-    // ADR 003 we never `db:push` rename a column in production; a
-    // future hand-authored migration can rename the column when we
-    // batch other column-rename work.
-    assignedAdminUserId: text("assigned_admin_clerk_id"),
+    assignedAdminUserId: text("assigned_admin_user_id"),
     assignedAt: timestamp("assigned_at", { withTimezone: true }),
     priority: text("priority").notNull().default("normal"),
     slaDueAt: timestamp("sla_due_at", { withTimezone: true }),

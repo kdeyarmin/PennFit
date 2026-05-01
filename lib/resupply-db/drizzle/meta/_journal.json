@@ -197,6 +197,13 @@
       "when": 1810108800000,
       "tag": "0025_strip_phi_encryption",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1810195200000,
+      "tag": "0026_rename_legacy_clerk_id_columns",
+      "breakpoints": true
     }
   ]
 }

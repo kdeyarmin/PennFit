@@ -6,7 +6,7 @@
 //     for callers that don't opt in.
 //   * Header present + no stored row → run the handler, then
 //     persist the response (status + body) under
-//     (admin_clerk_id, endpoint, key) on `res.on("finish")`. The
+//     (admin_user_id, endpoint, key) on `res.on("finish")`. The
 //     column name is preserved verbatim from the original schema
 //     for back-compat; today it stores the in-house
 //     auth.users.id of the calling admin.

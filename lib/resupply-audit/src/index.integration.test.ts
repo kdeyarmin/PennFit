@@ -82,14 +82,14 @@ describeIfDb("logAudit (live db)", () => {
     });
 
     const result = await getDbPool().query(
-      "SELECT operator_email, operator_clerk_id, target_table, target_id, ip, user_agent " +
+      "SELECT operator_email, operator_user_id, target_table, target_id, ip, user_agent " +
         "FROM resupply.audit_log WHERE metadata->>'_runTag' = $1",
       [runTag],
     );
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]).toEqual({
       operator_email: null,
-      operator_clerk_id: null,
+      operator_user_id: null,
       target_table: null,
       target_id: null,
       ip: null,

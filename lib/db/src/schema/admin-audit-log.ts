@@ -11,10 +11,7 @@ import {
  * we write a row here. Required by HIPAA "access tracking" expectations.
  *
  * What we log:
- *   - admin_email + admin user id (so we can prove WHO viewed it).
- *     The underlying column is named `admin_clerk_id` for back-compat
- *     with the already-applied schema; the JS field is exposed as
- *     `adminUserId`.
+ *   - admin_email + admin_user_id (so we can prove WHO viewed it).
  *   - action (e.g. "view_order_detail", "search_orders")
  *   - target_order_id (when applicable)
  *   - ip (request IP at view time)
@@ -29,7 +26,7 @@ export const adminAuditLogTable = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     adminEmail: text("admin_email").notNull(),
-    adminUserId: text("admin_clerk_id").notNull(),
+    adminUserId: text("admin_user_id").notNull(),
     action: text("action").notNull(),
     targetOrderId: uuid("target_order_id"),
     ip: text("ip"),

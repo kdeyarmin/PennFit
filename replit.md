@@ -60,8 +60,6 @@ Admins can invite, promote, demote, and remove teammates from inside the cpap-fi
 
 The user-visible terminology is "team / teammates / members". Internal identifiers were normalized to provider-neutral names: `userId`, `adminUserId`, `authorUserId`, `members`, `AdminTeamMember`, `TeamMemberRow`, `req.adminUserId`. The OpenAPI spec (`lib/resupply-api-spec/openapi.yaml`) and its generated client (`lib/resupply-api-client/src/generated/`) use these names; regenerate with `pnpm --filter @workspace/resupply-api-spec run codegen` after spec edits.
 
-**Drizzle JS-field rename convention**: when renaming an internal identifier whose underlying Postgres column is named `*_clerk_id` (e.g. `admin_clerk_id`, `operator_clerk_id`, `author_clerk_id`), only the JS property is renamed; the column-name string passed to `text("…")` stays unchanged. Drizzle binds via the column-name string, so this is wire-compatible. Renaming the column would require a hand-authored migration per ADR 003 (we never `db:push` schema changes against production data). The convention is documented in JSDoc on `lib/db/src/schema/admin-audit-log.ts`, `lib/resupply-db/src/schema/audit-log.ts`, and `lib/resupply-db/src/schema/patient-notes.ts`. The legacy column names are an artifact of the prior schema and will be renamed in a future hand-authored migration if needed.
-
 ### Mobile Fit-Flow Stepper
 
 A `<FitFlowStepper>` component provides visual progress indication for the mask fitting flow, adapting its display for mobile and desktop screens.

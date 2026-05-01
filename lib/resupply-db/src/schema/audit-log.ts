@@ -35,7 +35,7 @@ export const auditLog = resupplySchema.table(
     // Who. adminEmail is denormalised from the auth provider so the audit row
     // remains readable if the auth user is later deleted.
     adminEmail: text("operator_email"),
-    adminUserId: text("operator_clerk_id"),
+    adminUserId: text("operator_user_id"),
 
     // What. Action is a free-form verb namespaced like
     // "patient.view" / "episode.confirm" / "fulfillment.upload_csv".
