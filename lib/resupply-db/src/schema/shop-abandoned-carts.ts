@@ -4,7 +4,7 @@
 // the cart on a different device when the patient clicks the
 // email link.
 //
-// One row per auth user (clerk_user_id is UNIQUE). The frontend
+// One row per shop customer (customer_id is UNIQUE). The frontend
 // PUTs the current cart on a 3s debounce; an empty cart issues a
 // DELETE that flips `cleared_at` and zeroes `items` (the row stays
 // so the dispatcher can record "we already nudged this user once
@@ -69,11 +69,12 @@ export const shopAbandonedCarts = resupplySchema.table(
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
     /**
-     * auth user ID of the cart owner. Required AND unique — only
-     * signed-in patients are tracked (we need an email + a stable
-     * identity to send the nudge and to suppress after checkout).
+     * Shop-customer key of the cart owner. Required AND unique —
+     * only signed-in patients are tracked (we need an email + a
+     * stable identity to send the nudge and to suppress after
+     * checkout).
      */
-    clerkUserId: text("clerk_user_id").notNull().unique(),
+    customerId: text("customer_id").notNull().unique(),
     /**
      * Denormalized destination email (lowercased). Refreshed on
      * every PUT from the auth provider API so the dispatcher can
@@ -131,7 +132,7 @@ export const shopAbandonedCarts = resupplySchema.table(
     /**
      * Dispatcher scans for `updated_at <= now() - 24h` with predicate
      * filters layered on top — the index is a B-tree on updated_at
-     * so the scan is O(log n + matched). clerk_user_id is already
+     * so the scan is O(log n + matched). customer_id is already
      * unique-indexed (UNIQUE constraint), so no separate index needed.
      */
     updatedAtIdx: index("shop_abandoned_carts_updated_at_idx").on(t.updatedAt),

@@ -121,7 +121,7 @@ interface OrderRow {
   status: string;
   amountTotalCents: number | null;
   currency: string | null;
-  clerkUserId: string | null;
+  customerId: string | null;
   createdAt: Date;
   paidAt: Date | null;
   shippingAddress: SavedShippingAddress | null;
@@ -143,7 +143,7 @@ async function loadOrder(orderId: string): Promise<OrderRow | null> {
       status: shopOrders.status,
       amountTotalCents: shopOrders.amountTotalCents,
       currency: shopOrders.currency,
-      clerkUserId: shopOrders.clerkUserId,
+      customerId: shopOrders.customerId,
       createdAt: shopOrders.createdAt,
       paidAt: shopOrders.paidAt,
       shippingAddress: shopOrders.shippingAddress,
@@ -181,8 +181,8 @@ async function loadOrder(orderId: string): Promise<OrderRow | null> {
  *      manual retry) can re-attempt.
  *
  * Recipient resolution:
- *   * Linked `shop_customers.email_lower` (joined on `clerk_user_id`)
- *     wins. For guest checkouts (clerk_user_id NULL) we fall back to
+ *   * Linked `shop_customers.email_lower` (joined on `customer_id`)
+ *     wins. For guest checkouts (customer_id NULL) we fall back to
  *     `shop_orders.customer_email` captured at paid-time (migration
  *     0017). If neither is present, skip silently.
  *
@@ -214,7 +214,7 @@ async function sendShippingNotificationIfNew(args: {
     .returning({
       id: shopOrders.id,
       stripeSessionId: shopOrders.stripeSessionId,
-      clerkUserId: shopOrders.clerkUserId,
+      customerId: shopOrders.customerId,
       shippingAddress: shopOrders.shippingAddress,
       trackingCarrier: shopOrders.trackingCarrier,
       trackingNumber: shopOrders.trackingNumber,
@@ -265,11 +265,11 @@ async function sendShippingNotificationIfNew(args: {
     // (captured from Stripe at paid-time) → skip. We never log the
     // recipient string.
     let toEmail: string | null = null;
-    if (claimed.clerkUserId) {
+    if (claimed.customerId) {
       const [cust] = await db
         .select({ email: shopCustomers.emailLower })
         .from(shopCustomers)
-        .where(eq(shopCustomers.clerkUserId, claimed.clerkUserId))
+        .where(eq(shopCustomers.customerId, claimed.customerId))
         .limit(1);
       if (cust?.email) toEmail = cust.email;
     }
@@ -338,7 +338,7 @@ function projectOrder(row: OrderRow) {
     status: row.status,
     amountTotalCents: row.amountTotalCents,
     currency: row.currency,
-    clerkUserId: row.clerkUserId,
+    customerId: row.customerId,
     createdAt: row.createdAt.toISOString(),
     paidAt: row.paidAt ? row.paidAt.toISOString() : null,
     shippingAddress: row.shippingAddress,

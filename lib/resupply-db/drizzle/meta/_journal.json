@@ -141,6 +141,13 @@
             "when": 1809936000000,
             "tag": "0023_drop_admin_users_clerk_columns",
             "breakpoints": true
+        },
+        {
+            "idx": 20,
+            "version": "7",
+            "when": 1810022400000,
+            "tag": "0024_rename_shop_customer_id",
+            "breakpoints": true
         }
     ]
 }

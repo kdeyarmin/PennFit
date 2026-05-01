@@ -258,7 +258,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
             Order {item.sessionId.slice(-12)}
           </div>
           <div className="text-xs text-slate-500">
-            Customer {item.clerkUserId.slice(-10)} · opened{" "}
+            Customer {item.customerId.slice(-10)} · opened{" "}
             {new Date(item.createdAt).toLocaleString()}
           </div>
         </div>

@@ -788,7 +788,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: "user_someone_else",
+        customer_id: "user_someone_else",
       },
     });
     const router = await loadRouter();
@@ -807,7 +807,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
         id: SOURCE_ORDER_ID,
         status: "pending",
         paid_at: null,
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
     });
     const router = await loadRouter();
@@ -827,7 +827,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
         id: SOURCE_ORDER_ID,
         status: "refunded",
         paid_at: "2026-03-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
     });
     const router = await loadRouter();
@@ -846,7 +846,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
       items: [],
     });
@@ -869,7 +869,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
       items: [{ price_id: "price_x", quantity: 2 }],
       customer: null,
@@ -890,7 +890,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
       items: [
         { price_id: "price_a", quantity: 2 },
@@ -927,7 +927,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
       { price: "price_b", quantity: 1 },
     ]);
     expect(params.metadata.source).toBe("pennpaps-admin-reorder");
-    expect(params.metadata.clerk_user_id).toBe(VALID_USER_ID);
+    expect(params.metadata.customer_id).toBe(VALID_USER_ID);
     expect(params.metadata.reorder_source_order_id).toBe(SOURCE_ORDER_ID);
     expect(params.metadata.initiated_by_admin).toBe(ALLOWED_EMAIL);
     // success_url must hit the existing customer-facing landing page
@@ -946,7 +946,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
       items: [{ price_id: "price_a", quantity: 1 }],
       customer: {
@@ -977,7 +977,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
       items: [{ price_id: "price_a", quantity: 1 }],
       customer: null,
@@ -1004,7 +1004,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
       items: [{ price_id: "price_a", quantity: 1 }],
       customer: null,
@@ -1029,7 +1029,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
         id: SOURCE_ORDER_ID,
         status: "paid",
         paid_at: "2026-04-01T00:00:00Z",
-        clerk_user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
       },
       items: [{ price_id: "price_a", quantity: 1 }],
       customer: null,

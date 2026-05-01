@@ -142,7 +142,7 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
   // just customer_email) so we can manage / cancel later — gate the
   // whole flow on the user being signed-in.
   const isSubscription = items.some((it) => it.mode === "subscription");
-  if (isSubscription && !req.userClerkId) {
+  if (isSubscription && !req.userCustomerId) {
     res.status(401).json({
       error: "sign_in_required",
       message:
@@ -178,12 +178,12 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
   // is the documented fallback.
   let stripeCustomerId: string | null = null;
   let customerEmail: string | null = null;
-  if (req.userClerkId) {
+  if (req.userCustomerId) {
     try {
       const profile = await readCustomerProfile(req);
       customerEmail = profile.email;
       const mapping = await getOrCreateStripeCustomer(config, {
-        clerkUserId: req.userClerkId,
+        customerId: req.userCustomerId,
         email: customerEmail,
         displayName: profile.displayName,
       });
@@ -201,7 +201,7 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
     source: "pennpaps-shop",
     cart_hash: cartHash,
     flow: isSubscription ? "subscription" : "standard",
-    ...(req.userClerkId ? { clerk_user_id: req.userClerkId } : {}),
+    ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
   };
 
   let session;
@@ -210,7 +210,7 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
       // Subscription mode. Mixed line_items (recurring + one-time)
       // are valid — one-time SKUs are charged on the first invoice
       // and not renewed. We MUST attach `customer` (we already
-      // gated on req.userClerkId above so stripeCustomerId is
+      // gated on req.userCustomerId above so stripeCustomerId is
       // populated unless the customer-create best-effort failed —
       // in which case we have to refuse rather than silently
       // anonymise a recurring billing relationship).
@@ -242,11 +242,11 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
           metadata: sessionMetadata,
           // Stamp metadata onto the subscription itself so the
           // customer.subscription.* webhook can recover the buyer's
-          // clerk_user_id without having to look up the originating
+          // customer_id without having to look up the originating
           // Session.
           subscription_data: {
             metadata: {
-              clerk_user_id: req.userClerkId!,
+              customer_id: req.userCustomerId!,
               source: "pennpaps-shop",
             },
           },
@@ -331,7 +331,7 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
       stripeSessionId: session.id,
       status: "pending",
       cartHash,
-      ...(req.userClerkId ? { clerkUserId: req.userClerkId } : {}),
+      ...(req.userCustomerId ? { customerId: req.userCustomerId } : {}),
     })
     .onConflictDoUpdate({
       target: shopOrders.stripeSessionId,

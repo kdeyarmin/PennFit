@@ -342,7 +342,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_bob",
+        customerId: "user_bob",
         status: "paid",
         shippedAt: null,
       },
@@ -362,7 +362,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "pending",
         shippedAt: null,
       },
@@ -380,7 +380,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "paid",
         shippedAt: new Date("2026-04-25T09:00:00Z"),
       },
@@ -398,7 +398,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "paid",
         shippedAt: null,
       },
@@ -434,7 +434,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     selectQueue.push([
       {
         id: VALID_ID,
-        clerkUserId: "user_alice",
+        customerId: "user_alice",
         status: "paid",
         shippedAt: null,
       },

@@ -29,7 +29,7 @@ const router: IRouter = Router();
 const RECENT_ORDERS_LIMIT = 5;
 
 router.get("/shop/me", attachSignedIn, async (req, res) => {
-  if (!req.userClerkId) {
+  if (!req.userCustomerId) {
     res.json({ signedIn: false });
     return;
   }
@@ -42,7 +42,7 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   const { email, displayName } = await readCustomerProfile(req);
 
   const row = await ensureShopCustomerRow({
-    clerkUserId: req.userClerkId,
+    customerId: req.userCustomerId,
     email,
     displayName,
   });
@@ -61,14 +61,14 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
       createdAt: shopOrders.createdAt,
     })
     .from(shopOrders)
-    .where(eq(shopOrders.clerkUserId, req.userClerkId))
+    .where(eq(shopOrders.customerId, req.userCustomerId))
     .orderBy(desc(shopOrders.createdAt))
     .limit(RECENT_ORDERS_LIMIT);
 
   res.json({
     signedIn: true,
     profile: {
-      clerkUserId: row.clerkUserId,
+      customerId: row.customerId,
       email: row.emailLower,
       displayName: row.displayName,
       shippingAddress: row.shippingAddress ?? null,
@@ -129,7 +129,7 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
 
   // Make sure the row exists (first-time PUT before any GET).
   await ensureShopCustomerRow({
-    clerkUserId: req.userClerkId!,
+    customerId: req.userCustomerId!,
     email: null,
   });
 
@@ -147,7 +147,7 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
   const [row] = await db
     .update(shopCustomers)
     .set(updates)
-    .where(eq(shopCustomers.clerkUserId, req.userClerkId!))
+    .where(eq(shopCustomers.customerId, req.userCustomerId!))
     .returning();
 
   if (!row) {
@@ -157,7 +157,7 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
 
   res.json({
     profile: {
-      clerkUserId: row.clerkUserId,
+      customerId: row.customerId,
       email: row.emailLower,
       displayName: row.displayName,
       shippingAddress: row.shippingAddress ?? null,

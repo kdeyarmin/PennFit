@@ -251,10 +251,10 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   const items = await db
     .select({
       id: shopReviews.id,
-      // clerkUserId is selected only to drive the verified-purchaser
+      // customerId is selected only to drive the verified-purchaser
       // join below — we MUST NOT echo it back in the public response
       // (it would let any visitor scrape per-review identity).
-      clerkUserId: shopReviews.clerkUserId,
+      customerId: shopReviews.customerId,
       rating: shopReviews.rating,
       title: shopReviews.title,
       body: shopReviews.body,
@@ -276,31 +276,31 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
 
   // Verified-purchaser join. One indexed lookup per page (NOT per
   // row) against shop_order_items: ask Postgres for the distinct
-  // clerk_user_ids on the page that have at least one paid item for
+  // customer_ids on the page that have at least one paid item for
   // this product. We don't care about quantities or order ids — only
-  // membership. Anonymous reviewers (clerkUserId === null) are never
+  // membership. Anonymous reviewers (customerId === null) are never
   // verified by definition. If the table has no rows yet (fresh
   // install) the IN list yields an empty set and every flag is false.
   const reviewerIds = Array.from(
     new Set(
       trimmed
-        .map((it) => it.clerkUserId)
+        .map((it) => it.customerId)
         .filter((v): v is string => typeof v === "string" && v.length > 0),
     ),
   );
   const verifiedSet = new Set<string>();
   if (reviewerIds.length > 0) {
     const verifiedRows = await db
-      .selectDistinct({ clerkUserId: shopOrderItems.clerkUserId })
+      .selectDistinct({ customerId: shopOrderItems.customerId })
       .from(shopOrderItems)
       .where(
         and(
           eq(shopOrderItems.productId, productId),
-          inArray(shopOrderItems.clerkUserId, reviewerIds),
+          inArray(shopOrderItems.customerId, reviewerIds),
         ),
       );
     for (const row of verifiedRows) {
-      if (row.clerkUserId) verifiedSet.add(row.clerkUserId);
+      if (row.customerId) verifiedSet.add(row.customerId);
     }
   }
 
@@ -326,7 +326,7 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
       body: it.body,
       authorDisplayName: it.authorDisplayName,
       verifiedPurchaser:
-        it.clerkUserId != null && verifiedSet.has(it.clerkUserId),
+        it.customerId != null && verifiedSet.has(it.customerId),
       createdAt: it.createdAt.toISOString(),
     })),
     nextCursor,
@@ -404,8 +404,8 @@ router.post(
   "/shop/products/:productId/reviews",
   requireSignedIn,
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -450,7 +450,7 @@ router.post(
     }
 
     const insertRow: InsertShopReviewRow = {
-      clerkUserId,
+      customerId,
       productId,
       rating,
       title: cleanTitle,
@@ -475,12 +475,12 @@ router.post(
         createdAt: inserted.createdAt.toISOString(),
       });
     } catch (err) {
-      // UNIQUE (clerk_user_id, product_id) violation → caller already
+      // UNIQUE (customer_id, product_id) violation → caller already
       // has a review for this product. The frontend should swap to the
       // edit affordance.
       const msg = err instanceof Error ? err.message : String(err);
       if (
-        msg.includes("shop_reviews_clerk_user_id_product_id_unique") ||
+        msg.includes("shop_reviews_customer_id_product_id_unique") ||
         msg.includes("duplicate key")
       ) {
         res.status(409).json({ error: "already_reviewed" });
@@ -512,8 +512,8 @@ async function db_insert(row: InsertShopReviewRow) {
 }
 
 router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
-  const clerkUserId = req.userClerkId;
-  if (!clerkUserId) {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
@@ -537,7 +537,7 @@ router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
     .from(shopReviews)
     .where(
       and(
-        eq(shopReviews.clerkUserId, clerkUserId),
+        eq(shopReviews.customerId, customerId),
         eq(shopReviews.productId, productIdParse.data),
       ),
     )
@@ -563,8 +563,8 @@ router.patch(
   "/shop/me/reviews/:productId",
   requireSignedIn,
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -612,7 +612,7 @@ router.patch(
       })
       .where(
         and(
-          eq(shopReviews.clerkUserId, clerkUserId),
+          eq(shopReviews.customerId, customerId),
           eq(shopReviews.productId, productId),
         ),
       )
@@ -644,8 +644,8 @@ router.delete(
   "/shop/me/reviews/:productId",
   requireSignedIn,
   async (req, res) => {
-    const clerkUserId = req.userClerkId;
-    if (!clerkUserId) {
+    const customerId = req.userCustomerId;
+    if (!customerId) {
       res.status(401).json({ error: "sign_in_required" });
       return;
     }
@@ -663,7 +663,7 @@ router.delete(
       .delete(shopReviews)
       .where(
         and(
-          eq(shopReviews.clerkUserId, clerkUserId),
+          eq(shopReviews.customerId, customerId),
           eq(shopReviews.productId, productIdParse.data),
         ),
       )

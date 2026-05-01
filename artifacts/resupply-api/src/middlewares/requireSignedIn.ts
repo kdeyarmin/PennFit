@@ -10,7 +10,7 @@
 //
 // Behavior:
 //   * 401 if there's no session on the request.
-//   * Otherwise sets `req.userClerkId` and continues.
+//   * Otherwise sets `req.userCustomerId` and continues.
 //
 // Why we DON'T require a verified email here: a freshly-signed-up
 // shopper should be able to start placing orders immediately. The
@@ -23,11 +23,11 @@
 //   in-house pf_session cookie. A request that doesn't carry one
 //   (or carries an expired / revoked / locked cookie) gets a 401.
 //   The `customerIdResolver` in api-server's auth-deps maps the
-//   resolved auth.users.id to the legacy `shop_customers.clerk_user_id`
-//   value so every downstream FK keeps working unchanged. The
-//   resolver also returns the user's email + display name, which
-//   the middleware attaches to the request for the 5 shop
-//   endpoints that previously called `clerkClient.users.getUser`.
+//   resolved auth.users.id to `shop_customers.customer_id` so
+//   every downstream join keeps working. The resolver also
+//   returns the user's email + display name, which the middleware
+//   attaches to the request for the 5 shop endpoints that
+//   previously called `clerkClient.users.getUser`.
 
 import type { NextFunction, Request, Response } from "express";
 
@@ -44,7 +44,7 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      userClerkId?: string;
+      userCustomerId?: string;
       /**
        * Customer profile attached by `customerIdResolver` after
        * an in-house cookie has been validated. Handlers that need
@@ -115,7 +115,7 @@ async function resolveCustomer(req: Request): Promise<Resolved | null> {
 }
 
 function attach(req: Request, r: Resolved): void {
-  req.userClerkId = r.customerKey;
+  req.userCustomerId = r.customerKey;
   req.shopCustomerEmail = r.email;
   req.shopCustomerDisplayName = r.displayName;
 }
@@ -136,7 +136,7 @@ export async function requireSignedIn(
 
 /**
  * Soft variant: never blocks the request. Just attaches
- * `req.userClerkId` (and the optional profile fields) if a session
+ * `req.userCustomerId` (and the optional profile fields) if a session
  * exists. Used by `GET /shop/me` which must always 200 (so the
  * frontend can render a "signed-out" state without an error
  * toast) and by `POST /shop/checkout` which supports both guest

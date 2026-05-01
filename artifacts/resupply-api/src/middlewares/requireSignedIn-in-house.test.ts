@@ -37,10 +37,10 @@ import { attachSignedIn, requireSignedIn } from "./requireSignedIn";
 function makeApp(): Express {
   const app = express();
   app.get("/protected", requireSignedIn, (req, res) => {
-    res.json({ ok: true, userClerkId: req.userClerkId });
+    res.json({ ok: true, userCustomerId: req.userCustomerId });
   });
   app.get("/soft", attachSignedIn, (req, res) => {
-    res.json({ userClerkId: req.userClerkId ?? null });
+    res.json({ userCustomerId: req.userCustomerId ?? null });
   });
   return app;
 }
@@ -121,7 +121,7 @@ describe("requireSignedIn — in-house pf_session path (Stage 5a)", () => {
       .set("Cookie", cookie);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, userClerkId: "u_1" });
+    expect(res.body).toEqual({ ok: true, userCustomerId: "u_1" });
   });
 
   it("admits agent / admin staff who happen to also be shop customers", async () => {
@@ -134,7 +134,7 @@ describe("requireSignedIn — in-house pf_session path (Stage 5a)", () => {
         .get("/protected")
         .set("Cookie", cookie);
       expect(res.status).toBe(200);
-      expect(res.body.userClerkId).toBe(id);
+      expect(res.body.userCustomerId).toBe(id);
     }
   });
 
@@ -200,7 +200,7 @@ describe("attachSignedIn — soft variant (Stage 5a)", () => {
     mockDeps = null;
   });
 
-  it("attaches userClerkId when the in-house cookie is valid", async () => {
+  it("attaches userCustomerId when the in-house cookie is valid", async () => {
     const { deps, repo } = buildDeps();
     mockDeps = deps;
     const { cookie } = await seedSignedIn(repo, { id: "u_2" });
@@ -208,24 +208,24 @@ describe("attachSignedIn — soft variant (Stage 5a)", () => {
     const res = await request(makeApp()).get("/soft").set("Cookie", cookie);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ userClerkId: "u_2" });
+    expect(res.body).toEqual({ userCustomerId: "u_2" });
   });
 
-  it("returns null userClerkId when no session is present", async () => {
+  it("returns null userCustomerId when no session is present", async () => {
     const { deps } = buildDeps();
     mockDeps = deps;
     const res = await request(makeApp()).get("/soft");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ userClerkId: null });
+    expect(res.body).toEqual({ userCustomerId: null });
   });
 
-  it("returns null userClerkId for a malformed cookie (no error)", async () => {
+  it("returns null userCustomerId for a malformed cookie (no error)", async () => {
     const { deps } = buildDeps();
     mockDeps = deps;
     const res = await request(makeApp())
       .get("/soft")
       .set("Cookie", "pf_session=garbage");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ userClerkId: null });
+    expect(res.body).toEqual({ userCustomerId: null });
   });
 });

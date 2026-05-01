@@ -201,7 +201,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     expect(r.body.error).toBe("sign_in_required");
   });
 
-  it("404 when not owned (no row matches id+clerkUserId)", async () => {
+  it("404 when not owned (no row matches id+customerId)", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([]); // owner lookup returns nothing
     const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)

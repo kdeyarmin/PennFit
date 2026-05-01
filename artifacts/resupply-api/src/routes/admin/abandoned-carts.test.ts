@@ -394,7 +394,7 @@ describe("GET /admin/shop/abandoned-carts", () => {
     selectQueue.push([
       {
         id: ROW_A,
-        clerkUserId: "user_a",
+        customerId: "user_a",
         email: "joan@example.com",
         items: [
           { quantity: 2, name: "Headgear" },

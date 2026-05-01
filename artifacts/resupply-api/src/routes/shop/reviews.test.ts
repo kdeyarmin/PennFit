@@ -5,7 +5,7 @@
 //   * unauthenticated POST/PATCH/DELETE → 401
 //   * POST creates with status='pending' (admin must approve before
 //     a review goes public)
-//   * POST 409 on UNIQUE (clerk_user_id, product_id) violation
+//   * POST 409 on UNIQUE (customer_id, product_id) violation
 //   * POST strips HTML from title + body before insert
 //   * PATCH always resets status to 'pending' (re-moderate every edit)
 //   * DELETE is idempotent (200 even with zero rows deleted)
@@ -55,7 +55,7 @@ const dbStub = {
   select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
   // selectDistinct is used by the public reviews list to compute the
   // verified-purchaser flag — one query per page that returns the
-  // distinct clerk_user_ids on the page that have a paid order item
+  // distinct customer_ids on the page that have a paid order item
   // for the requested product. Same fluent shape as `select`.
   selectDistinct: vi.fn(() => fluent(selectDistinctQueue.shift() ?? [])),
   insert: vi.fn(() => {
@@ -221,7 +221,7 @@ describe("POST /shop/products/:productId/reviews", () => {
     stubSignedIn();
     insertErrorQueue.push(
       new Error(
-        'duplicate key value violates unique constraint "shop_reviews_clerk_user_id_product_id_unique"',
+        'duplicate key value violates unique constraint "shop_reviews_customer_id_product_id_unique"',
       ),
     );
     const res = await request(makeApp())
@@ -321,7 +321,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     selectQueue.push([
       {
         id: "rev_1",
-        clerkUserId: "user_bob",
+        customerId: "user_bob",
         rating: 5,
         title: "Great",
         body: "Loved it. Five stars from me on this one.",
@@ -331,7 +331,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     ]);
     // Verified-purchaser query: bob has bought this product so the
     // verified pill should light up.
-    selectDistinctQueue.push([{ clerkUserId: "user_bob" }]);
+    selectDistinctQueue.push([{ customerId: "user_bob" }]);
     selectQueue.push([
       { rating: 5, n: 4 },
       { rating: 4, n: 1 },
@@ -344,7 +344,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     expect(res.body.items[0].authorDisplayName).toBe("Bob R.");
     // Public reads never expose the author's email or clerk id
     expect(res.body.items[0].authorEmail).toBeUndefined();
-    expect(res.body.items[0].clerkUserId).toBeUndefined();
+    expect(res.body.items[0].customerId).toBeUndefined();
     expect(res.body.items[0].verifiedPurchaser).toBe(true);
     expect(res.body.aggregate.count).toBe(5);
     expect(res.body.aggregate.averageRating).toBe(4.8);
@@ -356,7 +356,7 @@ describe("GET /shop/products/:productId/reviews (public)", () => {
     selectQueue.push([
       {
         id: "rev_2",
-        clerkUserId: "user_charlie",
+        customerId: "user_charlie",
         rating: 4,
         title: "Decent",
         body: "Fine for the price, took a couple nights to get used to.",

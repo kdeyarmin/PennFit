@@ -25,7 +25,7 @@ export interface SavedCard {
 }
 
 export interface ShopMeProfile {
-  clerkUserId: string;
+  customerId: string;
   email: string | null;
   displayName: string | null;
   shippingAddress: SavedShippingAddress | null;
