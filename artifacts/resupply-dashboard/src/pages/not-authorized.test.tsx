@@ -145,17 +145,16 @@ describe("NotAuthorizedPage", () => {
     });
 
     it("Try again button is wired to a click handler", () => {
-      // We don't assert that window.location.reload was actually
-      // called: jsdom's `window.location` is non-configurable and
-      // the matrix of replace/redefine workarounds varies across
-      // jsdom versions. The render assertion above already proves
-      // the button exists with the correct role+label; here we
-      // confirm clicking it does not throw (jsdom's reload is a
-      // no-op stub, so a successful click means the inline handler
-      // resolved the function reference correctly).
       render(<NotAuthorizedPage reason="transient" />);
       const button = screen.getByRole("button", { name: /try again/i });
+
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
       expect(() => fireEvent.click(button)).not.toThrow();
+
+      consoleError.mockRestore();
     });
   });
 
