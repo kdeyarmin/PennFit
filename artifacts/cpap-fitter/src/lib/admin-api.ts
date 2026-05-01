@@ -225,18 +225,6 @@ export interface AdminTeamMember {
   isSelf: boolean;
   createdAt: number;
   lastSignInAt: number | null;
-  /**
-   * Set if this user's email is also in the server-config env
-   * allowlist. When present, role-change and remove are both no-ops
-   * for effective access (env wins), so the UI should disable those
-   * actions and explain that env access takes precedence.
-   */
-  envOverride: AdminTeamRole | null;
-}
-
-export interface AdminTeamEnvRow {
-  email: string;
-  role: AdminTeamRole;
 }
 
 export interface AdminTeamPendingInvitation {
@@ -251,7 +239,6 @@ export interface AdminTeamResponse {
   role: AdminTeamRole;
   self: { email?: string; userId?: string };
   members: AdminTeamMember[];
-  envAllowlist: AdminTeamEnvRow[];
   pendingInvitations: AdminTeamPendingInvitation[];
 }
 

@@ -13,7 +13,6 @@ import {
   AdminApiError,
   type AdminTeamRole,
   type AdminTeamMember,
-  type AdminTeamEnvRow,
   type AdminTeamPendingInvitation,
   type AdminInvitationResult,
 } from "@/lib/admin-api";
@@ -44,7 +43,7 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from "@/components/ui/radio-group";
-import { UserPlus, Users, ShieldCheck, Mail, Server, Trash2 } from "lucide-react";
+import { UserPlus, Users, Mail, Trash2 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 /**
@@ -53,22 +52,15 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
  * fix from CSR feedback ("we have to email an engineer to add a new
  * teammate"); this page makes that a self-service action.
  *
- * Three sections, in priority order for daily use:
+ * Two sections, in priority order for daily use:
  *
- *   1. Active teammates (auth-managed). Mutable inline. The signed-
- *      in admin's own row is marked "(you)" with disabled actions —
- *      the lockout-guard is also enforced server-side, but disabling
- *      the buttons is the friendlier signal.
+ *   1. Active teammates (DB-backed via `auth.users`). Mutable inline.
+ *      The signed-in admin's own row is marked "(you)" with disabled
+ *      actions — the lockout-guard is also enforced server-side, but
+ *      disabling the buttons is the friendlier signal.
  *
- *   2. Pending invitations. Cancel button revokes the the invitation
+ *   2. Pending invitations. Cancel button revokes the invitation
  *      (e.g. fixed a typo, want to re-send to the right address).
- *
- *   3. Env-allowlisted (read-only). Synthetic rows for emails listed
- *      in PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS. Rendered with a
- *      "set in server config" muted note so admins know why those
- *      rows have no edit affordance — the env vars are the
- *      permanent recovery / bootstrap path and intentionally not
- *      editable from the UI.
  *
  * Agents (adminRole === "agent") see the page in read-only mode —
  * no Invite button, no per-row controls. The page is reachable for
@@ -124,7 +116,6 @@ export function AdminUsers() {
   });
 
   const members = team.data?.members ?? [];
-  const envAllowlist = team.data?.envAllowlist ?? [];
   const pendingInvitations = team.data?.pendingInvitations ?? [];
 
   return (
@@ -297,36 +288,6 @@ export function AdminUsers() {
         </CardContent>
       </Card>
 
-      {/* ---------- Env-allowlisted ---------- */}
-      <Card className="border-0 glass-card rounded-2xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="w-5 h-5" />
-            Set in server config
-          </CardTitle>
-          <CardDescription>
-            These emails are hard-coded in the server's environment as a
-            recovery path. Only an engineer with shell access can change
-            them. Listed here so you know who has standing access without
-            relying on this page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {team.isLoading ? (
-            <Skeleton className="h-12 w-full" />
-          ) : envAllowlist.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No environment allowlist is set on this server.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border/40" data-testid="env-allowlist">
-              {envAllowlist.map((row, idx) => (
-                <EnvAllowlistRow key={`${row.email}-${idx}`} row={row} />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -346,13 +307,7 @@ function ActiveTeammateRow({
   onChangeRole: (role: AdminTeamRole) => void;
   onRevoke: () => void;
 }) {
-  // Env override means the email also appears in the server's
-  // PENN_ADMIN_EMAILS / PENN_AGENT_EMAILS allowlist. Env wins over
-  // auth provider metadata in requireAdmin, so any role-change or remove
-  // action against this row would be a no-op for effective access.
-  // Disable the controls and tell the operator who actually owns it.
-  const isEnvOverride = user.envOverride !== null;
-  const showActions = isAdmin && !user.isSelf && !isEnvOverride;
+  const showActions = isAdmin && !user.isSelf;
   return (
     <li
       className="py-3 flex flex-wrap items-center gap-3"
@@ -367,15 +322,6 @@ function ActiveTeammateRow({
             <span className="text-xs text-muted-foreground">(you)</span>
           )}
           <RoleBadge role={user.role} />
-          {isEnvOverride && (
-            <span
-              className="text-[10px] uppercase tracking-wide rounded border border-amber-400/40 text-amber-300/90 px-1.5 py-0.5"
-              title={`Also set in server config as ${user.envOverride}. Effective access is controlled by the env allowlist.`}
-              data-testid={`env-override-${user.id}`}
-            >
-              Server config
-            </span>
-          )}
         </div>
         {user.name && (
           <div className="text-xs text-muted-foreground truncate">
@@ -426,10 +372,6 @@ function ActiveTeammateRow({
         <span className="text-xs text-muted-foreground italic">
           Ask another admin to change your role
         </span>
-      ) : isAdmin && isEnvOverride ? (
-        <span className="text-xs text-muted-foreground italic max-w-[220px] text-right">
-          Set in server config — ask an engineer to change.
-        </span>
       ) : null}
     </li>
   );
@@ -472,23 +414,6 @@ function PendingInviteRow({
           {pending ? "Cancelling…" : "Cancel invite"}
         </Button>
       )}
-    </li>
-  );
-}
-
-function EnvAllowlistRow({ row }: { row: AdminTeamEnvRow }) {
-  return (
-    <li className="py-3 flex flex-wrap items-center gap-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-muted-foreground" />
-          <span className="font-medium truncate">{row.email}</span>
-          <RoleBadge role={row.role} />
-        </div>
-        <div className="text-xs text-muted-foreground">
-          Set in server config — ask an engineer to remove.
-        </div>
-      </div>
     </li>
   );
 }

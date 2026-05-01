@@ -33,10 +33,10 @@ need to be **correct**, not just present.
       extension installed. The boot will fail with
       `PgcryptoNotInstalledError` if the extension is missing.
 - [ ] All migrations applied in order:
-      `pnpm --filter @workspace/resupply-db run migrate`
-- [ ] Migrations 0016–0021 applied if rolling forward from before
-      this PR (shop_returns, csr_macros, comm_prefs JSONB,
-      review_request_sent_at, admin_users, conversations assignment).
+      `pnpm --filter @workspace/resupply-db run migrate`. The migrator
+      is idempotent (already-applied migrations are tracked in
+      `drizzle.resupply_migrations`), so re-running on a current
+      deploy is a no-op.
 
 ### PHI encryption
 
@@ -51,14 +51,24 @@ need to be **correct**, not just present.
       value for that purpose, so encrypted PHI written under a legacy
       key keeps decrypting after `RESUPPLY_MASTER_KEY` is added.
 
-### Admin allowlist
+### Admin access
 
-- [ ] `RESUPPLY_ADMIN_EMAILS` — comma-separated allowlist. At least
-      ONE entry is required; `requireAdmin` 503s on every request
-      when this is empty in `NODE_ENV=production`.
-- [ ] `RESUPPLY_AGENT_EMAILS` — optional allowlist for CSRs.
-- [ ] DB-backed members (added via `/admin/team`) layer on top once
-      migration 0020 is applied.
+Stage 5b moved admin/agent role authority onto `auth.users.role`
+(DB-backed). The legacy `RESUPPLY_ADMIN_EMAILS` /
+`RESUPPLY_AGENT_EMAILS` env vars are no longer consulted by
+`requireAdmin` — they survive only as display values on the
+`/admin/settings` panel (and as the `RESUPPLY_ADMIN_EMAILS` userenv
+hint on Replit).
+
+- [ ] At least one row exists in `auth.users` with
+      `role = 'admin'` and `status = 'active'`. Seed the first one
+      with `pnpm --filter @workspace/scripts auth:bootstrap-admin
+      --email=<addr> --role=admin` against the production
+      `DATABASE_URL`. The script issues a one-time set-password
+      email (when SendGrid is configured) and prints the raw token
+      so the bootstrap admin can sign in.
+- [ ] Additional admins / agents are added via `/admin/team` in
+      the resupply dashboard, NOT through env-var edits.
 
 ### Vendors (graceful-degrade if missing — dashboard `/admin/operations`
 shows green/red dots per vendor)
