@@ -206,6 +206,9 @@ importers:
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../../lib/resupply-email
+      argon2:
+        specifier: ^0.43.0
+        version: 0.43.1
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -748,6 +751,9 @@ importers:
       '@workspace/resupply-telecom':
         specifier: workspace:*
         version: link:../../lib/resupply-telecom
+      argon2:
+        specifier: ^0.43.0
+        version: 0.43.1
       cors:
         specifier: ^2
         version: 2.8.6
