@@ -1,35 +1,11 @@
 // Environment surface for the in-house auth library.
-//
-// Stage 5a — AUTH_PROVIDER kill switch retired. The flag lives on
-// in `.env.example` as a no-op (set it to anything; it's ignored)
-// to keep deploys with the legacy var set from crashing at boot,
-// but the library always behaves as if `AUTH_PROVIDER=in_house`.
-// Customer + staff cutovers (Stages 3–4c) shipped earlier; the
-// flag was the rollback lever, and the rollback window has
-// closed. AUTH_PASSWORD_PEPPER is now unconditionally required.
 
 import { z } from "zod";
 
-/**
- * Historical type — preserved on the public surface so existing
- * callers' destructuring keeps working through the Stage 5a /
- * Stage 5d transition. The only valid runtime value is "in_house";
- * we map any other input to that.
- */
-export type AuthProvider = "in_house";
-
-export const AUTH_PROVIDER_VALUES = ["in_house"] as const satisfies readonly AuthProvider[];
-
 export interface AuthEnv {
   /**
-   * Always "in_house" after Stage 5a. Kept on the type for
-   * back-compat with the few callers (e.g. `app.ts`'s log line)
-   * that introspect the field.
-   */
-  provider: AuthProvider;
-  /**
    * 32+ random bytes (base64). HMAC-SHA256(password, pepper) is
-   * what gets fed to argon2id. UNCONDITIONALLY required.
+   * what gets fed to argon2id.
    */
   passwordPepper: Buffer;
   /** Sliding session lifetime. Default 14 days. */
@@ -74,22 +50,5 @@ export function readAuthEnv(
     source.AUTH_EMAIL_TOKEN_TTL_HOURS ?? "24",
   );
   const passwordPepper = parsePepper(source.AUTH_PASSWORD_PEPPER);
-  return {
-    provider: "in_house",
-    passwordPepper,
-    sessionTtlDays,
-    emailTokenTtlHours,
-  };
-}
-
-/**
- * Historical helper. Always true after Stage 5a — kept on the
- * surface so existing call sites compile. New code should NOT
- * branch on this; the in-house path is the only path.
- *
- * @deprecated Always true; remove when Stage 5d retires the
- *   AUTH_PROVIDER flag entirely.
- */
-export function isInHouseAuthActive(_env: AuthEnv): boolean {
-  return true;
+  return { passwordPepper, sessionTtlDays, emailTokenTtlHours };
 }

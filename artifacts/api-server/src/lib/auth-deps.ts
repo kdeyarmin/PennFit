@@ -111,14 +111,6 @@ function makeSendgridSender(): EmailSender {
   };
 }
 
-/**
- * Stage 5a back-compat alias. New callers should use `getAuthDeps`.
- * @deprecated Use `getAuthDeps`. Removed in Stage 5d.
- */
-export function getAuthDepsOrNull(): AuthDeps {
-  return getAuthDeps();
-}
-
 export function __resetAuthDepsCache(): void {
   cachedDeps = undefined;
 }

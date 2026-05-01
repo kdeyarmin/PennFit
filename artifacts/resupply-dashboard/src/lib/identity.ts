@@ -1,13 +1,9 @@
-// Dashboard identity shim. Stage 5a retired the kill switch;
-// Stage 5c retired the Clerk implementation. The hook now reads
-// from the in-house /resupply-api/auth/me probe via the React
-// Query hook from @workspace/resupply-auth-react.
+// Dashboard identity shim. Reads the current session from
+// /resupply-api/auth/me via the React Query hook from
+// @workspace/resupply-auth-react.
 //
 // Components that previously called `useUser()` / `useClerk()`
-// import `useDashboardIdentity` from here instead. The
-// `IS_IN_HOUSE_AUTH` constant is preserved at `true` for
-// back-compat with any leftover branches; new code should not
-// branch on it.
+// import `useDashboardIdentity` from here instead.
 
 import { authHooks, authClient } from "./auth-hooks";
 
@@ -41,8 +37,3 @@ export function useDashboardIdentity(): DashboardIdentity {
   };
 }
 
-/**
- * @deprecated Always true after Stage 5c. Kept on the surface so
- * existing call sites compile; remove on the next sweep.
- */
-export const IS_IN_HOUSE_AUTH = true;

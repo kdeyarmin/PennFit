@@ -40,13 +40,10 @@ vi.mock("@clerk/express", () => ({
 // and drive role / status / session state from each test.
 let mockDeps: AuthDeps | null = null;
 vi.mock("../lib/auth-deps", () => ({
-  // After Stage 5a getAuthDeps always returns. We throw rather
-  // than return null in tests so the failure mode is loud.
   getAuthDeps: () => {
     if (!mockDeps) throw new Error("test: mockDeps not set");
     return mockDeps;
   },
-  getAuthDepsOrNull: () => mockDeps,
 }));
 
 import { requireAdmin, requireAdminOnly } from "./requireAdmin";
@@ -79,7 +76,6 @@ async function buildDepsWithRepo(): Promise<{
   const repo = makeMemoryRepo();
   const deps: AuthDeps = {
     env: {
-      provider: "in_house",
       passwordPepper: PEPPER,
       sessionTtlDays: 14,
       emailTokenTtlHours: 24,

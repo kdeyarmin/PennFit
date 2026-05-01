@@ -54,7 +54,6 @@ function buildDeps(): { deps: AuthDeps; repo: MemoryRepo } {
   const repo = makeMemoryRepo();
   const deps: AuthDeps = {
     env: {
-      provider: "in_house",
       passwordPepper: PEPPER,
       sessionTtlDays: 14,
       emailTokenTtlHours: 24,

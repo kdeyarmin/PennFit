@@ -61,8 +61,3 @@ export const SignedOut: React.FC<{
   return <>{children}</>;
 };
 
-/**
- * @deprecated Always true after Stage 5c. Kept on the surface so
- * existing call sites compile; remove on the next sweep.
- */
-export const IS_IN_HOUSE_AUTH = true;

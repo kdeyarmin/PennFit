@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { isInHouseAuthActive, readAuthEnv } from "./env";
+import { readAuthEnv } from "./env";
 
 const PEPPER_BASE64 =
   "Zm9yIHRlc3Rpbmcgb25seSBwbGVhc2UgZG8gbm90IHJldXNlIGFhYWFhYWE="; // 40 bytes when decoded
 
-describe("readAuthEnv (post-Stage-5a)", () => {
-  it("returns provider='in_house' regardless of input (kill switch retired)", () => {
+describe("readAuthEnv", () => {
+  it("returns sane defaults for missing TTLs", () => {
     const env = readAuthEnv({ AUTH_PASSWORD_PEPPER: PEPPER_BASE64 });
-    expect(env.provider).toBe("in_house");
     expect(env.sessionTtlDays).toBe(14);
     expect(env.emailTokenTtlHours).toBe(24);
   });
 
-  it("ignores any AUTH_PROVIDER value the caller sets", () => {
+  it("ignores any AUTH_PROVIDER value the caller sets (legacy compat)", () => {
     // Legacy deploys may still have AUTH_PROVIDER=clerk in their
     // env. We accept and ignore — the in-house path is the only
     // path now.
@@ -21,13 +20,7 @@ describe("readAuthEnv (post-Stage-5a)", () => {
       AUTH_PROVIDER: "clerk",
       AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
     });
-    expect(env.provider).toBe("in_house");
-  });
-
-  it("isInHouseAuthActive is always true (helper kept for back-compat)", () => {
-    expect(
-      isInHouseAuthActive(readAuthEnv({ AUTH_PASSWORD_PEPPER: PEPPER_BASE64 })),
-    ).toBe(true);
+    expect(env.passwordPepper.length).toBeGreaterThanOrEqual(32);
   });
 
   it("requires AUTH_PASSWORD_PEPPER unconditionally", () => {
