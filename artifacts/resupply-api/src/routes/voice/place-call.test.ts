@@ -1,8 +1,8 @@
 // Route tests for POST /voice/place-call.
 //
 // Mocking strategy:
-//   - Mock @clerk/express so requireAdmin can be exercised without
-//     a real auth lookup.
+//   - Mock requireAdmin via test-helpers/auth-mocks so the gate
+//     resolves without a real auth lookup.
 //   - Mock drizzle so we can stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioClient so we
 //     never try to dial a real number.
