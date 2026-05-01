@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#
+# Self-test for scripts/check-resupply-migration-pair.sh.
+#
+# Builds a throwaway git repo in a tempdir that mirrors the relevant
+# parts of the workspace layout, runs the checker against synthetic
+# diffs, and asserts pass/fail. Never touches the real working tree.
+#
+# Scenarios:
+#   A. clean tree (no schema changes, no migration changes) — pass
+#   B. schema TS modified WITHOUT a new migration file       — fail
+#   C. schema TS modified WITH a new migration file          — pass
+#   D. only a migration file added, no schema change         — pass
+#   E. only an unrelated file changed                        — pass
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/scripts/check-resupply-migration-pair.sh"
+
+if [[ ! -x "$SCRIPT" ]]; then
+  printf '[self-test] %s is not executable; chmod +x it first\n' "$SCRIPT" >&2
+  exit 1
+fi
+
+WORK="$(mktemp -d -t resupply-pair-test.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT INT TERM
+
+cd "$WORK"
+git init -q
+git config user.email "test@example.com"
+git config user.name "Test"
+git commit -q --allow-empty -m "init"
+
+# Mirror the layout the checker expects.
+mkdir -p lib/resupply-db/src/schema
+mkdir -p lib/resupply-db/drizzle/meta
+echo "// initial" > lib/resupply-db/src/schema/patients.ts
+echo "-- initial" > lib/resupply-db/drizzle/0000_init.sql
+git add .
+git commit -q -m "baseline"
+
+# Symlink the script + its companions so the script's call to
+# `git rev-parse --show-toplevel` resolves to THIS repo, not the
+# parent workspace.
+mkdir -p scripts
+cp "$SCRIPT" scripts/check-resupply-migration-pair.sh
+chmod +x scripts/check-resupply-migration-pair.sh
+
+run_check() {
+  # The script reads BASE_REF / DIFF_TARGET; in pre-commit mode that's
+  # HEAD + --cached.
+  BASE_REF=HEAD DIFF_TARGET=--cached \
+    bash scripts/check-resupply-migration-pair.sh
+}
+
+# --- A: clean tree -----------------------------------------------------------
+echo "[self-test] scenario A: clean staged index should pass"
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: A (clean tree should have passed)" >&2
+  exit 1
+fi
+
+# --- B: schema modified, NO new migration -----------------------------------
+echo "[self-test] scenario B: schema-only edit should fail"
+echo "// edited" >> lib/resupply-db/src/schema/patients.ts
+git add lib/resupply-db/src/schema/patients.ts
+if run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: B (schema-only edit should have failed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/src/schema/patients.ts >/dev/null 2>&1 || true
+git checkout -- lib/resupply-db/src/schema/patients.ts
+
+# --- C: schema modified WITH a new migration --------------------------------
+echo "[self-test] scenario C: schema edit + new migration should pass"
+echo "// edited" >> lib/resupply-db/src/schema/patients.ts
+echo "-- adds column" > lib/resupply-db/drizzle/0001_add_col.sql
+git add lib/resupply-db/src/schema/patients.ts lib/resupply-db/drizzle/0001_add_col.sql
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: C (schema + migration should have passed)" >&2
+  exit 1
+fi
+git restore --staged \
+  lib/resupply-db/src/schema/patients.ts \
+  lib/resupply-db/drizzle/0001_add_col.sql >/dev/null 2>&1 || true
+git checkout -- lib/resupply-db/src/schema/patients.ts
+rm -f lib/resupply-db/drizzle/0001_add_col.sql
+
+# --- D: migration-only change -----------------------------------------------
+echo "[self-test] scenario D: migration-only add should pass"
+echo "-- standalone fix" > lib/resupply-db/drizzle/0001_standalone.sql
+git add lib/resupply-db/drizzle/0001_standalone.sql
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: D (migration-only add should have passed)" >&2
+  exit 1
+fi
+git restore --staged lib/resupply-db/drizzle/0001_standalone.sql >/dev/null 2>&1 || true
+rm -f lib/resupply-db/drizzle/0001_standalone.sql
+
+# --- E: unrelated change ----------------------------------------------------
+echo "[self-test] scenario E: unrelated edit should pass"
+mkdir -p artifacts/cpap-fitter/src
+echo "// no schema involvement" > artifacts/cpap-fitter/src/index.ts
+git add artifacts/cpap-fitter/src/index.ts
+if ! run_check >/dev/null 2>&1; then
+  echo "[self-test] FAIL: E (unrelated edit should have passed)" >&2
+  exit 1
+fi
+
+echo "[self-test] all scenarios passed"

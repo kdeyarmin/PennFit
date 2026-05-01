@@ -54,16 +54,22 @@ When it runs:
   validation workflow (defined in `.replit`), append
   ```
    && bash scripts/check-drizzle-drift.sh --self-test \
-   && bash scripts/check-drizzle-drift.sh
+   && bash scripts/check-drizzle-drift.sh \
+   && bash scripts/check-resupply-migration-pair.sh --self-test \
+   && BASE_REF=origin/main DIFF_TARGET= bash scripts/check-resupply-migration-pair.sh
   ```
-  to that workflow's `args` chain. The check is fast and idempotent,
-  so it slots in next to the existing `check-codegen` and
-  `check-resupply-architecture` invocations without restructuring.
+  to that workflow's `args` chain. The structural check is for this
+  package; the co-change pair check is for the sibling
+  `@workspace/resupply-db` (whose snapshot chain is incomplete — see
+  the resupply README). Both are fast and idempotent.
 
 The companion `scripts/check-drizzle-drift.sh.test` exercises the
 checker against the live `lib/db/drizzle/` tree (clean-pass scenario
 and drifted-schema scenario) so any regression in the drift checker
-itself is caught alongside real drift.
+itself is caught alongside real drift. The resupply pair check has
+its own self-test at `scripts/check-resupply-migration-pair.sh.test`
+covering five staged-diff shapes (clean / schema-only / schema+migration
+/ migration-only / unrelated).
 
 The check requires `DATABASE_URL` to be set because `drizzle.config.ts`
 reads it on import; without it the script self-skips with a warning so

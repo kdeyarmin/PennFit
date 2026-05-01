@@ -12,8 +12,14 @@
 #       * scripts/check-resupply-architecture.sh
 #           when resupply lib/ or artifact code changes
 #       * scripts/check-drizzle-drift.sh
-#           when a Drizzle schema or migration file changes (catches
-#           schema TS edits that were never followed by `generate`)
+#           when a @workspace/db schema or migration file changes
+#           (catches schema TS edits that were never followed by
+#           `generate` — full structural diff)
+#       * scripts/check-resupply-migration-pair.sh
+#           when a @workspace/resupply-db schema file changes
+#           (co-change rule: any schema TS edit must ship with a new
+#           migration SQL in the same commit; weaker than a structural
+#           diff but works around the resupply snapshot-chain gap)
 #   - Both checks run against an isolated snapshot of the staged
 #     index — unstaged edits and untracked files are stashed for the
 #     duration of the hook and restored after, so the checks see
@@ -47,6 +53,7 @@ fi
 need_codegen=0
 need_arch=0
 need_drizzle=0
+need_resupply_pair=0
 
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
@@ -66,12 +73,11 @@ while IFS= read -r file; do
       need_arch=1
       ;;
   esac
-  # Drizzle drift: trigger when either the TypeScript schema or the
-  # committed migration tree of a covered DB lib changes. Today only
-  # lib/db is covered (lib/resupply-db's snapshot meta chain is broken
-  # — see scripts/check-drizzle-drift.sh header). Once the resupply
-  # snapshot chain is repaired, add the matching patterns for
-  # lib/resupply-db here.
+  # Drizzle structural drift (storefront DB only). The resupply DB has
+  # an incomplete snapshot chain that prevents drizzle-kit generate
+  # from running clean (see scripts/check-drizzle-drift.sh header), so
+  # it gets the weaker co-change check below instead until the chain
+  # is repaired.
   #
   # Bash `case` globs don't cross `/`, so we list each depth
   # explicitly. drizzle/ has top-level migration .sql files AND a
@@ -85,9 +91,19 @@ while IFS= read -r file; do
       need_drizzle=1
       ;;
   esac
+  # Resupply DB co-change rule: any schema TS edit must ship with a
+  # new migration SQL in the same commit. Trigger off the schema dir
+  # only — touching a migration file alone is a valid commit shape
+  # (e.g. a hand-authored data backfill) and the script handles that.
+  case "$file" in
+    lib/resupply-db/src/schema/*|lib/resupply-db/src/schema/*/*)
+      need_resupply_pair=1
+      ;;
+  esac
 done <<< "$staged"
 
-if [[ $need_codegen -eq 0 && $need_arch -eq 0 && $need_drizzle -eq 0 ]]; then
+if [[ $need_codegen -eq 0 && $need_arch -eq 0 && $need_drizzle -eq 0 \
+      && $need_resupply_pair -eq 0 ]]; then
   exit 0
 fi
 
@@ -116,6 +132,12 @@ run_checks() {
   if [[ $need_drizzle -eq 1 ]]; then
     printf '[pre-commit] Running Drizzle migration drift check…\n' >&2
     if ! bash "$REPO_ROOT/scripts/check-drizzle-drift.sh"; then
+      f=1
+    fi
+  fi
+  if [[ $need_resupply_pair -eq 1 ]]; then
+    printf '[pre-commit] Running resupply schema/migration co-change check…\n' >&2
+    if ! bash "$REPO_ROOT/scripts/check-resupply-migration-pair.sh"; then
       f=1
     fi
   fi

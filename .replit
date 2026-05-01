@@ -18,7 +18,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "drizzle-drift"
+args = "CPAP Fitter"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
@@ -33,12 +33,12 @@ task = "workflow.run"
 args = "Resupply Worker"
 
 [[workflows.workflow]]
-name = "drizzle-drift"
+name = "CPAP Fitter"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "bash scripts/check-drizzle-drift.sh --self-test && bash scripts/check-drizzle-drift.sh"
+args = "pnpm install --frozen-lockfile && PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
 waitForPort = 8080
 
 [workflows.workflow.metadata]
