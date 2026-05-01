@@ -14,21 +14,6 @@
 // sending the bearer token on it is a no-op (the public endpoint
 // doesn't read it), so we do it for free symmetry.
 
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 // Subset of `ShopProductView` from products-meta.ts that the
 // inventory editor actually renders. Kept hand-typed (vs imported
 // from the api package) because the API isn't exposing a TS type
@@ -56,7 +41,7 @@ export interface ListShopInventoryResponse {
 
 export async function listShopInventory(): Promise<ListShopInventoryResponse> {
   const res = await fetch("/resupply-api/shop/products", {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     // 503 here means "Stripe is not configured" — which the public
@@ -110,7 +95,6 @@ export async function patchShopProductStock(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        ...(await authHeaders()),
       },
       body: JSON.stringify({ stockCount }),
     },
@@ -171,7 +155,6 @@ export async function patchShopProductThreshold(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        ...(await authHeaders()),
       },
       body: JSON.stringify({ lowStockThreshold }),
     },
@@ -327,7 +310,6 @@ export async function createShopProduct(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      ...(await authHeaders()),
     },
     body: JSON.stringify(input),
   });

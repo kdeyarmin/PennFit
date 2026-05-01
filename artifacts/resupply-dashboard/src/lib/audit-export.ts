@@ -1,26 +1,8 @@
 // Hand-rolled CSV download helper for the audit log.
 //
-// Same auth bridge as the other hand-rolled api wrappers
-// (abandoned-carts-api, shop-reviews-api, shop-inventory-api):
-// we read the session token via globalThis.Clerk and attach
-// it as a Bearer header. We can't use the OpenAPI codegen client
-// here because the export endpoint streams `text/csv` rather than
-// JSON.
-
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
+// We can't use the OpenAPI codegen client here because the export
+// endpoint streams `text/csv` rather than JSON. Auth travels via the
+// same-origin `pf_session` cookie set by /resupply-api/auth/sign-in.
 
 export interface AuditExportFilters {
   action?: string;
@@ -49,7 +31,7 @@ export async function downloadAuditExport(
 ): Promise<{ filename: string; rowCountApprox: number }> {
   const url = `/resupply-api/audit/export.csv${buildQuery(filters)}`;
   const res = await fetch(url, {
-    headers: { Accept: "text/csv", ...(await authHeaders()) },
+    headers: { Accept: "text/csv" },
   });
   if (!res.ok) {
     let detail: string;

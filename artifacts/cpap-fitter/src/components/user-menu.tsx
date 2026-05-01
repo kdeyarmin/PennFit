@@ -7,11 +7,9 @@
 //                from /shop/cart lands back on /shop/cart afterwards
 //                instead of the admin dashboard.
 //
-// In Clerk mode the dropdown previously used Clerk's hosted
-// <UserButton/>. Stage 4b replaces it with a vendor-agnostic
-// implementation that calls the identity shim's signOut() — same
-// UX for the customer, but works equally well when ClerkProvider
-// is absent (in_house mode).
+// The dropdown is a vendor-agnostic implementation that calls the
+// identity shim's signOut() (see `@/lib/identity`). It does not
+// depend on any third-party auth widget.
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";

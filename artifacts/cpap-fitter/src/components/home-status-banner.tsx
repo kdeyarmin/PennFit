@@ -49,9 +49,9 @@ function SignedInBanner() {
         const d = await fetchShopMeDashboard();
         if (!cancelled) setData(d);
       } catch (err) {
-        // 401 here means Clerk session not yet hydrated on first paint;
-        // any other error is a transient API blip. Either way, hide
-        // the banner rather than rendering a broken state.
+        // 401 here means the in-house session probe came back signed-
+        // out; any other error is a transient API blip. Either way,
+        // hide the banner rather than rendering a broken state.
         if (!(err instanceof AccountApiError)) {
           // eslint-disable-next-line no-console
           console.warn("dashboard fetch failed", err);

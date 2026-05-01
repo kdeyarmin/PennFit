@@ -7,25 +7,9 @@
 // grows, but for the v1 admin queue this thin wrapper is enough and
 // avoids a codegen cycle for every backend tweak.
 //
-// Auth bridge: we reuse the same `globalThis.Clerk.session.getToken()`
-// pattern api-client.ts already wires up — see `getTokenFromGlobal`
-// there. The bridge is registered at module load, so by the time any
-// query in this module fires, the auth provider has installed `window.Clerk`.
-
-type ClerkGlobal = {
-  session?: { getToken: () => Promise<string | null> } | null;
-};
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const clerk = (globalThis as unknown as { Clerk?: ClerkGlobal }).Clerk;
-  if (!clerk?.session) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
+// Auth: the `pf_session` cookie set by /resupply-api/auth/sign-in
+// is sent automatically on same-origin requests, so these wrappers
+// don't need to attach an Authorization header.
 
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
@@ -64,7 +48,7 @@ export async function listAdminShopReviews(
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit) qs.set("limit", String(params.limit));
   const res = await fetch(`/resupply-api/admin/shop/reviews?${qs.toString()}`, {
-    headers: { Accept: "application/json", ...(await authHeaders()) },
+    headers: { Accept: "application/json" },
   });
   if (!res.ok) {
     throw new Error(`Failed to load reviews (${res.status})`);
@@ -77,7 +61,7 @@ export async function approveAdminShopReview(id: string): Promise<AdminReview> {
     `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/approve`,
     {
       method: "POST",
-      headers: { Accept: "application/json", ...(await authHeaders()) },
+      headers: { Accept: "application/json" },
     },
   );
   if (!res.ok) {
@@ -97,7 +81,6 @@ export async function rejectAdminShopReview(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        ...(await authHeaders()),
       },
       body: JSON.stringify(note ? { note } : {}),
     },
@@ -127,7 +110,7 @@ export async function unrejectAdminShopReview(
     `/resupply-api/admin/shop/reviews/${encodeURIComponent(id)}/unreject`,
     {
       method: "POST",
-      headers: { Accept: "application/json", ...(await authHeaders()) },
+      headers: { Accept: "application/json" },
     },
   );
   if (!res.ok) {
@@ -157,7 +140,6 @@ export async function updateAdminShopReviewNote(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        ...(await authHeaders()),
       },
       body: JSON.stringify({ note: note && note.trim() !== "" ? note : null }),
     },

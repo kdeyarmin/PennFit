@@ -6,9 +6,8 @@
 //   * `authHooks` — React Query hooks (useSession, useSignIn, …).
 //
 // Imported by:
-//   * `lib/identity.ts` — picks Clerk vs in-house at module load.
-//   * The new in-house sign-in / sign-up / forgot / reset / verify
-//     pages.
+//   * `lib/identity.tsx` — the shared identity hook surface.
+//   * The in-house sign-in / sign-up / forgot / reset / verify pages.
 
 import {
   createAuthClient,
