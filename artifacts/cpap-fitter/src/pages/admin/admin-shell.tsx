@@ -10,25 +10,11 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { SignedIn, SignedOut, useShopIdentity } from "@/lib/identity";
 
 /**
- * Build the `/sign-in` URL that returns the user to the admin route
- * they were trying to reach. Centralized so the signed-out branch and
- * the 401-from-/admin/me branch can't drift apart.
- */
-function getSignInTarget(location: string): string {
-  return `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
-}
-
-/**
  * AdminShell — wraps an admin page with two layered checks:
  *
  *   1. Signed-out users get redirected to /sign-in (via the
- *      identity shim's <SignedOut>). The current admin path is
- *      forwarded as `?redirect=` so the auth provider returns the
- *      user to the page they were trying to reach (e.g.
- *      /admin/orders) instead of the global
- *      `signInFallbackRedirectUrl` (which is /account, the patient
- *      page). We deliberately do NOT redirect from "/" — only from
- *      /admin*.
+ *      identity shim's <SignedOut>).
+ *      We deliberately do NOT redirect from "/" — only from /admin*.
  *
  *   2. Signed-in users hit /api/admin/me to verify they're on the
  *      PENN_ADMIN_EMAILS allowlist (in Clerk mode) or that
@@ -39,32 +25,37 @@ function getSignInTarget(location: string): string {
  * display in the sidebar.
  */
 export function AdminShell({ children }: { children: React.ReactNode }) {
-  // Pass the current admin path through to /sign-in so the auth provider's
-  // post-auth redirect lands the user back on the page they were trying to
-  // reach (e.g. /admin/orders) instead of falling through to the
-  // global signInFallbackRedirectUrl, which is /account. Without this,
-  // an admin who clicks an /admin link while signed-out gets bounced to
-  // the patient account page after authenticating, where the
-  // session-not-yet-propagated race produces a misleading "Your account
-  // info couldn't load" error.
+  // Capture the admin path the user is trying to reach so re-auth
+  // returns them here instead of falling through to the patient
+  // /account page. Without this query param the sign-in page may
+  // use a default fallback redirect, landing stale-session admins
+  // on /account where /shop/me also returns signedIn:false and
+  // renders a confusing "Your account info couldn't load" error
+  // that the Try again button can't recover from.
   const [location] = useLocation();
-  const signInTarget = getSignInTarget(location);
+  const signInHref = `/sign-in?redirect=${encodeURIComponent(location || "/admin")}`;
   return (
     <>
       <SignedOut>
-        <Redirect to={signInTarget} />
+        <Redirect to={signInHref} />
       </SignedOut>
       <SignedIn>
-        <AdminAuthorizedShell>{children}</AdminAuthorizedShell>
+        <AdminAuthorizedShell signInHref={signInHref}>
+          {children}
+        </AdminAuthorizedShell>
       </SignedIn>
     </>
   );
 }
 
-function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
+function AdminAuthorizedShell({
+  children,
+  signInHref,
+}: {
+  children: React.ReactNode;
+  signInHref: string;
+}) {
   const { isLoaded } = useShopIdentity();
-  const [location] = useLocation();
-  const signInTarget = getSignInTarget(location);
   const me = useQuery({
     queryKey: ["admin-me"],
     queryFn: fetchAdminMe,
@@ -91,7 +82,7 @@ function AdminAuthorizedShell({ children }: { children: React.ReactNode }) {
       return <NotAuthorized status={status} message={(me.error as Error).message} />;
     }
     if (status === 401) {
-      return <Redirect to={signInTarget} />;
+      return <Redirect to={signInHref} />;
     }
     return <AdminErrorShell error={me.error as Error} />;
   }

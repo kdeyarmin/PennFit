@@ -237,9 +237,9 @@ function AccountInner() {
             We can&apos;t see your sign-in anymore — sign back in and
             you&apos;ll land right back here.
           </p>
-          <Link href="/sign-in?redirect=/account">
-            <Button>Sign in</Button>
-          </Link>
+          <Button asChild data-testid="account-resignin-btn">
+            <Link href="/sign-in?redirect=/account">Sign in</Link>
+          </Button>
         </div>
       </div>
     );
