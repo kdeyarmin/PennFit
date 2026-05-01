@@ -1,22 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --color-primary: #1F3A5C; /* PennPaps Navy */
-  --color-secondary: #0F1C2D; /* Darker Navy */
-  --color-accent: #F4B942; /* PennPaps Gold */
+  /* Refined "quiet luxury" palette — mirrors the customer-facing
+   * cpap-fitter tokens so the tutorial reads as one product. Navy is
+   * cooler/deeper (more midnight, less royal); gold is a champagne-
+   * brass rather than a honey-yellow. */
+  --color-primary: #16335A;       /* Penn Navy */
+  --color-secondary: #0B1B33;     /* Penn Navy — deep (gradients/text) */
+  --color-accent: #D4A149;        /* Penn Gold — champagne brass */
+  --color-accent-soft: #ECCB85;   /* Gold — soft (highlights) */
 
-  --color-bg-light: #F8FAFC;
-  --color-bg-dark: #1F3A5C;
-  --color-bg-muted: #F1F5F9;
+  --color-bg-light: #FAFBFD;
+  --color-bg-dark: #16335A;
+  --color-bg-muted: #EEF2F7;
 
-  --color-text-primary: #0F1C2D;
+  --color-text-primary: #0E1B33;
   --color-text-secondary: #475569;
-  --color-text-muted: #94A3B8;
-  --color-text-inverse: #FFFFFF;
+  --color-text-muted: #8A98AB;
+  --color-text-inverse: #FAFBFD;
 
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-error: #EF4444;
+  --color-success: #2F9E6E;
+  --color-warning: #D89E48;
+  --color-error: #C8364A;
 
   --font-display: 'Plus Jakarta Sans', sans-serif;
   --font-body: 'Inter', sans-serif;
@@ -61,14 +66,14 @@ body {
      continuous wash rather than reading as discrete circles. Fixed
      attachment keeps them anchored as the page scrolls. */
   background-image:
-    radial-gradient(ellipse 90% 50% at 50% 110%, rgba(214, 234, 248, 0.55), transparent 70%),
-    radial-gradient(circle 30% at 92% -2%, rgba(244, 185, 66, 0.34), transparent 65%),
-    radial-gradient(ellipse 75% 55% at 100% -5%, rgba(244, 185, 66, 0.22), transparent 60%),
-    radial-gradient(ellipse 95% 65% at 8% -12%, rgba(31, 58, 92, 0.20), transparent 65%),
-    radial-gradient(ellipse 55% 45% at 115% 45%, rgba(31, 58, 92, 0.10), transparent 60%),
-    radial-gradient(ellipse 70% 55% at 50% 118%, rgba(31, 58, 92, 0.16), transparent 62%),
-    radial-gradient(ellipse 50% 40% at -5% 95%, rgba(244, 185, 66, 0.13), transparent 65%),
-    linear-gradient(125deg, transparent 35%, rgba(244, 185, 66, 0.06) 50%, transparent 65%);
+    radial-gradient(ellipse 90% 50% at 50% 110%, rgba(210, 225, 240, 0.55), transparent 70%),
+    radial-gradient(circle 30% at 92% -2%, rgba(212, 161, 73, 0.30), transparent 65%),
+    radial-gradient(ellipse 75% 55% at 100% -5%, rgba(212, 161, 73, 0.18), transparent 60%),
+    radial-gradient(ellipse 95% 65% at 8% -12%, rgba(22, 51, 90, 0.20), transparent 65%),
+    radial-gradient(ellipse 55% 45% at 115% 45%, rgba(22, 51, 90, 0.10), transparent 60%),
+    radial-gradient(ellipse 70% 55% at 50% 118%, rgba(11, 27, 51, 0.16), transparent 62%),
+    radial-gradient(ellipse 50% 40% at -5% 95%, rgba(212, 161, 73, 0.11), transparent 65%),
+    linear-gradient(125deg, transparent 35%, rgba(212, 161, 73, 0.05) 50%, transparent 65%);
   background-attachment: fixed;
 }
 
@@ -81,7 +86,7 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background-image: radial-gradient(circle at 1px 1px, rgba(31, 58, 92, 0.11) 1px, transparent 0);
+  background-image: radial-gradient(circle at 1px 1px, rgba(22, 51, 90, 0.10) 1px, transparent 0);
   background-size: 28px 28px;
   -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
   mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
