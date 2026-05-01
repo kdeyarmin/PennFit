@@ -9,19 +9,21 @@ top-level structure is:
 
 | Path | What lives here |
 | --- | --- |
-| `artifacts/resupply-api` | Single Express API process — resupply automation + voice WS endpoint AND the storefront/fitter routes (Task #37 merged the former `artifacts/api-server` in here, mounted at both `/resupply-api/*` and `/api/*`). |
+| `artifacts/api-server` | PennPaps storefront / fitter API (Express). |
+| `artifacts/resupply-api` | Resupply automation API + voice WS endpoint (Express). |
 | `artifacts/resupply-worker` | `pg-boss` background worker for reminders and PHI sweeps. |
 | `artifacts/cpap-fitter` | Customer-facing fitter SPA (Vite + React). |
-| `artifacts/resupply-dashboard` | Internal admin console SPA (Vite + React) — also hosts the staff PennPaps order/audit/reminders pages. |
+| `artifacts/resupply-dashboard` | Internal admin console SPA (Vite + React). |
+| `artifacts/mockup-sandbox` | Internal UI/UX mockup playground (Vite + React). |
+| `artifacts/pennpaps-tutorial` | Animated onboarding tutorial app (Vite + React). |
 | `lib/*` | Shared workspace packages (DB, contracts, messaging, etc.). |
 
 ## Prerequisites
 
 - Node.js **v24**
 - pnpm **v9+**
-- Postgres **v14+** (we run v16). No extensions required — the
-  active resupply schema only relies on `gen_random_uuid()`, which
-  has been built into Postgres core since v13.
+- Postgres (with the `pgcrypto` extension installed; the resupply
+  services refuse to start without it)
 
 ## Getting started
 
@@ -39,10 +41,9 @@ pnpm typecheck
 pnpm build
 
 # 5. Run a specific app (examples)
+pnpm --filter @workspace/api-server dev
 pnpm --filter @workspace/resupply-api dev
 pnpm --filter @workspace/resupply-worker dev
-pnpm --filter @workspace/cpap-fitter dev
-pnpm --filter @workspace/resupply-dashboard dev
 ```
 
 Each long-running service validates its required environment
@@ -65,28 +66,46 @@ commit real secrets.
 
 ### Required at boot (services refuse to start if missing)
 
-After Task #37 the previous `api-server` artifact was folded into
-`resupply-api`, so the table below has two service columns instead of
-three. Variables that used to be required by the legacy `api-server`
-(e.g. `PENN_ALLOWED_ORIGINS`, `PENN_FULFILLMENT_EMAIL`) are now read
-by the same single `resupply-api` process.
+| Variable | `api-server` | `resupply-api` | `resupply-worker` | Notes |
+| --- | :---: | :---: | :---: | --- |
+| `PORT` | ✅ | ✅ | — | HTTP listen port. |
+| `DATABASE_URL` | — | ✅ | ✅ | Postgres connection string. `pgcrypto` must be enabled. |
+| **Resupply key material** (one of the two options below) | — | ✅ | ✅ | See [Resupply key material](#resupply-key-material). |
 
-The Task #38 follow-up removed `AUTH_PASSWORD_PEPPER`. Passwords are
-hashed with plain argon2id; if you still have an `AUTH_PASSWORD_PEPPER`
-secret in your environment from an earlier deploy, it is silently
-ignored — feel free to delete it.
+#### Resupply key material
 
-| Variable | `resupply-api` | `resupply-worker` | Notes |
-| --- | :---: | :---: | --- |
-| `PORT` | ✅ | — | HTTP listen port. |
-| `DATABASE_URL` | ✅ | ✅ | Postgres connection string (v14+). No extensions required. |
-| `RESUPPLY_LINK_HMAC_KEY` | ✅ | ✅ | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links. |
+The resupply stack uses three cryptographic subkeys: a bulk PHI
+encryption key (pgcrypto), a link-signing HMAC key (email CTAs), and a
+phone-number-lookup HMAC key. They must remain cryptographically
+separate so a leak of one does not unlock the others.
 
-> Migration 0025 stripped pgcrypto column-level PHI encryption and
-> dropped the `phone_lookup` table, so the legacy
-> `RESUPPLY_MASTER_KEY` / `RESUPPLY_DATA_KEY` / `RESUPPLY_PHONE_HMAC_KEY`
-> secrets are no longer read by any code path. Delete them from your
-> secrets store if they're still hanging around.
+Pick **one** of these configurations:
+
+- **Preferred — single master key.** Set `RESUPPLY_MASTER_KEY` to a
+  32+ byte secret. The three subkeys are HKDF-SHA256-derived from it
+  with distinct domain-separated `info` labels (`data`, `link-hmac`,
+  `phone-hmac`); cryptographic separation is preserved. One secret
+  to generate, store, and rotate.
+- **Legacy — three per-purpose keys.** Set all three of
+  `RESUPPLY_DATA_KEY`, `RESUPPLY_LINK_HMAC_KEY`, and
+  `RESUPPLY_PHONE_HMAC_KEY`. When any legacy var is present it takes
+  precedence over the master-derived value for that specific purpose
+  — that's how PHI already encrypted under a legacy key keeps
+  decrypting after you start setting `RESUPPLY_MASTER_KEY`.
+
+> Generate any of these with `openssl rand -base64 48`.
+
+> **Migrating from legacy to master:** set `RESUPPLY_MASTER_KEY`
+> alongside the existing three legacy vars, then run
+> `pnpm --filter @workspace/resupply-db rotate-to-master-key`
+> (re-encrypts PHI and re-HMACs `phone_lookup` rows under the
+> master-derived subkeys, inside one transaction). After it commits,
+> drop `RESUPPLY_DATA_KEY` and `RESUPPLY_PHONE_HMAC_KEY` from your
+> secrets store. Leave `RESUPPLY_LINK_HMAC_KEY` in place for one full
+> link-token TTL (default 7 days) so any in-flight email CTAs still
+> verify, then drop it too. See
+> `lib/resupply-db/scripts/rotate-to-master-key.mjs` for the full
+> dry-run / commit flow.
 
 ### Optional / feature-gated (degrade gracefully when unset)
 
@@ -94,15 +113,18 @@ ignored — feel free to delete it.
 | --- | --- | --- |
 | `NODE_ENV`, `LOG_LEVEL` | All services | Defaults to `development` / `info`. |
 | `BASE_PATH` | Vite apps | Required by every Vite app at config time (the config throws if missing or empty). Set to `/` for root mounts. |
-| `PENN_ALLOWED_ORIGINS` | `resupply-api` | CORS allowlist for the storefront/fitter routes (the `/api/*` mount). Falls back to Replit dev domain + localhost. |
-| `RESUPPLY_ALLOWED_ORIGINS` | `resupply-api` | CORS allowlist for the resupply admin/voice routes (the `/resupply-api/*` mount). Falls back to Replit dev domain + localhost. |
+| `PENN_ALLOWED_ORIGINS` | `api-server` | CORS allowlist. Falls back to Replit dev domain + localhost. |
+| `RESUPPLY_ALLOWED_ORIGINS` | `resupply-api` | CORS allowlist. Falls back to Replit dev domain + localhost. |
 | `SHOP_PUBLIC_BASE_URL`, `REMINDER_PUBLIC_BASE_URL`, `RESUPPLY_VOICE_PUBLIC_BASE_URL` | `resupply-api` | Public base URLs used in outbound deep links. Cart-recovery + reminder emails fall through `SHOP → RESUPPLY_VOICE → https://pennpaps.com` in order. |
-| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `resupply-api`, `resupply-worker` | Outbound email + delivery webhooks. Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
-| `PENN_FULFILLMENT_EMAIL` | `resupply-api` | Where Penn Fit fulfillment receives new mask orders (this is the recipient, not the sender). |
-| `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS` | `resupply-api` | Comma-separated allowlists for role-gated admin endpoints. |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `api-server`, `resupply-api`, `resupply-worker` | Outbound email + delivery webhooks. Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
+| `PENN_FULFILLMENT_EMAIL` | `api-server` | Where Penn Fit fulfillment receives new mask orders (this is the recipient, not the sender). |
+| `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS` | `resupply-api` | Legacy/bootstrap role-email lists used for docs/display/seed-style workflows; admin endpoint authorization is enforced from `auth.users.role`, not these env vars. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID` | `resupply-api` | SMS + voice. Outbound SMS / voice routes return 503 when missing. |
 | `OPENAI_API_KEY` | `resupply-api` | Conversation AI. AI features disable when missing. |
-| `STRIPE_SECRET_KEY` | `resupply-api` | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when missing. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SIGNING_SECRET`, `STRIPE_PUBLISHABLE_KEY` | `resupply-api` | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when the secret key is missing; webhook verification fails closed without the signing secret. |
+| `RESUPPLY_PUBLIC_BASE_URL` | `resupply-api` | Public origin used to build Stripe Checkout success/cancel redirects. Falls back to `REPLIT_DOMAINS` / `REPLIT_DEV_DOMAIN` when unset. |
+| `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL`, `PENN_ADMIN_PUBLIC_BASE_URL` | `resupply-api`, `api-server` | Public origins of the admin consoles, used to build links into the dashboards from admin-only emails / `/admin/system-info` responses. |
+| `RESUPPLY_PRACTICE_NAME` | `resupply-api`, `resupply-worker` | Practice display name rendered in reminder/voice/messaging copy. Defaults to `PennPaps`. |
 | `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS` | `resupply-api`, `resupply-worker` | Object-storage paths for prescription attachments. The implementation uses `@google-cloud/storage`; in production this points at Replit Object Storage's GCS-compatible API, but any GCS-compatible endpoint works. |
 | `VITE_ENABLE_DEMO`, `VITE_RESUPPLY_CONTACT_EMAIL` | Vite apps | UI feature flags / display values. |
 | `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |

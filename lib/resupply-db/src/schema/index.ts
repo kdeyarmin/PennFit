@@ -8,6 +8,7 @@ export * from "./messages";
 export * from "./patient-latest-message";
 export * from "./fulfillments";
 export * from "./audit-log";
+export * from "./phone-lookup";
 export * from "./frequency-rules";
 export * from "./idempotency-keys";
 export * from "./shop-orders";
@@ -20,6 +21,3 @@ export * from "./shop-returns";
 export * from "./csr-macros";
 export * from "./admin-users";
 export * from "./auth";
-// Storefront (PennPaps fitter) tables in the `public` schema. See
-// `./storefront/index.ts` for the rationale of co-locating them here.
-export * from "./storefront";

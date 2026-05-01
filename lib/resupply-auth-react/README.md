@@ -23,5 +23,3 @@ What's NOT in here:
   forms are written per-product in the consuming SPA. The hooks
   expose everything a form component needs.
 - Routing. The SPA decides where its sign-in / verify pages live.
-- Anything tied to a third-party identity provider. The lib is the
-  in-house path only.

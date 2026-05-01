@@ -1,11 +1,15 @@
-// Password hashing — argon2id.
+// Password hashing — argon2id with a server-side pepper.
 //
-// The previous implementation HMAC'd the password with a server-side
-// "pepper" before feeding it to argon2id. The pepper was removed in
-// the Task #38 follow-up because the env-config requirement was
-// causing repeated boot failures and the security uplift it provided
-// (extra protection against an offline crack of a leaked DB) was not
-// worth the operational cost for this app's threat model.
+// Why pepper-then-argon2 (and not argon2-with-secret):
+//   * The `argon2` npm package's "secret" parameter is supported by
+//     the underlying library but is not always plumbed through
+//     consistently across versions and platforms. HMAC'ing the
+//     password with the pepper before hashing achieves the same
+//     security property (DB-only leak doesn't yield offline crack
+//     candidates) using a primitive that's stable across every
+//     argon2 release we'll touch.
+//   * Pepper rotation, when it happens, is a one-shot re-hash on
+//     next sign-in — same shape as a parameter drift.
 //
 // Why argon2id specifically:
 //   * It's the OWASP-recommended password hash and the only one of
@@ -13,24 +17,36 @@
 //     simultaneously. bcrypt has a 72-byte truncation surprise;
 //     scrypt's parameter tuning is finickier.
 //
-// Historical note: earlier revisions of this module pre-hashed the
-// password with HMAC-SHA256(password, pepper) before feeding it to
-// argon2id, as a defense-in-depth measure against an offline DB
-// dump. The pepper requirement was removed at the project owner's
-// direction; argon2id alone is still a strong KDF, and a stored
-// hash is not by itself a feasible offline crack target with the
-// memory/time parameters we use.
-//
 // Parameter target: ~250ms on prod hardware. Starting values:
 //     memoryCost: 19_456 KiB (~ 19 MiB)
 //     timeCost:   2 iterations
 //     parallelism: 1
 // These match OWASP's 2024 cheatsheet baseline for argon2id and are
 // what we encode into stored hashes via the algo tag "argon2id-v1".
+//
+// Stage 4c — multi-algorithm verify:
+//   The Clerk-to-in-house migration imports bcrypt password hashes
+//   from Clerk's user-export CSV and stores them with
+//   algo='clerk-bcrypt-v1'. verifyPasswordCredential() dispatches on
+//   the algo tag: argon2id for new credentials, bcrypt-compare for
+//   imported ones. On a successful bcrypt verify the result carries
+//   `needsRehash: true` so the sign-in handler can transparently
+//   upgrade the row to argon2id. After every imported user has
+//   signed in once, no clerk-bcrypt-v1 rows remain and the bridge
+//   is dead code (we keep it indefinitely; the cost is one
+//   import + a small switch).
 
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 import argon2 from "argon2";
+// bcryptjs (pure JS) instead of native `bcrypt`. Bcrypt verification
+// here is a one-shot migration path — every imported credential is
+// rehashed to argon2id on first successful sign-in (see
+// verifyPasswordCredential), so a sign-in costs ONE bcrypt compare
+// per user lifetime. The native binding's speed advantage isn't
+// worth the build-tooling dependency. Both libraries accept every
+// $2a/$2b/$2y variant Clerk emits.
+import bcrypt from "bcryptjs";
 
 export interface PasswordHashParams {
   /** KiB of memory. Default 19_456 (≈19 MiB). */
@@ -47,23 +63,18 @@ export interface PasswordHashParams {
  * hash itself, so verifyPasswordCredential can pick the right
  * verifier without parsing the hash string.
  *
- * "argon2id-v1" — argon2id, the current and only algorithm. The tag
- *     value was kept stable across the Task #38 pepper removal so
- *     the schema does not change, but be aware: hashes written
- *     before that removal were produced from
- *     `HMAC-SHA256(plaintext, pepper)` as the argon2id input, while
- *     hashes written after are produced from `plaintext` directly.
- *     `verifyPassword` no longer applies a pepper, so pre-removal
- *     rows will NOT validate — affected accounts must use the
- *     password-reset flow once. See ADR 014 "Amendment, Task #38".
- *     The tag column is kept for forward compatibility with future
- *     algorithm rotation (e.g. an argon2id-v2 with stronger
- *     parameters).
+ * "argon2id-v1" — peppered argon2id, the current default.
+ * "clerk-bcrypt-v1" — bare bcrypt, NO pepper. Imported from a
+ *     Clerk user-export CSV during the Stage 4c backfill. On a
+ *     successful verify the credential is rehashed to
+ *     argon2id-v1 (peppered) so subsequent sign-ins use the
+ *     standard path.
  */
-export type PasswordAlgo = "argon2id-v1";
+export type PasswordAlgo = "argon2id-v1" | "clerk-bcrypt-v1";
 
 export const PASSWORD_ALGOS: readonly PasswordAlgo[] = [
   "argon2id-v1",
+  "clerk-bcrypt-v1",
 ] as const;
 
 const DEFAULT_PARAMS = {
@@ -73,14 +84,29 @@ const DEFAULT_PARAMS = {
 } as const;
 
 /**
+ * Pre-hash step: HMAC-SHA256(password, pepper). The result is
+ * 32 bytes; we hex-encode it before passing to argon2 so the hash
+ * input is always a stable 64-char ASCII string regardless of the
+ * user's password contents.
+ */
+export function pepperPassword(password: string, pepper: Buffer): string {
+  if (pepper.length < 32) {
+    throw new Error("pepper must be at least 32 bytes");
+  }
+  return createHmac("sha256", pepper).update(password, "utf8").digest("hex");
+}
+
+/**
  * Hash a plaintext password. Returns the encoded argon2id string —
  * algo+params+salt+hash all in one column-friendly value.
  */
 export async function hashPassword(
   password: string,
+  pepper: Buffer,
   params: PasswordHashParams = {},
 ): Promise<string> {
-  return argon2.hash(password, {
+  const peppered = pepperPassword(password, pepper);
+  return argon2.hash(peppered, {
     type: argon2.argon2id,
     ...DEFAULT_PARAMS,
     ...params,
@@ -99,10 +125,12 @@ export async function hashPassword(
  */
 export async function verifyPassword(
   password: string,
+  pepper: Buffer,
   storedHash: string,
 ): Promise<boolean> {
+  const peppered = pepperPassword(password, pepper);
   try {
-    return await argon2.verify(storedHash, password);
+    return await argon2.verify(storedHash, peppered);
   } catch {
     return false;
   }
@@ -121,10 +149,10 @@ export interface VerifyCredentialResult {
    * AND should be upgraded by the caller. Always false on a
    * verification failure.
    *
-   * Today there is exactly one algorithm (argon2id-v1) so this
-   * field is always false on a successful verify; it's preserved
-   * in the result shape so a future algorithm rotation can flip it
-   * without a call-site change.
+   * The caller upgrades by computing `hashPassword(plaintext)` and
+   * writing the new hash + algo='argon2id-v1' to the row. The
+   * upgrade is best-effort: if the write fails, the next sign-in
+   * triggers another rehash attempt.
    */
   needsRehash: boolean;
 }
@@ -140,13 +168,28 @@ export interface VerifyCredentialResult {
  */
 export async function verifyPasswordCredential(
   password: string,
+  pepper: Buffer,
   credential: CredentialLike,
 ): Promise<VerifyCredentialResult> {
   const algo = (credential.algo ?? "argon2id-v1") as PasswordAlgo;
   switch (algo) {
     case "argon2id-v1": {
-      const ok = await verifyPassword(password, credential.passwordHash);
+      const ok = await verifyPassword(password, pepper, credential.passwordHash);
       return { ok, needsRehash: false };
+    }
+    case "clerk-bcrypt-v1": {
+      // Bcrypt's compare() accepts $2a$ / $2b$ / $2y$ variants and
+      // reads the cost out of the digest itself, so we don't need
+      // to know the cost factor Clerk used. NO pepper here — Clerk
+      // hashes are unpeppered (see Stage 4c plan + WorkOS / Better
+      // Auth / PropelAuth migration guides).
+      let ok: boolean;
+      try {
+        ok = await bcrypt.compare(password, credential.passwordHash);
+      } catch {
+        ok = false;
+      }
+      return { ok, needsRehash: ok };
     }
     default: {
       // Unknown algo — fail closed.

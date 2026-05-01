@@ -230,6 +230,7 @@ export async function seedUserWithPassword(
     status?: AuthUser["status"];
     emailVerified?: boolean;
     password: string;
+    pepper: Buffer;
   },
 ): Promise<AuthUser> {
   const user: AuthUser = {
@@ -243,7 +244,7 @@ export async function seedUserWithPassword(
     updatedAt: new Date(),
   };
   repo.__putUser(user);
-  const hash = await hashPassword(input.password, {
+  const hash = await hashPassword(input.password, input.pepper, {
     memoryCost: 1024,
     timeCost: 1,
     parallelism: 1,

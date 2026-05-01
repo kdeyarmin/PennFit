@@ -1,7 +1,8 @@
 // admin_users — DB-backed roster of admins / CSRs. See migration 0020.
 //
-// `auth_user_id` is the identity link to the in-house `auth.users`
-// table; it is populated for every active admin / CSR row.
+// `auth_user_id` (Stage 1) is the only identity link to the
+// in-house `auth.users` table. The legacy `clerk_user_id` /
+// `clerk_invitation_id` columns were dropped by migration 0023.
 
 import { sql } from "drizzle-orm";
 import { index, text, timestamp } from "drizzle-orm/pg-core";

@@ -32,7 +32,7 @@ const PRIORITY_VALUES: Priority[] = ["low", "normal", "high", "urgent"];
 
 export function ConversationAssignmentBar({
   conversationId,
-  assignedAdminUserId,
+  assignedAdminClerkId,
   priority,
   slaDueAt,
   escalatedAt,
@@ -41,7 +41,7 @@ export function ConversationAssignmentBar({
   onChange,
 }: {
   conversationId: string;
-  assignedAdminUserId: string | null;
+  assignedAdminClerkId: string | null;
   priority: Priority;
   slaDueAt: string | null;
   escalatedAt: string | null;
@@ -51,8 +51,8 @@ export function ConversationAssignmentBar({
 }) {
   const { userId } = useDashboardIdentity();
   const callerId = userId;
-  const isMine = !!assignedAdminUserId && assignedAdminUserId === callerId;
-  const isUnassigned = !assignedAdminUserId;
+  const isMine = !!assignedAdminClerkId && assignedAdminClerkId === callerId;
+  const isUnassigned = !assignedAdminClerkId;
 
   const [busy, setBusy] = useState<
     | "claim"
@@ -105,9 +105,9 @@ export function ConversationAssignmentBar({
           ) : (
             <span
               className="text-xs font-mono text-slate-700"
-              title={assignedAdminUserId ?? ""}
+              title={assignedAdminClerkId ?? ""}
             >
-              {isMine ? "You" : `${assignedAdminUserId?.slice(-8)}`}
+              {isMine ? "You" : `${assignedAdminClerkId?.slice(-8)}`}
             </span>
           )}
           {isUnassigned ? (

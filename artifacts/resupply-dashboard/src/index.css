@@ -29,93 +29,63 @@
    * HSL components (no hsl() wrapper) so we can compose alpha via
    * `hsl(var(--penn-navy) / 0.18)` exactly like the customer app.
    * ────────────────────────────────────────────────────────────────── */
-  --penn-navy: 213 51% 25%;
-  --penn-navy-deep: 213 60% 18%;
-  --penn-navy-soft: 213 45% 38%;
-  --penn-gold: 41 86% 59%;
-  --penn-gold-soft: 41 90% 78%;
-  --penn-gold-deep: 41 70% 45%;
-  --penn-mist: 200 50% 96%;
+  --penn-navy: 218 58% 21%;
+  --penn-navy-deep: 220 64% 13%;
+  --penn-navy-soft: 216 32% 42%;
+  --penn-gold: 38 62% 56%;
+  --penn-gold-soft: 38 70% 80%;
+  --penn-gold-deep: 36 55% 42%;
+  --penn-mist: 210 36% 96%;
+  --penn-platinum: 215 18% 88%;
 
   /* Surface scale — cool grays tuned to sit calmly under dense tables.
    * `surface-1` is the page canvas; `surface-2` is the card body;
    * `surface-3` is for nested rows / hovered states. */
-  --surface-0: 220 24% 97%;
-  --surface-1: 220 22% 98.5%;
+  --surface-0: 220 28% 97.5%;
+  --surface-1: 220 26% 99%;
   --surface-2: 0 0% 100%;
-  --surface-3: 220 20% 96%;
+  --surface-3: 220 22% 96%;
 
   /* Border + text scale. Keeping body text at navy-deep (instead of pure
    * black) gives the page a slight warm tint that ties back to the brand
    * without ever feeling "branded". */
-  --ink-1: 213 52% 14%;
-  --ink-2: 215 22% 32%;
-  --ink-3: 215 16% 48%;
-  --ink-muted: 215 14% 60%;
-  --line-1: 220 18% 90%;
-  --line-2: 220 20% 84%;
+  --ink-1: 220 50% 11%;
+  --ink-2: 218 22% 30%;
+  --ink-3: 218 16% 46%;
+  --ink-muted: 218 14% 58%;
+  --line-1: 218 22% 90%;
+  --line-2: 218 24% 84%;
 
   /* Status tones. Match the customer-app emerald/rose so badges in both
    * apps share the same visual language. */
-  --tone-emerald: 152 60% 38%;
-  --tone-amber: 38 95% 48%;
-  --tone-rose: 354 75% 50%;
-  --tone-blue: 213 80% 50%;
+  --tone-emerald: 152 55% 36%;
+  --tone-amber: 36 92% 46%;
+  --tone-rose: 354 70% 49%;
+  --tone-blue: 215 75% 48%;
 
   /* Component shape. */
   --radius-card: 10px;
   --radius-input: 8px;
   --radius-pill: 999px;
 
-  /* Elevation scale. Two layers of warm-tinted shadow + an inner
-   * highlight so cards lift off the canvas without going chalky. */
-  --shadow-card: 0 1px 2px hsl(var(--penn-navy) / 0.06),
-    0 4px 12px hsl(var(--penn-navy) / 0.05);
-  --shadow-card-hover: 0 1px 2px hsl(var(--penn-navy) / 0.08),
-    0 12px 24px hsl(var(--penn-navy) / 0.10);
-  --shadow-popover: 0 1px 2px hsl(var(--penn-navy) / 0.10),
-    0 16px 32px hsl(var(--penn-navy) / 0.14),
-    0 32px 64px hsl(var(--penn-navy) / 0.10);
+  /* Elevation scale. Two layers of cool-tinted shadow + an inner
+   * highlight so cards lift off the canvas without going chalky.
+   * Tint resolves through the brand navy so every elevated surface
+   * shares the same colored shadow language. */
+  --shadow-card: 0 1px 2px hsl(var(--penn-navy-deep) / 0.06),
+    0 6px 14px hsl(var(--penn-navy-deep) / 0.05);
+  --shadow-card-hover: 0 1px 2px hsl(var(--penn-navy-deep) / 0.08),
+    0 14px 28px hsl(var(--penn-navy-deep) / 0.11);
+  --shadow-popover: 0 1px 2px hsl(var(--penn-navy-deep) / 0.10),
+    0 18px 36px hsl(var(--penn-navy-deep) / 0.14),
+    0 36px 72px hsl(var(--penn-navy-deep) / 0.10);
 
-  /* Brand glow used on the navy header band. */
+  /* Brand glow used on the navy header band — refined champagne. */
   --header-glow: radial-gradient(
     ellipse 80% 100% at 50% 0%,
-    hsl(var(--penn-gold) / 0.18) 0%,
+    hsl(var(--penn-gold) / 0.20) 0%,
     hsl(var(--penn-navy) / 0) 70%
   );
-}
-
-/*
- * shadcn-flavoured colour token bridge. The four PennPaps storefront
- * admin pages ported from cpap-fitter (Task #37 consolidation) were
- * authored against the shadcn naming convention (`text-muted-
- * foreground`, `bg-muted`, `border-border`, `text-primary`,
- * `text-destructive`, …). The dashboard's own design system uses a
- * different vocabulary (`--ink-2`, `--surface-3`, `--line-1`, …).
- *
- * Rather than rewriting the four pages, we map the shadcn token
- * names onto the dashboard's existing Penn-brand variables via a
- * small `@theme inline` block. Tailwind v4 picks these up as
- * first-class colour utilities so `bg-muted`, `text-primary`, etc.
- * resolve to brand-coherent colours instead of falling through to
- * an unstyled default.
- *
- * Scope: this bridge exists ONLY for the storefront-admin pages.
- * Dashboard-native components should keep using the explicit
- * `--ink-*` / `--surface-*` / `--penn-*` vocabulary above; mixing
- * the two systems in new code defeats the point of the bridge.
- */
-@theme inline {
-  --color-background: hsl(var(--surface-1));
-  --color-foreground: hsl(var(--ink-1));
-  --color-border: hsl(var(--line-1));
-  --color-input: hsl(var(--line-1));
-  --color-muted: hsl(var(--surface-3));
-  --color-muted-foreground: hsl(var(--ink-3));
-  --color-primary: hsl(var(--penn-navy));
-  --color-primary-foreground: hsl(0 0% 100%);
-  --color-destructive: hsl(var(--tone-rose));
-  --color-destructive-foreground: hsl(0 0% 100%);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -148,9 +118,12 @@ body {
    * here — the dashboard is a work surface, motion lives in
    * interactions. */
   background-image:
-    radial-gradient(ellipse 60% 40% at 0% 100%, hsl(var(--penn-navy) / 0.05), transparent 70%),
-    radial-gradient(ellipse 50% 35% at 100% 0%, hsl(var(--penn-gold) / 0.06), transparent 70%);
+    radial-gradient(ellipse 60% 40% at 0% 100%, hsl(var(--penn-navy) / 0.055), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 100% 0%, hsl(var(--penn-gold) / 0.07), transparent 70%),
+    radial-gradient(ellipse 30% 20% at 100% 100%, hsl(var(--penn-platinum) / 0.45), transparent 70%);
   background-attachment: fixed;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
 }
 
 /* Whisper dot-grid — only barely perceptible against light surfaces,

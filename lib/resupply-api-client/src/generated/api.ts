@@ -450,8 +450,10 @@ On success returns `{conversationId, messageSid}` — the
 patient phone number is NEVER returned to the dashboard.
 
 Returns 503 when SMS+Email is not configured (any of
-TWILIO_*, SENDGRID_*, or RESUPPLY_LINK_HMAC_KEY missing).
-Feature-flagged on env presence — published behaviour.
+TWILIO_*, SENDGRID_*, or the resupply secret key
+(RESUPPLY_MASTER_KEY, or both legacy RESUPPLY_PHONE_HMAC_KEY
++ RESUPPLY_LINK_HMAC_KEY) missing). Feature-flagged on env
+presence — published behaviour.
 
  * @summary Admin-initiated outbound SMS resupply reminder
  */

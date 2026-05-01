@@ -2,13 +2,107 @@ modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
 router = "application"
-deploymentTarget = "gce"
+deploymentTarget = "autoscale"
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
 [workflows]
+runButton = "CPAP Fitter"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "API Server"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Resupply API"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Resupply Dashboard"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "CPAP Fitter"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Resupply Worker"
+
+[[workflows.workflow]]
+name = "CPAP Fitter"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm install --frozen-lockfile && PORT=25632 BASE_PATH=/ pnpm --filter @workspace/cpap-fitter run dev"
+
+[workflows.workflow.metadata]
+outputType = "service"
+restartOn = { success = false, failure = true, updateConfig = true }
+
+[[workflows.workflow]]
+name = "API Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8081 BASE_PATH=/api pnpm --filter @workspace/api-server run dev"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Resupply API"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8083 BASE_PATH=/resupply-api pnpm --filter @workspace/resupply-api run dev"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Resupply Dashboard"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=19334 BASE_PATH=/resupply/ pnpm --filter @workspace/resupply-dashboard run dev"
+
+[workflows.workflow.metadata]
+outputType = "service"
+restartOn = { success = false, failure = true, updateConfig = true }
+
+[[workflows.workflow]]
+name = "Resupply Worker"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/resupply-worker run dev"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "resupply-check"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/check-resupply-architecture.sh --self-test && bash scripts/check-resupply-architecture.sh && bash scripts/check-codegen.sh --self-test && bash scripts/check-codegen.sh && bash scripts/git-hooks/lib-staged-snapshot.test && pnpm run lint:resupply && pnpm -r --filter '@workspace/resupply-*' run typecheck && pnpm -r --filter '@workspace/resupply-*' run test"
+
+[workflows.workflow.metadata]
+isValidation = true
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -16,7 +110,7 @@ expertMode = true
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 60000
+timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
@@ -42,10 +136,6 @@ localPort = 8084
 externalPort = 5173
 
 [[ports]]
-localPort = 8085
-externalPort = 5000
-
-[[ports]]
 localPort = 19334
 externalPort = 3003
 
@@ -60,11 +150,7 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-VITE_CLERK_PUBLISHABLE_KEY = "pk_test_cGxlYXNpbmctYW5jaG92eS00MS5jbGVyay5hY2NvdW50cy5kZXYk"
 RESUPPLY_ADMIN_EMAILS = "penn-admin-test@example.com"
-
-[userenv.development]
-PENN_ADMIN_EMAILS = "penn-admin-test@example.com"
 
 [objectStorage]
 defaultBucketID = "replit-objstore-a89f4666-9708-424b-b390-3f9949919d52"

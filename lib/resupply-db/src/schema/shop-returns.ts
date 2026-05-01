@@ -60,7 +60,7 @@ export const shopReturns = resupplySchema.table(
     /** Free-form admin notes; concatenated, latest first. ≤8KB. */
     adminNote: text("admin_note"),
     /** Last admin who touched the row, for accountability in the queue. */
-    adminUserId: text("admin_user_id"),
+    adminClerkId: text("admin_clerk_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

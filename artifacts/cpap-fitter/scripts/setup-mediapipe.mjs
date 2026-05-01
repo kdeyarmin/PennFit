@@ -17,7 +17,7 @@
 import { mkdir, copyFile, readdir, writeFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
@@ -31,8 +31,40 @@ const MODELS_DEST = resolve(PUBLIC_DIR, "models");
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const MODEL_DEST = resolve(MODELS_DEST, "face_landmarker.task");
+const MIN_MODEL_BYTES = 1024 * 1024;
+const REQUEST_TIMEOUT_MS = 15_000;
 
-async function main() {
+export async function downloadModelWithRetry(attempts = 3) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const res = await fetch(MODEL_URL, { signal: controller.signal }).finally(() => {
+        clearTimeout(timeout);
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < MIN_MODEL_BYTES) {
+        throw new Error(`Downloaded file is too small (${buf.length} bytes)`);
+      }
+      return buf;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        console.warn(
+          `[setup-mediapipe] Download attempt ${attempt}/${attempts} failed; retrying ...`,
+        );
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Unknown download error");
+}
+
+export async function main() {
   await mkdir(WASM_DEST, { recursive: true });
   await mkdir(MODELS_DEST, { recursive: true });
 
@@ -69,7 +101,9 @@ async function main() {
   let needsDownload = true;
   try {
     const s = await stat(MODEL_DEST);
-    if (s.size > 1024 * 1024) needsDownload = false; // sanity check
+    if (s.size > MIN_MODEL_BYTES) {
+      needsDownload = false;
+    }
   } catch {
     /* missing — will download */
   }
@@ -80,21 +114,19 @@ async function main() {
   }
 
   console.log("[setup-mediapipe] Downloading face_landmarker.task ...");
-  const res = await fetch(MODEL_URL);
-  if (!res.ok) {
-    throw new Error(`Failed to download model: HTTP ${res.status}`);
-  }
-  const buf = Buffer.from(await res.arrayBuffer());
+  const buf = await downloadModelWithRetry();
   await writeFile(MODEL_DEST, buf);
   console.log(
     `[setup-mediapipe] Downloaded face_landmarker.task (${(buf.length / 1024 / 1024).toFixed(2)} MB)`,
   );
 }
 
-main().catch((e) => {
-  console.error("[setup-mediapipe] FAILED:", e.message);
-  // Non-fatal: dev server still starts, face-capture feature will be
-  // unavailable but all other pages (home, masks, questionnaire, results,
-  // shop) work without WASM assets.
-  process.exit(0);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.warn("[setup-mediapipe] WARN:", e.message);
+    // Non-fatal: dev server still starts, face-capture feature will be
+    // unavailable but all other pages (home, masks, questionnaire, results,
+    // shop) work without WASM assets.
+    process.exit(0);
+  });
+}

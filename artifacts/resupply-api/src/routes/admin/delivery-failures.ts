@@ -13,7 +13,7 @@
 //      '%.failed' — system-level errors (e.g. webhook signature
 //      verification failures, bulk-send aborts).
 //
-// PHI: message bodies are NOT surfaced on this view — operators
+// PHI: message bodies are NOT decrypted on this surface — operators
 // triaging deliverability don't need the content; they need WHERE it
 // failed and the error code. Patient name + ID are surfaced (already
 // permitted in the rest of the admin console).
@@ -24,6 +24,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
   conversations,
+  decrypt,
   getDbPool,
   messages,
   patients,
@@ -68,8 +69,8 @@ router.get("/admin/delivery-failures", requireAdmin, async (req, res) => {
       createdAt: messages.createdAt,
       channel: conversations.channel,
       patientId: conversations.patientId,
-      patientFirstName: patients.legalFirstName,
-      patientLastName: patients.legalLastName,
+      patientFirstName: decrypt(patients.legalFirstName),
+      patientLastName: decrypt(patients.legalLastName),
     })
     .from(messages)
     .leftJoin(conversations, eq(messages.conversationId, conversations.id))

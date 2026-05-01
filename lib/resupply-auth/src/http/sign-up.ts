@@ -42,6 +42,7 @@ export function makeSignUpHandler(
   deps: AuthDeps,
   options: MakeSignUpHandlerOptions,
 ) {
+  const pepper = deps.env.passwordPepper;
   const role = deps.signUpRole ?? "customer";
   const now = deps.now ?? (() => new Date());
 
@@ -103,6 +104,7 @@ export function makeSignUpHandler(
       userId = existing.id;
       const hash = await hashPassword(
         passwordCheck.value,
+        pepper,
         deps.passwordHashParams,
       );
       await deps.repo.upsertCredential({
@@ -120,6 +122,7 @@ export function makeSignUpHandler(
       userId = inserted.id;
       const hash = await hashPassword(
         passwordCheck.value,
+        pepper,
         deps.passwordHashParams,
       );
       await deps.repo.upsertCredential({

@@ -94,32 +94,6 @@ const NAV_LINKS: ReadonlyArray<{
     label: "Settings",
     matchPrefix: "/admin/settings",
   },
-  // PennPaps storefront-admin pages — ported from cpap-fitter as
-  // part of the Task #37 consolidation. Kept under their own
-  // `/admin/pennpaps/*` namespace so they don't visually collide
-  // with the existing cash-pay shop admin (`/admin/shop/*`) or
-  // the resupply audit log at `/audit` (which is a different
-  // table — `resupply.audit_log` vs `public.admin_audit_log`).
-  {
-    href: "/admin/pennpaps/orders",
-    label: "PennPaps Orders",
-    matchPrefix: "/admin/pennpaps/orders",
-  },
-  {
-    href: "/admin/pennpaps/analytics",
-    label: "PennPaps Analytics",
-    matchPrefix: "/admin/pennpaps/analytics",
-  },
-  {
-    href: "/admin/pennpaps/reminders",
-    label: "PennPaps Reminders",
-    matchPrefix: "/admin/pennpaps/reminders",
-  },
-  {
-    href: "/admin/pennpaps/audit",
-    label: "PennPaps Audit",
-    matchPrefix: "/admin/pennpaps/audit",
-  },
 ];
 
 function NavItem({

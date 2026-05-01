@@ -21,8 +21,8 @@
 //     handler issues exactly two execute() calls per request: the
 //     paginated SELECT, then the COUNT(*) total. Each test pushes
 //     two rows-results in that order.
-//   * the auth provider is mocked via auth-deps; the admin gate
-//     resolves a verified email matching RESUPPLY_ADMIN_EMAILS.
+//   * the requireAdmin middleware is mocked via test-helpers/auth-mocks
+//     so each test can pin the admin context (email, userId, role).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";

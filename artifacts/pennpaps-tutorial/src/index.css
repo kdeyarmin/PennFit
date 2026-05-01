@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+:root {
+  /* Refined "quiet luxury" palette — mirrors the customer-facing
+   * cpap-fitter tokens so the tutorial reads as one product. Navy is
+   * cooler/deeper (more midnight, less royal); gold is a champagne-
+   * brass rather than a honey-yellow. */
+  --color-primary: #16335A;       /* Penn Navy */
+  --color-secondary: #0B1B33;     /* Penn Navy — deep (gradients/text) */
+  --color-accent: #D4A149;        /* Penn Gold — champagne brass */
+  --color-accent-soft: #ECCB85;   /* Gold — soft (highlights) */
+
+  --color-bg-light: #FAFBFD;
+  --color-bg-dark: #16335A;
+  --color-bg-muted: #EEF2F7;
+
+  --color-text-primary: #0E1B33;
+  --color-text-secondary: #475569;
+  --color-text-muted: #8A98AB;
+  --color-text-inverse: #FAFBFD;
+
+  --color-success: #2F9E6E;
+  --color-warning: #D89E48;
+  --color-error: #C8364A;
+
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@theme inline {
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+  --color-accent: var(--color-accent);
+  --color-bg-light: var(--color-bg-light);
+  --color-bg-dark: var(--color-bg-dark);
+  --color-bg-muted: var(--color-bg-muted);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-inverse: var(--color-text-inverse);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+body {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--color-text-primary);
+  /* Warm cream base — same hue the tutorial has always used. */
+  background-color: #FAF7F2;
+  /* Layered ambient atmosphere — editorial, high-end, with real depth.
+     Order, from back to front:
+       1. Cool atmospheric haze along the bottom.
+       2. Concentrated warm gold "sun" at the top-right corner.
+       3. Wide gold sunrise glow that washes the upper-right area.
+       4. Top-left navy bloom (anchors the heading).
+       5. Mid-right deep navy depth bloom.
+       6. Bottom navy plinth (grounds the page).
+       7. Lower-left soft gold whisper (warmth balance).
+       8. Diagonal sheen — a faint angular highlight band so the surface
+          reads as polished material rather than flat paper.
+     All blobs use large radii + tuned alpha so they fuse into a single
+     continuous wash rather than reading as discrete circles. Fixed
+     attachment keeps them anchored as the page scrolls. */
+  background-image:
+    radial-gradient(ellipse 90% 50% at 50% 110%, rgba(210, 225, 240, 0.55), transparent 70%),
+    radial-gradient(circle 30% at 92% -2%, rgba(212, 161, 73, 0.30), transparent 65%),
+    radial-gradient(ellipse 75% 55% at 100% -5%, rgba(212, 161, 73, 0.18), transparent 60%),
+    radial-gradient(ellipse 95% 65% at 8% -12%, rgba(22, 51, 90, 0.20), transparent 65%),
+    radial-gradient(ellipse 55% 45% at 115% 45%, rgba(22, 51, 90, 0.10), transparent 60%),
+    radial-gradient(ellipse 70% 55% at 50% 118%, rgba(11, 27, 51, 0.16), transparent 62%),
+    radial-gradient(ellipse 50% 40% at -5% 95%, rgba(212, 161, 73, 0.11), transparent 65%),
+    linear-gradient(125deg, transparent 35%, rgba(212, 161, 73, 0.05) 50%, transparent 65%);
+  background-attachment: fixed;
+}
+
+/* Navy dot grid — viewport-fixed, masked into a soft center bloom so it
+   fades at the edges. More present than before so the surface reads as a
+   designed instrument panel, not a flat cream. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(circle at 1px 1px, rgba(22, 51, 90, 0.10) 1px, transparent 0);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
+  mask-image: radial-gradient(ellipse 95% 85% at 50% 38%, black 22%, transparent 85%);
+  opacity: 0.6;
+}
+
+/* Premium grain — a hair of SVG fractal-noise texture so the page never
+   reads as a flat digital gradient. Very low opacity, multiply blended,
+   viewport-fixed so it doesn't tile-shift on scroll. Keeps the surface
+   feeling tactile, like premium printed material. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.18  0 0 0 0 0.30  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-size: 240px 240px;
+  opacity: 0.06;
+  mix-blend-mode: multiply;
+}
+
+/* Make sure app content sits above the decorative layers. */
+#root {
+  position: relative;
+  z-index: 1;
+}

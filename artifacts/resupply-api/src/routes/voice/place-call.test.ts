@@ -1,8 +1,8 @@
 // Route tests for POST /voice/place-call.
 //
 // Mocking strategy:
-//   - Mock the auth-deps module so requireAdmin can be exercised
-//     without a real auth lookup.
+//   - Mock requireAdmin via test-helpers/auth-mocks so the gate
+//     resolves without a real auth lookup.
 //   - Mock drizzle so we can stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioClient so we
 //     never try to dial a real number.
@@ -122,6 +122,7 @@ const ENV_KEYS = [
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "RESUPPLY_ADMIN_EMAILS",
   "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
@@ -133,6 +134,8 @@ function setVoiceEnv(): void {
   process.env.TWILIO_PHONE_NUMBER = "+12158675309";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+  process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
+
   process.env.NODE_ENV = "test";
 }
 

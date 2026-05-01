@@ -1,223 +1,153 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1777297087004,
-      "tag": "0000_plain_bloodstorm",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1777384344952,
-      "tag": "0001_wandering_kat_farrell",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1777396226583,
-      "tag": "0002_burly_amphibian",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1777398516454,
-      "tag": "0003_admin_rename",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1777485000000,
-      "tag": "0004_patient_notes",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1777572000000,
-      "tag": "0005_idempotency_keys",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1777658400000,
-      "tag": "0006_shop_subscriptions",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1777744800000,
-      "tag": "0007_shop_subscriptions_event_ordering",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1777831200000,
-      "tag": "0008_shop_abandoned_carts",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1777917600000,
-      "tag": "0009_shop_reviews",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1778004000000,
-      "tag": "0010_shop_order_items",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1778090400000,
-      "tag": "0011_shop_order_items_price_id_not_null",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1778176800000,
-      "tag": "0012_patient_latest_message",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1778263200000,
-      "tag": "0013_shop_orders_tracking",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1778349600000,
-      "tag": "0014_shop_orders_shipping_address",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1778436000000,
-      "tag": "0015_prescription_attachments",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1778522400000,
-      "tag": "0016_shop_orders_email_tracking",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1778608800000,
-      "tag": "0017_shop_orders_customer_email",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1778695200000,
-      "tag": "0016_shop_returns",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1778781600000,
-      "tag": "0017_csr_macros",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1778868000000,
-      "tag": "0018_shop_customers_comm_prefs",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1778954400000,
-      "tag": "0019_shop_orders_review_request",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1779040800000,
-      "tag": "0020_admin_users",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1779127200000,
-      "tag": "0021_conversations_assignment",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1809849600000,
-      "tag": "0022_in_house_auth",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1809936000000,
-      "tag": "0023_drop_admin_users_clerk_columns",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "7",
-      "when": 1810022400000,
-      "tag": "0024_rename_shop_customer_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 27,
-      "version": "7",
-      "when": 1810108800000,
-      "tag": "0025_strip_phi_encryption",
-      "breakpoints": true
-    },
-    {
-      "idx": 28,
-      "version": "7",
-      "when": 1810195200000,
-      "tag": "0026_normalize_legacy_id_columns",
-      "breakpoints": true
-    },
-    {
-      "idx": 29,
-      "version": "7",
-      "when": 1810281600000,
-      "tag": "0027_storefront_tables",
-      "breakpoints": true
-    },
-    {
-      "idx": 30,
-      "version": "7",
-      "when": 1810368000000,
-      "tag": "0028_messages_twilio_sid_unique",
-      "breakpoints": true
-    }
-  ]
+    "version": "7",
+    "dialect": "postgresql",
+    "entries": [
+        {
+            "idx": 0,
+            "version": "7",
+            "when": 1777297087004,
+            "tag": "0000_plain_bloodstorm",
+            "breakpoints": true
+        },
+        {
+            "idx": 1,
+            "version": "7",
+            "when": 1777384344952,
+            "tag": "0001_wandering_kat_farrell",
+            "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1777396226583,
+            "tag": "0002_burly_amphibian",
+            "breakpoints": true
+        },
+        {
+            "idx": 3,
+            "version": "7",
+            "when": 1777398516454,
+            "tag": "0003_admin_rename",
+            "breakpoints": true
+        },
+        {
+            "idx": 4,
+            "version": "7",
+            "when": 1777485000000,
+            "tag": "0004_patient_notes",
+            "breakpoints": true
+        },
+        {
+            "idx": 5,
+            "version": "7",
+            "when": 1777572000000,
+            "tag": "0005_idempotency_keys",
+            "breakpoints": true
+        },
+        {
+            "idx": 6,
+            "version": "7",
+            "when": 1777658400000,
+            "tag": "0006_shop_subscriptions",
+            "breakpoints": true
+        },
+        {
+            "idx": 7,
+            "version": "7",
+            "when": 1777744800000,
+            "tag": "0007_shop_subscriptions_event_ordering",
+            "breakpoints": true
+        },
+        {
+            "idx": 8,
+            "version": "7",
+            "when": 1777831200000,
+            "tag": "0008_shop_abandoned_carts",
+            "breakpoints": true
+        },
+        {
+            "idx": 9,
+            "version": "7",
+            "when": 1777917600000,
+            "tag": "0009_shop_reviews",
+            "breakpoints": true
+        },
+        {
+            "idx": 10,
+            "version": "7",
+            "when": 1778004000000,
+            "tag": "0010_shop_order_items",
+            "breakpoints": true
+        },
+        {
+            "idx": 11,
+            "version": "7",
+            "when": 1778090400000,
+            "tag": "0011_shop_order_items_price_id_not_null",
+            "breakpoints": true
+        },
+        {
+            "idx": 12,
+            "version": "7",
+            "when": 1778176800000,
+            "tag": "0012_patient_latest_message",
+            "breakpoints": true
+        },
+        {
+            "idx": 13,
+            "version": "7",
+            "when": 1778263200000,
+            "tag": "0013_shop_orders_tracking",
+            "breakpoints": true
+        },
+        {
+            "idx": 14,
+            "version": "7",
+            "when": 1778349600000,
+            "tag": "0014_shop_orders_shipping_address",
+            "breakpoints": true
+        },
+        {
+            "idx": 15,
+            "version": "7",
+            "when": 1778436000000,
+            "tag": "0015_prescription_attachments",
+            "breakpoints": true
+        },
+        {
+            "idx": 16,
+            "version": "7",
+            "when": 1778522400000,
+            "tag": "0016_shop_orders_email_tracking",
+            "breakpoints": true
+        },
+        {
+            "idx": 17,
+            "version": "7",
+            "when": 1778608800000,
+            "tag": "0017_shop_orders_customer_email",
+            "breakpoints": true
+        },
+        {
+            "idx": 18,
+            "version": "7",
+            "when": 1809849600000,
+            "tag": "0022_in_house_auth",
+            "breakpoints": true
+        },
+        {
+            "idx": 19,
+            "version": "7",
+            "when": 1809936000000,
+            "tag": "0023_drop_admin_users_clerk_columns",
+            "breakpoints": true
+        },
+        {
+            "idx": 20,
+            "version": "7",
+            "when": 1810022400000,
+            "tag": "0024_rename_shop_customer_id",
+            "breakpoints": true
+        }
+    ]
 }

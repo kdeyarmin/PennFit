@@ -1,7 +1,8 @@
 // Route tests for POST /sms/send-reminder.
 //
 // Same mocking strategy as voice/place-call.test.ts:
-//   - Mock the auth-deps module so requireAdmin is exercisable.
+//   - Mock requireAdmin via test-helpers/auth-mocks so the gate is
+//     exercisable without a real auth lookup.
 //   - Mock drizzle so we stage row results per assertion.
 //   - Mock @workspace/resupply-telecom's createTwilioSmsClient so we
 //     never hit Twilio.
@@ -111,9 +112,11 @@ const ENV_KEYS = [
   "SENDGRID_FROM_EMAIL",
   "SENDGRID_FROM_NAME",
   "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY",
+  "RESUPPLY_PHONE_HMAC_KEY",
   "RESUPPLY_LINK_HMAC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "RESUPPLY_ADMIN_EMAILS",
+  "RESUPPLY_DATA_KEY",
   "NODE_ENV",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
@@ -127,9 +130,11 @@ function setMessagingEnv(): void {
   process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
   process.env.SENDGRID_FROM_NAME = "Penn Sleep";
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
+  process.env.RESUPPLY_PHONE_HMAC_KEY = "phone-hmac-test-key-32bytesXXXXXX";
   process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+  process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
   process.env.NODE_ENV = "test";
 }
 
@@ -262,12 +267,9 @@ describe("POST /sms/send-reminder", () => {
       },
     ]);
     selectQueue.push([{ id: EPISODE_ID, patientId: PATIENT_ID }]);
-    // otherOwners ambiguity check — empty (no conflict).
-    selectQueue.push([]);
-    // insert order: conversations (returning), messages (no returning),
-    // update conversations. The latest-message projection upsert is
-    // best-effort and warns on missing mocks rather than failing the
-    // request.
+    // insert order: phoneLookup upsert, conversations (returning),
+    // messages (no returning), update conversations.
+    insertQueue.push(undefined);
     insertQueue.push([{ id: CONVERSATION_ID }]);
     insertQueue.push(undefined);
     updateQueue.push(undefined);
@@ -313,10 +315,10 @@ describe("POST /sms/send-reminder", () => {
       },
     ]);
     selectQueue.push([{ id: EPISODE_ID, patientId: PATIENT_ID }]);
-    // otherOwners ambiguity check — empty (no conflict).
-    selectQueue.push([]);
-    // insert order on the failure path: conversations (returning).
-    // Twilio failure short-circuits before the messages insert.
+    // insert order on the failure path: phoneLookup upsert, then
+    // conversations (returning). Twilio failure short-circuits before
+    // the messages insert.
+    insertQueue.push(undefined);
     insertQueue.push([{ id: CONVERSATION_ID }]);
     const { TwilioApiError } = await import("@workspace/resupply-telecom");
     sendSmsMock.mockRejectedValue(
@@ -351,9 +353,8 @@ describe("POST /sms/send-reminder", () => {
       },
     ]);
     selectQueue.push([{ id: EPISODE_ID, patientId: PATIENT_ID }]);
-    // otherOwners ambiguity check → returns a *different* patient
-    // who owns the same phone number ⇒ conflict.
-    selectQueue.push([{ id: OTHER_PATIENT_ID }]);
+    // existingByHmac → owned by a *different* patient ⇒ conflict.
+    selectQueue.push([{ patientId: OTHER_PATIENT_ID }]);
 
     const res = await request(makeApp())
       .post("/resupply-api/sms/send-reminder")

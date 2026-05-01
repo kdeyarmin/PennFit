@@ -19,7 +19,7 @@ Use Express 5 + Zod for `artifacts/resupply-api` and `artifacts/resupply-worker`
 - Validation: Zod schemas generated from `lib/api-spec/openapi.yaml` (when
   the api spec is added in Phase 1+).
 - Logging: Pino + pino-http, same as the PennPaps fitter.
-- Auth: in-house cookie sessions (`lib/resupply-auth`); see ADR 014.
+- Auth: Clerk (`@clerk/express`), same as the PennPaps fitter.
 - Testing: Vitest + supertest.
 
 The existing `artifacts/api-server` shows the canonical pattern.

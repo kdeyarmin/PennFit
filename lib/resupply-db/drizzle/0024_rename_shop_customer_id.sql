@@ -22,8 +22,8 @@
 --   * shop_subscriptions       + shop_subscriptions_clerk_user_id_idx
 --   * shop_reviews             + shop_reviews_clerk_user_id_product_id_unique
 --   * shop_returns             + shop_returns_clerk_user_id_idx
---   * shop_abandoned_carts     + named UNIQUE constraint (from 0008)
---                                shop_abandoned_carts_clerk_user_id_unique
+--   * shop_abandoned_carts     + auto-named UNIQUE constraint
+--                                shop_abandoned_carts_clerk_user_id_key
 --
 -- Reversibility: this migration is purely a rename — to roll
 -- back, swap every `customer_id` for `clerk_user_id` in the
@@ -61,8 +61,8 @@ ALTER INDEX "resupply"."shop_returns_clerk_user_id_idx"
 
 ALTER TABLE "resupply"."shop_abandoned_carts"
   RENAME COLUMN "clerk_user_id" TO "customer_id";
--- The UNIQUE constraint on this column was created with an
--- explicit `_unique` suffix in 0008, not the auto `_key` form.
--- Rename it for symmetry with the new column name.
-ALTER INDEX "resupply"."shop_abandoned_carts_clerk_user_id_unique"
-  RENAME TO "shop_abandoned_carts_customer_id_unique";
+-- The UNIQUE constraint on the column was created inline (no
+-- explicit name), so Postgres assigned it the conventional
+-- `<table>_<col>_key` form. Rename it for symmetry.
+ALTER INDEX "resupply"."shop_abandoned_carts_clerk_user_id_key"
+  RENAME TO "shop_abandoned_carts_customer_id_key";

@@ -103,8 +103,8 @@ export function ConversationDetailPage({ id }: { id: string }) {
         </div>
         <ConversationAssignmentBar
           conversationId={data.id}
-          assignedAdminUserId={
-            (data as { assignedAdminUserId?: string | null }).assignedAdminUserId ?? null
+          assignedAdminClerkId={
+            (data as { assignedAdminClerkId?: string | null }).assignedAdminClerkId ?? null
           }
           priority={
             ((data as { priority?: string }).priority ?? "normal") as

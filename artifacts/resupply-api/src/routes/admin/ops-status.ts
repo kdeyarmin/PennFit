@@ -2,7 +2,7 @@
 //
 // One round-trip that returns the operator-facing health signals the
 // /admin/operations page renders:
-//   * vendor connectivity flags (sendgrid, twilio, stripe)
+//   * vendor connectivity flags (sendgrid, twilio, stripe, object storage)
 //   * dispatcher-eligible row counts (so admins know whether running
 //     a dispatcher will actually do anything)
 //   * team counts (active admins, active agents, pending invites)

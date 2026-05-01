@@ -1,66 +1,154 @@
+import bcrypt from "bcryptjs";
 import { describe, expect, it } from "vitest";
 
 import {
   hashPassword,
   needsRehash,
+  pepperPassword,
   verifyPassword,
   verifyPasswordCredential,
 } from "./password";
 
+const PEPPER = Buffer.from(
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "hex",
+);
+const PEPPER_2 = Buffer.from(
+  "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+  "hex",
+);
+
 // Argon2 hashing is intentionally slow. Use weak params for tests so
 // the suite stays fast — we only care about correctness here, not
-// the production parameter values.
+// the production parameter values (which are tested by the
+// `PASSWORD_HASH_DEFAULTS` snapshot in env.test.ts indirectly).
 const FAST_PARAMS = { memoryCost: 1024, timeCost: 1, parallelism: 1 };
+
+describe("pepperPassword", () => {
+  it("rejects pepper shorter than 32 bytes", () => {
+    expect(() => pepperPassword("hunter2", Buffer.alloc(16))).toThrow(
+      /at least 32 bytes/,
+    );
+  });
+
+  it("is deterministic for the same input", () => {
+    expect(pepperPassword("hunter2", PEPPER)).toBe(
+      pepperPassword("hunter2", PEPPER),
+    );
+  });
+
+  it("produces different output for different peppers", () => {
+    expect(pepperPassword("hunter2", PEPPER)).not.toBe(
+      pepperPassword("hunter2", PEPPER_2),
+    );
+  });
+});
 
 describe("hashPassword + verifyPassword", () => {
   it("verifies a correct password", async () => {
-    const hash = await hashPassword("hunter2", FAST_PARAMS);
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
     expect(hash.startsWith("$argon2id$")).toBe(true);
-    await expect(verifyPassword("hunter2", hash)).resolves.toBe(true);
+    await expect(verifyPassword("hunter2", PEPPER, hash)).resolves.toBe(true);
   });
 
   it("rejects an incorrect password", async () => {
-    const hash = await hashPassword("hunter2", FAST_PARAMS);
-    await expect(verifyPassword("wrong", hash)).resolves.toBe(false);
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    await expect(verifyPassword("wrong", PEPPER, hash)).resolves.toBe(false);
+  });
+
+  it("rejects when the pepper changes (offline crack defense)", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    await expect(verifyPassword("hunter2", PEPPER_2, hash)).resolves.toBe(
+      false,
+    );
   });
 
   it("returns false (not throws) on malformed stored hash", async () => {
     await expect(
-      verifyPassword("hunter2", "not-an-argon2-hash"),
+      verifyPassword("hunter2", PEPPER, "not-an-argon2-hash"),
     ).resolves.toBe(false);
   });
 });
 
 describe("verifyPasswordCredential — algo dispatch", () => {
-  it("verifies argon2id-v1 credentials", async () => {
-    const hash = await hashPassword("hunter2", FAST_PARAMS);
-    const result = await verifyPasswordCredential("hunter2", {
+  it("verifies argon2id-v1 credentials with the peppered argon2 path", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
       passwordHash: hash,
       algo: "argon2id-v1",
     });
     expect(result).toEqual({ ok: true, needsRehash: false });
   });
 
-  it("treats a missing algo as argon2id-v1 (back-compat with rows missing the tag)", async () => {
-    const hash = await hashPassword("hunter2", FAST_PARAMS);
-    const result = await verifyPasswordCredential("hunter2", {
+  it("treats a missing algo as argon2id-v1 (back-compat with pre-Stage-4c rows)", async () => {
+    const hash = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
       passwordHash: hash,
     });
     expect(result.ok).toBe(true);
   });
 
+  it("verifies a clerk-bcrypt-v1 credential WITHOUT applying the pepper", async () => {
+    // Mimic a Clerk export: bare bcrypt of the raw password.
+    const bcryptHash = await bcrypt.hash("hunter2", 4);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
+      passwordHash: bcryptHash,
+      algo: "clerk-bcrypt-v1",
+    });
+    expect(result.ok).toBe(true);
+    // Successful bcrypt verify ALWAYS asks for a rehash so the
+    // sign-in handler upgrades the row to argon2id-v1.
+    expect(result.needsRehash).toBe(true);
+  });
+
+  it("rejects a wrong password against a clerk-bcrypt-v1 hash", async () => {
+    const bcryptHash = await bcrypt.hash("hunter2", 4);
+    const result = await verifyPasswordCredential("WRONG", PEPPER, {
+      passwordHash: bcryptHash,
+      algo: "clerk-bcrypt-v1",
+    });
+    expect(result).toEqual({ ok: false, needsRehash: false });
+  });
+
+  it("normalizes a malformed clerk-bcrypt-v1 hash to a clean fail (no throw)", async () => {
+    const result = await verifyPasswordCredential(
+      "hunter2",
+      PEPPER,
+      {
+        passwordHash: "not-a-bcrypt-hash",
+        algo: "clerk-bcrypt-v1",
+      },
+    );
+    expect(result).toEqual({ ok: false, needsRehash: false });
+  });
+
   it("fails closed on an unknown algo tag", async () => {
-    const result = await verifyPasswordCredential("anything", {
+    const result = await verifyPasswordCredential("anything", PEPPER, {
       passwordHash: "anything",
       algo: "wat" as unknown as "argon2id-v1",
     });
     expect(result).toEqual({ ok: false, needsRehash: false });
   });
+
+  it("a clerk-bcrypt-v1 row does NOT verify when peppered (because Clerk hashes weren't peppered)", async () => {
+    // Sanity check that we're not accidentally peppering bcrypt
+    // input. Hash "hunter2" peppered, then try to verify "hunter2"
+    // against that hash via the bcrypt path — should fail because
+    // the bcrypt path doesn't apply the pepper but the hash was
+    // computed over the peppered string.
+    const peppered = pepperPassword("hunter2", PEPPER);
+    const bcryptOfPeppered = await bcrypt.hash(peppered, 4);
+    const result = await verifyPasswordCredential("hunter2", PEPPER, {
+      passwordHash: bcryptOfPeppered,
+      algo: "clerk-bcrypt-v1",
+    });
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("needsRehash", () => {
   it("flags a hash produced with weaker params than the current target", async () => {
-    const weak = await hashPassword("hunter2", FAST_PARAMS);
+    const weak = await hashPassword("hunter2", PEPPER, FAST_PARAMS);
     // Default target is much stronger than FAST_PARAMS, so it
     // should report "needs rehash".
     expect(needsRehash(weak)).toBe(true);
@@ -68,7 +156,7 @@ describe("needsRehash", () => {
 
   it("does not flag a hash produced with the current target", async () => {
     const target = { memoryCost: 4096, timeCost: 2, parallelism: 1 };
-    const fresh = await hashPassword("hunter2", target);
+    const fresh = await hashPassword("hunter2", PEPPER, target);
     expect(needsRehash(fresh, target)).toBe(false);
   });
 });

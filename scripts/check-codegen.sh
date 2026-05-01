@@ -57,17 +57,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Spec packages we check, in declaration order. For each spec we list
 # the spec package id (for the user-facing fix command) and the
 # directory to cd into to run orval.
-#
-# Task #37 deleted both `@workspace/resupply-api-spec` and
-# `@workspace/api-spec` along with their orval pipelines — the
-# generated client packages (`@workspace/resupply-api-client`,
-# `@workspace/api-client-react`, `@workspace/api-zod`) remain in the
-# tree as the only source of truth for those endpoints. Until a spec
-# package returns there is nothing to drift-check, so SPECS is empty
-# and the loop short-circuits below. The script (and its self-test
-# harness) are left in place so re-introducing a spec package only
-# requires adding one row here, not re-authoring the whole runner.
-SPECS=()
+SPECS=(
+  "resupply|@workspace/resupply-api-spec|lib/resupply-api-spec"
+  "pennpaps|@workspace/api-spec|lib/api-spec"
+)
 
 # Output directories produced by each spec, with a label and the env
 # var the spec's orval.config.ts honors to redirect that output's
@@ -257,14 +250,6 @@ EOF
 }
 
 printf 'Checking OpenAPI codegen drift…\n'
-
-# Defensive guard so the loop is safe under `set -u` if SPECS is empty.
-# Task #37 left no spec packages standing (see the SPECS=() comment
-# above); restore by adding rows there if a spec returns.
-if [[ ${#SPECS[@]} -eq 0 ]]; then
-  printf '  (no spec packages to check — see comment near SPECS=() in this script)\n'
-  exit 0
-fi
 
 failed=0
 for entry in "${SPECS[@]}"; do

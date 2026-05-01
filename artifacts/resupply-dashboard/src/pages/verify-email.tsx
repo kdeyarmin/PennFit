@@ -2,8 +2,6 @@
 // that points here with `?token=…`. We POST the token to the
 // server immediately on mount; the result is rendered as one of
 // three branches (verifying / success / error).
-//
-// Renders only when VITE_AUTH_PROVIDER === "in_house".
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";

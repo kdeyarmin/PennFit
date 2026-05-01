@@ -2,7 +2,7 @@
 //
 // Single endpoint that takes a free-text query and dispatches to the
 // right index based on what the input "looks like":
-//   * 10-15 digits / +E.164 → patient by direct phone_e164 equality
+//   * 10-15 digits / +E.164 → patient via phone_lookup HMAC
 //   * contains "@"           → shop customer by email_lower
 //   * UUIDv4 shape           → patient / conversation / episode / fulfillment
 //   * starts with "cs_"      → shop order by stripe_session_id
@@ -11,20 +11,23 @@
 // Each hit includes a `kind` and a relative URL the dashboard can
 // turn into a navigable link. PHI policy: phone numbers and email
 // addresses are NEVER echoed back; the response includes only ids,
-// channel labels, and the patient name (already permitted elsewhere
-// in the admin console).
+// channel labels, and the decrypted patient name (already permitted
+// elsewhere in the admin console).
 
 import { Router, type IRouter } from "express";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
-import { normalizeE164 } from "@workspace/resupply-domain";
 import {
   conversations,
+  decrypt,
   episodes,
   fulfillments,
   getDbPool,
+  hmacPhone,
+  normalizeE164,
   patients,
+  phoneLookup,
   shopCustomers,
   shopOrders,
 } from "@workspace/resupply-db";
@@ -67,25 +70,31 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
   if (PHONE_RE.test(q) && digits.length >= 7) {
     const e164 = normalizeE164(digits.length === 10 ? `+1${digits}` : `+${digits}`);
     if (e164) {
-      const rows = await db
-        .select({
-          patientId: patients.id,
-          firstName: patients.legalFirstName,
-          lastName: patients.legalLastName,
-          pacwareId: patients.pacwareId,
-        })
-        .from(patients)
-        .where(eq(patients.phoneE164, e164))
-        .limit(5);
-      for (const r of rows) {
-        const name = [r.firstName, r.lastName].filter(Boolean).join(" ").trim();
-        hits.push({
-          kind: "patient",
-          id: r.patientId,
-          label: name || "(no name on file)",
-          href: `/patients/${r.patientId}`,
-          hint: r.pacwareId ? `PACware #${r.pacwareId}` : null,
-        });
+      try {
+        const hash = hmacPhone(e164);
+        const rows = await db
+          .select({
+            patientId: phoneLookup.patientId,
+            firstName: decrypt(patients.legalFirstName),
+            lastName: decrypt(patients.legalLastName),
+            pacwareId: patients.pacwareId,
+          })
+          .from(phoneLookup)
+          .leftJoin(patients, eq(patients.id, phoneLookup.patientId))
+          .where(eq(phoneLookup.hmacPhone, hash))
+          .limit(5);
+        for (const r of rows) {
+          const name = [r.firstName, r.lastName].filter(Boolean).join(" ").trim();
+          hits.push({
+            kind: "patient",
+            id: r.patientId,
+            label: name || "(no name on file)",
+            href: `/patients/${r.patientId}`,
+            hint: r.pacwareId ? `PACware #${r.pacwareId}` : null,
+          });
+        }
+      } catch {
+        // hmac failure (most likely missing PHI_ENCRYPTION_KEY) — skip phone path.
       }
     }
   }
@@ -121,8 +130,8 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
     const [pat] = await db
       .select({
         id: patients.id,
-        firstName: patients.legalFirstName,
-        lastName: patients.legalLastName,
+        firstName: decrypt(patients.legalFirstName),
+        lastName: decrypt(patients.legalLastName),
         pacwareId: patients.pacwareId,
       })
       .from(patients)

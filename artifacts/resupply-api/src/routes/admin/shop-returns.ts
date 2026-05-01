@@ -192,7 +192,7 @@ router.post(
         status: "approved",
         approvedAt: now,
         updatedAt: now,
-        adminUserId: adminId,
+        adminClerkId: adminId,
         adminNote: appendNote(req.body?.note, adminId, "Approved"),
         returnLabelUrl: parsed.data.returnLabelUrl ?? null,
         returnCarrier: parsed.data.returnCarrier ?? null,
@@ -236,7 +236,7 @@ router.post(
         rejectedAt: now,
         closedAt: now,
         updatedAt: now,
-        adminUserId: adminId,
+        adminClerkId: adminId,
         adminNote: appendNote(parsed.data.note, adminId, "Rejected"),
       })
       .where(and(eq(shopReturns.id, id), eq(shopReturns.status, "requested")))
@@ -272,7 +272,7 @@ router.post(
         status: "shipped_back",
         shippedBackAt: now,
         updatedAt: now,
-        adminUserId: adminId,
+        adminClerkId: adminId,
         adminNote: appendNote(parsed.data.note, adminId, "Marked shipped back"),
       })
       .where(and(eq(shopReturns.id, id), eq(shopReturns.status, "approved")))
@@ -312,7 +312,7 @@ router.post(
         status: "received",
         receivedAt: now,
         updatedAt: now,
-        adminUserId: adminId,
+        adminClerkId: adminId,
         adminNote: appendNote(parsed.data.note, adminId, "Marked received"),
       })
       .where(
@@ -434,7 +434,7 @@ router.post(
         updatedAt: now,
         refundCents,
         stripeRefundId,
-        adminUserId: adminId,
+        adminClerkId: adminId,
         adminNote: appendNote(
           parsed.data.note,
           adminId,
@@ -486,7 +486,7 @@ router.post(
         exchangeProductId: parsed.data.exchangeProductId,
         exchangePriceId: parsed.data.exchangePriceId,
         exchangeOrderId: parsed.data.exchangeOrderId ?? null,
-        adminUserId: adminId,
+        adminClerkId: adminId,
         adminNote: appendNote(
           parsed.data.note,
           adminId,
@@ -530,7 +530,7 @@ router.post("/admin/shop/returns/:id/note", requireAdmin, async (req, res) => {
     .update(shopReturns)
     .set({
       adminNote: appendNote(parsed.data.note, adminId, "Note added", ret.adminNote),
-      adminUserId: adminId,
+      adminClerkId: adminId,
       updatedAt: new Date(),
     })
     .where(eq(shopReturns.id, id))
@@ -576,7 +576,7 @@ function serializeReturnRow(r: typeof shopReturns.$inferSelect) {
     returnCarrier: r.returnCarrier,
     returnTrackingNumber: r.returnTrackingNumber,
     adminNote: r.adminNote,
-    adminUserId: r.adminUserId,
+    adminClerkId: r.adminClerkId,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     approvedAt: r.approvedAt?.toISOString() ?? null,

@@ -6,16 +6,29 @@
 //   * Patient identifiers (patientId, episodeId, conversationId) are
 //     bound at construction time. The model NEVER sees them in any
 //     argument or any return value.
-//   * All free-form caller content stays in the `messages` table.
-//     Tool args + results carry only the structured shape the model
-//     needs to reason — never raw addresses, full names, or DOBs on
-//     the way out.
+//   * All free-form caller content stays in the encrypted `messages`
+//     table. Tool args + results carry only the structured shape the
+//     model needs to reason — never raw addresses, full names, or DOBs
+//     on the way out.
 //   * Identity verification gates every other side-effect tool. Until
 //     `verify_patient_identity` succeeds, dispatcher returns a stub
 //     `identity_required` shape so the model is forced to verify
 //     first. The two exceptions are `request_human_handoff` and
 //     `end_call` — a panicking caller MUST be able to escape to a
 //     human or hang up without first proving their date of birth.
+//
+// Why raw SQL for the identity check (and not Drizzle .select):
+//   The check needs `pgp_sym_decrypt(...) = $dob` evaluated INSIDE
+//   Postgres so we never pull the plaintext DOB across the wire into
+//   the API process. Drizzle's select projection would let us do the
+//   same thing, but the parameterised SQL is shorter, easier to
+//   audit, and avoids an extra import. The data key flows through the
+//   shared `@workspace/resupply-db` encryption helpers, which in turn
+//   read the key via `@workspace/resupply-secrets`'s `getDataKey()`
+//   (legacy RESUPPLY_DATA_KEY or HKDF-derived from RESUPPLY_MASTER_KEY)
+//   rather than `process.env.RESUPPLY_DATA_KEY` directly, so a missing
+//   key throws the same descriptive error from here as from a
+//   Drizzle-side encrypt() call.
 
 import { eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -23,6 +36,9 @@ import { timingSafeEqual, randomUUID } from "node:crypto";
 
 import {
   conversations,
+  decrypt,
+  decryptJson,
+  encryptJson,
   episodes,
   patients,
   prescriptions,
@@ -216,13 +232,13 @@ class Impl implements VoiceToolDispatcher {
       MAX_VERIFY_ATTEMPTS - this.verifyAttempts,
     );
 
-    // Read DOB + first name. The plaintext DOB is compared in Node
-    // with `timingSafeEqual` so we don't leak match duration via the
-    // SQL planner.
+    // Decrypt DOB + first name in-database. The plaintext DOB is
+    // compared in Node with `timingSafeEqual` so we don't leak match
+    // duration via the SQL planner.
     const rows = await this.db
       .select({
-        dob: patients.dateOfBirth,
-        firstName: patients.legalFirstName,
+        dob: decrypt(patients.dateOfBirth),
+        firstName: decrypt(patients.legalFirstName),
       })
       .from(patients)
       .where(eq(patients.id, this.deps.patientId))
@@ -294,20 +310,20 @@ class Impl implements VoiceToolDispatcher {
   ): Promise<DispatchToolResult<"get_shipping_address">> {
     const rows = await this.db
       .select({
-        address: patients.address,
+        address: decryptJson<{
+          line1: string;
+          line2?: string;
+          city: string;
+          state: string;
+          postalCode: string;
+          country: string;
+        }>(patients.address),
       })
       .from(patients)
       .where(eq(patients.id, this.deps.patientId))
       .limit(1);
 
-    const addr = (rows[0]?.address ?? null) as {
-      line1: string;
-      line2?: string;
-      city: string;
-      state: string;
-      postalCode: string;
-      country: string;
-    } | null;
+    const addr = rows[0]?.address ?? null;
     if (!addr) {
       return {
         callId: call.callId,
@@ -346,7 +362,7 @@ class Impl implements VoiceToolDispatcher {
     };
     await this.db
       .update(patients)
-      .set({ address: newAddress })
+      .set({ address: encryptJson(newAddress) })
       .where(eq(patients.id, this.deps.patientId));
 
     return {

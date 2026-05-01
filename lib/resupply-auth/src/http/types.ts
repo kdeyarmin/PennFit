@@ -36,21 +36,22 @@ export type EmailSender = (input: {
 }) => Promise<void> | void;
 
 /**
- * Opaque customer-id remapping for the in-house sign-in path.
+ * Stage 4c — opaque customer-id remapping for the in-house
+ * sign-in path.
  *
  * Some products carry a separate customer table whose primary
- * key (`shop_customers.customer_id`) is preserved independently
- * of the auth user id so downstream joins stay stable. An
- * in-house auth user's id is a UUID, and that stable customer key
- * may differ from `auth.users.id` for historical rows that were
- * linked before the customer column was renamed.
+ * key (`shop_customers.customer_id`) was preserved across the
+ * Clerk → in-house cutover so downstream joins kept working.
+ * After cutover, an in-house auth user's id is a UUID, and that
+ * stable customer key may differ from `auth.users.id` for
+ * pre-cutover rows.
  *
  * The resolver bridges that. Given an authenticated `auth.users`
  * row, it returns the string the rest of the API should treat
  * as the customer key — typically:
  *
- *   * For an existing customer linked via `shop_customers.auth_user_id`,
- *     the `shop_customers.customer_id` value.
+ *   * For an existing customer the Stage 4c backfill linked, the
+ *     `shop_customers.customer_id` value.
  *   * For a brand-new in-house sign-up, a freshly minted
  *     customer-table row keyed by `auth.users.id` (the resolver
  *     does the upsert).

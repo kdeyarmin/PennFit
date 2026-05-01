@@ -7,18 +7,26 @@ import {
 } from "./signed-link-tokens";
 
 const KEY_ENV = "RESUPPLY_LINK_HMAC_KEY";
+const MASTER_ENV = "RESUPPLY_MASTER_KEY";
 
 describe("signLinkToken / verifyLinkToken", () => {
   let savedKey: string | undefined;
+  let savedMaster: string | undefined;
 
   beforeEach(() => {
     savedKey = process.env[KEY_ENV];
+    savedMaster = process.env[MASTER_ENV];
+    // Tests below exercise the legacy-key path explicitly; clear
+    // master so a developer's shell can't perturb the comparison.
+    delete process.env[MASTER_ENV];
     process.env[KEY_ENV] = "test-key-aaaa";
   });
 
   afterEach(() => {
     if (savedKey === undefined) delete process.env[KEY_ENV];
     else process.env[KEY_ENV] = savedKey;
+    if (savedMaster === undefined) delete process.env[MASTER_ENV];
+    else process.env[MASTER_ENV] = savedMaster;
   });
 
   it("round-trips a valid token", () => {
@@ -167,10 +175,28 @@ describe("signLinkToken / verifyLinkToken", () => {
     ).toThrow(/conversationId/);
   });
 
-  it("throws when RESUPPLY_LINK_HMAC_KEY is unset", () => {
+  it("derives the link key from RESUPPLY_MASTER_KEY when the legacy var is unset", () => {
     delete process.env[KEY_ENV];
-    expect(() =>
-      signLinkToken({ conversationId: "conv-x", action: "confirm" }),
-    ).toThrow(/RESUPPLY_LINK_HMAC_KEY/);
+    process.env[MASTER_ENV] = "master-secret-xyz";
+    const token = signLinkToken({
+      conversationId: "conv-derived",
+      action: "confirm",
+    });
+    const result = verifyLinkToken(token);
+    expect(result.valid).toBe(true);
+  });
+
+  it("legacy key takes precedence over master (migration ordering)", () => {
+    process.env[KEY_ENV] = "legacy-link-key";
+    process.env[MASTER_ENV] = "master-secret-xyz";
+    const issuedUnderBoth = signLinkToken({
+      conversationId: "conv-x",
+      action: "confirm",
+    });
+    // Drop the master; verification should still succeed because the
+    // signature was computed under the legacy key.
+    delete process.env[MASTER_ENV];
+    const result = verifyLinkToken(issuedUnderBoth);
+    expect(result.valid).toBe(true);
   });
 });

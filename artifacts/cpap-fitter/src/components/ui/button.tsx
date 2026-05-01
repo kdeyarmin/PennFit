@@ -26,12 +26,21 @@ const buttonVariants = cva(
         // @replit no hover, transparent border
         ghost: "border border-transparent",
         link: "text-primary underline-offset-4 hover:underline",
+        // Premium navy CTA — forged-metal gradient + champagne halo on hover.
+        // Use for hero CTAs where the button needs to land as the focal point.
+        premium:
+          "btn-primary-glow text-primary-foreground border-0 font-semibold tracking-tight",
+        // Champagne gold CTA — companion to `premium`, reserved for the
+        // single most important action on a page (e.g. "Complete fit").
+        gold:
+          "btn-gold-glow border-0 font-semibold tracking-tight",
       },
       size: {
         // @replit changed sizes
         default: "min-h-9 px-4 py-2",
         sm: "min-h-8 rounded-md px-3 text-xs",
         lg: "min-h-10 rounded-md px-8",
+        xl: "min-h-12 rounded-lg px-10 text-base",
         icon: "h-9 w-9",
       },
     },

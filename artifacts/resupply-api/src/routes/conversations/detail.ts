@@ -1,7 +1,9 @@
-// GET /conversations/:id — conversation detail with full message body.
+// GET /conversations/:id — conversation detail with decrypted messages.
 //
-// This is the only endpoint that surfaces full message bodies to
-// the admin console.
+// This is the only endpoint that surfaces decrypted message bodies to
+// the admin console. Decryption happens in the SELECT projection
+// via `decrypt(messages.body)` so plaintext PHI never lives in Node
+// memory between Postgres and the JSON serialiser.
 //
 // Writes one `conversation.view` audit row with the conversation id
 // as target. The metadata records the conversation channel + status
@@ -16,6 +18,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   conversations,
+  decrypt,
   getDbPool,
   messages,
   patients,
@@ -42,14 +45,14 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     .select({
       id: conversations.id,
       patientId: conversations.patientId,
-      patientFirstName: patients.legalFirstName,
-      patientLastName: patients.legalLastName,
+      patientFirstName: decrypt(patients.legalFirstName),
+      patientLastName: decrypt(patients.legalLastName),
       episodeId: conversations.episodeId,
       channel: conversations.channel,
       status: conversations.status,
       lastMessageAt: conversations.lastMessageAt,
       createdAt: conversations.createdAt,
-      assignedAdminUserId: conversations.assignedAdminUserId,
+      assignedAdminClerkId: conversations.assignedAdminClerkId,
       assignedAt: conversations.assignedAt,
       priority: conversations.priority,
       slaDueAt: conversations.slaDueAt,
@@ -73,7 +76,7 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
       id: messages.id,
       direction: messages.direction,
       senderRole: messages.senderRole,
-      body: messages.body,
+      body: decrypt(messages.body),
       deliveryStatus: messages.deliveryStatus,
       sentAt: messages.sentAt,
       deliveredAt: messages.deliveredAt,
@@ -124,7 +127,7 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     status: header.status,
     lastMessageAt: toIso(header.lastMessageAt),
     createdAt: toIsoRequired(header.createdAt),
-    assignedAdminUserId: header.assignedAdminUserId ?? null,
+    assignedAdminClerkId: header.assignedAdminClerkId ?? null,
     assignedAt: toIso(header.assignedAt),
     priority: header.priority ?? "normal",
     slaDueAt: toIso(header.slaDueAt),

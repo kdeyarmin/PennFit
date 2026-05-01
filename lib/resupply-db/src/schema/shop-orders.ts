@@ -121,6 +121,14 @@ export const shopOrders = resupplySchema.table(
      */
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     /**
+     * One-shot timestamp marking when the post-purchase review-
+     * request email went out for this order. NULL = never sent.
+     * Migration 0019.
+     */
+    reviewRequestSentAt: timestamp("review_request_sent_at", {
+      withTimezone: true,
+    }),
+    /**
      * Idempotency stamp for the order-confirmation email sent from
      * the Stripe webhook on checkout.session.completed. NULL means
      * "no confirmation email recorded for this order"; once non-null

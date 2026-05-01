@@ -101,6 +101,7 @@ const ENV_KEYS = [
   "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY",
   "RESUPPLY_LINK_HMAC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+  "RESUPPLY_DATA_KEY",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
@@ -115,6 +116,7 @@ function setMessagingEnv(): void {
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
   process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
+  process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
 }
 
 const FROM_PHONE = "+12155551212";

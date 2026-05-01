@@ -16,12 +16,9 @@
 //
 // The module is lazy: nothing here runs until the API server
 // asks for `getAuthDeps()`. After Stage 5a the function always
-// returns a value (the kill switch is gone). The previous
-// version threw on a missing/short AUTH_PASSWORD_PEPPER; the
-// pepper was removed in the Task #38 follow-up so there is no
-// such fail-fast check anymore. Any other required-env misconfig
-// throws at first call so it surfaces at boot instead of on the
-// first sign-in attempt.
+// returns a value (the kill switch is gone); a misconfigured
+// AUTH_PASSWORD_PEPPER throws at first call so the misconfig
+// surfaces at boot instead of on the first sign-in attempt.
 
 import {
   createSendgridClient,
@@ -45,8 +42,8 @@ let cachedDeps: AuthDeps | undefined;
 /**
  * Build (and memoize) the AuthDeps. Always returns a value after
  * Stage 5a — the kill switch is gone. Exceptions during
- * construction (missing required env, missing DB pool, etc.)
- * propagate so a misconfigured deploy fails LOUD at first
+ * construction (missing AUTH_PASSWORD_PEPPER, missing DB pool,
+ * etc.) propagate so a misconfigured deploy fails LOUD at first
  * call rather than at the first sign-in attempt.
  */
 export function getAuthDeps(): AuthDeps {

@@ -38,7 +38,6 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
-import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { attachSignedIn } from "../../middlewares/requireSignedIn";
@@ -170,27 +169,6 @@ router.post("/shop/checkout", checkoutLimiter, attachSignedIn, async (req, res) 
   );
 
   const stripe = getStripeClient(config);
-
-  // Catalog guard: verify every price ID belongs to the approved shop
-  // catalog and respects stock/type constraints. This prevents a
-  // tampered request from purchasing hidden, out-of-stock, or
-  // non-catalog products by supplying arbitrary Stripe price IDs.
-  const cartValidation = await validateCartItems(stripe, items);
-  if (!cartValidation.ok) {
-    req.log?.warn(
-      { errors: cartValidation.errors },
-      "shop checkout: cart validation failed",
-    );
-    res.status(400).json({
-      error: "cart_invalid",
-      issues: cartValidation.errors.map((e) => ({
-        priceId: e.priceId,
-        reason: e.reason,
-        message: e.message,
-      })),
-    });
-    return;
-  }
 
   // If the user is signed in, attach (or create) their Stripe Customer
   // so the saved card + address pre-fill on the Stripe page AND so the
