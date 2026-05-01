@@ -12,12 +12,9 @@
 #       * scripts/check-resupply-architecture.sh
 #           when resupply lib/ or artifact code changes
 #       * scripts/check-drizzle-drift.sh
-#           Task #37 emptied this checker's LIBS list (the storefront
-#           lib it tracked, @workspace/db, was deleted). The hook
-#           still wires it up so that when @workspace/resupply-db is
-#           re-enrolled (after its snapshot meta chain is repaired),
-#           no further hook edits are needed; today the checker just
-#           prints a no-op message and exits 0.
+#           when a @workspace/resupply-db schema TS file or any file
+#           under drizzle/ changes (Task #39 re-enrolled the lib
+#           after consolidating its snapshot chain).
 #       * scripts/check-resupply-migration-pair.sh
 #           when a @workspace/resupply-db schema file changes
 #           (co-change rule: any schema TS edit must ship with a new
@@ -76,12 +73,17 @@ while IFS= read -r file; do
       need_arch=1
       ;;
   esac
-  # Drizzle structural drift: Task #37 deleted the only lib this
-  # check covered (@workspace/db). The hook keeps the trigger plumbing
-  # in place but currently has no path globs to match — when
-  # @workspace/resupply-db is re-enrolled in the checker, add
-  # `lib/resupply-db/...` patterns here. Until then `need_drizzle`
-  # stays 0 and the check is skipped on every commit.
+  # Drizzle structural drift: Task #39 re-enrolled @workspace/resupply-db
+  # in scripts/check-drizzle-drift.sh after consolidating its snapshot
+  # chain. Trigger on schema TS edits AND any file under drizzle/ —
+  # the structural check catches both "edited TS, forgot to generate"
+  # and "hand-edited a migration SQL/snapshot in a way that diverges
+  # from what regen would produce".
+  case "$file" in
+    lib/resupply-db/src/schema/*|lib/resupply-db/src/schema/*/*|lib/resupply-db/drizzle/*|lib/resupply-db/drizzle/*/*)
+      need_drizzle=1
+      ;;
+  esac
   # Resupply DB co-change rule: any schema TS edit must ship with a
   # new migration SQL in the same commit. Trigger off the schema dir
   # only — touching a migration file alone is a valid commit shape

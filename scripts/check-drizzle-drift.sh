@@ -3,15 +3,14 @@
 # migrations directory.
 #
 # Why this exists:
-#   Both `lib/db/src/schema/*.ts` (storefront) and
-#   `lib/resupply-db/src/schema/*.ts` (resupply) drive their respective
-#   `drizzle/` migration histories via `drizzle-kit generate`. The
-#   generated SQL + snapshot JSON is committed so deploys never have to
-#   run codegen at install time. The risk: someone edits a schema file
-#   and forgets to run `pnpm --filter @workspace/<lib> run generate`.
-#   Typecheck still passes (the TS schema is internally consistent) and
-#   the next deploy applies the OLD migrations, so the live DB silently
-#   lags the TypeScript types until the next person runs `generate` and
+#   `lib/resupply-db/src/schema/*.ts` drives the `drizzle/` migration
+#   history via `drizzle-kit generate`. The generated SQL + snapshot
+#   JSON is committed so deploys never have to run codegen at install
+#   time. The risk: someone edits a schema file and forgets to run
+#   `pnpm --filter @workspace/resupply-db run generate`. Typecheck
+#   still passes (the TS schema is internally consistent) and the next
+#   deploy applies the OLD migrations, so the live DB silently lags
+#   the TypeScript types until the next person runs `generate` and
 #   gets a confusing "diff against where, exactly?" migration in code
 #   review. This script closes that gap by running `drizzle-kit
 #   generate` for each lib and asserting it produces no new files.
@@ -46,10 +45,24 @@
 #
 # Usage:
 #   bash scripts/check-drizzle-drift.sh
-#       Check both libs.
+#       Check all enrolled drizzle libs.
 #
 #   bash scripts/check-drizzle-drift.sh --self-test
 #       Run the drift-detection self-test (see check-drizzle-drift.sh.test).
+#
+# Snapshot meta layout (Task #39):
+#   The committed snapshot chain in drizzle/meta/ holds a single
+#   consolidated snapshot named `<NN>_snapshot.json` whose <NN> matches
+#   the LAST entry in `_journal.json`. Drizzle requires per-snapshot
+#   prevId chain integrity but only diffs against the highest-indexed
+#   snapshot file present in meta/, so a single consolidated snapshot
+#   representing the current schema is sufficient for drift detection.
+#   The `_journal.json` and per-migration SQL files (drizzle/*.sql)
+#   are kept byte-identical to what production has applied — the
+#   runtime migrator hashes them against `drizzle.resupply_migrations`
+#   and would re-apply or refuse on any byte change. To rebuild the
+#   consolidated snapshot from scratch, see
+#   lib/resupply-db/README.md (`Rebuilding the snapshot meta`).
 
 set -euo pipefail
 
@@ -67,17 +80,14 @@ fi
 # Format: <pnpm-package-name>|<lib-dir>|<drizzle-out-dir>
 #
 # Task #37 deleted `@workspace/db` (its tables now live under
-# `@workspace/resupply-db`'s schema/storefront/), so the only entry
-# this script previously tracked is gone. The list is intentionally
-# empty until the resupply-db snapshot chain is repaired:
-#   * resupply-db's snapshot meta (drizzle/meta/000N_snapshot.json)
-#     only covers 0000-0003 while 27+ migration SQL files have
-#     shipped — most are hand-authored per ADR 003 and never updated
-#     the snapshot chain. drizzle-kit generate short-circuits with a
-#     "snapshot collision" error before it can compute a diff.
-# Once the snapshot chain is rebuilt, add:
-#   "@workspace/resupply-db|lib/resupply-db|lib/resupply-db/drizzle"
-LIBS=()
+# `@workspace/resupply-db`'s schema/storefront/), so resupply-db is
+# the single source of drizzle-managed schema. Its snapshot chain was
+# consolidated into a single `<NN>_snapshot.json` in Task #39 (see the
+# "Snapshot meta layout" header note above) so that drizzle-kit can
+# compute a diff without choking on the original incomplete chain.
+LIBS=(
+  "@workspace/resupply-db|lib/resupply-db|lib/resupply-db/drizzle"
+)
 
 restore_snapshot() {
   local snap="$1"
@@ -216,8 +226,8 @@ EOF
 
 printf 'Checking drizzle schema drift…\n'
 
-# `${LIBS[@]:-}` keeps the loop safe under `set -u` when LIBS is empty
-# (Task #37 emptied it; see the comment near LIBS=() above).
+# Defensive guard so the loop is safe under `set -u` if LIBS is ever
+# emptied again (e.g. while migrating away from drizzle for a lib).
 if [[ ${#LIBS[@]} -eq 0 ]]; then
   printf '  (no libs to check — see comment near LIBS=() in this script)\n'
   exit 0
