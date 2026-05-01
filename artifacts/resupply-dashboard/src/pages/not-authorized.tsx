@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 
 import { useDashboardIdentity } from "../lib/identity";
@@ -60,6 +61,7 @@ export function NotAuthorizedPage({
   const { signOut } = identity;
   const email = identity.email ?? "your account";
   const [, setNotAuthLocation] = useLocation();
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const isConfigError = reason === "not-configured";
   const isTransient = reason === "transient";
@@ -224,6 +226,8 @@ export function NotAuthorizedPage({
                 <button
                   type="button"
                   onClick={() => {
+                    if (isSigningOut) return;
+                    setIsSigningOut(true);
                     // Drop any persisted reply drafts before sign-out so
                     // PHI doesn't survive across admin sessions.
                     clearAllDrafts();
@@ -233,6 +237,8 @@ export function NotAuthorizedPage({
                       setNotAuthLocation("/sign-in");
                     });
                   }}
+                  disabled={isSigningOut}
+                  aria-busy={isSigningOut}
                   className="text-sm font-semibold px-4 py-2 rounded text-white"
                   style={{ backgroundColor: "#0a1f44" }}
                 >
