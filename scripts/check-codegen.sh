@@ -5,7 +5,7 @@
 # Why this exists:
 #   `lib/resupply-api-spec/openapi.yaml` is the source of truth for the
 #   resupply admin API; `lib/resupply-api-client/src/generated/` is
-#   produced from it by orval. Penn Fit has the same arrangement
+#   produced from it by orval. The PennPaps fitter has the same arrangement
 #   (`lib/api-spec/openapi.yaml` -> `lib/api-client-react/src/generated/`
 #   AND `lib/api-zod/src/generated/`). The generated files are committed
 #   so consumers don't need to run codegen at install time.
@@ -41,7 +41,7 @@
 #
 # Usage:
 #   bash scripts/check-codegen.sh
-#       Check both pipelines (resupply + Penn Fit).
+#       Check both pipelines (resupply + PennPaps fitter).
 #
 #   bash scripts/check-codegen.sh --self-test
 #       Run the drift-detection self-test (see scripts/check-codegen.sh.test).
@@ -59,7 +59,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # directory to cd into to run orval.
 SPECS=(
   "resupply|@workspace/resupply-api-spec|lib/resupply-api-spec"
-  "penn-fit|@workspace/api-spec|lib/api-spec"
+  "pennpaps|@workspace/api-spec|lib/api-spec"
 )
 
 # Output directories produced by each spec, with a label and the env
@@ -74,8 +74,8 @@ SPECS=(
 # Format: <spec-id>|<live-generated-dir>|<label>|<workspace-env-var>
 OUTPUTS=(
   "resupply|lib/resupply-api-client/src/generated|Resupply API client|CODEGEN_OUT_RESUPPLY_CLIENT"
-  "penn-fit|lib/api-client-react/src/generated|Penn Fit API client (react-query)|CODEGEN_OUT_PENN_FIT_CLIENT"
-  "penn-fit|lib/api-zod/src/generated|Penn Fit API client (zod)|CODEGEN_OUT_PENN_FIT_ZOD"
+  "pennpaps|lib/api-client-react/src/generated|PennPaps Fitter API client (react-query)|CODEGEN_OUT_PENNPAPS_CLIENT"
+  "pennpaps|lib/api-zod/src/generated|PennPaps Fitter API client (zod)|CODEGEN_OUT_PENNPAPS_ZOD"
 )
 
 outputs_for_spec() {
@@ -91,7 +91,7 @@ outputs_for_spec() {
 # Per-spec check.
 #
 # Orval is invoked ONCE per spec with all of that spec's workspace env
-# vars set, so multi-output specs (Penn Fit) regenerate everything in
+# vars set, so multi-output specs (the PennPaps fitter) regenerate everything in
 # a single pass — which matches how `pnpm run codegen` actually works
 # and avoids any per-output ordering surprises.
 check_spec() {

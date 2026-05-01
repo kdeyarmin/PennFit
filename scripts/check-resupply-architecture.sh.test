@@ -208,16 +208,16 @@ assert_fail_with "api importing resupply-testing" \
   "must not import @workspace/resupply-testing"
 rm "$WORK"/artifacts/resupply-api/src/bad.ts
 
-echo "[self-test] Rule 6: api may not import Penn Fit lib/db"
+echo "[self-test] Rule 6: api may not import PennPaps fitter lib/db"
 echo 'import { db } from "@workspace/db";' > "$WORK"/artifacts/resupply-api/src/bad.ts
 assert_fail_with "api importing @workspace/db" \
-  "must not import Penn Fit packages"
+  "must not import PennPaps fitter packages"
 rm "$WORK"/artifacts/resupply-api/src/bad.ts
 
-echo "[self-test] Rule 6: api may not import Penn Fit lib/api-zod"
+echo "[self-test] Rule 6: api may not import PennPaps fitter lib/api-zod"
 echo "import { x } from '@workspace/api-zod';" > "$WORK"/artifacts/resupply-api/src/bad.ts
 assert_fail_with "api importing @workspace/api-zod (single-quoted)" \
-  "must not import Penn Fit packages"
+  "must not import PennPaps fitter packages"
 rm "$WORK"/artifacts/resupply-api/src/bad.ts
 
 echo "[self-test] Rule 6: dashboard may not import @workspace/api-client-react"
@@ -227,14 +227,14 @@ echo "[self-test] Rule 6: dashboard may not import @workspace/api-client-react"
 echo 'import { healthCheck } from "@workspace/api-client-react";' \
   > "$WORK"/artifacts/resupply-dashboard/src/bad.ts
 assert_fail_with "dashboard importing @workspace/api-client-react" \
-  "must not import Penn Fit packages"
+  "must not import PennPaps fitter packages"
 rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
 
 echo "[self-test] Rule 6: dashboard may not import @workspace/db"
 echo "import { db } from '@workspace/db';" \
   > "$WORK"/artifacts/resupply-dashboard/src/bad.ts
 assert_fail_with "dashboard importing @workspace/db (single-quoted)" \
-  "must not import Penn Fit packages"
+  "must not import PennPaps fitter packages"
 rm "$WORK"/artifacts/resupply-dashboard/src/bad.ts
 
 echo "[self-test] Rule 6: dashboard may import @workspace/resupply-api-client"

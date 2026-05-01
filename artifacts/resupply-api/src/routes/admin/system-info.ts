@@ -15,6 +15,10 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import { getDbPool } from "@workspace/resupply-db";
+import {
+  hasDataKey,
+  hasPhoneHmacKey,
+} from "@workspace/resupply-secrets";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -104,7 +108,7 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
       },
       stripe: {
         secretKeyConfigured: Boolean(env.STRIPE_SECRET_KEY),
-        webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SECRET),
+        webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SIGNING_SECRET),
       },
       clerk: {
         publishableKeyConfigured: Boolean(
@@ -115,9 +119,6 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
       objectStorage: {
         privateBucketConfigured: Boolean(env.PRIVATE_OBJECT_DIR),
       },
-      anthropic: {
-        apiKeyConfigured: Boolean(env.ANTHROPIC_API_KEY),
-      },
       openai: {
         apiKeyConfigured: Boolean(env.OPENAI_API_KEY),
       },
@@ -125,8 +126,11 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
     encryption: {
       // PHI encryption key MUST be set in production. We only
       // surface presence — never the value, never a fingerprint.
-      phiKeyConfigured: Boolean(env.RESUPPLY_PHI_ENCRYPTION_KEY),
-      phoneHmacKeyConfigured: Boolean(env.RESUPPLY_PHONE_HMAC_KEY),
+      // `hasDataKey()` / `hasPhoneHmacKey()` accept either the
+      // legacy per-purpose env var or a derivation from
+      // RESUPPLY_MASTER_KEY.
+      phiKeyConfigured: hasDataKey(),
+      phoneHmacKeyConfigured: hasPhoneHmacKey(),
     },
   });
 });

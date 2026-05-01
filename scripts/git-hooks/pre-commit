@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # managed by scripts/install-hooks.sh
 #
-# Pre-commit hook: catches resupply / Penn Fit drift before the commit
+# Pre-commit hook: catches resupply / PennPaps fitter drift before the commit
 # lands, so developers don't find out at validation time minutes later.
 #
 # Behavior:

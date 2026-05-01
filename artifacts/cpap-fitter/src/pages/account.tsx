@@ -138,7 +138,7 @@ function SignedOutAccountPrompt() {
 }
 
 function AccountInner() {
-  const { displayName } = useShopIdentity();
+  const { displayName, isLoaded: isUserLoaded } = useShopIdentity();
   const [data, setData] = useState<ShopMeResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<boolean | null>(null);
@@ -175,8 +175,15 @@ function AccountInner() {
   }, []);
 
   useEffect(() => {
+    // Wait for the auth provider to finish hydrating before calling
+    // /shop/me. Otherwise the request can race ahead of the session
+    // cookie/token, the server sees an unauthenticated request and
+    // returns {signedIn:false}, and we'd render the misleading
+    // "Your session expired" copy for a user we KNOW is signed in
+    // (the outer <SignedIn> already gated on this).
+    if (!isUserLoaded) return;
     void reload();
-  }, [reload]);
+  }, [reload, isUserLoaded]);
 
   if (loadError) {
     return (
@@ -230,9 +237,9 @@ function AccountInner() {
             We can&apos;t see your sign-in anymore — sign back in and
             you&apos;ll land right back here.
           </p>
-          <Link href="/sign-in?redirect=/account">
-            <Button>Sign in</Button>
-          </Link>
+          <Button asChild data-testid="account-resignin-btn">
+            <Link href="/sign-in?redirect=/account">Sign in</Link>
+          </Button>
         </div>
       </div>
     );

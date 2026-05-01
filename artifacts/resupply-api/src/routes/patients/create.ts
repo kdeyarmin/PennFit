@@ -176,7 +176,9 @@ router.post(
             });
         } catch (err) {
           // Two real-world causes:
-          //   1. RESUPPLY_PHONE_HMAC_KEY isn't set (dev environment).
+          //   1. No phone HMAC key is sourceable (neither
+          //      RESUPPLY_MASTER_KEY nor RESUPPLY_PHONE_HMAC_KEY is
+          //      set — typical dev environment).
           //   2. Another patient already owns this hmac (data quality
           //      issue surfaced by the unique index — admin will need
           //      to triage). Either way, we don't want to fail the

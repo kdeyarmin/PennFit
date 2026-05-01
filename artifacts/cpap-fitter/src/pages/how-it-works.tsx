@@ -161,7 +161,7 @@ export function HowItWorks() {
             up where the scenes lay out side-by-side. */}
         <div className="relative w-full overflow-hidden rounded-2xl border border-border/60 shadow-lg bg-black aspect-[3/5] sm:aspect-video">
           <iframe
-            src="/penn-fit-tutorial/"
+            src="/pennpaps-tutorial/"
             title="PennPaps — How To Use"
             className="absolute inset-0 w-full h-full"
             sandbox="allow-scripts allow-same-origin"

@@ -9,8 +9,10 @@
 // equivalent — those normalizations conflict with how some
 // providers actually deliver mail.
 
+// Use [^\s@.]+ (no dots) for each domain label so the quantifiers
+// are non-overlapping and backtracking is bounded (no ReDoS).
 const EMAIL_BASIC_RE =
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+  /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u;
 
 /** True if the input looks like an email at all. */
 export function looksLikeEmail(input: unknown): input is string {

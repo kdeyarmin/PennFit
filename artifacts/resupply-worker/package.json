@@ -19,6 +19,7 @@
     "@workspace/resupply-email": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
+    "@workspace/resupply-secrets": "workspace:*",
     "@workspace/resupply-telecom": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg-boss": "^10.4.1",
