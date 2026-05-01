@@ -66,7 +66,7 @@ task = "shell.exec"
 args = "PORT=19334 BASE_PATH=/resupply/ pnpm --filter @workspace/resupply-dashboard run dev"
 
 [workflows.workflow.metadata]
-outputType = "service"
+outputType = "console"
 restartOn = { success = false, failure = true, updateConfig = true }
 
 [[workflows.workflow]]
