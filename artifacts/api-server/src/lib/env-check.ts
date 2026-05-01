@@ -15,8 +15,14 @@
  * documented as optional in the top-level README.
  */
 
+// AUTH_PASSWORD_PEPPER is consumed by `readAuthEnv` (resupply-auth)
+// during `getAuthDeps()`, which app.ts calls at module init. Without
+// it the server crashes before binding to PORT, so the gateway can
+// only return 502 to clients. Listing it here means the error
+// surfaces as a clean missing-env message alongside any others.
 const REQUIRED_ENV_VARS = [
   "PORT",
+  "AUTH_PASSWORD_PEPPER",
 ] as const;
 
 export function assertRequiredEnv(): void {
