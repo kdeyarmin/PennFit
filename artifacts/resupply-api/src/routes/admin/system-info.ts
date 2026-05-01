@@ -108,7 +108,7 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
       },
       stripe: {
         secretKeyConfigured: Boolean(env.STRIPE_SECRET_KEY),
-        webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SECRET),
+        webhookSecretConfigured: Boolean(env.STRIPE_WEBHOOK_SIGNING_SECRET),
       },
       clerk: {
         publishableKeyConfigured: Boolean(
@@ -118,9 +118,6 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
       },
       objectStorage: {
         privateBucketConfigured: Boolean(env.PRIVATE_OBJECT_DIR),
-      },
-      anthropic: {
-        apiKeyConfigured: Boolean(env.ANTHROPIC_API_KEY),
       },
       openai: {
         apiKeyConfigured: Boolean(env.OPENAI_API_KEY),
