@@ -11,9 +11,14 @@
  *   - sendReminderDue — sent by the dispatcher when one or more of a
  *     subscriber's items has reached its replacement interval.
  *
- * Configuration (all REQUIRED for actual delivery):
- *   - SENDGRID_API_KEY   — SendGrid API key with "Mail Send" permission
- *   - PENN_FROM_EMAIL    — Verified sender on the SendGrid account
+ * Configuration (all REQUIRED for actual delivery — read by the shared
+ * `createSendgridClient()` from @workspace/resupply-email):
+ *   - SENDGRID_API_KEY     — SendGrid API key with "Mail Send" permission
+ *   - SENDGRID_FROM_EMAIL  — Verified sender on the SendGrid account
+ *                            (operations should set this to info@pennpaps.com
+ *                            so every outbound email originates from the
+ *                            canonical practice address)
+ *   - SENDGRID_FROM_NAME   — Display name shown next to the From address
  *
  * Optional:
  *   - REMINDER_PUBLIC_BASE_URL — Base URL for manage / unsubscribe links.
@@ -28,6 +33,12 @@
  * Privacy: we deliberately log only the SKU of items in error paths;
  * the recipient email is never logged.
  */
+
+import {
+  createSendgridClient,
+  EmailApiError,
+  EmailConfigError,
+} from "@workspace/resupply-email";
 
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
@@ -72,47 +83,70 @@ function formatItemsList(items: ReminderItemForEmail[]): string {
     .join("\n");
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Convert the plain-text body to a minimally-styled HTML body. We keep
+ * the same content verbatim so the two views never drift; corporate
+ * spam filters that drop HTML-only mail will still see the text part.
+ */
+function bodyToHtml(text: string): string {
+  return `<div style="font-family:system-ui,-apple-system,sans-serif;white-space:pre-wrap;font-size:15px;line-height:1.5;color:#222">${escapeHtml(text)}</div>`;
+}
+
+/**
+ * Send via the shared SendGrid integration. All Penn Fit reminder emails
+ * funnel through this single helper so the From address (info@pennpaps.com),
+ * display name, and API key are always read from the same env vars as the
+ * rest of the platform — no separate PENN_FROM_EMAIL, no raw fetch.
+ */
 async function sendViaSendGrid(opts: {
   toEmail: string;
   subject: string;
   body: string;
 }): Promise<SendEmailResult> {
-  const apiKey = process.env.SENDGRID_API_KEY;
-  const fromEmail = process.env.PENN_FROM_EMAIL;
-
-  if (!apiKey || !fromEmail) {
-    return { configured: false, delivered: false };
+  let client;
+  try {
+    client = createSendgridClient();
+  } catch (err) {
+    if (err instanceof EmailConfigError) {
+      return { configured: false, delivered: false };
+    }
+    return {
+      configured: false,
+      delivered: false,
+      error: err instanceof Error ? err.message : "Unknown email config error",
+    };
   }
 
   try {
-    const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: opts.toEmail }], subject: opts.subject }],
-        from: { email: fromEmail, name: "PennPaps" },
-        content: [{ type: "text/plain", value: opts.body }],
-      }),
+    await client.sendEmail({
+      to: opts.toEmail,
+      subject: opts.subject,
+      text: opts.body,
+      html: bodyToHtml(opts.body),
     });
-
-    if (response.status >= 200 && response.status < 300) {
-      return { configured: true, delivered: true };
+    return { configured: true, delivered: true };
+  } catch (err) {
+    if (err instanceof EmailApiError) {
+      const status = err.status ?? "unknown";
+      return {
+        configured: true,
+        delivered: false,
+        error: `Email provider returned ${status}: ${err.message.slice(0, 200)}`,
+      };
     }
-
-    const errText = await response.text().catch(() => "");
     return {
       configured: true,
       delivered: false,
-      error: `Email provider returned ${response.status}: ${errText.slice(0, 200)}`,
-    };
-  } catch (e) {
-    return {
-      configured: true,
-      delivered: false,
-      error: e instanceof Error ? e.message : "Unknown email delivery error",
+      error: err instanceof Error ? err.message : "Unknown email delivery error",
     };
   }
 }

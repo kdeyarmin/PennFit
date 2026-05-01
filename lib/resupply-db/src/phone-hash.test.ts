@@ -36,18 +36,24 @@ describe("normalizeE164", () => {
 
 describe("hmacPhone", () => {
   const KEY_ENV = "RESUPPLY_PHONE_HMAC_KEY";
-  let saved: string | undefined;
+  const MASTER_ENV = "RESUPPLY_MASTER_KEY";
+  let savedKey: string | undefined;
+  let savedMaster: string | undefined;
 
   beforeEach(() => {
-    saved = process.env[KEY_ENV];
+    savedKey = process.env[KEY_ENV];
+    savedMaster = process.env[MASTER_ENV];
+    // The legacy-key tests below set KEY_ENV explicitly. Master is
+    // cleared so the legacy fallback path is what's actually under
+    // test, regardless of whatever the developer's shell may have set.
+    delete process.env[MASTER_ENV];
   });
 
   afterEach(() => {
-    if (saved === undefined) {
-      delete process.env[KEY_ENV];
-    } else {
-      process.env[KEY_ENV] = saved;
-    }
+    if (savedKey === undefined) delete process.env[KEY_ENV];
+    else process.env[KEY_ENV] = savedKey;
+    if (savedMaster === undefined) delete process.env[MASTER_ENV];
+    else process.env[MASTER_ENV] = savedMaster;
   });
 
   it("produces stable 32-byte digests for the same input + key", () => {
@@ -94,5 +100,24 @@ describe("hmacPhone", () => {
     process.env[KEY_ENV] = "test-key-aaaa";
     expect(() => hmacPhone("abc")).toThrow(/did not normalize/);
     expect(() => hmacPhone("")).toThrow(/did not normalize/);
+  });
+
+  it("derives the key from RESUPPLY_MASTER_KEY when the legacy var is unset", () => {
+    delete process.env[KEY_ENV];
+    process.env[MASTER_ENV] = "master-secret-xyz";
+    const a = hmacPhone("+12155551212");
+    const b = hmacPhone("+12155551212");
+    expect(a.length).toBe(32);
+    expect(a.equals(b)).toBe(true);
+  });
+
+  it("legacy key takes precedence over master (migration ordering)", () => {
+    process.env[KEY_ENV] = "legacy-key";
+    process.env[MASTER_ENV] = "master-secret-xyz";
+    const fromBoth = hmacPhone("+12155551212");
+
+    delete process.env[MASTER_ENV];
+    const fromLegacyOnly = hmacPhone("+12155551212");
+    expect(fromBoth.equals(fromLegacyOnly)).toBe(true);
   });
 });

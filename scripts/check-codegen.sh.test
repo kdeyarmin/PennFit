@@ -21,9 +21,9 @@
 #     file (even by mistake) would lose their edit on the next
 #     validation run with no warning.
 #
-#   Scenario C — corrupted Penn Fit *zod* file:
-#     This specifically guards against a memoization bug. The Penn Fit
-#     spec produces TWO output directories from one orval invocation
+#   Scenario C — corrupted PennPaps Fitter *zod* file:
+#     This specifically guards against a memoization bug. The PennPaps
+#     fitter spec produces TWO output directories from one orval invocation
 #     (api-client-react AND api-zod). An earlier version of the
 #     checker snapshotted per output dir just-in-time, so when it
 #     processed the react dir first orval would mutate the zod dir,
@@ -38,7 +38,7 @@
 #   - The checker leaving the working tree dirty after a failure,
 #     which would make local re-runs surprising and CI hard to reason
 #     about.
-#   - Penn Fit's dual-output spec being treated as one regeneration
+#   - The PennPaps fitter's dual-output spec being treated as one regeneration
 #     unit, not as two independent pipelines.
 
 set -euo pipefail
@@ -128,8 +128,8 @@ fi
 # leak between scenarios.
 cp -f "$SNAPSHOT/resupply/api.schemas.ts" "$RESUPPLY_VICTIM"
 
-# ---------- Scenario C: corrupted Penn Fit zod file ----------
-printf '[self-test] scenario C: corrupted Penn Fit zod file should fail + preserve marker\n'
+# ---------- Scenario C: corrupted PennPaps Fitter zod file ----------
+printf '[self-test] scenario C: corrupted PennPaps Fitter zod file should fail + preserve marker\n'
 
 ZOD_ORIGINAL_HASH="$(sha256sum "$ZOD_VICTIM" | awk '{print $1}')"
 printf '\n// SELF-TEST DRIFT MARKER (zod) — must be preserved on failure\n' >>"$ZOD_VICTIM"

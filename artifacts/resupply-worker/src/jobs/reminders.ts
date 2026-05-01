@@ -87,6 +87,10 @@ import {
   sendReminderSms,
   type SendActor,
 } from "@workspace/resupply-reminders";
+import {
+  hasLinkHmacKey,
+  hasPhoneHmacKey,
+} from "@workspace/resupply-secrets";
 
 import { logger } from "../logger.js";
 
@@ -160,9 +164,13 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
       (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : ""),
   );
-  const hmacKeysReady = Boolean(
-    env.RESUPPLY_PHONE_HMAC_KEY && env.RESUPPLY_LINK_HMAC_KEY,
-  );
+  // The HMAC keys come through `@workspace/resupply-secrets`, which
+  // accepts either the legacy per-purpose env vars or a derivation
+  // from RESUPPLY_MASTER_KEY — so don't read the env names directly.
+  // Pass the (potentially test-supplied) `env` through so the
+  // worker's hermetic preflight tests stay independent of the
+  // process's real env.
+  const hmacKeysReady = hasPhoneHmacKey(env) && hasLinkHmacKey(env);
 
   let sms: ReturnType<typeof readWorkerMessagingConfig>["sms"] = null;
   if (
@@ -505,7 +513,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     if (!cfg.sms || !cfg.hmacKeysReady) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-sms: SMS not configured (missing TWILIO_* / RESUPPLY_PHONE_HMAC_KEY) — skipping",
+        "reminders.send-sms: SMS not configured (missing TWILIO_* / phone HMAC key) — skipping",
       );
       return;
     }
@@ -537,7 +545,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     if (!cfg.email || !cfg.hmacKeysReady) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-email: email not configured (missing SENDGRID_* / RESUPPLY_LINK_HMAC_KEY) — skipping",
+        "reminders.send-email: email not configured (missing SENDGRID_* / link HMAC key) — skipping",
       );
       return;
     }

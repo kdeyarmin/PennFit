@@ -39,11 +39,11 @@
 //   502 stripe_refund_failed               — Stripe error proxied
 
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool, shopOrders } from "@workspace/resupply-db";
+import { getDbPool, shopCustomers, shopOrders } from "@workspace/resupply-db";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -51,6 +51,7 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
 
 const router: IRouter = Router();
 
@@ -120,7 +121,7 @@ interface OrderRow {
   status: string;
   amountTotalCents: number | null;
   currency: string | null;
-  clerkUserId: string | null;
+  customerId: string | null;
   createdAt: Date;
   paidAt: Date | null;
   shippingAddress: SavedShippingAddress | null;
@@ -128,6 +129,8 @@ interface OrderRow {
   trackingNumber: string | null;
   shippedAt: Date | null;
   deliveredAt: Date | null;
+  shippingEmailSentAt: Date | null;
+  customerEmail: string | null;
 }
 
 async function loadOrder(orderId: string): Promise<OrderRow | null> {
@@ -140,7 +143,7 @@ async function loadOrder(orderId: string): Promise<OrderRow | null> {
       status: shopOrders.status,
       amountTotalCents: shopOrders.amountTotalCents,
       currency: shopOrders.currency,
-      clerkUserId: shopOrders.clerkUserId,
+      customerId: shopOrders.customerId,
       createdAt: shopOrders.createdAt,
       paidAt: shopOrders.paidAt,
       shippingAddress: shopOrders.shippingAddress,
@@ -148,11 +151,183 @@ async function loadOrder(orderId: string): Promise<OrderRow | null> {
       trackingNumber: shopOrders.trackingNumber,
       shippedAt: shopOrders.shippedAt,
       deliveredAt: shopOrders.deliveredAt,
+      shippingEmailSentAt: shopOrders.shippingEmailSentAt,
+      customerEmail: shopOrders.customerEmail,
     })
     .from(shopOrders)
     .where(eq(shopOrders.id, orderId))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Send the "your order shipped" email at most once per
+ * (carrier, trackingNumber) combination. Called after the tracking
+ * UPDATE in the POST /admin/shop/orders/:id/tracking handler.
+ *
+ * Idempotency model (concurrent-safe):
+ *   1. The route's tracking UPDATE both stamps the new tracking AND
+ *      conditionally CLEARS `shipping_email_sent_at` in the same
+ *      atomic statement, ONLY if carrier or number actually changed
+ *      vs the prior row values.
+ *   2. This helper then performs an ATOMIC CLAIM on the (possibly
+ *      cleared) timestamp:
+ *        UPDATE … SET shipping_email_sent_at = now()
+ *        WHERE id = $1 AND shipping_email_sent_at IS NULL RETURNING …
+ *      Only one worker can win the row even if two admins click
+ *      "save tracking" within milliseconds.
+ *   3. On send failure we RELEASE the claim
+ *      (shipping_email_sent_at = NULL) so the next admin save (or a
+ *      manual retry) can re-attempt.
+ *
+ * Recipient resolution:
+ *   * Linked `shop_customers.email_lower` (joined on `customer_id`)
+ *     wins. For guest checkouts (customer_id NULL) we fall back to
+ *     `shop_orders.customer_email` captured at paid-time (migration
+ *     0017). If neither is present, skip silently.
+ *
+ * Errors NEVER throw — the admin route already 200'd the UPDATE; we
+ * must not fail the response because SendGrid is misconfigured.
+ */
+async function sendShippingNotificationIfNew(args: {
+  orderId: string;
+  log:
+    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | undefined;
+}): Promise<{ skipped: true; reason: string } | { skipped: false; delivered: boolean }> {
+  const { orderId, log } = args;
+  const db = drizzle(getDbPool());
+
+  // Atomic claim — wins iff shipping_email_sent_at is currently NULL.
+  // The route's prior UPDATE has either left the timestamp non-null
+  // (re-entry of identical tracking → claim fails → skip) or NULL
+  // (first send OR genuine re-ship → claim succeeds → send).
+  const claimedRows = await db
+    .update(shopOrders)
+    .set({ shippingEmailSentAt: sql`now()`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(shopOrders.id, orderId),
+        isNull(shopOrders.shippingEmailSentAt),
+      ),
+    )
+    .returning({
+      id: shopOrders.id,
+      stripeSessionId: shopOrders.stripeSessionId,
+      customerId: shopOrders.customerId,
+      shippingAddress: shopOrders.shippingAddress,
+      trackingCarrier: shopOrders.trackingCarrier,
+      trackingNumber: shopOrders.trackingNumber,
+      customerEmail: shopOrders.customerEmail,
+    });
+  const claimed = claimedRows[0];
+
+  if (!claimed) {
+    log?.info?.(
+      { orderId },
+      "shipping notification email skipped — already sent or row missing",
+    );
+    return { skipped: true, reason: "already_sent_or_missing" };
+  }
+
+  // From here on, ANY failure path MUST release the claim by writing
+  // shipping_email_sent_at = NULL so a future admin re-save can retry.
+  // Idempotent: safe to call multiple times. The outer try/catch below
+  // guarantees release on ANY thrown error in the post-claim block —
+  // including transient DB errors during the customer lookup — so a
+  // transient failure can never permanently lock out the email.
+  const releaseClaim = async (): Promise<void> => {
+    try {
+      await db
+        .update(shopOrders)
+        .set({ shippingEmailSentAt: null, updatedAt: sql`now()` })
+        .where(eq(shopOrders.id, claimed.id));
+    } catch (releaseErr) {
+      log?.warn?.(
+        {
+          orderId: claimed.id,
+          err: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+        },
+        "shipping notification email claim release failed",
+      );
+    }
+  };
+
+  try {
+    if (!claimed.trackingCarrier || !claimed.trackingNumber) {
+      // Defence in depth — schema enforces non-empty, but the email
+      // body would render nonsense without these.
+      await releaseClaim();
+      return { skipped: true, reason: "tracking_missing" };
+    }
+
+    // Recipient resolution: linked customer → persisted customer_email
+    // (captured from Stripe at paid-time) → skip. We never log the
+    // recipient string.
+    let toEmail: string | null = null;
+    if (claimed.customerId) {
+      const [cust] = await db
+        .select({ email: shopCustomers.emailLower })
+        .from(shopCustomers)
+        .where(eq(shopCustomers.customerId, claimed.customerId))
+        .limit(1);
+      if (cust?.email) toEmail = cust.email;
+    }
+    if (!toEmail && claimed.customerEmail) {
+      toEmail = claimed.customerEmail;
+    }
+    if (!toEmail) {
+      await releaseClaim();
+      log?.info?.(
+        { orderId: claimed.id },
+        "shipping notification email skipped — no recipient on file",
+      );
+      return { skipped: true, reason: "no_email_on_file" };
+    }
+
+    const result = await sendShippingNotificationEmail({
+      toEmail,
+      stripeSessionId: claimed.stripeSessionId,
+      carrier: claimed.trackingCarrier,
+      trackingNumber: claimed.trackingNumber,
+      shippingAddress: claimed.shippingAddress ?? null,
+    });
+
+    if (!result.configured) {
+      await releaseClaim();
+      log?.info?.(
+        { orderId: claimed.id },
+        "shipping notification email skipped — sendgrid not configured",
+      );
+      return { skipped: true, reason: "not_configured" };
+    }
+    if (!result.delivered) {
+      await releaseClaim();
+      log?.warn?.(
+        { orderId: claimed.id, error: result.error },
+        "shipping notification email send failed (non-fatal, claim released)",
+      );
+      return { skipped: false, delivered: false };
+    }
+
+    log?.info?.(
+      { orderId: claimed.id, messageId: result.messageId ?? null },
+      "shipping notification email delivered",
+    );
+    return { skipped: false, delivered: true };
+  } catch (err) {
+    // Catch-all: ANY uncaught error after the claim acquisition
+    // (transient DB read failure, unexpected throw inside the email
+    // helper, etc.) must release the claim so the next admin re-save
+    // can retry — otherwise a single transient failure would
+    // permanently suppress the shipping notification.
+    await releaseClaim();
+    log?.warn?.(
+      { orderId: claimed.id, err: err instanceof Error ? err.message : String(err) },
+      "shipping notification email post-claim threw (non-fatal, claim released)",
+    );
+    return { skipped: false, delivered: false };
+  }
 }
 
 function projectOrder(row: OrderRow) {
@@ -163,7 +338,7 @@ function projectOrder(row: OrderRow) {
     status: row.status,
     amountTotalCents: row.amountTotalCents,
     currency: row.currency,
-    clerkUserId: row.clerkUserId,
+    customerId: row.customerId,
     createdAt: row.createdAt.toISOString(),
     paidAt: row.paidAt ? row.paidAt.toISOString() : null,
     shippingAddress: row.shippingAddress,
@@ -222,6 +397,16 @@ router.post(
     }
 
     const db = drizzle(getDbPool());
+    // Atomicity note: in the SAME UPDATE that stamps the new tracking,
+    // CLEAR `shipping_email_sent_at` if either the carrier or the
+    // number actually changed vs the row's PRE-UPDATE values. SET
+    // clauses in Postgres see the OLD row, so `tracking_carrier IS
+    // DISTINCT FROM $new` evaluates against the prior column value.
+    // This is what makes the helper's claim-then-send logic correct
+    // under concurrency: two admins racing identical re-saves both
+    // see the timestamp non-null (no clear) and neither claims; one
+    // admin updating tracking AND another racing to send a stale
+    // email both serialize through the row's atomic UPDATE.
     const updated = await db
       .update(shopOrders)
       .set({
@@ -229,6 +414,7 @@ router.post(
         trackingNumber: number,
         shippedAt: sql`now()`,
         updatedAt: sql`now()`,
+        shippingEmailSentAt: sql`CASE WHEN ${shopOrders.trackingCarrier} IS DISTINCT FROM ${carrier} OR ${shopOrders.trackingNumber} IS DISTINCT FROM ${number} THEN NULL ELSE ${shopOrders.shippingEmailSentAt} END`,
       })
       .where(eq(shopOrders.id, orderId))
       .returning();
@@ -248,6 +434,28 @@ router.post(
       },
       "admin/shop/orders: tracking entered",
     );
+
+    // Best-effort shipping notification email. The admin's UPDATE has
+    // already succeeded; SendGrid being unconfigured or returning a
+    // 5xx must NOT 500 the route — operators would then re-click and
+    // we'd land in an inconsistent state where shipped_at is stamped
+    // but the email logic re-evaluates against the same row again.
+    try {
+      await sendShippingNotificationIfNew({
+        orderId,
+        log: req.log,
+      });
+    } catch (emailErr) {
+      req.log?.warn?.(
+        {
+          orderId,
+          err:
+            emailErr instanceof Error ? emailErr.message : String(emailErr),
+        },
+        "admin/shop/orders: shipping notification failed (non-fatal)",
+      );
+    }
+
     res.json({ order: projectOrder(row as OrderRow) });
   },
 );

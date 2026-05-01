@@ -16,20 +16,19 @@ export function EmptyState({
   return (
     <div className="text-center py-12 px-4">
       <div
-        className="mx-auto h-10 w-10 rounded-full flex items-center justify-center mb-3"
-        style={{ backgroundColor: "#f1f5f9", color: "#0a1f44" }}
+        className="mx-auto h-10 w-10 rounded-full flex items-center justify-center mb-3 icon-halo-navy"
         aria-hidden="true"
       >
-        <span className="text-lg">·</span>
+        <span className="text-lg leading-none">·</span>
       </div>
       <p
         className="text-sm font-semibold mb-1"
-        style={{ color: "#0a1f44" }}
+        style={{ color: "hsl(var(--ink-1))" }}
       >
         {title}
       </p>
       {hint && (
-        <p className="text-xs mb-3" style={{ color: "#6b7280" }}>
+        <p className="text-xs mb-3" style={{ color: "hsl(var(--ink-3))" }}>
           {hint}
         </p>
       )}

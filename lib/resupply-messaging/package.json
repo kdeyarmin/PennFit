@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@workspace/resupply-secrets": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

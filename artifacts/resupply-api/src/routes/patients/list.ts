@@ -84,10 +84,12 @@ router.get("/patients", requireAdmin, async (req, res) => {
     // or email or pacware id" and fall through.
     const normalizedPhone = normalizeE164(search);
     if (normalizedPhone) {
-      // hmacPhone() throws if RESUPPLY_PHONE_HMAC_KEY is unset. In
-      // that case fall back to the decrypt-ILIKE union rather than
-      // crashing the list endpoint — admins should still be able to
-      // search by name/email when phone search isn't configured.
+      // hmacPhone() throws if no phone HMAC key is sourceable
+      // (neither RESUPPLY_MASTER_KEY nor the legacy
+      // RESUPPLY_PHONE_HMAC_KEY is set). In that case fall back to
+      // the decrypt-ILIKE union rather than crashing the list
+      // endpoint — admins should still be able to search by
+      // name/email when phone search isn't configured.
       try {
         const hash = hmacPhone(normalizedPhone);
         filters.push(

@@ -1,0 +1,33 @@
+{
+  "name": "@workspace/resupply-auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test-helpers": "./src/test-helpers.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "test:watch": "vitest",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@workspace/resupply-db": "workspace:*",
+    "argon2": "^0.43.0",
+    "bcryptjs": "^3.0.2",
+    "drizzle-orm": "catalog:",
+    "express": "^5",
+    "pg": "^8.20.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "catalog:",
+    "@types/pg": "^8.18.0",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4",
+    "vitest": "^2.1.8"
+  }
+}

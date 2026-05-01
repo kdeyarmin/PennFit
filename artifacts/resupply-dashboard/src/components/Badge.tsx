@@ -6,13 +6,41 @@
 
 type Variant = "neutral" | "info" | "success" | "warning" | "danger" | "muted";
 
+// Status badges. neutral / info pull from the brand tokens so a
+// "navy" badge always matches the rest of the chrome; success /
+// warning / danger keep their semantic palettes (green / amber /
+// rose) so a "Failed" badge reads as alarm regardless of theme tweaks.
 const VARIANTS: Record<Variant, { bg: string; fg: string; border: string }> = {
-  neutral: { bg: "#f1f5f9", fg: "#0a1f44", border: "#e5e7eb" },
-  info: { bg: "#e0eaff", fg: "#1e3a8a", border: "#bfd1ff" },
-  success: { bg: "#dcfce7", fg: "#166534", border: "#bbf7d0" },
-  warning: { bg: "#fef3c7", fg: "#854d0e", border: "#fde68a" },
-  danger: { bg: "#fee2e2", fg: "#991b1b", border: "#fecaca" },
-  muted: { bg: "#f3f4f6", fg: "#6b7280", border: "#e5e7eb" },
+  neutral: {
+    bg: "hsl(var(--penn-navy) / 0.06)",
+    fg: "hsl(var(--penn-navy-deep))",
+    border: "hsl(var(--penn-navy) / 0.18)",
+  },
+  info: {
+    bg: "hsl(213 80% 50% / 0.10)",
+    fg: "hsl(213 80% 32%)",
+    border: "hsl(213 80% 50% / 0.30)",
+  },
+  success: {
+    bg: "hsl(152 60% 38% / 0.12)",
+    fg: "hsl(152 70% 24%)",
+    border: "hsl(152 60% 38% / 0.30)",
+  },
+  warning: {
+    bg: "hsl(38 95% 48% / 0.14)",
+    fg: "hsl(38 80% 28%)",
+    border: "hsl(38 95% 48% / 0.40)",
+  },
+  danger: {
+    bg: "hsl(354 75% 50% / 0.10)",
+    fg: "hsl(354 75% 38%)",
+    border: "hsl(354 75% 50% / 0.30)",
+  },
+  muted: {
+    bg: "hsl(var(--surface-3))",
+    fg: "hsl(var(--ink-3))",
+    border: "hsl(var(--line-1))",
+  },
 };
 
 export function Badge({

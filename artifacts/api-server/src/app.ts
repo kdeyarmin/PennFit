@@ -2,12 +2,9 @@ import express, { type Express, type Request } from "express";
 import cors from "cors";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
-import {
-  CLERK_PROXY_PATH,
-  clerkProxyMiddleware,
-} from "./middlewares/clerkProxyMiddleware.js";
+import { makeAuthRouter } from "@workspace/resupply-auth";
 import router from "./routes";
+import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -16,10 +13,6 @@ const app: Express = express();
 // looks like it came from 127.0.0.1 and the rate limiter would group all
 // users together (and refuse to start in strict mode).
 app.set("trust proxy", 1);
-
-// Auth frontend API proxy — must be mounted BEFORE body parsers because
-// the proxy streams raw bytes through to Clerk's backend. No-op in dev.
-app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
 // CORS allowlist. In dev (no PENN_ALLOWED_ORIGINS set) we allow same-origin
 // + the Replit dev domain so the preview iframe can call the API. In
@@ -85,11 +78,6 @@ app.use(
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
-// session middleware — attaches auth state to every request so
-// downstream `getAuth(req)` can read it. Safe to mount on every route;
-// it's a no-op for unauthenticated requests.
-app.use(clerkMiddleware());
-
 // Rate limit on the order endpoint specifically. Recommendation/catalog are
 // cheap and stateless, so they don't need this. Orders cost Penn an email
 // + a fulfillment workflow per request, so we throttle hard:
@@ -119,6 +107,16 @@ const usageEventLimiter = rateLimit({
   message: { error: "Too many tracking events" },
 });
 app.use("/api/usage-events", usageEventLimiter);
+
+// In-house /api/auth/* routes. Unconditionally mounted after
+// Stage 5a — a missing AUTH_PASSWORD_PEPPER throws here so the
+// misconfig surfaces at boot.
+const authDeps = getAuthDeps();
+app.use("/api/auth", makeAuthRouter(authDeps, { productName: "PennFit" }));
+logger.info(
+  { event: "auth_in_house_mounted" },
+  "in-house auth routes mounted at /api/auth",
+);
 
 app.use("/api", router);
 

@@ -4,14 +4,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 function fluent(result: unknown) {
   const obj: Record<string, unknown> = {
@@ -58,23 +61,18 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = [
   "RESUPPLY_ADMIN_EMAILS",
   "NODE_ENV",
   "RESUPPLY_PHONE_HMAC_KEY",
+  "RESUPPLY_DATA_KEY",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
@@ -85,9 +83,13 @@ describe("GET /patients", () => {
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+    // The decrypt() helper composes a pgp_sym_decrypt SQL fragment
+    // and reads RESUPPLY_DATA_KEY at SQL-build time. Tests don't
+    // exercise the actual cipher (the DB is mocked) but a non-empty
+    // value has to be present so the helper doesn't throw.
+    process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
     selectQueue.length = 0;
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     dbStub.select.mockClear();
   });
   afterEach(() => {
@@ -98,7 +100,6 @@ describe("GET /patients", () => {
   });
 
   it("returns 401 with no session", async () => {
-    getAuthMock.mockReturnValue({ userId: null });
     const res = await request(makeApp()).get("/resupply-api/patients");
     expect(res.status).toBe(401);
   });

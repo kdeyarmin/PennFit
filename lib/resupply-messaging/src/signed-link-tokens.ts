@@ -34,7 +34,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const HMAC_KEY_ENV = "RESUPPLY_LINK_HMAC_KEY";
+import { getLinkHmacKey } from "@workspace/resupply-secrets";
 
 const DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
@@ -81,18 +81,6 @@ export type VerifyLinkTokenResult =
         | "unknown-action";
     };
 
-function linkHmacKey(): string {
-  const k = process.env[HMAC_KEY_ENV];
-  if (!k) {
-    throw new Error(
-      `${HMAC_KEY_ENV} is not set — refusing to sign or verify link tokens. ` +
-        "Set it via Replit secrets (32-byte hex). It must be different from " +
-        "RESUPPLY_DATA_KEY and RESUPPLY_PHONE_HMAC_KEY.",
-    );
-  }
-  return k;
-}
-
 function base64urlEncode(buf: Buffer): string {
   return buf
     .toString("base64")
@@ -116,7 +104,7 @@ function base64urlDecode(s: string): Buffer | null {
 }
 
 function hmacSign(payloadEncoded: string): Buffer {
-  return createHmac("sha256", linkHmacKey())
+  return createHmac("sha256", getLinkHmacKey())
     .update(payloadEncoded, "utf8")
     .digest();
 }

@@ -89,11 +89,11 @@ export function PatientDetailPage({ id }: { id: string }) {
           <div>
             <h1
               className="text-2xl font-semibold mb-1"
-              style={{ color: "#0a1f44" }}
+              style={{ color: "hsl(var(--ink-1))" }}
             >
               {fullName(data.firstName, data.lastName)}
             </h1>
-            <p className="text-xs" style={{ color: "#6b7280" }}>
+            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               PACware ID #{data.pacwareId} · Patient created {formatDate(data.createdAt)}
             </p>
           </div>
@@ -105,7 +105,7 @@ export function PatientDetailPage({ id }: { id: string }) {
           <div>
             <p
               className="text-xs uppercase tracking-wider font-semibold mb-1"
-              style={{ color: "#c9a24a" }}
+              style={{ color: "hsl(var(--penn-gold-deep))" }}
             >
               Channels on file
             </p>
@@ -120,11 +120,11 @@ export function PatientDetailPage({ id }: { id: string }) {
           <div>
             <p
               className="text-xs uppercase tracking-wider font-semibold mb-1"
-              style={{ color: "#c9a24a" }}
+              style={{ color: "hsl(var(--penn-gold-deep))" }}
             >
               Last updated
             </p>
-            <p style={{ color: "#0a1f44" }}>{formatDateTime(data.updatedAt)}</p>
+            <p style={{ color: "hsl(var(--ink-1))" }}>{formatDateTime(data.updatedAt)}</p>
           </div>
         </div>
         {/*
@@ -143,10 +143,10 @@ export function PatientDetailPage({ id }: { id: string }) {
           hovering reveals the rest without taking layout space.
         */}
         {data.lastMessageAt ? (
-          <div className="mt-4 pt-4 border-t" style={{ borderColor: "#e5e7eb" }}>
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: "hsl(var(--line-1))" }}>
             <p
               className="text-xs uppercase tracking-wider font-semibold mb-1"
-              style={{ color: "#c9a24a" }}
+              style={{ color: "hsl(var(--penn-gold-deep))" }}
             >
               Last contact
             </p>
@@ -162,7 +162,7 @@ export function PatientDetailPage({ id }: { id: string }) {
                   ? "Inbound"
                   : "Outbound"}
               </Badge>
-              <span style={{ color: "#0a1f44" }}>
+              <span style={{ color: "hsl(var(--ink-1))" }}>
                 {formatDateTime(data.lastMessageAt)}
               </span>
             </div>
@@ -170,7 +170,7 @@ export function PatientDetailPage({ id }: { id: string }) {
               <p
                 className="mt-1 text-sm"
                 style={{
-                  color: "#374151",
+                  color: "hsl(var(--ink-2))",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -191,7 +191,7 @@ export function PatientDetailPage({ id }: { id: string }) {
 
       <div
         className="flex gap-1 border-b"
-        style={{ borderColor: "#e5e7eb" }}
+        style={{ borderColor: "hsl(var(--line-1))" }}
         role="tablist"
       >
         <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")}>
@@ -258,7 +258,7 @@ function BackLink() {
     <Link
       href="/patients"
       className="text-sm underline"
-      style={{ color: "#0a1f44" }}
+      style={{ color: "hsl(var(--ink-1))" }}
     >
       ← Back to patients
     </Link>
@@ -370,7 +370,7 @@ function ConversationsTab({
       key: "open",
       header: "",
       render: () => (
-        <span className="text-xs underline" style={{ color: "#0a1f44" }}>
+        <span className="text-xs underline" style={{ color: "hsl(var(--ink-1))" }}>
           Open →
         </span>
       ),
@@ -632,7 +632,7 @@ function PrescriptionsTab({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs" style={{ color: "#6b7280" }}>
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           Clinical fields are immutable after creation — to edit, add a
           new prescription and mark the old one expired.
         </p>
@@ -707,7 +707,7 @@ function PrescriptionAttachmentCell({
         </a>
         <div
           className="text-xs flex items-center gap-2"
-          style={{ color: "#6b7280" }}
+          style={{ color: "hsl(var(--ink-3))" }}
         >
           <span>{formatBytes(rx.attachmentSizeBytes)}</span>
           <button
@@ -955,11 +955,11 @@ function SettingsCard({
         <div>
           <h2
             className="text-sm uppercase tracking-wider font-semibold mb-1"
-            style={{ color: "#c9a24a" }}
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
           >
             Reminder settings
           </h2>
-          <p className="text-xs" style={{ color: "#6b7280" }}>
+          <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Per-patient overrides win over global rules and the
             prescription cadence. Leave a field blank to fall back to
             the rules engine.
@@ -981,7 +981,7 @@ function SettingsCard({
             onChange={(e) => setInsurancePayer(e.target.value)}
             disabled={isPending}
           />
-          <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+          <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Free-text — match key for rules.
           </p>
         </div>
@@ -997,7 +997,7 @@ function SettingsCard({
             onChange={(e) => setCadence(e.target.value)}
             disabled={isPending}
           />
-          <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+          <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Whole days, 1–365.
           </p>
         </div>
@@ -1015,7 +1015,7 @@ function SettingsCard({
             onChange={(e) => setChannel(e.target.value as ChannelChoice)}
             disabled={isPending}
           />
-          <p className="mt-1 text-xs" style={{ color: "#6b7280" }}>
+          <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Voice is admin-initiated only.
           </p>
         </div>
@@ -1033,7 +1033,7 @@ function SettingsCard({
       {statusMsg && !error && (
         <p
           className="mt-3 text-sm"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
           role="status"
         >
           {statusMsg}
@@ -1154,19 +1154,19 @@ function TimelineRow({
           <Badge variant={variant}>{label}</Badge>
           <span
             className="text-sm font-semibold"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             {event.title}
           </span>
         </div>
-        <span className="text-xs whitespace-nowrap" style={{ color: "#6b7280" }}>
+        <span className="text-xs whitespace-nowrap" style={{ color: "hsl(var(--ink-3))" }}>
           {formatDateTime(event.at)}
         </span>
       </div>
       {event.detail && (
         <p
           className="mt-1 text-sm whitespace-pre-wrap"
-          style={{ color: "#374151" }}
+          style={{ color: "hsl(var(--ink-2))" }}
         >
           {event.detail}
         </p>
@@ -1176,7 +1176,7 @@ function TimelineRow({
           type="button"
           onClick={() => onConversationClick(event.conversationId!)}
           className="mt-1 text-xs underline"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           Open conversation →
         </button>
@@ -1394,7 +1394,7 @@ function PatientActionBar({
         <div>
           <p
             className="text-xs uppercase tracking-wider font-semibold mb-2"
-            style={{ color: "#c9a24a" }}
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
           >
             Reach the patient now
           </p>
@@ -1448,17 +1448,17 @@ function PatientActionBar({
             </Button>
           </div>
           {sendDisabledHint && (
-            <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
+            <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               {sendDisabledHint}
             </p>
           )}
           {!sendDisabled && !patient.hasPhone && (
-            <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
+            <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               No phone on file — SMS / voice disabled.
             </p>
           )}
           {!sendDisabled && !patient.hasEmail && (
-            <p className="mt-2 text-xs" style={{ color: "#6b7280" }}>
+            <p className="mt-2 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               No email on file — email disabled.
             </p>
           )}
@@ -1467,7 +1467,7 @@ function PatientActionBar({
         <div>
           <p
             className="text-xs uppercase tracking-wider font-semibold mb-2"
-            style={{ color: "#c9a24a" }}
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
           >
             Lifecycle
           </p>
@@ -1521,9 +1521,9 @@ function PatientActionBar({
           style={{ borderColor: "#c9a24a", backgroundColor: "#fff8e7" }}
           role="status"
         >
-          <span className="text-sm" style={{ color: "#0a1f44" }}>
+          <span className="text-sm" style={{ color: "hsl(var(--ink-1))" }}>
             Patient closed. Reopen?{" "}
-            <span style={{ color: "#6b7280" }}>({secondsLeft}s)</span>
+            <span style={{ color: "hsl(var(--ink-3))" }}>({secondsLeft}s)</span>
           </span>
           <Button
             intent="secondary"
@@ -1620,7 +1620,7 @@ function NotesTab({ patientId }: { patientId: string }) {
           placeholder="Patient is recovering from minor surgery; pause reminders for 2 weeks…"
           disabled={create.isPending}
           className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-          style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+          style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
         />
         <div className="mt-2 flex items-center justify-between gap-3">
           <span
@@ -1666,10 +1666,10 @@ function NotesTab({ patientId }: { patientId: string }) {
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter notes…"
               className="flex-1 rounded border px-3 py-2 text-sm"
-              style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+              style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
               aria-label="Filter notes"
             />
-            <span className="text-xs" style={{ color: "#6b7280" }}>
+            <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
               {filterTrimmed
                 ? `${filteredItems.length} of ${data.items.length}`
                 : `${data.items.length} ${data.items.length === 1 ? "note" : "notes"}`}
@@ -1697,22 +1697,22 @@ function NoteRow({ note }: { note: PatientNote }) {
   return (
     <li
       className="rounded border px-3 py-2"
-      style={{ borderColor: "#e5e7eb", backgroundColor: "#fafafa" }}
+      style={{ borderColor: "hsl(var(--line-1))", backgroundColor: "#fafafa" }}
     >
       <div className="flex items-baseline justify-between gap-2 mb-1">
         <span
           className="text-xs font-semibold"
-          style={{ color: "#0a1f44" }}
+          style={{ color: "hsl(var(--ink-1))" }}
         >
           {note.authorEmail}
         </span>
-        <span className="text-xs" style={{ color: "#6b7280" }}>
+        <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {formatDateTime(note.createdAt)}
         </span>
       </div>
       <p
         className="text-sm whitespace-pre-wrap break-words"
-        style={{ color: "#374151" }}
+        style={{ color: "hsl(var(--ink-2))" }}
       >
         {note.body}
       </p>
@@ -1841,11 +1841,11 @@ function AddPrescriptionModal({
           <h2
             id="add-rx-title"
             className="text-lg font-semibold"
-            style={{ color: "#0a1f44" }}
+            style={{ color: "hsl(var(--ink-1))" }}
           >
             New prescription
           </h2>
-          <p className="text-xs" style={{ color: "#6b7280" }}>
+          <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Clinical fields are immutable after save. To "edit" later,
             add a new prescription and mark this one expired.
           </p>
@@ -1928,7 +1928,7 @@ function AddPrescriptionModal({
                 rows={2}
                 disabled={isPending}
                 className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-                style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+                style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
               />
             </div>
             <div className="md:col-span-2">
@@ -1941,7 +1941,7 @@ function AddPrescriptionModal({
                 rows={2}
                 disabled={isPending}
                 className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-                style={{ borderColor: "#e5e7eb", color: "#0a1f44" }}
+                style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
               />
             </div>
           </div>

@@ -6,7 +6,7 @@
     </linearGradient>
   </defs>
   <g>
-    <text x="0" y="36" font-family="'Inter', -apple-system, BlinkMacSystemFont, sans-serif" font-size="28" font-weight="700" fill="url(#g)" letter-spacing="-0.02em">Penn Fit</text>
+    <text x="0" y="36" font-family="'Inter', -apple-system, BlinkMacSystemFont, sans-serif" font-size="28" font-weight="700" fill="url(#g)" letter-spacing="-0.02em">PennPaps</text>
     <path d="M0 46 Q60 56 120 48" fill="none" stroke="#F4B942" stroke-width="3.5" stroke-linecap="round"/>
   </g>
 </svg>

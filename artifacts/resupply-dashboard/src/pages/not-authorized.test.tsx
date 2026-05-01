@@ -18,18 +18,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { NotAuthorizedPage } from "./not-authorized";
 
-// Mock @clerk/react with the smallest possible surface — useUser()
-// and useClerk() are the only imports the page touches. Re-using a
-// single signOut spy across cases lets us assert it gets called
-// with the documented redirectUrl.
-const signOut = vi.fn();
-vi.mock("@clerk/react", () => ({
-  useUser: () => ({
-    user: {
-      primaryEmailAddress: { emailAddress: "admin@example.com" },
-    },
+// Mock the identity shim. The page reads `email` and `signOut`
+// off useDashboardIdentity(); the underlying provider (Clerk vs
+// in-house) is invisible at this layer.
+const signOut = vi.fn().mockResolvedValue(undefined);
+vi.mock("../lib/identity", () => ({
+  useDashboardIdentity: () => ({
+    email: "admin@example.com",
+    role: null,
+    displayName: null,
+    userId: null,
+    signOut,
   }),
-  useClerk: () => ({ signOut }),
 }));
 
 afterEach(() => {
@@ -38,7 +38,10 @@ afterEach(() => {
   // queryBy* would see TWO copies of the page and the first
   // assertion would fail in a misleading way.
   cleanup();
-  signOut.mockReset();
+  // Clear the call log but keep the mockResolvedValue impl: the
+  // page chains .finally() on the result, so the mock has to
+  // continue returning a Promise across tests.
+  signOut.mockClear();
 });
 
 describe("NotAuthorizedPage", () => {
@@ -72,20 +75,16 @@ describe("NotAuthorizedPage", () => {
       expect(screen.getByText(/Access denied/i)).toBeDefined();
     });
 
-    it("invokes signOut with the documented sign-in redirect when the button is clicked", () => {
+    it("invokes signOut when the button is clicked", () => {
       render(<NotAuthorizedPage reason="not-authorized" />);
 
       fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
 
       expect(signOut).toHaveBeenCalledTimes(1);
-      // The redirectUrl is computed from import.meta.env.BASE_URL,
-      // which vitest defaults to "/" — so the trailing path here is
-      // just "/sign-in". Under vite the BASE_URL ends with a slash
-      // and the `.replace(/\/$/, "")` in the page strips it, hence
-      // no double slash. Asserting the suffix lets the test pass
-      // both at base="/" and at base="/dashboard/".
-      const args = signOut.mock.calls[0][0];
-      expect(args).toEqual({ redirectUrl: expect.stringMatching(/\/sign-in$/) });
+      // The shim's signOut is provider-agnostic and takes no args.
+      // Redirect to /sign-in is handled in the component via
+      // window.location.assign after the promise resolves.
+      expect(signOut.mock.calls[0]).toEqual([]);
     });
   });
 

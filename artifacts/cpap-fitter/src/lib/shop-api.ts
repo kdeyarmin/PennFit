@@ -240,7 +240,7 @@ export interface ReviewItem {
   createdAt: string;
   /**
    * True iff the API found a paid `shop_order_items` row matching
-   * this review's clerkUserId + productId. Server-computed — the
+   * this review's customerId + productId. Server-computed — the
    * client can render a "Verified purchaser" pill but never decide
    * the bit on its own. Older API versions may omit the field;
    * absent is treated as `false` by the UI.

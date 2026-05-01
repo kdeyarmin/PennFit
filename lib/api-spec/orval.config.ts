@@ -14,11 +14,11 @@ const liveApiZodSrc = path.resolve(root, "lib", "api-zod", "src");
 // until it's restarted. The mutator path (custom-fetch.ts) always
 // stays pointed at the live source: orval only reads from it, so it
 // never gets touched by the temp run.
-const apiClientReactSrc = process.env.CODEGEN_OUT_PENN_FIT_CLIENT
-  ? path.resolve(process.env.CODEGEN_OUT_PENN_FIT_CLIENT)
+const apiClientReactSrc = process.env.CODEGEN_OUT_PENNPAPS_CLIENT
+  ? path.resolve(process.env.CODEGEN_OUT_PENNPAPS_CLIENT)
   : liveApiClientReactSrc;
-const apiZodSrc = process.env.CODEGEN_OUT_PENN_FIT_ZOD
-  ? path.resolve(process.env.CODEGEN_OUT_PENN_FIT_ZOD)
+const apiZodSrc = process.env.CODEGEN_OUT_PENNPAPS_ZOD
+  ? path.resolve(process.env.CODEGEN_OUT_PENNPAPS_ZOD)
   : liveApiZodSrc;
 
 // Our exports make assumptions about the title of the API being "Api" (i.e. generated output is `api.ts`).

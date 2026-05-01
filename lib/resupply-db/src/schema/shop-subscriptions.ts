@@ -53,12 +53,13 @@ export const shopSubscriptions = resupplySchema.table(
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
     /**
-     * auth user ID of the subscriber. Required — guest subscriptions
-     * aren't supported (we need a stable account to manage / cancel).
-     * The /shop/checkout endpoint refuses to enter subscription mode
-     * for an anonymous cart, so this is never null in practice.
+     * Shop-customer key of the subscriber. Required — guest
+     * subscriptions aren't supported (we need a stable account to
+     * manage / cancel). The /shop/checkout endpoint refuses to
+     * enter subscription mode for an anonymous cart, so this is
+     * never null in practice.
      */
-    clerkUserId: text("clerk_user_id").notNull(),
+    customerId: text("customer_id").notNull(),
     /**
      * Stripe Subscription ID. Unique — `customer.subscription.created`
      * upserts on this column.
@@ -121,7 +122,7 @@ export const shopSubscriptions = resupplySchema.table(
       .default(sql`now()`),
   },
   (t) => ({
-    clerkUserIdx: index("shop_subscriptions_clerk_user_id_idx").on(t.clerkUserId),
+    customerIdx: index("shop_subscriptions_customer_id_idx").on(t.customerId),
     statusIdx: index("shop_subscriptions_status_idx").on(t.status),
   }),
 );

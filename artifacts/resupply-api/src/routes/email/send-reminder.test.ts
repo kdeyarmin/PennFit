@@ -4,14 +4,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-const getAuthMock = vi.fn();
-const getUserMock = vi.fn();
-vi.mock("@clerk/express", () => ({
-  getAuth: (...a: unknown[]) => getAuthMock(...a),
-  clerkClient: {
-    users: { getUser: (...a: unknown[]) => getUserMock(...a) },
-  },
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
 }));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
 
 function fluent(result: unknown) {
   const obj: Record<string, unknown> = {
@@ -86,17 +89,11 @@ function makeApp(): Express {
 }
 
 function stubVerifiedAdmin(): void {
-  getAuthMock.mockReturnValue({ userId: "user_op" });
-  getUserMock.mockResolvedValue({
-    primaryEmailAddressId: "eml_1",
-    emailAddresses: [
-      {
-        id: "eml_1",
-        emailAddress: ALLOWED_EMAIL,
-        verification: { status: "verified" },
-      },
-    ],
-  });
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = [
@@ -112,6 +109,7 @@ const ENV_KEYS = [
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "RESUPPLY_ADMIN_EMAILS",
   "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
@@ -128,6 +126,8 @@ function setMessagingEnv(): void {
   process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
+  process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
+
   process.env.NODE_ENV = "test";
 }
 
@@ -139,8 +139,7 @@ describe("POST /email/send-reminder", () => {
     selectQueue.length = 0;
     insertQueue.length = 0;
     updateQueue.length = 0;
-    getAuthMock.mockReset();
-    getUserMock.mockReset();
+    mockAdmin.current = null;
     sendEmailMock.mockReset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
     dbStub.select.mockClear();
