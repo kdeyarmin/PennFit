@@ -1,6 +1,5 @@
 // Reset-password page — consumes a `?token=…` URL param and lets
-// the user choose a new password. Renders only when
-// VITE_AUTH_PROVIDER === "in_house".
+// the user choose a new password.
 //
 // Success state is "redirect to /sign-in" — the server has
 // revoked every active session for the user, so even a tab that

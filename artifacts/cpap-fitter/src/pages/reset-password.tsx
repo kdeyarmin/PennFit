@@ -1,8 +1,7 @@
-// Reset-password landing for the cpap-fitter shop. Rendered only
-// when VITE_AUTH_PROVIDER === "in_house". Consumes a `?token=…`
-// URL param. On success the server has revoked every active
-// session for the user, so we redirect back to /sign-in instead of
-// auto-signing-in.
+// Reset-password landing for the cpap-fitter shop. Consumes a
+// `?token=…` URL param. On success the server has revoked every
+// active session for the user, so we redirect back to /sign-in
+// instead of auto-signing-in.
 
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";

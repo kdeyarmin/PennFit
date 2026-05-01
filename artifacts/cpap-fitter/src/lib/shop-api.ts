@@ -282,26 +282,6 @@ export interface ReviewWritePayload {
   body: string;
 }
 
-/**
- * Build the Authorization header from the auth provider's global session, when
- * the SDK has loaded. Returns an empty object when signed-out so
- * public reads still work.
- */
-async function authHeader(): Promise<Record<string, string>> {
-  const clerk = (
-    globalThis as unknown as {
-      Clerk?: { session?: { getToken?: () => Promise<string | null> } | null };
-    }
-  ).Clerk;
-  if (!clerk?.session?.getToken) return {};
-  try {
-    const token = await clerk.session.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
-
 export async function fetchProductReviews(
   productId: string,
   opts?: { cursor?: string; limit?: number },
@@ -336,7 +316,7 @@ export async function fetchReviewAggregates(
 export async function fetchMyReview(
   productId: string,
 ): Promise<MyReview | null> {
-  const headers = { Accept: "application/json", ...(await authHeader()) };
+  const headers = { Accept: "application/json" };
   const res = await fetch(
     `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
     { headers },
@@ -362,7 +342,6 @@ export async function submitReview(
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    ...(await authHeader()),
   };
   const res = await fetch(
     `/resupply-api/shop/products/${encodeURIComponent(productId)}/reviews`,
@@ -387,7 +366,6 @@ export async function updateMyReview(
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    ...(await authHeader()),
   };
   const res = await fetch(
     `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
@@ -398,7 +376,7 @@ export async function updateMyReview(
 }
 
 export async function deleteMyReview(productId: string): Promise<void> {
-  const headers = { Accept: "application/json", ...(await authHeader()) };
+  const headers = { Accept: "application/json" };
   const res = await fetch(
     `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
     { method: "DELETE", headers },
@@ -486,7 +464,7 @@ export async function fetchMyOrders(opts?: {
   if (opts?.cursor) params.set("cursor", opts.cursor);
   if (opts?.limit) params.set("limit", String(opts.limit));
   const qs = params.toString() ? `?${params.toString()}` : "";
-  const headers = { Accept: "application/json", ...(await authHeader()) };
+  const headers = { Accept: "application/json" };
   const res = await fetch(`/resupply-api/shop/me/orders${qs}`, { headers });
   if (!res.ok) {
     throw new Error(`Failed to load your orders (${res.status})`);
@@ -513,7 +491,6 @@ export async function resendOrderReceipt(
 ): Promise<{ sent: true; email: string }> {
   const headers = {
     Accept: "application/json",
-    ...(await authHeader()),
   };
   const res = await fetch(
     `/resupply-api/shop/me/orders/${encodeURIComponent(sessionId)}/resend-receipt`,
@@ -558,7 +535,6 @@ export async function updateOrderShippingAddress(
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    ...(await authHeader()),
   };
   const res = await fetch(
     `/resupply-api/shop/me/orders/${encodeURIComponent(orderId)}/shipping-address`,

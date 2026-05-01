@@ -90,14 +90,12 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function AccountPage() {
   useDocumentTitle("My account");
-  // We render an inline sign-in prompt for signed-out visitors instead
-  // of <Redirect to="/sign-in?…">. Wouter's <Redirect> wrapped inside
-  // Clerk's <Show fallback> renders during the brief Clerk-boot window
-  // and then again on the signed-out branch; the double-mount caused
-  // the page to render blank instead of navigating. Mirroring the
-  // /shop/orders pattern (inline CTA + ?redirect=/account round-trip)
-  // is more graceful UX anyway — the customer sees *why* they're being
-  // asked to sign in instead of a jarring auto-bounce.
+  // We render an inline sign-in prompt for signed-out visitors
+  // instead of <Redirect to="/sign-in?…">. Mirroring the
+  // /shop/orders pattern (inline CTA + ?redirect=/account
+  // round-trip) is more graceful UX — the customer sees *why*
+  // they're being asked to sign in instead of a jarring
+  // auto-bounce.
   return (
     <SignedIn fallback={<SignedOutAccountPrompt />}>
       <AccountInner />
@@ -215,9 +213,9 @@ function AccountInner() {
   //
   //   data.signedIn === true && !data.profile  → the API saw the
   //     session but couldn't materialize a profile row. This IS
-  //     usually a momentary hiccup — Clerk Backend API blip,
-  //     transient DB error during ensureShopCustomerRow, etc.
-  //     "Try again" is the right call here.
+  //     usually a momentary hiccup — transient DB error during
+  //     ensureShopCustomerRow, etc. "Try again" is the right call
+  //     here.
   //
   // The two need different copy + actions because retry-first vs
   // sign-in-first matters: telling someone whose session cookie is
