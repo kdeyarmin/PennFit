@@ -112,7 +112,7 @@ Architecture notes:
 - The new endpoints are intentionally NOT in the OpenAPI spec — this matches the local convention used by the other `/admin/shop/*` endpoints (orders, reviews, inventory), which both dashboards consume via raw fetch.
 - These endpoints log via `req.log` only; no `audit_log` writes. Shop is not patient-PHI surface, so it follows the same posture as the other `/admin/shop/*` routes (audit_log is reserved for `/patients/*` PHI operations).
 - PHI posture: list responses redact email via `redactEmail()`; the detail endpoint returns full email/address. Logs only carry `userId`, counts, and admin identity — never customer email or address.
-- Cross-API admin caveat: the cpap-fitter admin guard runs through the api-server's `requireAdmin` (DB-backed `auth.users.role`) while the new endpoints are gated by the resupply-api's `requireAdmin` (DB role plus the `RESUPPLY_ADMIN_EMAILS` env-var bootstrap). For an account to use the Customers page in any environment, it must be granted the admin role on both APIs — bootstrap the very first admin via `auth:bootstrap-admin` and then grant additional admins from `/admin/team`.
+- Cross-API admin caveat: the cpap-fitter admin guard runs through the api-server's `requireAdmin` (DB-backed `auth.users.role`) while the new endpoints are gated by the resupply-api's `requireAdmin` (also DB-backed by role). For an account to use the Customers page in any environment, it must be granted the admin role on both APIs — bootstrap the very first admin via `auth:bootstrap-admin` and then grant additional admins from `/admin/team`.
 
 ## External Dependencies
 
