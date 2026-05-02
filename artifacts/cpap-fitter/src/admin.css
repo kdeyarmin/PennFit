@@ -1,0 +1,418 @@
+@import "tailwindcss";
+
+/*
+ * PennPaps Admin Console — theme + base + ambient-atmosphere stylesheet.
+ *
+ * Design philosophy: "professional tooling, not marketing surface".
+ * The customer-facing app (cpap-fitter) leans into atmosphere — animated
+ * bloom drifts, dot grids, film grain — because patients arrive once and
+ * we need the page to feel premium at first glance. The admin console is
+ * the OPPOSITE: operators stare at it for eight hours, scanning dense
+ * tables and triaging queues. Atmosphere here is whisper-quiet by design
+ *
+ *   - one fixed navy top band that anchors the workspace
+ *   - one near-imperceptible dot lattice to break up flat fills
+ *   - no continuous animations (motion belongs in micro-interactions —
+ *     hover lifts, focus rings, in-flight spinners — not in the canvas)
+ *
+ * Brand tokens are exposed both as CSS custom properties (so inline
+ * styles in components can reference them) and as a small set of
+ * utility classes that match the customer-app vocabulary
+ * (`glass-card`, `lift-on-hover`, `aurora-divider`, etc.) so the two
+ * applications feel like one product despite being separate SPAs.
+ */
+
+/*
+ * Admin theme is scoped to `.admin-root` (NOT :root) so that loading
+ * admin.css side-effect from a lazy chunk does NOT clobber the
+ * customer storefront's brand tokens (--penn-navy etc.) which differ
+ * in value. Every admin surface (AppShell, admin auth pages,
+ * NotAuthorizedPage) wraps itself in <div className="admin-root">.
+ */
+.admin-root {
+  /* ──────────────────────────────────────────────────────────────────
+   * Brand palette. Single source of truth — every color used by an
+   * admin component should resolve through one of these. Values are
+   * HSL components (no hsl() wrapper) so we can compose alpha via
+   * `hsl(var(--penn-navy) / 0.18)` exactly like the customer app.
+   * ────────────────────────────────────────────────────────────────── */
+  --penn-navy: 218 58% 21%;
+  --penn-navy-deep: 220 64% 13%;
+  --penn-navy-soft: 216 32% 42%;
+  --penn-gold: 38 62% 56%;
+  --penn-gold-soft: 38 70% 80%;
+  --penn-gold-deep: 36 55% 42%;
+  --penn-mist: 210 36% 96%;
+  --penn-platinum: 215 18% 88%;
+
+  /* Surface scale — cool grays tuned to sit calmly under dense tables.
+   * `surface-1` is the page canvas; `surface-2` is the card body;
+   * `surface-3` is for nested rows / hovered states. */
+  --surface-0: 220 28% 97.5%;
+  --surface-1: 220 26% 99%;
+  --surface-2: 0 0% 100%;
+  --surface-3: 220 22% 96%;
+
+  /* Border + text scale. Keeping body text at navy-deep (instead of pure
+   * black) gives the page a slight warm tint that ties back to the brand
+   * without ever feeling "branded". */
+  --ink-1: 220 50% 11%;
+  --ink-2: 218 22% 30%;
+  --ink-3: 218 16% 46%;
+  --ink-muted: 218 14% 58%;
+  --line-1: 218 22% 90%;
+  --line-2: 218 24% 84%;
+
+  /* Status tones. Match the customer-app emerald/rose so badges in both
+   * apps share the same visual language. */
+  --tone-emerald: 152 55% 36%;
+  --tone-amber: 36 92% 46%;
+  --tone-rose: 354 70% 49%;
+  --tone-blue: 215 75% 48%;
+
+  /* Component shape. */
+  --radius-card: 10px;
+  --radius-input: 8px;
+  --radius-pill: 999px;
+
+  /* Elevation scale. Two layers of cool-tinted shadow + an inner
+   * highlight so cards lift off the canvas without going chalky.
+   * Tint resolves through the brand navy so every elevated surface
+   * shares the same colored shadow language. */
+  --shadow-card: 0 1px 2px hsl(var(--penn-navy-deep) / 0.06),
+    0 6px 14px hsl(var(--penn-navy-deep) / 0.05);
+  --shadow-card-hover: 0 1px 2px hsl(var(--penn-navy-deep) / 0.08),
+    0 14px 28px hsl(var(--penn-navy-deep) / 0.11);
+  --shadow-popover: 0 1px 2px hsl(var(--penn-navy-deep) / 0.10),
+    0 18px 36px hsl(var(--penn-navy-deep) / 0.14),
+    0 36px 72px hsl(var(--penn-navy-deep) / 0.10);
+
+  /* Brand glow used on the navy header band — refined champagne. */
+  --header-glow: radial-gradient(
+    ellipse 80% 100% at 50% 0%,
+    hsl(var(--penn-gold) / 0.20) 0%,
+    hsl(var(--penn-navy) / 0) 70%
+  );
+}
+
+/*
+ * shadcn-flavoured colour token bridge. The four PennPaps storefront
+ * admin pages ported from cpap-fitter (Task #37 consolidation) were
+ * authored against the shadcn naming convention (`text-muted-
+ * foreground`, `bg-muted`, `border-border`, `text-primary`,
+ * `text-destructive`, …). The dashboard's own design system uses a
+ * different vocabulary (`--ink-2`, `--surface-3`, `--line-1`, …).
+ *
+ * Rather than rewriting the four pages, we map the shadcn token
+ * names onto the dashboard's existing Penn-brand variables via a
+ * small `@theme inline` block. Tailwind v4 picks these up as
+ * first-class colour utilities so `bg-muted`, `text-primary`, etc.
+ * resolve to brand-coherent colours instead of falling through to
+ * an unstyled default.
+ *
+ * Scope: this bridge exists ONLY for the storefront-admin pages.
+ * Dashboard-native components should keep using the explicit
+ * `--ink-*` / `--surface-*` / `--penn-*` vocabulary above; mixing
+ * the two systems in new code defeats the point of the bridge.
+ */
+@theme inline {
+  --color-background: hsl(var(--surface-1));
+  --color-foreground: hsl(var(--ink-1));
+  --color-border: hsl(var(--line-1));
+  --color-input: hsl(var(--line-1));
+  --color-muted: hsl(var(--surface-3));
+  --color-muted-foreground: hsl(var(--ink-3));
+  --color-primary: hsl(var(--penn-navy));
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-destructive: hsl(var(--tone-rose));
+  --color-destructive-foreground: hsl(0 0% 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.admin-root {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  color: hsl(var(--ink-1));
+  background-color: hsl(var(--surface-0));
+  /* Whisper-quiet ambient atmosphere — see file header. Two corner
+   * blooms (both behind the navy top band so they only graze the
+   * sidebar / content edges) plus a fixed bottom plinth. No animation
+   * here — the dashboard is a work surface, motion lives in
+   * interactions. */
+  background-image:
+    radial-gradient(ellipse 60% 40% at 0% 100%, hsl(var(--penn-navy) / 0.055), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 100% 0%, hsl(var(--penn-gold) / 0.07), transparent 70%),
+    radial-gradient(ellipse 30% 20% at 100% 100%, hsl(var(--penn-platinum) / 0.45), transparent 70%);
+  background-attachment: fixed;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
+}
+
+/* Whisper dot-grid — only barely perceptible against light surfaces,
+ * but enough to keep big flat areas (e.g. empty queue states) from
+ * looking dead. Strong edge-mask so the grid never competes with
+ * card content. */
+.admin-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    hsl(var(--penn-navy) / 0.05) 1px,
+    transparent 0
+  );
+  background-size: 28px 28px;
+  mask-image: radial-gradient(
+    ellipse 70% 60% at 50% 40%,
+    black 5%,
+    transparent 80%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 70% 60% at 50% 40%,
+    black 5%,
+    transparent 80%
+  );
+  opacity: 0.6;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px hsl(var(--surface-2)),
+    0 0 0 4px hsl(var(--penn-navy) / 0.55);
+  border-radius: var(--radius-input);
+}
+
+/* Branded scrollbar — webkit only (Firefox falls back to its default).
+ * Matches the surface scale so the bar reads as "part of the page"
+ * rather than the OS chrome. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--penn-navy) / 0.18);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--penn-navy) / 0.32);
+  background-clip: content-box;
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * Component utility classes — mirror the cpap-fitter vocabulary so a
+ * developer who's worked on the customer app can recognize them here
+ * without re-learning a parallel system.
+ * ──────────────────────────────────────────────────────────────────── */
+
+@layer utilities {
+  /* Solid, low-elevation card surface. The `hover:` variant doesn't
+   * lift — that's reserved for `lift-on-hover` rows. */
+  .surface-card {
+    background-color: hsl(var(--surface-2));
+    border: 1px solid hsl(var(--line-1));
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Frosted glass for popovers / overlays. Less translucent than the
+   * customer app's glass since dashboard popovers usually overlap dense
+   * tables and need legibility. */
+  .glass-card {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--surface-2) / 0.94) 0%,
+      hsl(var(--surface-2) / 0.86) 100%
+    );
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid hsl(var(--line-2) / 0.85);
+    box-shadow: var(--shadow-popover);
+  }
+
+  /* Lift-on-hover for table rows / clickable cards. */
+  .lift-on-hover {
+    transition:
+      transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-color 200ms ease;
+  }
+  .lift-on-hover:hover {
+    transform: translateY(-1px);
+    border-color: hsl(var(--penn-navy) / 0.25);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  /* Aurora divider — same gradient as the customer-app version, used
+   * here under the navy header to break up the band-to-canvas
+   * transition with a thread of brand color. */
+  .aurora-divider {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--penn-gold) / 0.55) 35%,
+      hsl(var(--penn-gold) / 0.85) 50%,
+      hsl(var(--penn-gold) / 0.55) 65%,
+      transparent 100%
+    );
+  }
+
+  /* The navy chrome band that hosts the brand logo + global lookup +
+   * sign-out. Adds a subtle radial gold glow so the band reads as a
+   * crafted surface, not a flat block. */
+  .brand-band {
+    background:
+      var(--header-glow),
+      linear-gradient(
+        180deg,
+        hsl(var(--penn-navy-deep)) 0%,
+        hsl(var(--penn-navy)) 100%
+      );
+  }
+
+  /* Sidebar surface — a hairline gradient toward the content area so
+   * the sidebar reads as a distinct surface without a hard border. */
+  .sidebar-surface {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--surface-2)) 0%,
+      hsl(var(--surface-1)) 100%
+    );
+    border-right: 1px solid hsl(var(--line-1));
+  }
+
+  /* Active sidebar nav item — navy background with a gold leading
+   * accent. Replaces the hardcoded `style={{ borderLeft: ... }}`
+   * pattern in AppShell.tsx. */
+  .nav-item-active {
+    background-color: hsl(var(--penn-navy));
+    color: hsl(0 0% 100%);
+    box-shadow: inset 3px 0 0 hsl(var(--penn-gold));
+  }
+  .nav-item-idle {
+    color: hsl(var(--ink-1));
+    box-shadow: inset 3px 0 0 transparent;
+    transition: background-color 150ms ease, box-shadow 150ms ease;
+  }
+  .nav-item-idle:hover {
+    background-color: hsl(var(--surface-3));
+    box-shadow: inset 3px 0 0 hsl(var(--penn-gold) / 0.4);
+  }
+
+  /* Iconographic halos — same vocabulary as the customer app. */
+  .icon-halo-navy {
+    background: radial-gradient(
+      circle at 30% 25%,
+      hsl(var(--penn-navy) / 0.18),
+      hsl(var(--penn-navy) / 0.06) 70%
+    );
+    box-shadow:
+      0 0 0 1px hsl(var(--penn-navy) / 0.18) inset,
+      0 6px 16px hsl(var(--penn-navy) / 0.14);
+    color: hsl(var(--penn-navy));
+  }
+  .icon-halo-gold {
+    background: radial-gradient(
+      circle at 30% 25%,
+      hsl(var(--penn-gold) / 0.30),
+      hsl(var(--penn-gold) / 0.10) 70%
+    );
+    box-shadow:
+      0 0 0 1px hsl(var(--penn-gold) / 0.40) inset,
+      0 6px 16px hsl(var(--penn-gold) / 0.22);
+    color: hsl(var(--penn-navy));
+  }
+
+  /* Skeleton shimmer for loading rows — cool gray with a slow,
+   * GPU-cheap traveling highlight. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: hsl(var(--surface-3));
+    border-radius: 6px;
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--surface-2) / 0.9) 50%,
+      transparent 100%
+    );
+    transform: translateX(-100%);
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+  @keyframes skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Subtle entrance animation for KPI tiles / panels — same name as
+   * the customer-app version so the two SPAs feel like one product. */
+  @keyframes shimmer-in {
+    0% {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-shimmer-in {
+    animation: shimmer-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  /* Status-tone callouts. Tunes the rose/amber/emerald to the brand
+   * palette so a "Past due" pill in the resupply queue and a
+   * "Refunded" pill in the shop returns queue read as the same
+   * design language. */
+  .tone-emerald {
+    background-color: hsl(var(--tone-emerald) / 0.12);
+    color: hsl(var(--tone-emerald) / 1);
+    border: 1px solid hsl(var(--tone-emerald) / 0.30);
+  }
+  .tone-amber {
+    background-color: hsl(var(--tone-amber) / 0.14);
+    color: hsl(38 80% 28%);
+    border: 1px solid hsl(var(--tone-amber) / 0.40);
+  }
+  .tone-rose {
+    background-color: hsl(var(--tone-rose) / 0.10);
+    color: hsl(var(--tone-rose) / 1);
+    border: 1px solid hsl(var(--tone-rose) / 0.30);
+  }
+  .tone-navy {
+    background-color: hsl(var(--penn-navy) / 0.08);
+    color: hsl(var(--penn-navy));
+    border: 1px solid hsl(var(--penn-navy) / 0.22);
+  }
+}

@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -109,10 +109,40 @@ const VerifyEmailPage = lazy(() =>
     default: m.VerifyEmailPage,
   })),
 );
-// Admin pages were lifted out of the cpap-fitter storefront during the
-// Task #37 consolidation. Staff now use the Penn Resupply Console
-// (`artifacts/resupply-dashboard`) — the storefront only renders
-// patient-facing routes (shop, fitter, account, auth).
+
+// Admin auth pages — separate sign-in flow because admins post to
+// /resupply-api/auth/* (allowlist-gated) while customers post to
+// /api/auth/* (open self-signup). The shared `pf_session` cookie is
+// the same, but the entry pages are distinct so a typo in the
+// password page can't accidentally promote a customer into the
+// console-allowlist check or vice versa.
+const AdminSignInPage = lazy(() =>
+  import("@/pages/admin/sign-in").then((m) => ({ default: m.SignInPage })),
+);
+const AdminForgotPasswordPage = lazy(() =>
+  import("@/pages/admin/forgot-password").then((m) => ({
+    default: m.ForgotPasswordPage,
+  })),
+);
+const AdminResetPasswordPage = lazy(() =>
+  import("@/pages/admin/reset-password").then((m) => ({
+    default: m.ResetPasswordPage,
+  })),
+);
+const AdminVerifyEmailPage = lazy(() =>
+  import("@/pages/admin/verify-email").then((m) => ({
+    default: m.VerifyEmailPage,
+  })),
+);
+
+// Gated admin console — bundles all 28 admin pages, the AppShell
+// chrome, and the generated resupply-api client into a single chunk
+// loaded only when a staff user navigates to /admin/*. Keeps the
+// patient storefront bundle clean.
+const AdminConsoleRoute = lazy(() =>
+  import("@/pages/admin/console").then((m) => ({ default: m.ConsoleRoute })),
+);
+
 const Reminders = lazy(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -176,6 +206,28 @@ function GuardedResults() {
   if (!measurements) return <Redirect to="/" />;
   return <Results />;
 }
+/**
+ * LegacyResupplyRedirect
+ *
+ * Forward old `/resupply/*` URLs to the new `/admin/*` mount while
+ * preserving the query string and hash. wouter's `<Redirect to>`
+ * only carries the path, which would silently strip `?token=...`
+ * from links like `/resupply/reset-password?token=abc` — breaking
+ * password-reset and email-verify flows. We use an effect that calls
+ * `setLocation` with the full path+search+hash so SPA navigation
+ * lands on the right place with the original token intact.
+ */
+function LegacyResupplyRedirect({ rest }: { rest: string }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const path = rest ? `/admin/${rest}` : "/admin";
+    setLocation(`${path}${search}${hash}`, { replace: true });
+  }, [rest, setLocation]);
+  return null;
+}
+
 function GuardedOrder() {
   const { chosenMask } = useFitterStore();
   if (!chosenMask) return <Redirect to="/results" />;
@@ -291,16 +343,43 @@ function TopRouter() {
         <Route path="/verify-email" component={VerifyEmailPage} />
 
         {/*
-          Admin / staff routes were lifted out of the storefront in
-          the Task #37 consolidation. Penn staff sign in at the
-          Penn Resupply Console (`artifacts/resupply-dashboard`),
-          which shares the same `pf_session` cookie as the storefront
-          via the unified `/api/auth` + `/resupply-api/auth` mount.
-          A patient who lands on `/admin/*` here falls through to
-          the catch-all <PatientRouter> below and ends up on the
-          NotFound page, which is the desired UX for a wrong-app
-          deep link.
+          Old `/resupply/*` deep links — the staff console used to
+          live in its own SPA mounted at /resupply before the
+          consolidation. Keep these working so existing bookmarks,
+          email links, and SOP docs don't break overnight.
+          The proxy still routes /resupply/* to this artifact (see
+          artifact.toml), and we forward to the new /admin/* path.
         */}
+        <Route path="/resupply">
+          <LegacyResupplyRedirect rest="" />
+        </Route>
+        <Route path="/resupply/:rest*">
+          {(params) => (
+            <LegacyResupplyRedirect rest={params["rest*"] ?? ""} />
+          )}
+        </Route>
+
+        {/*
+          Admin / staff routes. The auth pages (sign-in, forgot,
+          reset, verify) are mounted ABOVE the gated console route
+          so a signed-out admin can actually reach the sign-in form.
+          Everything else under /admin/* funnels into
+          <AdminConsoleRoute>, which probes /resupply-api/auth/me
+          (session) → /resupply-api/admin/me (allowlist) before
+          mounting the AppShell + admin Switch.
+        */}
+        <Route path="/admin/sign-in" component={AdminSignInPage} />
+        <Route
+          path="/admin/forgot-password"
+          component={AdminForgotPasswordPage}
+        />
+        <Route
+          path="/admin/reset-password"
+          component={AdminResetPasswordPage}
+        />
+        <Route path="/admin/verify-email" component={AdminVerifyEmailPage} />
+        <Route path="/admin" component={AdminConsoleRoute} />
+        <Route path="/admin/:rest*" component={AdminConsoleRoute} />
 
         {/* Everything else falls through to the patient experience. */}
         <Route component={PatientRouter} />
