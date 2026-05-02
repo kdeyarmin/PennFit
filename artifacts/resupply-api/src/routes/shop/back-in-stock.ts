@@ -34,7 +34,12 @@ const bodySchema = z
       .trim()
       .min(3)
       .max(120)
-      .regex(/^prod_[A-Za-z0-9]+$/, "must be a Stripe product id"),
+      // Accept real Stripe ids (`prod_<base62>`) AND preview-mode
+      // ids like `prod_preview_mask-nasal-pillows-medium` so the
+      // notify-me flow works in dev and on demo SKUs. The `prod_`
+      // prefix gate prevents arbitrary input from being treated
+      // as a product reference.
+      .regex(/^prod_[A-Za-z0-9_-]+$/, "must be a Stripe product id"),
     email: z.string().trim().toLowerCase().email().max(200),
     /** Honeypot — bots fill it, humans don't see it. */
     website: z.string().max(200).optional(),

@@ -49,6 +49,7 @@ import {
 } from "@/lib/shop-api";
 import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
+import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 
 /** Bulk aggregate map keyed by Stripe productId. Empty until loaded. */
 type AggregateMap = Record<string, { count: number; averageRating: number }>;
@@ -239,7 +240,10 @@ export function Shop() {
       ) : (
         <>
           {data?.previewMode && <PreviewModeBanner />}
-          <div className="space-y-16 mt-12">
+          <div className="mt-12">
+            <RecentlyViewedStrip products={data?.products ?? []} />
+          </div>
+          <div className="space-y-16 mt-8">
             {sections.map((s) => (
               <CategorySection
                 key={s.category}

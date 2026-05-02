@@ -37,8 +37,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
+import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { StarRating } from "@/components/star-rating";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
+import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   DEFAULT_LOW_STOCK_THRESHOLD,
@@ -64,9 +66,13 @@ type LoadState = "loading" | "ready" | "not_found" | "error";
 
 export function ShopProductDetail({ productId }: { productId: string }) {
   const [product, setProduct] = useState<ShopProductView | null>(null);
+  // Full catalog kept around so RecentlyViewedStrip can resolve other
+  // products by id without firing a second list request.
+  const [catalog, setCatalog] = useState<ShopProductView[]>([]);
   const [previewMode, setPreviewMode] = useState(false);
   const [state, setState] = useState<LoadState>("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const { recordView } = useRecentlyViewed();
 
   // Reviews list (paginated) + aggregate. We store the whole
   // ReviewListResponse so the aggregate doesn't go stale on "Show
@@ -177,9 +183,14 @@ export function ShopProductDetail({ productId }: { productId: string }) {
           return;
         }
         setProduct(found);
+        setCatalog(catalog.products);
         setPreviewMode(catalog.previewMode);
         setReviewPages(reviews);
         setState("ready");
+        // Track this view AFTER we know the product id resolved to a
+        // real catalog row — we don't want to record a view for a
+        // 404'd or otherwise-missing id.
+        recordView(found.id);
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -189,7 +200,9 @@ export function ShopProductDetail({ productId }: { productId: string }) {
     return () => {
       active = false;
     };
-  }, [productId]);
+    // recordView is stable (useCallback []), but eslint-react-hooks
+    // can't see through the hook so we depend on it explicitly.
+  }, [productId, recordView]);
 
   // Load the caller's own review for this product when the auth provider is ready.
   // Refetches on sign-in/out via the user-id key dep below.
@@ -293,6 +306,11 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   return (
     <PageShell>
       <Hero product={product} previewMode={previewMode} />
+      <RecentlyViewedStrip
+        products={catalog}
+        excludeProductId={product.id}
+        compact
+      />
       <ReviewsSection
         productId={productId}
         reviews={reviewPages}
