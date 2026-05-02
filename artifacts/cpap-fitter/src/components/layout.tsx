@@ -7,6 +7,7 @@ import { useCart } from "@/hooks/use-cart";
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
+import { MobileCtaBar } from "@/components/mobile-cta-bar";
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -202,7 +203,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
          * keep an explicit focus-visible ring so keyboard users actually
          * see where focus landed when they activate the skip link.
          */
-        className="flex-1 flex flex-col relative focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="flex-1 flex flex-col relative focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background pb-20 md:pb-0"
       >
         {children}
       </main>
@@ -293,6 +294,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </footer>
       <PwaInstallPrompt />
+      <MobileCtaBar />
     </div>
   );
 }

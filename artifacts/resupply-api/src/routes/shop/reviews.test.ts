@@ -147,6 +147,27 @@ const VALID_BODY = {
   body: "Held a great seal all night and the strap is comfy.",
 };
 
+describe("GET /shop/reviews/site-aggregate", () => {
+  it("returns count + averageRating for the trust strip", async () => {
+    selectQueue.push([{ count: 4, avg: 4.75 }]);
+    const res = await request(makeApp()).get(
+      "/resupply-api/shop/reviews/site-aggregate",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ count: 4, averageRating: 4.8 });
+    expect(res.headers["cache-control"]).toContain("max-age=300");
+  });
+
+  it("returns zeros cleanly when there are no approved reviews", async () => {
+    selectQueue.push([{ count: 0, avg: 0 }]);
+    const res = await request(makeApp()).get(
+      "/resupply-api/shop/reviews/site-aggregate",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ count: 0, averageRating: 0 });
+  });
+});
+
 describe("POST /shop/products/:productId/reviews", () => {
   it("rejects unauthenticated requests with 401", async () => {
     const res = await request(makeApp())

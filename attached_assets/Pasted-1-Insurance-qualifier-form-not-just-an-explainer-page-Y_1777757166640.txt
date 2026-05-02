@@ -1,0 +1,29 @@
+1. Insurance qualifier form — not just an explainer page
+Your /insurance page is content-only. Aeroflow's entire growth engine is a 90-second eligibility form (carrier, member ID, DOB, prescribing doctor) that returns a real-time qualification. Even a "lead-capture" version that emails the team to verify within 24h would convert dramatically better than the current explainer. Bonus: dovetails with the existing prescriptions table.
+2. Machine-on-file / "Your CPAP profile"
+You have no record of which machine the patient owns. Once you do, you unlock:
+•	Compatible-supplies filtering on the shop ("show only items that fit your AirSense 11")
+•	Smart resupply schedules per machine
+•	Targeted firmware/recall notices
+Lofta and ResMed myAir both anchor everything around the device. One small patient_devices table + an account-page card.
+3. Bundle builder for resupply
+1800CPAP's #1 SKU type is the all-in-one resupply bundle (cushions + filters + tubing for one price). You sell the parts but don't bundle them. A "build my 90-day resupply" flow reduces decision fatigue and lifts AOV. Could be entirely a frontend/storefront change against existing products + a backend "bundle" SKU type.
+4. Subscription self-service surface
+Subscriptions exist in your DB (shop_subscriptions, admin metrics route) but I don't see a customer-facing pause / skip next shipment / change cadence / swap mask size UX. This is the #1 reason patients churn off resupply — they can't self-serve and call the competitor instead.
+5. Long-tail content / SEO
+Root keyword "sleep apnea" is KD 88 — unwinnable. The leading sites win on long-tail ("CPAP humidifier too dry," "AirSense 11 vs 10," "mask leaks at the bridge of nose"). Your /learn is well-organized but only 14 articles. A simple /learn/[slug] MDX or DB-backed blog template + 30 long-tail articles drives qualified traffic at very low cost.
+Medium-leverage adds
+•	Trust-signal strip below the hero: "Local · Medicare-accepted · 30-day comfort guarantee · 4.8★ from N reviews." Pulled live from the existing reviews aggregate.
+•	Shop product page: "compatible accessories" cross-sell rail — drives AOV; you have the catalog to do it.
+•	"Reorder last shipment" 1-click on /account and order-success page (you have the order data).
+•	Referral / "tell a fellow CPAP user" — DME is an extremely word-of-mouth-driven category. 
+•	Live chat / AI assistant during business hours — you already run an inbound SMS conversation system; surfacing the same admin agents via a website widget closes the "I have one question before I buy" gap.
+•	Apple Health / Health Connect read-only — pulls last night's sleep duration into the account dashboard. Cheap to build, very on-brand.
+Brand / UX polish
+•	Hero rotation of social proof: "PennPaps fitted 3,142 masks this year" (live counter) is more compelling than the current static intro paragraph.
+•	Before/after stories — 2-3 short "Met Linda. CPAP changed her mornings" cards. Use stock photos until you have real ones with consent.
+•	Replace generic stock-photo aesthetic on /learn cards with a single illustrated style — Lofta and Hims/Ro both win on consistent illustration; you currently use icon halos which is good but mixed.
+•	Sticky bottom-bar CTA on mobile ("Get fitted · Shop · Talk to us") — competitors universally do this; conversion uplift is well-documented.
+Strategic / longer-horizon plays
+•	Compliance tracking via ResMed AirView / Philips Care Orchestrator integration — required for some insurance plans, valuable to your billing workflow, and lets the patient see "you're at 87% adherence this month" badges.
+

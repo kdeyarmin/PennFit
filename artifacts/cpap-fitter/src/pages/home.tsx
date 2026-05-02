@@ -15,6 +15,7 @@ import {
   UserCircle2,
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
+import { TrustSignalStrip } from "@/components/trust-signal-strip";
 
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
@@ -80,6 +81,9 @@ export function Home() {
         </div>
 
       </div>
+
+      {/* Trust-signal strip — live aggregate review rating + static brand promises */}
+      <TrustSignalStrip />
 
       {/* Three ways to use PennPaps — surfaces shop + accounts alongside the fitter */}
       <div className="w-full mb-20 animate-shimmer-in" style={{ animationDelay: "60ms" }}>

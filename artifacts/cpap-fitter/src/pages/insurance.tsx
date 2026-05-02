@@ -29,6 +29,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { InsuranceLeadForm } from "@/components/insurance-lead-form";
 
 type Step = {
   Icon: React.ComponentType<{ className?: string }>;
@@ -219,6 +220,11 @@ export function Insurance() {
           claim — you just get the supplies.
         </p>
       </header>
+
+      {/* Lead-capture form — primary conversion path on this page */}
+      <section id="verify">
+        <InsuranceLeadForm />
+      </section>
 
       {/* Top-level promise */}
       <section className="grid sm:grid-cols-3 gap-4">

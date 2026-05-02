@@ -576,6 +576,91 @@ export async function updateOrderShippingAddress(
   };
 }
 
+// ────────────────────────────────────────── site-wide reviews aggregate
+//
+// Powers the trust-signal strip on the marketing home page. One
+// number (count) and one float (averageRating) across ALL approved
+// reviews — the rating chip self-hides when count === 0 so a fresh
+// install never shows "0.0★ from 0 reviews".
+
+export interface ShopReviewsSiteAggregate {
+  count: number;
+  /** Mean star rating, 0–5, rounded to one decimal. */
+  averageRating: number;
+}
+
+export async function getShopReviewsSiteAggregate(): Promise<ShopReviewsSiteAggregate> {
+  const res = await fetch("/resupply-api/shop/reviews/site-aggregate", {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`http_${res.status}`);
+  }
+  const body = (await res.json()) as ShopReviewsSiteAggregate;
+  return {
+    count: typeof body.count === "number" ? body.count : 0,
+    averageRating:
+      typeof body.averageRating === "number" ? body.averageRating : 0,
+  };
+}
+
+// ─────────────────────────────────────────── insurance lead-capture form
+//
+// Posts to /shop/insurance-leads. Server fires two SendGrid emails
+// (team notification + patient confirmation). Server always 200s
+// once the body validates and the rate limit clears, even when
+// SendGrid hiccups — the team also has the inbox to fall back on.
+
+export interface InsuranceLeadInput {
+  fullName: string;
+  email: string;
+  phone: string;
+  dateOfBirth: string;
+  insuranceCarrier: string;
+  memberId: string;
+  groupNumber: string | null;
+  prescribingPhysician: string | null;
+  notes: string | null;
+  /** Honeypot — must be passed through but should always be empty. */
+  website: string;
+}
+
+export async function submitInsuranceLead(
+  input: InsuranceLeadInput,
+): Promise<{ ok: true; delivered: boolean }> {
+  const res = await fetch("/resupply-api/shop/insurance-leads", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    if (code === "rate_limited") {
+      throw new Error(
+        "We've received a lot of requests from your network. Please wait a few minutes and try again, or call us.",
+      );
+    }
+    if (code === "invalid_body") {
+      throw new Error(
+        "Please double-check the form — one of the fields didn't look right.",
+      );
+    }
+    throw new Error(
+      "Something went wrong on our end. Please try again or call us.",
+    );
+  }
+  return (await res.json()) as { ok: true; delivered: boolean };
+}
+
 export function formatMoneyCents(cents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

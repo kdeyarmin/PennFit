@@ -398,6 +398,33 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
   res.json({ aggregates });
 });
 
+// Site-wide aggregate across ALL approved reviews — powers the
+// trust-signal strip on the marketing home page. One COUNT + one
+// AVG; the trust strip caches client-side via React Query so this
+// runs at most a handful of times per visitor.
+//
+// Returns 0/0 cleanly when no reviews exist (fresh install) so the
+// frontend can hide the strip without a special-case.
+router.get("/shop/reviews/site-aggregate", async (_req, res) => {
+  const db = drizzle(getDbPool());
+  const rows = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      avg: sql<number>`coalesce(avg(${shopReviews.rating}), 0)::float`,
+    })
+    .from(shopReviews)
+    .where(eq(shopReviews.status, "approved"));
+  const row = rows[0] ?? { count: 0, avg: 0 };
+  // 5 minutes of public CDN-friendly caching is fine — a brand-new
+  // approved review showing up in 5 minutes vs. immediately is
+  // imperceptible on a marketing surface.
+  res.set("Cache-Control", "public, max-age=300, s-maxage=300");
+  res.json({
+    count: row.count,
+    averageRating: row.count === 0 ? 0 : Math.round(row.avg * 10) / 10,
+  });
+});
+
 // ────────────────────────────────────────────────────────── author endpoints
 
 router.post(
