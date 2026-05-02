@@ -65,11 +65,14 @@ export function PwaInstallPrompt() {
     // Hide immediately if the user is already running in standalone
     // mode (i.e. they already installed) — no point showing an
     // install prompt.
+    // iOS Safari exposes a non-standard `standalone` boolean on
+    // `navigator` to indicate the page is running as an installed
+    // home-screen PWA. It's not part of the lib.dom type, so we
+    // describe it locally with a typed extension instead of `any`.
+    type NavigatorWithStandalone = Navigator & { standalone?: boolean };
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
-      // iOS Safari standalone PWA flag
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (navigator as any).standalone === true;
+      (navigator as NavigatorWithStandalone).standalone === true;
     if (standalone) return;
 
     const onPrompt = (e: Event) => {
