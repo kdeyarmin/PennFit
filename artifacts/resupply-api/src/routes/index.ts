@@ -14,6 +14,7 @@ import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
+import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import auditRouter from "./audit/index.js";
 import conversationsRouter from "./conversations/index.js";
 import dashboardRouter from "./dashboard/index.js";
@@ -61,6 +62,10 @@ router.use(abandonedCartsRouter);
 // publicly visible after an admin approves them. requireAdmin gate
 // is on the router itself.
 router.use(shopReviewsAdminRouter);
+// /admin/shop/insurance-leads/* — durable queue + status mutations
+// for submissions to the public POST /shop/insurance-leads form.
+// requireAdmin gate is on the router itself.
+router.use(insuranceLeadsAdminRouter);
 // /admin/shop/products/* — operator tooling for the cash-pay catalog
 // itself. Today: PATCH stock_count metadata on a Stripe Product.
 // requireAdmin gate is on the router itself.

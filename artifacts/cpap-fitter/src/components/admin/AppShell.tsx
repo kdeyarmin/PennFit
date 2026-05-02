@@ -49,6 +49,11 @@ const NAV_LINKS: ReadonlyArray<{
     matchPrefix: "/admin/shop/abandoned-carts",
   },
   {
+    href: "/admin/shop/insurance-leads",
+    label: "Insurance Leads",
+    matchPrefix: "/admin/shop/insurance-leads",
+  },
+  {
     href: "/admin/shop/returns",
     label: "Returns & RMAs",
     matchPrefix: "/admin/shop/returns",

@@ -18,6 +18,7 @@ export * from "./shop-abandoned-carts";
 export * from "./shop-reviews";
 export * from "./shop-order-items";
 export * from "./shop-returns";
+export * from "./insurance-leads";
 export * from "./csr-macros";
 export * from "./admin-users";
 export * from "./auth";

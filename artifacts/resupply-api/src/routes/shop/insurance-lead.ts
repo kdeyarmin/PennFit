@@ -14,14 +14,24 @@
 //     the workflow, and we don't need a Redis dependency for a
 //     single-form rate limit.
 //
-// No DB writes today: the team works the email inbox. We log a
-// counts-only audit line so we can prove submission volume without
-// exposing PHI in the audit table.
+// Persistence: every submission that passes validation + the
+// honeypot + the rate limit is inserted into `resupply.insurance_leads`
+// so the admin queue page (/admin/shop/insurance-leads) can work the
+// list independently of email outcomes. The DB write is best-effort
+// — if the insert fails (DB outage, schema drift) we still send the
+// SendGrid emails and 200 the patient; ops gets a warn log line.
+//
+// We also log a counts-only audit line so we can prove submission
+// volume without exposing PHI in the audit table.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { sendInsuranceLeadEmails } from "../../lib/insurance-lead-email";
+import {
+  recordInsuranceLead,
+  stampInsuranceLeadDelivery,
+} from "../../lib/insurance-lead-record";
 
 const router: IRouter = Router();
 
@@ -97,15 +107,37 @@ router.post("/shop/insurance-leads", async (req, res) => {
     return;
   }
 
-  const ipKey =
-    (req.ip ||
-      req.socket?.remoteAddress ||
-      req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
-      "unknown") + ":insurance-lead";
+  const ip =
+    req.ip ||
+    req.socket?.remoteAddress ||
+    req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
+    "unknown";
+  const ipKey = ip + ":insurance-lead";
   if (rateLimited(ipKey)) {
     res.status(429).json({ error: "rate_limited" });
     return;
   }
+
+  // DB persistence first (best-effort) so that even if SendGrid
+  // throws/hangs after this point, the row is in the admin queue.
+  // recordInsuranceLead never throws — it logs + returns id=null on
+  // failure.
+  const persisted = await recordInsuranceLead({
+    fullName: data.fullName,
+    email: data.email,
+    phone: data.phone,
+    dateOfBirth: data.dateOfBirth,
+    insuranceCarrier: data.insuranceCarrier,
+    memberId: data.memberId,
+    groupNumber: data.groupNumber,
+    prescribingPhysician: data.prescribingPhysician,
+    notes: data.notes,
+    submitterIp: ip === "unknown" ? null : ip,
+    userAgent:
+      typeof req.headers["user-agent"] === "string"
+        ? req.headers["user-agent"].slice(0, 500)
+        : null,
+  });
 
   const result = await sendInsuranceLeadEmails({
     fullName: data.fullName,
@@ -119,12 +151,21 @@ router.post("/shop/insurance-leads", async (req, res) => {
     notes: data.notes,
   });
 
+  // Stamp the SendGrid outcomes on the row we just inserted (no-op
+  // if persistence failed and id is null).
+  await stampInsuranceLeadDelivery(persisted.id, {
+    notificationDelivered: result.notificationDelivered,
+    confirmationDelivered: result.confirmationDelivered,
+  });
+
   // Counts-only log — never the patient's PHI.
   req.log?.info?.(
     {
       configured: result.configured,
       notificationDelivered: result.notificationDelivered,
       confirmationDelivered: result.confirmationDelivered,
+      persisted: persisted.id !== null,
+      persistErr: persisted.error,
       err: result.error,
     },
     "shop/insurance-leads: submission processed",

@@ -12,6 +12,16 @@ vi.mock("../../lib/insurance-lead-email", () => ({
   sendInsuranceLeadEmails: (...args: unknown[]) => sendMock(...args),
 }));
 
+// Stub the DB-write helper so the route's tests don't need a real
+// pool. The default success shape mirrors a healthy insert; any
+// individual case can override via mockResolvedValueOnce.
+const recordMock = vi.fn();
+const stampMock = vi.fn();
+vi.mock("../../lib/insurance-lead-record", () => ({
+  recordInsuranceLead: (...args: unknown[]) => recordMock(...args),
+  stampInsuranceLeadDelivery: (...args: unknown[]) => stampMock(...args),
+}));
+
 import insuranceLeadRouter, {
   _resetInsuranceLeadRateBucketForTests,
 } from "./insurance-lead";
@@ -39,6 +49,10 @@ beforeEach(() => {
     notificationDelivered: true,
     confirmationDelivered: true,
   });
+  recordMock.mockReset();
+  recordMock.mockResolvedValue({ id: "lead_test_1" });
+  stampMock.mockReset();
+  stampMock.mockResolvedValue(undefined);
   _resetInsuranceLeadRateBucketForTests();
 });
 
