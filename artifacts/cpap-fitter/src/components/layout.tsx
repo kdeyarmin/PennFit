@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ShieldCheck, Menu, X, ShoppingCart, Package } from "lucide-react";
+import { ShieldCheck, Menu, X, Package } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
-import { useCart } from "@/hooks/use-cart";
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
+import { MiniCart } from "@/components/shop/mini-cart";
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -30,10 +30,10 @@ const navLinks = [
   { href: "/faq", label: "FAQ" },
 ];
 
-// CartNavIcon — small cart link with a count badge for the header.
-// Lives in this file because it's a layout concern (header chrome) and
-// the only consumer is the Layout itself; extracting to its own file
-// would just be indirection for a 20-line component.
+// (CartNavIcon was replaced by MiniCart — see
+// components/shop/mini-cart.tsx. The header now opens a popover
+// with the current cart contents instead of navigating away.)
+//
 // "Your orders" header link — only rendered for signed-in visitors.
 // Lives next to the cart icon so the two shop affordances are
 // grouped. Hidden for signed-out visitors so the header stays
@@ -53,36 +53,6 @@ function YourOrdersNavLink() {
   );
 }
 
-function CartNavIcon() {
-  const { count } = useCart();
-  const hasItems = count > 0;
-  return (
-    <Link
-      href="/shop/cart"
-      className={`relative inline-flex items-center justify-center h-10 w-10 rounded-lg transition-colors ${
-        hasItems
-          ? "text-[hsl(var(--penn-navy))] hover:bg-secondary/40"
-          : "text-muted-foreground hover:text-primary hover:bg-secondary/40"
-      }`}
-      aria-label={`Cart (${count} item${count === 1 ? "" : "s"})`}
-      data-testid="nav-cart-icon"
-    >
-      <ShoppingCart className="h-5 w-5" strokeWidth={hasItems ? 2.25 : 2} />
-      {hasItems && (
-        <span
-          // Floating gold pill: ring-2 ring-white separates it from the cart
-          // icon edge so the count never visually fuses with the cart strokes.
-          // tabular-nums keeps "12" the same width as "11" so the pill doesn't
-          // jiggle as the count changes.
-          className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1.5 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] text-[11px] font-bold leading-none flex items-center justify-center tabular-nums ring-2 ring-white shadow-sm"
-          data-testid="nav-cart-count"
-        >
-          {count > 99 ? "99+" : count}
-        </span>
-      )}
-    </Link>
-  );
-}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -140,14 +110,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
               <YourOrdersNavLink />
-              <CartNavIcon />
+              <MiniCart />
               <UserMenu />
             </nav>
 
             {/* Mobile actions: cart icon + hamburger */}
             <div className="md:hidden flex items-center gap-2">
               <UserMenu />
-              <CartNavIcon />
+              <MiniCart />
               <button
                 type="button"
                 onClick={() => setMobileOpen((v) => !v)}
