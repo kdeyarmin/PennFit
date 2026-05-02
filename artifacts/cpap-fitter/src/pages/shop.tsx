@@ -55,6 +55,7 @@ import { QuickViewDialog } from "@/components/shop/quick-view-dialog";
 import { WishlistButton } from "@/components/shop/wishlist-button";
 import { CompareTray } from "@/components/shop/compare-tray";
 import { useCompare } from "@/lib/compare";
+import { HsaFsaBadge } from "@/components/shop/hsa-fsa-badge";
 import { Eye, Scale } from "lucide-react";
 
 /** Bulk aggregate map keyed by Stripe productId. Empty until loaded. */
@@ -626,6 +627,10 @@ function ProductCard({
               Out of stock
             </Badge>
           ) : lowStockHint !== null ? (
+            // The HSA/FSA chip sits next to the inventory chip
+            // when there's a low-stock hint; on out-of-stock
+            // rows we still show it so the eligibility signal
+            // never disappears.
             <Badge
               variant="outline"
               className={`font-semibold ${
@@ -638,6 +643,7 @@ function ProductCard({
               Only {lowStockHint} left
             </Badge>
           ) : null}
+          <HsaFsaBadge size="card" />
         </div>
         {product.isBundle && product.bundleContents.length > 0 && (
           <ul className="text-sm text-foreground/80 space-y-1.5 mb-4">
@@ -827,6 +833,18 @@ function InsuranceFooter() {
           See how insurance works <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
       </Link>
+      {/*
+        Quiet HSA/FSA explainer — sits to the right of the
+        insurance CTA on desktop, wraps below on mobile. Reuses
+        the same pill style as the per-card badge so shoppers
+        recognize it as the same eligibility signal.
+      */}
+      <div className="md:border-l md:border-border/60 md:pl-5 flex items-center gap-2 text-xs text-muted-foreground">
+        <HsaFsaBadge size="pdp" />
+        <span className="hidden md:inline">
+          Pay with your HSA / FSA card at checkout.
+        </span>
+      </div>
     </div>
   );
 }

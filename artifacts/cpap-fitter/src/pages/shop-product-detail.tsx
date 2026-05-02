@@ -58,6 +58,7 @@ import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import { YouMayAlsoLikeStrip } from "@/components/shop/you-may-also-like-strip";
 import { ShippingEta } from "@/components/shop/shipping-eta";
 import { ProductFaq } from "@/components/shop/product-faq";
+import { HsaFsaBadge } from "@/components/shop/hsa-fsa-badge";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   DEFAULT_LOW_STOCK_THRESHOLD,
@@ -670,6 +671,7 @@ function Hero({
               Only {lowStockHint} left
             </Badge>
           ) : null}
+          <HsaFsaBadge size="pdp" />
         </div>
         {product.recurringPrice && (
           <div
