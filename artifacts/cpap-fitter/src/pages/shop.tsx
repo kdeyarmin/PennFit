@@ -50,6 +50,7 @@ import {
 import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
+import { ShopFilterBar } from "@/components/shop/shop-filter-bar";
 
 /** Bulk aggregate map keyed by Stripe productId. Empty until loaded. */
 type AggregateMap = Record<string, { count: number; averageRating: number }>;
@@ -197,6 +198,34 @@ export function Shop() {
     );
   }, [data]);
 
+  // Search query state. Lives on the parent so the filter bar can
+  // mutate it AND the renderer can swap the sectioned grid for a
+  // flat results grid when it's non-empty. We match across the
+  // fields a shopper is most likely to type into a CPAP search:
+  // name, tagline, description, manufacturer, model number,
+  // category. Case-insensitive, whitespace-trimmed, no fancy
+  // tokenization — the catalog is small enough that substring is
+  // the right tool.
+  const [query, setQuery] = useState("");
+  const trimmedQuery = query.trim().toLowerCase();
+  const filteredProducts = useMemo(() => {
+    if (!data || trimmedQuery.length === 0) return [];
+    return data.products.filter((p) => {
+      const haystack = [
+        p.name,
+        p.tagline ?? "",
+        p.description ?? "",
+        p.manufacturer ?? "",
+        p.modelNumber ?? "",
+        p.category,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(trimmedQuery);
+    });
+  }, [data, trimmedQuery]);
+  const isSearching = trimmedQuery.length > 0;
+
   // After products land, fetch aggregate review stats for every visible
   // SKU in a single round trip. We deliberately decouple this from the
   // primary products fetch so a flaky reviews endpoint never blanks
@@ -240,19 +269,81 @@ export function Shop() {
       ) : (
         <>
           {data?.previewMode && <PreviewModeBanner />}
+          {/*
+            Anchor for the "All" pill in the filter bar so it
+            always has somewhere to scroll back to. Sits just
+            above the recently-viewed strip rather than at the
+            very top of the page so the customer doesn't lose the
+            sticky bar itself when they tap All.
+          */}
+          <div id="shop-catalog-top" />
+          <ShopFilterBar
+            query={query}
+            onQueryChange={setQuery}
+            categories={sections.map((s) => ({
+              value: s.category,
+              label: CATEGORY_META[s.category].label,
+            }))}
+            resultCount={filteredProducts.length}
+          />
           <div className="mt-12">
             <RecentlyViewedStrip products={data?.products ?? []} />
           </div>
-          <div className="space-y-16 mt-8">
-            {sections.map((s) => (
-              <CategorySection
-                key={s.category}
-                category={s.category}
-                items={s.items}
-                aggregates={aggregates}
-              />
-            ))}
-          </div>
+          {isSearching ? (
+            <section
+              className="mt-8"
+              aria-label="Search results"
+              data-testid="shop-search-results"
+            >
+              <h2 className="text-xl md:text-2xl font-bold tracking-tight mb-4">
+                {filteredProducts.length === 0
+                  ? "No matches"
+                  : `${filteredProducts.length} result${
+                      filteredProducts.length === 1 ? "" : "s"
+                    }`}
+                <span className="text-muted-foreground font-normal text-base ml-2">
+                  for &ldquo;{trimmedQuery}&rdquo;
+                </span>
+              </h2>
+              {filteredProducts.length === 0 ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  data-testid="shop-search-empty"
+                >
+                  Try a different word — or{" "}
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    clear the search
+                  </button>{" "}
+                  to browse all categories.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {filteredProducts.map((p) => (
+                    <ProductCard
+                      key={p.id}
+                      product={p}
+                      aggregate={aggregates[p.id] ?? null}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : (
+            <div className="space-y-16 mt-8">
+              {sections.map((s) => (
+                <CategorySection
+                  key={s.category}
+                  category={s.category}
+                  items={s.items}
+                  aggregates={aggregates}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
       <InsuranceFooter />
@@ -301,7 +392,11 @@ function CategorySection({
 }) {
   const meta = CATEGORY_META[category];
   return (
-    <section data-testid={`shop-section-${category}`}>
+    <section
+      id={`shop-section-${category}`}
+      data-testid={`shop-section-${category}`}
+      className="scroll-mt-32"
+    >
       <div className="flex items-start gap-4 mb-6">
         <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
           {meta.icon}
