@@ -474,6 +474,67 @@ export function Learn() {
         </p>
       </header>
 
+      {/*
+        Above-the-fold Virtual Mask Fitter CTA. The same call-to-action
+        also lives at the very bottom of this page, but with 700+ lines
+        of educational content in between, the bottom placement was
+        effectively invisible to most readers. This banner sits right
+        under the hero so anyone landing on /learn sees the primary
+        action before they start scrolling, while still leaving the
+        long-form content available for shoppers who want to read first.
+      */}
+      <section
+        aria-label="Virtual Mask Fitter"
+        className="relative overflow-hidden rounded-3xl border border-[hsl(var(--penn-gold))]/40 bg-gradient-to-br from-[hsl(var(--penn-navy))] via-[hsl(var(--penn-navy))] to-[#0d2a5c] text-white px-6 py-7 md:px-10 md:py-9 shadow-xl"
+        data-testid="learn-fitter-cta"
+      >
+        {/* Soft gold halo in the upper-right for visual interest */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full bg-[hsl(var(--penn-gold))]/25 blur-3xl"
+        />
+        <div className="relative flex flex-col md:flex-row md:items-center gap-6">
+          <div className="shrink-0 h-14 w-14 rounded-2xl bg-[hsl(var(--penn-gold))]/20 ring-1 ring-[hsl(var(--penn-gold))]/40 flex items-center justify-center">
+            <Sparkles className="w-7 h-7 text-[hsl(var(--penn-gold))]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[hsl(var(--penn-gold))]">
+              On-device · 3 minutes · No sign-up
+            </p>
+            <h2 className="mt-1 text-2xl md:text-3xl font-bold tracking-tight">
+              Try the Virtual Mask Fitter
+            </h2>
+            <p className="mt-2 text-sm md:text-base text-white/80 leading-relaxed max-w-2xl">
+              Skip the guesswork — we&rsquo;ll match your face to the right mask
+              from a quick on-device capture and a few questions. Your photo
+              never leaves your phone.
+            </p>
+          </div>
+          <div className="shrink-0 flex flex-col sm:flex-row md:flex-col gap-2 md:min-w-[200px]">
+            <Link href="/consent">
+              <Button
+                size="lg"
+                className="w-full h-12 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-gold))]/90 font-semibold gap-2 shadow-md"
+                data-testid="learn-fitter-cta-start"
+              >
+                Start the fitter
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </Link>
+            <Link href="/how-it-works">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full h-9 rounded-full text-white/85 hover:text-white hover:bg-white/10 text-xs"
+                data-testid="learn-fitter-cta-how"
+              >
+                How it works
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Section nav — anchors so the page is scannable when long */}
       <nav
         aria-label="Topics on this page"
