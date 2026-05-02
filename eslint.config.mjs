@@ -41,7 +41,6 @@ export default [
       "lib/resupply-*/src/**/*.tsx",
       "artifacts/resupply-api/src/**/*.ts",
       "artifacts/resupply-worker/src/**/*.ts",
-      "artifacts/resupply-dashboard/src/**/*.{ts,tsx}",
     ],
     languageOptions: {
       ecmaVersion: 2024,
