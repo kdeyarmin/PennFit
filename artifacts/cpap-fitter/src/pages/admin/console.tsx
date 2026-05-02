@@ -87,6 +87,9 @@ function AdminConsole() {
     <AppShell adminEmail={data?.email} adminRole={data?.role}>
       <Switch>
         <Route path="/admin" component={DashboardPage} />
+        <Route path="/admin/dashboard">
+          <Redirect to="/admin" replace />
+        </Route>
         <Route path="/admin/patients" component={PatientsPage} />
         <Route path="/admin/patients/:id">
           {(params) => <PatientDetailPage id={params.id} />}
