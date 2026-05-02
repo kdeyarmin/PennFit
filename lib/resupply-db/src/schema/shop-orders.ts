@@ -159,6 +159,14 @@ export const shopOrders = resupplySchema.table(
      * pre-migration historical orders. Migration 0017.
      */
     customerEmail: text("customer_email"),
+    /**
+     * One-shot timestamp marking when the post-purchase review-
+     * request email went out for this order. NULL = never sent.
+     * Migration 0019.
+     */
+    reviewRequestSentAt: timestamp("review_request_sent_at", {
+      withTimezone: true,
+    }),
   },
   (t) => ({
     statusIdx: index("shop_orders_status_idx").on(t.status),

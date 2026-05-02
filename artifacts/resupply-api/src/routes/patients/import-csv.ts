@@ -10,11 +10,11 @@
 //   ("X created, Y duplicates, Z errors") instead of a binary blob.
 //
 // Why a 500-row hard cap:
-//   Each row triggers an INSERT + 1-2 encrypt() pgcrypto round-trips,
-//   and we want the request to finish well under the express
-//   default body-parser timeout. The dashboard chunks larger imports
-//   into multiple POSTs; the audit log makes it trivial to stitch
-//   them back together by request id.
+//   Each row triggers a plaintext INSERT, and we want the request
+//   to finish well under the express default body-parser timeout.
+//   The dashboard chunks larger imports into multiple POSTs; the
+//   audit log makes it trivial to stitch them back together by
+//   request id.
 //
 // Audit philosophy:
 //   ONE audit row per call, with structural counts only. The
@@ -29,15 +29,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  encrypt,
-  encryptJson,
-  getDbPool,
-  hmacPhone,
-  normalizeE164,
-  patients,
-  phoneLookup,
-} from "@workspace/resupply-db";
+import { getDbPool, patients } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { withIdempotency } from "../../middlewares/idempotency";
@@ -161,12 +153,12 @@ router.post(
         .insert(patients)
         .values({
           pacwareId: row.pacwareId,
-          legalFirstName: encrypt(row.legalFirstName),
-          legalLastName: encrypt(row.legalLastName),
-          dateOfBirth: encrypt(row.dateOfBirth),
-          phoneE164: encrypt(row.phoneE164 ?? null),
-          email: encrypt(row.email ?? null),
-          address: address ? encryptJson(address) : encryptJson(null),
+          legalFirstName: row.legalFirstName,
+          legalLastName: row.legalLastName,
+          dateOfBirth: row.dateOfBirth,
+          phoneE164: row.phoneE164 ?? null,
+          email: row.email ?? null,
+          address,
           status: "active",
           insurancePayer: row.insurancePayer ?? null,
           createdAt: now,
@@ -177,32 +169,6 @@ router.post(
       if (newId) {
         created += 1;
         createdIds.push(newId);
-
-        // Backfill phone_lookup so admins can search by phone right
-        // after import (without waiting for the first SMS to lazily
-        // populate it). Failure is non-fatal — we log a warn and
-        // move on; phone search will be unavailable for this row
-        // until the next outbound SMS.
-        if (row.phoneE164) {
-          const normalized = normalizeE164(row.phoneE164);
-          if (normalized) {
-            try {
-              const hash = hmacPhone(normalized);
-              await db
-                .insert(phoneLookup)
-                .values({ patientId: newId, hmacPhone: hash })
-                .onConflictDoUpdate({
-                  target: phoneLookup.patientId,
-                  set: { hmacPhone: hash, updatedAt: new Date() },
-                });
-            } catch (lookupErr) {
-              logger.warn(
-                { err: lookupErr, row_index: i, patient_id: newId },
-                "patients/import-csv: phone_lookup backfill failed",
-              );
-            }
-          }
-        }
       }
     } catch (err) {
       // Mirror the create.ts duplicate-detection: 23505 + the

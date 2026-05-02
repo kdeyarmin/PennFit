@@ -4,10 +4,10 @@ import {
   jsonb,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
-import { encryptedText } from "../encryption";
 import { conversations } from "./conversations";
 import { resupplySchema } from "./_schema";
 
@@ -15,15 +15,12 @@ import { resupplySchema } from "./_schema";
  * Messages — individual SMS / email / voice-transcript turns inside a
  * conversation.
  *
- * Why `body` is encrypted:
- *   Patient turns frequently contain PHI (names, addresses, even
- *   diagnosis details when they ramble at the agent). The whole body is
- *   pgcrypto-encrypted; routing fields the system needs to query on
- *   (`direction`, `senderRole`, `deliveryStatus`) live in plaintext.
+ * `body` is plaintext text. Routing fields (`direction`, `senderRole`,
+ * `deliveryStatus`) live alongside.
  *
- * `vendorMetadata` (jsonb, plaintext) stores Twilio/SendGrid envelope
- * data — message SID, error codes, segment counts. It is operationally
- * useful and never carries PHI.
+ * `vendorMetadata` (jsonb) stores Twilio/SendGrid envelope data —
+ * message SID, error codes, segment counts. Operationally useful for
+ * debugging deliveries.
  */
 export const messages = resupplySchema.table(
   "messages",
@@ -38,16 +35,13 @@ export const messages = resupplySchema.table(
       enum: ["patient", "admin", "agent", "system"],
     }).notNull(),
 
-    // Encrypted body. Use `encrypt(value)` to write and
-    // `decrypt(messages.body)` to read.
-    body: encryptedText("body").notNull(),
+    body: text("body").notNull(),
 
     // Vendor-side delivery state (twilio: queued/sent/delivered/undelivered/failed).
     deliveryStatus: text("delivery_status"),
     deliveryError: text("delivery_error"),
 
-    // Plaintext envelope from the channel adapter — message SID,
-    // segment count, etc. Never PHI.
+    // Envelope from the channel adapter — message SID, segment count, etc.
     vendorMetadata: jsonb("vendor_metadata")
       .notNull()
       .default(sql`'{}'::jsonb`)
@@ -68,6 +62,16 @@ export const messages = resupplySchema.table(
     deliveryStatusIdx: index("messages_delivery_status_idx").on(
       t.deliveryStatus,
     ),
+    // Replay-protection: each inbound Twilio MessageSid must be unique.
+    // The partial expression index (direction = 'inbound') ensures the
+    // constraint only applies to inbound messages and does not interfere
+    // with outbound rows that never carry a twilio_message_sid. Created
+    // by migration 0018_messages_twilio_sid_unique.sql.
+    twilioSidInboundUniq: uniqueIndex(
+      "messages_twilio_sid_inbound_uniq",
+    )
+      .on(sql`(${t.vendorMetadata}->>'twilio_message_sid')`)
+      .where(sql`direction = 'inbound'`),
   }),
 );
 

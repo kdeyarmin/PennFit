@@ -211,24 +211,22 @@ export const useSubmitOrder = <
 };
 
 /**
- * Public endpoint. Behavior depends on whether the email is already
-on file:
+ * Public endpoint. Always returns the same response shape regardless
+of whether the email is already on file, to prevent email
+enumeration. The manage token is never returned in the API response
+— it is delivered only via email to the address on file, ensuring
+only the verified inbox owner can access subscription management.
 
-- **New email:** the subscription is created. The response includes
-  `manageToken` so the client can deep-link to the manage page
-  immediately (this also makes the dev-mode flow usable when
-  email delivery isn't configured). A confirmation email is sent
-  containing the same manage link.
-- **Existing email:** the response is `alreadySubscribed: true`
-  with NO `manageToken` — to prevent email-enumeration takeover
-  of an existing subscription, the manage link is only sent to
-  the registered owner's inbox. The submitter's items are not
-  applied to the existing row; the registered owner can update
-  items via the manage page.
+- **New email:** the subscription is created and a confirmation
+  email containing the manage link is sent to the provided address.
+- **Existing email:** no changes are made; the existing manage link
+  is re-sent to the registered owner's inbox only.
+
+Both cases return the same response shape with no subscriber-status
+information disclosed to the caller.
 
 Honeypot: a hidden `website` field. If non-empty, the request is
-silently accepted (fake `manageToken: "honeypot"`) and no DB
-write or email send occurs.
+silently accepted and no DB write or email send occurs.
 
  * @summary Subscribe to supply replacement reminders
  */

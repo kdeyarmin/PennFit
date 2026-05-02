@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",
+    "@workspace/api-zod": "workspace:*",
     "@workspace/resupply-ai": "workspace:*",
     "@workspace/resupply-audit": "workspace:*",
     "@workspace/resupply-auth": "workspace:*",

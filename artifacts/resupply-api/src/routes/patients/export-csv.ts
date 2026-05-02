@@ -1,9 +1,9 @@
 // GET /patients/export.csv — admin-only CSV export of the patient roster.
 //
 // Why a dedicated endpoint (not "fetch all pages of GET /patients"):
-//   * Browser-side pagination loops issue N round-trips, decrypt
-//     PHI N times, and the admin watches a spinner. A single
-//     server-side query streams a clean CSV in one round-trip.
+//   * Browser-side pagination loops issue N round-trips and the
+//     admin watches a spinner. A single server-side query streams
+//     a clean CSV in one round-trip.
 //   * The export columns mirror the IMPORT columns exactly. That's
 //     the load-bearing property here: an admin can export, edit in
 //     Excel, and re-import via /patients/import-csv without column
@@ -15,8 +15,8 @@
 //     and audit-logged. Each call writes one `patient.export.csv`
 //     audit row with the row count and active filters — never the
 //     PHI itself.
-//   * `Cache-Control: no-store` keeps decrypted PHI out of any
-//     intermediate proxy / browser cache.
+//   * `Cache-Control: no-store` keeps PHI out of any intermediate
+//     proxy / browser cache.
 //
 // Limits:
 //   * 5000-row hard cap. Beyond that we stop including rows and set
@@ -33,15 +33,10 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { decrypt, getDbPool, patients } from "@workspace/resupply-db";
+import { getDbPool, patients } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
-
-// `decrypt(column)` builds a `pgp_sym_decrypt(column, current_setting('app.enc_key', true))`
-// SQL fragment. We push decryption to the database — pulling 5000
-// rows of bytea over the wire only to decrypt them in Node would
-// double the payload and force pgcrypto state into the app process.
 
 const MAX_ROWS = 5000;
 
@@ -98,8 +93,9 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
   // Build the WHERE clause. We mirror GET /patients' behavior:
   //   * status: simple eq
   //   * search: case-insensitive substring across pacware_id AND the
-  //     decrypted first/last name. The decrypted-name match is a
-  //     full scan; the row cap and the admin gate make this OK.
+  //     name columns. Plaintext columns make this a straightforward
+  //     ILIKE; the row cap and the admin gate keep it acceptable
+  //     without an additional index.
   const conditions: SQL[] = [];
   if (status) conditions.push(eq(patients.status, status));
   if (search) {
@@ -107,8 +103,8 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
     conditions.push(
       sql`(
         ${patients.pacwareId} ILIKE ${pattern}
-        OR pgp_sym_decrypt(${patients.legalFirstName}, current_setting('app.enc_key', true)) ILIKE ${pattern}
-        OR pgp_sym_decrypt(${patients.legalLastName}, current_setting('app.enc_key', true)) ILIKE ${pattern}
+        OR ${patients.legalFirstName} ILIKE ${pattern}
+        OR ${patients.legalLastName} ILIKE ${pattern}
       )`,
     );
   }
@@ -120,20 +116,16 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
         : and(...conditions);
 
   // Fetch one extra row so we know whether to flag truncation
-  // without a separate COUNT(*) query. Decryption happens
-  // server-side via the `decrypt(...)` SQL helper so plaintext PHI
-  // is materialized exactly once (in the response we're already
-  // emitting), not redundantly buffered as bytea + plaintext in app
-  // memory.
+  // without a separate COUNT(*) query.
   const limit = MAX_ROWS + 1;
   const baseQuery = db
     .select({
       pacwareId: patients.pacwareId,
-      firstName: decrypt(patients.legalFirstName),
-      lastName: decrypt(patients.legalLastName),
-      dateOfBirth: decrypt(patients.dateOfBirth),
-      phoneE164: decrypt(patients.phoneE164),
-      email: decrypt(patients.email),
+      firstName: patients.legalFirstName,
+      lastName: patients.legalLastName,
+      dateOfBirth: patients.dateOfBirth,
+      phoneE164: patients.phoneE164,
+      email: patients.email,
       status: patients.status,
       createdAt: patients.createdAt,
       updatedAt: patients.updatedAt,
@@ -202,9 +194,6 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
   if (truncated) res.setHeader("X-Truncated", "true");
   res.status(200).send(lines.join("\n") + "\n");
 });
-
-// `decrypt` is imported from the db helpers, where it returns a
-// string from a `bytea` column round-tripped through pgcrypto.
 
 export default router;
 

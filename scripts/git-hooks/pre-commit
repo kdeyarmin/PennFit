@@ -11,6 +11,15 @@
 #           when an OpenAPI spec or its generated client tree changes
 #       * scripts/check-resupply-architecture.sh
 #           when resupply lib/ or artifact code changes
+#       * scripts/check-drizzle-drift.sh
+#           when a @workspace/resupply-db schema TS file or any file
+#           under drizzle/ changes (Task #39 re-enrolled the lib
+#           after consolidating its snapshot chain).
+#       * scripts/check-resupply-migration-pair.sh
+#           when a @workspace/resupply-db schema file changes
+#           (co-change rule: any schema TS edit must ship with a new
+#           migration SQL in the same commit; weaker than a structural
+#           diff but works around the resupply snapshot-chain gap)
 #   - Both checks run against an isolated snapshot of the staged
 #     index — unstaged edits and untracked files are stashed for the
 #     duration of the hook and restored after, so the checks see
@@ -43,6 +52,8 @@ fi
 
 need_codegen=0
 need_arch=0
+need_drizzle=0
+need_resupply_pair=0
 
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
@@ -62,9 +73,30 @@ while IFS= read -r file; do
       need_arch=1
       ;;
   esac
+  # Drizzle structural drift: Task #39 re-enrolled @workspace/resupply-db
+  # in scripts/check-drizzle-drift.sh after consolidating its snapshot
+  # chain. Trigger on schema TS edits AND any file under drizzle/ —
+  # the structural check catches both "edited TS, forgot to generate"
+  # and "hand-edited a migration SQL/snapshot in a way that diverges
+  # from what regen would produce".
+  case "$file" in
+    lib/resupply-db/src/schema/*|lib/resupply-db/src/schema/*/*|lib/resupply-db/drizzle/*|lib/resupply-db/drizzle/*/*)
+      need_drizzle=1
+      ;;
+  esac
+  # Resupply DB co-change rule: any schema TS edit must ship with a
+  # new migration SQL in the same commit. Trigger off the schema dir
+  # only — touching a migration file alone is a valid commit shape
+  # (e.g. a hand-authored data backfill) and the script handles that.
+  case "$file" in
+    lib/resupply-db/src/schema/*|lib/resupply-db/src/schema/*/*)
+      need_resupply_pair=1
+      ;;
+  esac
 done <<< "$staged"
 
-if [[ $need_codegen -eq 0 && $need_arch -eq 0 ]]; then
+if [[ $need_codegen -eq 0 && $need_arch -eq 0 && $need_drizzle -eq 0 \
+      && $need_resupply_pair -eq 0 ]]; then
   exit 0
 fi
 
@@ -87,6 +119,18 @@ run_checks() {
   if [[ $need_codegen -eq 1 ]]; then
     printf '[pre-commit] Running OpenAPI codegen drift check…\n' >&2
     if ! bash "$REPO_ROOT/scripts/check-codegen.sh"; then
+      f=1
+    fi
+  fi
+  if [[ $need_drizzle -eq 1 ]]; then
+    printf '[pre-commit] Running Drizzle migration drift check…\n' >&2
+    if ! bash "$REPO_ROOT/scripts/check-drizzle-drift.sh"; then
+      f=1
+    fi
+  fi
+  if [[ $need_resupply_pair -eq 1 ]]; then
+    printf '[pre-commit] Running resupply schema/migration co-change check…\n' >&2
+    if ! bash "$REPO_ROOT/scripts/check-resupply-migration-pair.sh"; then
       f=1
     fi
   fi

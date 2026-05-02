@@ -6,102 +6,136 @@
 -- a DO block that swallows the duplicate_object error. Future
 -- migrations should NOT do this — they should be sequential and
 -- assume the prior state.
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- pgcrypto was historically required for the column-level
+-- pgp_sym_encrypt/decrypt of PHI. Migration 0025_strip_phi_encryption
+-- removes that dependency from the live schema (gen_random_uuid is in
+-- Postgres core since v13, which is the only function the active
+-- schema still calls). We attempt to install the extension here as a
+-- best-effort so legacy pre-0025 dumps can still decrypt their bytea
+-- columns on the way through 0025; if the extension is unavailable on
+-- this Postgres flavor (e.g. some managed offerings ship without it),
+-- we swallow the error and continue. A fresh DB has no encrypted rows
+-- to decrypt, so 0025 detects that case and runs as a pure schema
+-- swap (see comments in 0025_strip_phi_encryption.sql).
+DO $$
+BEGIN
+  BEGIN
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+  EXCEPTION
+    WHEN feature_not_supported OR insufficient_privilege OR undefined_file THEN
+      RAISE NOTICE
+        'pgcrypto extension not available (%) — continuing without it. '
+        'Migration 0025 will run as a schema-only conversion '
+        '(no encrypted rows to decrypt).',
+        SQLERRM;
+    WHEN OTHERS THEN
+      -- Catch-all for managed Postgres flavors that report extension
+      -- unavailability via a non-standard SQLSTATE. We still want to
+      -- continue, but log the underlying error so an operator can
+      -- distinguish "extension not shipped" from a real surprise.
+      RAISE NOTICE
+        'CREATE EXTENSION pgcrypto failed (%; SQLSTATE=%) — continuing. '
+        '0025 will refuse to proceed if encrypted rows are present.',
+        SQLERRM, SQLSTATE;
+  END;
+END
+$$;
 --> statement-breakpoint
 CREATE SCHEMA IF NOT EXISTS "resupply";
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "resupply"."patients" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"pacware_id" text NOT NULL,
-	"legal_first_name" "bytea" NOT NULL,
-	"legal_last_name" "bytea" NOT NULL,
-	"date_of_birth" "bytea" NOT NULL,
-	"phone_e164" "bytea",
-	"email" "bytea",
-	"address" "bytea",
-	"status" text DEFAULT 'active' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "pacware_id" text NOT NULL,
+        "legal_first_name" "bytea" NOT NULL,
+        "legal_last_name" "bytea" NOT NULL,
+        "date_of_birth" "bytea" NOT NULL,
+        "phone_e164" "bytea",
+        "email" "bytea",
+        "address" "bytea",
+        "status" text DEFAULT 'active' NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "resupply"."prescriptions" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"patient_id" uuid NOT NULL,
-	"item_sku" text NOT NULL,
-	"cadence_days" integer NOT NULL,
-	"valid_from" date NOT NULL,
-	"valid_until" date,
-	"details" "bytea",
-	"status" text DEFAULT 'active' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "patient_id" uuid NOT NULL,
+        "item_sku" text NOT NULL,
+        "cadence_days" integer NOT NULL,
+        "valid_from" date NOT NULL,
+        "valid_until" date,
+        "details" "bytea",
+        "status" text DEFAULT 'active' NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "resupply"."episodes" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"patient_id" uuid NOT NULL,
-	"prescription_id" uuid NOT NULL,
-	"status" text DEFAULT 'outreach_pending' NOT NULL,
-	"due_at" timestamp with time zone NOT NULL,
-	"expires_at" timestamp with time zone,
-	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "patient_id" uuid NOT NULL,
+        "prescription_id" uuid NOT NULL,
+        "status" text DEFAULT 'outreach_pending' NOT NULL,
+        "due_at" timestamp with time zone NOT NULL,
+        "expires_at" timestamp with time zone,
+        "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "resupply"."conversations" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"patient_id" uuid NOT NULL,
-	"episode_id" uuid NOT NULL,
-	"channel" text NOT NULL,
-	"status" text DEFAULT 'open' NOT NULL,
-	"external_ref" text,
-	"last_message_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "patient_id" uuid NOT NULL,
+        "episode_id" uuid NOT NULL,
+        "channel" text NOT NULL,
+        "status" text DEFAULT 'open' NOT NULL,
+        "external_ref" text,
+        "last_message_at" timestamp with time zone,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "resupply"."messages" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"conversation_id" uuid NOT NULL,
-	"direction" text NOT NULL,
-	"sender_role" text NOT NULL,
-	"body" "bytea" NOT NULL,
-	"delivery_status" text,
-	"delivery_error" text,
-	"vendor_metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"sent_at" timestamp with time zone,
-	"delivered_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "conversation_id" uuid NOT NULL,
+        "direction" text NOT NULL,
+        "sender_role" text NOT NULL,
+        "body" "bytea" NOT NULL,
+        "delivery_status" text,
+        "delivery_error" text,
+        "vendor_metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "sent_at" timestamp with time zone,
+        "delivered_at" timestamp with time zone,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "resupply"."fulfillments" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"patient_id" uuid NOT NULL,
-	"episode_id" uuid NOT NULL,
-	"item_sku" text NOT NULL,
-	"quantity" text DEFAULT '1' NOT NULL,
-	"status" text DEFAULT 'queued' NOT NULL,
-	"pacware_order_ref" text,
-	"shipment_metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"submitted_at" timestamp with time zone,
-	"shipped_at" timestamp with time zone,
-	"delivered_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "patient_id" uuid NOT NULL,
+        "episode_id" uuid NOT NULL,
+        "item_sku" text NOT NULL,
+        "quantity" text DEFAULT '1' NOT NULL,
+        "status" text DEFAULT 'queued' NOT NULL,
+        "pacware_order_ref" text,
+        "shipment_metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "submitted_at" timestamp with time zone,
+        "shipped_at" timestamp with time zone,
+        "delivered_at" timestamp with time zone,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "resupply"."audit_log" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"operator_email" text,
-	"operator_clerk_id" text,
-	"action" text NOT NULL,
-	"target_table" text,
-	"target_id" uuid,
-	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"ip" text,
-	"user_agent" text,
-	"occurred_at" timestamp with time zone DEFAULT now() NOT NULL
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "operator_email" text,
+        "operator_clerk_id" text,
+        "action" text NOT NULL,
+        "target_table" text,
+        "target_id" uuid,
+        "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "ip" text,
+        "user_agent" text,
+        "occurred_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 DO $$ BEGIN

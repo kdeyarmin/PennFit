@@ -42,7 +42,7 @@ interface AuditRow {
   id: string;
   occurred_at: Date | string | null;
   operator_email: string | null;
-  operator_clerk_id: string | null;
+  operator_user_id: string | null;
   action: string;
   target_table: string | null;
   target_id: string | null;
@@ -105,7 +105,7 @@ router.get("/audit", requireAdmin, async (req, res) => {
   const offsetIdx = params.length;
 
   const rowsSql = (
-    `SELECT id, occurred_at, operator_email, operator_clerk_id, ` +
+    `SELECT id, occurred_at, operator_email, operator_user_id, ` +
     `action, target_table, target_id, metadata, ip, user_agent ` +
     `FROM resupply.audit_log ${whereSql} ` +
     `ORDER BY occurred_at DESC ` +
@@ -125,7 +125,7 @@ router.get("/audit", requireAdmin, async (req, res) => {
       id: r.id,
       occurredAt: toIsoRequired(r.occurred_at),
       adminEmail: r.operator_email,
-      adminUserId: r.operator_clerk_id,
+      adminUserId: r.operator_user_id,
       action: r.action,
       targetTable: r.target_table,
       targetId: r.target_id,

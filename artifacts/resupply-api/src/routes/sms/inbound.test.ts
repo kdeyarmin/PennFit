@@ -99,7 +99,6 @@ const ENV_KEYS = [
   "SENDGRID_FROM_EMAIL",
   "SENDGRID_FROM_NAME",
   "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY",
-  "RESUPPLY_PHONE_HMAC_KEY",
   "RESUPPLY_LINK_HMAC_KEY",
   "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "RESUPPLY_DATA_KEY",
@@ -115,7 +114,6 @@ function setMessagingEnv(): void {
   process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
   process.env.SENDGRID_FROM_NAME = "Penn Sleep";
   process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = "fake-pubkey";
-  process.env.RESUPPLY_PHONE_HMAC_KEY = "phone-hmac-test-key-32bytesXXXXXX";
   process.env.RESUPPLY_LINK_HMAC_KEY = "link-hmac-test-key-32bytesXXXXXXX";
   process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://test.example.com";
   process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
@@ -163,7 +161,7 @@ describe("POST /sms/inbound", () => {
 
   it("audits unknown_phone and replies with opt-out boilerplate", async () => {
     setMessagingEnv();
-    selectQueue.push([]); // phone_lookup miss
+    selectQueue.push([]); // phone lookup miss
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -184,9 +182,46 @@ describe("POST /sms/inbound", () => {
     expect(JSON.stringify(audit.metadata)).not.toContain(FROM_PHONE);
   });
 
+  it("audits ambiguous_phone and replies with router-guard boilerplate when two patients share a phone", async () => {
+    // Family-plan / shared-line scenario: phone_e164 equality returns
+    // multiple patients. We can't safely route the inbound to either
+    // patient's conversation thread, so we audit, surface a generic
+    // reply, and bail out before any conversation/messages writes.
+    setMessagingEnv();
+    selectQueue.push([
+      { patientId: PATIENT_ID },
+      { patientId: "99999999-9999-4999-8999-999999999999" },
+    ]);
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "yes please",
+        MessageSid: "SM_ambig",
+        NumMedia: "0",
+      });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("This number is on multiple accounts");
+    // No conversation insert / message persist on the ambiguous path.
+    expect(placeOrderMock).not.toHaveBeenCalled();
+    // Single audit row, with the right outcome and PHI-scrubbed metadata.
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0][0];
+    expect(audit.action).toBe("messaging.inbound.received");
+    expect(audit.metadata.outcome).toBe("ambiguous_phone");
+    expect(audit.metadata.match_count).toBe(2);
+    expect(JSON.stringify(audit.metadata)).not.toContain(FROM_PHONE);
+  });
+
   it("dispatches confirm intent → places order, closes, audits ok", async () => {
     setMessagingEnv();
     selectQueue.push([{ patientId: PATIENT_ID }]); // phone_lookup hit
+    // Forward-port of main commit 63de00e (Task #20): MessageSid
+    // dedup pre-check runs after the phone lookup. Empty result =
+    // "this SID has not been seen before, proceed normally".
+    selectQueue.push([]); // sid_dedup miss
     selectQueue.push([{ id: CONVERSATION_ID }]); // open conversation
     placeOrderMock.mockResolvedValue({
       status: "ok",
@@ -232,6 +267,7 @@ describe("POST /sms/inbound", () => {
   it("STOP keyword pauses patient + closes regardless of conversation context", async () => {
     setMessagingEnv();
     selectQueue.push([{ patientId: PATIENT_ID }]);
+    selectQueue.push([]); // sid_dedup miss (Task #20 forward-port)
     selectQueue.push([{ id: CONVERSATION_ID }]);
 
     const res = await request(makeApp())
@@ -261,6 +297,7 @@ describe("POST /sms/inbound", () => {
   it("AI fallback fires on unknown intent and steers dispatch", async () => {
     setMessagingEnv();
     selectQueue.push([{ patientId: PATIENT_ID }]);
+    selectQueue.push([]); // sid_dedup miss (Task #20 forward-port)
     selectQueue.push([{ id: CONVERSATION_ID }]);
     // Recent thread fetch (decrypted) for AI context.
     selectQueue.push([]);
@@ -299,6 +336,7 @@ describe("POST /sms/inbound", () => {
   it("HELP returns boilerplate without dispatching anywhere", async () => {
     setMessagingEnv();
     selectQueue.push([{ patientId: PATIENT_ID }]);
+    selectQueue.push([]); // sid_dedup miss (Task #20 forward-port)
     selectQueue.push([{ id: CONVERSATION_ID }]);
 
     const res = await request(makeApp())

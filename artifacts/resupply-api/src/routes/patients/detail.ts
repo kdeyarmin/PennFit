@@ -1,8 +1,8 @@
 // GET /patients/:id — full patient detail for the admin console.
 //
-// Returns the patient header (decrypted name; phone/email surfaced
-// only as boolean reachability flags) plus, in one round-trip per
-// related table:
+// Returns the patient header (name; phone/email surfaced only as
+// boolean reachability flags) plus, in one round-trip per related
+// table:
 //   * all prescriptions
 //   * all episodes (denormalising the prescription's itemSku for
 //     display so the patient detail tab doesn't need a second
@@ -13,7 +13,7 @@
 //
 // Writes one `patient.view` audit row with the patient id as
 // target. This is a PHI read, so it is auditable per ADR; we do
-// not include the decrypted name in metadata (the metadata
+// not include the patient name in metadata (the metadata
 // sanitiser would drop it anyway, but it costs nothing to be
 // explicit at the call site).
 
@@ -25,7 +25,6 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   conversations,
-  decrypt,
   episodes,
   fulfillments,
   getDbPool,
@@ -53,15 +52,13 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
 
   // Detail header LEFT JOINs the latest-message projection so the
   // patient header strip can show "last contacted" without a
-  // separate /messages query. Same encryption-on-the-wire treatment
-  // as patients/list — decrypt() is the only path through which the
-  // bytea preview leaves Postgres.
+  // separate /messages query.
   const patientRows = await db
     .select({
       id: patients.id,
       pacwareId: patients.pacwareId,
-      firstName: decrypt(patients.legalFirstName),
-      lastName: decrypt(patients.legalLastName),
+      firstName: patients.legalFirstName,
+      lastName: patients.legalLastName,
       status: patients.status,
       hasPhone: sql<boolean>`(${patients.phoneE164} IS NOT NULL)`,
       hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
@@ -76,7 +73,7 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
       updatedAt: patients.updatedAt,
       lastMessageAt: patientLatestMessage.lastMessageAt,
       lastMessageDirection: patientLatestMessage.lastMessageDirection,
-      lastMessagePreview: decrypt(patientLatestMessage.lastMessagePreview),
+      lastMessagePreview: patientLatestMessage.lastMessagePreview,
     })
     .from(patients)
     .leftJoin(

@@ -7,12 +7,9 @@
 //   - Typed config errors so callers can branch on misconfig vs upstream
 //     failure.
 //
-// HIPAA note: this code is the wire to SendGrid. SendGrid will only sign
-// a BAA on the Pro tier and above; the API account associated with
-// SENDGRID_API_KEY MUST be on a BAA-eligible plan before any PHI flows
-// through here. This module cannot validate that for you — operations
-// must keep the BAA paperwork in order. We DO refuse to send when the
-// env var is missing, so a stub deploy without the key fails closed.
+// This module is the wire to SendGrid. We refuse to send when the
+// SENDGRID_API_KEY env var is missing, so a stub deploy without the
+// key fails closed.
 
 import sgMail from "@sendgrid/mail";
 

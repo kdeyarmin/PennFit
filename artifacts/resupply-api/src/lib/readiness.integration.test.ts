@@ -17,7 +17,6 @@
 //
 // Skips when:
 //   - `DATABASE_URL` is unset (no Postgres reachable).
-//   - `RESUPPLY_DATA_KEY` is unset (encryption helpers refuse to load).
 //   - The connecting role lacks `CREATE DATABASE` (e.g. CI on a
 //     restricted DB user). The skip message explains the situation.
 
@@ -54,7 +53,6 @@ const MIGRATE_SCRIPT = path.resolve(
 );
 
 const baseDbUrl = process.env.DATABASE_URL;
-const dataKey = process.env.RESUPPLY_DATA_KEY;
 
 // Pre-flight a CREATE DATABASE permission check synchronously at
 // module load so the skip predicate is correct before any beforeAll.
@@ -98,7 +96,6 @@ await checkCreateDatabasePerm();
 
 const skipReason = (() => {
   if (!baseDbUrl) return "DATABASE_URL is not set";
-  if (!dataKey) return "RESUPPLY_DATA_KEY is not set";
   if (permissionCheckErr) return `permission probe failed: ${permissionCheckErr}`;
   if (!canCreateDatabase) return "connecting role lacks CREATE DATABASE";
   return null;

@@ -15,6 +15,7 @@
   "dependencies": {
     "@workspace/resupply-audit": "workspace:*",
     "@workspace/resupply-db": "workspace:*",
+    "@workspace/resupply-domain": "workspace:*",
     "@workspace/resupply-email": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-telecom": "workspace:*",

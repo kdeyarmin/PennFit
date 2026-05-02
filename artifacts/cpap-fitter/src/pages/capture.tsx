@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Camera, AlertCircle, RefreshCw, Eye, Sun, ScanFace } from "lucide-react";
@@ -89,7 +90,16 @@ export function Capture() {
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-      setCapturedImage(dataUrl);
+      // flushSync forces the captured-image context state to commit BEFORE
+      // we navigate. Without it, wouter's setLocation synchronously fires a
+      // 'pushState' event that re-renders the wouter subtree first, so the
+      // GuardedMeasure on /measure reads the still-null capturedImage and
+      // bounces straight back to /capture. (Wouter's own source notes the
+      // missing unstable_batchedUpdates as a known caveat — see
+      // node_modules/wouter/src/use-browser-location.js lines 74-76.)
+      flushSync(() => {
+        setCapturedImage(dataUrl);
+      });
       stopCamera();
       track("capture_taken");
       setLocation("/measure");

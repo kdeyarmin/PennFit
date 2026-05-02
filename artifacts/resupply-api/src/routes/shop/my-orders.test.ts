@@ -6,7 +6,7 @@
 //   * 200 with grouped line items per order when both tables have rows
 //   * Items belonging to other orders are not bled into this user's
 //     response (the line-item join is keyed on the user's order ids,
-//     not on the user's clerkId — so we test that grouping really is
+//     not on the user's id — so we test that grouping really is
 //     per-order)
 //   * Pagination cursor is emitted only when the page is full (limit+1
 //     trick) — proving the contract callers rely on

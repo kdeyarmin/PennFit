@@ -61,7 +61,7 @@ process**, not as a separate service. Why:
 
 - The bridge needs the resupply DB pool, the audit helper, and the
   encryption keys — exactly what `resupply-api` already has wired up.
-- One TLS endpoint, one Clerk-protected admin surface, one set of
+- One TLS endpoint, one auth-protected admin surface, one set of
   env vars to manage.
 - A separate "voice service" would force a public WS endpoint for
   Twilio plus a private channel back to the API for tool calls — more

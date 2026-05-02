@@ -8,7 +8,13 @@ export default defineConfig({
   schema: "./src/schema/index.ts",
   out: "./drizzle",
   dialect: "postgresql",
-  schemaFilter: ["resupply"],
+  // `resupply` holds the resupply system's tables; `public` holds the
+  // PennPaps storefront tables (orders, usage_events, admin_audit_log,
+  // reminder_subscriptions). Both sets of tables live in this same
+  // physical database and are now owned by this single drizzle package
+  // — see `./src/schema/storefront/index.ts` for the consolidation
+  // rationale (Task #37).
+  schemaFilter: ["public", "resupply"],
   dbCredentials: {
     url: process.env.DATABASE_URL,
   },

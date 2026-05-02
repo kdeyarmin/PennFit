@@ -145,7 +145,7 @@ export class RealtimeClient extends EventEmitter {
     super();
     if (!opts.apiKey) {
       throw new Error(
-        "RealtimeClient: apiKey is required. Set OPENAI_API_KEY (BAA-covered key).",
+        "RealtimeClient: apiKey is required. Set OPENAI_API_KEY.",
       );
     }
     this.opts = {

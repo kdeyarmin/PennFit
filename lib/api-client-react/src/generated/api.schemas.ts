@@ -402,22 +402,12 @@ export const SubscribeReminderResponseEmailStatus = {
   failed: "failed",
 } as const;
 
+// Forward-port of main commit 1e50795 (Task #18) — `manageToken` and
+// `alreadySubscribed` removed; both new + existing branches return the
+// same shape so unauthenticated callers can no longer enumerate
+// subscribers or mint capability tokens via the response.
 export interface SubscribeReminderResponse {
   success: boolean;
-  /** Capability token for the /reminders/manage endpoints. ONLY
-returned for newly-created subscriptions. For requests against
-an already-existing email we deliberately omit this field — the
-existing manage link is sent only to the registered owner's
-inbox, so an attacker who guesses an email cannot escalate to
-full subscription control via this endpoint.
- */
-  manageToken?: string;
-  /** True when the email was already on file. The response is
-otherwise indistinguishable from a fresh subscribe (no items
-disclosed, no token disclosed) — the caller should display a
-generic "check your email for a manage link" message.
- */
-  alreadySubscribed?: boolean;
   /** Whether a confirmation / manage email was sent */
   emailStatus: SubscribeReminderResponseEmailStatus;
   message: string;

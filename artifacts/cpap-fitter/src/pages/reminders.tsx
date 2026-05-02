@@ -36,15 +36,10 @@ function buildInitialState(): Record<ReminderSku, ItemState> {
   return out;
 }
 
+// Forward-port of main commit 1e50795 (Task #18) — the API no longer
+// returns `manageToken` or `alreadySubscribed`; both new + existing
+// branches share the same "check your inbox" success shape.
 interface SuccessState {
-  /**
-   * The capability token, present only when this was a brand-new
-   * subscription. When the email was already on file, the server
-   * deliberately withholds this — to prevent email-enumeration takeover —
-   * and instead emails the manage link directly to the registered owner.
-   */
-  manageToken?: string;
-  alreadySubscribed: boolean;
   emailStatus: "sent" | "skipped" | "failed";
   message: string;
 }
@@ -90,8 +85,6 @@ export function Reminders() {
       {
         onSuccess: (resp) => {
           setSuccess({
-            manageToken: resp.manageToken,
-            alreadySubscribed: resp.alreadySubscribed ?? false,
             emailStatus: resp.emailStatus,
             message: resp.message,
           });
@@ -104,14 +97,6 @@ export function Reminders() {
   }
 
   if (success) {
-    // Two distinct success shapes:
-    //  - new subscription: token was returned, show in-page manage link.
-    //  - already-subscribed: token withheld for security; tell the user to
-    //    check their inbox.
-    const manageHref = success.manageToken
-      ? `/reminders/manage?token=${encodeURIComponent(success.manageToken)}`
-      : null;
-
     return (
       <>
         <TechBackdrop />
@@ -125,57 +110,23 @@ export function Reminders() {
             <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-navy flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
             </div>
-            <CardTitle className="text-2xl tracking-tight">
-              {success.alreadySubscribed ? "Check your inbox" : "You're signed up"}
-            </CardTitle>
+            <CardTitle className="text-2xl tracking-tight">Check your inbox</CardTitle>
             <CardDescription>{success.message}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {success.alreadySubscribed && success.emailStatus !== "sent" && (
+            {success.emailStatus !== "sent" && (
               <Alert>
                 <MailCheck className="w-4 h-4" />
                 <AlertTitle>Could not send the manage email</AlertTitle>
                 <AlertDescription>
-                  Email delivery isn't configured here — please reach out to
-                  Penn Home Medical Supply directly so we can update your
-                  reminder preferences.
+                  Email delivery isn't configured right now — please reach out
+                  to Penn Home Medical Supply directly so we can send you your
+                  manage link.
                 </AlertDescription>
               </Alert>
-            )}
-
-            {!success.alreadySubscribed && success.emailStatus !== "sent" && (
-              <Alert>
-                <MailCheck className="w-4 h-4" />
-                <AlertTitle>Confirmation email not sent</AlertTitle>
-                <AlertDescription>
-                  Save the manage link below — it's the easiest way to update
-                  your dates or unsubscribe later.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {manageHref && (
-              <div className="rounded-xl border bg-muted/40 p-4">
-                <p className="text-sm font-medium mb-2">Your manage link</p>
-                <Link
-                  href={manageHref}
-                  className="text-sm text-[hsl(var(--penn-navy))] underline break-all"
-                  data-testid="link-manage-subscription"
-                >
-                  {window.location.origin}
-                  {manageHref}
-                </Link>
-              </div>
             )}
 
             <div className="flex flex-wrap gap-3">
-              {manageHref && (
-                <Link href={manageHref}>
-                  <Button variant="outline" data-testid="button-manage-now">
-                    Open manage page
-                  </Button>
-                </Link>
-              )}
               <Link href="/">
                 <Button variant="ghost">Back to PennPaps</Button>
               </Link>
