@@ -53,7 +53,9 @@ import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import { ShopFilterBar } from "@/components/shop/shop-filter-bar";
 import { QuickViewDialog } from "@/components/shop/quick-view-dialog";
 import { WishlistButton } from "@/components/shop/wishlist-button";
-import { Eye } from "lucide-react";
+import { CompareTray } from "@/components/shop/compare-tray";
+import { useCompare } from "@/lib/compare";
+import { Eye, Scale } from "lucide-react";
 
 /** Bulk aggregate map keyed by Stripe productId. Empty until loaded. */
 type AggregateMap = Record<string, { count: number; averageRating: number }>;
@@ -350,6 +352,13 @@ export function Shop() {
         </>
       )}
       <InsuranceFooter />
+      {/*
+        Compare drawer. Mounted at the page root so the floating
+        bottom bar persists across the section grid AND the
+        search-results grid. Renders nothing when the compare
+        list is empty.
+      */}
+      <CompareTray catalog={data?.products ?? []} />
     </div>
   );
 }
@@ -745,6 +754,7 @@ function ProductCard({
           >
             Or use insurance — $0 with prescription
           </Link>
+          <CompareToggle product={product} />
         </div>
       </div>
       <QuickViewDialog
@@ -754,6 +764,41 @@ function ProductCard({
         onOpenChange={setQuickViewOpen}
       />
     </div>
+  );
+}
+
+// Tiny in-card toggle for the compare drawer. Lives below the
+// "Or use insurance" line — visually quiet, but discoverable.
+// Disabled (with a hint) when the shopper already has the
+// compare cap (4) of OTHER items selected; toggling off is
+// always allowed.
+function CompareToggle({ product }: { product: ShopProductView }) {
+  const { has, toggle, isFull } = useCompare();
+  const selected = has(product.id);
+  const disabled = !selected && isFull;
+  return (
+    <button
+      type="button"
+      onClick={() => toggle(product.id)}
+      disabled={disabled}
+      aria-pressed={selected}
+      title={
+        disabled
+          ? "Compare list is full (max 4) — remove one to add this"
+          : selected
+            ? "Remove from compare"
+            : "Add to compare"
+      }
+      className={`flex items-center justify-center gap-1.5 w-full text-xs font-medium transition-colors ${
+        selected
+          ? "text-[hsl(var(--penn-navy))] font-semibold"
+          : "text-muted-foreground hover:text-[hsl(var(--penn-navy))]"
+      } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+      data-testid={`shop-compare-toggle-${product.id}`}
+    >
+      <Scale className="w-3.5 h-3.5" />
+      {selected ? "✓ Comparing" : "Add to compare"}
+    </button>
   );
 }
 
