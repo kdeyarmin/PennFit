@@ -107,7 +107,7 @@ import type PgBoss from "pg-boss";
 import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, prescriptions } from "@workspace/resupply-db";
 
-import { logger } from "../logger.js";
+import { logger } from "../../lib/logger.js";
 import {
   attachmentKeyForObjectName,
   deleteAttachmentObject,

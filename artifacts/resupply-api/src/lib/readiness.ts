@@ -6,13 +6,15 @@ import { logger } from "./logger";
 //   db    — Postgres is reachable AND accepting queries from this
 //           process's connection pool. Anything admin-facing fails
 //           if the DB is down, so this is a hard requirement.
-//   queue — pg-boss has bootstrapped its schema. We don't start
-//           pg-boss in the API process (the worker owns it — see
-//           ADR 002), so we infer queue readiness from the existence
-//           of the pg-boss `version` table in the dedicated
-//           `pgboss_resupply` schema. If the worker hasn't booted
-//           yet, the API has no way to enqueue work and shouldn't
-//           accept traffic.
+//   queue — pg-boss has bootstrapped its schema. pg-boss boots
+//           in-process at startup (see src/worker/index.ts; the
+//           formerly-separate resupply-worker artifact was folded
+//           into this process so a single deploy gates on a single
+//           healthz). We still probe the schema rather than checking
+//           an in-memory `workerReady` flag because the schema is
+//           the cross-process contract: any future tool that probes
+//           "is the queue alive?" can run this same check without
+//           reaching into our process state.
 //
 // Each check is wrapped in a per-check timeout so a wedged dependency
 // can't stall the readiness probe past the deploy gate's own

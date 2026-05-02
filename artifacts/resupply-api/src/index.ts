@@ -19,6 +19,7 @@ import { logger } from "./lib/logger";
 import { getPendingSessions } from "./lib/voice/pending-sessions";
 import { handleVoiceWsConnection } from "./lib/voice/ws-handler";
 import { readVoiceConfigOrNull } from "./lib/voice/voice-config";
+import { startWorker, stopWorker } from "./worker/index.js";
 
 // Route resupply-db's projection-failure log path through the
 // API server's structured pino logger. This eliminates the silent-
@@ -225,6 +226,18 @@ async function shutdown(signal: string): Promise<void> {
   );
   await Promise.race([httpClosed, timeout]);
 
+  // Stop pg-boss BEFORE the DB pool closes — pg-boss owns its own
+  // pool but our /readyz check probes the shared schema, and a clean
+  // pg-boss stop drains any in-flight job handlers gracefully.
+  try {
+    await stopWorker();
+  } catch (err) {
+    logger.warn(
+      { err: serializeErr(err) },
+      "shutdown: worker stop errored",
+    );
+  }
+
   try {
     await getDbPool().end();
   } catch (err) {
@@ -241,6 +254,16 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
 async function start(): Promise<void> {
+  // Start pg-boss + register job handlers BEFORE accepting traffic.
+  // The /readyz check probes the `pgboss_resupply.version` table, so
+  // this ordering guarantees readyz can flip green as soon as the
+  // listener is up — no race between traffic and queue bootstrap.
+  // If pg-boss boot fails (bad DATABASE_URL, schema permissions),
+  // the throw bubbles to start()'s caller below, which logs fatal
+  // and exits 1 — the orchestrator then sees a never-ready container
+  // and marks the deploy failed instead of half-promoting it.
+  await startWorker();
+
   httpServer.listen(port, () => {
     const voiceConfigured = readVoiceConfigOrNull() !== null;
     logger.info(
@@ -258,4 +281,7 @@ async function start(): Promise<void> {
   });
 }
 
-void start();
+start().catch((err) => {
+  logger.fatal({ err: serializeErr(err) }, "fatal: resupply-api failed to start");
+  void flushLogsAndExit(1);
+});

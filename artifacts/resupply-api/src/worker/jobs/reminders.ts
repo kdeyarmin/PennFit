@@ -88,7 +88,7 @@ import {
 } from "@workspace/resupply-reminders";
 import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
-import { logger } from "../logger.js";
+import { logger } from "../../lib/logger.js";
 
 export const SCAN_JOB = "reminders.scan";
 export const SEND_SMS_JOB = "reminders.send-sms";
