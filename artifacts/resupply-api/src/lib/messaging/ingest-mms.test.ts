@@ -461,6 +461,151 @@ describe("ingestInboundMmsMedia", () => {
     });
   });
 
+  // Task #52 — exercise the OVERALL_BUDGET_MS race in `ingestInboundMmsMedia`.
+  //
+  // What this guards
+  // ----------------
+  // The 9-second overall budget is the only thing standing between a
+  // stalled GCS PUT (or a never-acked Twilio CDN read) and Twilio's
+  // 15-second webhook retry threshold — past which Twilio retries
+  // the inbound webhook and we get duplicate `messages` rows guarded
+  // only by the partial unique index. The other tests in this file
+  // use immediate-resolve fetch mocks, so a regression that removed
+  // the `Promise.race` against the budget timer would not be caught.
+  //
+  // How the budget works under test
+  // -------------------------------
+  // - `vi.useFakeTimers()` controls BOTH the per-media abort timer
+  //   (5s) and the overall-budget timer (9s).
+  // - `fetch` is mocked to return a Promise that never settles (and
+  //   ignores the AbortSignal — the budget is supposed to save us
+  //   precisely when the AbortSignal is honoured by nothing on the
+  //   other end of the wire).
+  // - Advancing fake time past 9s resolves the budget sentinel,
+  //   `Promise.race` returns it, and the helper folds every slot
+  //   into the `errored` bucket and emits one warning log line.
+  describe("OVERALL_BUDGET_MS — stalled fetch can't hold the webhook", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      // Drop any still-pending timers (e.g. the per-media abort
+      // setTimeout we never let fire) before handing control back.
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    });
+
+    /** Fetch impl that returns a Promise which never settles. The
+     *  AbortSignal handed to it is intentionally ignored — that's
+     *  the failure mode the overall-budget guard exists for. */
+    function neverSettlingFetch(): MockInstance {
+      return vi
+        .spyOn(globalThis, "fetch" as never)
+        .mockImplementation((async () =>
+          new Promise(() => {
+            /* never resolves */
+          })) as never);
+    }
+
+    it("returns within the 9s budget with every slot counted as errored", async () => {
+      fetchSpy = neverSettlingFetch();
+
+      const promise = ingestInboundMmsMedia(
+        {
+          messageId: MSG_ID,
+          rawWebhookBody: {
+            NumMedia: "3",
+            MediaUrl0:
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEa",
+            MediaContentType0: "image/png",
+            MediaUrl1:
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEb",
+            MediaContentType1: "image/png",
+            MediaUrl2:
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEc",
+            MediaContentType2: "image/png",
+          },
+          numMedia: 3,
+          twilioAccountSid: TWILIO_SID,
+          twilioAuthToken: TWILIO_TOKEN,
+        },
+        SILENT_LOGGER,
+      );
+
+      // Advance to 8.999s — JUST before the budget. The promise
+      // must still be pending; if it's already settled the budget
+      // is firing too early (regression).
+      await vi.advanceTimersByTimeAsync(8_999);
+      let earlySettled = false;
+      void promise.then(() => {
+        earlySettled = true;
+      });
+      // Yield to the microtask queue so any spurious early settle
+      // would have flipped the flag.
+      await Promise.resolve();
+      expect(earlySettled).toBe(false);
+
+      // Tick past the 9s budget; the Promise.race resolves with the
+      // sentinel and the helper returns.
+      await vi.advanceTimersByTimeAsync(2);
+
+      const result = await promise;
+      expect(result).toEqual({
+        attempted: 3,
+        succeeded: 0,
+        rejected: 0,
+        errored: 3,
+      });
+      // Critical: no DB insert can have happened — the production
+      // code path returns BEFORE any persistInboundAttachment call
+      // could land. A bug that swallowed the budget but still
+      // awaited the never-settling fetches would either hang the
+      // test or — worse in production — let the webhook stall.
+      expect(insertCalls).toHaveLength(0);
+      expect(getUploadUrlMock).not.toHaveBeenCalled();
+    });
+
+    it("emits the mms_ingest_overall_budget_exceeded warning log", async () => {
+      fetchSpy = neverSettlingFetch();
+      const warn = SILENT_LOGGER.warn as ReturnType<typeof vi.fn>;
+      warn.mockClear();
+
+      const promise = ingestInboundMmsMedia(
+        {
+          messageId: MSG_ID,
+          rawWebhookBody: {
+            NumMedia: "2",
+            MediaUrl0:
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEx",
+            MediaContentType0: "image/png",
+            MediaUrl1:
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEy",
+            MediaContentType1: "image/png",
+          },
+          numMedia: 2,
+          twilioAccountSid: TWILIO_SID,
+          twilioAuthToken: TWILIO_TOKEN,
+        },
+        SILENT_LOGGER,
+      );
+
+      await vi.advanceTimersByTimeAsync(9_001);
+      await promise;
+
+      // Pino-style call shape is `(obj, msg)`. Find the budget log
+      // by message string so any future per-media abort warnings
+      // emitted alongside it don't break the assertion.
+      const budgetCall = warn.mock.calls.find(
+        (c) => c[1] === "mms_ingest_overall_budget_exceeded",
+      );
+      expect(budgetCall).toBeDefined();
+      expect(budgetCall![0]).toMatchObject({
+        budget_ms: 9_000,
+        attempted: 2,
+      });
+    });
+  });
+
   it("counts a DB insert failure as errored without throwing", async () => {
     fetchSpy = mockFetch((url) => {
       if (url.includes("api.twilio.com")) {
