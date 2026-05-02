@@ -90,6 +90,9 @@ const ShopCheckoutCancel = lazy(() =>
 const ShopOrders = lazy(() =>
   import("@/pages/shop-orders").then((m) => ({ default: m.ShopOrders })),
 );
+const ShopWishlist = lazy(() =>
+  import("@/pages/shop-wishlist").then((m) => ({ default: m.ShopWishlist })),
+);
 const AccountPage = lazy(() =>
   import("@/pages/account").then((m) => ({ default: m.AccountPage })),
 );
@@ -300,6 +303,7 @@ function PatientRouter() {
           <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
           <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
           <Route path="/shop/orders" component={ShopOrders} />
+          <Route path="/shop/wishlist" component={ShopWishlist} />
           <Route path="/account" component={AccountPage} />
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />

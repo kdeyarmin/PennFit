@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ShieldCheck, Menu, X, Package } from "lucide-react";
+import { ShieldCheck, Menu, X, Package, Heart } from "lucide-react";
 import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
 import { UserMenu } from "@/components/user-menu";
@@ -8,6 +8,33 @@ import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
 import { MiniCart } from "@/components/shop/mini-cart";
+import { useWishlist } from "@/lib/wishlist";
+
+// Wishlist nav indicator — small heart with count badge that
+// only renders once the shopper has saved at least one item, so
+// the header stays uncluttered for first-time browsers. Visible
+// on both desktop and mobile (the shop affordances cluster
+// together on mobile alongside the cart icon).
+function WishlistNavLink() {
+  const { count } = useWishlist();
+  if (count === 0) return null;
+  return (
+    <Link
+      href="/shop/wishlist"
+      className="relative inline-flex items-center justify-center h-10 w-10 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/40 transition-colors"
+      aria-label={`Wishlist (${count} saved)`}
+      data-testid="nav-wishlist"
+    >
+      <Heart className="h-5 w-5" />
+      <span
+        className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] text-[10px] font-bold leading-[18px] text-center"
+        data-testid="nav-wishlist-count"
+      >
+        {count > 99 ? "99+" : count}
+      </span>
+    </Link>
+  );
+}
 
 // Reset scroll to the top on every route change. Without this, navigating
 // from a long page (e.g. Results) into a new page leaves the user halfway
@@ -110,6 +137,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
               <YourOrdersNavLink />
+              <WishlistNavLink />
               <MiniCart />
               <UserMenu />
             </nav>
@@ -117,6 +145,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Mobile actions: cart icon + hamburger */}
             <div className="md:hidden flex items-center gap-2">
               <UserMenu />
+              <WishlistNavLink />
               <MiniCart />
               <button
                 type="button"
@@ -226,6 +255,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <li><Link href="/how-it-works" className="text-muted-foreground hover:text-primary transition-colors">Virtual Mask Fitter</Link></li>
                   <li><Link href="/masks" className="text-muted-foreground hover:text-primary transition-colors">Mask Catalog</Link></li>
                   <li><Link href="/shop" className="text-muted-foreground hover:text-primary transition-colors">Shop Supplies</Link></li>
+                  <li><Link href="/shop/wishlist" className="text-muted-foreground hover:text-primary transition-colors">Saved for later</Link></li>
                   <li><Link href="/insurance" className="text-muted-foreground hover:text-primary transition-colors">How insurance works</Link></li>
                   <li><Link href="/account" className="text-muted-foreground hover:text-primary transition-colors">My Account</Link></li>
                   <li><Link href="/learn" className="text-muted-foreground hover:text-primary transition-colors">Learn</Link></li>

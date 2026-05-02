@@ -52,6 +52,7 @@ import { StarRating } from "@/components/star-rating";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import { ShopFilterBar } from "@/components/shop/shop-filter-bar";
 import { QuickViewDialog } from "@/components/shop/quick-view-dialog";
+import { WishlistButton } from "@/components/shop/wishlist-button";
 import { Eye } from "lucide-react";
 
 /** Bulk aggregate map keyed by Stripe productId. Empty until loaded. */
@@ -549,6 +550,17 @@ function ProductCard({
           <Eye className="w-3.5 h-3.5" />
           Quick view
         </button>
+        {/*
+          Wishlist heart. Lives top-LEFT (when there is no Bundle
+          badge) or just below it (when there is). Always visible
+          — unlike Quick view, save-for-later is a primary
+          intent that should be discoverable without hovering.
+        */}
+        <div
+          className={`absolute left-3 ${product.isBundle ? "top-12" : "top-3"}`}
+        >
+          <WishlistButton productId={product.id} productName={product.name} />
+        </div>
       </div>
       <div className="p-6 flex flex-col flex-1">
         {modelLine && (
