@@ -1,9 +1,16 @@
-// pg-boss job: weekly sweep of orphaned prescription-attachment PHI.
+// pg-boss job: weekly sweep of orphaned attachment PHI in private GCS.
 //
 // Background
 // ----------
-// Three of the four prescription-attachment lifecycle paths are self-
-// cleaning today (see docs/resupply/PHI-RETENTION.md):
+// Two writers share the `/objects/uploads/` prefix in the private
+// bucket:
+//   * `prescriptions.attachment_object_key` — patient-uploaded
+//     prescription scans/photos.
+//   * `message_attachments.object_key` — inbound MMS / email media
+//     persisted by the SMS and SendGrid Inbound Parse webhooks.
+//
+// Three of the four prescription-attachment lifecycle paths are
+// self-cleaning today (see docs/resupply/PHI-RETENTION.md):
 //   1. Upload-url → finalize: row + bytes paired atomically.
 //   2. Replacement: the previous object is deleted best-effort by the
 //      api's finalize handler.
@@ -11,15 +18,23 @@
 //      clearing the row's pointer columns.
 // The fourth — "upload-url issued, GCS PUT happened, finalize never
 // called" — leaves bytes in the bucket with no DB row pointing at
-// them. This sweep is the cleanup for path #4.
+// them. The messaging path has its own equivalent: the inbound MMS
+// ingestor caps the whole webhook at 9s wall-clock, and any
+// per-media task that finishes its GCS PUT after the budget but
+// before its DB insert lands is an orphan too.
+// This sweep is the cleanup for both paths.
 //
 // Algorithm
 // ---------
 // Once per week (Sunday 03:13 UTC):
 //   1. List every object under `<entity-prefix>/uploads/` in the
-//      private bucket.
+//      private bucket (a single prefix scan covers both writers
+//      since prescriptions + message_attachments share the same
+//      `/objects/uploads/` shape).
 //   2. SELECT every non-null `attachment_object_key` from
-//      `prescriptions` (the column shape is `/objects/uploads/<uuid>`).
+//      `prescriptions` AND every `object_key` from
+//      `message_attachments`, union into one reference Set
+//      (column shape on both sides is `/objects/uploads/<uuid>`).
 //   3. For each bucket object, derive its expected
 //      `/objects/uploads/<uuid>` shape and look it up in the DB Set:
 //        - referenced → leave alone
@@ -77,8 +92,17 @@
 // Counters semantics
 // ------------------
 //   * `objects_scanned`         — total bucket objects examined.
-//   * `references_loaded`       — count of non-null DB attachment keys.
+//   * `references_loaded`       — count of non-null DB attachment
+//                                 keys across BOTH `prescriptions`
+//                                 and `message_attachments` (union'd
+//                                 size; identical keys present in
+//                                 both tables are counted once).
 //   * `orphans_deleted`         — objects deleted this run.
+//   * `bytes_reclaimed`         — sum of GCS-reported byte sizes for
+//                                 objects deleted this run. Useful
+//                                 for cost-trend dashboards. Objects
+//                                 GCS didn't surface a `size` for
+//                                 contribute 0 (very rare).
 //   * `orphans_too_young`       — orphans skipped because of the
 //                                 grace window. Will be revisited.
 //   * `orphans_no_time_created` — orphans skipped because GCS did
@@ -105,7 +129,11 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, prescriptions } from "@workspace/resupply-db";
+import {
+  getDbPool,
+  messageAttachments,
+  prescriptions,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import {
@@ -134,6 +162,8 @@ export interface SweepCounters {
   objects_scanned: number;
   references_loaded: number;
   orphans_deleted: number;
+  /** Sum of GCS-reported byte sizes for objects deleted this run. */
+  bytes_reclaimed: number;
   orphans_too_young: number;
   orphans_no_time_created: number;
   delete_errors: number;
@@ -195,6 +225,7 @@ export async function sweepOrphans(deps: SweepDeps): Promise<SweepCounters> {
     objects_scanned: 0,
     references_loaded: 0,
     orphans_deleted: 0,
+    bytes_reclaimed: 0,
     orphans_too_young: 0,
     orphans_no_time_created: 0,
     delete_errors: 0,
@@ -256,8 +287,13 @@ export async function sweepOrphans(deps: SweepDeps): Promise<SweepCounters> {
     const outcome = await deps.deleteObject(obj.bucketName, obj.objectName);
     if (outcome === "ok") {
       counters.orphans_deleted += 1;
+      // GCS occasionally omits `size` from object metadata. Fall back
+      // to 0 — undercounting bytes_reclaimed is preferable to crashing
+      // the sweep over a single weird object, and the alternative
+      // counter (orphans_deleted) still moves so the run is visible.
+      if (obj.size !== null) counters.bytes_reclaimed += obj.size;
       logger.info(
-        { age_ms: ageMs },
+        { age_ms: ageMs, bytes: obj.size ?? 0 },
         "attachment-sweep: deleted orphan attachment",
       );
     } else if (outcome === "not_found") {
@@ -310,23 +346,49 @@ export function buildProductionSweepDeps(
     listObjects: () => listAttachmentObjects(),
     attachmentKeyOf: (n) => attachmentKeyForObjectName(n),
     loadReferencedKeys: async () => {
-      const rows = await db
-        .select({ key: prescriptions.attachmentObjectKey })
-        .from(prescriptions)
-        .where(isNotNull(prescriptions.attachmentObjectKey));
+      // Two SELECTs (one per writer) instead of a single UNION SQL —
+      // schema lives in one place (drizzle), the result Set is built
+      // in one place (here), and the queries fan out cleanly to
+      // whichever pool replica is available. Cost is identical in
+      // practice: both columns are hit by their primary lookup paths
+      // and row counts are O(thousands) per table at production
+      // scale. A key present in BOTH tables is correctly counted
+      // once thanks to Set semantics.
       const set = new Set<string>();
-      for (const r of rows) {
+      const [presRows, msgRows] = await Promise.all([
+        db
+          .select({ key: prescriptions.attachmentObjectKey })
+          .from(prescriptions)
+          .where(isNotNull(prescriptions.attachmentObjectKey)),
+        db
+          .select({ key: messageAttachments.objectKey })
+          .from(messageAttachments),
+      ]);
+      for (const r of presRows) {
+        if (r.key) set.add(r.key);
+      }
+      for (const r of msgRows) {
         if (r.key) set.add(r.key);
       }
       return set;
     },
     isStillReferenced: async (attachmentKey) => {
-      const rows = await db
-        .select({ id: prescriptions.id })
-        .from(prescriptions)
-        .where(eq(prescriptions.attachmentObjectKey, attachmentKey))
-        .limit(1);
-      return rows.length > 0;
+      // Pre-delete recheck — same widening as loadReferencedKeys:
+      // either writer claiming the key counts as "still referenced".
+      // Two LIMIT 1 SELECTs in parallel.
+      const [presRows, msgRows] = await Promise.all([
+        db
+          .select({ id: prescriptions.id })
+          .from(prescriptions)
+          .where(eq(prescriptions.attachmentObjectKey, attachmentKey))
+          .limit(1),
+        db
+          .select({ id: messageAttachments.id })
+          .from(messageAttachments)
+          .where(eq(messageAttachments.objectKey, attachmentKey))
+          .limit(1),
+      ]);
+      return presRows.length > 0 || msgRows.length > 0;
     },
     deleteObject: async (bucketName, objectName) => {
       try {

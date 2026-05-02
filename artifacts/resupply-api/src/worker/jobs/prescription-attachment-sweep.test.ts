@@ -44,12 +44,14 @@ const HOUR_MS = 60 * 60 * 1000;
 function obj(
   objectName: string,
   ageHours: number | null,
+  size: number | null = 1024,
 ): AttachmentObject {
   return {
     bucketName: "test-bucket",
     objectName,
     timeCreated:
       ageHours === null ? null : new Date(NOW.getTime() - ageHours * HOUR_MS),
+    size,
   };
 }
 
@@ -281,6 +283,7 @@ describe("sweepOrphans", () => {
       objects_scanned: 0,
       references_loaded: 1,
       orphans_deleted: 0,
+      bytes_reclaimed: 0,
       orphans_too_young: 0,
       orphans_no_time_created: 0,
       delete_errors: 0,
@@ -303,6 +306,54 @@ describe("sweepOrphans", () => {
     expect(deleted.map((d) => d.name)).toEqual(["uploads/x"]);
     expect(counters.orphans_deleted).toBe(1);
     expect(audited).toHaveLength(1);
+  });
+
+  // Task #50 — bytes_reclaimed counter.
+  //
+  // The dashboard now surfaces a "bytes reclaimed" stat fed by the
+  // sum of GCS `size` metadata across deleted orphans. Three cases
+  // worth pinning:
+  //   1. Sums correctly across a multi-orphan run.
+  //   2. Skipped categories (referenced / too-young / no-tc /
+  //      non-attachment) contribute nothing — only successful
+  //      "ok" deletes count.
+  //   3. A null size on an otherwise-deletable orphan is tolerated
+  //      (delete still happens, contributes 0 to bytes_reclaimed).
+  it("sums bytes_reclaimed across successful deletes only", async () => {
+    const { deps, audited } = makeDeps({
+      objects: [
+        obj("uploads/del1", 48, 1_000),
+        obj("uploads/del2", 48, 2_500),
+        obj("uploads/young", 1, 9_999), // skipped — should NOT add
+        obj("uploads/healthy", 100, 8_888), // referenced — should NOT add
+        obj("uploads/null-size", 48, null), // delete OK, contributes 0
+      ],
+      referenced: ["/objects/uploads/healthy"],
+    });
+    const counters = await sweepOrphans(deps);
+    expect(counters.orphans_deleted).toBe(3);
+    expect(counters.bytes_reclaimed).toBe(3_500); // 1000 + 2500 + 0
+    expect(audited[0]?.bytes_reclaimed).toBe(3_500);
+  });
+
+  it("does not credit bytes_reclaimed for not_found or error outcomes", async () => {
+    const { deps, audited } = makeDeps({
+      objects: [
+        obj("uploads/already-gone", 48, 5_000),
+        obj("uploads/explodes", 48, 7_000),
+      ],
+      referenced: [],
+      deleteOutcomes: {
+        "uploads/already-gone": "not_found",
+        "uploads/explodes": "error",
+      },
+    });
+    const counters = await sweepOrphans(deps);
+    expect(counters.orphans_deleted).toBe(0);
+    expect(counters.delete_404_idempotent).toBe(1);
+    expect(counters.delete_errors).toBe(1);
+    expect(counters.bytes_reclaimed).toBe(0);
+    expect(audited[0]?.bytes_reclaimed).toBe(0);
   });
 });
 

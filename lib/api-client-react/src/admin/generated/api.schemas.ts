@@ -599,6 +599,9 @@ export interface PhiSweepCounters {
   referencesLoaded: number;
   /** @minimum 0 */
   orphansDeleted: number;
+  /** Sum of GCS-reported byte sizes for objects deleted this run.
+   *  @minimum 0 */
+  bytesReclaimed: number;
   /** @minimum 0 */
   orphansTooYoung: number;
   /** @minimum 0 */

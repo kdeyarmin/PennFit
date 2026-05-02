@@ -86,6 +86,23 @@ const TONE_STYLES: Record<Tone, ToneStyles> = {
   },
 };
 
+/**
+ * Render a byte count as a short human-friendly string. Same rules
+ * the rest of the app uses for attachment sizes (binary KiB/MiB/GiB),
+ * with a single decimal at MiB+ for readability. Hand-rolled to keep
+ * the dashboard zero-dependency on a humanize-bytes lib.
+ */
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 1024) return `${n} B`;
+  const kib = n / 1024;
+  if (kib < 1024) return `${Math.round(kib)} KiB`;
+  const mib = kib / 1024;
+  if (mib < 1024) return `${mib.toFixed(1)} MiB`;
+  const gib = mib / 1024;
+  return `${gib.toFixed(2)} GiB`;
+}
+
 function formatRelative(lastRunAt: string, now: number): string {
   const t = new Date(lastRunAt).getTime();
   if (Number.isNaN(t)) return lastRunAt;
@@ -230,6 +247,11 @@ function PhiSweepDetails({
         <Counter label="Objects scanned" value={c.objectsScanned} />
         <Counter label="References loaded" value={c.referencesLoaded} />
         <Counter label="Orphans deleted" value={c.orphansDeleted} />
+        <Counter
+          label="Bytes reclaimed"
+          value={formatBytes(c.bytesReclaimed)}
+          testId="phi-sweep-bytes-reclaimed"
+        />
         <Counter label="Too young (skipped)" value={c.orphansTooYoung} />
         <Counter
           label="404 (already gone)"
@@ -241,9 +263,17 @@ function PhiSweepDetails({
   );
 }
 
-function Counter({ label, value }: { label: string; value: number }) {
+function Counter({
+  label,
+  value,
+  testId,
+}: {
+  label: string;
+  value: number | string;
+  testId?: string;
+}) {
   return (
-    <div className="flex justify-between gap-2">
+    <div className="flex justify-between gap-2" data-testid={testId}>
       <dt>{label}</dt>
       <dd className="font-medium tabular-nums">{value}</dd>
     </div>

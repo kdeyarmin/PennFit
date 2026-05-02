@@ -73,6 +73,10 @@ const sweepMetadataSchema = z
     objects_scanned: z.number().int().nonnegative(),
     references_loaded: z.number().int().nonnegative(),
     orphans_deleted: z.number().int().nonnegative(),
+    // Optional + defaulted to 0 so historical pre-Task#50 audit rows
+    // (which predate this counter) still parse cleanly and surface
+    // on the dashboard instead of degrading to "no run yet".
+    bytes_reclaimed: z.number().int().nonnegative().optional().default(0),
     orphans_too_young: z.number().int().nonnegative(),
     orphans_no_time_created: z.number().int().nonnegative(),
     delete_errors: z.number().int().nonnegative(),
@@ -88,6 +92,8 @@ export interface PhiSweepCounters {
   objectsScanned: number;
   referencesLoaded: number;
   orphansDeleted: number;
+  /** Sum of GCS-reported byte sizes for objects deleted this run. */
+  bytesReclaimed: number;
   orphansTooYoung: number;
   orphansNoTimeCreated: number;
   deleteErrors: number;
@@ -164,6 +170,7 @@ export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> 
       objectsScanned: m.objects_scanned,
       referencesLoaded: m.references_loaded,
       orphansDeleted: m.orphans_deleted,
+      bytesReclaimed: m.bytes_reclaimed,
       orphansTooYoung: m.orphans_too_young,
       orphansNoTimeCreated: m.orphans_no_time_created,
       deleteErrors: m.delete_errors,

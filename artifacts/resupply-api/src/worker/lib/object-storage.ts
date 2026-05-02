@@ -65,6 +65,10 @@ export interface AttachmentObject {
   objectName: string;
   /** GCS `timeCreated` parsed to a Date. Null when GCS omitted it. */
   timeCreated: Date | null;
+  /** Object size in bytes, parsed from GCS metadata. Null when GCS
+   *  omitted `size` (rare; the sweep handles it as "delete on schedule
+   *  but contribute 0 to bytes_reclaimed"). */
+  size: number | null;
 }
 
 /**
@@ -125,10 +129,22 @@ export async function listAttachmentObjects(
       const d = new Date(tcRaw);
       if (!Number.isNaN(d.getTime())) timeCreated = d;
     }
+    // GCS returns `size` as a stringified integer; coerce defensively
+    // and fall back to null on anything we can't parse so a single
+    // weird metadata blob can't crash the sweep.
+    const sizeRaw = f.metadata.size;
+    let size: number | null = null;
+    if (typeof sizeRaw === "string") {
+      const n = Number.parseInt(sizeRaw, 10);
+      if (Number.isFinite(n) && n >= 0) size = n;
+    } else if (typeof sizeRaw === "number" && Number.isFinite(sizeRaw)) {
+      size = sizeRaw;
+    }
     return {
       bucketName,
       objectName: f.name,
       timeCreated,
+      size,
     };
   });
 }
