@@ -17,11 +17,6 @@ import { makeMemoryRepo, seedUserWithPassword } from "../test-helpers";
 import { makeAuthRouter } from "./index";
 import type { AuditWriter, AuthDeps } from "./types";
 
-const PEPPER_BASE64 = Buffer.from(
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "hex",
-).toString("base64");
-
 interface Harness {
   app: Express;
   repo: ReturnType<typeof makeMemoryRepo>;
@@ -46,7 +41,6 @@ function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
   }> = [];
   const env = readAuthEnv({
     AUTH_PROVIDER: "in_house",
-    AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
   });
   const deps: AuthDeps = {
     env,
@@ -95,7 +89,6 @@ describe("POST /auth/sign-in", () => {
       status: opts.status ?? "active",
       emailVerified: opts.verified ?? true,
       password: "correct horse battery staple",
-      pepper: Buffer.from(PEPPER_BASE64, "base64"),
     });
   }
 
@@ -228,7 +221,6 @@ describe("POST /auth/sign-out", () => {
       role: "admin",
       emailVerified: true,
       password: "p4ssword!",
-      pepper: Buffer.from(PEPPER_BASE64, "base64"),
     });
     const signIn = await supertest(h.app)
       .post("/auth/sign-in")
@@ -262,7 +254,6 @@ describe("GET /auth/me", () => {
       role: "admin",
       emailVerified: true,
       password: "p4ssword!",
-      pepper: Buffer.from(PEPPER_BASE64, "base64"),
     });
     const signIn = await supertest(h.app)
       .post("/auth/sign-in")

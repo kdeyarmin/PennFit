@@ -21,8 +21,8 @@
 //     it expects each query to see, in order.
 //   * Stripe is mocked at the lib/stripe/config layer; only refunds
 //     are exercised here.
-//   * the requireAdmin middleware is mocked via test-helpers/auth-mocks
-//     so each test can pin the admin context (email, userId, role).
+//   * the auth provider is mocked via auth-deps; the admin gate
+//     resolves a verified email matching RESUPPLY_ADMIN_EMAILS.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -191,7 +191,6 @@ const ENV_KEYS = [
   "SENDGRID_FROM_EMAIL",
   "SENDGRID_FROM_NAME",
   "SHOP_PUBLIC_BASE_URL",
-  "RESUPPLY_DATA_KEY",
 ] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
@@ -199,8 +198,6 @@ const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 beforeEach(() => {
   for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
   for (const k of ENV_KEYS) delete process.env[k];
-  process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
-
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";

@@ -15,10 +15,7 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import { getDbPool } from "@workspace/resupply-db";
-import {
-  hasDataKey,
-  hasPhoneHmacKey,
-} from "@workspace/resupply-secrets";
+import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -104,7 +101,7 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
         accountSidConfigured: Boolean(env.TWILIO_ACCOUNT_SID),
         authTokenConfigured: Boolean(env.TWILIO_AUTH_TOKEN),
         messagingServiceConfigured: Boolean(env.TWILIO_MESSAGING_SERVICE_SID),
-        voicePhoneConfigured: Boolean(env.TWILIO_PHONE_NUMBER),
+        voicePhoneConfigured: Boolean(env.TWILIO_VOICE_PHONE_NUMBER),
       },
       stripe: {
         secretKeyConfigured: Boolean(env.STRIPE_SECRET_KEY),
@@ -117,14 +114,11 @@ router.get("/admin/system-info", requireAdmin, async (_req, res) => {
         apiKeyConfigured: Boolean(env.OPENAI_API_KEY),
       },
     },
-    encryption: {
-      // PHI encryption key MUST be set in production. We only
-      // surface presence — never the value, never a fingerprint.
-      // `hasDataKey()` / `hasPhoneHmacKey()` accept either the
-      // legacy per-purpose env var or a derivation from
-      // RESUPPLY_MASTER_KEY.
-      phiKeyConfigured: hasDataKey(),
-      phoneHmacKeyConfigured: hasPhoneHmacKey(),
+    secrets: {
+      // We only surface presence — never the value, never a
+      // fingerprint. `RESUPPLY_LINK_HMAC_KEY` signs unsubscribe and
+      // confirmation deep-links so they can't be forged.
+      linkHmacKeyConfigured: hasLinkHmacKey(),
     },
   });
 });

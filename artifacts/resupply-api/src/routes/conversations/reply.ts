@@ -15,7 +15,7 @@
 //
 // PHI in audit log: never. The helper records `body_length` so admins
 // can spot suspiciously empty/long replies, but the message body
-// itself only lives encrypted at rest in `messages.body`.
+// itself only lives in `messages.body`.
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -67,9 +67,7 @@ router.post(
         "vars are missing. Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, " +
         "TWILIO_PHONE_NUMBER or TWILIO_MESSAGING_SERVICE_SID, SENDGRID_API_KEY, " +
         "SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME, " +
-        "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and the resupply secret key " +
-        "(RESUPPLY_MASTER_KEY, or both legacy RESUPPLY_PHONE_HMAC_KEY + " +
-        "RESUPPLY_LINK_HMAC_KEY).",
+        "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and RESUPPLY_LINK_HMAC_KEY.",
     });
     return;
   }

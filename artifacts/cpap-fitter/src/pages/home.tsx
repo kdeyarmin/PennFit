@@ -6,7 +6,6 @@ import {
   ScanFace,
   ClipboardList,
   Zap,
-  PlayCircle,
   ArrowRight,
   BookOpen,
   HelpCircle,
@@ -74,13 +73,10 @@ export function Home() {
               Shop CPAP supplies
             </Button>
           </Link>
-          <Button asChild size="lg" variant="ghost" className="h-14 px-4 text-base rounded-full text-muted-foreground hover:text-primary gap-2">
-            <a href="/pennpaps-tutorial/" target="_blank" rel="noopener noreferrer">
-              <PlayCircle className="w-5 h-5" />
-              Watch the tutorial
-              <span className="sr-only">(opens in a new tab)</span>
-            </a>
-          </Button>
+          {/* "Watch the tutorial" button removed in the Task #37
+              consolidation along with the standalone pennpaps-tutorial
+              artifact. Patients now see the inline how-it-works copy
+              and animated step rail on /how-it-works instead. */}
         </div>
 
       </div>

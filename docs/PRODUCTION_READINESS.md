@@ -6,9 +6,8 @@ record at the resupply-api or rolling a customer-facing release.
 
 The list is deliberately short — runtime guards already cover most
 classes of misconfiguration (the `assertRequiredEnv` boot check,
-`assertPgcryptoEnabled` preflight, `requireAdmin` failure modes).
-What's left is the human-in-the-loop work an operator has to confirm
-once per environment.
+`requireAdmin` failure modes). What's left is the human-in-the-loop
+work an operator has to confirm once per environment.
 
 ---
 
@@ -24,74 +23,60 @@ need to be **correct**, not just present.
       a verified email. Seed the first admin against a fresh DB
       with `pnpm --filter @workspace/scripts auth:bootstrap-admin
       --email=<addr> --role=admin`.
-- [ ] `AUTH_PASSWORD_PEPPER` — 32+ random bytes (base64-encoded;
-      `openssl rand -base64 48`). Mixed into argon2id when hashing
-      customer passwords; bcrypt is only the legacy Clerk import path.
-      Without it password hashing refuses to boot in production.
-      Treat as long-lived; rotating it invalidates every stored hash.
-- [ ] `AUTH_SESSION_TTL_DAYS` (default 14), `AUTH_EMAIL_TOKEN_TTL_HOURS`
-      (default 24) — session and verify/reset link lifetimes. Defaults
-      are fine for production unless a security review says otherwise.
+- [ ] No `AUTH_PASSWORD_PEPPER` env var is required. The Task #38
+      follow-up removed the server-side pepper; passwords are now
+      hashed with plain argon2id. Any leftover `AUTH_PASSWORD_PEPPER`
+      secret from an earlier deploy is silently ignored and can be
+      deleted. NB: the removal invalidated every previously stored
+      password hash — existing users must go through the password
+      reset flow once.
 
 ### Database
 
-- [ ] `DATABASE_URL` — Postgres connection string with the `pgcrypto`
-      extension installed. The boot will fail with
-      `PgcryptoNotInstalledError` if the extension is missing.
+- [ ] `DATABASE_URL` — Postgres v14+ connection string. No
+      extensions are required: the active resupply schema only
+      uses `gen_random_uuid()`, which has been built into Postgres
+      core since v13.
 - [ ] All migrations applied in order:
-      `pnpm --filter @workspace/resupply-db run migrate`. The migrator
-      is idempotent (already-applied migrations are tracked in
-      `drizzle.resupply_migrations`), so re-running on a current
-      deploy is a no-op.
+      `pnpm --filter @workspace/resupply-db run migrate`
+- [ ] Migrations 0016–0021 applied if rolling forward from before
+      this PR (shop_returns, csr_macros, comm_prefs JSONB,
+      review_request_sent_at, admin_users, conversations assignment).
 
-### PHI encryption
+### PHI storage
 
-- [ ] `RESUPPLY_MASTER_KEY` — single 32+ byte secret; the resupply
-      stack HKDF-derives bulk PHI encryption (pgcrypto), email link
-      HMAC, and phone-lookup HMAC subkeys from it with distinct
-      domain-separated `info` labels. Lost = unrecoverable PHI;
-      rotation requires the `rotate-to-master-key` script.
-- [ ] (Legacy) `RESUPPLY_DATA_KEY`, `RESUPPLY_LINK_HMAC_KEY`,
-      `RESUPPLY_PHONE_HMAC_KEY` — older deployments may still set
-      these explicitly; each takes precedence over the master-derived
-      value for that purpose, so encrypted PHI written under a legacy
-      key keeps decrypting after `RESUPPLY_MASTER_KEY` is added.
+PHI columns are stored in plaintext in the resupply schema (per
+migration 0025_strip_phi_encryption — see ADR 007's "Superseded"
+header). Confidentiality at this layer is enforced by Postgres
+authn / encryption-at-rest at the storage layer, not column-level
+crypto. The only remaining application-layer secret in this family is:
 
-### Admin access
+- [ ] `RESUPPLY_LINK_HMAC_KEY` — 32+ random bytes used to sign the
+      short-lived patient links delivered in SMS / email reminders.
+      Rotating it invalidates every in-flight link.
 
-Stage 5b moved admin/agent role authority onto `auth.users.role`
-(DB-backed). The legacy `RESUPPLY_ADMIN_EMAILS` /
-`RESUPPLY_AGENT_EMAILS` env vars are no longer consulted by
-`requireAdmin` — they survive only as display values on the
-`/admin/settings` panel (and as the `RESUPPLY_ADMIN_EMAILS` userenv
-hint on Replit).
+### Admin allowlist
 
-- [ ] At least one row exists in `auth.users` with
-      `role = 'admin'` and `status = 'active'`. Seed the first one
-      with `pnpm --filter @workspace/scripts auth:bootstrap-admin
-      --email=<addr> --role=admin` against the production
-      `DATABASE_URL`. The script issues a one-time set-password
-      email (when SendGrid is configured) and prints the raw token
-      so the bootstrap admin can sign in.
-- [ ] Additional admins / agents are added via `/admin/team` in
-      the resupply dashboard, NOT through env-var edits.
+- [ ] `RESUPPLY_ADMIN_EMAILS` — comma-separated allowlist. At least
+      ONE entry is required; `requireAdmin` 503s on every request
+      when this is empty in `NODE_ENV=production`.
+- [ ] `RESUPPLY_AGENT_EMAILS` — optional allowlist for CSRs.
+- [ ] DB-backed members (added via `/admin/team`) layer on top once
+      migration 0020 is applied.
 
 ### Vendors (graceful-degrade if missing — dashboard `/admin/operations`
 shows green/red dots per vendor)
 
-- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SIGNING_SECRET` — cash-pay
-      shop checkout, refunds, subscription mirror. Webhook signature
-      verification fails closed without the signing secret.
+- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` — cash-pay shop
+      checkout, refunds, subscription mirror.
 - [ ] `SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL` + `SENDGRID_FROM_NAME` —
       order receipts, reminder emails, cart-abandonment, review
       requests.
-- [ ] `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` — verifies SendGrid event
-      webhook signatures so bounce / spam-report events are trusted.
 - [ ] `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` +
       `TWILIO_MESSAGING_SERVICE_SID` — outbound SMS.
-- [ ] `TWILIO_PHONE_NUMBER` — outbound voice calls and SMS fallback
-      when no messaging service is configured.
-- [ ] `OPENAI_API_KEY` — conversation AI + voice realtime transcription.
+- [ ] `TWILIO_VOICE_PHONE_NUMBER` — outbound voice calls.
+- [ ] `ANTHROPIC_API_KEY` — Claude conversation agent.
+- [ ] `OPENAI_API_KEY` — voice realtime transcription.
 - [ ] `PRIVATE_OBJECT_DIR` — GCS bucket prefix for prescription
       attachments.
 
@@ -101,12 +86,7 @@ shows green/red dots per vendor)
       review request, order tracking).
 - [ ] `RESUPPLY_VOICE_PUBLIC_BASE_URL` — Twilio webhook target.
 - [ ] `RESUPPLY_DASHBOARD_PUBLIC_BASE_URL` — admin-team invite
-      redirect URL (the link in admin invitation emails).
-- [ ] `PENN_ADMIN_PUBLIC_BASE_URL` — public origin of the PennPaps
-      admin console; used to build links in admin-only emails.
-- [ ] `RESUPPLY_PUBLIC_BASE_URL` — public origin used for Stripe
-      Checkout success/cancel redirects. Falls back to
-      `REPLIT_DOMAINS` / `REPLIT_DEV_DOMAIN` when unset.
+      redirect URL (the link in the invitation email).
 
 ---
 
@@ -145,8 +125,7 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
     lookup health — see requireAdmin)
   - `event=stripe_refund_failed`
   - `event=sms_status_update_failed`
-  - any `level=fatal` line (unhandled exception, pgcrypto missing,
-    boot failure)
+  - any `level=fatal` line (unhandled exception, boot failure)
 
 ---
 
@@ -158,9 +137,9 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
       `13 3 * * 0` reaps unreferenced rows; lifecycle should NOT
       auto-delete referenced ones).
 - [ ] Restore drill: a recent restore-to-staging exercise has
-      verified `RESUPPLY_PHI_ENCRYPTION_KEY` decrypts the backup.
-      Without that, "we have backups" is a thinkpiece, not a recovery
-      plan.
+      verified the dump restores cleanly and the resupply API boots
+      against it. Without that, "we have backups" is a thinkpiece,
+      not a recovery plan.
 
 ---
 
@@ -176,7 +155,8 @@ session cookie (`__session`) and respect SameSite=Lax / Secure.
 ## 7. Smoke tests after deploy
 
 - [ ] `GET /resupply-api/healthz` returns 200.
-- [ ] `GET /resupply-api/readyz` returns 200 (preflight succeeded).
+- [ ] `GET /resupply-api/readyz` returns 200 (DB pool + worker
+      bootstrap succeeded).
 - [ ] An invited admin can accept their email invitation, set a
       password, sign in, and reach `/admin` with their assigned role.
 - [ ] An out-of-allowlist user signing in gets the
@@ -197,11 +177,12 @@ catches drift:
 - [ ] No PHI in logs. Audit by running:
       `rg "patient\.firstName|patient\.lastName|email_address|phone" artifacts/resupply-api/src --glob="!*.test.ts" --glob="!*.md"`
       and confirming no log lines reference these fields directly.
-- [ ] Audit log writes on every admin read of decrypted PHI (covered
-      by the `conversation.view`, `patient.view`, `audit.export.csv`
-      pattern; new admin endpoints should follow suit).
-- [ ] `RESUPPLY_PHI_ENCRYPTION_KEY` rotation procedure documented
-      and tested in staging.
+- [ ] Audit log writes on every admin read of PHI (covered by the
+      `conversation.view`, `patient.view`, `audit.export.csv` pattern;
+      new admin endpoints should follow suit).
+- [ ] `RESUPPLY_LINK_HMAC_KEY` rotation procedure documented (rotation
+      invalidates every in-flight signed link, so coordinate with a
+      send-pause window).
 - [ ] Customer self-service data-export (GET /shop/me/export) is
       reachable and returns the user's complete record set.
 

@@ -109,43 +109,10 @@ const VerifyEmailPage = lazy(() =>
     default: m.VerifyEmailPage,
   })),
 );
-const AdminShell = lazy(() =>
-  import("@/pages/admin/admin-shell").then((m) => ({ default: m.AdminShell })),
-);
-const AdminDashboard = lazy(() =>
-  import("@/pages/admin/dashboard").then((m) => ({
-    default: m.AdminDashboard,
-  })),
-);
-const AdminOrders = lazy(() =>
-  import("@/pages/admin/orders").then((m) => ({ default: m.AdminOrders })),
-);
-const AdminOrderDetail = lazy(() =>
-  import("@/pages/admin/order-detail").then((m) => ({
-    default: m.AdminOrderDetail,
-  })),
-);
-const AdminCustomers = lazy(() =>
-  import("@/pages/admin/customers").then((m) => ({
-    default: m.AdminCustomers,
-  })),
-);
-const AdminCustomerDetailPage = lazy(() =>
-  import("@/pages/admin/customer-detail").then((m) => ({
-    default: m.AdminCustomerDetailPage,
-  })),
-);
-const AdminAuditLog = lazy(() =>
-  import("@/pages/admin/audit").then((m) => ({ default: m.AdminAuditLog })),
-);
-const AdminReminders = lazy(() =>
-  import("@/pages/admin/reminders").then((m) => ({
-    default: m.AdminReminders,
-  })),
-);
-const AdminUsers = lazy(() =>
-  import("@/pages/admin/users").then((m) => ({ default: m.AdminUsers })),
-);
+// Admin pages were lifted out of the cpap-fitter storefront during the
+// Task #37 consolidation. Staff now use the Penn Resupply Console
+// (`artifacts/resupply-dashboard`) — the storefront only renders
+// patient-facing routes (shop, fitter, account, auth).
 const Reminders = lazy(() =>
   import("@/pages/reminders").then((m) => ({ default: m.Reminders })),
 );
@@ -323,46 +290,17 @@ function TopRouter() {
         <Route path="/reset-password" component={ResetPasswordPage} />
         <Route path="/verify-email" component={VerifyEmailPage} />
 
-        <Route path="/admin">
-          <AdminShell>
-            <AdminDashboard />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/orders">
-          <AdminShell>
-            <AdminOrders />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/orders/:id">
-          <AdminShell>
-            <AdminOrderDetail />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/customers">
-          <AdminShell>
-            <AdminCustomers />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/customers/:userId">
-          <AdminShell>
-            <AdminCustomerDetailPage />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/audit">
-          <AdminShell>
-            <AdminAuditLog />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/reminders">
-          <AdminShell>
-            <AdminReminders />
-          </AdminShell>
-        </Route>
-        <Route path="/admin/users">
-          <AdminShell>
-            <AdminUsers />
-          </AdminShell>
-        </Route>
+        {/*
+          Admin / staff routes were lifted out of the storefront in
+          the Task #37 consolidation. Penn staff sign in at the
+          Penn Resupply Console (`artifacts/resupply-dashboard`),
+          which shares the same `pf_session` cookie as the storefront
+          via the unified `/api/auth` + `/resupply-api/auth` mount.
+          A patient who lands on `/admin/*` here falls through to
+          the catch-all <PatientRouter> below and ends up on the
+          NotFound page, which is the desired UX for a wrong-app
+          deep link.
+        */}
 
         {/* Everything else falls through to the patient experience. */}
         <Route component={PatientRouter} />

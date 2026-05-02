@@ -4,12 +4,7 @@ import { URL } from "node:url";
 
 import { WebSocketServer, type WebSocket } from "ws";
 
-import {
-  PgcryptoNotInstalledError,
-  assertPgcryptoEnabled,
-  getDbPool,
-  setProjectionLogger,
-} from "@workspace/resupply-db";
+import { getDbPool, setProjectionLogger } from "@workspace/resupply-db";
 
 import { assertRequiredEnv } from "./lib/env-check";
 
@@ -162,12 +157,6 @@ function serializeErr(err: unknown): { name: string; message?: string } {
   return { name: "unknown" };
 }
 
-// Preflight: refuse to listen if pgcrypto is missing. Without the
-// extension, any subsequent encrypted PHI write would fail at SQL
-// time with a confusing "function pgp_sym_encrypt does not exist"
-// error. Failing fast here turns that into a clear, actionable boot
-// error and keeps a half-broken process out of the load balancer.
-//
 // Why we sleep before exit: pino with a transport (pino-pretty in
 // dev, any worker-thread destination in prod) buffers log writes in
 // a worker thread. A bare `process.exit(1)` immediately after
@@ -252,20 +241,6 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
 async function start(): Promise<void> {
-  try {
-    await assertPgcryptoEnabled(getDbPool());
-  } catch (err) {
-    if (err instanceof PgcryptoNotInstalledError) {
-      logger.fatal({ err: { message: err.message } }, err.message);
-    } else {
-      logger.fatal(
-        { err },
-        "fatal: resupply-api could not run pgcrypto preflight",
-      );
-    }
-    await flushLogsAndExit(1);
-  }
-
   httpServer.listen(port, () => {
     const voiceConfigured = readVoiceConfigOrNull() !== null;
     logger.info(

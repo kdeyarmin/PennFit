@@ -1,15 +1,14 @@
 // GET /conversations — paginated conversation queue.
 //
-// Joins patients to surface decrypted firstName + lastName so the
-// queue can render a human-readable label without a second
-// round-trip per row. Sort key: `lastMessageAt DESC NULLS LAST,
-// createdAt DESC` so conversations with fresh activity surface
-// first; brand-new conversations (no messages yet) fall back to
-// createdAt order.
+// Joins patients to surface firstName + lastName so the queue can
+// render a human-readable label without a second round-trip per
+// row. Sort key: `lastMessageAt DESC NULLS LAST, createdAt DESC` so
+// conversations with fresh activity surface first; brand-new
+// conversations (no messages yet) fall back to createdAt order.
 //
 // Like the patient list, no audit row per page-flip — the
 // /conversations/:id detail view is the one that writes the audit
-// row, since that is where decrypted message bodies cross the wire.
+// row, since that is where message bodies cross the wire.
 
 import { Router, type IRouter } from "express";
 import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
@@ -18,7 +17,6 @@ import { z } from "zod";
 
 import {
   conversations,
-  decrypt,
   getDbPool,
   patients,
 } from "@workspace/resupply-db";
@@ -80,13 +78,13 @@ router.get("/conversations", requireAdmin, async (req, res) => {
   if (priority) filters.push(eq(conversations.priority, priority));
   if (view === "mine") {
     if (req.adminUserId) {
-      filters.push(eq(conversations.assignedAdminClerkId, req.adminUserId));
+      filters.push(eq(conversations.assignedAdminUserId, req.adminUserId));
       filters.push(
         sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
       );
     }
   } else if (view === "unassigned") {
-    filters.push(isNull(conversations.assignedAdminClerkId));
+    filters.push(isNull(conversations.assignedAdminUserId));
     filters.push(
       sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
     );
@@ -102,7 +100,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
       sql`${conversations.status} IN ('open','awaiting_admin')`,
     );
   } else if (assignedTo) {
-    filters.push(eq(conversations.assignedAdminClerkId, assignedTo));
+    filters.push(eq(conversations.assignedAdminUserId, assignedTo));
   }
   const whereClause = filters.length ? and(...filters) : undefined;
 
@@ -117,14 +115,14 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     .select({
       id: conversations.id,
       patientId: conversations.patientId,
-      patientFirstName: decrypt(patients.legalFirstName),
-      patientLastName: decrypt(patients.legalLastName),
+      patientFirstName: patients.legalFirstName,
+      patientLastName: patients.legalLastName,
       episodeId: conversations.episodeId,
       channel: conversations.channel,
       status: conversations.status,
       lastMessageAt: conversations.lastMessageAt,
       createdAt: conversations.createdAt,
-      assignedAdminClerkId: conversations.assignedAdminClerkId,
+      assignedAdminUserId: conversations.assignedAdminUserId,
       assignedAt: conversations.assignedAt,
       priority: conversations.priority,
       slaDueAt: conversations.slaDueAt,
@@ -164,7 +162,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
       status: r.status,
       lastMessageAt: toIso(r.lastMessageAt),
       createdAt: toIsoRequired(r.createdAt),
-      assignedAdminClerkId: r.assignedAdminClerkId ?? null,
+      assignedAdminUserId: r.assignedAdminUserId ?? null,
       assignedAt: toIso(r.assignedAt),
       priority: r.priority ?? "normal",
       slaDueAt: toIso(r.slaDueAt),

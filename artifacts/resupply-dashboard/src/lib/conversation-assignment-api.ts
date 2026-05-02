@@ -32,8 +32,8 @@ export const claimConversation = (id: string, force = false) =>
 export const releaseConversation = (id: string) =>
   post(`/conversations/${encodeURIComponent(id)}/release`);
 
-export const assignConversation = (id: string, clerkUserId: string) =>
-  post(`/conversations/${encodeURIComponent(id)}/assign`, { clerkUserId });
+export const assignConversation = (id: string, userId: string) =>
+  post(`/conversations/${encodeURIComponent(id)}/assign`, { userId });
 
 export const setConversationPriority = (id: string, priority: Priority) =>
   post(`/conversations/${encodeURIComponent(id)}/priority`, { priority });

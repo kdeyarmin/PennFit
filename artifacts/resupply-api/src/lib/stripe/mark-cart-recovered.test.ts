@@ -4,8 +4,6 @@
 // Coverage:
 //   * Session WITH metadata.customer_id → UPDATE shop_abandoned_carts
 //     (recovered_at = now, items = [], subtotal = 0).
-//   * Session WITH the legacy metadata.clerk_user_id key (pre-cutover
-//     in-flight Sessions) → same UPDATE — the helper accepts either.
 //   * Session WITHOUT a customer-id metadata key (guest checkout) →
 //     no-op (no DB update, no logging surface beyond debug).
 //
@@ -87,18 +85,6 @@ describe("markCartRecovered", () => {
     const [meta, msg] = log.info.mock.calls[0];
     expect(meta).toEqual({ customerId: "user_signed_in_42", rowId: "row_aaa" });
     expect(msg).toBe("abandoned cart marked recovered");
-  });
-
-  it("falls back to the legacy clerk_user_id metadata key for in-flight pre-cutover Sessions", async () => {
-    const log = makeLog();
-    updateQueue.push([{ id: "row_legacy" }]);
-    await markCartRecovered(
-      makeSession({ clerk_user_id: "user_legacy_99" }),
-      log,
-    );
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
-    const [meta] = log.info.mock.calls[0];
-    expect(meta).toEqual({ customerId: "user_legacy_99", rowId: "row_legacy" });
   });
 
   it("is a silent no-op when session has no customer_id (guest checkout)", async () => {

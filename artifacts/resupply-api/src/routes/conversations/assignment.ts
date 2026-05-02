@@ -73,7 +73,7 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
   const rows = await db
     .select({
       id: conversations.id,
-      assignedAdminClerkId: conversations.assignedAdminClerkId,
+      assignedAdminUserId: conversations.assignedAdminUserId,
       status: conversations.status,
       priority: conversations.priority,
     })
@@ -86,15 +86,15 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
     return;
   }
   if (
-    row.assignedAdminClerkId &&
-    row.assignedAdminClerkId !== adminId &&
+    row.assignedAdminUserId &&
+    row.assignedAdminUserId !== adminId &&
     !force
   ) {
     res.status(409).json({
       error: "already_assigned",
       message:
         "Another team member already claimed this conversation. Pass ?force=1 to take over.",
-      assignedTo: row.assignedAdminClerkId,
+      assignedTo: row.assignedAdminUserId,
     });
     return;
   }
@@ -105,7 +105,7 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
       ? computeSlaDueAt(priority, row.status, now)
       : undefined;
   const updates: Partial<typeof conversations.$inferInsert> = {
-    assignedAdminClerkId: adminId,
+    assignedAdminUserId: adminId,
     assignedAt: now,
     updatedAt: now,
   };
@@ -127,7 +127,7 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
   const adminRole = req.adminRole;
   const db = drizzle(getDbPool());
   const rows = await db
-    .select({ assignedAdminClerkId: conversations.assignedAdminClerkId })
+    .select({ assignedAdminUserId: conversations.assignedAdminUserId })
     .from(conversations)
     .where(eq(conversations.id, id))
     .limit(1);
@@ -137,8 +137,8 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
     return;
   }
   if (
-    row.assignedAdminClerkId &&
-    row.assignedAdminClerkId !== adminId &&
+    row.assignedAdminUserId &&
+    row.assignedAdminUserId !== adminId &&
     adminRole !== "admin"
   ) {
     res.status(403).json({
@@ -151,7 +151,7 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
   await db
     .update(conversations)
     .set({
-      assignedAdminClerkId: null,
+      assignedAdminUserId: null,
       assignedAt: null,
       updatedAt: new Date(),
     })
@@ -159,7 +159,7 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-const assignBody = z.object({ clerkUserId: z.string().min(1) }).strict();
+const assignBody = z.object({ userId: z.string().min(1) }).strict();
 
 router.post(
   "/conversations/:id/assign",
@@ -179,7 +179,7 @@ router.post(
     const updated = await db
       .update(conversations)
       .set({
-        assignedAdminClerkId: parsed.data.clerkUserId,
+        assignedAdminUserId: parsed.data.userId,
         assignedAt: new Date(),
         updatedAt: new Date(),
       })

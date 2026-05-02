@@ -18,12 +18,6 @@ import { makeMemoryRepo, seedUserWithPassword } from "../test-helpers";
 import { makeAuthRouter } from "./index";
 import type { AuditWriter, AuthDeps } from "./types";
 
-const PEPPER_BASE64 = Buffer.from(
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "hex",
-).toString("base64");
-const PEPPER = Buffer.from(PEPPER_BASE64, "base64");
-
 interface Harness {
   app: Express;
   repo: ReturnType<typeof makeMemoryRepo>;
@@ -48,7 +42,6 @@ function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
   }> = [];
   const env = readAuthEnv({
     AUTH_PROVIDER: "in_house",
-    AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
   });
   const deps: AuthDeps = {
     env,
@@ -137,7 +130,6 @@ describe("POST /auth/sign-up", () => {
       id: "u_existing",
       emailLower: "existing@example.com",
       password: "the existing password",
-      pepper: PEPPER,
     });
 
     const res = await supertest(h.app).post("/auth/sign-up").send({
@@ -233,7 +225,6 @@ describe("POST /auth/forgot-password", () => {
       id: "u_alice",
       emailLower: "alice@example.com",
       password: "current password",
-      pepper: PEPPER,
     });
     const res = await supertest(h.app)
       .post("/auth/forgot-password")
@@ -273,7 +264,6 @@ describe("POST /auth/reset-password", () => {
       emailLower: "alice@example.com",
       emailVerified: true,
       password: "old password",
-      pepper: PEPPER,
     });
     // Pre-existing live session that should be killed by the reset.
     const signIn = await supertest(h.app)
@@ -315,7 +305,6 @@ describe("POST /auth/reset-password", () => {
       id: "u_alice",
       emailLower: "alice@example.com",
       password: "old password",
-      pepper: PEPPER,
     });
     await supertest(h.app)
       .post("/auth/forgot-password")
@@ -340,7 +329,6 @@ describe("POST /auth/reset-password", () => {
       id: "u_alice",
       emailLower: "alice@example.com",
       password: "old password",
-      pepper: PEPPER,
     });
     await supertest(h.app)
       .post("/auth/forgot-password")
@@ -404,7 +392,6 @@ describe("POST /auth/change-password", () => {
       id: "u_alice",
       emailLower: "alice@example.com",
       password: "current password",
-      pepper: PEPPER,
     });
     const { cookieHeader } = await signInAs(
       h,
@@ -429,7 +416,6 @@ describe("POST /auth/change-password", () => {
       id: "u_alice",
       emailLower: "alice@example.com",
       password: "current password",
-      pepper: PEPPER,
     });
     const { cookieHeader, csrf } = await signInAs(
       h,
@@ -456,7 +442,6 @@ describe("POST /auth/change-password", () => {
       id: "u_alice",
       emailLower: "alice@example.com",
       password: "current password",
-      pepper: PEPPER,
     });
     // Two parallel sessions: A and B.
     const a = await signInAs(h, "alice@example.com", "current password");
@@ -496,7 +481,6 @@ describe("POST /auth/change-password", () => {
       id: "u_alice",
       emailLower: "alice@example.com",
       password: "current password",
-      pepper: PEPPER,
     });
     const { cookieHeader, csrf } = await signInAs(
       h,

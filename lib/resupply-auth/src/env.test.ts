@@ -2,44 +2,38 @@ import { describe, expect, it } from "vitest";
 
 import { readAuthEnv } from "./env";
 
-const PEPPER_BASE64 =
-  "Zm9yIHRlc3Rpbmcgb25seSBwbGVhc2UgZG8gbm90IHJldXNlIGFhYWFhYWE="; // 40 bytes when decoded
-
 describe("readAuthEnv", () => {
   it("returns sane defaults for missing TTLs", () => {
-    const env = readAuthEnv({ AUTH_PASSWORD_PEPPER: PEPPER_BASE64 });
+    const env = readAuthEnv({});
     expect(env.sessionTtlDays).toBe(14);
     expect(env.emailTokenTtlHours).toBe(24);
   });
 
   it("ignores any AUTH_PROVIDER value the caller sets (legacy compat)", () => {
-    // Legacy deploys may still have AUTH_PROVIDER=clerk in their
-    // env. We accept and ignore — the in-house path is the only
-    // path now.
+    // Legacy deploys may still have a stale AUTH_PROVIDER value in
+    // their env. We accept and ignore — the in-house path is the
+    // only path now.
     const env = readAuthEnv({
-      AUTH_PROVIDER: "clerk",
-      AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
+      AUTH_PROVIDER: "external",
     });
-    expect(env.passwordPepper.length).toBeGreaterThanOrEqual(32);
+    expect(env.sessionTtlDays).toBe(14);
   });
 
-  it("requires AUTH_PASSWORD_PEPPER unconditionally", () => {
-    expect(() => readAuthEnv({})).toThrow(
-      /AUTH_PASSWORD_PEPPER is required/,
-    );
-  });
-
-  it("rejects pepper shorter than 32 bytes", () => {
-    // 16 bytes when decoded
-    const tooShort = Buffer.from("a".repeat(16)).toString("base64");
-    expect(() =>
-      readAuthEnv({ AUTH_PASSWORD_PEPPER: tooShort }),
-    ).toThrow(/at least 32 bytes/);
+  it("ignores any AUTH_PASSWORD_PEPPER value the caller sets (legacy compat)", () => {
+    // Legacy deploys may still have a stale AUTH_PASSWORD_PEPPER
+    // value in their env. The pepper was removed from the auth
+    // surface; we accept and ignore so removed-but-not-yet-cleared
+    // env vars don't crash a service that's being upgraded in
+    // place.
+    const env = readAuthEnv({
+      AUTH_PASSWORD_PEPPER: "anything-or-nothing",
+    });
+    expect(env).not.toHaveProperty("passwordPepper");
+    expect(env).toEqual({ sessionTtlDays: 14, emailTokenTtlHours: 24 });
   });
 
   it("parses positive integer TTLs and rejects bad ones", () => {
     const env = readAuthEnv({
-      AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
       AUTH_SESSION_TTL_DAYS: "30",
       AUTH_EMAIL_TOKEN_TTL_HOURS: "2",
     });
@@ -48,27 +42,18 @@ describe("readAuthEnv", () => {
 
     expect(() =>
       readAuthEnv({
-        AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
         AUTH_SESSION_TTL_DAYS: "0",
       }),
     ).toThrow();
     expect(() =>
       readAuthEnv({
-        AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
         AUTH_SESSION_TTL_DAYS: "-1",
       }),
     ).toThrow();
     expect(() =>
       readAuthEnv({
-        AUTH_PASSWORD_PEPPER: PEPPER_BASE64,
         AUTH_SESSION_TTL_DAYS: "two weeks",
       }),
     ).toThrow();
-  });
-
-  it("decodes a 32+ byte pepper into a Buffer", () => {
-    const env = readAuthEnv({ AUTH_PASSWORD_PEPPER: PEPPER_BASE64 });
-    expect(env.passwordPepper).toBeInstanceOf(Buffer);
-    expect(env.passwordPepper.length).toBeGreaterThanOrEqual(32);
   });
 });

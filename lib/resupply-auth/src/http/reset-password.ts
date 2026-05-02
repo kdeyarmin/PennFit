@@ -26,7 +26,6 @@ const ResetBody = z.object({
 });
 
 export function makeResetPasswordHandler(deps: AuthDeps) {
-  const pepper = deps.env.passwordPepper;
   const now = deps.now ?? (() => new Date());
 
   return async function handleReset(req: Request, res: Response): Promise<void> {
@@ -76,7 +75,6 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
 
     const newHash = await hashPassword(
       passwordCheck.value,
-      pepper,
       deps.passwordHashParams,
     );
     await deps.repo.upsertCredential({

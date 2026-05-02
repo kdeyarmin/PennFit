@@ -46,7 +46,7 @@ type Row = {
   createdAt: string;
   // Assignment / SLA fields surfaced from the backend (additive — older
   // generated client doesn't know about them yet).
-  assignedAdminClerkId?: string | null;
+  assignedAdminUserId?: string | null;
   assignedAt?: string | null;
   priority?: "low" | "normal" | "high" | "urgent";
   slaDueAt?: string | null;
@@ -156,13 +156,13 @@ export function ConversationsPage() {
       key: "assignee",
       header: "Assignee",
       render: (r) =>
-        r.assignedAdminClerkId ? (
+        r.assignedAdminUserId ? (
           <span
             className="text-[11px] font-mono"
             style={{ color: "hsl(var(--ink-2))" }}
-            title={r.assignedAdminClerkId}
+            title={r.assignedAdminUserId}
           >
-            {r.assignedAdminClerkId.slice(-8)}
+            {r.assignedAdminUserId.slice(-8)}
           </span>
         ) : (
           <span className="text-[11px] italic" style={{ color: "#9ca3af" }}>

@@ -22,7 +22,6 @@ const ChangeBody = z.object({
 });
 
 export function makeChangePasswordHandler(deps: AuthDeps) {
-  const pepper = deps.env.passwordPepper;
   const now = deps.now ?? (() => new Date());
 
   return async function handleChange(req: Request, res: Response): Promise<void> {
@@ -78,7 +77,6 @@ export function makeChangePasswordHandler(deps: AuthDeps) {
 
     const ok = await verifyPassword(
       parsed.data.currentPassword,
-      pepper,
       cred.passwordHash,
     );
     if (!ok) {
@@ -101,7 +99,6 @@ export function makeChangePasswordHandler(deps: AuthDeps) {
     const t = now();
     const newHash = await hashPassword(
       newPwCheck.value,
-      pepper,
       deps.passwordHashParams,
     );
     await deps.repo.upsertCredential({

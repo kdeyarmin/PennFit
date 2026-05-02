@@ -51,11 +51,11 @@ export const conversations = resupplySchema.table(
     // admin inbox sort order.
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
 
-    // Assignment + SLA columns (migration 0021). assignedAdminClerkId
-    // mirrors the Clerk user id directly (no FK) so threads handled by
+    // Assignment + SLA columns (migration 0021). assignedAdminUserId
+    // mirrors the auth user id directly (no FK) so threads handled by
     // bootstrap env-var admins still work — those admins don't have
     // rows in admin_users yet.
-    assignedAdminClerkId: text("assigned_admin_clerk_id"),
+    assignedAdminUserId: text("assigned_admin_user_id"),
     assignedAt: timestamp("assigned_at", { withTimezone: true }),
     priority: text("priority").notNull().default("normal"),
     slaDueAt: timestamp("sla_due_at", { withTimezone: true }),

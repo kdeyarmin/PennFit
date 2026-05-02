@@ -39,9 +39,9 @@
 //
 // Mocking strategy mirrors my-orders.test.ts: drizzle is replaced
 // with a fluent stub backed by `selectQueue` / `updateQueue`; Stripe
-// is mocked at the lib/stripe/config layer; requireSignedIn is mocked
-// via test-helpers/auth-mocks. We DON'T import a real Stripe SDK; the
-// mock hands back plain objects shaped like the SDK responses we read.
+// is mocked at the lib/stripe/config layer; the auth provider auth is mocked
+// via auth-deps. We DON'T import a real Stripe SDK; the mock hands
+// back plain objects shaped like the SDK responses we read.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";

@@ -1,6 +1,5 @@
-// Tests for the in-house pf_session cookie path on requireAdmin.
-// Stage 5a retired the Clerk fall-through; the only path the
-// middleware exercises is this one.
+// Tests for the in-house pf_session cookie path on requireAdmin —
+// the only path the middleware supports.
 
 import express, { type Express } from "express";
 import request from "supertest";
@@ -51,11 +50,6 @@ function makeApp(): Express {
   return app;
 }
 
-const PEPPER = Buffer.from(
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "hex",
-);
-
 async function buildDepsWithRepo(): Promise<{
   deps: AuthDeps;
   repo: MemoryRepo;
@@ -63,7 +57,6 @@ async function buildDepsWithRepo(): Promise<{
   const repo = makeMemoryRepo();
   const deps: AuthDeps = {
     env: {
-      passwordPepper: PEPPER,
       sessionTtlDays: 14,
       emailTokenTtlHours: 24,
     },
@@ -109,7 +102,7 @@ async function seedSignedInUser(
   // We don't need a password credential for any of these tests —
   // the middleware doesn't read it. Plant one anyway so the user
   // looks complete (would never sign in without one).
-  const hash = await hashPassword("placeholder", PEPPER, {
+  const hash = await hashPassword("placeholder", {
     memoryCost: 1024,
     timeCost: 1,
     parallelism: 1,
@@ -173,6 +166,8 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       adminUserId: "u_admin",
       adminRole: "admin",
     });
+
+
   });
 
   it("admits an agent via pf_session cookie", async () => {
@@ -218,6 +213,8 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
 
     expect(res.status).toBe(401);
+
+
   });
 
   it("returns 401 when the session is expired", async () => {
@@ -285,6 +282,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       .set("Cookie", "pf_session=anything");
 
     expect(res.status).toBe(401);
+
   });
 
   it("returns 401 when no cookie is present", async () => {
@@ -294,5 +292,7 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(401);
+
+
   });
 });

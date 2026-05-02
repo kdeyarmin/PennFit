@@ -1,7 +1,6 @@
 // In-house pf_session cookie path on requireSignedIn /
-// attachSignedIn. After Stage 5a, this is the ONLY path —
-// requireSignedIn no longer falls through to a Clerk getAuth()
-// lookup, and a request without a valid pf_session cookie gets
+// attachSignedIn. This is the ONLY path the middleware
+// supports — a request without a valid pf_session cookie gets
 // a 401 (or attachSignedIn no-ops). The tests below pin that.
 
 import express, { type Express } from "express";
@@ -23,7 +22,7 @@ import {
 
 let mockDeps: AuthDeps | null = null;
 vi.mock("../lib/auth-deps", () => ({
-  // After Stage 5a getAuthDeps always returns. We throw rather
+  // getAuthDeps always returns in production. We throw rather
   // than return null in tests so the failure mode is loud.
   getAuthDeps: () => {
     if (!mockDeps) throw new Error("test: mockDeps not set");
@@ -45,16 +44,10 @@ function makeApp(): Express {
   return app;
 }
 
-const PEPPER = Buffer.from(
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "hex",
-);
-
 function buildDeps(): { deps: AuthDeps; repo: MemoryRepo } {
   const repo = makeMemoryRepo();
   const deps: AuthDeps = {
     env: {
-      passwordPepper: PEPPER,
       sessionTtlDays: 14,
       emailTokenTtlHours: 24,
     },

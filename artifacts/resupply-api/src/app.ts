@@ -1,8 +1,10 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { makeAuthRouter } from "@workspace/resupply-auth";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { makeAuthRouter, type AuthDeps } from "@workspace/resupply-auth";
 import router from "./routes";
+import storefrontRouter from "./routes/storefront";
 import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
 import { errorHandler } from "./middlewares/errorHandler";
@@ -136,8 +138,8 @@ app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 
 // In-house /auth/* routes. The router is unconditionally mounted;
-// a missing AUTH_PASSWORD_PEPPER throws here so the misconfig
-// surfaces at boot rather than at the first sign-in attempt.
+// any required-env misconfig throws here so it surfaces at boot
+// rather than at the first sign-in attempt.
 const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",
@@ -148,11 +150,71 @@ logger.info(
   "in-house auth routes mounted at /resupply-api/auth",
 );
 
+// Second mount of the same auth router under /api/auth, used by the
+// patient-facing storefront (cpap-fitter). It shares the same
+// `pf_session` cookie + `auth.users` table as the dashboard mount
+// above — sign in once on either surface, the session works on the
+// other. The only difference vs. the dashboard mount is
+// `allowSignUp: true`: the cash-pay storefront accepts customer
+// sign-ups (default role `customer`), while the staff dashboard
+// must remain invite-only (`allowSignUp: false`). All other deps
+// (DB pool, audit, email, customerIdResolver) are reused
+// from `getAuthDeps()` so we never have two divergent code paths.
+const storefrontAuthDeps: AuthDeps = { ...authDeps, allowSignUp: true };
+app.use(
+  "/api/auth",
+  makeAuthRouter(storefrontAuthDeps, {
+    productName: "Penn Home Medical Supply",
+  }),
+);
+logger.info(
+  { event: "auth_in_house_storefront_mounted" },
+  "in-house auth routes mounted at /api/auth (storefront, allowSignUp=true)",
+);
+
+// Storefront-specific rate limits (lifted from the deleted
+// `api-server` artifact). Orders cost Penn an email + a fulfillment
+// workflow per request — throttle hard. Usage events are anonymous
+// telemetry — looser limit. Both are keyed by IP via `ipKeyGenerator`
+// for IPv6-safe normalisation. `app.set("trust proxy", 1)` above is
+// what makes the IP key honest behind Replit's reverse proxy.
+const storefrontOrderLimiter = expressRateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many order attempts from this network. Please wait a few minutes and try again, or call Penn Home Medical Supply directly.",
+  },
+});
+app.use("/api/orders", storefrontOrderLimiter);
+
+const storefrontUsageEventLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "Too many tracking events" },
+});
+app.use("/api/usage-events", storefrontUsageEventLimiter);
+
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,
 // and the admin smoke endpoint /resupply-api/me; richer endpoints
 // land in later phases.
 app.use("/resupply-api", router);
+
+// Storefront routes (lifted in from the deleted `api-server`
+// artifact). Mounted under /api so the cpap-fitter SPA's existing
+// fetch calls — `/api/orders`, `/api/recommend`, `/api/admin/*`,
+// `/api/usage-events`, `/api/reminders`, `/api/healthz` — keep
+// working unchanged. Both `/api` and `/resupply-api` are advertised
+// in this artifact's artifact.toml `paths` so the Replit reverse
+// proxy routes both prefixes to this same Express process.
+app.use("/api", storefrontRouter);
 
 // Top-level error handler — MUST be the last middleware mounted on
 // the app. Catches any error a route handler throws (or passes via

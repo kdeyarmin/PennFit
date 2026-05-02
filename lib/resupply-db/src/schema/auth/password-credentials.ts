@@ -24,9 +24,8 @@ export const authPasswordCredentials = authSchema.table(
     algo: text("algo").notNull().default("argon2id-v1"),
     /**
      * If true, the user is forced through /reset-password on their
-     * next sign-in. Used for: (a) staff invited via the team page
-     * before they've chosen their own password, (b) the Clerk →
-     * in-house cutover backfill in Stage 4 of the migration plan.
+     * next sign-in. Used for staff invited via the team page before
+     * they've chosen their own password.
      */
     mustChange: boolean("must_change").notNull().default(false),
     updatedAt: timestamp("updated_at", { withTimezone: true })

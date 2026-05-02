@@ -74,7 +74,6 @@ import {
 } from "@workspace/resupply-domain";
 import {
   conversations,
-  decrypt,
   episodes,
   frequencyRules,
   fulfillments,
@@ -87,10 +86,7 @@ import {
   sendReminderSms,
   type SendActor,
 } from "@workspace/resupply-reminders";
-import {
-  hasLinkHmacKey,
-  hasPhoneHmacKey,
-} from "@workspace/resupply-secrets";
+import { hasLinkHmacKey } from "@workspace/resupply-secrets";
 
 import { logger } from "../logger.js";
 
@@ -164,13 +160,14 @@ function readWorkerMessagingConfig(env: NodeJS.ProcessEnv = process.env): {
     env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
       (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : ""),
   );
-  // The HMAC keys come through `@workspace/resupply-secrets`, which
-  // accepts either the legacy per-purpose env vars or a derivation
-  // from RESUPPLY_MASTER_KEY — so don't read the env names directly.
+  // RESUPPLY_LINK_HMAC_KEY is needed for signed email-action links
+  // (confirm/edit/stop). It's the only HMAC key the program still
+  // uses; the phone-number HMAC was deleted along with the
+  // pgcrypto encryption layer (PHI is now stored as plaintext).
   // Pass the (potentially test-supplied) `env` through so the
   // worker's hermetic preflight tests stay independent of the
   // process's real env.
-  const hmacKeysReady = hasPhoneHmacKey(env) && hasLinkHmacKey(env);
+  const hmacKeysReady = hasLinkHmacKey(env);
 
   let sms: ReturnType<typeof readWorkerMessagingConfig>["sms"] = null;
   if (
@@ -234,8 +231,9 @@ export const __testing = {
  * candidate episode.
  *
  * Returns one row per (patient, episode, channel) — channel is
- * computed in TypeScript after we decrypt phone/email (we cannot
- * filter on encrypted columns in SQL).
+ * computed in TypeScript after we read phone/email so the cadence
+ * resolution can layer per-patient overrides on top of the SKU-level
+ * SQL filter.
  */
 export async function scanForDueReminders(
   asOf: Date = new Date(),
@@ -289,9 +287,10 @@ export async function scanForDueReminders(
   // lastFulfilledAt and prescription.created_at the eligibility
   // check uses to compute "is this patient due RIGHT NOW".
   //
-  // Channel resolution still needs decrypted phone + email
-  // reachability — surfaced as booleans so the Set<string> dedupe
-  // below doesn't accidentally retain PHI.
+  // Channel resolution still needs phone + email reachability —
+  // we surface them as the actual values (no longer encrypted) and
+  // only persist booleans into the dedupe set so PHI doesn't leak
+  // into in-memory data structures unnecessarily.
   const lastFulfilledAt = sql<Date | null>`(
     SELECT MAX(${fulfillments.shippedAt})
     FROM ${fulfillments}
@@ -306,8 +305,8 @@ export async function scanForDueReminders(
       insurancePayer: patients.insurancePayer,
       cadenceOverrideDays: patients.cadenceOverrideDays,
       channelPreference: patients.channelPreference,
-      phone: decrypt(patients.phoneE164),
-      email: decrypt(patients.email),
+      phone: patients.phoneE164,
+      email: patients.email,
       prescriptionItemSku: prescriptions.itemSku,
       prescriptionCadenceDays: prescriptions.cadenceDays,
       prescriptionCreatedAt: prescriptions.createdAt,
@@ -513,7 +512,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     if (!cfg.sms || !cfg.hmacKeysReady) {
       logger.warn(
         { job_id: j.id },
-        "reminders.send-sms: SMS not configured (missing TWILIO_* / phone HMAC key) — skipping",
+        "reminders.send-sms: SMS not configured (missing TWILIO_* / link HMAC key) — skipping",
       );
       return;
     }

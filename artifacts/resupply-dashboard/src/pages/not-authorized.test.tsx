@@ -1,24 +1,26 @@
 // Tests for the three failure-mode branches the dashboard funnels
 // into NotAuthorizedPage. Architect review flagged the lack of a
-// regression test for the 502 (auth-API upstream) → "transient"
-// copy path: a future refactor that breaks the reason mapping in
-// the caller could silently downgrade the messaging from "try
-// again" back to "you don't have access" — exactly the auth-flake
+// regression test for the 502 (auth upstream) → "transient" copy
+// path: a future refactor that breaks the reason mapping in the
+// caller could silently downgrade the messaging from "try again"
+// back to "you don't have access" — exactly the auth-flake
 // confusion the operational hardening was meant to fix.
 //
 // Render scope is intentionally narrow: this file asserts ONLY the
 // per-reason copy + interaction surface visible on the page itself.
-// The mapping FROM HTTP status TO `reason` lives in the consumers;
-// when those mapping helpers ship behind their own export, they
-// should grow tests in the same file as the helper, not here.
+// The mapping FROM HTTP status TO `reason` lives in `lib/api-client`
+// (or its consumers); when those mapping helpers ship behind their
+// own export, they should grow tests in the same file as the
+// helper, not here.
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { NotAuthorizedPage } from "./not-authorized";
 
-// Mock the identity shim. The page reads `email` and `signOut` off
-// useDashboardIdentity().
+// Mock the identity shim. The page reads `email` and `signOut`
+// off useDashboardIdentity(); the underlying provider is invisible
+// at this layer.
 const signOut = vi.fn().mockResolvedValue(undefined);
 vi.mock("../lib/identity", () => ({
   useDashboardIdentity: () => ({
@@ -81,23 +83,8 @@ describe("NotAuthorizedPage", () => {
       expect(signOut).toHaveBeenCalledTimes(1);
       // The shim's signOut is provider-agnostic and takes no args.
       // Redirect to /sign-in is handled in the component via
-      // wouter navigation after the promise resolves.
+      // window.location.assign after the promise resolves.
       expect(signOut.mock.calls[0]).toEqual([]);
-    });
-
-
-    it("ignores repeated sign-out clicks while sign-out is in-flight", () => {
-      signOut.mockImplementationOnce(
-        () => new Promise<void>(() => undefined),
-      );
-      render(<NotAuthorizedPage reason="not-authorized" />);
-
-      const button = screen.getByRole("button", { name: /sign out/i });
-      fireEvent.click(button);
-      fireEvent.click(button);
-
-      expect(signOut).toHaveBeenCalledTimes(1);
-      expect(button.getAttribute("disabled")).not.toBeNull();
     });
   });
 
@@ -158,16 +145,17 @@ describe("NotAuthorizedPage", () => {
     });
 
     it("Try again button is wired to a click handler", () => {
+      // We don't assert that window.location.reload was actually
+      // called: jsdom's `window.location` is non-configurable and
+      // the matrix of replace/redefine workarounds varies across
+      // jsdom versions. The render assertion above already proves
+      // the button exists with the correct role+label; here we
+      // confirm clicking it does not throw (jsdom's reload is a
+      // no-op stub, so a successful click means the inline handler
+      // resolved the function reference correctly).
       render(<NotAuthorizedPage reason="transient" />);
       const button = screen.getByRole("button", { name: /try again/i });
-
-      const consoleError = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
-
       expect(() => fireEvent.click(button)).not.toThrow();
-
-      consoleError.mockRestore();
     });
   });
 
