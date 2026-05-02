@@ -197,24 +197,22 @@ export const SubmitOrderResponse = zod.object({
 });
 
 /**
- * Public endpoint. Behavior depends on whether the email is already
-on file:
+ * Public endpoint. Always returns the same response shape regardless
+of whether the email is already on file, to prevent email
+enumeration. The manage token is never returned in the API response
+— it is delivered only via email to the address on file, ensuring
+only the verified inbox owner can access subscription management.
 
-- **New email:** the subscription is created. The response includes
-  `manageToken` so the client can deep-link to the manage page
-  immediately (this also makes the dev-mode flow usable when
-  email delivery isn't configured). A confirmation email is sent
-  containing the same manage link.
-- **Existing email:** the response is `alreadySubscribed: true`
-  with NO `manageToken` — to prevent email-enumeration takeover
-  of an existing subscription, the manage link is only sent to
-  the registered owner's inbox. The submitter's items are not
-  applied to the existing row; the registered owner can update
-  items via the manage page.
+- **New email:** the subscription is created and a confirmation
+  email containing the manage link is sent to the provided address.
+- **Existing email:** no changes are made; the existing manage link
+  is re-sent to the registered owner's inbox only.
+
+Both cases return the same response shape with no subscriber-status
+information disclosed to the caller.
 
 Honeypot: a hidden `website` field. If non-empty, the request is
-silently accepted (fake `manageToken: "honeypot"`) and no DB
-write or email send occurs.
+silently accepted and no DB write or email send occurs.
 
  * @summary Subscribe to supply replacement reminders
  */
@@ -268,18 +266,6 @@ export const SubscribeToRemindersBody = zod.object({
 
 export const SubscribeToRemindersResponse = zod.object({
   success: zod.boolean(),
-  manageToken: zod
-    .string()
-    .optional()
-    .describe(
-      "Capability token for the \/reminders\/manage endpoints. ONLY\nreturned for newly-created subscriptions. For requests against\nan already-existing email we deliberately omit this field — the\nexisting manage link is sent only to the registered owner's\ninbox, so an attacker who guesses an email cannot escalate to\nfull subscription control via this endpoint.\n",
-    ),
-  alreadySubscribed: zod
-    .boolean()
-    .optional()
-    .describe(
-      'True when the email was already on file. The response is\notherwise indistinguishable from a fresh subscribe (no items\ndisclosed, no token disclosed) — the caller should display a\ngeneric \"check your email for a manage link\" message.\n',
-    ),
   emailStatus: zod
     .enum(["sent", "skipped", "failed"])
     .describe("Whether a confirmation \/ manage email was sent"),

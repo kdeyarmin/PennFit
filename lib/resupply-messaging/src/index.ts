@@ -33,15 +33,20 @@ export {
   type VerifyLinkTokenOptions,
 } from "./signed-link-tokens";
 
+// Forward-port of main commit 63de00e (Task #20) — re-export the new
+// renderClickLanding template so the GET /email/click handler can
+// render the safe two-step landing page.
 export {
   renderResupplyReminder,
   renderClickConfirmation,
   renderClickError,
+  renderClickLanding,
   escapeHtml,
   type RenderResupplyReminderInput,
   type RenderedEmail,
   type RenderClickConfirmationInput,
   type RenderClickErrorInput,
+  type RenderClickLandingInput,
 } from "./email-templates";
 
 export {

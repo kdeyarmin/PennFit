@@ -129,6 +129,85 @@ export function renderResupplyReminder(
   return { subject, html, text };
 }
 
+export interface RenderClickLandingInput {
+  /** Practice display name. Already admin-vetted. */
+  practiceName: string;
+  /** The action the token encodes — shown to the patient before they commit. */
+  action: "confirm" | "edit" | "stop";
+  /**
+   * The full POST action URL, including the signed `?t=…` query parameter.
+   * This is what the HTML form's `action` attribute is set to.
+   */
+  formActionUrl: string;
+}
+
+/**
+ * Renders the intermediate landing page shown on GET /email/click before
+ * any state-changing action is performed. The page asks the patient to
+ * explicitly click a button, which then POSTs to the same URL.
+ *
+ * This two-step flow prevents corporate email scanners and link-preview
+ * systems from triggering order confirmations or preference changes
+ * when they pre-fetch the link to check for malware.
+ *
+ * No PHI is included — we never echo the patient's name on a page that
+ * could be forwarded or cached by an intermediary.
+ */
+export function renderClickLanding(input: RenderClickLandingInput): string {
+  const safePractice = escapeHtml(input.practiceName);
+
+  const heading =
+    input.action === "confirm"
+      ? "Confirm your CPAP resupply order"
+      : input.action === "edit"
+        ? "Request an address change"
+        : "Stop CPAP refill reminders";
+
+  const description =
+    input.action === "confirm"
+      ? "Click the button below to confirm your order and we'll ship your supplies right away."
+      : input.action === "edit"
+        ? "Click the button below and a member of our team will reach out about your shipping address."
+        : "Click the button below to unsubscribe from CPAP refill reminders. You can always reply to a future email to re-enroll.";
+
+  const buttonLabel =
+    input.action === "confirm"
+      ? "Confirm my order"
+      : input.action === "edit"
+        ? "Request address change"
+        : "Stop reminders";
+
+  const buttonColor =
+    input.action === "stop" ? "#dc2626" : "#0f766e";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(heading)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+  <div style="max-width:480px;margin:0 auto;padding:48px 24px;text-align:center;">
+    <h1 style="margin:0 0 12px;font-size:22px;line-height:28px;font-weight:600;">
+      ${escapeHtml(heading)}
+    </h1>
+    <p style="margin:0 0 32px;font-size:15px;line-height:22px;color:#334155;">
+      ${escapeHtml(description)}
+    </p>
+    <form method="POST" action="${input.formActionUrl}">
+      <button type="submit" style="display:inline-block;padding:14px 28px;border-radius:6px;background:${buttonColor};color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;border:none;cursor:pointer;">
+        ${escapeHtml(buttonLabel)}
+      </button>
+    </form>
+    <p style="margin:24px 0 0;font-size:13px;line-height:18px;color:#64748b;">
+      — ${safePractice}
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
 export interface RenderClickConfirmationInput {
   /** Practice display name. Already admin-vetted. */
   practiceName: string;

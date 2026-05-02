@@ -54,7 +54,7 @@ router.delete("/rules/:id", requireAdminOnly, async (req, res) => {
       targetId: parsed.data.id,
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
-      metadata: { name: result[0].name },
+      metadata: { ruleName: result[0].name },
     });
   } catch (err) {
     logger.error(

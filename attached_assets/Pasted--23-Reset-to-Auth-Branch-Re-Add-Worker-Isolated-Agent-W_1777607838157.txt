@@ -1,0 +1,53 @@
+#23 - Reset to Auth Branch + Re-Add Worker (Isolated Agent)
+What & Why
+Supersedes the abandoned task #22 (which was assigned to main agent and got blocked by the destructive-git guard). This task must be assigned to an isolated task agent — the agent's container can run git reset --hard and the task system's auto-merge will preserve the agent branch's full 85-commit history when it lands back on main.
+
+A parallel task agent (subrepl-3ppc2e03/main, HEAD 4619ea3) completed a full Clerk → in-house email+password auth migration: 85 commits across Stages 5d.1–5d.4. It includes a destructive but well-staged DB migration series (drop Clerk columns, rename clerk_user_id → customer_id on seven shop tables, new auth schema with sessions / password_credentials / login_attempts).
+
+That branch was mid-merge with main and had irreconcilable migration-history conflicts (both sides authored migrations at indices 17 and 18 with different filenames). The user has chosen to take the agent's branch wholesale and forfeit main's recent worker-artifact work, then re-port the worker fix on top.
+
+DB-safety contract (ADR 003): hand-authored migrations only, NEVER db:push --force. The agent's migrations 0018–0024 are hand-authored; the destructive ones (0023 drop, 0024 rename) include reversibility notes. Do not modify them — they'll apply fresh on the production DB on first boot.
+
+Done looks like
+Working tree HEAD is byte-identical to subrepl-3ppc2e03/main (commit 4619ea3 Merge pull request #21), plus a small follow-on commit re-adding the worker artifact files.
+pennfit.replit.app returns real content (200) on /, /api/healthz, /resupply-api/healthz, /resupply-api/readyz, /resupply/, and /penn-fit-tutorial/ after a fresh deploy.
+The resupply-worker is running as a deployable artifact in production, pg-boss has connected, and its healthz endpoint returns 200.
+All in-house auth migrations (0018 comm_prefs through 0024 rename) have applied to the production DB.
+Typecheck and resupply-* test suites pass locally.
+Out of scope
+Reviewing the agent's 85 commits in detail — the user has approved taking them wholesale.
+Any further auth changes (sign-in UI, email verification flow, etc.) — that's the agent's territory and presumably already done in their branch.
+Re-creating any other lost main-side work besides the worker artifact (the opengraph image is already on the agent's branch via commit 18ffdda; the 0018_messages_twilio_sid_unique migration is being intentionally dropped).
+Adding session-secret or password-hashing env vars to production secrets — surface to the user but do not provision.
+Steps
+Reset to the agent branch — From a clean working tree, run git reset --hard subrepl-3ppc2e03/main so HEAD points at commit 4619ea3. Verify with git log -1 --oneline (should show the merge commit) and git status --short (should be empty). Confirm migrations 0018–0024 from the agent are present in lib/resupply-db/drizzle/ and the lib/resupply-auth/ package exists.
+
+Inspect new env vars the in-house auth needs — Grep lib/resupply-auth/ and artifacts/resupply-api/src/ for process.env.* references. Produce a list of any required env vars not in the existing production secrets list (likely candidates: session-signing key, password-hash pepper). Surface to the user before the deploy step; do not provision.
+
+Recover the worker artifact files from git history — The worker fix lives in commit e98929b (still reachable via reflog after the reset). Use git show e98929b -- <path> to extract these files and write them into the working tree:
+
+artifacts/resupply-worker/.replit-artifact/artifact.toml (new file, 37 lines, kind="api", previewPath="/__resupply-worker-internal", localPort=8085, healthz path /__resupply-worker-internal/_internal/healthz)
+artifacts/resupply-worker/build.mjs (new file, 126 lines, esbuild + pino plugin, mirrors artifacts/resupply-api/build.mjs)
+artifacts/resupply-worker/package.json (re-apply the diff: add build + start scripts and devDependencies for esbuild, esbuild-plugin-pino, pino-pretty, thread-stream)
+artifacts/resupply-worker/src/index.ts (re-apply the diff: ~97-line addition of node:http healthz server with workerReady gate that flips to true after pg-boss.start() + handler registration)
+.replit (re-apply 4-line addition — likely a [[ports]] entry for 8085)
+replit.md (re-apply 4-line addition documenting the worker artifact)
+Do NOT take pnpm-lock.yaml from e98929b directly — re-run pnpm install so the lockfile reflects both the agent's new auth dependencies AND the worker's new esbuild dependencies in one consistent resolution.
+Verify the prefixed-path healthz — The shared reverse proxy does NOT rewrite paths. The node:http handler in artifacts/resupply-worker/src/index.ts MUST respond 200 at BOTH /_internal/healthz (bare, for local probes) AND /__resupply-worker-internal/_internal/healthz (prefixed, for the production deploy gate). This was caught by architect review in the prior session and is critical — without it the production deploy gate hangs forever.
+
+Verify production secrets cover the new requirements — From step 2's output, list any new required env vars to the user. The agent's branch removed Clerk env requirements, so CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY are no longer required for boot. Resupply secrets (RESUPPLY_LINK_HMAC_KEY, RESUPPLY_PHONE_HMAC_KEY, plus either RESUPPLY_DATA_KEY or the consolidated RESUPPLY_MASTER_KEY) are still required for api-server, resupply-api, and worker.
+
+Pre-flight typecheck and tests — Run pnpm install, then pnpm run typecheck and pnpm --filter '@workspace/resupply-*' run test. Fix only failures introduced by the worker artifact additions; do NOT modify any of the agent's auth code or migrations. Pre-existing failures in artifacts/resupply-api/src/routes/sms/inbound.test.ts may or may not still exist on the agent's branch — if they're gone, great; if they're still failing, leave them alone unless directly worker-related.
+
+Local smoke test of the worker bundle — After build, run PORT=8085 node artifacts/resupply-worker/dist/index.mjs against the local DB and confirm curl localhost:8085/_internal/healthz returns 200 within ~5 seconds. This validates pg-boss bootstrap end-to-end before deploy.
+
+Architect review of the worker re-port — Run a code review focused on the artifact.toml, build.mjs, healthz changes, and worker entry point before committing. Address any critical findings.
+
+Commit and instruct the user to publish — Stage only the worker-related changes (the agent's auth work is already committed via the reset). Commit with a message documenting the three additions (artifact.toml, build.mjs, healthz). Tell the user to click Publish in the Manage tab and wait for confirmation.
+
+Post-deploy smoke test — Curl all six routes from the "Done looks like" section against https://pennfit.replit.app/. Inspect production logs for any boot crashes, missing-env errors, or pg-boss bootstrap failures within the first 5 minutes. Report results to the user.
+
+Relevant files
+artifacts/resupply-api/.replit-artifact/artifact.toml
+artifacts/resupply-api/build.mjs
+lib/resupply-db/drizzle/meta/_journal.json
