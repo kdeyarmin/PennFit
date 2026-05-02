@@ -4,6 +4,42 @@ Privacy-first CPAP fitting, ordering, and resupply automation for
 Penn Home Medical Supply. See [`replit.md`](./replit.md) for the
 full product and architecture overview.
 
+## Git source of truth
+
+**Canonical ref:** `main` on `https://github.com/kdeyarmin/PennFit`
+(the Replit remote-tracking name is `subrepl-3ppc2e03/main`).
+
+**Why this exists:** in May 2026 the Replit workspace, GitHub, and
+Replit's `gitsafe-backup` snapshots had drifted by ~150 commits
+across four divergent lines because no agent or human knew which
+surface was authoritative. See
+[`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md) for
+the post-mortem. This rule prevents a repeat.
+
+**At the start of every session, every agent and human MUST:**
+
+```bash
+# 1. Confirm clean tree
+git status
+
+# 2. Pull canonical ref and align local main to it
+git fetch subrepl-3ppc2e03
+git rev-list --count main..subrepl-3ppc2e03/main   # how many commits you're behind
+# If clean and behind: align (destructive — only when status is clean)
+git reset --hard subrepl-3ppc2e03/main
+```
+
+**Where new work lands:** push a feature branch and open a PR on
+`github.com/kdeyarmin/PennFit`. Do NOT commit directly to local
+`main` and let it drift again. The Replit Git pane has a "Push"
+action that creates the branch on the remote; finish the PR on
+github.com.
+
+**Pre-commit drift warning:** the pre-commit hook prints a non-
+blocking warning when local `main` is more than 10 commits behind
+`subrepl-3ppc2e03/main`. Bypass with `SKIP_HOOKS=1 git commit ...`
+or `--no-verify` for genuine emergencies.
+
 This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9). The
 top-level structure is:
 

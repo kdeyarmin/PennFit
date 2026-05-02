@@ -38,6 +38,41 @@ fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# ----- Source-of-truth drift warning (Task #47) ---------------------------
+# The canonical ref is `main` on github.com/kdeyarmin/PennFit
+# (Replit remote-tracking name: subrepl-3ppc2e03/main). When local
+# `main` falls more than DRIFT_THRESHOLD commits behind that ref,
+# print a non-blocking warning so the developer notices BEFORE they
+# branch off a stale base. Uses the cached remote-tracking ref only
+# (no network), so it's free.
+#
+# Silently skipped when:
+#   - the remote-tracking ref doesn't exist (fresh clone, different
+#     remote name, etc.)
+#   - the current branch is not `main` (feature-branch commits
+#     shouldn't get nagged on every save)
+DRIFT_REMOTE="subrepl-3ppc2e03/main"
+DRIFT_THRESHOLD=10
+if git rev-parse --verify --quiet "$DRIFT_REMOTE" >/dev/null; then
+  current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  if [[ "$current_branch" == "main" ]]; then
+    behind="$(git rev-list --count "main..${DRIFT_REMOTE}" 2>/dev/null || echo 0)"
+    if [[ "$behind" -gt "$DRIFT_THRESHOLD" ]]; then
+      cat >&2 <<EOF
+[pre-commit] WARNING: local main is $behind commits behind ${DRIFT_REMOTE}.
+            ${DRIFT_REMOTE} is the canonical source of truth (see
+            replit.md "Git source of truth"). Consider aligning before
+            committing:
+                git fetch subrepl-3ppc2e03
+                git status         # must be clean for the next step
+                git reset --hard ${DRIFT_REMOTE}
+            (Continuing — this warning does not block the commit.)
+EOF
+    fi
+  fi
+fi
+# ----- end drift warning --------------------------------------------------
+
 # Diff against HEAD when present, otherwise against the empty tree
 # (initial commit). Newly-added files are picked up either way.
 if git rev-parse --verify HEAD >/dev/null 2>&1; then
