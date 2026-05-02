@@ -16,7 +16,20 @@ import {
   Sparkles,
   ArrowRight,
   Settings2,
+  Droplets,
+  Repeat,
+  ShieldCheck,
+  Sunrise,
+  LifeBuoy,
 } from "lucide-react";
+
+type Category =
+  | "basics"
+  | "equipment"
+  | "care"
+  | "living"
+  | "concerns"
+  | "team";
 
 type Article = {
   Icon: React.ComponentType<{ className?: string }>;
@@ -24,15 +37,69 @@ type Article = {
   takeaway: string;
   body: React.ReactNode;
   tone: "navy" | "gold";
+  category: Category;
 };
 
+const categoryMeta: Record<
+  Category,
+  { eyebrow: string; title: string; caption: string }
+> = {
+  basics: {
+    eyebrow: "Foundations",
+    title: "The Basics",
+    caption:
+      "What sleep apnea is, how CPAP solves it, and why treating it changes more than just sleep.",
+  },
+  equipment: {
+    eyebrow: "Fit",
+    title: "Choosing Your Equipment",
+    caption:
+      "Mask styles, sleep position, and the tradeoffs that decide whether a mask works for your face.",
+  },
+  care: {
+    eyebrow: "Hygiene",
+    title: "Daily Care & Maintenance",
+    caption:
+      "Cleaning routines and replacement cadences — the small habits that keep therapy hygienic and effective.",
+  },
+  living: {
+    eyebrow: "Habits",
+    title: "Living with Therapy",
+    caption:
+      "Building the nightly habit, sleeping with a partner, and traveling without breaking your routine.",
+  },
+  concerns: {
+    eyebrow: "Honest answers",
+    title: "Common Concerns & When It Feels Hard",
+    caption:
+      "The objections we hear most often — and the specific fixes for the discomforts that drive people to quit too early.",
+  },
+  team: {
+    eyebrow: "Coordination",
+    title: "Working with Your Care Team",
+    caption:
+      "How PennPaps and your sleep medicine provider divide responsibilities so you don't have to be the messenger.",
+  },
+};
+
+const CATEGORY_ORDER: Category[] = [
+  "basics",
+  "equipment",
+  "care",
+  "living",
+  "concerns",
+  "team",
+];
+
 const articles: Article[] = [
+  // ── Foundations ────────────────────────────────────────────────
   {
     Icon: Moon,
     title: "What is Sleep Apnea?",
     takeaway:
       "Repeated breathing pauses during sleep — common, treatable, and often invisible to the patient.",
     tone: "navy",
+    category: "basics",
     body: (
       <>
         Obstructive sleep apnea (OSA) happens when the soft tissues in the
@@ -53,6 +120,7 @@ const articles: Article[] = [
     takeaway:
       "A bedside machine delivers a steady, gentle pressure that holds your airway open all night.",
     tone: "navy",
+    category: "basics",
     body: (
       <>
         Your CPAP machine takes in room air, gently pressurizes it (often
@@ -72,6 +140,7 @@ const articles: Article[] = [
     takeaway:
       "Treating sleep apnea improves daytime energy, blood pressure, mood, and long-term cardiovascular health.",
     tone: "gold",
+    category: "basics",
     body: (
       <>
         Patients who use CPAP consistently report sharper morning focus,
@@ -86,12 +155,15 @@ const articles: Article[] = [
       </>
     ),
   },
+
+  // ── Choosing Your Equipment ────────────────────────────────────
   {
     Icon: Glasses,
     title: "Understanding Mask Styles",
     takeaway:
       "Three broad styles — nasal pillows, nasal masks, and full-face — each suited to different sleepers.",
     tone: "navy",
+    category: "equipment",
     body: (
       <>
         <strong>Nasal pillows</strong> are minimal — small silicone tips
@@ -114,6 +186,7 @@ const articles: Article[] = [
     takeaway:
       "Side and stomach sleepers need lower-profile masks; back sleepers have the most flexibility.",
     tone: "gold",
+    category: "equipment",
     body: (
       <>
         If you sleep on your side, a bulky full-face mask will dig into
@@ -128,12 +201,41 @@ const articles: Article[] = [
       </>
     ),
   },
+
+  // ── Daily Care ─────────────────────────────────────────────────
+  {
+    Icon: Droplets,
+    title: "Cleaning Your CPAP",
+    takeaway:
+      "Daily wipe of the cushion, weekly soap-and-water for the mask, monthly chamber soak — simple, no special gadgets.",
+    tone: "navy",
+    category: "care",
+    body: (
+      <>
+        A clean CPAP isn't a deep-clean ritual — it's a few small habits.{" "}
+        <strong>Daily:</strong> empty leftover water from the humidifier
+        and let the chamber air-dry. Wipe the mask cushion with a soft
+        damp cloth or a CPAP wipe to remove face oils.{" "}
+        <strong>Weekly:</strong> take the mask apart and hand-wash the
+        cushion, frame, and headgear in warm water with mild dish soap —
+        no scented soaps, no bleach, no alcohol, all of which break down
+        silicone and void the warranty. Rinse thoroughly and air-dry.
+        Wash the tubing the same way and hang it to drip-dry.{" "}
+        <strong>Monthly:</strong> swap your filter, give the water
+        chamber a vinegar-and-water soak (1:1 for 30 minutes), then
+        rinse. Skip the UV sanitizers and ozone "cleaners" — the FDA
+        has cautioned against them and they can damage equipment without
+        proven benefit over routine soap and water.
+      </>
+    ),
+  },
   {
     Icon: CalendarClock,
     title: "Replacement Schedule",
     takeaway:
       "Cushions every 2–4 weeks, headgear every 6 months, tubing every 3 months, filters monthly.",
-    tone: "navy",
+    tone: "gold",
+    category: "care",
     body: (
       <>
         CPAP supplies wear out faster than you'd think. Silicone cushions
@@ -147,12 +249,89 @@ const articles: Article[] = [
       </>
     ),
   },
+
+  // ── Living with Therapy ────────────────────────────────────────
+  {
+    Icon: Sunrise,
+    title: "What to Expect: The First Two Weeks",
+    takeaway:
+      "An adjustment period is normal — most patients hit their stride between night 7 and night 21.",
+    tone: "navy",
+    category: "living",
+    body: (
+      <>
+        The first nights with CPAP almost always feel strange. Your face
+        is wearing something new, your bedroom has a new sound profile,
+        and your brain is processing "is this safe to sleep with?" Plan
+        for it. <strong>Nights 1–3:</strong> wear the mask 30 minutes
+        during the day (reading, watching TV) before you ever sleep with
+        it on — it builds the "oh, that's just my mask" familiarity
+        faster than white-knuckling it through bedtime.{" "}
+        <strong>Nights 4–10:</strong> many patients experience a
+        deeper-sleep "rebound" and may sleep more than usual as the body
+        catches up on years of fragmented sleep. That's a good sign.{" "}
+        <strong>Nights 11–21:</strong> the mask starts to feel normal,
+        you wake up clearer-headed, and the morning improvements
+        compound. If you're past three weeks and still struggling, the
+        mask probably isn't right for you — message us and we'll
+        re-fit you.
+      </>
+    ),
+  },
+  {
+    Icon: Repeat,
+    title: "Building a Consistent Routine",
+    takeaway:
+      "The biggest predictor of long-term benefit is wearing it nightly — including naps, weekends, and travel.",
+    tone: "gold",
+    category: "living",
+    body: (
+      <>
+        CPAP only works while it's on. Aim for every sleep session,
+        every night — including naps and weekends. Even a few nights off
+        early on can re-introduce the daytime fatigue and partner-
+        disturbing snoring you signed up to fix. A few tactics that help:
+        keep the machine on the same nightstand every night so it
+        becomes part of your bedtime cue, plug it in <em>before</em> you
+        brush your teeth so it's ready when you are, keep a backup
+        cushion in your nightstand for the inevitable weak-strap night,
+        and pack the travel bag the day before any trip so you don't
+        "forget" to bring it. Insurance compliance windows (typically 4
+        hours/night, 70% of nights, in the first 90 days) exist
+        precisely because consistency is what makes the therapy
+        clinically effective.
+      </>
+    ),
+  },
+  {
+    Icon: Users,
+    title: "Sleeping Together with CPAP",
+    takeaway:
+      "Modern CPAPs are nearly silent and most bed partners sleep better, not worse.",
+    tone: "navy",
+    category: "living",
+    body: (
+      <>
+        Patients often worry their CPAP will disturb a bed partner —
+        the reverse is usually true. Modern CPAPs run quieter than a
+        ceiling fan, and eliminating snoring and gasping pauses makes
+        the bedroom calmer, not louder. The most common partner
+        complaints are mask air leaks (a fit issue we can solve) and
+        the sound of the heated humidifier (turn it down or off). If a
+        partner is sensitive to the hose movement, a hose hanger above
+        the bed keeps it out of the way. Patients also report renewed
+        intimacy once both partners are sleeping deeply through the
+        night — chronic exhaustion is its own relationship strain.
+      </>
+    ),
+  },
   {
     Icon: Plane,
     title: "Traveling with CPAP",
     takeaway:
       "CPAP machines fly free as medical equipment — pack smart and bring distilled water plans.",
     tone: "gold",
+    category: "living",
     body: (
       <>
         CPAP machines do not count toward your carry-on allowance on US
@@ -166,31 +345,73 @@ const articles: Article[] = [
       </>
     ),
   },
+
+  // ── Common Concerns ────────────────────────────────────────────
   {
-    Icon: Users,
-    title: "Sleeping Together with CPAP",
+    Icon: ShieldCheck,
+    title: "Common Concerns & Myths",
     takeaway:
-      "Modern CPAPs are nearly silent and most bed partners sleep better, not worse.",
+      "Most resistance to CPAP comes from outdated fears — modern equipment and modern fitting practices solve almost all of them.",
     tone: "navy",
+    category: "concerns",
     body: (
       <>
-        Patients often worry their CPAP will disturb a bed partner —
-        the reverse is usually true. Modern CPAPs run quieter than a
-        ceiling fan, and eliminating snoring and gasping pauses makes
-        the bedroom calmer, not louder. The most common partner
-        complaints are mask air leaks (a fit issue we can solve) and
-        the sound of the heated humidifier (turn it down or off). If a
-        partner is sensitive to the hose movement, a hose hanger above
-        the bed keeps it out of the way.
+        A few of the objections we hear most often, and what's actually
+        true. <em>"It's claustrophobic"</em> — nasal pillows weigh less
+        than a pair of glasses and don't cover your face at all; most
+        claustrophobia complaints disappear with the right mask style.{" "}
+        <em>"I'll become dependent on it"</em> — CPAP is a treatment,
+        not a drug. It works while you wear it; your body doesn't lose
+        the ability to breathe on its own. <em>"It's noisy"</em> —
+        modern machines run at ~26 dB, quieter than a whisper and
+        quieter than your own breathing. <em>"I only need it on bad
+        nights"</em> — apnea events happen every night you sleep on
+        your back without therapy, whether you feel it the next day or
+        not. <em>"I should lose weight first"</em> — losing weight can
+        reduce apnea severity in some patients, but you need restorative
+        sleep to have the energy to exercise and the hormonal balance
+        to lose weight. Treating apnea makes weight loss easier, not the
+        other way around.
       </>
     ),
   },
+  {
+    Icon: LifeBuoy,
+    title: "When CPAP Feels Hard",
+    takeaway:
+      "Mask leaks, dry mouth, congestion, and pressure intolerance all have specific fixes — don't quit, adjust.",
+    tone: "gold",
+    category: "concerns",
+    body: (
+      <>
+        Almost every adherence problem traces back to one of four
+        issues, all fixable. <strong>Mask leaks:</strong> usually a fit
+        problem (wrong size or worn-out cushion) or a sleeping-position
+        mismatch — we'll re-measure and try a different style.{" "}
+        <strong>Dry mouth or sore throat:</strong> turn up the heated
+        humidifier, or if you're a mouth-breather wearing a nasal mask,
+        switch to full-face. <strong>Nasal congestion:</strong>{" "}
+        humidification helps, and your provider can prescribe a nasal
+        steroid. Don't skip CPAP nights because you're stuffy — that
+        often makes the next morning worse. <strong>Pressure feels too
+        strong:</strong> turn on the "ramp" feature so the machine
+        starts low and builds up over 20–45 minutes while you fall
+        asleep; ask your provider whether an APAP (auto-adjusting)
+        setting would suit you better. The point: adherence problems
+        are signals, not verdicts. Tell us what's happening and we'll
+        iterate until it works.
+      </>
+    ),
+  },
+
+  // ── Working with Your Care Team ────────────────────────────────
   {
     Icon: Stethoscope,
     title: "Working With Your Sleep Provider",
     takeaway:
       "Your prescription, pressure setting, and clinical changes come from your provider — supplies come from us.",
-    tone: "gold",
+    tone: "navy",
+    category: "team",
     body: (
       <>
         PennPaps handles the equipment side: mask
@@ -211,10 +432,16 @@ const tones = {
   gold: "icon-halo-gold",
 } as const;
 
+const articlesByCategory = CATEGORY_ORDER.map((category) => ({
+  category,
+  meta: categoryMeta[category],
+  items: articles.filter((a) => a.category === category),
+}));
+
 export function Learn() {
   useDocumentTitle(
     "Learn — CPAP guides",
-    "Plain-English CPAP guides from Penn Home Medical Supply: replacement schedules, device setup, troubleshooting, travel, and what to expect on therapy.",
+    "Plain-English CPAP guides from Penn Home Medical Supply: sleep apnea basics, mask choice, cleaning, building a routine, common objections, replacement schedules, and what to expect on therapy.",
   );
   return (
     <div className="container max-w-5xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
@@ -240,39 +467,78 @@ export function Learn() {
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
           Short, plain-language guides on sleep apnea, CPAP basics, mask
-          choice, and living comfortably with therapy — written by the same
-          team that fits you.
+          choice, cleaning, building a nightly routine, and the common
+          concerns that keep people from sticking with therapy — written
+          by the same team that fits you.
         </p>
       </header>
 
-      {/* Article cards */}
-      <section className="grid gap-5 md:grid-cols-2">
-        {articles.map(({ Icon, title, takeaway, body, tone }) => (
-          <article
-            key={title}
-            className="glass-card lift-on-hover rounded-2xl p-6 flex flex-col gap-4"
+      {/* Section nav — anchors so the page is scannable when long */}
+      <nav
+        aria-label="Topics on this page"
+        className="glass-panel rounded-2xl px-4 py-3 flex flex-wrap gap-x-5 gap-y-2 justify-center text-sm"
+        data-testid="learn-section-nav"
+      >
+        {articlesByCategory.map(({ category, meta }) => (
+          <a
+            key={category}
+            href={`#section-${category}`}
+            className="text-[hsl(var(--penn-navy))]/80 hover:text-primary font-medium transition-colors"
+            data-testid={`learn-nav-${category}`}
           >
-            <div className="flex items-start gap-4">
-              <div
-                className={`shrink-0 h-12 w-12 rounded-xl ${tones[tone]} flex items-center justify-center`}
-              >
-                <Icon className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold tracking-tight">
-                  {title}
-                </h2>
-                <p className="text-sm text-[hsl(var(--penn-navy))]/80 font-medium leading-snug">
-                  {takeaway}
-                </p>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              {body}
-            </p>
-          </article>
+            {meta.title}
+          </a>
         ))}
-      </section>
+      </nav>
+
+      {/* Sectioned article grids */}
+      {articlesByCategory.map(({ category, meta, items }) => (
+        <section
+          key={category}
+          id={`section-${category}`}
+          className="space-y-6 scroll-mt-24"
+          data-testid={`learn-section-${category}`}
+        >
+          <div className="space-y-2 text-center md:text-left">
+            <span className="text-xs font-semibold uppercase tracking-[0.28em] text-[hsl(var(--penn-gold))]">
+              {meta.eyebrow}
+            </span>
+            <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-primary">
+              {meta.title}
+            </h2>
+            <p className="text-sm md:text-base text-muted-foreground max-w-2xl leading-relaxed mx-auto md:mx-0">
+              {meta.caption}
+            </p>
+          </div>
+          <div className="grid gap-5 md:grid-cols-2">
+            {items.map(({ Icon, title, takeaway, body, tone }) => (
+              <article
+                key={title}
+                className="glass-card lift-on-hover rounded-2xl p-6 flex flex-col gap-4"
+              >
+                <div className="flex items-start gap-4">
+                  <div
+                    className={`shrink-0 h-12 w-12 rounded-xl ${tones[tone]} flex items-center justify-center`}
+                  >
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold tracking-tight">
+                      {title}
+                    </h3>
+                    <p className="text-sm text-[hsl(var(--penn-navy))]/80 font-medium leading-snug">
+                      {takeaway}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {body}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
 
       {/* Disclaimer */}
       <section>
