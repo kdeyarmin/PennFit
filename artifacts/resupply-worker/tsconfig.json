@@ -7,7 +7,6 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../lib/resupply-contracts" },
     { "path": "../../lib/resupply-domain" },
     { "path": "../../lib/resupply-db" },
     { "path": "../../lib/resupply-audit" },
