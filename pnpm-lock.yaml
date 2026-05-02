@@ -417,9 +417,6 @@ importers:
       '@workspace/resupply-auth':
         specifier: workspace:*
         version: link:../../lib/resupply-auth
-      '@workspace/resupply-contracts':
-        specifier: workspace:*
-        version: link:../../lib/resupply-contracts
       '@workspace/resupply-db':
         specifier: workspace:*
         version: link:../../lib/resupply-db
@@ -526,9 +523,6 @@ importers:
       '@workspace/resupply-audit':
         specifier: workspace:*
         version: link:../../lib/resupply-audit
-      '@workspace/resupply-contracts':
-        specifier: workspace:*
-        version: link:../../lib/resupply-contracts
       '@workspace/resupply-db':
         specifier: workspace:*
         version: link:../../lib/resupply-db
@@ -699,19 +693,6 @@ importers:
       react:
         specifier: 'catalog:'
         version: 19.1.6
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)
-
-  lib/resupply-contracts:
-    dependencies:
-      zod:
-        specifier: 'catalog:'
-        version: 3.25.76
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 25.3.5
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)
