@@ -13,6 +13,7 @@ import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
+import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
 import auditRouter from "./audit/index.js";
@@ -62,6 +63,10 @@ router.use(abandonedCartsRouter);
 // publicly visible after an admin approves them. requireAdmin gate
 // is on the router itself.
 router.use(shopReviewsAdminRouter);
+// /admin/shop/back-in-stock-queue — visibility into who's waiting
+// for which OOS SKU + manual fanout trigger. requireAdmin gate is
+// on the router itself.
+router.use(shopBackInStockAdminRouter);
 // /admin/shop/insurance-leads/* — durable queue + status mutations
 // for submissions to the public POST /shop/insurance-leads form.
 // requireAdmin gate is on the router itself.
