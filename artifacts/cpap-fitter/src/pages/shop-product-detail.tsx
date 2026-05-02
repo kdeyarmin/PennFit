@@ -16,7 +16,13 @@
 // session — the page swaps the form for a "Sign in to write a
 // review" prompt for signed-out visitors via the auth provider's <Show>.
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "wouter";
 import {
   ArrowLeft,
@@ -367,6 +373,37 @@ function Hero({
   );
   const resolved = resolveProductImage(product.imageUrl);
 
+  // Desktop sticky CTA: when the primary Add-to-cart button scrolls
+  // out of view, slide a thin bar down from the top with the same
+  // CTA. Hidden on mobile because the global mobile-cta-bar already
+  // owns the bottom slot there. IntersectionObserver on the button
+  // ref is cheaper than scroll listeners and gives us the right
+  // toggle semantics for free (only re-fires when state crosses the
+  // threshold).
+  const ctaRef = useRef<HTMLButtonElement | null>(null);
+  const [stickyVisible, setStickyVisible] = useState(false);
+  useEffect(() => {
+    const el = ctaRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        // Hide while the CTA is on screen; show once it leaves.
+        // We trigger when the CTA passes ABOVE the viewport (user
+        // scrolled past it). Without this check, the bar would
+        // briefly show on initial mount when the page is still
+        // settling above the fold.
+        if (!entry) return;
+        const passedAbove =
+          entry.boundingClientRect.bottom < (entry.rootBounds?.top ?? 0);
+        setStickyVisible(!entry.isIntersecting && passedAbove);
+      },
+      { rootMargin: "0px 0px 0px 0px", threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
   // Inventory affordances. Subscription mode is exempt: the
   // Subscribe & ship toggle stays available even when the one-time
   // pool has hit zero — auto-ship inventory is a separate weekly
@@ -413,6 +450,65 @@ function Hero({
       className="grid grid-cols-1 md:grid-cols-2 gap-8"
       data-testid="pdp-hero"
     >
+      <div
+        className={`hidden md:block fixed top-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-b border-border shadow-sm transition-transform duration-200 ease-out ${
+          stickyVisible ? "translate-y-0" : "-translate-y-full"
+        }`}
+        aria-hidden={!stickyVisible}
+        data-testid="pdp-sticky-cta"
+      >
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center gap-4">
+          <div className="w-9 h-9 rounded-md bg-secondary/60 overflow-hidden shrink-0 flex items-center justify-center">
+            {resolved && !imgFailed ? (
+              <img
+                src={resolved}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Package className="w-4 h-4 text-muted-foreground" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div
+              className="text-sm font-semibold text-[hsl(var(--penn-navy))] truncate"
+              title={product.name}
+            >
+              {product.name}
+            </div>
+            {product.tagline && (
+              <div className="text-xs text-muted-foreground truncate">
+                {product.tagline}
+              </div>
+            )}
+          </div>
+          <div className="hidden lg:block tabular-nums text-base font-bold text-[hsl(var(--penn-navy))] shrink-0">
+            {formatMoneyCents(product.price.unitAmount, product.price.currency)}
+          </div>
+          <Button
+            onClick={handleAdd}
+            disabled={addDisabled}
+            aria-disabled={addDisabled}
+            size="sm"
+            className="shrink-0"
+            data-testid="pdp-sticky-add-to-cart"
+            tabIndex={stickyVisible ? 0 : -1}
+          >
+            {justAdded ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 mr-2" /> Added
+              </>
+            ) : !isSubscriptionMode && oneTimeOutOfStock ? (
+              "Out of stock"
+            ) : (
+              <>
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                {isSubscriptionMode ? "Subscribe" : "Add to cart"}
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
       <div className="aspect-square glass-card rounded-2xl overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center">
         {resolved && !imgFailed ? (
           <img
@@ -511,6 +607,7 @@ function Hero({
           </div>
         )}
         <Button
+          ref={ctaRef}
           onClick={handleAdd}
           className="mt-6 max-w-sm"
           disabled={addDisabled}
