@@ -64,6 +64,11 @@ const ReplacementSchedule = lazy(() =>
 const DeviceSetup = lazy(() =>
   import("@/pages/device-setup").then((m) => ({ default: m.DeviceSetup })),
 );
+const SleepApneaQuiz = lazy(() =>
+  import("@/pages/sleep-apnea-quiz").then((m) => ({
+    default: m.SleepApneaQuiz,
+  })),
+);
 const ShopCart = lazy(() =>
   import("@/pages/shop-cart").then((m) => ({ default: m.ShopCart })),
 );
@@ -284,6 +289,7 @@ function PatientRouter() {
           <Route path="/learn" component={Learn} />
           <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
           <Route path="/learn/device-setup" component={DeviceSetup} />
+          <Route path="/learn/sleep-apnea-quiz" component={SleepApneaQuiz} />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
           <Route path="/shop" component={Shop} />

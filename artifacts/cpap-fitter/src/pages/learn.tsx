@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Sunrise,
   LifeBuoy,
+  ClipboardList,
 } from "lucide-react";
 
 type Category =
@@ -575,6 +576,26 @@ export function Learn() {
 
       {/* Cross-links */}
       <section className="grid sm:grid-cols-2 gap-4">
+        <Link
+          href="/learn/sleep-apnea-quiz"
+          className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group sm:col-span-2"
+          data-testid="learn-link-sleep-apnea-quiz"
+        >
+          <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
+            <ClipboardList className="w-5 h-5" />
+          </div>
+          <div className="space-y-1 flex-1">
+            <h3 className="font-semibold tracking-tight group-hover:text-primary transition-colors">
+              Take the sleep apnea self-screener
+            </h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Eight quick questions based on the validated STOP-BANG
+              clinical screener. Get a risk band and a clear, physician-
+              focused next step — no diagnosis, no sales pitch.
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
+        </Link>
         <Link
           href="/faq"
           className="glass-card lift-on-hover rounded-2xl p-6 flex items-start gap-4 group"
