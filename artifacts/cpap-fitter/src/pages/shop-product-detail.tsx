@@ -34,7 +34,15 @@ import {
   ShoppingCart,
   Trash2,
   Pencil,
+  ZoomIn,
+  X,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -345,6 +353,103 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   );
 }
 
+// Hero product image — always visible as a clickable card; on
+// click, opens a lightbox dialog showing the same image at the
+// largest size the viewport will allow. This is a frontend-only
+// affordance: most product photos are 1024px+ master files and
+// look much better full-bleed than scaled into the 480x480
+// hero card. Useful for masks/cushions where shoppers want to
+// inspect strap routing, vent geometry, or material texture
+// before they commit. The Esc key, the X chip, and clicking
+// the backdrop all close the lightbox (Radix Dialog defaults).
+function ProductImageWithZoom({
+  src,
+  alt,
+  failed,
+  onFail,
+}: {
+  src: string | null;
+  alt: string;
+  failed: boolean;
+  onFail: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasImage = Boolean(src) && !failed;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => hasImage && setOpen(true)}
+        disabled={!hasImage}
+        aria-label={hasImage ? `View ${alt} full size` : alt}
+        className={`group relative aspect-square glass-card rounded-2xl overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center w-full text-left ${
+          hasImage
+            ? "cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-gold))]"
+            : "cursor-default"
+        }`}
+        data-testid="pdp-image-zoom-trigger"
+      >
+        {hasImage ? (
+          <img
+            src={src ?? undefined}
+            alt={alt}
+            loading="eager"
+            decoding="async"
+            onError={onFail}
+            className="w-full h-full object-contain p-8 transition-transform duration-300 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <Package className="w-24 h-24 text-[hsl(var(--penn-navy))]/40" />
+        )}
+        {hasImage && (
+          <span
+            aria-hidden
+            className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--penn-navy))]/85 text-white text-[11px] font-medium px-2.5 py-1 backdrop-blur-sm opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+          >
+            <ZoomIn className="w-3 h-3" />
+            Click to zoom
+          </span>
+        )}
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          className="max-w-5xl w-[95vw] p-0 bg-transparent border-0 shadow-none"
+          data-testid="pdp-image-zoom-dialog"
+        >
+          {/*
+            Visually-hidden header for screen readers. The
+            actual visible UI is just the image and the close
+            chip; Radix requires DialogTitle/Description to
+            avoid an a11y warning, so we render them sr-only.
+          */}
+          <DialogTitle className="sr-only">{alt} — full size</DialogTitle>
+          <DialogDescription className="sr-only">
+            Full-size product photo. Press Escape or click outside to close.
+          </DialogDescription>
+          <div className="relative bg-white rounded-2xl overflow-hidden shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close zoom"
+              className="absolute top-3 right-3 z-10 h-9 w-9 rounded-full bg-white/95 hover:bg-white text-[hsl(var(--penn-navy))] inline-flex items-center justify-center shadow-md ring-1 ring-black/10"
+              data-testid="pdp-image-zoom-close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            {src ? (
+              <img
+                src={src}
+                alt={alt}
+                className="w-full max-h-[85vh] object-contain bg-gradient-to-br from-slate-50 via-white to-slate-100"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="container mx-auto px-4 md:px-6 py-10 md:py-14 max-w-5xl">
@@ -511,20 +616,13 @@ function Hero({
           </Button>
         </div>
       </div>
-      <div className="aspect-square glass-card rounded-2xl overflow-hidden bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center">
-        {resolved && !imgFailed ? (
-          <img
-            src={resolved}
-            alt={product.name}
-            loading="eager"
-            decoding="async"
-            onError={() => setImgFailed(true)}
-            className="w-full h-full object-contain p-8"
-          />
-        ) : (
-          <Package className="w-24 h-24 text-[hsl(var(--penn-navy))]/40" />
-        )}
-      </div>
+      <ProductImageWithZoom
+        src={resolved}
+        alt={product.name}
+        failed={imgFailed}
+        onFail={() => setImgFailed(true)}
+      />
+      
       <div className="flex flex-col">
         {product.isBundle && (
           <Badge
