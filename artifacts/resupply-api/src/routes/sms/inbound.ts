@@ -43,7 +43,7 @@
 //   twilio_message_sid.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
