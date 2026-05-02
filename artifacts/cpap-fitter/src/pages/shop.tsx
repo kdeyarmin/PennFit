@@ -51,6 +51,8 @@ import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import { ShopFilterBar } from "@/components/shop/shop-filter-bar";
+import { QuickViewDialog } from "@/components/shop/quick-view-dialog";
+import { Eye } from "lucide-react";
 
 /** Bulk aggregate map keyed by Stripe productId. Empty until loaded. */
 type AggregateMap = Record<string, { count: number; averageRating: number }>;
@@ -431,6 +433,10 @@ function ProductCard({
   const { addItem } = useCart();
   const [justAdded, setJustAdded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  // Quick-view dialog visibility. Owned by the card so the modal
+  // closes naturally when the card unmounts (e.g. switching from
+  // sectioned grid to search-results grid).
+  const [quickViewOpen, setQuickViewOpen] = useState(false);
   // Per-card mode toggle. We keep this in component state rather than
   // in the cart hook because the user may be browsing multiple
   // products and toggling each one before committing to "Add to cart".
@@ -498,7 +504,7 @@ function ProductCard({
 
   return (
     <div
-      className="glass-card lift-on-hover rounded-2xl overflow-hidden flex flex-col"
+      className="group glass-card lift-on-hover rounded-2xl overflow-hidden flex flex-col"
       data-testid={`shop-card-${product.id}`}
     >
       <div className="relative aspect-square bg-gradient-to-br from-slate-50 via-white to-slate-100 border-b border-slate-200/60 flex items-center justify-center">
@@ -525,6 +531,24 @@ function ProductCard({
             Bundle
           </Badge>
         )}
+        {/*
+          Quick-view trigger. Always visible on touch devices (where
+          hover doesn't exist), reveals on group-hover on desktop so
+          it doesn't compete with the product image at rest. The
+          modal preserves the shopper's scroll position across the
+          eight category sections — much better than a full PDP
+          navigation when they just want to peek at the description.
+        */}
+        <button
+          type="button"
+          onClick={() => setQuickViewOpen(true)}
+          aria-label={`Quick view: ${product.name}`}
+          className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 backdrop-blur px-3 py-1.5 text-xs font-semibold text-[hsl(var(--penn-navy))] shadow-sm border border-border/60 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-white"
+          data-testid={`shop-quickview-trigger-${product.id}`}
+        >
+          <Eye className="w-3.5 h-3.5" />
+          Quick view
+        </button>
       </div>
       <div className="p-6 flex flex-col flex-1">
         {modelLine && (
@@ -711,6 +735,12 @@ function ProductCard({
           </Link>
         </div>
       </div>
+      <QuickViewDialog
+        product={product}
+        aggregate={aggregate}
+        open={quickViewOpen}
+        onOpenChange={setQuickViewOpen}
+      />
     </div>
   );
 }
