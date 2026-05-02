@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
-import type { FacialMeasurements, QuestionnaireAnswers } from "@workspace/api-client-react";
+import type { FacialMeasurements, QuestionnaireAnswers } from "@workspace/api-client-react/storefront";
 
 export interface ChosenMask {
   maskId: string;

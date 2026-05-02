@@ -24,7 +24,7 @@
  */
 
 import { Router } from "express";
-import { SubmitOrderBody } from "@workspace/api-zod";
+import { SubmitOrderBody } from "../../lib/api-zod/index.js";
 import { db, ordersTable } from "../../lib/storefront/db.js";
 import { eq } from "drizzle-orm";
 import { sendOrderToPenn, generateOrderReference } from "../../lib/storefront/orderEmail.js";

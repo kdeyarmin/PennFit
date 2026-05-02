@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    "./storefront": "./src/storefront/index.ts",
+    "./admin": "./src/admin/index.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "catalog:"

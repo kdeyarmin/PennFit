@@ -7,7 +7,7 @@ import {
   useListMasks,
   ApiError,
   type QuestionnaireAnswers,
-} from "@workspace/api-client-react";
+} from "@workspace/api-client-react/storefront";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";

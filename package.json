@@ -7,7 +7,7 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "lint:resupply": "eslint --max-warnings 0 \"lib/resupply-*/src/**/*.{ts,tsx}\" \"artifacts/resupply-api/src/**/*.ts\" \"artifacts/resupply-worker/src/**/*.ts\" \"artifacts/resupply-dashboard/src/**/*.{ts,tsx}\""
+    "lint:resupply": "eslint --max-warnings 0 \"lib/resupply-*/src/**/*.{ts,tsx}\" \"artifacts/resupply-api/src/**/*.ts\" \"artifacts/cpap-fitter/src/{pages,components,lib,hooks}/admin/**/*.{ts,tsx}\""
   },
   "private": true,
   "devDependencies": {

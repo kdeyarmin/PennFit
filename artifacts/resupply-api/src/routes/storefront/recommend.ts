@@ -11,12 +11,11 @@
  *   - Write any patient data to a database
  *   - Persist session data
  *
- * This minimizes PHI exposure and simplifies HIPAA compliance posture.
- * Deployments must still execute a BAA with the cloud provider.
+ * This minimizes PHI exposure.
  */
 
 import { Router } from "express";
-import { GetRecommendationBody, ListMasksResponse } from "@workspace/api-zod";
+import { GetRecommendationBody } from "../../lib/api-zod/index.js";
 import { recommend } from "../../lib/storefront/recommendationEngine.js";
 import { maskCatalog } from "../../data/maskCatalog.js";
 

@@ -1,5 +1,15 @@
 # CPAP Resupply Automation — Architecture
 
+> ⚠️ **Partially stale.** The dependency rules and "why" sections
+> below are still authoritative. The structure tables predate the
+> May 2026 consolidations: `artifacts/resupply-worker` is now an
+> in-process boot module inside `artifacts/resupply-api/src/worker/`,
+> `artifacts/resupply-dashboard` is now mounted under `/admin/*`
+> inside `artifacts/cpap-fitter`, and `lib/resupply-contracts` /
+> `lib/resupply-testing` have been deleted. For the current top-level
+> shape see the root [`README.md`](../../README.md). The ADRs in
+> `./adr/` remain accurate for the decisions they document.
+
 This document describes how the resupply system is laid out in this monorepo,
 how data flows between the pieces, and the dependency rules every package
 must obey. The "why" for each major choice lives in `docs/resupply/adr/`.

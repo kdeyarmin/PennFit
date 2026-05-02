@@ -44,6 +44,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { getOrCreateStripeCustomer } from "../../lib/stripe/customer";
+import { validateCartItems } from "../../lib/stripe/validate-cart";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { rateLimit } from "../../middlewares/rate-limit";
 
@@ -192,6 +193,28 @@ router.post(
         res.status(409).json({ error: "reorder_basket_empty" });
         return;
       }
+    }
+
+    // Catalog guard: verify every price in the resolved basket belongs
+    // to the approved shop catalog and respects stock/type constraints.
+    // This applies to both fresh carts and reorder baskets — a reorder
+    // must re-validate because a product could have gone out of stock
+    // or been removed from the catalog since the original purchase.
+    const cartValidation = await validateCartItems(stripe, basket);
+    if (!cartValidation.ok) {
+      req.log?.warn(
+        { errors: cartValidation.errors },
+        "quick-checkout: cart validation failed",
+      );
+      res.status(400).json({
+        error: "cart_invalid",
+        issues: cartValidation.errors.map((e) => ({
+          priceId: e.priceId,
+          reason: e.reason,
+          message: e.message,
+        })),
+      });
+      return;
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {

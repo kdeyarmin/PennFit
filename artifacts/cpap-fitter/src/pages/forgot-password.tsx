@@ -1,6 +1,5 @@
-// Forgot-password landing for the cpap-fitter shop. Rendered only
-// when VITE_AUTH_PROVIDER === "in_house". Server returns 200
-// regardless of whether the email matches an account — no
+// Forgot-password landing for the cpap-fitter shop. Server returns
+// 200 regardless of whether the email matches an account — no
 // enumeration — so we always render the success state on
 // settlement.
 

@@ -1,5 +1,28 @@
 # PennPaps — Penn Home Medical Supply
 
+## Git source of truth
+
+**Canonical ref:** `main` on `https://github.com/kdeyarmin/PennFit` (the Replit remote-tracking name is `subrepl-3ppc2e03/main`).
+
+**Why this exists:** in May 2026 the workspace, GitHub, and Replit's `gitsafe-backup` snapshots had drifted by ~150 commits across four divergent lines because no agent or human knew which surface was authoritative (see [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md) for the post-mortem). This rule prevents a repeat.
+
+**Every agent session and human dev MUST do this at the start of work:**
+
+```bash
+# 1. Confirm working tree is clean (no uncommitted edits to lose)
+git status
+
+# 2. Pull the canonical ref and align local main to it
+git fetch subrepl-3ppc2e03
+git rev-list --count main..subrepl-3ppc2e03/main   # how many commits you're behind
+# If clean and behind: align (destructive — only when status is clean)
+git reset --hard subrepl-3ppc2e03/main
+```
+
+**Where new work lands:** push a feature branch and open a PR on `github.com/kdeyarmin/PennFit`. Do NOT commit directly to local `main` and let it drift again. The Replit Git pane has a "Push" action that creates the branch on the remote; finish the PR on github.com.
+
+**The pre-commit hook warns** when local `main` is more than 10 commits behind `subrepl-3ppc2e03/main` (non-blocking — surfaces drift without breaking emergency commits). Bypass with `SKIP_HOOKS=1 git commit ...` or `--no-verify`.
+
 ## Overview
 
 PennPaps is a privacy-first web application for personalized CPAP mask selection and ordering. It uses on-device facial measurements and a clinical questionnaire to recommend masks from its catalog. The application supports both insurance and cash-pay customers, aiming to improve patient adherence. It includes an internal CPAP Resupply Automation system for patient outreach and management. The vision is to create a comprehensive storefront for CPAP supplies, integrating fitting, shopping, and resupply services.
@@ -30,7 +53,7 @@ The user journey includes stages like Consent, Facial Scan, Questionnaire, Mask 
 
 ### CPAP Resupply Automation System
 
-A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard provides tools for managing patients, conversations, and audit logs.
+The internal Resupply system automates patient outreach from a single `Express API` process (`artifacts/resupply-api`) that also boots an **in-process `pg-boss` worker** at startup (see `src/worker/index.ts`). The former separate `artifacts/resupply-worker` artifact was folded into the API in May 2026 — the workload is light (hourly reminder scan, weekly attachment sweep), the API's `/readyz` already gated on the same `pgboss_resupply.version` table the worker creates, and a single artifact is one fewer thing to deploy and monitor. The system integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard (33 pages — patients, conversations, episodes, rules, audit logs, team, customers, returns) is mounted **inside the same `cpap-fitter` SPA at `/admin/*`** so the project ships ONE customer-facing site at `pennfit.replit.app/`. Admin routes are gated by `useGetAdminMe`; admin auth pages live at `/admin/sign-in`, `/admin/forgot-password`, `/admin/reset-password`, `/admin/verify-email` (basePath `"/admin"`). Legacy `/resupply/*` URLs still route to the same artifact and SPA-redirect to `/admin/*` while preserving query strings (so existing `?token=…` bookmarks for password-reset/verify-email keep working). Admin theme tokens (`--penn-navy`, etc.) live in `src/admin.css` scoped under `.admin-root` so they do NOT clobber the storefront's brand tokens; every admin surface wraps its outer `<div>` with `className="admin-root"`.
 
 ### Cash-Pay Shop & Customer Accounts
 

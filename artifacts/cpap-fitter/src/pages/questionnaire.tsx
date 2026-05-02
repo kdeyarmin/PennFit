@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, CheckCircle2, Lightbulb } from "lucide-react";
-import type { QuestionnaireAnswers } from "@workspace/api-client-react";
+import type { QuestionnaireAnswers } from "@workspace/api-client-react/storefront";
 
 const PAGE_TITLE = "A few quick questions";
 

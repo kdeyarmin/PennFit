@@ -108,7 +108,7 @@ router.post("/rules", requireAdmin, async (req, res) => {
       targetId: row.id,
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
-      metadata: { name: row.name, priority: row.priority },
+      metadata: { ruleName: row.name, priority: row.priority },
     });
   } catch (err) {
     logger.error(

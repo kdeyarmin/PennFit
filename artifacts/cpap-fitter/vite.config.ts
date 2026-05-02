@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { packageNameFromModulePath } from "../shared/vite/manual-chunks";
+import { fitterChunkForPackage } from "../shared/vite/chunk-groups";
 
 const isBuild = process.argv.includes("build");
 
@@ -23,6 +25,7 @@ if (!isBuild && !basePath) {
     "BASE_PATH environment variable is required but was not provided.",
   );
 }
+
 
 export default defineConfig({
   base: basePath ?? "/",
@@ -59,6 +62,24 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (
+          warning.code === "SOURCEMAP_ERROR" &&
+          warning.message.includes("Can't resolve original location of error")
+        ) {
+          return;
+        }
+        warn(warning);
+      },
+      output: {
+        manualChunks(id) {
+          const packageName = packageNameFromModulePath(id);
+          if (!packageName) return;
+          return fitterChunkForPackage(packageName);
+        },
+      },
+    },
   },
   server: {
     port,

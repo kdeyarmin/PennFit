@@ -12,10 +12,21 @@
 // guard, and the post-lockout allowlist (request_human_handoff /
 // end_call).
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import { createVoiceToolDispatcher } from "./tools-impl";
+
+// The dispatcher's verify_patient_identity path runs through the
+// pgcrypto `decrypt(...)` SQL helper, which reads
+// RESUPPLY_DATA_KEY at SQL-build time. The DB itself is stubbed —
+// no actual decrypt happens — but the helper still throws if the
+// key is missing. Set a placeholder once for the suite.
+beforeAll(() => {
+  if (!process.env.RESUPPLY_DATA_KEY) {
+    process.env.RESUPPLY_DATA_KEY = "00".repeat(32);
+  }
+});
 
 interface StubRow {
   dob: string | null;

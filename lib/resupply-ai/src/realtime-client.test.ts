@@ -89,7 +89,7 @@ describe("RealtimeClient", () => {
     ).toThrow(/apiKey/);
   });
 
-  it("connects to the realtime URL with the model query param and the BAA-friendly headers", () => {
+  it("connects to the realtime URL with the model query param and the auth headers", () => {
     const { capturedUrl, capturedHeaders } = build();
     expect(capturedUrl).toBe(
       "wss://api.openai.com/v1/realtime?model=gpt-realtime",

@@ -1,7 +1,6 @@
 // Verify-email landing for the cpap-fitter shop. The user clicks
 // the link in their welcome email and we POST the token to the
-// server immediately on mount. Rendered only when
-// VITE_AUTH_PROVIDER === "in_house".
+// server immediately on mount.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
