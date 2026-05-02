@@ -53,7 +53,7 @@ The user journey includes stages like Consent, Facial Scan, Questionnaire, Mask 
 
 ### CPAP Resupply Automation System
 
-A separate internal system automates patient outreach using an `Express API`, `pg-boss` background worker, and a `React admin console`. It integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard provides tools for managing patients, conversations, and audit logs.
+The internal Resupply system automates patient outreach using an `Express API` (`artifacts/resupply-api`) and a `pg-boss` background worker (`artifacts/resupply-worker`). It integrates `Twilio` for voice calls and two-way SMS, and `SendGrid` for email. The Admin Dashboard (33 pages — patients, conversations, episodes, rules, audit logs, team, customers, returns) is mounted **inside the same `cpap-fitter` SPA at `/admin/*`** so the project ships ONE customer-facing site at `pennfit.replit.app/`. Admin routes are gated by `useGetAdminMe`; admin auth pages live at `/admin/sign-in`, `/admin/forgot-password`, `/admin/reset-password`, `/admin/verify-email` (basePath `"/admin"`). Legacy `/resupply/*` URLs still route to the same artifact and SPA-redirect to `/admin/*` while preserving query strings (so existing `?token=…` bookmarks for password-reset/verify-email keep working). Admin theme tokens (`--penn-navy`, etc.) live in `src/admin.css` scoped under `.admin-root` so they do NOT clobber the storefront's brand tokens; every admin surface wraps its outer `<div>` with `className="admin-root"`.
 
 ### Cash-Pay Shop & Customer Accounts
 
