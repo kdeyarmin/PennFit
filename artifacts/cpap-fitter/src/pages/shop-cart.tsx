@@ -33,6 +33,7 @@ import {
   fetchShopProducts,
   formatMoneyCents,
   startCheckout,
+  type ShopProductView,
 } from "@/lib/shop-api";
 import {
   AccountApiError,
@@ -41,6 +42,8 @@ import {
   type SavedCard,
 } from "@/lib/account-api";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
+import { ShippingEta } from "@/components/shop/shipping-eta";
+import { CartCrossSell } from "@/components/shop/cart-cross-sell";
 
 // sessionStorage key written by /account when the user clicks
 // "Buy this again". Reading + clearing it here is the only handshake
@@ -280,6 +283,13 @@ export function ShopCart() {
     };
   }, [items.length]);
 
+  // Catalog snapshot is reused for two things on this page:
+  //   1. previewMode flag (existing behavior — gates real checkout)
+  //   2. CartCrossSell input (new — the strip needs the full
+  //      catalog to pick complementary categories)
+  // We fetch once on mount and keep both in sync from the same call
+  // so the user doesn't see flicker between them.
+  const [catalog, setCatalog] = useState<ShopProductView[]>([]);
   useEffect(() => {
     let active = true;
     fetchShopProducts()
@@ -287,11 +297,13 @@ export function ShopCart() {
         if (!active) return;
         if ("unavailable" in r) {
           // Treat hard-503 as preview-equivalent for the cart: no
-          // checkout possible either way.
+          // checkout possible either way. Catalog stays empty so the
+          // cross-sell strip self-hides.
           setPreviewMode(true);
           return;
         }
         setPreviewMode(r.previewMode);
+        setCatalog(r.products);
       })
       .catch(() => {
         // Fail open to "live" so a transient products fetch failure
@@ -629,6 +641,18 @@ export function ShopCart() {
                   {formatMoneyCents(totalCents)}
                 </span>
               </div>
+              {/*
+                Same shipping promise the customer saw on the PDP,
+                rendered here so they don't lose confidence between
+                product page and checkout. Self-hides if there are no
+                items (the parent ternary already guards), and
+                gracefully renders even if the catalog is still
+                loading — the dates are computed locally.
+              */}
+              <ShippingEta
+                className="mb-4"
+                testIdPrefix="cart-shipping-eta"
+              />
               <ComfortGuarantee variant="badge" className="mb-4" />
               {error && (
                 <div
@@ -767,6 +791,31 @@ export function ShopCart() {
               </div>
             </div>
           </aside>
+          {/*
+            Cross-sell strip lives outside the items column so it
+            spans the full width below both columns on desktop. The
+            component self-hides when fewer than 2 cards qualify, so
+            an empty catalog (preview / fetch failure) won't leave a
+            lonely heading visible.
+          */}
+          <div className="lg:col-span-3">
+            <CartCrossSell
+              products={catalog}
+              cartProductIds={items.map((i) => i.productId)}
+              cartCategories={Array.from(
+                new Set(
+                  items
+                    .map(
+                      (i) =>
+                        catalog.find((p) => p.id === i.productId)?.category,
+                    )
+                    .filter((c): c is ShopProductView["category"] =>
+                      typeof c === "string",
+                    ),
+                ),
+              )}
+            />
+          </div>
         </div>
       )}
     </div>
