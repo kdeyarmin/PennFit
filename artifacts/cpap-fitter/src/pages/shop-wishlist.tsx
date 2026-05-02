@@ -165,23 +165,35 @@ function WishlistRow({ product }: { product: ShopProductView }) {
   const oneTimeOutOfStock =
     typeof product.stockCount === "number" && product.stockCount <= 0;
 
+  const buildLine = () => ({
+    productId: product.id,
+    priceId: product.price.id,
+    name: product.name,
+    unitAmountCents: product.price.unitAmount,
+    currency: product.price.currency,
+    imageUrl: resolved,
+    isBundle: product.isBundle,
+    // Wishlist always adds as a one-time purchase. The recurring
+    // toggle is a per-card decision; if the shopper wants the
+    // subscription cadence they should click through to the PDP.
+    mode: "one_time" as const,
+    recurringPriceId: null,
+    recurringIntervalLabel: null,
+    stockCount: product.stockCount,
+  });
+
   const handleAdd = () => {
-    addItem({
-      productId: product.id,
-      priceId: product.price.id,
-      name: product.name,
-      unitAmountCents: product.price.unitAmount,
-      currency: product.price.currency,
-      imageUrl: resolved,
-      isBundle: product.isBundle,
-      // Wishlist always adds as a one-time purchase. The recurring
-      // toggle is a per-card decision; if the shopper wants the
-      // subscription cadence they should click through to the PDP.
-      mode: "one_time",
-      recurringPriceId: null,
-      recurringIntervalLabel: null,
-      stockCount: product.stockCount,
-    });
+    addItem(buildLine());
+  };
+
+  // "Move to cart" — symmetric counterpart to the cart page's
+  // "Save for later". Adds to cart and removes from the wishlist
+  // in one click so the saved list stays a meaningful shortlist
+  // instead of accumulating items the shopper has already moved
+  // forward on.
+  const handleMove = () => {
+    addItem(buildLine());
+    removeFromWishlist(product.id);
   };
 
   return (
@@ -227,7 +239,7 @@ function WishlistRow({ product }: { product: ShopProductView }) {
             </span>
           )}
         </div>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
           <Button
             size="sm"
             onClick={handleAdd}
@@ -236,6 +248,16 @@ function WishlistRow({ product }: { product: ShopProductView }) {
           >
             <ShoppingCart className="w-3.5 h-3.5 mr-1.5" />
             Add to cart
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleMove}
+            disabled={oneTimeOutOfStock}
+            data-testid={`wishlist-move-${product.id}`}
+            title="Add to cart and remove from your saved list"
+          >
+            Move to cart
           </Button>
           <button
             type="button"

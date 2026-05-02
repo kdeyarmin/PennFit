@@ -27,8 +27,10 @@ import {
   Loader2,
 } from "lucide-react";
 
+import { Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/hooks/use-cart";
+import { addToWishlist, isInWishlist } from "@/lib/wishlist";
 import {
   fetchShopProducts,
   formatMoneyCents,
@@ -550,6 +552,28 @@ export function ShopCart() {
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                    {/*
+                      Save-for-later affordance. Adds the SKU to
+                      the localStorage wishlist (no-op if it's
+                      already saved) and removes the line from
+                      the cart in one click. Sits between the
+                      qty stepper and the destructive Remove so
+                      shoppers who are decluttering their cart
+                      have a non-destructive option.
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isInWishlist(it.productId)) {
+                          addToWishlist(it.productId);
+                        }
+                        removeItem(it.priceId);
+                      }}
+                      className="text-xs text-muted-foreground hover:text-[hsl(var(--penn-navy))] flex items-center gap-1.5 transition-colors"
+                      data-testid={`cart-save-for-later-${it.priceId}`}
+                    >
+                      <Heart className="w-3.5 h-3.5" /> Save for later
+                    </button>
                     <button
                       type="button"
                       onClick={() => removeItem(it.priceId)}
