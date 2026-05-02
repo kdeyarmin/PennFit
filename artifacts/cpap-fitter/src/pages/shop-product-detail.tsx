@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   ArrowLeft,
+  Bell,
   CheckCircle2,
   Loader2,
   Package,
@@ -49,6 +50,7 @@ import {
   deleteMyReview,
   formatMoneyCents,
   resolveProductImage,
+  submitBackInStockNotify,
   type ReviewItem,
   type ReviewListResponse,
   type MyReview,
@@ -507,6 +509,9 @@ function Hero({
             </>
           )}
         </Button>
+        {oneTimeOutOfStock && !isSubscriptionMode && (
+          <BackInStockNotify productId={product.id} />
+        )}
         <Link
           href="/insurance"
           className="text-xs text-muted-foreground hover:text-primary transition-colors mt-3 inline-flex items-center gap-1"
@@ -519,6 +524,110 @@ function Hero({
         </div>
       </div>
     </div>
+  );
+}
+
+function BackInStockNotify({ productId }: { productId: string }) {
+  const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState(""); // honeypot — never rendered visibly
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<"inserted" | "duplicate" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await submitBackInStockNotify({ productId, email });
+      // "queued" is what the honeypot path returns; treat like inserted
+      // for the patient-facing message (we never tell a bot it tripped).
+      setDone(r.status === "duplicate" ? "duplicate" : "inserted");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (done) {
+    return (
+      <div
+        className="mt-4 max-w-sm rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 flex items-start gap-2"
+        data-testid="pdp-bis-success"
+        role="status"
+      >
+        <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+        <span>
+          {done === "duplicate"
+            ? "You're already on the list — we'll email you the moment it's back."
+            : "Got it — we'll email you when this is back in stock."}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="mt-4 max-w-sm rounded-xl border border-border/60 bg-secondary/30 p-3"
+      data-testid="pdp-bis-form"
+      noValidate
+    >
+      <label
+        htmlFor="bis-email"
+        className="text-xs font-semibold text-[hsl(var(--penn-navy))] flex items-center gap-1.5"
+      >
+        <Bell className="w-3.5 h-3.5" /> Email me when back in stock
+      </label>
+      <div className="mt-2 flex gap-2">
+        <Input
+          id="bis-email"
+          type="email"
+          required
+          autoComplete="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="flex-1"
+          data-testid="pdp-bis-email"
+        />
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={busy || !email}
+          aria-disabled={busy || !email}
+          data-testid="pdp-bis-submit"
+        >
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Notify me"}
+        </Button>
+      </div>
+      {/* Honeypot — visually hidden + aria-hidden + tabIndex=-1 so a
+          real keyboard or screen-reader user never lands on it.
+          Bots fill every input regardless. */}
+      <input
+        type="text"
+        name="website"
+        value={website}
+        onChange={(e) => setWebsite(e.target.value)}
+        autoComplete="off"
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: "-10000px",
+          width: "1px",
+          height: "1px",
+          opacity: 0,
+        }}
+      />
+      {error && (
+        <p className="mt-2 text-xs text-red-700" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        One email per signup. We'll never share your address.
+      </p>
+    </form>
   );
 }
 

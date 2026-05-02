@@ -661,6 +661,44 @@ export async function submitInsuranceLead(
   return (await res.json()) as { ok: true; delivered: boolean };
 }
 
+export async function submitBackInStockNotify(input: {
+  productId: string;
+  email: string;
+}): Promise<{ ok: true; status: "inserted" | "duplicate" | "error" | "queued" }> {
+  const res = await fetch("/resupply-api/shop/back-in-stock", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    if (code === "rate_limited") {
+      throw new Error(
+        "Too many requests from your network. Please wait a few minutes and try again.",
+      );
+    }
+    if (code === "invalid_body") {
+      throw new Error(
+        "That email didn't look right — please double-check and try again.",
+      );
+    }
+    throw new Error("Something went wrong. Please try again.");
+  }
+  return (await res.json()) as {
+    ok: true;
+    status: "inserted" | "duplicate" | "error" | "queued";
+  };
+}
+
 export function formatMoneyCents(cents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

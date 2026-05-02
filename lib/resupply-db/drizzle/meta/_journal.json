@@ -232,6 +232,13 @@
       "when": 1810540800000,
       "tag": "0030_insurance_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1810627200000,
+      "tag": "0031_back_in_stock_notifications",
+      "breakpoints": true
     }
   ]
 }

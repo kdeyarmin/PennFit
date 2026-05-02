@@ -10,6 +10,7 @@ import { Router, type IRouter } from "express";
 import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import insuranceLeadRouter from "./insurance-lead";
+import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meCommPrefsRouter from "./me-comm-prefs";
 import meDashboardRouter from "./me-dashboard";
@@ -56,5 +57,6 @@ router.use(reviewsRouter);
 // emails (team notification + patient confirmation); does not
 // write to the DB — the verifications team works the inbox.
 router.use(insuranceLeadRouter);
+router.use(backInStockRouter);
 
 export default router;

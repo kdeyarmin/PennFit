@@ -37,6 +37,7 @@ import {
   SHOP_CATEGORIES,
   type ShopProductView,
 } from "../../lib/stripe/products-meta";
+import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
 
 const router: IRouter = Router();
 
@@ -199,6 +200,44 @@ router.patch(
       { productId, stockCount },
       "shop/admin/products: stock count updated",
     );
+
+    // Back-in-stock fan-out: when stock transitions from 0 (or any
+    // non-positive number) to a positive integer, fire the notify-me
+    // queue. We deliberately ignore null->positive transitions
+    // (admin first-tracking a previously-untracked SKU) to avoid
+    // spamming a stale queue with no real "was out of stock"
+    // semantics. Fire-and-forget so the admin save returns
+    // immediately; the helper logs its own outcome.
+    const wasOut =
+      typeof existingProjected.stockCount === "number" &&
+      existingProjected.stockCount <= 0;
+    const nowIn =
+      typeof projected.stockCount === "number" && projected.stockCount > 0;
+    if (wasOut && nowIn) {
+      const baseUrl =
+        process.env.PUBLIC_SHOP_BASE_URL?.replace(/\/$/, "") ||
+        "https://pennpaps.com";
+      const priceLabel =
+        typeof projected.price?.unitAmount === "number"
+          ? `$${(projected.price.unitAmount / 100).toFixed(2)}`
+          : null;
+      void dispatchBackInStockForProduct({
+        productId,
+        productName: projected.name,
+        productImageUrl: projected.imageUrl ?? null,
+        productUrl: `${baseUrl}/shop/p/${encodeURIComponent(productId)}`,
+        priceLabel,
+      }).catch((err) => {
+        req.log?.warn?.(
+          {
+            productId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "shop/admin/products: back-in-stock dispatch threw",
+        );
+      });
+    }
+
     res.json({ product: projected });
   },
 );
