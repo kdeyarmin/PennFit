@@ -23,6 +23,7 @@
     "@workspace/resupply-secrets": "workspace:*",
     "@workspace/resupply-telecom": "workspace:*",
     "argon2": "^0.43.0",
+    "busboy": "^1.6.0",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
@@ -37,6 +38,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@types/busboy": "^1.5.4",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",

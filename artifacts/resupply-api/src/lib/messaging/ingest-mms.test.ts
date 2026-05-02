@@ -57,7 +57,7 @@ vi.mock("../object-storage/objectStorage", () => ({
   },
 }));
 
-import { ingestInboundMmsMedia } from "./ingest-mms";
+import { ingestInboundMmsMedia, persistInboundAttachment } from "./ingest-mms";
 
 const SILENT_LOGGER = {
   warn: vi.fn(),
@@ -305,6 +305,160 @@ describe("ingestInboundMmsMedia", () => {
     expect(result.attempted + result.rejected + result.errored).toBeLessThanOrEqual(
       10,
     );
+  });
+
+  describe("persistInboundAttachment (shared validate→upload→insert tail)", () => {
+    const SAMPLE_MSG = "22222222-2222-4222-8222-222222222222";
+
+    it("uploads + inserts an email-sourced PNG attachment", async () => {
+      fetchSpy = mockFetch(() => new Response("", { status: 200 })); // GCS PUT
+      insertImpl.mockReturnValue(undefined);
+
+      const outcome = await persistInboundAttachment(
+        {
+          messageId: SAMPLE_MSG,
+          bytes: pngBytes(128),
+          contentType: "image/png",
+          filename: "patient-card.png",
+          twilioMediaSid: null,
+          source: "email",
+        },
+        SILENT_LOGGER,
+      );
+
+      expect(outcome).toBe("succeeded");
+      expect(insertCalls).toHaveLength(1);
+      const inserted = insertCalls[0]!;
+      expect(inserted.messageId).toBe(SAMPLE_MSG);
+      expect(inserted.contentType).toBe("image/png");
+      expect(inserted.sizeBytes).toBe(128);
+      expect(inserted.objectKey).toBe("/objects/uploads/abc");
+      expect(inserted.twilioMediaSid).toBeNull();
+      expect(String(inserted.filename)).toBe("patient-card.png");
+    });
+
+    it("strips charset from content-type when matching the allowlist", async () => {
+      fetchSpy = mockFetch(() => new Response("", { status: 200 }));
+      insertImpl.mockReturnValue(undefined);
+
+      const outcome = await persistInboundAttachment(
+        {
+          messageId: SAMPLE_MSG,
+          bytes: pngBytes(8),
+          // SendGrid sometimes forwards "application/pdf; name=foo.pdf"
+          // — the helper must normalize to the bare type for the allowlist.
+          contentType: "application/pdf; name=insurance.pdf",
+          filename: "insurance.pdf",
+          twilioMediaSid: null,
+          source: "email",
+        },
+        SILENT_LOGGER,
+      );
+      expect(outcome).toBe("succeeded");
+      expect(insertCalls[0]!.contentType).toBe("application/pdf");
+    });
+
+    it("rejects content types outside the allowlist without uploading", async () => {
+      fetchSpy = mockFetch(() => new Response("", { status: 200 }));
+      const outcome = await persistInboundAttachment(
+        {
+          messageId: SAMPLE_MSG,
+          bytes: pngBytes(8),
+          contentType: "application/zip",
+          filename: "stuff.zip",
+          twilioMediaSid: null,
+          source: "email",
+        },
+        SILENT_LOGGER,
+      );
+      expect(outcome).toBe("rejected");
+      expect(getUploadUrlMock).not.toHaveBeenCalled();
+      expect(insertCalls).toHaveLength(0);
+    });
+
+    it("rejects oversize (>5MB) bytes without uploading", async () => {
+      fetchSpy = mockFetch(() => new Response("", { status: 200 }));
+      const outcome = await persistInboundAttachment(
+        {
+          messageId: SAMPLE_MSG,
+          bytes: new Uint8Array(5 * 1024 * 1024 + 1),
+          contentType: "image/jpeg",
+          filename: "huge.jpg",
+          twilioMediaSid: null,
+          source: "email",
+        },
+        SILENT_LOGGER,
+      );
+      expect(outcome).toBe("rejected");
+      expect(getUploadUrlMock).not.toHaveBeenCalled();
+      expect(insertCalls).toHaveLength(0);
+    });
+
+    it("synthesizes a safe filename when caller passes null", async () => {
+      fetchSpy = mockFetch(() => new Response("", { status: 200 }));
+      insertImpl.mockReturnValue(undefined);
+
+      const outcome = await persistInboundAttachment(
+        {
+          messageId: SAMPLE_MSG,
+          bytes: pngBytes(8),
+          contentType: "image/png",
+          filename: null,
+          twilioMediaSid: null,
+          source: "email",
+        },
+        SILENT_LOGGER,
+      );
+      expect(outcome).toBe("succeeded");
+      // Falls back to "<source>-<random>.<ext>" — no sid available.
+      expect(String(insertCalls[0]!.filename)).toMatch(/^email-[a-z0-9]+\.png$/);
+    });
+
+    it("scrubs path separators + control chars from caller-supplied names", async () => {
+      fetchSpy = mockFetch(() => new Response("", { status: 200 }));
+      insertImpl.mockReturnValue(undefined);
+
+      const outcome = await persistInboundAttachment(
+        {
+          messageId: SAMPLE_MSG,
+          bytes: pngBytes(8),
+          contentType: "image/png",
+          filename: "../../etc/pass\x00wd",
+          twilioMediaSid: null,
+          source: "email",
+        },
+        SILENT_LOGGER,
+      );
+      expect(outcome).toBe("succeeded");
+      const fn = String(insertCalls[0]!.filename);
+      // Path separators and NUL bytes must be replaced — those are the
+      // actively dangerous bits. We deliberately allow ".." to survive
+      // as part of the basename (it isn't dangerous once the slashes
+      // are gone, and the GCS object key is a UUID anyway).
+      expect(fn).not.toContain("/");
+      expect(fn).not.toContain("\\");
+      expect(fn).not.toContain("\x00");
+    });
+
+    it("returns 'errored' when the DB insert throws", async () => {
+      fetchSpy = mockFetch(() => new Response("", { status: 200 }));
+      insertImpl.mockImplementation(() => {
+        throw new Error("transient db error");
+      });
+
+      const outcome = await persistInboundAttachment(
+        {
+          messageId: SAMPLE_MSG,
+          bytes: pngBytes(8),
+          contentType: "image/png",
+          filename: "foo.png",
+          twilioMediaSid: null,
+          source: "email",
+        },
+        SILENT_LOGGER,
+      );
+      expect(outcome).toBe("errored");
+    });
   });
 
   it("counts a DB insert failure as errored without throwing", async () => {

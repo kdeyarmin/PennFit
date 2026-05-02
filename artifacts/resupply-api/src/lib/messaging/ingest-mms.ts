@@ -1,5 +1,20 @@
-// MMS media ingestion — copy Twilio-hosted media bytes into our
-// private object store and persist `message_attachments` rows.
+// Inbound message-attachment ingestion.
+//
+// Two callers today:
+//   1. The Twilio MMS webhook, which knows nothing but a list of
+//      Twilio-hosted MediaUrl[N] strings. The downloader here pulls
+//      those bytes (basic-auth, with a per-media timeout), validates
+//      type+size, uploads to GCS, inserts a `message_attachments`
+//      row. Public entry point: `ingestInboundMmsMedia`.
+//   2. The SendGrid Inbound Parse webhook, which arrives with the
+//      attachment bytes already in-process (multipart/form-data).
+//      That path re-uses the validate+upload+insert tail end via
+//      the exported `persistInboundAttachment` helper, so the
+//      allowlist + size cap + GCS ACL + DB insert behaviour is
+//      identical across channels. Public entry point: callers
+//      import `persistInboundAttachment` directly.
+//
+// MMS-specific framing notes preserved for future readers:
 //
 // Why we mirror to our own storage rather than referencing the
 // Twilio media URL directly:
@@ -237,13 +252,147 @@ async function downloadOneMedia(
 }
 
 /**
- * Upload `bytes` to GCS via the existing presigned-URL flow used by
- * prescription attachments, then set the private ACL with the
- * "messaging-inbound" pseudo-owner.
+ * Validate `contentType` + `bytes` size against the same allowlist /
+ * cap the MMS path uses, then mirror the bytes into our private GCS
+ * bucket and insert the matching `message_attachments` row. Used by
+ * both the MMS path (post-download) and the SendGrid Inbound Parse
+ * path (bytes already in hand).
  *
- * Returns the normalised `/objects/uploads/<uuid>` path or null on
- * failure.
+ * Returns:
+ *   - "succeeded" when the row landed,
+ *   - "rejected" for type/size violations (no GCS upload occurred),
+ *   - "errored"  for transient GCS / DB failures (callers should
+ *                count this and continue).
+ *
+ * Never throws — internal failures are logged and folded into the
+ * outcome enum so a webhook handler can keep its 200 SLA.
  */
+export interface PersistInboundAttachmentInput {
+  /** Message row id to attach to (already persisted). */
+  messageId: string;
+  /** Raw bytes of the attachment. */
+  bytes: Uint8Array;
+  /** MIME type (will be lower-cased + checked against the allowlist). */
+  contentType: string;
+  /**
+   * Best-effort original filename. Truncated to fit the
+   * `varchar(255)` column. Pass null to synthesize one from a
+   * sensible source-specific prefix.
+   */
+  filename: string | null;
+  /**
+   * Twilio's per-media SID when the source is MMS — drives the
+   * partial-unique replay-protection index. Null for non-Twilio
+   * sources (e.g. inbound email).
+   */
+  twilioMediaSid?: string | null;
+  /** Short tag for log lines + filename fallback ("mms" / "email"). */
+  source?: string;
+}
+
+export type PersistInboundAttachmentOutcome =
+  | "succeeded"
+  | "rejected"
+  | "errored";
+
+export async function persistInboundAttachment(
+  input: PersistInboundAttachmentInput,
+  logger: Logger,
+  storageImpl?: ObjectStorageService,
+): Promise<PersistInboundAttachmentOutcome> {
+  const declaredType = (input.contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  if (!declaredType || !ALLOWED_CONTENT_TYPES.has(declaredType)) {
+    logger.warn(
+      {
+        source: input.source ?? "unknown",
+        actual_content_type: declaredType,
+      },
+      "attachment_ingest_rejected_content_type",
+    );
+    return "rejected";
+  }
+  if (!input.bytes || input.bytes.byteLength === 0 || input.bytes.byteLength > MAX_BYTES) {
+    logger.warn(
+      {
+        source: input.source ?? "unknown",
+        size: input.bytes?.byteLength ?? 0,
+      },
+      "attachment_ingest_rejected_size",
+    );
+    return "rejected";
+  }
+
+  const storage = storageImpl ?? new ObjectStorageService();
+  const objectKey = await uploadToGcs(input.bytes, declaredType, storage, logger);
+  if (!objectKey) return "errored";
+
+  const filename = sanitizeFilename(
+    input.filename,
+    declaredType,
+    input.source ?? "inbound",
+    input.twilioMediaSid ?? null,
+  );
+
+  const db = drizzle(getDbPool());
+  try {
+    await db.insert(messageAttachments).values({
+      messageId: input.messageId,
+      objectKey,
+      filename,
+      contentType: declaredType,
+      sizeBytes: input.bytes.byteLength,
+      twilioMediaSid: input.twilioMediaSid ?? null,
+    });
+    return "succeeded";
+  } catch (err) {
+    // Most likely the partial-unique index on twilio_media_sid fired
+    // (replayed MMS webhook). The GCS bytes we just uploaded are now
+    // an orphan that the attachment sweep job will reap.
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        twilio_media_sid: input.twilioMediaSid ?? null,
+        source: input.source ?? "unknown",
+      },
+      "attachment_ingest_db_insert_failed",
+    );
+    return "errored";
+  }
+}
+
+/**
+ * Build a safe filename for the persisted row. We never trust the
+ * source-supplied name verbatim:
+ *   - Strip path separators and control characters,
+ *   - Force a sensible extension matching the validated content type,
+ *   - Truncate to fit the schema's varchar(255).
+ *
+ * When the caller supplies no filename we synthesize one from
+ * `<source>-<sid|random>.<ext>` so "Save as…" pre-fills with a
+ * recognisable label without leaking PHI.
+ */
+function sanitizeFilename(
+  raw: string | null,
+  contentType: string,
+  source: string,
+  twilioMediaSid: string | null,
+): string {
+  const ext = extensionForContentType(contentType);
+  if (raw && raw.trim().length > 0) {
+    const cleaned = raw
+      .replace(/[\u0000-\u001f/\\]+/g, "_")
+      .trim()
+      .slice(0, 240);
+    if (cleaned.length > 0) {
+      // Preserve the caller's extension if any; otherwise append the
+      // type-derived one so downstream tools open it correctly.
+      return /\.[a-zA-Z0-9]{1,8}$/.test(cleaned) ? cleaned : `${cleaned}${ext}`;
+    }
+  }
+  const tail = twilioMediaSid ?? Math.random().toString(36).slice(2, 10);
+  return `${source}-${tail}${ext}`;
+}
+
 async function uploadToGcs(
   bytes: Uint8Array,
   contentType: string,
@@ -302,13 +451,12 @@ export async function ingestInboundMmsMedia(
   if (slots.length === 0) return result;
 
   const storage = storageImpl ?? new ObjectStorageService();
-  const db = drizzle(getDbPool());
 
   type Outcome = "succeeded" | "rejected" | "errored";
 
   async function processOne(
     slot: MediaSlot,
-    ordinal: number,
+    _ordinal: number,
   ): Promise<Outcome> {
     const downloaded = await downloadOneMedia(
       slot,
@@ -317,46 +465,23 @@ export async function ingestInboundMmsMedia(
       logger,
     );
     if (!downloaded) return "rejected";
-    const objectKey = await uploadToGcs(
-      downloaded.bytes,
-      downloaded.contentType,
-      storage,
-      logger,
-    );
-    if (!objectKey) return "errored";
-
-    // Filename: Twilio doesn't supply one for MMS. Synthesise from
-    // the media SID + a sane extension so "Save as…" pre-fills
-    // sensibly without leaking PHI.
-    const ext = extensionForContentType(downloaded.contentType);
-    const filename = downloaded.twilioMediaSid
-      ? `mms-${downloaded.twilioMediaSid}${ext}`
-      : `mms-${ordinal}${ext}`;
-
-    try {
-      await db.insert(messageAttachments).values({
+    // Hand off to the shared validate→upload→insert tail. The MMS
+    // path supplies twilio_media_sid (drives the partial-unique
+    // replay-protection index) and a null filename so the helper
+    // synthesizes "mms-<sid>.<ext>" from the source tag — same
+    // string the original MMS-only code path produced.
+    return persistInboundAttachment(
+      {
         messageId: input.messageId,
-        objectKey,
-        filename,
+        bytes: downloaded.bytes,
         contentType: downloaded.contentType,
-        sizeBytes: downloaded.bytes.byteLength,
+        filename: null,
         twilioMediaSid: downloaded.twilioMediaSid,
-      });
-      return "succeeded";
-    } catch (err) {
-      // Most likely the unique partial index on twilio_media_sid
-      // fired — replayed webhook re-ingesting the same media. The
-      // GCS bytes we just uploaded are now an orphan that the
-      // attachment sweep job will reap. Log + count, don't throw.
-      logger.warn(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          twilio_media_sid: downloaded.twilioMediaSid,
-        },
-        "mms_ingest_db_insert_failed",
-      );
-      return "errored";
-    }
+        source: "mms",
+      },
+      logger,
+      storage,
+    );
   }
 
   // Parallelize per-media: each task is already bounded by its own
