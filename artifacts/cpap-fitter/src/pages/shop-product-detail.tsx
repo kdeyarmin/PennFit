@@ -49,6 +49,7 @@ import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import { YouMayAlsoLikeStrip } from "@/components/shop/you-may-also-like-strip";
 import { ShippingEta } from "@/components/shop/shipping-eta";
+import { ProductFaq } from "@/components/shop/product-faq";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   DEFAULT_LOW_STOCK_THRESHOLD,
@@ -314,6 +315,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   return (
     <PageShell>
       <Hero product={product} previewMode={previewMode} />
+      <ProductFaq product={product} />
       <YouMayAlsoLikeStrip products={catalog} currentProduct={product} />
       <RecentlyViewedStrip
         products={catalog}
