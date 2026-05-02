@@ -1,3 +1,13 @@
+> ⚠️ **Stale (Phase-0 onboarding doc).** Several of the libs and
+> artifacts named below have since been consolidated or removed
+> (`artifacts/resupply-worker` was folded into `artifacts/resupply-api`
+> as an in-process pg-boss worker; `artifacts/resupply-dashboard` was
+> folded into `artifacts/cpap-fitter` under `/admin/*`; `lib/resupply-contracts`
+> and `lib/resupply-testing` were deleted). For current state see
+> [`replit.md`](../../replit.md) and the root [`README.md`](../../README.md).
+> The doc below is preserved for the historical "why we built it this
+> way" context that the ADRs in `./adr/` reference.
+
 # CPAP Resupply Automation — Onboarding (5 minute tour)
 
 Welcome. This is the second product in the monorepo, separate from Penn

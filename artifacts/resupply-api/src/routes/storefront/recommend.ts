@@ -15,7 +15,7 @@
  */
 
 import { Router } from "express";
-import { GetRecommendationBody, ListMasksResponse } from "../../lib/api-zod/index.js";
+import { GetRecommendationBody } from "../../lib/api-zod/index.js";
 import { recommend } from "../../lib/storefront/recommendationEngine.js";
 import { maskCatalog } from "../../data/maskCatalog.js";
 

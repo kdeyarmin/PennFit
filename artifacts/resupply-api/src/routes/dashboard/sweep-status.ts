@@ -58,7 +58,7 @@ import { logger } from "../../lib/logger";
 
 /** Action string the worker writes for a sweep summary row. Must
  *  stay in lockstep with the `logAudit({ action: ... })` call in
- *  `artifacts/resupply-worker/src/jobs/prescription-attachment-sweep.ts`
+ *  `artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`
  *  (note: distinct from `SWEEP_JOB` in that file, which is the
  *  pg-boss queue name and uses the plural `prescriptions.`). */
 export const SWEEP_AUDIT_ACTION = "prescription.attachment.sweep";

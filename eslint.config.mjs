@@ -32,6 +32,12 @@ export default [
       // are not actionable. Typecheck still covers them via the lib's
       // tsconfig.
       "lib/api-client-react/src/*/generated/**",
+      // Orval-generated zod schemas. The api-zod package was folded
+      // into artifacts/resupply-api/src/lib/api-zod/ in the round-2
+      // consolidation; the `generated/` subtree is still owned by
+      // codegen and must not be hand-edited (it's regenerated whenever
+      // the OpenAPI spec returns — see scripts/check-codegen.sh).
+      "artifacts/resupply-api/src/lib/api-zod/generated/**",
       "scripts/check-resupply-architecture.sh.test", // bash, not JS
     ],
   },
@@ -41,8 +47,11 @@ export default [
     files: [
       "lib/resupply-*/src/**/*.ts",
       "lib/resupply-*/src/**/*.tsx",
+      // resupply-api hosts the in-process pg-boss worker as of the
+      // round-3 consolidation (the former artifacts/resupply-worker
+      // was folded into src/worker/), so this single glob now covers
+      // both the API and worker source.
       "artifacts/resupply-api/src/**/*.ts",
-      "artifacts/resupply-worker/src/**/*.ts",
     ],
     languageOptions: {
       ecmaVersion: 2024,

@@ -588,7 +588,7 @@ export interface CreatePatientResponse {
  * Counter snapshot from one sweep run. Every field is a
 non-negative integer. Field meanings live in the source-of-
 truth doc string in
-`artifacts/resupply-worker/src/jobs/prescription-attachment-sweep.ts`
+`artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`
 ("Counters semantics" block).
 
  */
@@ -662,7 +662,7 @@ this deploy) OR the latest row's metadata could not be
 parsed into the expected counter shape (degraded gracefully
 so a malformed historical row never 500s the dashboard).
 Counters are documented in
-`artifacts/resupply-worker/src/jobs/prescription-attachment-sweep.ts`.
+`artifacts/resupply-api/src/worker/jobs/prescription-attachment-sweep.ts`.
  */
   prescriptionAttachmentSweep: null | PhiSweepStatus;
 }

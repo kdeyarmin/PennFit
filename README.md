@@ -45,11 +45,10 @@ top-level structure is:
 
 | Path | What lives here |
 | --- | --- |
-| `artifacts/resupply-api` | Single Express API process — resupply automation + voice WS endpoint AND the storefront/fitter routes (Task #37 merged the former `artifacts/api-server` in here, mounted at both `/resupply-api/*` and `/api/*`). |
-| `artifacts/resupply-worker` | `pg-boss` background worker for reminders and PHI sweeps. |
-| `artifacts/cpap-fitter` | Customer-facing fitter SPA (Vite + React). |
-| `artifacts/resupply-dashboard` | Internal admin console SPA (Vite + React) — also hosts the staff PennPaps order/audit/reminders pages. |
-| `lib/*` | Shared workspace packages (DB, contracts, messaging, etc.). |
+| `artifacts/resupply-api` | Single Express API process — resupply automation + voice WS endpoint AND the storefront/fitter routes (Task #37 merged the former `artifacts/api-server` in here, mounted at both `/resupply-api/*` and `/api/*`). As of the May 2026 round-3 consolidation it ALSO hosts the in-process `pg-boss` worker (reminder scans + PHI attachment sweeps) — see `src/worker/index.ts`. The former separate `artifacts/resupply-worker` artifact is gone. |
+| `artifacts/cpap-fitter` | Customer-facing fitter SPA (Vite + React). Also mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`) — the former separate `artifacts/resupply-dashboard` SPA was folded in here so the project ships ONE customer-facing site. Legacy `/resupply/*` deep links SPA-redirect to `/admin/*` with query strings preserved. |
+| `artifacts/shared` | Shared cross-artifact assets (currently the favicon set served at the root path). |
+| `lib/*` | Shared workspace packages (DB, auth, messaging, email, AI, telecom, audit, domain, secrets, reminders, plus the API client + auth React adapters). |
 
 ## Prerequisites
 
@@ -75,11 +74,14 @@ pnpm typecheck
 pnpm build
 
 # 5. Run a specific app (examples)
-pnpm --filter @workspace/resupply-api dev
-pnpm --filter @workspace/resupply-worker dev
-pnpm --filter @workspace/cpap-fitter dev
-pnpm --filter @workspace/resupply-dashboard dev
+pnpm --filter @workspace/resupply-api dev   # boots the in-process pg-boss worker too
+pnpm --filter @workspace/cpap-fitter dev    # serves customer storefront + admin console
 ```
+
+In the Replit workspace, prefer the registered workflows
+(`artifacts/resupply-api: Resupply API` and `artifacts/cpap-fitter:
+web`) over running `pnpm dev` directly — the workflows wire up the
+per-artifact `PORT` and `BASE_PATH` that the dev servers expect.
 
 Each long-running service validates its required environment
 variables at startup and fails fast with a single error listing
@@ -101,22 +103,24 @@ commit real secrets.
 
 ### Required at boot (services refuse to start if missing)
 
-After Task #37 the previous `api-server` artifact was folded into
-`resupply-api`, so the table below has two service columns instead of
-three. Variables that used to be required by the legacy `api-server`
-(e.g. `PENN_ALLOWED_ORIGINS`, `PENN_FULFILLMENT_EMAIL`) are now read
-by the same single `resupply-api` process.
+After the May 2026 consolidations there is now exactly one backend
+service to configure: `resupply-api`. Task #37 folded the legacy
+`api-server` into it (so `PENN_ALLOWED_ORIGINS`, `PENN_FULFILLMENT_EMAIL`,
+etc. are now read by `resupply-api`). The round-3 consolidation then
+folded the former `resupply-worker` process in too (pg-boss boots
+in-process at startup), so the env table no longer needs a separate
+worker column.
 
 The Task #38 follow-up removed `AUTH_PASSWORD_PEPPER`. Passwords are
 hashed with plain argon2id; if you still have an `AUTH_PASSWORD_PEPPER`
 secret in your environment from an earlier deploy, it is silently
 ignored — feel free to delete it.
 
-| Variable | `resupply-api` | `resupply-worker` | Notes |
-| --- | :---: | :---: | --- |
-| `PORT` | ✅ | — | HTTP listen port. |
-| `DATABASE_URL` | ✅ | ✅ | Postgres connection string (v14+). No extensions required. |
-| `RESUPPLY_LINK_HMAC_KEY` | ✅ | ✅ | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links. |
+| Variable | `resupply-api` | Notes |
+| --- | :---: | --- |
+| `PORT` | ✅ | HTTP listen port. |
+| `DATABASE_URL` | ✅ | Postgres connection string (v14+). No extensions required. The same connection string is also used by the in-process pg-boss worker (it owns its own pool, distinct from the application pool). |
+| `RESUPPLY_LINK_HMAC_KEY` | ✅ | 32+ random bytes used to sign the short-lived patient links delivered in SMS / email reminders. Generate with `openssl rand -base64 48`. Rotating it invalidates in-flight links. |
 
 > Migration 0025 stripped pgcrypto column-level PHI encryption and
 > dropped the `phone_lookup` table, so the legacy
@@ -133,13 +137,13 @@ ignored — feel free to delete it.
 | `PENN_ALLOWED_ORIGINS` | `resupply-api` | CORS allowlist for the storefront/fitter routes (the `/api/*` mount). Falls back to Replit dev domain + localhost. |
 | `RESUPPLY_ALLOWED_ORIGINS` | `resupply-api` | CORS allowlist for the resupply admin/voice routes (the `/resupply-api/*` mount). Falls back to Replit dev domain + localhost. |
 | `SHOP_PUBLIC_BASE_URL`, `REMINDER_PUBLIC_BASE_URL`, `RESUPPLY_VOICE_PUBLIC_BASE_URL` | `resupply-api` | Public base URLs used in outbound deep links. Cart-recovery + reminder emails fall through `SHOP → RESUPPLY_VOICE → https://pennpaps.com` in order. |
-| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `resupply-api`, `resupply-worker` | Outbound email + delivery webhooks. Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_FROM_NAME`, `SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | `resupply-api` | Outbound email + delivery webhooks (used by both the request-handling routes and the in-process worker's reminder jobs). Every sender across the monorepo funnels through the shared `createSendgridClient()` in `lib/resupply-email`, so `SENDGRID_FROM_EMAIL` (set to `info@pennpaps.com`) is the single From address for the entire platform. Email features log-and-skip when missing. |
 | `PENN_FULFILLMENT_EMAIL` | `resupply-api` | Where Penn Fit fulfillment receives new mask orders (this is the recipient, not the sender). |
 | `RESUPPLY_ADMIN_EMAILS`, `RESUPPLY_AGENT_EMAILS`, `RESUPPLY_OPERATOR_EMAILS` | `resupply-api` | Comma-separated allowlists for role-gated admin endpoints. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID` | `resupply-api` | SMS + voice. Outbound SMS / voice routes return 503 when missing. |
 | `OPENAI_API_KEY` | `resupply-api` | Conversation AI. AI features disable when missing. |
 | `STRIPE_SECRET_KEY` | `resupply-api` | Cash-pay shop checkout + webhooks. Shop endpoints return preview-mode responses when missing. |
-| `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS` | `resupply-api`, `resupply-worker` | Object-storage paths for prescription attachments. The implementation uses `@google-cloud/storage`; in production this points at Replit Object Storage's GCS-compatible API, but any GCS-compatible endpoint works. |
+| `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS` | `resupply-api` | Object-storage paths for prescription attachments (used by both the upload routes and the in-process worker's PHI sweep job). The implementation uses `@google-cloud/storage`; in production this points at Replit Object Storage's GCS-compatible API, but any GCS-compatible endpoint works. |
 | `VITE_ENABLE_DEMO`, `VITE_RESUPPLY_CONTACT_EMAIL` | Vite apps | UI feature flags / display values. |
 | `CODEGEN_OUT_PENNPAPS_CLIENT`, `CODEGEN_OUT_PENNPAPS_ZOD`, `CODEGEN_OUT_RESUPPLY_CLIENT` | `scripts/codegen` | Override OpenAPI codegen output paths. Defaults are in-repo. |
 | `REPL_ID`, `REPLIT_DEV_DOMAIN`, `REPLIT_DOMAINS` | All services | Set automatically on Replit; usually leave blank locally. |
@@ -151,7 +155,7 @@ ignored — feel free to delete it.
 | `pnpm typecheck` | `tsc --build` across libs + per-app `typecheck`. |
 | `pnpm build` | Type-check, then `build` in every package that defines one. |
 | `pnpm lint:resupply` | ESLint (zero warnings) over the resupply surface. |
-| `pnpm --filter <pkg> test` | Vitest for a specific package (resupply-api, resupply-worker, …). |
+| `pnpm --filter <pkg> test` | Vitest for a specific package (resupply-api, the resupply-* libs, …). |
 
 ## Privacy contract
 

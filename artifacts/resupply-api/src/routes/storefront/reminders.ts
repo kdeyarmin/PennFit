@@ -171,7 +171,11 @@ router.post("/reminders", async (req, res) => {
     // response is intentionally identical to the new-subscription response
     // so callers cannot determine whether the email was already on file
     // (preventing email-enumeration of health-adjacent subscriber data).
-    let emailStatus: "sent" | "skipped" | "failed" = "skipped";
+    //
+    // `emailStatus` is assigned in every branch below (try success path
+    // OR catch handler), so we declare it without an initializer to
+    // satisfy `no-useless-assignment` while keeping the union type.
+    let emailStatus: "sent" | "skipped" | "failed";
     try {
       const result = await sendReminderManageLink({
         toEmail: existing[0]!.email,
@@ -207,7 +211,9 @@ router.post("/reminders", async (req, res) => {
     .returning();
   const row: ReminderSubscriptionRow = inserted!;
 
-  let emailStatus: "sent" | "skipped" | "failed" = "skipped";
+  // Same rationale as the existing-row branch above — assigned in every
+  // path below, so declared without an initializer.
+  let emailStatus: "sent" | "skipped" | "failed";
   try {
     const result = await sendReminderConfirmation({
       toEmail: row.email,

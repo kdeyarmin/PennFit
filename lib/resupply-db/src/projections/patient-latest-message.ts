@@ -185,7 +185,8 @@ let defaultLogger: ProjectionLogger = consoleFallbackLogger;
 
 /**
  * Register a process-wide logger for projection failures. Call
- * once at process boot (api-server / resupply-worker entrypoints).
+ * once at process boot — currently the resupply-api entrypoint,
+ * which also hosts the in-process pg-boss worker.
  */
 export function setProjectionLogger(logger: ProjectionLogger): void {
   defaultLogger = logger;
