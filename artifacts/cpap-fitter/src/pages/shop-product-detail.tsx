@@ -42,6 +42,7 @@ import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { StarRating } from "@/components/star-rating";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
+import { YouMayAlsoLikeStrip } from "@/components/shop/you-may-also-like-strip";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
 import {
   DEFAULT_LOW_STOCK_THRESHOLD,
@@ -307,6 +308,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   return (
     <PageShell>
       <Hero product={product} previewMode={previewMode} />
+      <YouMayAlsoLikeStrip products={catalog} currentProduct={product} />
       <RecentlyViewedStrip
         products={catalog}
         excludeProductId={product.id}
