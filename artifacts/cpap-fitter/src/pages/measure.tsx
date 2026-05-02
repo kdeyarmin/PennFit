@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
-import type { FacialMeasurements } from "@workspace/api-client-react";
+import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 

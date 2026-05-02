@@ -10,14 +10,14 @@ import {
   useCreatePatient,
   useImportPatientsCsv,
   useListPatients,
-} from "@workspace/resupply-api-client";
+} from "@workspace/api-client-react/admin";
 import type {
   BulkPatientStatusRequestStatus,
   CreatePatientRequest,
   ImportPatientRow,
   ImportPatientRowError,
   ListPatientsParams,
-} from "@workspace/resupply-api-client";
+} from "@workspace/api-client-react/admin";
 import { Card } from "@/components/admin/Card";
 import { Table, type Column } from "@/components/admin/Table";
 import { Badge, humanizeStatus, patientStatusVariant } from "@/components/admin/Badge";

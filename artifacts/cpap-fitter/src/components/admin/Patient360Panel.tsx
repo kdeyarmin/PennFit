@@ -14,7 +14,7 @@
 // and a deep link to the full patient page.
 
 import { Link } from "wouter";
-import { useGetPatient } from "@workspace/resupply-api-client";
+import { useGetPatient } from "@workspace/api-client-react/admin";
 import { Card } from "./Card";
 import { Badge, humanizeStatus, patientStatusVariant } from "./Badge";
 import { Spinner } from "./Spinner";

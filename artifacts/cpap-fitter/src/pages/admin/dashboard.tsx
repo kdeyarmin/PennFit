@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { useGetDashboardSummary } from "@workspace/resupply-api-client";
+import { useGetDashboardSummary } from "@workspace/api-client-react/admin";
 import { KpiCard } from "@/components/admin/Card";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { PhiSweepStatusCard } from "@/components/admin/PhiSweepStatusCard";

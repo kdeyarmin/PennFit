@@ -7,7 +7,7 @@ import {
   useSendEmailReminder,
   usePlaceVoiceCall,
   useReplyInConversation,
-} from "@workspace/resupply-api-client";
+} from "@workspace/api-client-react/admin";
 import { Card } from "@/components/admin/Card";
 import {
   Badge,

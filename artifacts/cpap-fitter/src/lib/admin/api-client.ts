@@ -12,7 +12,7 @@
 // no-op hook so App.tsx's existing call site compiles. New code
 // should not call it; remove on the next sweep.
 
-import { setAuthTokenGetter } from "@workspace/resupply-api-client";
+import { setAuthTokenGetter } from "@workspace/api-client-react/admin";
 
 setAuthTokenGetter(async () => null);
 

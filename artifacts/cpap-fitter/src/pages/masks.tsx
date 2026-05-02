@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useListMasks, MaskEntryType } from "@workspace/api-client-react";
+import { useListMasks, MaskEntryType } from "@workspace/api-client-react/storefront";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

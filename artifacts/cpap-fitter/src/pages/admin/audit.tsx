@@ -4,7 +4,7 @@ import {
   getListAuditQueryKey,
   useListAudit,
   type ListAuditParams,
-} from "@workspace/resupply-api-client";
+} from "@workspace/api-client-react/admin";
 import { Card } from "@/components/admin/Card";
 import { Table, type Column } from "@/components/admin/Table";
 import { Spinner } from "@/components/admin/Spinner";

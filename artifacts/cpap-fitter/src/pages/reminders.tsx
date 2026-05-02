@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import {
   useSubscribeToReminders,
   ApiError,
-} from "@workspace/api-client-react";
+} from "@workspace/api-client-react/storefront";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

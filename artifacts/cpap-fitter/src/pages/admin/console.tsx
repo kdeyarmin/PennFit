@@ -20,7 +20,7 @@
 // under /admin/*.
 
 import { Switch, Route, Redirect } from "wouter";
-import { useGetAdminMe, ApiError } from "@workspace/resupply-api-client";
+import { useGetAdminMe, ApiError } from "@workspace/api-client-react/admin";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AppShell } from "@/components/admin/AppShell";

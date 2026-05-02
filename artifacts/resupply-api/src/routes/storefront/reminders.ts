@@ -35,7 +35,7 @@ import {
   UpdateReminderSubscriptionQueryParams,
   UnsubscribeFromRemindersQueryParams,
   type ReminderItem,
-} from "@workspace/api-zod";
+} from "../../lib/api-zod/index.js";
 import { db, reminderSubscriptionsTable, type ReminderSubscriptionRow } from "../../lib/storefront/db.js";
 import { eq } from "drizzle-orm";
 import {

@@ -30,7 +30,7 @@
 // library. Localization is not a goal — admin UI is English-only.
 
 import { useMemo } from "react";
-import type { PhiSweepStatus } from "@workspace/resupply-api-client";
+import type { PhiSweepStatus } from "@workspace/api-client-react/admin";
 
 interface Props {
   data: PhiSweepStatus | null | undefined;

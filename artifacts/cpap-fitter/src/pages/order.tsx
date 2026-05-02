@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { useSubmitOrder, ApiError } from "@workspace/api-client-react";
+import { useSubmitOrder, ApiError } from "@workspace/api-client-react/storefront";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

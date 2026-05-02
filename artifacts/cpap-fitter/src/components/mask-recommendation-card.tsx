@@ -2,7 +2,7 @@ import React from "react";
 import type {
   MaskEntry,
   MaskRecommendation,
-} from "@workspace/api-client-react";
+} from "@workspace/api-client-react/storefront";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

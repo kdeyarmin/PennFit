@@ -4,7 +4,7 @@
  * `/resupply-api/*` routes (Task #37 consolidation).
  *
  * These are deliberately kept OUT of the OpenAPI client
- * (`@workspace/resupply-api-client`) because:
+ * (`@workspace/api-client-react/admin`) because:
  *   1. The resupply API spec describes the conversation/episode
  *      surface; the storefront admin surface is a separate,
  *      cookie-gated set of routes hosted by the same Express app

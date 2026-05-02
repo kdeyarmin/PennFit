@@ -1,4 +1,4 @@
-import { ApiError } from "@workspace/resupply-api-client";
+import { ApiError } from "@workspace/api-client-react/admin";
 import { Button } from "./Button";
 
 // Inline error panel rendered when a list/detail query fails. Pulls a
