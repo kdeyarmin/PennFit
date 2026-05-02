@@ -9,7 +9,7 @@
 // content). PHI does not enter the audit metadata.
 
 import { Router, type IRouter } from "express";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
@@ -17,6 +17,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   conversations,
   getDbPool,
+  messageAttachments,
   messages,
   patients,
 } from "@workspace/resupply-db";
@@ -83,6 +84,53 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     .where(eq(messages.conversationId, id))
     .orderBy(asc(messages.createdAt), asc(messages.id));
 
+  // Pull attachments for the loaded messages in a single follow-up
+  // query, then group in memory. Two-step rather than a join because
+  // a message with N attachments would otherwise duplicate the
+  // message row N times and force a manual collapse — a flat IN
+  // query is simpler and uses the message_attachments_message_idx
+  // index. Empty when no messages have attachments (the common case).
+  const messageIds = messageRows.map((m) => m.id);
+  const attachmentRows = messageIds.length
+    ? await db
+        .select({
+          id: messageAttachments.id,
+          messageId: messageAttachments.messageId,
+          filename: messageAttachments.filename,
+          contentType: messageAttachments.contentType,
+          sizeBytes: messageAttachments.sizeBytes,
+          createdAt: messageAttachments.createdAt,
+        })
+        .from(messageAttachments)
+        .where(inArray(messageAttachments.messageId, messageIds))
+        .orderBy(asc(messageAttachments.createdAt), asc(messageAttachments.id))
+    : [];
+
+  const attachmentsByMessage = new Map<
+    string,
+    Array<{
+      id: string;
+      filename: string | null;
+      contentType: string;
+      sizeBytes: number;
+      createdAt: string;
+    }>
+  >();
+  for (const a of attachmentRows) {
+    const arr = attachmentsByMessage.get(a.messageId) ?? [];
+    arr.push({
+      id: a.id,
+      filename: a.filename ?? null,
+      contentType: a.contentType,
+      sizeBytes: a.sizeBytes,
+      createdAt:
+        a.createdAt instanceof Date
+          ? a.createdAt.toISOString()
+          : String(a.createdAt ?? new Date(0).toISOString()),
+    });
+    attachmentsByMessage.set(a.messageId, arr);
+  }
+
   const toIso = (v: unknown): string | null => {
     if (v == null) return null;
     if (v instanceof Date) return v.toISOString();
@@ -140,6 +188,10 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
       sentAt: toIso(m.sentAt),
       deliveredAt: toIso(m.deliveredAt),
       createdAt: toIsoRequired(m.createdAt),
+      // Always present (empty array when no media). Keeps the client
+      // contract uniform and lets the UI render a single .map without
+      // a null guard.
+      attachments: attachmentsByMessage.get(m.id) ?? [],
     })),
   });
 });

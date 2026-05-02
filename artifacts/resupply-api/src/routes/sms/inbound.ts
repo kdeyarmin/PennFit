@@ -67,6 +67,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { createOpenAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
+import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
 import {
   readMessagingConfigOrNull,
   readSmsConfigOrNull,
@@ -440,19 +441,85 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
   // Persist inbound message row before any decision logic — we want
   // the transcript even if dispatch crashes.
   const inboundAt = new Date();
-  await db.insert(messages).values({
-    conversationId,
-    direction: "inbound",
-    senderRole: "patient",
-    body: parsed.Body,
-    deliveryStatus: "received",
-    vendorMetadata: { twilio_message_sid: parsed.MessageSid },
-    sentAt: inboundAt,
-  });
+  const insertedMsg = await db
+    .insert(messages)
+    .values({
+      conversationId,
+      direction: "inbound",
+      senderRole: "patient",
+      body: parsed.Body,
+      deliveryStatus: "received",
+      vendorMetadata: { twilio_message_sid: parsed.MessageSid },
+      sentAt: inboundAt,
+    })
+    .returning({ id: messages.id });
+  const inboundMessageId = insertedMsg[0]?.id ?? null;
   await db
     .update(conversations)
     .set({ lastMessageAt: inboundAt, updatedAt: inboundAt })
     .where(eq(conversations.id, conversationId));
+
+  // MMS media ingestion — Twilio sets NumMedia to a string ("0".."10").
+  // We fan out to our private GCS so the dashboard can render
+  // attachments without exposing Twilio creds and so PHI bytes don't
+  // vanish when Twilio's 365-day retention expires. Best-effort: any
+  // partial failure is logged and audited but does not 5xx the
+  // webhook (Twilio would retry, creating duplicate inbound rows
+  // shielded only by the partial unique index). The whole call is
+  // wrapped in catch so even an unexpected throw can't bring the
+  // webhook down.
+  const numMedia = Number.parseInt(parsed.NumMedia ?? "0", 10);
+  if (
+    inboundMessageId &&
+    Number.isFinite(numMedia) &&
+    numMedia > 0 &&
+    cfg.sms.twilioAccountSid &&
+    cfg.sms.twilioAuthToken
+  ) {
+    try {
+      const ingestResult = await ingestInboundMmsMedia(
+        {
+          messageId: inboundMessageId,
+          rawWebhookBody: req.body as Record<string, unknown>,
+          numMedia,
+          twilioAccountSid: cfg.sms.twilioAccountSid,
+          twilioAuthToken: cfg.sms.twilioAuthToken,
+        },
+        req.log,
+      );
+      // Counts-only audit — no PHI, no Twilio identifiers, no
+      // conversation/patient ids in the metadata payload. The
+      // (targetTable, targetId) tuple already pins the audit row
+      // to the message; investigators can join through `messages`
+      // to recover conversation_id / patient_id when needed,
+      // without us mirroring the linkage into every audit row.
+      await safeAudit({
+        action: "messaging.inbound.media_ingested",
+        adminEmail: null,
+        adminUserId: null,
+        targetTable: "messages",
+        targetId: inboundMessageId,
+        metadata: {
+          channel: "sms",
+          attempted: ingestResult.attempted,
+          succeeded: ingestResult.succeeded,
+          rejected: ingestResult.rejected,
+          errored: ingestResult.errored,
+        },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      });
+    } catch (err) {
+      // The ingest module already swallows individual failures; an
+      // exception here would mean a programming error (bad import,
+      // missing env, etc). Log and continue so the webhook still
+      // returns 200 to Twilio.
+      logger.error(
+        { err: serializeErr(err), conversation_id: conversationId },
+        "sms.inbound: mms ingestion crashed",
+      );
+    }
+  }
 
   // Refresh latest-message projection (best-effort).
   await tryUpsertPatientLatestMessage(

@@ -5,6 +5,7 @@ export * from "./prescriptions";
 export * from "./episodes";
 export * from "./conversations";
 export * from "./messages";
+export * from "./message-attachments";
 export * from "./patient-latest-message";
 export * from "./fulfillments";
 export * from "./audit-log";

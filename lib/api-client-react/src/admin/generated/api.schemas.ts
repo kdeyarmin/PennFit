@@ -996,6 +996,14 @@ export const ConversationMessageSenderRole = {
 decrypted message bodies cross the API boundary.
 
  */
+export interface ConversationMessageAttachment {
+  id: string;
+  filename?: string | null;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 export interface ConversationMessage {
   id: string;
   direction: ConversationMessageDirection;
@@ -1005,6 +1013,7 @@ export interface ConversationMessage {
   sentAt?: string | null;
   deliveredAt?: string | null;
   createdAt: string;
+  attachments: ConversationMessageAttachment[];
 }
 
 export type ConversationDetailChannel =

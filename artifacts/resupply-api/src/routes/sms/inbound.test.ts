@@ -76,6 +76,20 @@ vi.mock("../../lib/messaging/order-flow", () => ({
   pausePatient: (...a: unknown[]) => pausePatientMock(...a),
 }));
 
+// MMS ingestion — mocked at the module boundary so the route test
+// can assert "we called ingest with the right shape" without
+// stubbing fetch + GCS in here too (those concerns live in
+// ingest-mms.test.ts).
+const ingestMmsMock = vi.fn().mockResolvedValue({
+  attempted: 0,
+  succeeded: 0,
+  rejected: 0,
+  errored: 0,
+});
+vi.mock("../../lib/messaging/ingest-mms", () => ({
+  ingestInboundMmsMedia: (...a: unknown[]) => ingestMmsMock(...a),
+}));
+
 import inboundRouter, {
   __setAiFallbackAdapterForTests,
 } from "./inbound";
@@ -131,6 +145,12 @@ describe("POST /sms/inbound", () => {
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
+    ingestMmsMock.mockReset().mockResolvedValue({
+      attempted: 0,
+      succeeded: 0,
+      rejected: 0,
+      errored: 0,
+    });
     dbStub.select.mockClear();
     dbStub.insert.mockClear();
     dbStub.update.mockClear();
@@ -353,6 +373,78 @@ describe("POST /sms/inbound", () => {
     expect(res.text).toContain("automated CPAP refill reminders");
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
+  });
+
+  it("ingests MMS media when NumMedia>0 and audits counts only", async () => {
+    setMessagingEnv();
+    selectQueue.push([{ patientId: PATIENT_ID }]); // phone_lookup hit
+    selectQueue.push([]); // sid_dedup miss
+    selectQueue.push([{ id: CONVERSATION_ID }]); // open conversation
+    // Inbound message insert returns the new message id so the
+    // ingest call has something to attach to.
+    const INBOUND_MSG_ID = "44444444-4444-4444-8444-444444444444";
+    insertQueue.push([{ id: INBOUND_MSG_ID }]);
+    // The HELP path doesn't dispatch an order; outbound reply
+    // insert pulls the next entry — empty is fine.
+    insertQueue.push([]);
+
+    ingestMmsMock.mockResolvedValueOnce({
+      attempted: 2,
+      succeeded: 2,
+      rejected: 0,
+      errored: 0,
+    });
+
+    const res = await request(makeApp())
+      .post("/resupply-api/sms/inbound")
+      .type("form")
+      .send({
+        From: FROM_PHONE,
+        To: "+12158675309",
+        Body: "HELP",
+        MessageSid: "SM_mms",
+        NumMedia: "2",
+        MediaUrl0:
+          "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMabc/Media/ME001",
+        MediaContentType0: "image/jpeg",
+        MediaUrl1:
+          "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMabc/Media/ME002",
+        MediaContentType1: "image/png",
+      });
+    expect(res.status).toBe(200);
+    // Ingest was called with the persisted message id and the raw
+    // webhook body (so MediaUrlN are reachable).
+    expect(ingestMmsMock).toHaveBeenCalledTimes(1);
+    const ingestArgs = ingestMmsMock.mock.calls[0][0];
+    expect(ingestArgs.messageId).toBe(INBOUND_MSG_ID);
+    expect(ingestArgs.numMedia).toBe(2);
+    expect(ingestArgs.twilioAccountSid).toBe("ACtest");
+    expect(ingestArgs.twilioAuthToken).toBe("test-twilio-token");
+    expect(ingestArgs.rawWebhookBody.MediaUrl0).toContain("ME001");
+    expect(ingestArgs.rawWebhookBody.MediaUrl1).toContain("ME002");
+    // Counts-only audit was emitted with no PHI.
+    const audits = logAuditMock.mock.calls.map((c) => c[0]);
+    const ingestAudit = audits.find(
+      (a) => a.action === "messaging.inbound.media_ingested",
+    );
+    expect(ingestAudit).toBeDefined();
+    expect(ingestAudit?.metadata).toMatchObject({
+      attempted: 2,
+      succeeded: 2,
+      rejected: 0,
+      errored: 0,
+    });
+    // PHI / linkability guard — counts-only payload. Audit row's
+    // (targetTable, targetId) tuple already pins this to the
+    // message; the metadata must NOT mirror conversation_id,
+    // patient_id, or the Twilio message SID.
+    const auditJson = JSON.stringify(ingestAudit?.metadata);
+    expect(auditJson).not.toContain("ME001");
+    expect(auditJson).not.toContain("ME002");
+    expect(auditJson).not.toContain(FROM_PHONE);
+    expect(auditJson).not.toContain(CONVERSATION_ID);
+    expect(auditJson).not.toContain(PATIENT_ID);
+    expect(auditJson).not.toContain("SM_mms");
   });
 
   // CARRIER COMPLIANCE — STOP/HELP must be honored even when we

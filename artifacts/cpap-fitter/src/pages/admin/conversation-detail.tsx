@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import {
   ApiError,
+  type ConversationMessageAttachment,
   useGetConversation,
   useSendSmsReminder,
   useSendEmailReminder,
@@ -157,6 +158,14 @@ export function ConversationDetailPage({ id }: { id: string }) {
                     >
                       {m.body}
                     </div>
+                    {m.attachments && m.attachments.length > 0 && (
+                      <MessageAttachments
+                        conversationId={data.id}
+                        messageId={m.id}
+                        attachments={m.attachments}
+                        isOutbound={isOutbound}
+                      />
+                    )}
                     <p
                       className="text-[10px] mt-1 px-1"
                       style={{ color: "hsl(var(--ink-3))", textAlign: isOutbound ? "right" : "left" }}
@@ -475,6 +484,207 @@ function groupByCategory(macros: CsrMacro[]): Record<string, CsrMacro[]> {
     out[cat]!.push(m);
   }
   return out;
+}
+
+// Inline attachment renderer for a single message bubble.
+//
+// Image MIME types render as a thumbnail grid; clicking opens a
+// fullscreen lightbox with the original-size image. The thumbnail
+// uses the same authenticated GET endpoint as the lightbox — the
+// browser caches the bytes for ~5 min (per Cache-Control set by the
+// download route) so opening the lightbox is a no-op fetch.
+//
+// Non-image attachments (PDFs and the rare other allowed types)
+// render as a labeled chip — clicking opens the file in a new tab,
+// where the inline Content-Disposition lets the browser preview
+// it (PDFs) or fall back to download.
+function MessageAttachments({
+  conversationId,
+  messageId,
+  attachments,
+  isOutbound,
+}: {
+  conversationId: string;
+  messageId: string;
+  attachments: ConversationMessageAttachment[];
+  isOutbound: boolean;
+}) {
+  const [lightbox, setLightbox] = useState<ConversationMessageAttachment | null>(
+    null,
+  );
+
+  function urlFor(a: ConversationMessageAttachment): string {
+    return `/resupply-api/conversations/${conversationId}/messages/${messageId}/attachments/${a.id}`;
+  }
+
+  const images = attachments.filter((a) =>
+    a.contentType.toLowerCase().startsWith("image/"),
+  );
+  const others = attachments.filter(
+    (a) => !a.contentType.toLowerCase().startsWith("image/"),
+  );
+
+  return (
+    <div
+      className="mt-2 flex flex-col gap-2"
+      style={{ alignItems: isOutbound ? "flex-end" : "flex-start" }}
+    >
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {images.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setLightbox(a)}
+              className="block rounded border overflow-hidden bg-white"
+              style={{
+                borderColor: "hsl(var(--line-1))",
+                width: 120,
+                height: 120,
+              }}
+              title={a.filename ?? "Attachment"}
+              data-testid={`attachment-thumb-${a.id}`}
+            >
+              <img
+                src={urlFor(a)}
+                alt={a.filename ?? "Attachment"}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+      {others.map((a) => (
+        <a
+          key={a.id}
+          href={urlFor(a)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded border px-3 py-2 text-xs"
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            backgroundColor: "#ffffff",
+            color: "hsl(var(--ink-1))",
+            maxWidth: "100%",
+          }}
+          data-testid={`attachment-chip-${a.id}`}
+        >
+          <span
+            className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider"
+            style={{
+              backgroundColor: "hsl(var(--line-1))",
+              color: "hsl(var(--ink-2))",
+            }}
+          >
+            {a.contentType.split("/")[1] ?? "file"}
+          </span>
+          <span className="truncate" style={{ maxWidth: 240 }}>
+            {a.filename ?? "Attachment"}
+          </span>
+          <span style={{ color: "hsl(var(--ink-3))" }}>
+            {formatBytes(a.sizeBytes)}
+          </span>
+        </a>
+      ))}
+      {lightbox && (
+        // Plain fixed-position overlay rather than a Dialog component
+        // because the admin app doesn't ship one yet and importing
+        // Radix here just for this would balloon the bundle. Click on
+        // backdrop OR Escape closes; the image itself swallows the
+        // click so we don't dismiss while panning.
+        <LightboxOverlay
+          attachment={lightbox}
+          src={urlFor(lightbox)}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function LightboxOverlay({
+  attachment,
+  src,
+  onClose,
+}: {
+  attachment: ConversationMessageAttachment;
+  src: string;
+  onClose: () => void;
+}) {
+  // Escape key to dismiss. Bound on document so focus inside the
+  // lightbox isn't required — anywhere on the page works. Cleanup
+  // on unmount is required so a future page navigation that mounts
+  // its own keydown handler doesn't see ours.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={attachment.filename ?? "Attachment"}
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(0,0,0,0.85)",
+        zIndex: 50,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        cursor: "zoom-out",
+      }}
+      data-testid="attachment-lightbox"
+    >
+      <img
+        src={src}
+        alt={attachment.filename ?? "Attachment"}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: "100%",
+          maxHeight: "100%",
+          objectFit: "contain",
+          cursor: "default",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        }}
+      />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        style={{
+          position: "absolute",
+          top: 16,
+          right: 16,
+          backgroundColor: "rgba(0,0,0,0.6)",
+          color: "#ffffff",
+          border: "1px solid rgba(255,255,255,0.3)",
+          borderRadius: 6,
+          padding: "6px 12px",
+          fontSize: 14,
+          cursor: "pointer",
+        }}
+        aria-label="Close attachment preview"
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function BackLink() {

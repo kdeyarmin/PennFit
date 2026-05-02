@@ -21,6 +21,7 @@ function fluent(result: unknown) {
     from: () => obj,
     where: () => obj,
     leftJoin: () => obj,
+    innerJoin: () => obj,
     orderBy: () => obj,
     limit: () => obj,
     offset: () => obj,
@@ -150,6 +151,10 @@ describe("GET /conversations/:id", () => {
         createdAt: new Date("2025-04-02T12:00:00Z"),
       },
     ]);
+    // Third query — message_attachments by message_id IN (...).
+    // Empty here: this test asserts the legacy shape still works
+    // when no attachments exist.
+    selectQueue.push([]);
 
     const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}`,
@@ -160,6 +165,10 @@ describe("GET /conversations/:id", () => {
     expect(res.body.messages).toHaveLength(2);
     expect(res.body.messages[0].body).toMatch(/CPAP supplies/);
     expect(res.body.messages[1].body).toBe("YES");
+    // Attachments field is always present (empty array when no media).
+    expect(res.body.messages[0].attachments).toEqual([]);
+    expect(res.body.messages[1].attachments).toEqual([]);
+
 
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect(logAuditMock).toHaveBeenCalledWith(
@@ -176,5 +185,68 @@ describe("GET /conversations/:id", () => {
         }),
       }),
     );
+  });
+
+  it("groups attachments per message in the response payload", async () => {
+    // Asserts the new MMS attachment plumbing: detail.ts pulls
+    // message_attachments via inArray and groups in memory.
+    stubVerifiedAdmin();
+    selectQueue.push([
+      {
+        id: CONV_ID,
+        patientId: PATIENT_ID,
+        patientFirstName: "Bob",
+        patientLastName: "Jones",
+        episodeId: EPISODE_ID,
+        channel: "sms",
+        status: "open",
+        lastMessageAt: new Date("2025-05-01T12:00:00Z"),
+        createdAt: new Date("2025-05-01T11:00:00Z"),
+      },
+    ]);
+    selectQueue.push([
+      {
+        id: MSG_A,
+        direction: "inbound",
+        senderRole: "patient",
+        body: "Here are the photos you asked for",
+        deliveryStatus: null,
+        sentAt: new Date("2025-05-01T12:00:00Z"),
+        deliveredAt: null,
+        createdAt: new Date("2025-05-01T12:00:00Z"),
+      },
+    ]);
+    selectQueue.push([
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        messageId: MSG_A,
+        filename: "mms-ME001.jpg",
+        contentType: "image/jpeg",
+        sizeBytes: 12345,
+        createdAt: new Date("2025-05-01T12:00:01Z"),
+      },
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+        messageId: MSG_A,
+        filename: "mms-ME002.png",
+        contentType: "image/png",
+        sizeBytes: 6789,
+        createdAt: new Date("2025-05-01T12:00:02Z"),
+      },
+    ]);
+    const res = await request(makeApp()).get(
+      `/resupply-api/conversations/${CONV_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.messages).toHaveLength(1);
+    const msg = res.body.messages[0];
+    expect(msg.attachments).toHaveLength(2);
+    expect(msg.attachments[0]).toMatchObject({
+      filename: "mms-ME001.jpg",
+      contentType: "image/jpeg",
+      sizeBytes: 12345,
+    });
+    expect(msg.attachments[0].id).toBeDefined();
+    expect(msg.attachments[1].contentType).toBe("image/png");
   });
 });
