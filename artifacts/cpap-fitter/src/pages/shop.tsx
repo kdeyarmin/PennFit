@@ -50,7 +50,10 @@ import {
 import { useCart } from "@/hooks/use-cart";
 import { StarRating } from "@/components/star-rating";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
-import { ShopFilterBar } from "@/components/shop/shop-filter-bar";
+import {
+  ShopFilterBar,
+  type ShopSort,
+} from "@/components/shop/shop-filter-bar";
 import { QuickViewDialog } from "@/components/shop/quick-view-dialog";
 import { WishlistButton } from "@/components/shop/wishlist-button";
 import { CompareTray } from "@/components/shop/compare-tray";
@@ -204,6 +207,52 @@ export function Shop() {
     );
   }, [data]);
 
+  // Sort selection from the filter bar. Hoisted above applySort
+  // so the closure resolves it without a forward-reference TDZ.
+  const [sort, setSort] = useState<ShopSort>("featured");
+
+  // Apply the active sort to a list of products. Pure function;
+  // returns a new array (never mutates the input). "featured"
+  // is a no-op so the admin's curated category order survives.
+  // top-rated needs the aggregate map to resolve average + count.
+  const applySort = useCallback(
+    (list: ShopProductView[]): ShopProductView[] => {
+      if (sort === "featured") return list;
+      const next = list.slice();
+      switch (sort) {
+        case "price-asc":
+          next.sort((a, b) => a.price.unitAmount - b.price.unitAmount);
+          break;
+        case "price-desc":
+          next.sort((a, b) => b.price.unitAmount - a.price.unitAmount);
+          break;
+        case "name-asc":
+          next.sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+          );
+          break;
+        case "top-rated":
+          next.sort((a, b) => {
+            const aa = aggregates[a.id];
+            const bb = aggregates[b.id];
+            const ar = aa?.averageRating ?? 0;
+            const br = bb?.averageRating ?? 0;
+            if (br !== ar) return br - ar;
+            const ac = aa?.count ?? 0;
+            const bc = bb?.count ?? 0;
+            return bc - ac;
+          });
+          break;
+      }
+      return next;
+    },
+    // aggregates is defined a few lines below — captured lazily via
+    // closure, so the dependency list lists it for completeness once
+    // the state exists. Forward-reference safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sort],
+  );
+
   // Search query state. Lives on the parent so the filter bar can
   // mutate it AND the renderer can swap the sectioned grid for a
   // flat results grid when it's non-empty. We match across the
@@ -291,6 +340,8 @@ export function Shop() {
               label: CATEGORY_META[s.category].label,
             }))}
             resultCount={filteredProducts.length}
+            sort={sort}
+            onSortChange={setSort}
           />
           <div className="mt-12">
             <RecentlyViewedStrip products={data?.products ?? []} />
@@ -328,7 +379,7 @@ export function Shop() {
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {filteredProducts.map((p) => (
+                  {applySort(filteredProducts).map((p) => (
                     <ProductCard
                       key={p.id}
                       product={p}
@@ -344,7 +395,7 @@ export function Shop() {
                 <CategorySection
                   key={s.category}
                   category={s.category}
-                  items={s.items}
+                  items={applySort(s.items)}
                   aggregates={aggregates}
                 />
               ))}

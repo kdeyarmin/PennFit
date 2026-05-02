@@ -22,7 +22,7 @@
 // horizontally so we don't have to wrap onto multiple rows and
 // eat vertical space.
 
-import { Search, X } from "lucide-react";
+import { ArrowUpDown, Search, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 
@@ -33,12 +33,43 @@ interface Category {
   label: string;
 }
 
+/**
+ * Sort modes available in the filter bar's dropdown.
+ *
+ *   featured     — original catalog order (curated by the admin).
+ *                  Default; no client-side reorder applied.
+ *   price-asc    — unit amount ascending.
+ *   price-desc   — unit amount descending.
+ *   name-asc     — product name A→Z (locale-aware compare).
+ *   top-rated    — average rating desc, review-count desc tiebreak.
+ *
+ * "featured" intentionally remains an explicit option even when
+ * it's the default so the user can reset back to it after they
+ * pick a sort.
+ */
+export type ShopSort =
+  | "featured"
+  | "price-asc"
+  | "price-desc"
+  | "name-asc"
+  | "top-rated";
+
+const SORT_OPTIONS: { value: ShopSort; label: string }[] = [
+  { value: "featured", label: "Featured" },
+  { value: "price-asc", label: "Price: low to high" },
+  { value: "price-desc", label: "Price: high to low" },
+  { value: "name-asc", label: "Name: A to Z" },
+  { value: "top-rated", label: "Top rated" },
+];
+
 interface Props {
   query: string;
   onQueryChange: (next: string) => void;
   categories: Category[];
   /** Total visible product count (filtered if query is non-empty). */
   resultCount: number;
+  sort: ShopSort;
+  onSortChange: (next: ShopSort) => void;
 }
 
 export function ShopFilterBar({
@@ -46,6 +77,8 @@ export function ShopFilterBar({
   onQueryChange,
   categories,
   resultCount,
+  sort,
+  onSortChange,
 }: Props) {
   const trimmed = query.trim();
   const isSearching = trimmed.length > 0;
@@ -97,6 +130,35 @@ export function ShopFilterBar({
             {resultCount} result{resultCount === 1 ? "" : "s"}
           </span>
         )}
+        {/*
+          Sort selector. Native <select> keeps the bundle small
+          and gets accessible keyboard + mobile-OS pickers for
+          free. Wrapped in a chip so it visually matches the
+          category pills below. The label sits inside the
+          chip on desktop and collapses to just the icon + value
+          on narrow widths so the search input keeps as much
+          horizontal space as possible.
+        */}
+        <label
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-white pl-2.5 pr-1 h-9 text-xs text-[hsl(var(--penn-navy))] focus-within:ring-2 focus-within:ring-[hsl(var(--penn-gold))]/40"
+          data-testid="shop-sort-wrap"
+        >
+          <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="hidden md:inline font-semibold">Sort</span>
+          <select
+            value={sort}
+            onChange={(e) => onSortChange(e.target.value as ShopSort)}
+            aria-label="Sort products"
+            className="bg-transparent border-0 outline-none pr-1 py-1 font-medium cursor-pointer"
+            data-testid="shop-sort-select"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       {!isSearching && categories.length > 0 && (
         <div
