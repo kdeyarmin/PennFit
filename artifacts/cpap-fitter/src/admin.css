@@ -31,37 +31,44 @@
  */
 .admin-root {
   /* ──────────────────────────────────────────────────────────────────
-   * Brand palette. Single source of truth — every color used by an
-   * admin component should resolve through one of these. Values are
-   * HSL components (no hsl() wrapper) so we can compose alpha via
-   * `hsl(var(--penn-navy) / 0.18)` exactly like the customer app.
+   * Brand palette — kept in sync with the storefront's "Onyx &
+   * Champagne" palette in index.css so the two SPAs read as one
+   * product. Values are HSL components (no hsl() wrapper) so we can
+   * compose alpha via `hsl(var(--penn-navy) / 0.18)` exactly like
+   * the customer app.
+   *
+   * The admin canvas trades the storefront's warm pearl background
+   * for a quieter cool grey — operators stare at this for hours and
+   * the page reads as "work surface", not "marketing surface".
    * ────────────────────────────────────────────────────────────────── */
-  --penn-navy: 218 58% 21%;
-  --penn-navy-deep: 220 64% 13%;
-  --penn-navy-soft: 216 32% 42%;
-  --penn-gold: 38 62% 56%;
-  --penn-gold-soft: 38 70% 80%;
-  --penn-gold-deep: 36 55% 42%;
-  --penn-mist: 210 36% 96%;
-  --penn-platinum: 215 18% 88%;
+  --penn-onyx:        220 72% 7%;
+  --penn-navy-deep:   220 72% 9%;
+  --penn-navy:        220 68% 13%;
+  --penn-navy-soft:   216 38% 28%;
+  --penn-gold-deep:   34 58% 36%;
+  --penn-gold:        40 58% 54%;
+  --penn-gold-soft:   40 70% 86%;
+  --penn-platinum:    220 18% 88%;
+  --penn-pearl:       42 28% 97.5%;
+  --penn-mist:        220 30% 95%;
 
-  /* Surface scale — cool grays tuned to sit calmly under dense tables.
-   * `surface-1` is the page canvas; `surface-2` is the card body;
-   * `surface-3` is for nested rows / hovered states. */
+  /* Surface scale — cool greys tuned to sit calmly under dense
+   * tables. `surface-1` is the page canvas; `surface-2` is the
+   * card body; `surface-3` is for nested rows / hovered states. */
   --surface-0: 220 28% 97.5%;
   --surface-1: 220 26% 99%;
   --surface-2: 0 0% 100%;
   --surface-3: 220 22% 96%;
 
-  /* Border + text scale. Keeping body text at navy-deep (instead of pure
-   * black) gives the page a slight warm tint that ties back to the brand
-   * without ever feeling "branded". */
-  --ink-1: 220 50% 11%;
-  --ink-2: 218 22% 30%;
-  --ink-3: 218 16% 46%;
-  --ink-muted: 218 14% 58%;
-  --line-1: 218 22% 90%;
-  --line-2: 218 24% 84%;
+  /* Border + text scale. Keeping body text at navy-deep (instead of
+   * pure black) gives the page a slight warm tint that ties back to
+   * the brand without ever feeling "branded". */
+  --ink-1: 220 55% 11%;
+  --ink-2: 220 22% 30%;
+  --ink-3: 220 16% 46%;
+  --ink-muted: 220 14% 58%;
+  --line-1: 220 20% 89%;
+  --line-2: 220 22% 84%;
 
   /* Status tones. Match the customer-app emerald/rose so badges in both
    * apps share the same visual language. */
@@ -283,16 +290,24 @@
   }
 
   /* The navy chrome band that hosts the brand logo + global lookup +
-   * sign-out. Adds a subtle radial gold glow so the band reads as a
-   * crafted surface, not a flat block. */
+   * sign-out. A 4-stop forged-metal gradient (soft top → navy →
+   * navy-deep → onyx foot) plus a champagne radial glow centered on
+   * the masthead reads as a crafted, lit surface rather than a flat
+   * block. The 1px champagne hairline at the bottom edge ties it to
+   * the page below. */
   .brand-band {
     background:
       var(--header-glow),
       linear-gradient(
         180deg,
-        hsl(var(--penn-navy-deep)) 0%,
-        hsl(var(--penn-navy)) 100%
+        hsl(var(--penn-navy-soft)) 0%,
+        hsl(var(--penn-navy)) 30%,
+        hsl(var(--penn-navy-deep)) 75%,
+        hsl(var(--penn-onyx)) 100%
       );
+    box-shadow:
+      0 1px 0 hsl(var(--penn-gold) / 0.30),
+      0 4px 12px hsl(var(--penn-navy-deep) / 0.18);
   }
 
   /* Sidebar surface — a hairline gradient toward the content area so
