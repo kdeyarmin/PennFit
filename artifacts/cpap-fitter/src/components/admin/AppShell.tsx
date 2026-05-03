@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode, SVGProps } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -24,7 +24,15 @@ import {
   UsersRound,
   Settings,
   FileSearch,
+  Menu,
 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { useDashboardIdentity } from "@/lib/admin/identity";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { GlobalLookup } from "./GlobalLookup";
@@ -308,6 +316,39 @@ function isLinkActive(location: string, link: NavLink): boolean {
   return location === prefix || location.startsWith(`${prefix}/`);
 }
 
+/**
+ * The grouped nav body. Used by both the persistent desktop sidebar
+ * and the mobile slide-out drawer so they stay 1:1 in sync — adding
+ * a new section to NAV_GROUPS automatically lands in both surfaces.
+ */
+function SidebarNavBody({
+  location,
+  onItemClick,
+}: {
+  location: string;
+  onItemClick?: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-5">
+      {NAV_GROUPS.map((group) => (
+        <div key={group.label} className="flex flex-col gap-0.5">
+          <p
+            className="text-[10px] uppercase tracking-[0.22em] font-semibold mb-1.5 px-3"
+            style={{ color: "hsl(var(--penn-gold-deep))" }}
+          >
+            {group.label}
+          </p>
+          {group.items.map((link) => (
+            <div key={link.href} onClick={onItemClick}>
+              <NavItem {...link} isActive={isLinkActive(location, link)} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function AdminHeaderChip({
   email,
   role,
@@ -394,6 +435,13 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [location] = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Auto-close the mobile drawer on every route change so reps don't
+  // have to tap the X after picking a destination.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location]);
 
   return (
     <RoleProvider role={adminRole}>
@@ -408,44 +456,76 @@ export function AppShell({
           ) : undefined
         }
       />
+      {/*
+        Mobile-only sub-bar: hamburger trigger that opens the same
+        grouped nav inside a left-anchored Sheet drawer. Hidden at
+        lg+ where the persistent sidebar takes over. We render this
+        in its own row (instead of squeezing into BrandHeader) so the
+        existing header chrome stays untouched and the trigger has
+        room to be a comfortable 44px tap target.
+      */}
+      {adminEmail ? (
+        <div className="lg:hidden border-b border-border/60 bg-white px-4 py-2 flex items-center gap-2">
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <SheetTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 px-3 h-10 rounded-md border border-border bg-white text-sm font-semibold text-[hsl(var(--penn-navy))] hover:bg-secondary/60"
+                aria-label="Open admin navigation"
+                data-testid="admin-mobile-nav-trigger"
+              >
+                <Menu className="h-4 w-4" aria-hidden="true" />
+                Menu
+              </button>
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              className="w-72 p-0 sidebar-surface flex flex-col"
+            >
+              <SheetHeader className="px-4 py-3 border-b border-border/60">
+                <SheetTitle className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+                  Admin navigation
+                </SheetTitle>
+              </SheetHeader>
+              <nav
+                className="flex-1 overflow-y-auto px-3 py-4"
+                aria-label="Admin navigation"
+              >
+                <SidebarNavBody
+                  location={location}
+                  onItemClick={() => setMobileNavOpen(false)}
+                />
+              </nav>
+            </SheetContent>
+          </Sheet>
+        </div>
+      ) : null}
       <div className="flex-1 flex">
         {/*
-          Grouped sidebar navigation. Each section gets a small
-          gold uppercase header so reps can locate the right family
-          of pages at a glance rather than scanning a flat list of
-          ~28 items. Sticky inside its own scroll context so the
-          nav stays visible on long detail pages, with its own
-          inner scroll if a particularly small viewport can't fit
-          every group at once.
+          Persistent grouped sidebar — desktop only. Each section
+          gets a small gold uppercase header so reps can locate the
+          right family of pages at a glance rather than scanning a
+          flat list of ~28 items. Sticky inside its own scroll
+          context so the nav stays visible on long detail pages,
+          with its own inner scroll if a particularly small laptop
+          viewport can't fit every group at once. On <lg viewports
+          the sidebar is hidden in favour of the slide-out drawer
+          above so the main content can claim the full width.
         */}
         <aside
-          className="sidebar-surface w-64 shrink-0 flex flex-col"
+          className="sidebar-surface w-64 shrink-0 hidden lg:flex flex-col"
           aria-label="Admin navigation"
         >
           <nav
-            className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-5 sticky top-0"
+            className="flex-1 overflow-y-auto px-3 py-4 sticky top-0"
             style={{ maxHeight: "calc(100vh - 4rem)" }}
           >
-            {NAV_GROUPS.map((group) => (
-              <div key={group.label} className="flex flex-col gap-0.5">
-                <p
-                  className="text-[10px] uppercase tracking-[0.22em] font-semibold mb-1.5 px-3"
-                  style={{ color: "hsl(var(--penn-gold-deep))" }}
-                >
-                  {group.label}
-                </p>
-                {group.items.map((link) => (
-                  <NavItem
-                    key={link.href}
-                    {...link}
-                    isActive={isLinkActive(location, link)}
-                  />
-                ))}
-              </div>
-            ))}
+            <SidebarNavBody location={location} />
           </nav>
         </aside>
-        <main className="flex-1 p-6 overflow-x-hidden">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
+          {children}
+        </main>
       </div>
       <BrandFooter />
     </div>

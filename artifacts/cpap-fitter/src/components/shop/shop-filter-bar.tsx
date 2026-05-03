@@ -97,7 +97,14 @@ export function ShopFilterBar({
       className="sticky top-16 z-30 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-white/85 backdrop-blur border-b border-border/50"
       data-testid="shop-filter-bar"
     >
-      <div className="flex items-center gap-3">
+      {/*
+        Two-row layout on mobile, single-row at sm+. The search
+        input deserves the full row on a phone so the placeholder
+        stays readable and the clear-X target isn't crowded against
+        the sort chip. The sort chip + result count drop to a
+        compact toolbar on the row below.
+      */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           <Input
@@ -106,7 +113,7 @@ export function ShopFilterBar({
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search supplies, brands, model numbers…"
             aria-label="Search the shop"
-            className="pl-9 pr-9 h-10 bg-white"
+            className="pl-9 pr-9 h-10 bg-white w-full"
             data-testid="shop-search-input"
           />
           {isSearching && (
@@ -121,9 +128,10 @@ export function ShopFilterBar({
             </button>
           )}
         </div>
+        <div className="flex items-center justify-between sm:justify-end gap-3">
         {isSearching && (
           <span
-            className="hidden sm:inline text-xs text-muted-foreground tabular-nums shrink-0"
+            className="text-xs text-muted-foreground tabular-nums shrink-0"
             data-testid="shop-search-result-count"
             aria-live="polite"
           >
@@ -159,6 +167,7 @@ export function ShopFilterBar({
             ))}
           </select>
         </label>
+        </div>
       </div>
       {!isSearching && categories.length > 0 && (
         <div
