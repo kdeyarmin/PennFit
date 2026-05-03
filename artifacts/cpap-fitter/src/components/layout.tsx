@@ -323,7 +323,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
-            {/* Bottom bar: copyright + parent-company callout */}
+            {/* Bottom bar: copyright + parent-company callout + staff link */}
             <div className="mt-10 pt-6 border-t border-border/40 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
               <div>
                 © {new Date().getFullYear()} Penn Home Medical Supply. All rights reserved.
@@ -332,6 +332,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 Penn Home Medical Supply is a licensed durable medical equipment provider.
                 {" "}PennPaps.com is its online patient-facing service.
               </div>
+            </div>
+            {/*
+              Staff sign-in. Intentionally subdued and tucked at the
+              very bottom of the footer so customers — who have a
+              prominent "Sign in" affordance up in the header — don't
+              accidentally land on the admin console. The link routes
+              to the same admin sign-in page the console already uses.
+            */}
+            <div className="mt-4 pt-4 border-t border-border/30 flex justify-center md:justify-end">
+              <Link
+                href="/admin/sign-in"
+                className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80 hover:text-[hsl(var(--penn-navy))] transition-colors"
+                data-testid="footer-staff-signin"
+              >
+                <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                Staff sign-in
+              </Link>
             </div>
           </div>
         </div>
