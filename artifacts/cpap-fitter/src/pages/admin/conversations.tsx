@@ -270,7 +270,7 @@ export function ConversationsPage() {
                 columns={cols}
                 rows={data.items}
                 rowKey={(r) => r.id}
-                onRowClick={(r) => setLocation(`/conversations/${r.id}`)}
+                onRowClick={(r) => setLocation(`/admin/conversations/${r.id}`)}
                 emptyState={
                   <EmptyState
                     title="No conversations match this view."

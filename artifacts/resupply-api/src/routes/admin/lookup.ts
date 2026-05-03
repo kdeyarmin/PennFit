@@ -83,7 +83,7 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
           kind: "patient",
           id: r.patientId,
           label: name || "(no name on file)",
-          href: `/patients/${r.patientId}`,
+          href: `/admin/patients/${r.patientId}`,
           hint: r.pacwareId ? `PACware #${r.pacwareId}` : null,
         });
       }
@@ -134,7 +134,7 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
         kind: "patient",
         id: pat.id,
         label: name || "(no name on file)",
-        href: `/patients/${pat.id}`,
+        href: `/admin/patients/${pat.id}`,
         hint: pat.pacwareId ? `PACware #${pat.pacwareId}` : null,
       });
     }
@@ -153,7 +153,7 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
         kind: "conversation",
         id: conv.id,
         label: `Conversation · ${conv.channel} · ${conv.status}`,
-        href: `/conversations/${conv.id}`,
+        href: `/admin/conversations/${conv.id}`,
       });
     }
     const [ep] = await db
@@ -166,7 +166,7 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
         kind: "episode",
         id: ep.id,
         label: `Episode · ${ep.status}${ep.dueAt ? ` · due ${ep.dueAt.toISOString().slice(0, 10)}` : ""}`,
-        href: `/episodes`,
+        href: `/admin/episodes`,
       });
     }
     const [fu] = await db
@@ -181,7 +181,7 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
         label: `Fulfillment · ${fu.status}`,
         // No dedicated fulfillment page yet — link to the patient
         // detail when we can resolve it (skip for now if unavailable).
-        href: `/episodes`,
+        href: `/admin/episodes`,
       });
     }
   }
