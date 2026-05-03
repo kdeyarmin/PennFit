@@ -110,42 +110,56 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
+  /*
+   * PennPaps brand palette.
+   *
+   * Primary brand colors are navy #0a1f44 (≈ hsl(218 75% 15%)) and
+   * gold #c9a24a (≈ hsl(42 54% 54%)). Earlier iterations of this
+   * file accidentally redefined --penn-navy / --penn-gold as bright
+   * cobalt blues, which made every "navy" button render as
+   * cobalt-blue and every "gold" accent render as pale blue. Below
+   * is the corrected palette: --primary now resolves to deep navy
+   * so every shadcn primary control adopts the brand without
+   * touching individual call sites.
+   */
   --background: 220 30% 97%;
-  --foreground: 220 45% 11%;
+  --foreground: 218 60% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 220 45% 11%;
-  --card-border: 214.3 31.8% 91.4%;
+  --card-foreground: 218 60% 12%;
+  --card-border: 214 31% 91%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --popover-border: 214.3 31.8% 91.4%;
-  --primary: 217 91% 56%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 215 35% 92%;
-  --secondary-foreground: 220 40% 16%;
-  --muted: 215 35% 94%;
-  --muted-foreground: 220 14% 40%;
-  --accent: 217 91% 62%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 216 24% 89%;
-  --input: 216 24% 89%;
-  --ring: 217 91% 56%;
+  --popover-foreground: 218 60% 10%;
+  --popover-border: 214 31% 91%;
+  --primary: 218 75% 15%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 218 25% 94%;
+  --secondary-foreground: 218 60% 14%;
+  --muted: 218 25% 95%;
+  --muted-foreground: 218 14% 38%;
+  /* Accent = warm gold, used for selected states + highlights */
+  --accent: 42 54% 54%;
+  --accent-foreground: 218 75% 12%;
+  --destructive: 0 72% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 218 22% 88%;
+  --input: 218 22% 88%;
+  --ring: 218 75% 25%;
 
-  --chart-1: 217 91% 56%;
-  --chart-2: 200 90% 48%;
-  --chart-3: 230 70% 50%;
-  --chart-4: 195 78% 42%;
-  --chart-5: 210 86% 62%;
+  /* Charts keep a wider hue range so dashboards stay readable */
+  --chart-1: 218 75% 28%;
+  --chart-2: 42 54% 54%;
+  --chart-3: 200 70% 38%;
+  --chart-4: 218 50% 55%;
+  --chart-5: 32 80% 58%;
 
-  --sidebar: 220 35% 98%;
-  --sidebar-foreground: 220 45% 12%;
-  --sidebar-border: 216 24% 89%;
-  --sidebar-primary: 217 91% 56%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 214 95% 93%;
-  --sidebar-accent-foreground: 220 45% 18%;
-  --sidebar-ring: 217 91% 56%;
+  --sidebar: 218 30% 98%;
+  --sidebar-foreground: 218 60% 12%;
+  --sidebar-border: 218 22% 88%;
+  --sidebar-primary: 218 75% 15%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 42 54% 88%;
+  --sidebar-accent-foreground: 218 75% 14%;
+  --sidebar-ring: 218 75% 25%;
 
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
@@ -163,12 +177,21 @@
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-  /* High-end accents */
-  --penn-navy: 217 91% 56%;
-  --penn-navy-deep: 221 83% 40%;
-  --penn-gold: 212 100% 68%;
-  --penn-gold-soft: 212 100% 86%;
-  --penn-mist: 210 60% 95%;
+  /*
+   * Brand accents (kept as raw HSL triplets so they can be used
+   * with hsl(var(--token) / alpha) inside utility classes).
+   *
+   *   --penn-navy       deep navy  (#0a1f44)
+   *   --penn-navy-deep  even deeper navy for shadows/gradients
+   *   --penn-gold       warm champagne gold (#c9a24a)
+   *   --penn-gold-soft  pale gold tint for surfaces / hover halos
+   *   --penn-mist       cool blue-grey mist for ambient washes
+   */
+  --penn-navy: 218 75% 15%;
+  --penn-navy-deep: 218 75% 10%;
+  --penn-gold: 42 54% 54%;
+  --penn-gold-soft: 42 60% 84%;
+  --penn-mist: 218 35% 94%;
   --glass-bg: 255 255 255;
   --glass-stroke: 213 40% 88%;
 

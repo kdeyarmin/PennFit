@@ -125,17 +125,38 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </div>
             </Link>
 
-            {/* Desktop nav */}
-            <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-              {navLinks.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className="text-muted-foreground transition-colors hover:text-primary"
-                >
-                  {l.label}
-                </Link>
-              ))}
+            {/*
+              Desktop nav. We bumped from text-sm/gap-6 to
+              text-[15px]/gap-7 with a heavier hover treatment so
+              the labels are easy to read for older patients (a
+              significant share of CPAP users). The active route
+              gets an underlined gold accent that doubles as a
+              "you are here" landmark — important when the same
+              header is reused on every page.
+            */}
+            <nav className="hidden md:flex items-center gap-7 text-[15px] font-medium">
+              {navLinks.map((l) => {
+                // Treat "/foo" as active for "/foo" and any
+                // descendant route ("/foo/bar"). Home ("/") is
+                // not in navLinks, so no special-case needed.
+                const isActive =
+                  location === l.href || location.startsWith(`${l.href}/`);
+                return (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    aria-current={isActive ? "page" : undefined}
+                    data-testid={`nav-${l.href.replace(/\//g, "")}`}
+                    className={`relative py-1 transition-colors hover:text-primary focus-visible:text-primary ${
+                      isActive
+                        ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-[hsl(var(--penn-gold))]"
+                        : "text-foreground/75"
+                    }`}
+                  >
+                    {l.label}
+                  </Link>
+                );
+              })}
               <YourOrdersNavLink />
               <WishlistNavLink />
               <MiniCart />
@@ -161,23 +182,45 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {/* Mobile dropdown panel */}
+          {/*
+            Mobile dropdown panel. Each row is now a 48px-tall
+            target with base-size text — comfortably above the
+            44px Apple HIG / 48dp Material minimums and easy to
+            tap accurately for users with reduced dexterity. The
+            active route gets a navy left rail + gold dot so the
+            user always knows where they are inside the menu.
+          */}
           {mobileOpen && (
             <div
               id="mobile-nav-panel"
-              className="md:hidden border-t border-border/40 bg-white/85 backdrop-blur-md"
+              className="md:hidden border-t border-border/40 bg-white/90 backdrop-blur-md"
             >
-              <nav className="container mx-auto flex flex-col px-4 py-3 gap-1 text-sm font-medium">
-                {navLinks.map((l) => (
-                  <Link
-                    key={l.href}
-                    href={l.href}
-                    className="block px-3 py-2.5 rounded-lg text-foreground hover:bg-muted/60 transition-colors"
-                    data-testid={`mobile-link-${l.href.replace("/", "")}`}
-                  >
-                    {l.label}
-                  </Link>
-                ))}
+              <nav className="container mx-auto flex flex-col px-3 py-3 gap-1 text-base font-medium">
+                {navLinks.map((l) => {
+                  const isActive =
+                    location === l.href || location.startsWith(`${l.href}/`);
+                  return (
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`flex items-center justify-between min-h-12 px-4 rounded-xl transition-colors ${
+                        isActive
+                          ? "bg-secondary text-primary border-l-4 border-[hsl(var(--penn-gold))] pl-3"
+                          : "text-foreground hover:bg-muted/60 active:bg-muted"
+                      }`}
+                      data-testid={`mobile-link-${l.href.replace("/", "")}`}
+                    >
+                      <span>{l.label}</span>
+                      {isActive ? (
+                        <span
+                          aria-hidden
+                          className="h-2 w-2 rounded-full bg-[hsl(var(--penn-gold))]"
+                        />
+                      ) : null}
+                    </Link>
+                  );
+                })}
               </nav>
             </div>
           )}
