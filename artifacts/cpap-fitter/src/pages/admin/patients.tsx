@@ -582,7 +582,7 @@ export function PatientsPage() {
                 columns={columns}
                 rows={data.items}
                 rowKey={(r) => r.id}
-                onRowClick={(r) => setLocation(`/patients/${r.id}`)}
+                onRowClick={(r) => setLocation(`/admin/patients/${r.id}`)}
                 emptyState={
                   <EmptyState
                     title="No patients match this view."
@@ -607,7 +607,7 @@ export function PatientsPage() {
           onClose={() => setCreating(false)}
           onCreated={(id) => {
             setCreating(false);
-            setLocation(`/patients/${id}`);
+            setLocation(`/admin/patients/${id}`);
           }}
         />
       )}

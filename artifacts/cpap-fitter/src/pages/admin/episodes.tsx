@@ -152,7 +152,7 @@ export function EpisodesPage() {
     if (statusFilter) params.set("status", statusFilter);
     if (qDebounced) params.set("q", qDebounced);
     const qs = params.toString();
-    setLocation(qs ? `/episodes?${qs}` : "/episodes", { replace: true });
+    setLocation(qs ? `/admin/episodes?${qs}` : "/admin/episodes", { replace: true });
   }, [statusFilter, qDebounced, setLocation]);
 
   const params: ListEpisodesParams = useMemo(
@@ -410,7 +410,7 @@ export function EpisodesPage() {
                 columns={cols}
                 rows={data.items}
                 rowKey={(r) => r.id}
-                onRowClick={(r) => setLocation(`/patients/${r.patientId}`)}
+                onRowClick={(r) => setLocation(`/admin/patients/${r.patientId}`)}
                 emptyState={
                   <EmptyState
                     title="No episodes match this view."
