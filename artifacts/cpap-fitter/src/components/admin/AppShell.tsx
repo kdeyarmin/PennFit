@@ -480,7 +480,17 @@ export function AppShell({
             </SheetTrigger>
             <SheetContent
               side="left"
-              className="w-72 p-0 sidebar-surface flex flex-col"
+              /*
+                Radix portals SheetContent to <body>, OUTSIDE the
+                <div className="admin-root"> wrapper, so the admin
+                CSS variables (--surface-2, --penn-navy, etc) don't
+                resolve here and the sidebar-surface gradient renders
+                transparent — the dashboard content shows through
+                behind the nav items. Re-applying `admin-root` on the
+                portal scopes those tokens locally so the drawer
+                renders opaque with the correct admin chrome.
+              */
+              className="admin-root w-72 p-0 sidebar-surface flex flex-col bg-white"
             >
               <SheetHeader className="px-4 py-3 border-b border-border/60">
                 <SheetTitle className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
