@@ -1147,7 +1147,8 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
 
   return (
     <section
-      className="glass-card rounded-2xl p-6"
+      id="autoship"
+      className="glass-card rounded-2xl p-6 scroll-mt-24"
       data-testid="account-subscriptions-section"
     >
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
