@@ -7,6 +7,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 
 import { authHooks } from "@/lib/auth-hooks";
+import { AuthLayout } from "@/components/auth-layout";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -24,7 +25,7 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12">
+    <AuthLayout variant="customer">
       <div className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4">
         <h1 className="text-xl font-semibold">Reset your password</h1>
 
@@ -83,6 +84,6 @@ export function ForgotPasswordPage() {
           </form>
         )}
       </div>
-    </div>
+    </AuthLayout>
   );
 }

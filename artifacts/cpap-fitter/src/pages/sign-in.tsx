@@ -10,6 +10,7 @@ import { Link, useLocation } from "wouter";
 import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
+import { AuthLayout } from "@/components/auth-layout";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -37,7 +38,7 @@ export function SignInPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12">
+    <AuthLayout variant="customer">
       <form
         onSubmit={onSubmit}
         className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-4"
@@ -110,6 +111,6 @@ export function SignInPage() {
           </p>
         </div>
       </form>
-    </div>
+    </AuthLayout>
   );
 }

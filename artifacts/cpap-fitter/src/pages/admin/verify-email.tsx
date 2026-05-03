@@ -11,6 +11,7 @@ import { Link } from "wouter";
 import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
+import { AuthLayout } from "@/components/auth-layout";
 
 const basePath = "/admin";
 
@@ -58,12 +59,9 @@ export function VerifyEmailPage() {
   }, [token]);
 
   return (
-    <div
-      className="admin-root min-h-screen flex items-center justify-center px-4 py-12"
-      style={{ backgroundColor: "#f7f8fb" }}
-    >
+    <AuthLayout variant="admin">
       <div
-        className="w-full max-w-sm rounded-lg shadow-sm border p-6 space-y-4 bg-white"
+        className="admin-root w-full max-w-sm rounded-lg shadow-sm border p-6 space-y-4 bg-white"
         style={{ borderColor: "hsl(var(--line-1))" }}
       >
         <h1
@@ -116,6 +114,6 @@ export function VerifyEmailPage() {
           </>
         )}
       </div>
-    </div>
+    </AuthLayout>
   );
 }
