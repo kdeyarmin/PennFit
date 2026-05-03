@@ -396,6 +396,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       FAQ
                     </Link>
                   </li>
+                  <li>
+                    <Link
+                      href="/returns"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Returns &amp; refunds
+                    </Link>
+                  </li>
                 </ul>
               </div>
 
