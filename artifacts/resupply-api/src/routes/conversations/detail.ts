@@ -20,6 +20,7 @@ import {
   messageAttachments,
   messages,
   patients,
+  shopCustomers,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -45,6 +46,12 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
       patientId: conversations.patientId,
       patientFirstName: patients.legalFirstName,
       patientLastName: patients.legalLastName,
+      // Shop-customer subject — null for patient-flow rows, set for
+      // in_app rows. Joined nullable so the existing patient-flow
+      // queries don't change shape.
+      customerId: conversations.customerId,
+      customerDisplayName: shopCustomers.displayName,
+      customerEmail: shopCustomers.emailLower,
       episodeId: conversations.episodeId,
       channel: conversations.channel,
       status: conversations.status,
@@ -60,6 +67,10 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     })
     .from(conversations)
     .leftJoin(patients, eq(patients.id, conversations.patientId))
+    .leftJoin(
+      shopCustomers,
+      eq(shopCustomers.customerId, conversations.customerId),
+    )
     .where(eq(conversations.id, id))
     .limit(1);
 
@@ -167,10 +178,16 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
 
   res.status(200).json({
     id: header.id,
+    // Patient-flow subject — null for in_app rows.
     patientId: header.patientId,
     patientFirstName: header.patientFirstName ?? "",
     patientLastName: header.patientLastName ?? "",
     episodeId: header.episodeId,
+    // Shop-customer subject — null for patient-flow rows. The UI
+    // branches on these for in_app channel rendering.
+    customerId: header.customerId,
+    customerDisplayName: header.customerDisplayName ?? null,
+    customerEmail: header.customerEmail ?? null,
     channel: header.channel,
     status: header.status,
     lastMessageAt: toIso(header.lastMessageAt),

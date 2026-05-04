@@ -15,7 +15,12 @@ import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { conversations, getDbPool, patients } from "@workspace/resupply-db";
+import {
+  conversations,
+  getDbPool,
+  patients,
+  shopCustomers,
+} from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -24,7 +29,10 @@ const listQuery = z
     status: z
       .enum(["open", "awaiting_patient", "awaiting_admin", "closed"])
       .optional(),
-    channel: z.enum(["sms", "voice", "email"]).optional(),
+    // `in_app` added post-0033: in-account customer-service threads
+    // appear in the same inbox as SMS/email/voice and CSRs filter the
+    // same way.
+    channel: z.enum(["sms", "voice", "email", "in_app"]).optional(),
     patientId: z.string().uuid().optional(),
     /**
      * Inbox view — orthogonal to status. Predefined buckets:
@@ -111,6 +119,12 @@ router.get("/conversations", requireAdmin, async (req, res) => {
       patientId: conversations.patientId,
       patientFirstName: patients.legalFirstName,
       patientLastName: patients.legalLastName,
+      // Customer subject (in_app channel only). Both fields nullable
+      // for patient-flow conversations — the XOR check guarantees
+      // exactly one of (patient_id, customer_id) is set.
+      customerId: conversations.customerId,
+      customerDisplayName: shopCustomers.displayName,
+      customerEmail: shopCustomers.emailLower,
       episodeId: conversations.episodeId,
       channel: conversations.channel,
       status: conversations.status,
@@ -125,6 +139,10 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     })
     .from(conversations)
     .leftJoin(patients, eq(patients.id, conversations.patientId))
+    .leftJoin(
+      shopCustomers,
+      eq(shopCustomers.customerId, conversations.customerId),
+    )
     .where(whereClause)
     // Sort: breaching/escalated first (NULLS LAST so non-SLA threads
     // don't push themselves to the top), then last-message recency.
@@ -148,10 +166,16 @@ router.get("/conversations", requireAdmin, async (req, res) => {
   res.status(200).json({
     items: rows.map((r) => ({
       id: r.id,
+      // Patient/episode subject — null for in_app rows (post-0033).
       patientId: r.patientId,
       patientFirstName: r.patientFirstName ?? "",
       patientLastName: r.patientLastName ?? "",
       episodeId: r.episodeId,
+      // Customer subject — null for patient-flow rows. The UI
+      // branches on these for in_app channel rendering.
+      customerId: r.customerId,
+      customerDisplayName: r.customerDisplayName ?? null,
+      customerEmail: r.customerEmail ?? null,
       channel: r.channel,
       status: r.status,
       lastMessageAt: toIso(r.lastMessageAt),

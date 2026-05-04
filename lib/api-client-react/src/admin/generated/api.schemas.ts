@@ -939,6 +939,7 @@ export const ConversationListItemChannel = {
   sms: "sms",
   voice: "voice",
   email: "email",
+  in_app: "in_app",
 } as const;
 
 export type ConversationListItemStatus =
@@ -953,10 +954,18 @@ export const ConversationListItemStatus = {
 
 export interface ConversationListItem {
   id: string;
-  patientId: string;
+  /** Null for in_app channel rows (post-0033). */
+  patientId: string | null;
   patientFirstName: string;
   patientLastName: string;
-  episodeId: string;
+  /** Null for in_app channel rows. */
+  episodeId: string | null;
+  /** Set for in_app channel rows; null for patient-flow rows. */
+  customerId?: string | null;
+  /** Set for in_app channel rows; null for patient-flow rows. */
+  customerDisplayName?: string | null;
+  /** Set for in_app channel rows; null for patient-flow rows. */
+  customerEmail?: string | null;
   channel: ConversationListItemChannel;
   status: ConversationListItemStatus;
   lastMessageAt?: string | null;
@@ -989,6 +998,7 @@ export type ConversationMessageSenderRole =
 
 export const ConversationMessageSenderRole = {
   patient: "patient",
+  customer: "customer",
   admin: "admin",
   agent: "agent",
   system: "system",
@@ -1026,6 +1036,7 @@ export const ConversationDetailChannel = {
   sms: "sms",
   voice: "voice",
   email: "email",
+  in_app: "in_app",
 } as const;
 
 export type ConversationDetailStatus =
@@ -1040,10 +1051,18 @@ export const ConversationDetailStatus = {
 
 export interface ConversationDetail {
   id: string;
-  patientId: string;
+  /** Null for in_app channel rows (post-0033). */
+  patientId: string | null;
   patientFirstName: string;
   patientLastName: string;
-  episodeId: string;
+  /** Null for in_app channel rows. */
+  episodeId: string | null;
+  /** Set for in_app channel rows; null for patient-flow rows. */
+  customerId?: string | null;
+  /** Set for in_app channel rows; null for patient-flow rows. */
+  customerDisplayName?: string | null;
+  /** Set for in_app channel rows; null for patient-flow rows. */
+  customerEmail?: string | null;
   channel: ConversationDetailChannel;
   status: ConversationDetailStatus;
   lastMessageAt?: string | null;
@@ -1998,6 +2017,7 @@ export const ListConversationsChannel = {
   sms: "sms",
   voice: "voice",
   email: "email",
+  in_app: "in_app",
 } as const;
 
 export type ListEpisodesParams = {

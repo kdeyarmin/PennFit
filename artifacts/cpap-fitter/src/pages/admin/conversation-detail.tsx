@@ -83,20 +83,59 @@ export function ConversationDetailPage({ id }: { id: string }) {
                   className="text-xs uppercase tracking-wider mb-1"
                   style={{ color: "hsl(var(--penn-gold-deep))" }}
                 >
-                  Conversation
+                  {data.channel === "in_app"
+                    ? "In-account conversation"
+                    : "Conversation"}
                 </p>
                 <h1
                   className="text-2xl font-semibold mb-1"
                   style={{ color: "hsl(var(--ink-1))" }}
                 >
-                  <Link
-                    href={`/patients/${data.patientId}`}
-                    className="underline decoration-dotted"
-                    style={{ color: "hsl(var(--ink-1))" }}
-                  >
-                    {fullName(data.patientFirstName, data.patientLastName)}
-                  </Link>
+                  {data.channel === "in_app" && data.customerId ? (
+                    /*
+                      In-app threads: header links to the
+                      customer-360 page where the CSR can see saved
+                      device + physician info + lifetime stats. No
+                      patient context to show — a shop customer is a
+                      different identity space than a resupply
+                      patient.
+                    */
+                    <Link
+                      href={`/admin/shop/customers/${encodeURIComponent(data.customerId)}`}
+                      className="underline decoration-dotted"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                      data-testid="conv-detail-customer-link"
+                    >
+                      {data.customerDisplayName ??
+                        data.customerEmail ??
+                        "Shop customer"}
+                    </Link>
+                  ) : data.patientId ? (
+                    <Link
+                      href={`/patients/${data.patientId}`}
+                      className="underline decoration-dotted"
+                      style={{ color: "hsl(var(--ink-1))" }}
+                    >
+                      {fullName(data.patientFirstName, data.patientLastName)}
+                    </Link>
+                  ) : (
+                    /*
+                      Defensive: a row with neither subject set would
+                      indicate a CHECK-constraint violation upstream.
+                      Render a placeholder so the UI doesn't crash.
+                    */
+                    "Unknown subject"
+                  )}
                 </h1>
+                {data.channel === "in_app" && data.customerEmail && (
+                  <p
+                    className="text-xs mb-1"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                    data-testid="conv-detail-customer-email"
+                  >
+                    {data.customerEmail}
+                  </p>
+                )}
                 <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
                   Started {formatDateTime(data.createdAt)} · Last message{" "}
                   {formatDateTime(data.lastMessageAt)}
@@ -206,14 +245,38 @@ export function ConversationDetailPage({ id }: { id: string }) {
             onAfterSend={() => void refetch()}
           />
 
-          <ActionBar
-            patientId={data.patientId}
-            episodeId={data.episodeId}
-            onAfterAction={() => void refetch()}
-          />
+          {/*
+            ActionBar is patient-flow only — it fires SMS / email /
+            voice reminders against the conversation's patient_id +
+            episode_id. In-app threads have neither, so the bar is
+            hidden. CSRs use the in-app reply composer above for
+            outbound messages.
+          */}
+          {data.channel !== "in_app" && data.patientId && data.episodeId && (
+            <ActionBar
+              patientId={data.patientId}
+              episodeId={data.episodeId}
+              onAfterAction={() => void refetch()}
+            />
+          )}
         </div>
         <aside className="space-y-4">
-          <Patient360Panel patientId={data.patientId} />
+          {/*
+            Patient360Panel pulls patient timeline + episodes —
+            patient-flow only. For in-app threads we render a small
+            customer-context callout instead with a deep link to the
+            customer-360 page where the CSR can see saved device +
+            physician info + lifetime stats.
+          */}
+          {data.channel === "in_app" && data.customerId ? (
+            <InAppCustomerContextPanel
+              customerId={data.customerId}
+              displayName={data.customerDisplayName ?? null}
+              email={data.customerEmail ?? null}
+            />
+          ) : data.patientId ? (
+            <Patient360Panel patientId={data.patientId} />
+          ) : null}
         </aside>
       </div>
     </div>
@@ -794,6 +857,54 @@ function ActionBar({
           {feedback.text}
         </p>
       )}
+    </Card>
+  );
+}
+
+/**
+ * Customer-context sidebar shown in place of Patient360Panel for
+ * in-app threads. Keeps the right column populated with something
+ * useful (deep link to customer-360, contact crumbs) so an in-app
+ * conversation doesn't render with an empty rail.
+ */
+function InAppCustomerContextPanel({
+  customerId,
+  displayName,
+  email,
+}: {
+  customerId: string;
+  displayName: string | null;
+  email: string | null;
+}) {
+  return (
+    <Card>
+      <div style={{ padding: 16 }} data-testid="conv-detail-customer-panel">
+        <p
+          className="text-xs uppercase tracking-wider mb-2"
+          style={{ color: "hsl(var(--penn-gold-deep))" }}
+        >
+          Customer
+        </p>
+        <h3
+          className="text-base font-semibold mb-1"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
+          {displayName ?? email ?? "Shop customer"}
+        </h3>
+        {email && displayName && (
+          <p className="text-xs mb-3" style={{ color: "hsl(var(--ink-3))" }}>
+            {email}
+          </p>
+        )}
+        <Link
+          href={`/admin/shop/customers/${encodeURIComponent(customerId)}`}
+          className="text-xs underline decoration-dotted"
+          style={{ color: "hsl(var(--ink-1))" }}
+          data-testid="conv-detail-customer-360-link"
+        >
+          View full customer profile →
+        </Link>
+      </div>
     </Card>
   );
 }
