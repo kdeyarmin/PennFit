@@ -17,10 +17,8 @@
 
 import type { Pool } from "pg";
 
-import {
-  issueToken,
-  type AuthDeps,
-} from "./index";
+import { issueToken } from "./token";
+import type { AuthDeps } from "./http/types";
 import { renderPasswordResetEmail } from "./http/email-templates";
 
 /** Invite tokens are valid for 7 days. Long enough that an
