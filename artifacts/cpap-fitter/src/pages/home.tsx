@@ -28,17 +28,13 @@ export function Home() {
       {/* Hero */}
       <div className="text-center max-w-4xl mb-12 md:mb-16 animate-shimmer-in">
         <div className="flex justify-center mb-5">
-          <div className="inline-flex items-center gap-3">
-            <div className="hidden sm:block h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
-            <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              Penn Home Medical Supply · PennPaps.com
-            </span>
-            <div className="hidden sm:block h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
-          </div>
+          <span className="status-pill" data-testid="home-tech-pill">
+            On-device computer vision · HIPAA-aligned · Penn Home Medical Supply
+          </span>
         </div>
 
         <h1 className="text-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-5 md:mb-6 leading-[1.08] sm:leading-[1.05]">
-          <span className="text-gradient-brand">Your CPAP, made simple.</span>
+          <span className="text-gradient-tech">Your CPAP, made simple.</span>
           <br />
           <span className="text-foreground/90">Fit. Shop. Resupply.</span>
         </h1>
@@ -205,9 +201,9 @@ export function Home() {
           { v: "100%", l: "On-device face capture" },
           { v: "Direct", l: "From your local DME" },
         ].map(({ v, l }) => (
-          <div key={l} className="glass-panel rounded-xl px-5 py-4">
-            <div className="text-2xl md:text-3xl font-bold tracking-tight text-gradient-brand">{v}</div>
-            <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">{l}</div>
+          <div key={l} className="glass-card-tech rounded-xl px-5 py-4">
+            <div className="text-2xl md:text-3xl font-bold tracking-tight text-gradient-tech font-mono">{v}</div>
+            <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-[0.22em]">{l}</div>
           </div>
         ))}
       </div>
