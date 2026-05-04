@@ -28,6 +28,7 @@ import {
   ArrowLeft,
   Bell,
   CheckCircle2,
+  Link2,
   Loader2,
   Package,
   ShieldCheck,
@@ -47,11 +48,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
+import { useToast } from "@/hooks/use-toast";
 import { StarRating } from "@/components/star-rating";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
@@ -276,9 +279,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   if (state === "loading") {
     return (
       <PageShell>
-        <div className="flex items-center justify-center py-24 text-muted-foreground">
-          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Loading product…
-        </div>
+        <PdpSkeleton />
       </PageShell>
     );
   }
@@ -452,6 +453,42 @@ function ProductImageWithZoom({
   );
 }
 
+/**
+ * PdpSkeleton — reflows to the shape of a real product detail
+ * (square hero image on the left, title + tagline + price + CTA on
+ * the right). Used while the catalog + reviews are in flight.
+ *
+ * The previous loading state was a centered spinner; the skeleton
+ * keeps the page from looking empty above the fold and means the
+ * layout doesn't lurch when data lands.
+ */
+function PdpSkeleton() {
+  return (
+    <div
+      className="grid md:grid-cols-2 gap-8 md:gap-10 mt-2"
+      data-testid="pdp-skeleton"
+      role="status"
+      aria-label="Loading product"
+    >
+      <div>
+        <Skeleton className="aspect-square w-full rounded-2xl" />
+      </div>
+      <div className="space-y-4">
+        <Skeleton className="h-9 w-3/4" />
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+        <Skeleton className="h-10 w-32 mt-4" />
+        <div className="flex gap-3 pt-2">
+          <Skeleton className="h-12 flex-1 rounded-full" />
+          <Skeleton className="h-12 w-12 rounded-full" />
+        </div>
+      </div>
+      <span className="sr-only">Loading product…</span>
+    </div>
+  );
+}
+
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="container mx-auto px-4 md:px-6 py-10 md:py-14 max-w-5xl">
@@ -475,12 +512,58 @@ function Hero({
   previewMode: boolean;
 }) {
   const { addItem } = useCart();
+  const { toast } = useToast();
   const [justAdded, setJustAdded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [mode, setMode] = useState<"one_time" | "subscription">(
     product.recurringPrice ? "subscription" : "one_time",
   );
   const resolved = resolveProductImage(product.imageUrl);
+
+  // Share-by-link affordance. Tries the native Web Share sheet first
+  // (iOS Safari, Android Chrome — surfaces Messages, Mail, AirDrop,
+  // etc), falls back to clipboard copy with a toast confirmation.
+  // Both branches share the same canonical PDP URL — never the page
+  // URL, which can carry tracking query params like `?utm_…` we do
+  // NOT want to propagate when one shopper passes a link to another.
+  async function handleShare() {
+    if (typeof window === "undefined") return;
+    const basePath = (import.meta.env.BASE_URL || "").replace(/\/$/, "");
+    const canonicalBasePath = basePath === "/" ? "" : basePath;
+    const url = `${window.location.origin}${canonicalBasePath}/shop/p/${encodeURIComponent(product.id)}`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: product.name,
+          text: product.tagline ?? `${product.name} at PennPaps`,
+          url,
+        });
+        return;
+      } catch (err) {
+        // User cancelled the share sheet, or share failed silently.
+        // We don't surface an error toast for cancellation — fall
+        // through to clipboard copy only when the API is missing.
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        // Any other failure: fall through to clipboard.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: "Link copied",
+        description: "Product link copied to your clipboard.",
+      });
+    } catch {
+      toast({
+        title: "Couldn't copy link",
+        description:
+          "Your browser blocked clipboard access — long-press the address bar to copy the URL instead.",
+        variant: "destructive",
+      });
+    }
+  }
 
   // Desktop sticky CTA: when the primary Add-to-cart button scrolls
   // out of view, slide a thin bar down from the top with the same
@@ -632,9 +715,21 @@ function Hero({
             Bundle
           </Badge>
         )}
-        <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight">
-          {product.name}
-        </h1>
+        <div className="flex items-start gap-3">
+          <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight flex-1 min-w-0">
+            {product.name}
+          </h1>
+          <button
+            type="button"
+            onClick={handleShare}
+            className="shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-full border border-border/60 bg-white text-[hsl(var(--penn-navy))] hover:border-[hsl(var(--penn-gold))]/60 hover:bg-[hsl(var(--penn-gold))]/5 transition-colors"
+            aria-label={`Share ${product.name}`}
+            title="Share this product"
+            data-testid="pdp-share"
+          >
+            <Link2 className="w-4 h-4" />
+          </button>
+        </div>
         {product.tagline && (
           <p className="text-base text-muted-foreground mt-2">
             {product.tagline}
