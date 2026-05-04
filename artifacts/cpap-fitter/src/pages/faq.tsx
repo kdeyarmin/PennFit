@@ -491,8 +491,12 @@ export function Faq() {
   // Press "/" anywhere on the page to jump focus into the FAQ
   // search, mirroring the convention used by Slack, GitHub, Discord,
   // et al. The hook ignores the keypress when the user is already
-  // typing in another input.
-  useSearchShortcut({ ref: searchRef });
+  // typing in another input. Esc inside the input clears it and
+  // exits the search-results view in one keystroke.
+  useSearchShortcut({
+    ref: searchRef,
+    onClear: () => setQuery(""),
+  });
 
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">

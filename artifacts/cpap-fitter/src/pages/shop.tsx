@@ -30,7 +30,6 @@ import {
   Repeat,
   ShieldCheck,
   ShoppingCart,
-  Loader2,
   Info,
   RefreshCcw,
   WifiOff,
@@ -38,6 +37,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   DEFAULT_LOW_STOCK_THRESHOLD,
   fetchReviewAggregates,
@@ -162,16 +162,6 @@ export function Shop() {
   const retry = useCallback(() => {
     setAttempt((n) => n + 1);
   }, []);
-
-  // "/" anywhere on /shop jumps focus into the search input rendered
-  // by ShopFilterBar. The bar lives in a child component and doesn't
-  // expose a ref, so we resolve it by data-testid (already wired for
-  // tests). Disabled while the catalog is still loading to avoid
-  // grabbing a key event before the input exists.
-  useSearchShortcut({
-    selector: '[data-testid="shop-search-input"]',
-    disabled: loading,
-  });
 
   useEffect(() => {
     let active = true;
@@ -303,6 +293,19 @@ export function Shop() {
       window.history.replaceState(null, "", next);
     }
   }, [query]);
+
+  // "/" anywhere on /shop jumps focus into the search input rendered
+  // by ShopFilterBar. The bar lives in a child component and doesn't
+  // expose a ref, so we resolve it by data-testid (already wired for
+  // tests). Disabled while the catalog is still loading to avoid
+  // grabbing a key event before the input exists. Esc inside the
+  // input clears the query and blurs.
+  useSearchShortcut({
+    selector: '[data-testid="shop-search-input"]',
+    disabled: loading,
+    onClear: () => setQuery(""),
+  });
+
   const trimmedQuery = query.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     if (!data || trimmedQuery.length === 0) return [];
@@ -349,13 +352,7 @@ export function Shop() {
     <div className="container mx-auto px-4 md:px-6 py-12 md:py-16 max-w-6xl">
       <ShopHero />
       {loading ? (
-        <div
-          className="flex items-center justify-center py-24 text-muted-foreground"
-          data-testid="shop-loading"
-        >
-          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-          Loading PennPaps shop…
-        </div>
+        <ShopCatalogSkeleton />
       ) : unavailable ? (
         <ShopComingSoon message={unavailable} />
       ) : error ? (
@@ -938,6 +935,47 @@ function InsuranceFooter() {
           Pay with your HSA / FSA card at checkout.
         </span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * ShopCatalogSkeleton — renders 6 product-card-shaped placeholders
+ * during the initial catalog fetch. Replaces the previous centered
+ * spinner-with-text loader. The shape mirrors the real product card
+ * (square image, two text rows, a price + button row) so when the
+ * data lands the layout reflows by ~zero pixels — no jarring "loading
+ * shimmer to fully-rendered card" jump.
+ *
+ * Below `<ShopHero>` we don't render a fake filter bar — the hero
+ * already takes the eye, and a fake sort dropdown that does nothing
+ * is more confusing than reassuring. Just the cards.
+ */
+function ShopCatalogSkeleton() {
+  return (
+    <div
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-10"
+      data-testid="shop-loading"
+      role="status"
+      aria-label="Loading PennPaps shop"
+    >
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-2xl border border-border/60 bg-white overflow-hidden"
+        >
+          <Skeleton className="aspect-square w-full rounded-none" />
+          <div className="p-4 space-y-3">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+            <div className="flex items-center justify-between pt-2">
+              <Skeleton className="h-5 w-16" />
+              <Skeleton className="h-8 w-24 rounded-full" />
+            </div>
+          </div>
+        </div>
+      ))}
+      <span className="sr-only">Loading PennPaps shop…</span>
     </div>
   );
 }

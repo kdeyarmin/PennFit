@@ -78,6 +78,7 @@ import {
   formatMoneyCents,
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 
@@ -382,6 +383,26 @@ function ProfileSection({
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Field-by-field comparison against the original profile snapshot
+  // tells us whether the form has unsaved changes. We use trimmed
+  // values to mirror what would actually be persisted (so adding
+  // trailing whitespace to your name doesn't trigger the warning).
+  // `addr.line2` falls back to "" because the original profile
+  // stores nullable line2 as null and the input always returns "".
+  const initialAddr = profile.shippingAddress ?? null;
+  const dirty =
+    (displayName.trim() || null) !== (profile.displayName ?? null) ||
+    (addr.line1?.trim() ?? "") !== (initialAddr?.line1 ?? "") ||
+    (addr.line2?.trim() ?? "") !== (initialAddr?.line2 ?? "") ||
+    (addr.city?.trim() ?? "") !== (initialAddr?.city ?? "") ||
+    (addr.state?.trim().toUpperCase() ?? "") !== (initialAddr?.state ?? "") ||
+    (addr.postalCode?.trim() ?? "") !== (initialAddr?.postalCode ?? "");
+
+  // Surface the browser's native "unsaved changes" prompt when the
+  // user tries to close / reload the tab with edits in flight.
+  // Cleared automatically once `dirty` flips false (after save).
+  useUnsavedChangesWarning(dirty);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -547,6 +568,20 @@ function ProfileSection({
               data-testid="account-save-success"
             >
               <CheckCircle2 className="h-4 w-4" /> Saved
+            </span>
+          )}
+          {/* Visible cue when there are unsaved changes. Pairs with
+              the beforeunload prompt — the prompt only fires on tab
+              close, this hint reassures the user (or warns them)
+              while they're still on the page. Hidden during the
+              brief post-save flash so we don't show "Unsaved" right
+              next to "Saved". */}
+          {dirty && !(savedAt && Date.now() - savedAt < 4000) && (
+            <span
+              className="text-xs text-amber-700"
+              data-testid="account-profile-dirty"
+            >
+              Unsaved changes
             </span>
           )}
         </div>

@@ -597,12 +597,45 @@ export function ShopCart() {
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span
-                        className="px-3 text-sm tabular-nums min-w-[2ch] text-center"
+                      {/*
+                        Editable quantity input. The previous version
+                        was a silent <span>, which forced shoppers to
+                        click the +/− buttons N times to reach a
+                        non-trivial quantity (qty 12 = 11 clicks).
+                        Now the value is a typed input bracketed by
+                        the same +/− buttons. setQuantity already
+                        clamps to [0, 20] and integerizes mid-stroke
+                        fractional inputs, so the only thing this
+                        handler needs to do is parse the string.
+                        Empty input is treated as 1 on blur (the
+                        cart-line-removed semantic for qty 0 already
+                        belongs to the explicit Remove button).
+                      */}
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={it.quantity}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          // Allow empty mid-edit; default to 1 only
+                          // if the field is blurred while empty.
+                          if (raw === "") return;
+                          const n = parseInt(raw, 10);
+                          if (Number.isFinite(n)) {
+                            setQuantity(it.priceId, n);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (e.target.value === "") {
+                            setQuantity(it.priceId, 1);
+                          }
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        className="w-10 h-7 text-sm tabular-nums text-center bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-gold))]/40 rounded"
+                        aria-label={`Quantity of ${it.name}`}
                         data-testid={`cart-qty-${it.priceId}`}
-                      >
-                        {it.quantity}
-                      </span>
+                      />
                       <button
                         type="button"
                         onClick={() => setQuantity(it.priceId, it.quantity + 1)}

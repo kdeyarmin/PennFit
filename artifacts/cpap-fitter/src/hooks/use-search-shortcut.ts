@@ -22,15 +22,47 @@ interface Options {
   ref?: RefObject<HTMLInputElement | null>;
   selector?: string;
   disabled?: boolean;
+  /**
+   * Optional Esc-to-clear handler. When supplied, pressing Escape
+   * **while focus is in the search input** clears the query and
+   * blurs the input. Pressing Escape elsewhere on the page is left
+   * alone (other elements own that key — modals, popovers, etc.).
+   * Caller passes the same setter that drives the input's value.
+   */
+  onClear?: () => void;
 }
 
-export function useSearchShortcut({ ref, selector, disabled }: Options): void {
+export function useSearchShortcut({
+  ref,
+  selector,
+  disabled,
+  onClear,
+}: Options): void {
   useEffect(() => {
     if (disabled) return;
+    function resolveInput(): HTMLInputElement | null {
+      return (
+        ref?.current ??
+        (selector
+          ? (document.querySelector(selector) as HTMLInputElement | null)
+          : null)
+      );
+    }
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "/") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
+      const input = resolveInput();
+
+      if (e.key === "Escape" && onClear && input && t === input) {
+        // Only fire when the input itself is focused — Escape
+        // anywhere else on the page belongs to dialogs / popovers.
+        e.preventDefault();
+        onClear();
+        input.blur();
+        return;
+      }
+
+      if (e.key !== "/") return;
       if (
         t &&
         (t.tagName === "INPUT" ||
@@ -40,11 +72,6 @@ export function useSearchShortcut({ ref, selector, disabled }: Options): void {
       ) {
         return;
       }
-      const input =
-        ref?.current ??
-        (selector
-          ? (document.querySelector(selector) as HTMLInputElement | null)
-          : null);
       if (!input) return;
       e.preventDefault();
       input.focus();
@@ -52,5 +79,5 @@ export function useSearchShortcut({ ref, selector, disabled }: Options): void {
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [ref, selector, disabled]);
+  }, [ref, selector, disabled, onClear]);
 }
