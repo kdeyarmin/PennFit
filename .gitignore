@@ -3,6 +3,7 @@
 # compiled output
 dist
 dist-profile
+coverage
 tmp
 out-tsc
 *.tsbuildinfo
