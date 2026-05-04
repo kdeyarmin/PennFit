@@ -2,7 +2,8 @@
 
 Privacy-first CPAP fitting, ordering, and resupply automation for
 Penn Home Medical Supply. See [`replit.md`](./replit.md) for the
-full product and architecture overview.
+full product and architecture overview, and [`CLAUDE.md`](./CLAUDE.md)
+for guidance aimed at coding agents (Claude Code and similar).
 
 ## Git source of truth
 
