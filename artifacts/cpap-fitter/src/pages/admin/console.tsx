@@ -38,6 +38,7 @@ import { RulesPage } from "@/pages/admin/rules";
 import { AuditPage } from "@/pages/admin/audit";
 import { AdminShopReviewsPage } from "@/pages/admin/admin-shop-reviews";
 import { AdminShopReturnsPage } from "@/pages/admin/admin-shop-returns";
+import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
 import { AdminMacrosPage } from "@/pages/admin/admin-macros";
 import { AdminShopSubscriptionsPage } from "@/pages/admin/admin-shop-subscriptions";
 import { AdminTeamPage } from "@/pages/admin/admin-team";
@@ -134,6 +135,7 @@ function AdminConsole() {
           {(params) => <AdminCustomerDetailPage userId={params.userId} />}
         </Route>
         <Route path="/admin/shop/returns" component={AdminShopReturnsPage} />
+        <Route path="/admin/followups" component={AdminFollowupsPage} />
         <Route path="/admin/macros" component={AdminMacrosPage} />
         <Route
           path="/admin/shop/subscriptions"

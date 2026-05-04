@@ -3,6 +3,7 @@ import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopCustomersAdminRouter from "./admin/customers.js";
 import shopCustomerNotesRouter from "./admin/customer-notes.js";
 import shopCustomerFollowupsRouter from "./admin/customer-followups.js";
+import followupsListRouter from "./admin/followups-list.js";
 import shopOrderNotesRouter from "./admin/order-notes.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
@@ -145,6 +146,10 @@ router.use(shopCustomerNotesRouter);
 // reminders per shop customer (Phase 17). Same mount-after-detail
 // rationale as the notes router.
 router.use(shopCustomerFollowupsRouter);
+// /admin/followups — cross-customer daily queue of open follow-ups
+// (Phase 18). Mounted alongside the per-customer router so both
+// surfaces stay co-located.
+router.use(followupsListRouter);
 // /admin/shop/returns/* — comfort-guarantee swap / refund / RMA
 // queue. Linear lifecycle (requested → approved → shipped_back →
 // received → refunded|replaced|closed) with strict from-state
