@@ -77,11 +77,10 @@ export function AdminShopBackInStockPage() {
           Back-in-stock queue
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Patients who asked to be notified when an out-of-stock SKU
-          comes back. Auto-fanout fires when an admin saves the
-          inventory editor and the stock count goes from 0 to a
-          positive number — use the button below if you need to push
-          an already-restocked SKU now.
+          Patients who asked to be notified when an out-of-stock SKU comes back.
+          Auto-fanout fires when an admin saves the inventory editor and the
+          stock count goes from 0 to a positive number — use the button below if
+          you need to push an already-restocked SKU now.
         </p>
       </header>
 
@@ -112,9 +111,15 @@ export function AdminShopBackInStockPage() {
                 <thead className="bg-secondary/40 text-left">
                   <tr>
                     <th className="px-4 py-3 font-medium">Product</th>
-                    <th className="px-4 py-3 font-medium text-right">Pending</th>
-                    <th className="px-4 py-3 font-medium text-right">Notified</th>
-                    <th className="px-4 py-3 font-medium text-right">Delivered</th>
+                    <th className="px-4 py-3 font-medium text-right">
+                      Pending
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right">
+                      Notified
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right">
+                      Delivered
+                    </th>
                     <th className="px-4 py-3 font-medium">Oldest pending</th>
                     <th className="px-4 py-3 font-medium">Last fanout</th>
                     <th className="px-4 py-3 font-medium text-right">Action</th>
@@ -130,9 +135,7 @@ export function AdminShopBackInStockPage() {
                         dispatchMutation.isPending &&
                         dispatchMutation.variables === row.productId
                       }
-                      onDispatch={() =>
-                        dispatchMutation.mutate(row.productId)
-                      }
+                      onDispatch={() => dispatchMutation.mutate(row.productId)}
                     />
                   ))}
                 </tbody>
@@ -144,8 +147,8 @@ export function AdminShopBackInStockPage() {
               className="mt-3 text-xs text-muted-foreground"
               data-testid="back-in-stock-no-stripe"
             >
-              Stripe is not configured in this environment, so product
-              names show as raw ids and the dispatch button is disabled.
+              Stripe is not configured in this environment, so product names
+              show as raw ids and the dispatch button is disabled.
             </p>
           )}
         </>
@@ -289,8 +292,8 @@ function EmptyState() {
         No notify-me signups yet.
       </h2>
       <p className="text-sm text-muted-foreground mt-1">
-        Patients can sign up from any product page once it goes out
-        of stock. Their email will appear here automatically.
+        Patients can sign up from any product page once it goes out of stock.
+        Their email will appear here automatically.
       </p>
     </div>
   );

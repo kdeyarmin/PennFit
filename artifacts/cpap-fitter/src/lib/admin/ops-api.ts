@@ -41,11 +41,15 @@ export interface DispatcherResult {
 }
 
 export async function runAbandonedCartDispatcher(): Promise<DispatcherResult> {
-  return await postDispatcher("/resupply-api/admin/shop/abandoned-carts/send-due");
+  return await postDispatcher(
+    "/resupply-api/admin/shop/abandoned-carts/send-due",
+  );
 }
 
 export async function runReviewRequestDispatcher(): Promise<DispatcherResult> {
-  return await postDispatcher("/resupply-api/admin/shop/review-requests/send-due");
+  return await postDispatcher(
+    "/resupply-api/admin/shop/review-requests/send-due",
+  );
 }
 
 async function postDispatcher(url: string): Promise<DispatcherResult> {
@@ -55,10 +59,13 @@ async function postDispatcher(url: string): Promise<DispatcherResult> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Dispatcher failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Dispatcher failed (${res.status})`,
+    );
   }
   return (await res.json()) as DispatcherResult;
 }

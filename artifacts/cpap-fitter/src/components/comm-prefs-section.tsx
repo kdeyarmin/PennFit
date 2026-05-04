@@ -86,8 +86,8 @@ export function CommPrefsSection() {
         )}
       </div>
       <p className="text-sm text-muted-foreground">
-        Choose what you&apos;d like to hear from us. Order receipts and
-        shipping notifications always send — those aren&apos;t marketing.
+        Choose what you&apos;d like to hear from us. Order receipts and shipping
+        notifications always send — those aren&apos;t marketing.
       </p>
 
       <div className="space-y-2">
@@ -164,9 +164,7 @@ function Toggle({
       <div className="mt-0.5">
         <span
           className={`inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-            enabled
-              ? "bg-[hsl(var(--penn-navy))]"
-              : "bg-slate-300"
+            enabled ? "bg-[hsl(var(--penn-navy))]" : "bg-slate-300"
           }`}
         >
           <span

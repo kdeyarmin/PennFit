@@ -34,7 +34,12 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     }
     const hash = hashToken(parsed.data.token);
     if (!hash) {
-      authError(res, 410, "invalid_input", "This verification link is invalid or has expired.");
+      authError(
+        res,
+        410,
+        "invalid_input",
+        "This verification link is invalid or has expired.",
+      );
       return;
     }
 
@@ -44,7 +49,12 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       at: t,
     });
     if (!consumed || consumed.purpose !== "signup_verify") {
-      authError(res, 410, "invalid_input", "This verification link is invalid or has expired.");
+      authError(
+        res,
+        410,
+        "invalid_input",
+        "This verification link is invalid or has expired.",
+      );
       return;
     }
 

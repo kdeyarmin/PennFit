@@ -52,8 +52,8 @@ export function ReorderSuggestionsSection() {
         <h2 className="font-semibold">Time to reorder?</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Based on your purchase history, these supplies are due (or about
-        to be) for replacement.
+        Based on your purchase history, these supplies are due (or about to be)
+        for replacement.
       </p>
       <ul className="space-y-3">
         {items.map((s) => (
@@ -121,14 +121,16 @@ function ReorderCard({ item }: { item: ReorderSuggestion }) {
               }`}
             >
               {overdue ? <AlertCircle className="w-3 h-3" /> : null}
-              {overdue ? `${item.ageDays - item.cadenceDays} day${
-                item.ageDays - item.cadenceDays === 1 ? "" : "s"
-              } overdue` : `Due ${dueOn}`}
+              {overdue
+                ? `${item.ageDays - item.cadenceDays} day${
+                    item.ageDays - item.cadenceDays === 1 ? "" : "s"
+                  } overdue`
+                : `Due ${dueOn}`}
             </span>
           </div>
           <div className="text-xs text-muted-foreground">
-            Last ordered {lastPaid} · suggested cadence every{" "}
-            {item.cadenceDays} days
+            Last ordered {lastPaid} · suggested cadence every {item.cadenceDays}{" "}
+            days
           </div>
         </div>
       </div>

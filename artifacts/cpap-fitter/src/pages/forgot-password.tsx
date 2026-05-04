@@ -18,10 +18,7 @@ export function ForgotPasswordPage() {
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    forgot.mutate(
-      { email: email.trim() },
-      { onSettled: () => setDone(true) },
-    );
+    forgot.mutate({ email: email.trim() }, { onSettled: () => setDone(true) });
   }
 
   return (
@@ -36,8 +33,8 @@ export function ForgotPasswordPage() {
               the password. The link expires in one hour.
             </p>
             <p className="text-xs text-muted-foreground">
-              Didn't get it? Check your spam folder, or try again with the
-              email you signed up with.
+              Didn't get it? Check your spam folder, or try again with the email
+              you signed up with.
             </p>
             <Link
               href={`${basePath}/sign-in`}
@@ -49,8 +46,7 @@ export function ForgotPasswordPage() {
         ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <p className="text-sm">
-              Enter your email and we'll send you a link to set a new
-              password.
+              Enter your email and we'll send you a link to set a new password.
             </p>
 
             <label className="block text-sm">

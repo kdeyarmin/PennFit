@@ -10,7 +10,11 @@ import {
 describe("parseTwilioFrame — happy paths", () => {
   it("parses a 'connected' handshake frame", () => {
     const frame = parseTwilioFrame(
-      JSON.stringify({ event: "connected", protocol: "Call", version: "1.0.0" }),
+      JSON.stringify({
+        event: "connected",
+        protocol: "Call",
+        version: "1.0.0",
+      }),
     );
     expect(frame?.event).toBe("connected");
   });
@@ -27,7 +31,11 @@ describe("parseTwilioFrame — happy paths", () => {
           customParameters: {
             conversationId: "11111111-1111-1111-1111-111111111111",
           },
-          mediaFormat: { encoding: "audio/x-mulaw", sampleRate: 8000, channels: 1 },
+          mediaFormat: {
+            encoding: "audio/x-mulaw",
+            sampleRate: 8000,
+            channels: 1,
+          },
         },
       }),
     );

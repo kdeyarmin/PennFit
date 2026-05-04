@@ -80,7 +80,6 @@ function YourOrdersNavLink() {
   );
 }
 
-
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -110,9 +109,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-50 w-full">
         <div className="glass-panel border-x-0 border-t-0 border-b border-border/40">
           <div className="container mx-auto flex h-16 md:h-20 items-center justify-between px-4 md:px-6">
-            <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
+            <Link
+              href="/"
+              className="flex items-center gap-3 transition-opacity hover:opacity-80"
+            >
               <div className="relative">
-                <div className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-cyan)/0.18)] via-[hsl(var(--penn-navy)/0.12)] to-[hsl(var(--penn-gold)/0.22)] blur-md" aria-hidden="true" />
+                <div
+                  className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-cyan)/0.18)] via-[hsl(var(--penn-navy)/0.12)] to-[hsl(var(--penn-gold)/0.22)] blur-md"
+                  aria-hidden="true"
+                />
                 <img
                   src={pennLogo}
                   alt="PennPaps"
@@ -120,8 +125,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 />
               </div>
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
-                <span className="font-semibold tracking-tight text-base text-primary">PennPaps<span className="text-muted-foreground/70 font-normal">.com</span></span>
-                <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">by Penn Home Medical Supply</span>
+                <span className="font-semibold tracking-tight text-base text-primary">
+                  PennPaps
+                  <span className="text-muted-foreground/70 font-normal">
+                    .com
+                  </span>
+                </span>
+                <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  by Penn Home Medical Supply
+                </span>
               </div>
             </Link>
 
@@ -172,12 +184,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => setMobileOpen((v) => !v)}
                 className="inline-flex items-center justify-center h-10 w-10 rounded-lg glass-panel border-0 text-primary hover:opacity-80 transition-opacity"
-                aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+                aria-label={
+                  mobileOpen ? "Close navigation menu" : "Open navigation menu"
+                }
                 aria-expanded={mobileOpen}
                 aria-controls="mobile-nav-panel"
                 data-testid="button-mobile-menu"
               >
-                {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                {mobileOpen ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <Menu className="h-5 w-5" />
+                )}
               </button>
             </div>
           </div>
@@ -260,7 +278,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <div className="md:col-span-5">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="relative">
-                    <div className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-navy)/0.10)] to-[hsl(var(--penn-gold)/0.20)] blur-md" aria-hidden="true" />
+                    <div
+                      className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-navy)/0.10)] to-[hsl(var(--penn-gold)/0.20)] blur-md"
+                      aria-hidden="true"
+                    />
                     <img
                       src={pennLogo}
                       alt="Penn Home Medical Supply"
@@ -277,15 +298,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
-                  <span className="font-semibold text-foreground">PennPaps.com</span> is the
-                  online CPAP storefront from{" "}
-                  <span className="font-semibold text-foreground">Penn Home Medical Supply</span>{" "}
+                  <span className="font-semibold text-foreground">
+                    PennPaps.com
+                  </span>{" "}
+                  is the online CPAP storefront from{" "}
+                  <span className="font-semibold text-foreground">
+                    Penn Home Medical Supply
+                  </span>{" "}
                   — fit a new mask, order supplies direct, and stay on a
                   resupply schedule with your local DME team.
                 </p>
                 <div className="mt-4 inline-flex items-center gap-2">
                   <span className="status-pill">
-                    <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                    <ShieldCheck
+                      className="h-3.5 w-3.5 text-primary"
+                      aria-hidden="true"
+                    />
                     Secure checkout · private on-device fitting
                   </span>
                 </div>
@@ -297,14 +325,70 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   Patient Services
                 </div>
                 <ul className="space-y-2 text-sm">
-                  <li><Link href="/how-it-works" className="text-muted-foreground hover:text-primary transition-colors">Virtual Mask Fitter</Link></li>
-                  <li><Link href="/masks" className="text-muted-foreground hover:text-primary transition-colors">Mask Catalog</Link></li>
-                  <li><Link href="/shop" className="text-muted-foreground hover:text-primary transition-colors">Shop Supplies</Link></li>
-                  <li><Link href="/shop/wishlist" className="text-muted-foreground hover:text-primary transition-colors">Saved for later</Link></li>
-                  <li><Link href="/insurance" className="text-muted-foreground hover:text-primary transition-colors">How insurance works</Link></li>
-                  <li><Link href="/account" className="text-muted-foreground hover:text-primary transition-colors">My Account</Link></li>
-                  <li><Link href="/learn" className="text-muted-foreground hover:text-primary transition-colors">Learn</Link></li>
-                  <li><Link href="/faq" className="text-muted-foreground hover:text-primary transition-colors">FAQ</Link></li>
+                  <li>
+                    <Link
+                      href="/how-it-works"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Virtual Mask Fitter
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/masks"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Mask Catalog
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/shop"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Shop Supplies
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/shop/wishlist"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Saved for later
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/insurance"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      How insurance works
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/account"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      My Account
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/learn"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Learn
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/faq"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      FAQ
+                    </Link>
+                  </li>
                 </ul>
               </div>
 
@@ -314,13 +398,34 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   Legal & Privacy
                 </div>
                 <ul className="space-y-2 text-sm">
-                  <li><Link href="/privacy" className="text-muted-foreground hover:text-primary transition-colors">Privacy Policy</Link></li>
-                  <li><Link href="/terms" className="text-muted-foreground hover:text-primary transition-colors">Terms of Service</Link></li>
+                  <li>
+                    <Link
+                      href="/privacy"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Privacy Policy
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/terms"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Terms of Service
+                    </Link>
+                  </li>
                   {/*
                     /consent is the in-flow data-use consent screen for camera /
                     biometric processing, distinct from the Terms of Service.
                   */}
-                  <li><Link href="/consent" className="text-muted-foreground hover:text-primary transition-colors">Data Use & Consent</Link></li>
+                  <li>
+                    <Link
+                      href="/consent"
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      Data Use & Consent
+                    </Link>
+                  </li>
                 </ul>
               </div>
             </div>
@@ -328,11 +433,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Bottom bar: copyright + parent-company callout + staff link */}
             <div className="mt-10 pt-6 border-t border-border/40 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
               <div>
-                © {new Date().getFullYear()} Penn Home Medical Supply. All rights reserved.
+                © {new Date().getFullYear()} Penn Home Medical Supply. All
+                rights reserved.
               </div>
               <div className="text-center md:text-right">
-                Penn Home Medical Supply is a licensed durable medical equipment provider.
-                {" "}PennPaps.com is its online patient-facing service.
+                Penn Home Medical Supply is a licensed durable medical equipment
+                provider. PennPaps.com is its online patient-facing service.
               </div>
             </div>
             {/*

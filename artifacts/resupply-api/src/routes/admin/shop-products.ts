@@ -59,7 +59,9 @@ const patchBodySchema = z.object({
 const patchThresholdBodySchema = z.object({
   lowStockThreshold: z
     .union([z.number().int().min(0).max(1000), z.null()])
-    .describe("Integer ≥0, or null to clear the threshold (storefront uses default of 5)."),
+    .describe(
+      "Integer ≥0, or null to clear the threshold (storefront uses default of 5).",
+    ),
 });
 
 router.patch(
@@ -434,282 +436,272 @@ const createBodySchema = z.object({
     .nullish(),
   stockCount: z.number().int().min(0).max(1_000_000).nullish(),
   lowStockThreshold: z.number().int().min(0).max(1000).nullish(),
-  bundleContents: z
-    .array(z.string().trim().min(1).max(250))
-    .max(20)
-    .nullish(),
+  bundleContents: z.array(z.string().trim().min(1).max(250)).max(20).nullish(),
   // Recurring (subscription) price. Both fields must be present
   // together — see cross-field check below.
   recurringInterval: z.enum(["day", "week", "month", "year"]).nullish(),
   recurringIntervalCount: z.number().int().min(1).max(12).nullish(),
 });
 
-router.post(
-  "/admin/shop/products",
-  requireAdmin,
-  async (req, res) => {
-    const parsed = createBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "invalid_body",
-        issues: parsed.error.issues.map((i) => ({
-          path: i.path.join("."),
-          message: i.message,
-        })),
-      });
-      return;
-    }
-    const input = parsed.data;
+router.post("/admin/shop/products", requireAdmin, async (req, res) => {
+  const parsed = createBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "invalid_body",
+      issues: parsed.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+      })),
+    });
+    return;
+  }
+  const input = parsed.data;
 
-    // Cross-field: bundleContents only valid when category=bundle.
-    // The storefront's bundle-card layout reads metadata.bundle_contents
-    // directly; setting it on a non-bundle SKU would render the
-    // bullet list under a non-bundle product card.
-    if (
-      input.bundleContents &&
-      input.bundleContents.length > 0 &&
-      input.category !== "bundle"
-    ) {
-      res.status(400).json({
-        error: "invalid_body",
-        issues: [
-          {
-            path: "bundleContents",
-            message:
-              "bundleContents is only allowed when category is 'bundle'",
-          },
-        ],
-      });
-      return;
-    }
+  // Cross-field: bundleContents only valid when category=bundle.
+  // The storefront's bundle-card layout reads metadata.bundle_contents
+  // directly; setting it on a non-bundle SKU would render the
+  // bullet list under a non-bundle product card.
+  if (
+    input.bundleContents &&
+    input.bundleContents.length > 0 &&
+    input.category !== "bundle"
+  ) {
+    res.status(400).json({
+      error: "invalid_body",
+      issues: [
+        {
+          path: "bundleContents",
+          message: "bundleContents is only allowed when category is 'bundle'",
+        },
+      ],
+    });
+    return;
+  }
 
-    // Cross-field: recurring price needs both interval + intervalCount.
-    // Either both present or both absent.
-    const wantsRecurring = !!(
-      input.recurringInterval || input.recurringIntervalCount
+  // Cross-field: recurring price needs both interval + intervalCount.
+  // Either both present or both absent.
+  const wantsRecurring = !!(
+    input.recurringInterval || input.recurringIntervalCount
+  );
+  if (
+    wantsRecurring &&
+    !(input.recurringInterval && input.recurringIntervalCount)
+  ) {
+    res.status(400).json({
+      error: "invalid_body",
+      issues: [
+        {
+          path: "recurringInterval",
+          message:
+            "recurringInterval and recurringIntervalCount must both be provided",
+        },
+      ],
+    });
+    return;
+  }
+
+  const config = readStripeConfigOrNull();
+  if (!config) {
+    res.status(503).json({ error: "stripe_not_configured" });
+    return;
+  }
+  const stripe = getStripeClient(config);
+
+  // SKU collision guard. Search Stripe for an active product
+  // already carrying this `metadata.shop_sku`. The SKU regex
+  // restricts inputs to [a-z0-9-]+, so safe to interpolate
+  // into the Stripe search query string.
+  let existingBySku;
+  try {
+    existingBySku = await stripe.products.search({
+      query: `metadata['shop_sku']:'${input.sku}' AND active:'true'`,
+      limit: 1,
+    });
+  } catch (err) {
+    const status =
+      typeof (err as { statusCode?: number })?.statusCode === "number"
+        ? (err as { statusCode: number }).statusCode
+        : 502;
+    req.log?.warn?.(
+      {
+        sku: input.sku,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "shop/admin/products: stripe search failed",
     );
-    if (
-      wantsRecurring &&
-      !(input.recurringInterval && input.recurringIntervalCount)
-    ) {
-      res.status(400).json({
-        error: "invalid_body",
-        issues: [
-          {
-            path: "recurringInterval",
-            message:
-              "recurringInterval and recurringIntervalCount must both be provided",
-          },
-        ],
-      });
-      return;
-    }
+    res.status(status >= 400 && status < 600 ? status : 502).json({
+      error: "stripe_search_failed",
+    });
+    return;
+  }
+  if (existingBySku.data[0]) {
+    res.status(409).json({
+      error: "sku_already_exists",
+      productId: existingBySku.data[0].id,
+    });
+    return;
+  }
 
-    const config = readStripeConfigOrNull();
-    if (!config) {
-      res.status(503).json({ error: "stripe_not_configured" });
-      return;
-    }
-    const stripe = getStripeClient(config);
+  // Build metadata. Mirrors seed-stripe-products.ts so a product
+  // created here is byte-equivalent to one seeded from the script.
+  const metadata: Record<string, string> = {
+    shop_sku: input.sku,
+    category: input.category,
+  };
+  if (input.tagline) metadata.tagline = input.tagline;
+  if (input.replacementHint) metadata.replacement_hint = input.replacementHint;
+  if (input.manufacturer) metadata.manufacturer = input.manufacturer;
+  if (input.modelNumber) metadata.model_number = input.modelNumber;
+  if (input.stockCount != null) metadata.stock_count = String(input.stockCount);
+  if (input.lowStockThreshold != null)
+    metadata.low_stock_threshold = String(input.lowStockThreshold);
+  if (input.bundleContents && input.bundleContents.length > 0) {
+    metadata.bundle = "true";
+    // JSON-encode for robust round-tripping (Stripe metadata cap
+    // is 500 chars per value; bundle contents are short bullets).
+    metadata.bundle_contents = JSON.stringify(input.bundleContents);
+  }
 
-    // SKU collision guard. Search Stripe for an active product
-    // already carrying this `metadata.shop_sku`. The SKU regex
-    // restricts inputs to [a-z0-9-]+, so safe to interpolate
-    // into the Stripe search query string.
-    let existingBySku;
-    try {
-      existingBySku = await stripe.products.search({
-        query: `metadata['shop_sku']:'${input.sku}' AND active:'true'`,
-        limit: 1,
-      });
-    } catch (err) {
-      const status =
-        typeof (err as { statusCode?: number })?.statusCode === "number"
-          ? (err as { statusCode: number }).statusCode
-          : 502;
-      req.log?.warn?.(
-        {
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "shop/admin/products: stripe search failed",
-      );
-      res.status(status >= 400 && status < 600 ? status : 502).json({
-        error: "stripe_search_failed",
-      });
-      return;
-    }
-    if (existingBySku.data[0]) {
-      res.status(409).json({
-        error: "sku_already_exists",
-        productId: existingBySku.data[0].id,
-      });
-      return;
-    }
+  const createPayload: Stripe.ProductCreateParams = {
+    name: input.name,
+    description: input.description,
+    metadata,
+  };
+  if (input.imageUrl) {
+    createPayload.images = [input.imageUrl];
+  }
 
-    // Build metadata. Mirrors seed-stripe-products.ts so a product
-    // created here is byte-equivalent to one seeded from the script.
-    const metadata: Record<string, string> = {
-      shop_sku: input.sku,
-      category: input.category,
-    };
-    if (input.tagline) metadata.tagline = input.tagline;
-    if (input.replacementHint)
-      metadata.replacement_hint = input.replacementHint;
-    if (input.manufacturer) metadata.manufacturer = input.manufacturer;
-    if (input.modelNumber) metadata.model_number = input.modelNumber;
-    if (input.stockCount != null)
-      metadata.stock_count = String(input.stockCount);
-    if (input.lowStockThreshold != null)
-      metadata.low_stock_threshold = String(input.lowStockThreshold);
-    if (input.bundleContents && input.bundleContents.length > 0) {
-      metadata.bundle = "true";
-      // JSON-encode for robust round-tripping (Stripe metadata cap
-      // is 500 chars per value; bundle contents are short bullets).
-      metadata.bundle_contents = JSON.stringify(input.bundleContents);
-    }
+  let product: { id: string };
+  try {
+    product = await stripe.products.create(createPayload);
+  } catch (err) {
+    const status =
+      typeof (err as { statusCode?: number })?.statusCode === "number"
+        ? (err as { statusCode: number }).statusCode
+        : 502;
+    req.log?.warn?.(
+      {
+        sku: input.sku,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "shop/admin/products: stripe create product failed",
+    );
+    res.status(status >= 400 && status < 600 ? status : 502).json({
+      error: "stripe_create_failed",
+    });
+    return;
+  }
 
-    const createPayload: Stripe.ProductCreateParams = {
-      name: input.name,
-      description: input.description,
-      metadata,
-    };
-    if (input.imageUrl) {
-      createPayload.images = [input.imageUrl];
-    }
-
-    let product: { id: string };
-    try {
-      product = await stripe.products.create(createPayload);
-    } catch (err) {
-      const status =
-        typeof (err as { statusCode?: number })?.statusCode === "number"
-          ? (err as { statusCode: number }).statusCode
-          : 502;
-      req.log?.warn?.(
-        {
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "shop/admin/products: stripe create product failed",
-      );
-      res.status(status >= 400 && status < 600 ? status : 502).json({
-        error: "stripe_create_failed",
-      });
-      return;
-    }
-
-    // Create one-time price.
-    let price: { id: string };
-    try {
-      price = await stripe.prices.create({
-        product: product.id,
-        unit_amount: input.unitAmountCents,
-        currency: "usd",
-      });
-    } catch (err) {
-      const status =
-        typeof (err as { statusCode?: number })?.statusCode === "number"
-          ? (err as { statusCode: number }).statusCode
-          : 502;
-      req.log?.warn?.(
-        {
-          productId: product.id,
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "shop/admin/products: stripe create price failed (product orphaned)",
-      );
-      res.status(status >= 400 && status < 600 ? status : 502).json({
-        error: "stripe_price_create_failed",
-        productId: product.id,
-      });
-      return;
-    }
-
-    // Optional recurring (subscription) price. The storefront reads
-    // it via projectProduct's `recurringPrice` field. We do NOT set
-    // it as default_price — default stays the one-time price so a
-    // plain "Buy now" still works. Failure here is non-fatal: the
-    // operator can add the recurring price via the Stripe Dashboard.
-    let recurringPriceId: string | null = null;
-    if (input.recurringInterval && input.recurringIntervalCount) {
-      try {
-        const recurring = await stripe.prices.create({
-          product: product.id,
-          unit_amount: input.unitAmountCents,
-          currency: "usd",
-          recurring: {
-            interval: input.recurringInterval,
-            interval_count: input.recurringIntervalCount,
-          },
-        });
-        recurringPriceId = recurring.id;
-      } catch (err) {
-        req.log?.warn?.(
-          {
-            productId: product.id,
-            sku: input.sku,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          "shop/admin/products: recurring price create failed (one-time price still set)",
-        );
-        // Continue — the product is usable as a one-time SKU.
-      }
-    }
-
-    // Set default_price + re-retrieve with expand so the projection
-    // pipeline below has the same shape /shop/products consumes.
-    let updated;
-    try {
-      updated = await stripe.products.update(product.id, {
-        default_price: price.id,
-        expand: ["default_price"],
-      });
-    } catch (err) {
-      const status =
-        typeof (err as { statusCode?: number })?.statusCode === "number"
-          ? (err as { statusCode: number }).statusCode
-          : 502;
-      req.log?.warn?.(
-        {
-          productId: product.id,
-          sku: input.sku,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "shop/admin/products: stripe set default_price failed",
-      );
-      res.status(status >= 400 && status < 600 ? status : 502).json({
-        error: "stripe_set_default_price_failed",
-        productId: product.id,
-      });
-      return;
-    }
-
-    const projected: ShopProductView | null = projectProduct(updated);
-    if (!projected) {
-      // Product + price exist in Stripe but our projection gate
-      // rejects (most likely missing/invalid metadata.category).
-      // Returning 422 with the productId lets the admin UI offer a
-      // "fix in Stripe Dashboard" link rather than a generic 500.
-      res.status(422).json({
-        error: "unprojectable_product",
-        productId: product.id,
-      });
-      return;
-    }
-
-    req.log?.info?.(
+  // Create one-time price.
+  let price: { id: string };
+  try {
+    price = await stripe.prices.create({
+      product: product.id,
+      unit_amount: input.unitAmountCents,
+      currency: "usd",
+    });
+  } catch (err) {
+    const status =
+      typeof (err as { statusCode?: number })?.statusCode === "number"
+        ? (err as { statusCode: number }).statusCode
+        : 502;
+    req.log?.warn?.(
       {
         productId: product.id,
         sku: input.sku,
-        unitAmountCents: input.unitAmountCents,
-        hasRecurring: !!recurringPriceId,
+        err: err instanceof Error ? err.message : String(err),
       },
-      "shop/admin/products: product created",
+      "shop/admin/products: stripe create price failed (product orphaned)",
     );
-    res.status(201).json({ product: projected });
-  },
-);
+    res.status(status >= 400 && status < 600 ? status : 502).json({
+      error: "stripe_price_create_failed",
+      productId: product.id,
+    });
+    return;
+  }
+
+  // Optional recurring (subscription) price. The storefront reads
+  // it via projectProduct's `recurringPrice` field. We do NOT set
+  // it as default_price — default stays the one-time price so a
+  // plain "Buy now" still works. Failure here is non-fatal: the
+  // operator can add the recurring price via the Stripe Dashboard.
+  let recurringPriceId: string | null = null;
+  if (input.recurringInterval && input.recurringIntervalCount) {
+    try {
+      const recurring = await stripe.prices.create({
+        product: product.id,
+        unit_amount: input.unitAmountCents,
+        currency: "usd",
+        recurring: {
+          interval: input.recurringInterval,
+          interval_count: input.recurringIntervalCount,
+        },
+      });
+      recurringPriceId = recurring.id;
+    } catch (err) {
+      req.log?.warn?.(
+        {
+          productId: product.id,
+          sku: input.sku,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "shop/admin/products: recurring price create failed (one-time price still set)",
+      );
+      // Continue — the product is usable as a one-time SKU.
+    }
+  }
+
+  // Set default_price + re-retrieve with expand so the projection
+  // pipeline below has the same shape /shop/products consumes.
+  let updated;
+  try {
+    updated = await stripe.products.update(product.id, {
+      default_price: price.id,
+      expand: ["default_price"],
+    });
+  } catch (err) {
+    const status =
+      typeof (err as { statusCode?: number })?.statusCode === "number"
+        ? (err as { statusCode: number }).statusCode
+        : 502;
+    req.log?.warn?.(
+      {
+        productId: product.id,
+        sku: input.sku,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "shop/admin/products: stripe set default_price failed",
+    );
+    res.status(status >= 400 && status < 600 ? status : 502).json({
+      error: "stripe_set_default_price_failed",
+      productId: product.id,
+    });
+    return;
+  }
+
+  const projected: ShopProductView | null = projectProduct(updated);
+  if (!projected) {
+    // Product + price exist in Stripe but our projection gate
+    // rejects (most likely missing/invalid metadata.category).
+    // Returning 422 with the productId lets the admin UI offer a
+    // "fix in Stripe Dashboard" link rather than a generic 500.
+    res.status(422).json({
+      error: "unprojectable_product",
+      productId: product.id,
+    });
+    return;
+  }
+
+  req.log?.info?.(
+    {
+      productId: product.id,
+      sku: input.sku,
+      unitAmountCents: input.unitAmountCents,
+      hasRecurring: !!recurringPriceId,
+    },
+    "shop/admin/products: product created",
+  );
+  res.status(201).json({ product: projected });
+});
 
 export default router;

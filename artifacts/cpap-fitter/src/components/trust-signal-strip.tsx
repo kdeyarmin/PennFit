@@ -10,7 +10,13 @@
 // chip.
 
 import React, { useEffect, useState } from "react";
-import { ShieldCheck, MapPin, RefreshCw, PackageCheck, Star } from "lucide-react";
+import {
+  ShieldCheck,
+  MapPin,
+  RefreshCw,
+  PackageCheck,
+  Star,
+} from "lucide-react";
 import { getShopReviewsSiteAggregate } from "@/lib/shop-api";
 
 interface Aggregate {

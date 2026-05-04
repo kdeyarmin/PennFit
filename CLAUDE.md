@@ -32,15 +32,15 @@ Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-stat
 
 This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
 
-| Path | Purpose |
-| --- | --- |
+| Path                     | Purpose                                                                                                                                                                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `artifacts/resupply-api` | Single Express 5 API process. Hosts the storefront/fitter routes (`/api/*`), the resupply admin/voice routes (`/resupply-api/*`), AND the in-process `pg-boss` worker (reminders + PHI sweep) booted from `src/worker/index.ts`. |
-| `artifacts/cpap-fitter` | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings. |
-| `artifacts/shared` | Cross-artifact static assets (favicons served at root). |
-| `lib/resupply-*` | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`. |
-| `lib/api-client-react` | Generated API client + React hooks. |
-| `scripts/` | Codegen + drift checks (`check-codegen`, `check-drizzle-drift`, `check-resupply-architecture`, `check-resupply-migration-pair`). |
-| `docs/` | Architecture notes, post-mortems, production readiness. |
+| `artifacts/cpap-fitter`  | Customer-facing SPA (Vite + React + Wouter + Tailwind). Mounts the internal admin console at `/admin/*` (gated by `useGetAdminMe`); legacy `/resupply/*` URLs SPA-redirect to `/admin/*` preserving query strings.               |
+| `artifacts/shared`       | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
+| `lib/resupply-*`         | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`.                                                                                      |
+| `lib/api-client-react`   | Generated API client + React hooks.                                                                                                                                                                                              |
+| `scripts/`               | Codegen + drift checks (`check-codegen`, `check-drizzle-drift`, `check-resupply-architecture`, `check-resupply-migration-pair`).                                                                                                 |
+| `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
 
 There is **one** customer-facing site (`pennfit.replit.app/`). The former
 separate `api-server`, `resupply-worker`, and `resupply-dashboard` artifacts
@@ -98,10 +98,10 @@ third-party credential.
 
 Required at boot for `resupply-api`:
 
-| Variable | Notes |
-| --- | --- |
-| `PORT` | HTTP listen port. |
-| `DATABASE_URL` | Postgres v14+ (no extensions; only `gen_random_uuid()` is used). |
+| Variable                 | Notes                                                                                                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                   | HTTP listen port.                                                                                                                                        |
+| `DATABASE_URL`           | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                         |
 | `RESUPPLY_LINK_HMAC_KEY` | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links. |
 
 The full env table — including every optional variable and where it's
@@ -118,7 +118,7 @@ read — lives in [`README.md`](./README.md#environment-variables) and
   Admin auth flows live under `/admin/sign-in`, `/admin/forgot-password`,
   `/admin/reset-password`, `/admin/verify-email`.
 - **Inbound MMS:** webhook downloads each `MediaUrlN` with HTTP basic auth
-  (5s/media timeout, 5MB cap, image/* + application/pdf allowlist, max 10
+  (5s/media timeout, 5MB cap, image/\* + application/pdf allowlist, max 10
   attachments/message), uploads to App Storage, persists as
   `message_attachments`. Audit emits counts only — no media URLs, no PHI.
 - **Codegen:** OpenAPI clients regenerated by `scripts/codegen`; drift
@@ -133,5 +133,5 @@ read — lives in [`README.md`](./README.md#environment-variables) and
   [`README.md`](./README.md).
 - For the Git source-of-truth rule, the post-mortem in
   [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md)
-  explains *why*; follow the start-of-session checklist above to comply.
+  explains _why_; follow the start-of-session checklist above to comply.
 - For threat-model questions, see [`threat_model.md`](./threat_model.md).

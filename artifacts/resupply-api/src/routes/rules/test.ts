@@ -143,14 +143,10 @@ router.post("/rules/test", requireAdmin, async (req, res) => {
       }
     }
     if (r.minTenureDays !== null && tenureDays < r.minTenureDays) {
-      reasons.push(
-        `tenure ${tenureDays}d < minTenureDays ${r.minTenureDays}d`,
-      );
+      reasons.push(`tenure ${tenureDays}d < minTenureDays ${r.minTenureDays}d`);
     }
     if (r.maxTenureDays !== null && tenureDays > r.maxTenureDays) {
-      reasons.push(
-        `tenure ${tenureDays}d > maxTenureDays ${r.maxTenureDays}d`,
-      );
+      reasons.push(`tenure ${tenureDays}d > maxTenureDays ${r.maxTenureDays}d`);
     }
     return {
       id: r.id,

@@ -11,9 +11,10 @@ import { describe, expect, it } from "vitest";
 import { createAuthClient, type AuthClient, type AuthMe } from "./client";
 import { SESSION_QUERY_KEY, createAuthHooks } from "./hooks";
 
-function recordingFetch(
-  responses: Array<{ status: number; body?: unknown }>,
-): { fetch: typeof fetch; calls: { url: string }[] } {
+function recordingFetch(responses: Array<{ status: number; body?: unknown }>): {
+  fetch: typeof fetch;
+  calls: { url: string }[];
+} {
   const calls: { url: string }[] = [];
   let idx = 0;
   const fn: typeof fetch = async (input) => {

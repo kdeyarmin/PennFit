@@ -18,16 +18,21 @@ async function post(
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Request failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Request failed (${res.status})`,
+    );
   }
   return await res.json();
 }
 
 export const claimConversation = (id: string, force = false) =>
-  post(`/conversations/${encodeURIComponent(id)}/claim${force ? "?force=1" : ""}`);
+  post(
+    `/conversations/${encodeURIComponent(id)}/claim${force ? "?force=1" : ""}`,
+  );
 
 export const releaseConversation = (id: string) =>
   post(`/conversations/${encodeURIComponent(id)}/release`);

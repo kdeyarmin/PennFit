@@ -184,9 +184,9 @@ async function downloadOneMedia(
   twilioMediaSid: string | null;
 } | null> {
   const twilioMediaSid = extractTwilioMediaSid(slot.url);
-  const auth = Buffer.from(
-    `${twilioAccountSid}:${twilioAuthToken}`,
-  ).toString("base64");
+  const auth = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString(
+    "base64",
+  );
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PER_MEDIA_TIMEOUT_MS);
@@ -300,7 +300,8 @@ export async function persistInboundAttachment(
   logger: Logger,
   storageImpl?: ObjectStorageService,
 ): Promise<PersistInboundAttachmentOutcome> {
-  const declaredType = (input.contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+  const declaredType =
+    (input.contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
   if (!declaredType || !ALLOWED_CONTENT_TYPES.has(declaredType)) {
     logger.warn(
       {
@@ -311,7 +312,11 @@ export async function persistInboundAttachment(
     );
     return "rejected";
   }
-  if (!input.bytes || input.bytes.byteLength === 0 || input.bytes.byteLength > MAX_BYTES) {
+  if (
+    !input.bytes ||
+    input.bytes.byteLength === 0 ||
+    input.bytes.byteLength > MAX_BYTES
+  ) {
     logger.warn(
       {
         source: input.source ?? "unknown",
@@ -323,7 +328,12 @@ export async function persistInboundAttachment(
   }
 
   const storage = storageImpl ?? new ObjectStorageService();
-  const objectKey = await uploadToGcs(input.bytes, declaredType, storage, logger);
+  const objectKey = await uploadToGcs(
+    input.bytes,
+    declaredType,
+    storage,
+    logger,
+  );
   if (!objectKey) return "errored";
 
   const filename = sanitizeFilename(
@@ -412,10 +422,7 @@ async function uploadToGcs(
       body: bytes,
     });
     if (!putResp.ok) {
-      logger.warn(
-        { status: putResp.status },
-        "mms_ingest_gcs_put_non_2xx",
-      );
+      logger.warn({ status: putResp.status }, "mms_ingest_gcs_put_non_2xx");
       return null;
     }
     const normalised = await storage.trySetObjectEntityAclPolicy(uploadUrl, {

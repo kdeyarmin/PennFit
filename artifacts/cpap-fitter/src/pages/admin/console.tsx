@@ -104,7 +104,10 @@ function AdminConsole() {
         <Route path="/admin/rules" component={RulesPage} />
         <Route path="/admin/audit" component={AuditPage} />
         <Route path="/admin/shop/reviews" component={AdminShopReviewsPage} />
-        <Route path="/admin/shop/inventory" component={AdminShopInventoryPage} />
+        <Route
+          path="/admin/shop/inventory"
+          component={AdminShopInventoryPage}
+        />
         <Route
           path="/admin/shop/inventory/new"
           component={AdminShopProductNewPage}

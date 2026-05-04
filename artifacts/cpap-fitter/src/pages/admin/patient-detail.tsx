@@ -94,7 +94,8 @@ export function PatientDetailPage({ id }: { id: string }) {
               {fullName(data.firstName, data.lastName)}
             </h1>
             <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              PACware ID #{data.pacwareId} · Patient created {formatDate(data.createdAt)}
+              PACware ID #{data.pacwareId} · Patient created{" "}
+              {formatDate(data.createdAt)}
             </p>
           </div>
           <Badge variant={patientStatusVariant(data.status)}>
@@ -124,7 +125,9 @@ export function PatientDetailPage({ id }: { id: string }) {
             >
               Last updated
             </p>
-            <p style={{ color: "hsl(var(--ink-1))" }}>{formatDateTime(data.updatedAt)}</p>
+            <p style={{ color: "hsl(var(--ink-1))" }}>
+              {formatDateTime(data.updatedAt)}
+            </p>
           </div>
         </div>
         {/*
@@ -143,7 +146,10 @@ export function PatientDetailPage({ id }: { id: string }) {
           hovering reveals the rest without taking layout space.
         */}
         {data.lastMessageAt ? (
-          <div className="mt-4 pt-4 border-t" style={{ borderColor: "hsl(var(--line-1))" }}>
+          <div
+            className="mt-4 pt-4 border-t"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
             <p
               className="text-xs uppercase tracking-wider font-semibold mb-1"
               style={{ color: "hsl(var(--penn-gold-deep))" }}
@@ -194,10 +200,16 @@ export function PatientDetailPage({ id }: { id: string }) {
         style={{ borderColor: "hsl(var(--line-1))" }}
         role="tablist"
       >
-        <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")}>
+        <TabButton
+          active={tab === "timeline"}
+          onClick={() => setTab("timeline")}
+        >
           Timeline
         </TabButton>
-        <TabButton active={tab === "episodes"} onClick={() => setTab("episodes")}>
+        <TabButton
+          active={tab === "episodes"}
+          onClick={() => setTab("episodes")}
+        >
           Episodes ({data.episodes.length})
         </TabButton>
         <TabButton
@@ -227,7 +239,9 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "timeline" && (
           <TimelineTab
             patientId={id}
-            onConversationClick={(cid) => setLocation(`/admin/conversations/${cid}`)}
+            onConversationClick={(cid) =>
+              setLocation(`/admin/conversations/${cid}`)
+            }
           />
         )}
         {tab === "episodes" && <EpisodesTab episodes={data.episodes} />}
@@ -370,7 +384,10 @@ function ConversationsTab({
       key: "open",
       header: "",
       render: () => (
-        <span className="text-xs underline" style={{ color: "hsl(var(--ink-1))" }}>
+        <span
+          className="text-xs underline"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
           Open →
         </span>
       ),
@@ -503,9 +520,7 @@ function PrescriptionsTab({
       onChanged();
     } catch (err) {
       setActionError(
-        err instanceof Error
-          ? err.message
-          : "Couldn't attach document.",
+        err instanceof Error ? err.message : "Couldn't attach document.",
       );
     } finally {
       setBusyAttachmentRxId(null);
@@ -527,21 +542,18 @@ function PrescriptionsTab({
       onChanged();
     } catch (err) {
       setActionError(
-        err instanceof Error
-          ? err.message
-          : "Couldn't remove attachment.",
+        err instanceof Error ? err.message : "Couldn't remove attachment.",
       );
     } finally {
       setBusyAttachmentRxId(null);
     }
   }
 
-  async function changeStatus(
-    rxId: string,
-    nextStatus: "expired" | "revoked",
-  ) {
+  async function changeStatus(rxId: string, nextStatus: "expired" | "revoked") {
     const verb = nextStatus === "revoked" ? "revoke" : "mark expired";
-    if (!window.confirm(`Are you sure you want to ${verb} this prescription?`)) {
+    if (
+      !window.confirm(`Are you sure you want to ${verb} this prescription?`)
+    ) {
       return;
     }
     setActionError(null);
@@ -570,7 +582,11 @@ function PrescriptionsTab({
       header: "Cadence",
       render: (r) => `${r.cadenceDays} days`,
     },
-    { key: "from", header: "Valid from", render: (r) => formatDate(r.validFrom) },
+    {
+      key: "from",
+      header: "Valid from",
+      render: (r) => formatDate(r.validFrom),
+    },
     {
       key: "until",
       header: "Valid until",
@@ -633,8 +649,8 @@ function PrescriptionsTab({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-          Clinical fields are immutable after creation — to edit, add a
-          new prescription and mark the old one expired.
+          Clinical fields are immutable after creation — to edit, add a new
+          prescription and mark the old one expired.
         </p>
         <Button onClick={() => setShowAdd(true)}>+ Add prescription</Button>
       </div>
@@ -765,7 +781,6 @@ function PrescriptionAttachmentCell({
   );
 }
 
-
 // ----------------------
 // Settings panel
 // ----------------------
@@ -870,9 +885,7 @@ function SettingsCard({
   function describeError(err: unknown): string {
     if (err instanceof ApiError) {
       // ConsoleValidationError surface
-      const data = err.data as
-        | { error?: string; message?: string }
-        | undefined;
+      const data = err.data as { error?: string; message?: string } | undefined;
       return data?.message ?? data?.error ?? "Couldn't save changes.";
     }
     return err instanceof Error ? err.message : "Couldn't save changes.";
@@ -960,14 +973,11 @@ function SettingsCard({
             Reminder settings
           </h2>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Per-patient overrides win over global rules and the
-            prescription cadence. Leave a field blank to fall back to
-            the rules engine.
+            Per-patient overrides win over global rules and the prescription
+            cadence. Leave a field blank to fall back to the rules engine.
           </p>
         </div>
-        {hasOverride && (
-          <Badge variant="info">Custom override active</Badge>
-        )}
+        {hasOverride && <Badge variant="info">Custom override active</Badge>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1022,11 +1032,7 @@ function SettingsCard({
       </div>
 
       {error && (
-        <p
-          className="mt-3 text-sm"
-          style={{ color: "#b91c1c" }}
-          role="alert"
-        >
+        <p className="mt-3 text-sm" style={{ color: "#b91c1c" }} role="alert">
           {error}
         </p>
       )}
@@ -1142,13 +1148,9 @@ function TimelineRow({
   onConversationClick: (id: string) => void;
 }) {
   const { label, variant } = timelineKindLabel(event.kind);
-  const isLinkable =
-    event.kind === "message" && event.conversationId != null;
+  const isLinkable = event.kind === "message" && event.conversationId != null;
   return (
-    <li
-      className="border-l-2 pl-3 py-1"
-      style={{ borderColor: "#c9a24a" }}
-    >
+    <li className="border-l-2 pl-3 py-1" style={{ borderColor: "#c9a24a" }}>
       <div className="flex items-baseline justify-between gap-3">
         <div className="flex items-center gap-2">
           <Badge variant={variant}>{label}</Badge>
@@ -1159,7 +1161,10 @@ function TimelineRow({
             {event.title}
           </span>
         </div>
-        <span className="text-xs whitespace-nowrap" style={{ color: "hsl(var(--ink-3))" }}>
+        <span
+          className="text-xs whitespace-nowrap"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
           {formatDateTime(event.at)}
         </span>
       </div>
@@ -1252,7 +1257,8 @@ function PatientActionBar({
     const eps = patient.episodes;
     if (eps.length === 0) return null;
     const live = eps.find(
-      (e) => e.status === "outreach_pending" || e.status === "awaiting_response",
+      (e) =>
+        e.status === "outreach_pending" || e.status === "awaiting_response",
     );
     if (live) return live;
     // newest by createdAt
@@ -1264,9 +1270,7 @@ function PatientActionBar({
 
   function describe(err: unknown): string {
     if (err instanceof ApiError) {
-      const data = err.data as
-        | { error?: string; message?: string }
-        | undefined;
+      const data = err.data as { error?: string; message?: string } | undefined;
       return data?.message ?? data?.error ?? "Request failed.";
     }
     return err instanceof Error ? err.message : "Request failed.";
@@ -1345,8 +1349,7 @@ function PatientActionBar({
     if (patient.status !== "closed") {
       setFeedback({
         kind: "error",
-        text:
-          "Patient was already updated elsewhere — undo skipped to avoid clobbering a newer change.",
+        text: "Patient was already updated elsewhere — undo skipped to avoid clobbering a newer change.",
       });
       return;
     }
@@ -1389,7 +1392,10 @@ function PatientActionBar({
       : null;
 
   return (
-    <Card title="Quick actions" subtitle="Every action writes to the audit log.">
+    <Card
+      title="Quick actions"
+      subtitle="Every action writes to the audit log."
+    >
       <div className="space-y-3">
         <div>
           <p
@@ -1401,13 +1407,20 @@ function PatientActionBar({
           <div className="flex flex-wrap items-center gap-2">
             <Button
               isLoading={sms.isPending}
-              disabled={sendDisabled || (isMutating && !sms.isPending) || !patient.hasPhone}
+              disabled={
+                sendDisabled ||
+                (isMutating && !sms.isPending) ||
+                !patient.hasPhone
+              }
               onClick={() =>
                 targetEpisode &&
                 fire(
                   "SMS reminder",
                   sms.mutateAsync({
-                    data: { patientId: patient.id, episodeId: targetEpisode.id },
+                    data: {
+                      patientId: patient.id,
+                      episodeId: targetEpisode.id,
+                    },
                   }),
                 )
               }
@@ -1417,13 +1430,20 @@ function PatientActionBar({
             <Button
               intent="secondary"
               isLoading={email.isPending}
-              disabled={sendDisabled || (isMutating && !email.isPending) || !patient.hasEmail}
+              disabled={
+                sendDisabled ||
+                (isMutating && !email.isPending) ||
+                !patient.hasEmail
+              }
               onClick={() =>
                 targetEpisode &&
                 fire(
                   "Email reminder",
                   email.mutateAsync({
-                    data: { patientId: patient.id, episodeId: targetEpisode.id },
+                    data: {
+                      patientId: patient.id,
+                      episodeId: targetEpisode.id,
+                    },
                   }),
                 )
               }
@@ -1433,13 +1453,20 @@ function PatientActionBar({
             <Button
               intent="secondary"
               isLoading={voice.isPending}
-              disabled={sendDisabled || (isMutating && !voice.isPending) || !patient.hasPhone}
+              disabled={
+                sendDisabled ||
+                (isMutating && !voice.isPending) ||
+                !patient.hasPhone
+              }
               onClick={() =>
                 targetEpisode &&
                 fire(
                   "Voice call",
                   voice.mutateAsync({
-                    data: { patientId: patient.id, episodeId: targetEpisode.id },
+                    data: {
+                      patientId: patient.id,
+                      episodeId: targetEpisode.id,
+                    },
                   }),
                 )
               }
@@ -1620,7 +1647,10 @@ function NotesTab({ patientId }: { patientId: string }) {
           placeholder="Patient is recovering from minor surgery; pause reminders for 2 weeks…"
           disabled={create.isPending}
           className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-          style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
+          style={{
+            borderColor: "hsl(var(--line-1))",
+            color: "hsl(var(--ink-1))",
+          }}
         />
         <div className="mt-2 flex items-center justify-between gap-3">
           <span
@@ -1666,7 +1696,10 @@ function NotesTab({ patientId }: { patientId: string }) {
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter notes…"
               className="flex-1 rounded border px-3 py-2 text-sm"
-              style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
+              style={{
+                borderColor: "hsl(var(--line-1))",
+                color: "hsl(var(--ink-1))",
+              }}
               aria-label="Filter notes"
             />
             <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
@@ -1846,8 +1879,8 @@ function AddPrescriptionModal({
             New prescription
           </h2>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            Clinical fields are immutable after save. To "edit" later,
-            add a new prescription and mark this one expired.
+            Clinical fields are immutable after save. To "edit" later, add a new
+            prescription and mark this one expired.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1928,7 +1961,10 @@ function AddPrescriptionModal({
                 rows={2}
                 disabled={isPending}
                 className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-                style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
+                style={{
+                  borderColor: "hsl(var(--line-1))",
+                  color: "hsl(var(--ink-1))",
+                }}
               />
             </div>
             <div className="md:col-span-2">
@@ -1941,7 +1977,10 @@ function AddPrescriptionModal({
                 rows={2}
                 disabled={isPending}
                 className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-                style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
+                style={{
+                  borderColor: "hsl(var(--line-1))",
+                  color: "hsl(var(--ink-1))",
+                }}
               />
             </div>
           </div>

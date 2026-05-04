@@ -63,7 +63,8 @@ describe("signLinkToken / verifyLinkToken", () => {
     const [payload, sig] = token.split(".");
     // Replace one character in the payload — base64url is canonical so
     // any change shifts the bytes the HMAC was computed over.
-    const corrupted = (payload!.charAt(0) === "A" ? "B" : "A") + payload!.slice(1);
+    const corrupted =
+      (payload!.charAt(0) === "A" ? "B" : "A") + payload!.slice(1);
     const result = verifyLinkToken(`${corrupted}.${sig}`);
     expect(result.valid).toBe(false);
     if (result.valid) return;

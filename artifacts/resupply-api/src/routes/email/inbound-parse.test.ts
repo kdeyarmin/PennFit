@@ -16,14 +16,7 @@
 // reference so the test can simulate "patient found vs. not found"
 // without re-implementing SQL.
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
@@ -79,10 +72,7 @@ function makeInsert(table: unknown) {
         // Also support bare-await (no .returning()), used by the
         // attachment insert.
         then: (resolve: (v: unknown) => unknown, reject?: unknown) =>
-          Promise.resolve(undefined).then(
-            resolve as never,
-            reject as never,
-          ),
+          Promise.resolve(undefined).then(resolve as never, reject as never),
       };
     },
   };
@@ -112,10 +102,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -144,10 +133,9 @@ const persistMock = vi.fn(
     "succeeded" as const,
 );
 vi.mock("../../lib/messaging/ingest-mms", async () => {
-  const actual =
-    await vi.importActual<typeof import("../../lib/messaging/ingest-mms")>(
-      "../../lib/messaging/ingest-mms",
-    );
+  const actual = await vi.importActual<
+    typeof import("../../lib/messaging/ingest-mms")
+  >("../../lib/messaging/ingest-mms");
   return {
     ...actual,
     persistInboundAttachment: (

@@ -28,48 +28,79 @@ const questions: Question[] = [
     options: [
       { value: "none", label: "No, this is my first time" },
       { value: "nasal", label: "Yes, a Nasal Mask (covers nose only)" },
-      { value: "nasalPillow", label: "Yes, Nasal Pillows (inserts into nostrils)" },
-      { value: "fullFace", label: "Yes, a Full Face Mask (covers nose and mouth)" },
-      { value: "hybrid", label: "Yes, a Hybrid Mask (under nose and covers mouth)" },
+      {
+        value: "nasalPillow",
+        label: "Yes, Nasal Pillows (inserts into nostrils)",
+      },
+      {
+        value: "fullFace",
+        label: "Yes, a Full Face Mask (covers nose and mouth)",
+      },
+      {
+        value: "hybrid",
+        label: "Yes, a Hybrid Mask (under nose and covers mouth)",
+      },
     ],
   },
   {
     id: "cpapPressureSetting",
     question: "What is your prescribed CPAP pressure?",
-    description: "Found on your CPAP machine settings or your titration study report (in cmH₂O).",
+    description:
+      "Found on your CPAP machine settings or your titration study report (in cmH₂O).",
     helpText:
       "Higher pressures (15+) need a mask with a broader, tighter seal. Most nasal pillows aren't rated above ~20 cmH₂O.",
     type: "select",
     options: [
-      { value: "unknown", label: "I'm not sure", sublabel: "We'll skip this in scoring — pick the closest" },
-      { value: "low", label: "Low (4–9 cmH₂O)", sublabel: "Common for mild apnea" },
-      { value: "medium", label: "Medium (10–14 cmH₂O)", sublabel: "Most common range" },
-      { value: "high", label: "High (15+ cmH₂O)", sublabel: "Severe apnea or BiPAP" },
+      {
+        value: "unknown",
+        label: "I'm not sure",
+        sublabel: "We'll skip this in scoring — pick the closest",
+      },
+      {
+        value: "low",
+        label: "Low (4–9 cmH₂O)",
+        sublabel: "Common for mild apnea",
+      },
+      {
+        value: "medium",
+        label: "Medium (10–14 cmH₂O)",
+        sublabel: "Most common range",
+      },
+      {
+        value: "high",
+        label: "High (15+ cmH₂O)",
+        sublabel: "Severe apnea or BiPAP",
+      },
     ],
   },
   {
     id: "mouthBreather",
     question: "Do you frequently breathe through your mouth while sleeping?",
-    description: "If you wake up with a very dry mouth, you might be a mouth breather.",
-    helpText: "Mouth breathing makes nasal-only masks ineffective — air leaks out the mouth.",
+    description:
+      "If you wake up with a very dry mouth, you might be a mouth breather.",
+    helpText:
+      "Mouth breathing makes nasal-only masks ineffective — air leaks out the mouth.",
     type: "boolean",
   },
   {
     id: "sideOrStomachSleeper",
     question: "Do you primarily sleep on your side or stomach?",
-    description: "Active sleepers or side/stomach sleepers often need lower-profile masks.",
+    description:
+      "Active sleepers or side/stomach sleepers often need lower-profile masks.",
     type: "boolean",
   },
   {
     id: "claustrophobic",
     question: "Do you experience claustrophobia?",
-    description: "If you feel anxious with things covering your face, we'll recommend minimal-contact masks.",
+    description:
+      "If you feel anxious with things covering your face, we'll recommend minimal-contact masks.",
     type: "boolean",
   },
   {
     id: "heavyFacialHair",
     question: "Do you have a beard or heavy facial hair?",
-    description: "Facial hair can interfere with the seal of certain mask types.",
+    description:
+      "Facial hair can interfere with the seal of certain mask types.",
     helpText:
       "Full-face and nasal cushions seal against skin — beards break that seal. Nasal pillows tend to work better.",
     type: "boolean",
@@ -77,19 +108,22 @@ const questions: Question[] = [
   {
     id: "wearsGlasses",
     question: "Do you like to read or watch TV in bed while wearing glasses?",
-    description: "Some masks block the bridge of your nose, making glasses impossible to wear.",
+    description:
+      "Some masks block the bridge of your nose, making glasses impossible to wear.",
     type: "boolean",
   },
   {
     id: "frequentCongestion",
     question: "Do you frequently suffer from nasal congestion or allergies?",
-    description: "If your nose is often blocked, a nasal-only mask may not provide adequate therapy.",
+    description:
+      "If your nose is often blocked, a nasal-only mask may not provide adequate therapy.",
     type: "boolean",
   },
   {
     id: "mobilityLimitations",
     question: "Do you have arthritis or limited dexterity in your hands?",
-    description: "We'll prioritize masks with magnetic clips and easy-release headgear.",
+    description:
+      "We'll prioritize masks with magnetic clips and easy-release headgear.",
     type: "boolean",
   },
   {
@@ -100,7 +134,8 @@ const questions: Question[] = [
   {
     id: "siliconeSensitivity",
     question: "Do you have a known allergy or sensitivity to silicone?",
-    description: "Most mask cushions are silicone, but alternatives exist (like memory foam).",
+    description:
+      "Most mask cushions are silicone, but alternatives exist (like memory foam).",
     type: "boolean",
   },
 ];
@@ -117,8 +152,18 @@ export function Questionnaire() {
   const currentQ = questions[currentIndex];
   const progress = (currentIndex / questions.length) * 100;
 
-  const handleAnswer = (value: any) => {
-    updateAnswers({ [currentQ.id]: value });
+  // Answer values are heterogeneous: boolean for `type: "boolean"`
+  // questions and string (an option's `value`) for `type: "select"`.
+  // We can't narrow further at the call site because TS sees
+  // `currentQ.id` as `keyof QuestionnaireAnswers` (a union) and the
+  // value type per key varies — so the computed-key dispatch needs
+  // a cast to the destination shape. The runtime guarantee comes from
+  // the question schema: each question only emits a value compatible
+  // with its declared key.
+  const handleAnswer = (value: boolean | string) => {
+    updateAnswers({
+      [currentQ.id]: value,
+    } as Partial<QuestionnaireAnswers>);
 
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((curr) => curr + 1);
@@ -163,7 +208,10 @@ export function Questionnaire() {
         <Progress value={progress} className="h-1.5" />
       </div>
 
-      <div className="animate-in slide-in-from-right-4 fade-in duration-300" key={currentIndex}>
+      <div
+        className="animate-in slide-in-from-right-4 fade-in duration-300"
+        key={currentIndex}
+      >
         <Card className="border-0 glass-card rounded-2xl min-h-[420px] flex flex-col">
           <CardHeader className="pb-4">
             <CardTitle
@@ -176,13 +224,17 @@ export function Questionnaire() {
               {currentQ.question}
             </CardTitle>
             {currentQ.description && (
-              <p className="text-muted-foreground mt-2 leading-relaxed">{currentQ.description}</p>
+              <p className="text-muted-foreground mt-2 leading-relaxed">
+                {currentQ.description}
+              </p>
             )}
             {currentQ.helpText && (
               <div className="mt-4 flex items-start gap-2.5 text-xs rounded-xl callout-gold p-3">
                 <Lightbulb className="w-4 h-4 mt-0.5 text-[hsl(var(--penn-navy))] shrink-0" />
                 <span className="text-foreground/85 leading-relaxed">
-                  <strong className="text-[hsl(var(--penn-navy-deep))] font-semibold">Why we ask:</strong>{" "}
+                  <strong className="text-[hsl(var(--penn-navy-deep))] font-semibold">
+                    Why we ask:
+                  </strong>{" "}
                   {currentQ.helpText}
                 </span>
               </div>
@@ -256,7 +308,9 @@ export function Questionnaire() {
                           )}
                         </div>
                         <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                          <span className="font-medium tracking-tight">{opt.label}</span>
+                          <span className="font-medium tracking-tight">
+                            {opt.label}
+                          </span>
                           {opt.sublabel && (
                             <span className="text-xs text-muted-foreground font-normal">
                               {opt.sublabel}

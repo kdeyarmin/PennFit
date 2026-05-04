@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, Skeleton, Badge } from "@/components/admin/ui-shims";
+import {
+  Card,
+  CardContent,
+  Skeleton,
+  Badge,
+} from "@/components/admin/ui-shims";
 import { fetchAdminAnalytics } from "@/lib/admin/storefront-admin-api";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
 
@@ -9,7 +14,10 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Failed",
   skipped: "Skipped",
 };
-const STATUS_TONE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const STATUS_TONE: Record<
+  string,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
   pending: "outline",
   sent: "default",
   failed: "destructive",
@@ -40,7 +48,8 @@ export function AdminAnalytics() {
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
           PennPaps storefront performance: total orders, email delivery health,
-          most-ordered masks, fitter funnel completion, and a 30-day order trend.
+          most-ordered masks, fitter funnel completion, and a 30-day order
+          trend.
         </p>
       </div>
 
@@ -63,7 +72,11 @@ export function AdminAnalytics() {
               className="text-3xl font-semibold mt-2"
               data-testid="metric-total-orders"
             >
-              {isLoading ? <Skeleton className="h-8 w-16" /> : data?.totalOrders ?? 0}
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                (data?.totalOrders ?? 0)
+              )}
             </div>
           </CardContent>
         </Card>
@@ -79,7 +92,7 @@ export function AdminAnalytics() {
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                data?.ordersByDay.reduce((sum, d) => sum + d.count, 0) ?? 0
+                (data?.ordersByDay.reduce((sum, d) => sum + d.count, 0) ?? 0)
               )}
             </div>
           </CardContent>
@@ -119,7 +132,9 @@ export function AdminAnalytics() {
                 </div>
               ))}
               {data.statusBreakdown.length === 0 && (
-                <div className="text-sm text-muted-foreground">No orders yet.</div>
+                <div className="text-sm text-muted-foreground">
+                  No orders yet.
+                </div>
               )}
             </div>
           )}
@@ -129,7 +144,9 @@ export function AdminAnalytics() {
       {/* Top masks */}
       <Card className="border-0 glass-card rounded-2xl">
         <CardContent className="p-5">
-          <h2 className="text-lg font-semibold mb-3">Top masks (by order count)</h2>
+          <h2 className="text-lg font-semibold mb-3">
+            Top masks (by order count)
+          </h2>
           {isLoading && <Skeleton className="h-32 w-full" />}
           {!isLoading && data && (
             <div className="overflow-x-auto">
@@ -144,7 +161,10 @@ export function AdminAnalytics() {
                 <tbody>
                   {data.topMasks.length === 0 && (
                     <tr>
-                      <td colSpan={3} className="py-8 text-center text-muted-foreground">
+                      <td
+                        colSpan={3}
+                        className="py-8 text-center text-muted-foreground"
+                      >
                         No mask orders yet.
                       </td>
                     </tr>
@@ -159,7 +179,9 @@ export function AdminAnalytics() {
                       <td className="py-2 px-3 text-muted-foreground">
                         {m.maskManufacturer}
                       </td>
-                      <td className="py-2 px-3 text-right font-mono">{m.count}</td>
+                      <td className="py-2 px-3 text-right font-mono">
+                        {m.count}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -224,11 +246,17 @@ export function AdminAnalytics() {
                 </div>
               )}
               {data.ordersByDay.length > 0 && (
-                <div className="flex items-end gap-1 h-32" data-testid="trend-bars">
+                <div
+                  className="flex items-end gap-1 h-32"
+                  data-testid="trend-bars"
+                >
                   {data.ordersByDay.map((d) => {
                     const pct =
                       peakDayCount > 0
-                        ? Math.max(4, Math.round((d.count / peakDayCount) * 100))
+                        ? Math.max(
+                            4,
+                            Math.round((d.count / peakDayCount) * 100),
+                          )
                         : 4;
                     return (
                       <div

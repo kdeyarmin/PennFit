@@ -22,7 +22,7 @@ need to be **correct**, not just present.
 - [ ] `auth.users` table has at least one row with role `admin` and
       a verified email. Seed the first admin against a fresh DB
       with `pnpm --filter @workspace/scripts auth:bootstrap-admin
-      --email=<addr> --role=admin`.
+--email=<addr> --role=admin`.
 - [ ] No `AUTH_PASSWORD_PEPPER` env var is required. The Task #38
       follow-up removed the server-side pepper; passwords are now
       hashed with plain argon2id. Any leftover `AUTH_PASSWORD_PEPPER`
@@ -65,6 +65,7 @@ crypto. The only remaining application-layer secret in this family is:
       migration 0020 is applied.
 
 ### Vendors (graceful-degrade if missing — dashboard `/admin/operations`
+
 shows green/red dots per vendor)
 
 - [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` — cash-pay shop

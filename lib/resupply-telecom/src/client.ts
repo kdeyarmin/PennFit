@@ -153,7 +153,12 @@ export function createTwilioClient(
           // Subscribe to the full call lifecycle. Twilio defaults to
           // just `completed`, but we want `initiated`/`ringing`/
           // `answered` for the admin dashboard timeline.
-          statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+          statusCallbackEvent: [
+            "initiated",
+            "ringing",
+            "answered",
+            "completed",
+          ],
           statusCallbackMethod: "POST",
           // Recording: ALWAYS off. We persist the encrypted transcript;
           // the audio itself is PHI we don't want sitting in Twilio

@@ -27,8 +27,14 @@ async function buildAll() {
     // Examples of unbundleable packages:
     // - uses native modules and loads them dynamically (e.g. sharp)
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
+    // - large vendor SDKs that we'd rather load at runtime from
+    //   node_modules than bake into the bundle (twilio, stripe — see
+    //   AUDIT_REPORT.md follow-up #4; bundling twilio inflated the
+    //   single-file output by ~7 MB / 57% before this change).
     external: [
       "*.node",
+      "twilio",
+      "stripe",
       "sharp",
       "better-sqlite3",
       "sqlite3",
@@ -104,7 +110,7 @@ async function buildAll() {
     sourcemap: "linked",
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
-      esbuildPluginPino({ transports: ["pino-pretty"] })
+      esbuildPluginPino({ transports: ["pino-pretty"] }),
     ],
     // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
     banner: {

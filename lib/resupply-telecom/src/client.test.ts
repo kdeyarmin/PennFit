@@ -83,7 +83,8 @@ describe("createTwilioClient — placeCall", () => {
       to: "+12155551212",
       from: "+12158675309",
       url: "https://example.com/resupply-api/voice/twiml-connect?conversationId=cid",
-      statusCallbackUrl: "https://example.com/resupply-api/voice/status-callback",
+      statusCallbackUrl:
+        "https://example.com/resupply-api/voice/status-callback",
     });
     expect(result.sid).toBe("CAabc");
     expect(create).toHaveBeenCalledTimes(1);

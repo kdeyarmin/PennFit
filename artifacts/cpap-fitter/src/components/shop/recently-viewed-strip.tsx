@@ -85,8 +85,7 @@ export function RecentlyViewedStrip({
       >
         {ordered.map((p) => {
           const img = resolveProductImage(p.imageUrl);
-          const oos =
-            typeof p.stockCount === "number" && p.stockCount <= 0;
+          const oos = typeof p.stockCount === "number" && p.stockCount <= 0;
           return (
             <Link
               key={p.id}

@@ -44,9 +44,7 @@ describe("sanitizeMetadata", () => {
     // Audit metadata is shaped as a key/value envelope, not a list.
     // Allowing arrays would defeat the point of `metadata.requestId`
     // existing as a stable lookup key.
-    expect(() => sanitizeMetadata([1, 2, 3])).toThrow(
-      AuditMetadataShapeError,
-    );
+    expect(() => sanitizeMetadata([1, 2, 3])).toThrow(AuditMetadataShapeError);
   });
 
   it("rejects primitives as top-level metadata", () => {
@@ -121,18 +119,14 @@ describe("sanitizeMetadata", () => {
 
   // Whole-key denylist: generic terms only fire when the entire
   // normalized key equals the entry. Compound keys pass.
-  it.each([
-    ["name"],
-    ["NAME"],
-    ["state"],
-    ["notes"],
-    ["dx"],
-    ["condition"],
-  ])("whole-key denylist rejects bare %p", (key) => {
-    expect(() => sanitizeMetadata({ [key]: "x" })).toThrow(
-      AuditMetadataPhiError,
-    );
-  });
+  it.each([["name"], ["NAME"], ["state"], ["notes"], ["dx"], ["condition"]])(
+    "whole-key denylist rejects bare %p",
+    (key) => {
+      expect(() => sanitizeMetadata({ [key]: "x" })).toThrow(
+        AuditMetadataPhiError,
+      );
+    },
+  );
 
   // The whole-key denylist must NOT fire on compound keys — these
   // are common JS idioms and blocking them would create absurd
@@ -202,9 +196,9 @@ describe("sanitizeMetadata", () => {
     class MyThing {
       constructor(public requestId: string) {}
     }
-    expect(() =>
-      sanitizeMetadata({ thing: new MyThing("req_1") }),
-    ).toThrow(AuditMetadataShapeError);
+    expect(() => sanitizeMetadata({ thing: new MyThing("req_1") })).toThrow(
+      AuditMetadataShapeError,
+    );
   });
 
   it("rejects Map / Set / Date / Buffer values", () => {

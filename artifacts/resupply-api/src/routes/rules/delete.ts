@@ -58,7 +58,10 @@ router.delete("/rules/:id", requireAdminOnly, async (req, res) => {
     });
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "rules.delete: audit write failed",
     );
   }

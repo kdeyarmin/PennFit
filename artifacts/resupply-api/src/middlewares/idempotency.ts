@@ -124,7 +124,8 @@ export function withIdempotency(endpoint: string) {
       );
       res.status(500).json({
         error: "idempotency_misconfigured",
-        message: "Idempotency middleware was invoked without an authenticated admin.",
+        message:
+          "Idempotency middleware was invoked without an authenticated admin.",
       });
       return;
     }
@@ -148,7 +149,13 @@ export function withIdempotency(endpoint: string) {
       existing = rows[0];
     } catch (err) {
       logger.error(
-        { err: err instanceof Error ? { name: err.name, message: err.message } : err, endpoint },
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+          endpoint,
+        },
         "withIdempotency: lookup query failed",
       );
       res.status(500).json({

@@ -112,8 +112,8 @@ export function ComfortGuarantee({
           <p className="text-muted-foreground mt-1.5">
             Most masks feel different the first night. If yours isn&apos;t
             comfortable after a week of trying, contact us and we&apos;ll send a
-            different size or style — and cover return shipping. No
-            restocking fee, no hassle.
+            different size or style — and cover return shipping. No restocking
+            fee, no hassle.
           </p>
           {linkToPolicy && (
             <div className="mt-4">

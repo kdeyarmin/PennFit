@@ -27,7 +27,10 @@ import { Router } from "express";
 import { SubmitOrderBody } from "../../lib/api-zod/index.js";
 import { db, ordersTable } from "../../lib/storefront/db.js";
 import { eq } from "drizzle-orm";
-import { sendOrderToPenn, generateOrderReference } from "../../lib/storefront/orderEmail.js";
+import {
+  sendOrderToPenn,
+  generateOrderReference,
+} from "../../lib/storefront/orderEmail.js";
 import { logger } from "../../lib/logger.js";
 
 const router = Router();
@@ -37,7 +40,8 @@ router.post("/orders", async (req, res) => {
   // strip mode) would silently drop the unknown field and we'd lose the
   // signal. We deliberately return a fake-looking success so the bot
   // believes its submission worked and stops retrying.
-  const honeypot = (req.body as Record<string, unknown> | null | undefined)?.website;
+  const honeypot = (req.body as Record<string, unknown> | null | undefined)
+    ?.website;
   if (typeof honeypot === "string" && honeypot.trim().length > 0) {
     res.json({
       success: true,
@@ -53,7 +57,9 @@ router.post("/orders", async (req, res) => {
   if (!parseResult.success) {
     res.status(400).json({
       error: "Invalid order",
-      details: parseResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
+      details: parseResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
     });
     return;
   }
@@ -66,7 +72,9 @@ router.post("/orders", async (req, res) => {
   if (order.consentToContact !== true) {
     res.status(400).json({
       error: "Invalid order",
-      details: ["consentToContact: You must consent to be contacted to submit an order"],
+      details: [
+        "consentToContact: You must consent to be contacted to submit an order",
+      ],
     });
     return;
   }
@@ -104,7 +112,10 @@ router.post("/orders", async (req, res) => {
     // We deliberately don't fail the whole request on a DB write error.
     // The patient's primary expectation is that Penn receives the order;
     // losing the audit row is bad but recoverable, losing the email is not.
-    logger.error({ err }, "Failed to persist order before send (continuing with email)");
+    logger.error(
+      { err },
+      "Failed to persist order before send (continuing with email)",
+    );
   }
 
   const result = await sendOrderToPenn(order, { orderReference });
@@ -122,10 +133,11 @@ router.post("/orders", async (req, res) => {
         .update(ordersTable)
         .set({
           emailStatus: status,
-          emailError: result.delivered ? null : result.error ?? null,
-          emailDeliveredAt: result.delivered && result.deliveredAt
-            ? new Date(result.deliveredAt)
-            : null,
+          emailError: result.delivered ? null : (result.error ?? null),
+          emailDeliveredAt:
+            result.delivered && result.deliveredAt
+              ? new Date(result.deliveredAt)
+              : null,
         })
         .where(eq(ordersTable.id, dbId));
     } catch (err) {
@@ -143,7 +155,8 @@ router.post("/orders", async (req, res) => {
 
   if (!result.delivered) {
     res.status(502).json({
-      error: "We could not deliver your order to Penn Home Medical Supply. Please try again or call us directly.",
+      error:
+        "We could not deliver your order to Penn Home Medical Supply. Please try again or call us directly.",
       details: result.error ? [result.error] : undefined,
     });
     return;

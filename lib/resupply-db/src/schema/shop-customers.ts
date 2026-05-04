@@ -107,7 +107,9 @@ export const shopCustomers = resupplySchema.table(
      * opportunistically on each /shop/me hit.
      */
     emailLower: text("email_lower"),
-    shippingAddress: jsonb("shipping_address_json").$type<SavedShippingAddress | null>(),
+    shippingAddress: jsonb(
+      "shipping_address_json",
+    ).$type<SavedShippingAddress | null>(),
     /**
      * Last default payment method we saw on the Stripe Customer.
      * Populated by the webhook on checkout.session.completed when
@@ -126,9 +128,9 @@ export const shopCustomers = resupplySchema.table(
      * coalesces missing keys to DEFAULT_COMMUNICATION_PREFERENCES on
      * read so callers can rely on a fully-populated object.
      */
-    communicationPreferences: jsonb("communication_preferences").$type<
-      CommunicationPreferences | null
-    >(),
+    communicationPreferences: jsonb(
+      "communication_preferences",
+    ).$type<CommunicationPreferences | null>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

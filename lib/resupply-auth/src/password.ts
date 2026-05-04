@@ -62,9 +62,7 @@ export interface PasswordHashParams {
  */
 export type PasswordAlgo = "argon2id-v1";
 
-export const PASSWORD_ALGOS: readonly PasswordAlgo[] = [
-  "argon2id-v1",
-] as const;
+export const PASSWORD_ALGOS: readonly PasswordAlgo[] = ["argon2id-v1"] as const;
 
 const DEFAULT_PARAMS = {
   memoryCost: 19_456,

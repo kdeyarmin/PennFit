@@ -35,10 +35,9 @@ const poolQuery = vi.fn(async () => {
 });
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({ query: poolQuery }) as never,
@@ -53,10 +52,9 @@ const logAuditMock: Mock<(...args: unknown[]) => Promise<void>> = vi.fn(
   async (..._args: unknown[]): Promise<void> => undefined,
 );
 vi.mock("@workspace/resupply-audit", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-audit")>(
-      "@workspace/resupply-audit",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-audit")
+  >("@workspace/resupply-audit");
   return {
     ...actual,
     logAudit: (...a: unknown[]) => logAuditMock(...a),
@@ -82,7 +80,11 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -107,9 +109,8 @@ describe("GET /audit/export.csv", () => {
     }
   });
 
-  it("returns 401 with no session", async () => {    const res = await request(makeApp()).get(
-      "/resupply-api/audit/export.csv",
-    );
+  it("returns 401 with no session", async () => {
+    const res = await request(makeApp()).get("/resupply-api/audit/export.csv");
     expect(res.status).toBe(401);
   });
 
@@ -141,9 +142,7 @@ describe("GET /audit/export.csv", () => {
       ],
     });
 
-    const res = await request(makeApp()).get(
-      "/resupply-api/audit/export.csv",
-    );
+    const res = await request(makeApp()).get("/resupply-api/audit/export.csv");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/csv/);
     expect(res.headers["content-disposition"]).toMatch(
@@ -159,7 +158,9 @@ describe("GET /audit/export.csv", () => {
     expect(lines[1]).toContain("patient.view");
     // metadata JSON contains both a comma and a quote, so it must
     // be wrapped in quotes with internal quotes doubled.
-    expect(lines[1]).toMatch(/"\{""source"":""console"",""note"":""has \\""quote\\"" and ,comma""\}"/);
+    expect(lines[1]).toMatch(
+      /"\{""source"":""console"",""note"":""has \\""quote\\"" and ,comma""\}"/,
+    );
     // No truncation footer for a single-row result.
     expect(res.text).not.toContain("# truncated");
   });
@@ -171,10 +172,7 @@ describe("GET /audit/export.csv", () => {
       "/resupply-api/audit/export.csv?action=patient&targetTable=patients&since=2025-01-01T00:00:00Z",
     );
     expect(res.status).toBe(200);
-    const firstCall = poolQuery.mock.calls[0] as unknown as [
-      string,
-      unknown[],
-    ];
+    const firstCall = poolQuery.mock.calls[0] as unknown as [string, unknown[]];
     // Wildcarded action, exact targetTable, parsed Date for since,
     // followed by the row-cap limit (50_000 + 1).
     expect(firstCall[1]).toEqual([
@@ -203,13 +201,9 @@ describe("GET /audit/export.csv", () => {
     }));
     queryQueue.push({ rows });
 
-    const res = await request(makeApp()).get(
-      "/resupply-api/audit/export.csv",
-    );
+    const res = await request(makeApp()).get("/resupply-api/audit/export.csv");
     expect(res.status).toBe(200);
-    expect(res.text).toContain(
-      "# truncated: more than 50000 rows matched",
-    );
+    expect(res.text).toContain("# truncated: more than 50000 rows matched");
   });
 
   it("writes a post-export audit row with action audit.export.csv", async () => {
@@ -240,9 +234,7 @@ describe("GET /audit/export.csv", () => {
     queryQueue.push({ rows: [] });
     logAuditMock.mockRejectedValueOnce(new Error("audit insert failed"));
 
-    const res = await request(makeApp()).get(
-      "/resupply-api/audit/export.csv",
-    );
+    const res = await request(makeApp()).get("/resupply-api/audit/export.csv");
     expect(res.status).toBe(200);
     // The CSV body still includes the header row.
     expect(res.text.startsWith("id,occurredAt,")).toBe(true);

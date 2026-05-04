@@ -71,7 +71,9 @@ export async function dispatchBackInStockNow(
         "Stripe is not configured — set STRIPE_SECRET_KEY to dispatch.",
       );
     }
-    throw new Error(`Dispatch failed (${res.status}${detail ? `: ${detail}` : ""})`);
+    throw new Error(
+      `Dispatch failed (${res.status}${detail ? `: ${detail}` : ""})`,
+    );
   }
   return (await res.json()) as BackInStockDispatchResult;
 }

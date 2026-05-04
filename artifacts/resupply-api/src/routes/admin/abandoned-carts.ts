@@ -170,10 +170,7 @@ router.post(
     // Pre-fetch comm prefs for every claimed user so we can suppress
     // sends for customers who turned off cart-abandonment nudges or
     // are inside a DND window. Single batch query — never N+1.
-    const prefsByUser = new Map<
-      string,
-      ReturnType<typeof mergePrefs>
-    >();
+    const prefsByUser = new Map<string, ReturnType<typeof mergePrefs>>();
     if (claimed.length > 0) {
       const userIds = Array.from(new Set(claimed.map((r) => r.customerId)));
       const customerRows = await db
@@ -263,7 +260,10 @@ router.post(
         }
         skippedNoConfig += remainingIds.length;
         req.log?.warn(
-          { rowId: row.id, err: err instanceof Error ? err.message : String(err) },
+          {
+            rowId: row.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
           "cart-abandonment send threw — unclaiming batch",
         );
         break;

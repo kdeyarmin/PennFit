@@ -73,7 +73,13 @@ export function AdminShopReturnsPage() {
   );
 }
 
-function TabStrip({ tab, onChange }: { tab: Tab; onChange: (next: Tab) => void }) {
+function TabStrip({
+  tab,
+  onChange,
+}: {
+  tab: Tab;
+  onChange: (next: Tab) => void;
+}) {
   return (
     <div
       role="tablist"
@@ -205,8 +211,10 @@ function ReturnCard({ item }: { item: AdminReturn }) {
     onSuccess: invalidate,
   });
   const replaceMut = useMutation({
-    mutationFn: (body: { exchangeProductId: string; exchangePriceId: string }) =>
-      replaceReturn(item.id, body),
+    mutationFn: (body: {
+      exchangeProductId: string;
+      exchangePriceId: string;
+    }) => replaceReturn(item.id, body),
     onSuccess: invalidate,
   });
   const noteMut = useMutation({
@@ -403,9 +411,7 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                     })
                   }
                   disabled={
-                    replaceMut.isPending ||
-                    !replaceProductId ||
-                    !replacePriceId
+                    replaceMut.isPending || !replaceProductId || !replacePriceId
                   }
                   className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                 >

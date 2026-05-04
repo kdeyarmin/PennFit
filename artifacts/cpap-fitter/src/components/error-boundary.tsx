@@ -33,7 +33,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // eslint-disable-next-line no-console
     console.error("[ErrorBoundary] caught a render error:", error, info);
   }
 
@@ -55,13 +54,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
       >
         <div className="glass-card rounded-2xl p-8 max-w-lg text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-            <AlertTriangle className="h-6 w-6 text-amber-700" aria-hidden="true" />
+            <AlertTriangle
+              className="h-6 w-6 text-amber-700"
+              aria-hidden="true"
+            />
           </div>
           <h1 className="text-2xl font-semibold mb-2">Something went wrong</h1>
           <p className="text-muted-foreground mb-6">
             The page hit an unexpected error. Reloading usually fixes it. If
-            this keeps happening, please call us at Penn Home Medical Supply
-            and we'll help you finish what you were doing.
+            this keeps happening, please call us at Penn Home Medical Supply and
+            we'll help you finish what you were doing.
           </p>
           {/*
             Development-only diagnostic. We print the thrown error's message

@@ -16,12 +16,15 @@ export default function NotFound() {
         >
           404
         </p>
-        <h1 className="text-2xl font-semibold mb-3" style={{ color: "hsl(var(--ink-1))" }}>
+        <h1
+          className="text-2xl font-semibold mb-3"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
           Page not found
         </h1>
         <p className="text-sm mb-6" style={{ color: "hsl(var(--ink-2))" }}>
-          That route is not part of the admin console. Phase 0 only ships
-          the home placeholder.
+          That route is not part of the admin console. Phase 0 only ships the
+          home placeholder.
         </p>
         <Link
           href="/admin"

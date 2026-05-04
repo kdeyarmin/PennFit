@@ -182,7 +182,10 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "patients.detail: audit write failed",
     );
   }
@@ -212,9 +215,7 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
       // forward it as-is. Defensive String() in case a future
       // mode change yields a Date.
       validFrom:
-        typeof p.validFrom === "string"
-          ? p.validFrom
-          : String(p.validFrom),
+        typeof p.validFrom === "string" ? p.validFrom : String(p.validFrom),
       validUntil:
         p.validUntil == null
           ? null

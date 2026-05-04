@@ -24,11 +24,7 @@
 // re-renders with the rows that just flipped to "Nudged".
 
 import { useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type AbandonedCartRow,
   type SendDueResponse,
@@ -50,13 +46,14 @@ function deriveStatus(row: AbandonedCartRow, nowMs: number): Status {
   return ageMs < COOLING_MS ? "cooling" : "eligible";
 }
 
-const STATUS_STYLE: Record<Status, { bg: string; fg: string; label: string }> = {
-  recovered: { bg: "#dcfce7", fg: "#14532d", label: "Recovered" },
-  cleared: { bg: "#f1f5f9", fg: "#475569", label: "Cleared" },
-  nudged: { bg: "#dbeafe", fg: "#1e3a8a", label: "Nudged" },
-  cooling: { bg: "#fef3c7", fg: "#854d0e", label: "Cooling 24h" },
-  eligible: { bg: "#fee2e2", fg: "#7f1d1d", label: "Eligible" },
-};
+const STATUS_STYLE: Record<Status, { bg: string; fg: string; label: string }> =
+  {
+    recovered: { bg: "#dcfce7", fg: "#14532d", label: "Recovered" },
+    cleared: { bg: "#f1f5f9", fg: "#475569", label: "Cleared" },
+    nudged: { bg: "#dbeafe", fg: "#1e3a8a", label: "Nudged" },
+    cooling: { bg: "#fef3c7", fg: "#854d0e", label: "Cooling 24h" },
+    eligible: { bg: "#fee2e2", fg: "#7f1d1d", label: "Eligible" },
+  };
 
 function formatMoneyCents(cents: number, currency: string): string {
   // Same lightweight formatter as the rest of the dashboard. Falls
@@ -124,10 +121,7 @@ export function AdminShopAbandonedCartsPage() {
   );
 
   return (
-    <div
-      className="space-y-6"
-      data-testid="admin-shop-abandoned-carts-page"
-    >
+    <div className="space-y-6" data-testid="admin-shop-abandoned-carts-page">
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
@@ -137,9 +131,9 @@ export function AdminShopAbandonedCartsPage() {
         </h1>
         <p className="text-sm text-slate-600 max-w-2xl">
           Customers whose cart sat for 24+ hours without checkout. Use{" "}
-          <span className="font-semibold">Send due reminders</span> to
-          dispatch one nudge email per eligible row — already-nudged,
-          recovered, and cleared rows are skipped automatically.
+          <span className="font-semibold">Send due reminders</span> to dispatch
+          one nudge email per eligible row — already-nudged, recovered, and
+          cleared rows are skipped automatically.
         </p>
       </header>
 
@@ -199,7 +193,10 @@ export function AdminShopAbandonedCartsPage() {
           onClick={() => void refetch()}
           disabled={isPending}
           className="px-3 py-2 rounded text-xs font-semibold border bg-white"
-          style={{ color: "hsl(var(--ink-1))", borderColor: "hsl(var(--line-1))" }}
+          style={{
+            color: "hsl(var(--ink-1))",
+            borderColor: "hsl(var(--line-1))",
+          }}
           data-testid="abandoned-refresh-btn"
         >
           Refresh
@@ -217,8 +214,7 @@ export function AdminShopAbandonedCartsPage() {
             Scanned {lastResult.scanned} · sent {lastResult.sent}
             {lastResult.skippedFailed > 0 &&
               ` · failed ${lastResult.skippedFailed}`}
-            {!lastResult.sendgridConfigured &&
-              " · SendGrid not configured"}
+            {!lastResult.sendgridConfigured && " · SendGrid not configured"}
           </span>
         )}
         {opError && (
@@ -236,9 +232,7 @@ export function AdminShopAbandonedCartsPage() {
         )}
       </div>
 
-      {isError && (
-        <ErrorPanel error={error} onRetry={() => void refetch()} />
-      )}
+      {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
 
       <div
         className="border rounded-lg bg-white overflow-hidden"
@@ -251,9 +245,7 @@ export function AdminShopAbandonedCartsPage() {
               <th className="text-left px-3 py-2 font-semibold">Customer</th>
               <th className="text-right px-3 py-2 font-semibold">Items</th>
               <th className="text-right px-3 py-2 font-semibold">Subtotal</th>
-              <th className="text-left px-3 py-2 font-semibold">
-                Updated
-              </th>
+              <th className="text-left px-3 py-2 font-semibold">Updated</th>
               <th className="text-left px-3 py-2 font-semibold">Nudge</th>
             </tr>
           </thead>
@@ -276,9 +268,9 @@ export function AdminShopAbandonedCartsPage() {
                   className="px-3 py-6 text-center text-slate-500"
                   data-testid="abandoned-empty"
                 >
-                  No abandoned carts. The cart-abandonment table only
-                  records signed-in users with at least one item that
-                  sat untouched for the cooling window.
+                  No abandoned carts. The cart-abandonment table only records
+                  signed-in users with at least one item that sat untouched for
+                  the cooling window.
                 </td>
               </tr>
             )}
@@ -323,19 +315,13 @@ export function AdminShopAbandonedCartsPage() {
                     </td>
                     <td className="px-3 py-2 align-top text-slate-600">
                       {r.remindedAt ? (
-                        <span
-                          title={new Date(r.remindedAt).toLocaleString()}
-                        >
+                        <span title={new Date(r.remindedAt).toLocaleString()}>
                           {formatRelative(r.remindedAt, nowMs)}
                         </span>
                       ) : status === "cooling" ? (
-                        <span className="text-xs text-slate-400">
-                          waiting
-                        </span>
+                        <span className="text-xs text-slate-400">waiting</span>
                       ) : status === "eligible" ? (
-                        <span className="text-xs text-slate-400">
-                          ready
-                        </span>
+                        <span className="text-xs text-slate-400">ready</span>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}

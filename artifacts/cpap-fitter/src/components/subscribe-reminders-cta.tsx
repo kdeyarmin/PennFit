@@ -25,7 +25,9 @@ export function SubscribeRemindersCta({
             <Bell className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-medium">Get reminded when it's time to swap supplies</p>
+            <p className="font-medium">
+              Get reminded when it's time to swap supplies
+            </p>
             <p className="text-sm text-muted-foreground">
               Free, one-click unsubscribe.
             </p>

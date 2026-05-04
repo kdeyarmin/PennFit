@@ -98,8 +98,7 @@ CardContent.displayName = "CardContent";
 type ButtonVariant = "default" | "outline" | "ghost" | "destructive";
 type ButtonSize = "default" | "sm" | "icon";
 
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
 }
@@ -107,7 +106,8 @@ export interface ButtonProps
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   default: "bg-slate-900 text-white hover:bg-slate-800 border border-slate-900",
   outline: "bg-white text-slate-900 hover:bg-slate-50 border border-slate-300",
-  ghost: "bg-transparent text-slate-700 hover:bg-slate-100 border border-transparent",
+  ghost:
+    "bg-transparent text-slate-700 hover:bg-slate-100 border border-transparent",
   destructive: "bg-red-600 text-white hover:bg-red-700 border border-red-600",
 };
 
@@ -239,7 +239,12 @@ interface CollectedItem {
 function collectSelectItems(node: React.ReactNode): CollectedItem[] {
   const out: CollectedItem[] = [];
   React.Children.forEach(node, (child) => {
-    if (!React.isValidElement<{ value?: string; children?: React.ReactNode }>(child)) return;
+    if (
+      !React.isValidElement<{ value?: string; children?: React.ReactNode }>(
+        child,
+      )
+    )
+      return;
     if ((child.type as React.ComponentType | undefined) === SelectItem) {
       out.push({
         value: child.props.value ?? "",
@@ -261,7 +266,12 @@ function findTriggerProps(node: React.ReactNode): {
   let triggerClassName = "";
   let placeholder = "";
   React.Children.forEach(node, (child) => {
-    if (!React.isValidElement<{ className?: string; children?: React.ReactNode }>(child)) return;
+    if (
+      !React.isValidElement<{ className?: string; children?: React.ReactNode }>(
+        child,
+      )
+    )
+      return;
     if ((child.type as React.ComponentType | undefined) === SelectTrigger) {
       triggerClassName = child.props.className ?? "";
       // Look one level deeper for SelectValue placeholder
@@ -400,10 +410,7 @@ export function AlertTitle({
   ...rest
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
-    <h5
-      className={cn("font-semibold leading-tight", className)}
-      {...rest}
-    />
+    <h5 className={cn("font-semibold leading-tight", className)} {...rest} />
   );
 }
 
@@ -411,10 +418,5 @@ export function AlertDescription({
   className,
   ...rest
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn("text-sm leading-snug", className)}
-      {...rest}
-    />
-  );
+  return <div className={cn("text-sm leading-snug", className)} {...rest} />;
 }

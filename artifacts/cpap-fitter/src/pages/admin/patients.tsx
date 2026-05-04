@@ -20,7 +20,11 @@ import type {
 } from "@workspace/api-client-react/admin";
 import { Card } from "@/components/admin/Card";
 import { Table, type Column } from "@/components/admin/Table";
-import { Badge, humanizeStatus, patientStatusVariant } from "@/components/admin/Badge";
+import {
+  Badge,
+  humanizeStatus,
+  patientStatusVariant,
+} from "@/components/admin/Badge";
 import { Spinner } from "@/components/admin/Spinner";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
@@ -132,7 +136,9 @@ export function PatientsPage() {
   }, [data]);
 
   const allVisibleSelected =
-    !!data && data.items.length > 0 && data.items.every((r) => selectedIds.has(r.id));
+    !!data &&
+    data.items.length > 0 &&
+    data.items.every((r) => selectedIds.has(r.id));
   const someVisibleSelected =
     !!data && data.items.some((r) => selectedIds.has(r.id));
 
@@ -161,7 +167,9 @@ export function PatientsPage() {
     setSelectedIds(new Set());
   }
 
-  async function runBulk(targetStatus: BulkPatientStatusRequestStatus): Promise<void> {
+  async function runBulk(
+    targetStatus: BulkPatientStatusRequestStatus,
+  ): Promise<void> {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     const verb =
@@ -270,14 +278,11 @@ export function PatientsPage() {
       if (truncated) {
         setBulkFeedback({
           kind: "error",
-          text:
-            "Export was capped at 5,000 rows. Narrow your filters to export the rest.",
+          text: "Export was capped at 5,000 rows. Narrow your filters to export the rest.",
         });
       }
     } catch (err) {
-      setExportError(
-        err instanceof Error ? err.message : "Export failed.",
-      );
+      setExportError(err instanceof Error ? err.message : "Export failed.");
     } finally {
       setBulkExporting(false);
     }
@@ -501,7 +506,10 @@ export function PatientsPage() {
           aria-label="Bulk patient actions"
         >
           <div className="flex items-center gap-3">
-            <span className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+            <span
+              className="font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
               {selectedIds.size > 0
                 ? `${selectedIds.size} selected on this page`
                 : "Bulk action result"}
@@ -701,8 +709,10 @@ function buildCreatePatientBody(form: NewCustomerForm): {
   if (pacwareId.length > 64) {
     return { body: null, error: "Pacware ID is too long (max 64 chars)." };
   }
-  if (legalFirstName === "") return { body: null, error: "First name is required." };
-  if (legalLastName === "") return { body: null, error: "Last name is required." };
+  if (legalFirstName === "")
+    return { body: null, error: "First name is required." };
+  if (legalLastName === "")
+    return { body: null, error: "Last name is required." };
   if (!ISO_DATE_RE.test(dateOfBirth)) {
     return { body: null, error: "Date of birth must be in YYYY-MM-DD format." };
   }
@@ -726,7 +736,8 @@ function buildCreatePatientBody(form: NewCustomerForm): {
     form.addressPostalCode,
     form.addressCountry,
   ].map((s) => s.trim());
-  const anyAddress = addressFields.some((s) => s !== "") || form.addressLine2.trim() !== "";
+  const anyAddress =
+    addressFields.some((s) => s !== "") || form.addressLine2.trim() !== "";
   const allRequiredAddress = addressFields.every((s) => s !== "");
   if (anyAddress && !allRequiredAddress) {
     return {
@@ -778,9 +789,7 @@ function buildCreatePatientBody(form: NewCustomerForm): {
 
 function describeCreateError(err: unknown): string {
   if (err instanceof ApiError) {
-    const data = err.data as
-      | { error?: string; message?: string }
-      | undefined;
+    const data = err.data as { error?: string; message?: string } | undefined;
     return data?.message ?? data?.error ?? "Couldn't create the customer.";
   }
   return err instanceof Error ? err.message : "Couldn't create the customer.";
@@ -861,8 +870,8 @@ function NewCustomerModal({
             New customer
           </h2>
           <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-            All PHI fields are encrypted at rest. The Pacware ID must be
-            unique — duplicates are rejected.
+            All PHI fields are encrypted at rest. The Pacware ID must be unique
+            — duplicates are rejected.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -888,10 +897,7 @@ function NewCustomerModal({
                   { value: "closed", label: "Closed" },
                 ]}
                 onChange={(e) =>
-                  patch(
-                    "status",
-                    e.target.value as NewCustomerForm["status"],
-                  )
+                  patch("status", e.target.value as NewCustomerForm["status"])
                 }
                 disabled={isPending}
               />
@@ -932,7 +938,10 @@ function NewCustomerModal({
                 required
                 disabled={isPending}
               />
-              <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              <p
+                className="mt-1 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
                 Stored as YYYY-MM-DD; no timezone applied.
               </p>
             </div>
@@ -969,8 +978,8 @@ function NewCustomerModal({
                 Mailing address (optional)
               </h3>
               <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-                Provide the full address or leave it blank. Required for
-                shipped supplies; optional if the patient is e-fulfillment only.
+                Provide the full address or leave it blank. Required for shipped
+                supplies; optional if the patient is e-fulfillment only.
               </p>
             </div>
             <div className="md:col-span-2">
@@ -1070,9 +1079,7 @@ function NewCustomerModal({
                 min={1}
                 max={365}
                 value={form.cadenceOverrideDays}
-                onChange={(e) =>
-                  patch("cadenceOverrideDays", e.target.value)
-                }
+                onChange={(e) => patch("cadenceOverrideDays", e.target.value)}
                 disabled={isPending}
               />
             </div>
@@ -1099,11 +1106,7 @@ function NewCustomerModal({
           </div>
 
           {error && (
-            <p
-              className="text-sm"
-              style={{ color: "#b91c1c" }}
-              role="alert"
-            >
+            <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
               {error}
             </p>
           )}
@@ -1191,9 +1194,10 @@ type ParsedRow = {
   error: string | null;
 };
 
-function buildRowFromCsv(
-  raw: Record<string, string>,
-): { row: ImportPatientRow | null; error: string | null } {
+function buildRowFromCsv(raw: Record<string, string>): {
+  row: ImportPatientRow | null;
+  error: string | null;
+} {
   const trimmed: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw)) {
     trimmed[k] = (v ?? "").trim();
@@ -1209,8 +1213,7 @@ function buildRowFromCsv(
     return { row: null, error: "Legal first name is required." };
   if (!legalLastName)
     return { row: null, error: "Legal last name is required." };
-  if (!dateOfBirth)
-    return { row: null, error: "Date of birth is required." };
+  if (!dateOfBirth) return { row: null, error: "Date of birth is required." };
 
   // Server enforces YYYY-MM-DD; we surface a friendly error early so
   // the admin doesn't blast 500 rows of MM/DD/YYYY at us.
@@ -1397,9 +1400,7 @@ function ImportCsvModal({
     // errors. Both share the same shape: rowIndex + message.
     const lines: string[] = ["rowIndex,field,message"];
     for (const r of invalidRows) {
-      lines.push(
-        `${r.rowIndex},,"${(r.error ?? "").replace(/"/g, '""')}"`,
-      );
+      lines.push(`${r.rowIndex},,"${(r.error ?? "").replace(/"/g, '""')}"`);
     }
     for (const e of summary.serverErrors) {
       lines.push(
@@ -1447,7 +1448,8 @@ function ImportCsvModal({
                 <code>legalFirstName</code>, <code>legalLastName</code>,{" "}
                 <code>dateOfBirth</code> (YYYY-MM-DD). Optional:{" "}
                 <code>phoneE164</code>, <code>email</code>, address fields.
-                Duplicates by Pacware ID are skipped — they don't fail the import.
+                Duplicates by Pacware ID are skipped — they don't fail the
+                import.
               </p>
             </div>
             <Button
@@ -1477,11 +1479,7 @@ function ImportCsvModal({
           {parsing && <Spinner label="Parsing CSV…" />}
 
           {parseError && (
-            <p
-              className="text-sm"
-              style={{ color: "#b91c1c" }}
-              role="alert"
-            >
+            <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
               {parseError}
             </p>
           )}
@@ -1498,7 +1496,11 @@ function ImportCsvModal({
               >
                 <strong>{validRows.length}</strong> valid row
                 {validRows.length === 1 ? "" : "s"} ready to import,{" "}
-                <strong style={{ color: invalidRows.length > 0 ? "#b91c1c" : "#374151" }}>
+                <strong
+                  style={{
+                    color: invalidRows.length > 0 ? "#b91c1c" : "#374151",
+                  }}
+                >
                   {invalidRows.length}
                 </strong>{" "}
                 with validation errors.
@@ -1512,7 +1514,10 @@ function ImportCsvModal({
                   >
                     Validation errors
                   </p>
-                  <ul className="text-xs space-y-1" style={{ color: "hsl(var(--ink-2))" }}>
+                  <ul
+                    className="text-xs space-y-1"
+                    style={{ color: "hsl(var(--ink-2))" }}
+                  >
                     {invalidRows.slice(0, 10).map((r) => (
                       <li key={r.rowIndex}>
                         <strong>Row {r.rowIndex}</strong>: {r.error}
@@ -1532,7 +1537,8 @@ function ImportCsvModal({
                   className="text-xs uppercase tracking-wider font-semibold mb-1"
                   style={{ color: "hsl(var(--penn-gold-deep))" }}
                 >
-                  Preview (first {Math.min(CSV_PREVIEW_ROWS, validRows.length)} rows)
+                  Preview (first {Math.min(CSV_PREVIEW_ROWS, validRows.length)}{" "}
+                  rows)
                 </p>
                 <div
                   className="overflow-x-auto rounded border"
@@ -1552,7 +1558,10 @@ function ImportCsvModal({
                     <tbody>
                       {validRows.slice(0, CSV_PREVIEW_ROWS).map((r) => (
                         <tr key={r.rowIndex}>
-                          <td className="px-2 py-1" style={{ color: "hsl(var(--ink-3))" }}>
+                          <td
+                            className="px-2 py-1"
+                            style={{ color: "hsl(var(--ink-3))" }}
+                          >
                             {r.rowIndex}
                           </td>
                           <td className="px-2 py-1">{r.parsed!.pacwareId}</td>
@@ -1563,7 +1572,9 @@ function ImportCsvModal({
                           <td className="px-2 py-1">
                             {r.parsed!.phoneE164 ?? "—"}
                           </td>
-                          <td className="px-2 py-1">{r.parsed!.email ?? "—"}</td>
+                          <td className="px-2 py-1">
+                            {r.parsed!.email ?? "—"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1579,17 +1590,17 @@ function ImportCsvModal({
               )}
 
               {submitError && (
-                <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
+                <p
+                  className="text-sm"
+                  style={{ color: "#b91c1c" }}
+                  role="alert"
+                >
                   {submitError}
                 </p>
               )}
 
               <div className="flex justify-end gap-2">
-                <Button
-                  intent="ghost"
-                  onClick={reset}
-                  disabled={submitting}
-                >
+                <Button intent="ghost" onClick={reset} disabled={submitting}>
                   Pick a different file
                 </Button>
                 <Button
@@ -1618,8 +1629,8 @@ function ImportCsvModal({
                   <strong style={{ color: "#166534" }}>
                     {summary.created}
                   </strong>{" "}
-                  created ·{" "}
-                  <strong>{summary.skippedDuplicates}</strong> duplicate
+                  created · <strong>{summary.skippedDuplicates}</strong>{" "}
+                  duplicate
                   {summary.skippedDuplicates === 1 ? "" : "s"} skipped ·{" "}
                   <strong
                     style={{
@@ -1646,7 +1657,10 @@ function ImportCsvModal({
                   >
                     Server-reported errors
                   </p>
-                  <ul className="text-xs space-y-1" style={{ color: "hsl(var(--ink-2))" }}>
+                  <ul
+                    className="text-xs space-y-1"
+                    style={{ color: "hsl(var(--ink-2))" }}
+                  >
                     {summary.serverErrors.slice(0, 10).map((e, i) => (
                       <li key={`${e.rowIndex}-${i}`}>
                         <strong>Row {e.rowIndex + 1}</strong>
@@ -1663,7 +1677,8 @@ function ImportCsvModal({
               )}
 
               <div className="flex justify-end gap-2">
-                {(summary.serverErrors.length > 0 || invalidRows.length > 0) && (
+                {(summary.serverErrors.length > 0 ||
+                  invalidRows.length > 0) && (
                   <Button intent="secondary" onClick={downloadErrorsCsv}>
                     Download errors CSV
                   </Button>

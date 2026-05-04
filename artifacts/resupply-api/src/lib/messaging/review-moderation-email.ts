@@ -213,8 +213,7 @@ async function safeSend(
   } catch (err) {
     return {
       sent: false,
-      reason:
-        err instanceof Error ? err.message : "sendgrid_unknown_failure",
+      reason: err instanceof Error ? err.message : "sendgrid_unknown_failure",
     };
   }
 }

@@ -126,10 +126,7 @@ export async function checkReadiness(): Promise<ReadinessResult> {
     // already proven by the integration test; this keeps the
     // admin-readable log stream equally clean. Treat every log
     // line as world-readable.
-    logger.warn(
-      { errCategory: errors.db },
-      "readiness: db check failed",
-    );
+    logger.warn({ errCategory: errors.db }, "readiness: db check failed");
   }
   if (queue.status === "rejected") {
     if ((queue.reason as { code?: string })?.code === "SCHEMA_MISSING") {
@@ -137,10 +134,7 @@ export async function checkReadiness(): Promise<ReadinessResult> {
     } else {
       errors.queue = categorize(queue.reason);
     }
-    logger.warn(
-      { errCategory: errors.queue },
-      "readiness: queue check failed",
-    );
+    logger.warn({ errCategory: errors.queue }, "readiness: queue check failed");
   }
 
   const allOk = checks.db === "ok" && checks.queue === "ok";

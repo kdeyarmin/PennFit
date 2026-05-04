@@ -75,10 +75,9 @@ vi.mock("../../lib/stripe/config", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
@@ -112,7 +111,7 @@ beforeEach(() => {
   dbStub.execute.mockClear();
   stripeCheckoutCreateMock.mockReset();
   stripeConfigured = true;
-    mockAdmin.current = null;
+  mockAdmin.current = null;
 });
 
 afterEach(() => {
@@ -129,7 +128,8 @@ async function loadRouter() {
 }
 
 describe("GET /admin/shop/customers — auth gate", () => {
-  it("rejects callers without sign-in (no userId)", async () => {    const router = await loadRouter();
+  it("rejects callers without sign-in (no userId)", async () => {
+    const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
     );
@@ -356,7 +356,8 @@ function pushDetailQueue(opts: {
 }
 
 describe("GET /admin/shop/customers/:userId — auth + validation", () => {
-  it("rejects unauthenticated callers", async () => {    const router = await loadRouter();
+  it("rejects unauthenticated callers", async () => {
+    const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
     );
@@ -685,7 +686,10 @@ function pushReorderQueue({
 }: {
   order: Record<string, unknown> | null;
   items?: Array<{ price_id: string; quantity: number }>;
-  customer?: { email_lower: string | null; stripe_customer_id: string | null } | null;
+  customer?: {
+    email_lower: string | null;
+    stripe_customer_id: string | null;
+  } | null;
 }) {
   executeQueue.push({ rows: order ? [order] : [] });
   if (items !== undefined) executeQueue.push({ rows: items });

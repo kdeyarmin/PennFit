@@ -55,12 +55,7 @@ export function ConversationAssignmentBar({
   const isUnassigned = !assignedAdminUserId;
 
   const [busy, setBusy] = useState<
-    | "claim"
-    | "release"
-    | "priority"
-    | "escalate"
-    | "deescalate"
-    | null
+    "claim" | "release" | "priority" | "escalate" | "deescalate" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [showPriority, setShowPriority] = useState(false);
@@ -113,7 +108,9 @@ export function ConversationAssignmentBar({
           {isUnassigned ? (
             <button
               type="button"
-              onClick={() => void run("claim", () => claimConversation(conversationId))}
+              onClick={() =>
+                void run("claim", () => claimConversation(conversationId))
+              }
               disabled={busy !== null}
               className="text-xs font-semibold text-blue-700 hover:underline disabled:opacity-60"
               data-testid="conv-claim"
@@ -123,7 +120,9 @@ export function ConversationAssignmentBar({
           ) : isMine ? (
             <button
               type="button"
-              onClick={() => void run("release", () => releaseConversation(conversationId))}
+              onClick={() =>
+                void run("release", () => releaseConversation(conversationId))
+              }
               disabled={busy !== null}
               className="text-xs font-semibold text-slate-600 hover:underline disabled:opacity-60"
               data-testid="conv-release"
@@ -175,7 +174,9 @@ export function ConversationAssignmentBar({
               <button
                 type="button"
                 onClick={() =>
-                  void run("deescalate", () => deEscalateConversation(conversationId))
+                  void run("deescalate", () =>
+                    deEscalateConversation(conversationId),
+                  )
                 }
                 disabled={busy !== null}
                 className="text-xs font-semibold text-slate-600 hover:underline disabled:opacity-60"

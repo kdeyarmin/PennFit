@@ -78,8 +78,13 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
     // Stripe deprecated this field but still populates it on older
     // API versions; cast through unknown so we don't fight the SDK
     // types when the field is missing on the union.
-    (session as unknown as { shipping_details?: { address?: { city?: string | null; state?: string | null } } })
-      .shipping_details ??
+    (
+      session as unknown as {
+        shipping_details?: {
+          address?: { city?: string | null; state?: string | null };
+        };
+      }
+    ).shipping_details ??
     null;
 
   const lineItems = session.line_items?.data ?? [];

@@ -157,7 +157,10 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "conversations.detail: audit write failed",
     );
   }

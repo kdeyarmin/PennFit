@@ -50,8 +50,10 @@ const dbStub = {
       // The line-item query has no `.limit()`; awaiting the chain
       // straight after `.where()` should resolve to the next queue
       // entry. We model that via a thenable.
-      then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-        Promise.resolve(result).then(resolve, reject),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject: (e: unknown) => unknown,
+      ) => Promise.resolve(result).then(resolve, reject),
     };
     return obj;
   }),
@@ -71,10 +73,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 

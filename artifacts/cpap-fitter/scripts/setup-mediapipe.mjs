@@ -40,9 +40,11 @@ export async function downloadModelWithRetry(attempts = 3) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      const res = await fetch(MODEL_URL, { signal: controller.signal }).finally(() => {
-        clearTimeout(timeout);
-      });
+      const res = await fetch(MODEL_URL, { signal: controller.signal }).finally(
+        () => {
+          clearTimeout(timeout);
+        },
+      );
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -74,7 +76,15 @@ export async function main() {
   //    contains the expected WASM file wins.
   const candidates = [
     // pnpm hoisted location (most common in this monorepo)
-    resolve(PROJECT_ROOT, "..", "..", "node_modules", "@mediapipe", "tasks-vision", "wasm"),
+    resolve(
+      PROJECT_ROOT,
+      "..",
+      "..",
+      "node_modules",
+      "@mediapipe",
+      "tasks-vision",
+      "wasm",
+    ),
     // Local artifact node_modules (fallback)
     resolve(PROJECT_ROOT, "node_modules", "@mediapipe", "tasks-vision", "wasm"),
   ];
@@ -94,7 +104,9 @@ export async function main() {
   for (const f of files) {
     await copyFile(resolve(wasmSrc, f), resolve(WASM_DEST, f));
   }
-  console.log(`[setup-mediapipe] Copied ${files.length} WASM files → public/mediapipe/wasm/`);
+  console.log(
+    `[setup-mediapipe] Copied ${files.length} WASM files → public/mediapipe/wasm/`,
+  );
 
   // 2) Download the face landmark model if it's not already cached. Models
   //    are large (~3.5 MB) and immutable, so we never re-download.
@@ -121,7 +133,10 @@ export async function main() {
   );
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main().catch((e) => {
     console.warn("[setup-mediapipe] WARN:", e.message);
     // Non-fatal: dev server still starts, face-capture feature will be

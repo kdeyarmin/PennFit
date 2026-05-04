@@ -12,7 +12,14 @@
 // returned by the public read endpoints.
 
 import { sql } from "drizzle-orm";
-import { check, index, integer, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 

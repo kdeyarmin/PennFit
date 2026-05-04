@@ -131,10 +131,7 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
       updatedAt: patients.updatedAt,
     })
     .from(patients);
-  const rows = await (whereClause
-    ? baseQuery.where(whereClause)
-    : baseQuery
-  )
+  const rows = await (whereClause ? baseQuery.where(whereClause) : baseQuery)
     .orderBy(asc(patients.createdAt))
     .limit(limit);
 
@@ -180,7 +177,10 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     logger.warn(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "patients/export-csv: audit write failed",
     );
   }

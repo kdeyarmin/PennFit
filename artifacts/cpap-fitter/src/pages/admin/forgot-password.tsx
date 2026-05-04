@@ -50,8 +50,8 @@ export function ForgotPasswordPage() {
               the password. The link expires in one hour.
             </p>
             <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              Didn't get it? Check your spam folder, or try again with the
-              email you signed up with.
+              Didn't get it? Check your spam folder, or try again with the email
+              you signed up with.
             </p>
             <Link
               href={`${basePath}/sign-in`}

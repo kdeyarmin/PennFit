@@ -8,6 +8,7 @@
     "seed:shop": "tsx ./src/seed-stripe-products.ts",
     "auth:bootstrap-admin": "tsx ./src/auth-bootstrap-admin.ts",
     "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --passWithNoTests --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

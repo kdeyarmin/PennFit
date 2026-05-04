@@ -22,7 +22,10 @@ import { getDbPool, shopOrders, shopCustomers } from "@workspace/resupply-db";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
 import { readCustomerProfile } from "../../lib/customer-profile";
-import { attachSignedIn, requireSignedIn } from "../../middlewares/requireSignedIn";
+import {
+  attachSignedIn,
+  requireSignedIn,
+} from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
 

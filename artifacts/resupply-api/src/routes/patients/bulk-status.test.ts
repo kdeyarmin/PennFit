@@ -29,7 +29,8 @@ const dbStub = {
       from: () => obj,
       where: () => obj,
       limit: () => obj,
-      then: (resolve: (v: unknown) => unknown) => Promise.resolve([]).then(resolve),
+      then: (resolve: (v: unknown) => unknown) =>
+        Promise.resolve([]).then(resolve),
     };
     return obj;
   }),
@@ -46,7 +47,8 @@ const dbStub = {
       values: () => obj,
       onConflictDoUpdate: () => obj,
       returning: () => Promise.resolve([]),
-      then: (resolve: (v: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
+      then: (resolve: (v: unknown) => unknown) =>
+        Promise.resolve(undefined).then(resolve),
     };
     return obj;
   }),
@@ -56,10 +58,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -166,9 +167,7 @@ describe("POST /patients/bulk-status", () => {
 
   it("dedupes repeated ids before counting failures", async () => {
     const now = new Date("2026-04-28T12:00:00Z");
-    updateReturning.mockResolvedValueOnce([
-      { id: PATIENT_A, updatedAt: now },
-    ]);
+    updateReturning.mockResolvedValueOnce([{ id: PATIENT_A, updatedAt: now }]);
 
     const res = await request(makeApp())
       .post("/resupply-api/patients/bulk-status")

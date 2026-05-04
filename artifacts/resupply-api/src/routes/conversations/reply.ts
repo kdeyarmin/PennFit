@@ -52,124 +52,127 @@ router.post(
   requireAdmin,
   withIdempotency("POST /conversations/:id/reply"),
   async (req, res) => {
-  const idParsed = idParam.safeParse(req.params);
-  if (!idParsed.success) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
+    const idParsed = idParam.safeParse(req.params);
+    if (!idParsed.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
 
-  const cfg = readMessagingConfigOrNull();
-  if (!cfg) {
-    res.status(503).json({
-      error: "messaging_not_configured",
-      message:
-        "SMS+Email reply is disabled because one or more required env " +
-        "vars are missing. Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, " +
-        "TWILIO_PHONE_NUMBER or TWILIO_MESSAGING_SERVICE_SID, SENDGRID_API_KEY, " +
-        "SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME, " +
-        "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and RESUPPLY_LINK_HMAC_KEY.",
-    });
-    return;
-  }
-
-  const bodyParsed = bodySchema.safeParse(req.body);
-  if (!bodyParsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: bodyParsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-
-  const { id: conversationId } = idParsed.data;
-  const { body } = bodyParsed.data;
-
-  let outcome: ReplyInConversationOutcome;
-  try {
-    outcome = await replyInConversation({
-      pool: getDbPool(),
-      smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
-      emailCfg: { ...cfg.email, practiceName: cfg.practiceName },
-      conversationId,
-      body,
-      actor: {
-        kind: "admin",
-        adminEmail: req.adminEmail ?? null,
-        adminUserId: req.adminUserId ?? null,
-        ip: req.ip ?? null,
-        userAgent: req.get("user-agent") ?? null,
-      },
-    });
-  } catch (err) {
-    if (err instanceof TwilioConfigError || err instanceof EmailConfigError) {
-      logger.error(
-        { err, conversation_id: conversationId },
-        "POST /conversations/:id/reply: vendor config error",
-      );
+    const cfg = readMessagingConfigOrNull();
+    if (!cfg) {
       res.status(503).json({
-        error: "vendor_config_error",
-        message: err.message,
+        error: "messaging_not_configured",
+        message:
+          "SMS+Email reply is disabled because one or more required env " +
+          "vars are missing. Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, " +
+          "TWILIO_PHONE_NUMBER or TWILIO_MESSAGING_SERVICE_SID, SENDGRID_API_KEY, " +
+          "SENDGRID_FROM_EMAIL, SENDGRID_FROM_NAME, " +
+          "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and RESUPPLY_LINK_HMAC_KEY.",
       });
       return;
     }
-    throw err;
-  }
 
-  switch (outcome.status) {
-    case "ok":
-      res.status(201).json({
-        messageId: outcome.messageId,
-        conversationId: outcome.conversationId,
-        vendorRef: outcome.vendorRef,
+    const bodyParsed = bodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
       });
       return;
-    case "conversation_not_found":
-      res.status(404).json({ error: "not_found" });
-      return;
-    case "conversation_closed":
-      res.status(409).json({
-        error: "conversation_closed",
-        message: "This conversation is closed. Start a new one with the patient.",
-      });
-      return;
-    case "patient_missing_contact":
-      res.status(409).json({
-        error: "patient_missing_contact",
-        channel: outcome.channel,
-        message:
-          outcome.channel === "sms"
-            ? "Patient has no phone number on file (or the conversation is on a voice channel — voice replies are not supported)."
-            : "Patient has no email address on file.",
-      });
-      return;
-    case "patient_phone_unnormalizable":
-      res.status(422).json({
-        error: "patient_phone_unnormalizable",
-        message: "Patient's phone number couldn't be parsed as E.164.",
-      });
-      return;
-    case "vendor_api_error":
-      logger.warn(
-        {
-          conversation_id: conversationId,
-          vendor: outcome.vendor,
-          vendor_status: outcome.vendorStatus,
-          vendor_code: outcome.vendorCode,
+    }
+
+    const { id: conversationId } = idParsed.data;
+    const { body } = bodyParsed.data;
+
+    let outcome: ReplyInConversationOutcome;
+    try {
+      outcome = await replyInConversation({
+        pool: getDbPool(),
+        smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
+        emailCfg: { ...cfg.email, practiceName: cfg.practiceName },
+        conversationId,
+        body,
+        actor: {
+          kind: "admin",
+          adminEmail: req.adminEmail ?? null,
+          adminUserId: req.adminUserId ?? null,
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
         },
-        "POST /conversations/:id/reply: vendor api error",
-      );
-      res.status(502).json({
-        error: "vendor_api_error",
-        vendor: outcome.vendor,
-        vendorStatus: outcome.vendorStatus,
-        vendorCode: outcome.vendorCode,
-        message: "The SMS/email vendor rejected the message. The attempt is in the audit log.",
       });
-      return;
-  }
-});
+    } catch (err) {
+      if (err instanceof TwilioConfigError || err instanceof EmailConfigError) {
+        logger.error(
+          { err, conversation_id: conversationId },
+          "POST /conversations/:id/reply: vendor config error",
+        );
+        res.status(503).json({
+          error: "vendor_config_error",
+          message: err.message,
+        });
+        return;
+      }
+      throw err;
+    }
+
+    switch (outcome.status) {
+      case "ok":
+        res.status(201).json({
+          messageId: outcome.messageId,
+          conversationId: outcome.conversationId,
+          vendorRef: outcome.vendorRef,
+        });
+        return;
+      case "conversation_not_found":
+        res.status(404).json({ error: "not_found" });
+        return;
+      case "conversation_closed":
+        res.status(409).json({
+          error: "conversation_closed",
+          message:
+            "This conversation is closed. Start a new one with the patient.",
+        });
+        return;
+      case "patient_missing_contact":
+        res.status(409).json({
+          error: "patient_missing_contact",
+          channel: outcome.channel,
+          message:
+            outcome.channel === "sms"
+              ? "Patient has no phone number on file (or the conversation is on a voice channel — voice replies are not supported)."
+              : "Patient has no email address on file.",
+        });
+        return;
+      case "patient_phone_unnormalizable":
+        res.status(422).json({
+          error: "patient_phone_unnormalizable",
+          message: "Patient's phone number couldn't be parsed as E.164.",
+        });
+        return;
+      case "vendor_api_error":
+        logger.warn(
+          {
+            conversation_id: conversationId,
+            vendor: outcome.vendor,
+            vendor_status: outcome.vendorStatus,
+            vendor_code: outcome.vendorCode,
+          },
+          "POST /conversations/:id/reply: vendor api error",
+        );
+        res.status(502).json({
+          error: "vendor_api_error",
+          vendor: outcome.vendor,
+          vendorStatus: outcome.vendorStatus,
+          vendorCode: outcome.vendorCode,
+          message:
+            "The SMS/email vendor rejected the message. The attempt is in the audit log.",
+        });
+        return;
+    }
+  },
+);
 
 export default router;

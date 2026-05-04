@@ -24,7 +24,10 @@ export function AdminAuditLog() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-display text-3xl font-bold tracking-tight" data-testid="admin-page-title">
+        <h1
+          className="text-display text-3xl font-bold tracking-tight"
+          data-testid="admin-page-title"
+        >
           Activity history
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
@@ -59,7 +62,10 @@ export function AdminAuditLog() {
                   ))}
                 {!isLoading && data && data.events.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-muted-foreground">
+                    <td
+                      colSpan={5}
+                      className="py-12 text-center text-muted-foreground"
+                    >
                       Nothing recorded yet — once admins start opening orders or
                       sending reminders, their actions will appear here.
                     </td>
@@ -71,10 +77,7 @@ export function AdminAuditLog() {
                       {new Date(ev.occurredAt).toLocaleString()}
                     </td>
                     <td className="py-3 px-4">{ev.adminEmail}</td>
-                    <td
-                      className="py-3 px-4"
-                      title={ev.action}
-                    >
+                    <td className="py-3 px-4" title={ev.action}>
                       {auditActionLabel(ev.action)}
                     </td>
                     <td className="py-3 px-4 font-mono text-xs">

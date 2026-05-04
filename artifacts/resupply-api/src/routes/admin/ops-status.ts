@@ -45,8 +45,8 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
     ),
     twilioSms: Boolean(
       process.env.TWILIO_ACCOUNT_SID &&
-        process.env.TWILIO_AUTH_TOKEN &&
-        process.env.TWILIO_MESSAGING_SERVICE_SID,
+      process.env.TWILIO_AUTH_TOKEN &&
+      process.env.TWILIO_MESSAGING_SERVICE_SID,
     ),
     stripe: Boolean(process.env.STRIPE_SECRET_KEY),
     objectStorage: Boolean(process.env.PRIVATE_OBJECT_DIR),

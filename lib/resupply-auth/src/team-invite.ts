@@ -64,10 +64,7 @@ export async function inviteTeamMember(
   args: InviteArgs,
 ): Promise<InviteResult> {
   const now = new Date();
-  const baseUrl = (args.publicBaseUrl ?? deps.publicBaseUrl).replace(
-    /\/$/,
-    "",
-  );
+  const baseUrl = (args.publicBaseUrl ?? deps.publicBaseUrl).replace(/\/$/, "");
 
   // Upsert the auth.users row. Conflict on email_lower → update
   // role to the requested value AND clear status to 'invited' if

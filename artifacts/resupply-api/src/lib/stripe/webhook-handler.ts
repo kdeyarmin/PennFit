@@ -46,7 +46,11 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
-import { getStripeClient, readStripeConfigOrNull, type StripeConfig } from "./config";
+import {
+  getStripeClient,
+  readStripeConfigOrNull,
+  type StripeConfig,
+} from "./config";
 import { readDefaultPaymentMethod } from "./customer";
 import { formatIntervalLabel } from "./products-meta";
 import {
@@ -227,7 +231,9 @@ export const stripeWebhookHandler: RequestHandler = async (
           await syncCustomerAfterCheckout(config, session, log);
         } catch (syncErr) {
           log?.warn?.(
-            { err: syncErr instanceof Error ? syncErr.message : String(syncErr) },
+            {
+              err: syncErr instanceof Error ? syncErr.message : String(syncErr),
+            },
             "stripe webhook: customer sync failed (non-fatal)",
           );
         }
@@ -304,7 +310,10 @@ export const stripeWebhookHandler: RequestHandler = async (
         // back to our row via payment_intent — that field is set on
         // the row by markPaid().
         const charge = event.data.object as Stripe.Charge;
-        if (charge.payment_intent && typeof charge.payment_intent === "string") {
+        if (
+          charge.payment_intent &&
+          typeof charge.payment_intent === "string"
+        ) {
           await markStatusByPaymentIntent(
             charge.payment_intent,
             "refunded",
@@ -347,7 +356,7 @@ async function markPaid(
   const paymentIntentId =
     typeof session.payment_intent === "string"
       ? session.payment_intent
-      : session.payment_intent?.id ?? null;
+      : (session.payment_intent?.id ?? null);
 
   // Re-stamp customer_id from session metadata. The route that
   // created this Session also wrote it locally — this is belt-and-
@@ -398,10 +407,7 @@ async function markPaid(
       paidAt: shopOrders.paidAt,
     });
 
-  log?.info?.(
-    { amountCents: session.amount_total },
-    "shop order marked paid",
-  );
+  log?.info?.({ amountCents: session.amount_total }, "shop order marked paid");
 
   const row = updated[0];
   if (!row) return null;
@@ -437,7 +443,10 @@ async function upsertOrderItemsFromSession(
   session: Stripe.Checkout.Session,
   order: PaidOrderRow,
   log:
-    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
     | undefined,
 ): Promise<OrderConfirmationLineItem[]> {
   const stripe = getStripeClient(config);
@@ -510,16 +519,19 @@ async function upsertOrderItemsFromSession(
   }
 
   const db = drizzle(getDbPool());
-  await db.insert(shopOrderItems).values(rows).onConflictDoNothing({
-    // Match the UNIQUE we declared in the migration. We name the
-    // target columns rather than the index so a future index rename
-    // doesn't silently disable the dedupe.
-    target: [
-      shopOrderItems.stripeSessionId,
-      shopOrderItems.productId,
-      shopOrderItems.priceId,
-    ],
-  });
+  await db
+    .insert(shopOrderItems)
+    .values(rows)
+    .onConflictDoNothing({
+      // Match the UNIQUE we declared in the migration. We name the
+      // target columns rather than the index so a future index rename
+      // doesn't silently disable the dedupe.
+      target: [
+        shopOrderItems.stripeSessionId,
+        shopOrderItems.productId,
+        shopOrderItems.priceId,
+      ],
+    });
 
   log?.info?.(
     { sessionId: session.id, count: rows.length },
@@ -545,13 +557,18 @@ async function upsertOrderItemsFromSession(
 async function syncCustomerAfterCheckout(
   config: StripeConfig,
   session: Stripe.Checkout.Session,
-  log: { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void } | undefined,
+  log:
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
+    | undefined,
 ): Promise<void> {
   const customerId = readCustomerIdFromMetadata(session.metadata);
   const stripeCustomerId =
     typeof session.customer === "string"
       ? session.customer
-      : session.customer?.id ?? null;
+      : (session.customer?.id ?? null);
   if (!customerId || !stripeCustomerId) return;
 
   const db = drizzle(getDbPool());
@@ -603,7 +620,8 @@ async function syncCustomerAfterCheckout(
       defaultPaymentMethodId: updates.defaultPaymentMethodId ?? null,
       defaultPaymentMethodBrand: updates.defaultPaymentMethodBrand ?? null,
       defaultPaymentMethodLast4: updates.defaultPaymentMethodLast4 ?? null,
-      defaultPaymentMethodExpMonth: updates.defaultPaymentMethodExpMonth ?? null,
+      defaultPaymentMethodExpMonth:
+        updates.defaultPaymentMethodExpMonth ?? null,
       defaultPaymentMethodExpYear: updates.defaultPaymentMethodExpYear ?? null,
       shippingAddress: updates.shippingAddress ?? null,
     })
@@ -641,7 +659,10 @@ async function syncCustomerAfterCheckout(
 export async function markCartRecovered(
   session: Stripe.Checkout.Session,
   log:
-    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
     | undefined,
 ): Promise<void> {
   const customerId = readCustomerIdFromMetadata(session.metadata);
@@ -695,7 +716,12 @@ async function markStatus(
 async function upsertSubscription(
   subscription: Stripe.Subscription,
   eventCreatedAt: Date,
-  log: { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void } | undefined,
+  log:
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
+    | undefined,
 ): Promise<void> {
   const db = drizzle(getDbPool());
 
@@ -710,14 +736,15 @@ async function upsertSubscription(
   const stripeCustomerId =
     typeof subscription.customer === "string"
       ? subscription.customer
-      : subscription.customer?.id ?? null;
+      : (subscription.customer?.id ?? null);
 
   // Snapshot line items for offline rendering on /account.
   const items: ShopSubscriptionItemSnapshot[] = subscription.items.data.map(
     (it) => {
       const price = it.price;
       const product = price.product;
-      const productId = typeof product === "string" ? product : product?.id ?? null;
+      const productId =
+        typeof product === "string" ? product : (product?.id ?? null);
       const productName =
         typeof product === "object" && product && !product.deleted
           ? product.name
@@ -875,9 +902,14 @@ export async function sendOrderConfirmationIfFirst(args: {
   paidOrderId: string;
   items: readonly OrderConfirmationLineItem[];
   log:
-    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
     | undefined;
-}): Promise<{ skipped: true; reason: string } | { skipped: false; delivered: boolean }> {
+}): Promise<
+  { skipped: true; reason: string } | { skipped: false; delivered: boolean }
+> {
   const { session, paidOrderId, items, log } = args;
   const db = drizzle(getDbPool());
 
@@ -931,7 +963,10 @@ export async function sendOrderConfirmationIfFirst(args: {
       log?.warn?.(
         {
           orderId: claimed.id,
-          err: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+          err:
+            releaseErr instanceof Error
+              ? releaseErr.message
+              : String(releaseErr),
         },
         "order confirmation email claim release failed",
       );
@@ -1006,7 +1041,10 @@ export async function sendOrderConfirmationIfFirst(args: {
     // would permanently suppress the confirmation email.
     await releaseClaim();
     log?.warn?.(
-      { orderId: claimed.id, err: err instanceof Error ? err.message : String(err) },
+      {
+        orderId: claimed.id,
+        err: err instanceof Error ? err.message : String(err),
+      },
       "order confirmation email post-claim threw (non-fatal, claim released)",
     );
     return { skipped: false, delivered: false };

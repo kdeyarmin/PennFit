@@ -112,7 +112,7 @@ describe("renderClickConfirmation", () => {
 
   it("escapes practice name", () => {
     const html = renderClickConfirmation({
-      practiceName: '<b>Penn</b>',
+      practiceName: "<b>Penn</b>",
       action: "confirm",
     });
     expect(html).not.toContain("<b>Penn</b>");

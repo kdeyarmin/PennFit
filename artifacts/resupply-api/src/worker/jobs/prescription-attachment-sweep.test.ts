@@ -241,10 +241,7 @@ describe("sweepOrphans", () => {
 
   it("skips non-attachment objects but counts them", async () => {
     const { deps, audited, deleted, rechecks } = makeDeps({
-      objects: [
-        obj("uploads/old1", 48),
-        obj("public/marketing.png", 48),
-      ],
+      objects: [obj("uploads/old1", 48), obj("public/marketing.png", 48)],
       referenced: [],
       unmatched: ["public/marketing.png"],
     });
@@ -360,16 +357,14 @@ describe("sweepOrphans", () => {
 describe("attachmentKeyForObjectName", () => {
   it("returns the /objects/uploads/<id> key for an attachment object", () => {
     const env = { PRIVATE_OBJECT_DIR: "/test-bucket/.private" };
-    expect(
-      attachmentKeyForObjectName(".private/uploads/abc-uuid", env),
-    ).toBe("/objects/uploads/abc-uuid");
+    expect(attachmentKeyForObjectName(".private/uploads/abc-uuid", env)).toBe(
+      "/objects/uploads/abc-uuid",
+    );
   });
 
   it("returns null for objects outside the uploads/ prefix", () => {
     const env = { PRIVATE_OBJECT_DIR: "/test-bucket/.private" };
-    expect(
-      attachmentKeyForObjectName(".private/other/abc", env),
-    ).toBeNull();
+    expect(attachmentKeyForObjectName(".private/other/abc", env)).toBeNull();
   });
 
   it("returns null for the bare uploads/ prefix with no id", () => {
@@ -379,12 +374,10 @@ describe("attachmentKeyForObjectName", () => {
 
   it("works when PRIVATE_OBJECT_DIR has no entity prefix (bucket-only)", () => {
     const env = { PRIVATE_OBJECT_DIR: "/bucket-only" };
-    expect(
-      attachmentKeyForObjectName("uploads/xyz", env),
-    ).toBe("/objects/uploads/xyz");
-    expect(
-      attachmentKeyForObjectName("other/xyz", env),
-    ).toBeNull();
+    expect(attachmentKeyForObjectName("uploads/xyz", env)).toBe(
+      "/objects/uploads/xyz",
+    );
+    expect(attachmentKeyForObjectName("other/xyz", env)).toBeNull();
   });
 
   it("throws when PRIVATE_OBJECT_DIR is unset", () => {

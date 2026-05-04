@@ -12,16 +12,9 @@
 // openai, @anthropic-ai/sdk, ws. The architecture check fails the
 // build if any of these ever land here.
 
-export {
-  INTENT_NAMES,
-  assertNeverIntent,
-  type Intent,
-} from "./intents";
+export { INTENT_NAMES, assertNeverIntent, type Intent } from "./intents";
 
-export {
-  parseSmsIntent,
-  type KeywordRouterResult,
-} from "./keyword-router";
+export { parseSmsIntent, type KeywordRouterResult } from "./keyword-router";
 
 export {
   signLinkToken,

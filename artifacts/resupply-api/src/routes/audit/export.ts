@@ -161,10 +161,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
   const filename = `audit-export-${stamp}.csv`;
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${filename}"`,
-  );
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Cache-Control", "no-store");
 
   // Header row.
@@ -176,7 +173,7 @@ router.get("/audit/export.csv", requireAdmin, async (req, res) => {
         r.id,
         r.occurred_at instanceof Date
           ? r.occurred_at.toISOString()
-          : r.occurred_at ?? "",
+          : (r.occurred_at ?? ""),
         r.operator_email,
         r.operator_user_id,
         r.action,

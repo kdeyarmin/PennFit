@@ -73,9 +73,11 @@ vi.mock("../../lib/stripe/products-meta", async () => {
   >("../../lib/stripe/products-meta");
   return {
     ...actual,
-    projectProduct: (
-      raw: { id: string; name?: string; metadata?: Record<string, string> },
-    ) => projectProductMock(raw),
+    projectProduct: (raw: {
+      id: string;
+      name?: string;
+      metadata?: Record<string, string>;
+    }) => projectProductMock(raw),
   };
 });
 
@@ -136,7 +138,11 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -158,7 +164,7 @@ beforeEach(() => {
   // catalog). Tests that need to simulate a non-catalog product
   // override this with mockReturnValueOnce(null).
   projectProductMock.mockImplementation(defaultProjection);
-    mockAdmin.current = null;
+  mockAdmin.current = null;
 });
 
 afterEach(() => {
@@ -169,7 +175,8 @@ afterEach(() => {
 });
 
 describe("PATCH /admin/shop/products/:productId/stock", () => {
-  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp())
       .patch("/resupply-api/admin/shop/products/prod_x/stock")
       .send({ stockCount: 5 });
     expect([401, 403]).toContain(res.status);
@@ -238,7 +245,9 @@ describe("PATCH /admin/shop/products/:productId/stock", () => {
     expect(stripeUpdateMock).toHaveBeenCalledTimes(1);
     const [productId, payload] = stripeUpdateMock.mock.calls[0]!;
     expect(productId).toBe("prod_x");
-    expect((payload as { metadata: Record<string, string> }).metadata.stock_count).toBe("7");
+    expect(
+      (payload as { metadata: Record<string, string> }).metadata.stock_count,
+    ).toBe("7");
     expect(res.body.product.stockCount).toBe(7);
     // Sanity-check the API/frontend contract: ShopProductView
     // exposes prices as `price.unitAmount` (NOT `price.amount`).
@@ -264,7 +273,9 @@ describe("PATCH /admin/shop/products/:productId/stock", () => {
     expect(res.status).toBe(200);
     const [, payload] = stripeUpdateMock.mock.calls[0]!;
     // The Stripe contract: setting a metadata key to "" deletes it.
-    expect((payload as { metadata: Record<string, string> }).metadata.stock_count).toBe("");
+    expect(
+      (payload as { metadata: Record<string, string> }).metadata.stock_count,
+    ).toBe("");
     expect(res.body.product.stockCount).toBeNull();
   });
 
@@ -364,7 +375,8 @@ describe("POST /admin/shop/products", () => {
     });
   }
 
-  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp())
       .post("/resupply-api/admin/shop/products")
       .send(VALID_BODY);
     expect([401, 403]).toContain(res.status);

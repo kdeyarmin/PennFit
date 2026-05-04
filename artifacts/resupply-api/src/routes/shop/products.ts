@@ -95,10 +95,15 @@ router.get("/shop/products", async (req, res) => {
           type: "recurring",
           limit: 100,
         });
-        const cheapestByProduct = new Map<string, ReturnType<typeof projectRecurringPrice>>();
+        const cheapestByProduct = new Map<
+          string,
+          ReturnType<typeof projectRecurringPrice>
+        >();
         for (const price of priceList.data) {
           const productId =
-            typeof price.product === "string" ? price.product : price.product?.id;
+            typeof price.product === "string"
+              ? price.product
+              : price.product?.id;
           if (!productId) continue;
           const projected = projectRecurringPrice(price);
           if (!projected) continue;

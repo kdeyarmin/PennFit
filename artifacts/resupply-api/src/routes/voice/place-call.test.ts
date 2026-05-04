@@ -61,10 +61,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -78,10 +77,9 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 const placeCallMock = vi.fn();
 vi.mock("@workspace/resupply-telecom", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-telecom")>(
-      "@workspace/resupply-telecom",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
   return {
     ...actual,
     createTwilioClient: vi.fn(() => ({ placeCall: placeCallMock })),
@@ -171,7 +169,8 @@ describe("POST /voice/place-call", () => {
   });
 
   it("returns 401 when there is no session", async () => {
-    setVoiceEnv();    const res = await request(makeApp())
+    setVoiceEnv();
+    const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
     expect(res.status).toBe(401);
@@ -201,9 +200,7 @@ describe("POST /voice/place-call", () => {
   it("returns 422 when patient has no phone", async () => {
     setVoiceEnv();
     stubVerifiedAdmin();
-    selectQueue.push([
-      { id: PATIENT_ID, phoneE164: null, status: "active" },
-    ]);
+    selectQueue.push([{ id: PATIENT_ID, phoneE164: null, status: "active" }]);
     const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });

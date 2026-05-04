@@ -37,7 +37,9 @@ router.post("/recommend", (req, res) => {
   if (!parseResult.success) {
     res.status(400).json({
       error: "Invalid input",
-      details: parseResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
+      details: parseResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
     });
     return;
   }
@@ -49,7 +51,8 @@ router.post("/recommend", (req, res) => {
   const longStringPattern = /[A-Za-z0-9+/]{1000,}/; // typical base64 is very long
   if (base64Pattern.test(bodyStr) || longStringPattern.test(bodyStr)) {
     res.status(400).json({
-      error: "Request body contains unexpected binary or encoded data. Only numeric measurements are accepted.",
+      error:
+        "Request body contains unexpected binary or encoded data. Only numeric measurements are accepted.",
     });
     return;
   }

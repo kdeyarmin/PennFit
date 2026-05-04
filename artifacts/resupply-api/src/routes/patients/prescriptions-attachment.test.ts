@@ -62,10 +62,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
@@ -135,7 +134,11 @@ function makeApp(): Express {
   // explode in tests (no pino-http middleware here). Production
   // mounts pino-http via the api-server bootstrap.
   app.use((req, _res, next) => {
-    (req as unknown as { log: { warn: () => void; error: () => void; info: () => void } }).log = {
+    (
+      req as unknown as {
+        log: { warn: () => void; error: () => void; info: () => void };
+      }
+    ).log = {
       warn: () => undefined,
       error: () => undefined,
       info: () => undefined,
@@ -154,8 +157,14 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
-const originalEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
+] as const;
+const originalEnv: Partial<
+  Record<(typeof ENV_KEYS)[number], string | undefined>
+> = {};
 
 function resetEnvAndMocks(): void {
   for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
@@ -164,7 +173,7 @@ function resetEnvAndMocks(): void {
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   selectQueue.length = 0;
-    mockAdmin.current = null;
+  mockAdmin.current = null;
   dbStub.select.mockClear();
   dbStub.update.mockClear();
   updateSpy.mockClear();

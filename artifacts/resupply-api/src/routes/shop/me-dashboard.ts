@@ -94,10 +94,7 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
     })
     .from(shopOrders)
     .where(
-      and(
-        eq(shopOrders.customerId, customerId),
-        eq(shopOrders.status, "paid"),
-      ),
+      and(eq(shopOrders.customerId, customerId), eq(shopOrders.status, "paid")),
     )
     .orderBy(desc(shopOrders.paidAt))
     .limit(1);

@@ -95,8 +95,9 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   // Reviews list (paginated) + aggregate. We store the whole
   // ReviewListResponse so the aggregate doesn't go stale on "Show
   // more" loads.
-  const [reviewPages, setReviewPages] =
-    useState<ReviewListResponse | null>(null);
+  const [reviewPages, setReviewPages] = useState<ReviewListResponse | null>(
+    null,
+  );
   const [loadingMore, setLoadingMore] = useState(false);
 
   // The signed-in caller's own review for this product, when present.
@@ -290,8 +291,8 @@ export function ShopProductDetail({ productId }: { productId: string }) {
             We couldn&apos;t find that product.
           </h1>
           <p className="text-sm text-muted-foreground mb-6">
-            It may have been retired or replaced. Browse the full catalog
-            and we&apos;ll help you find a fresh equivalent.
+            It may have been retired or replaced. Browse the full catalog and
+            we&apos;ll help you find a fresh equivalent.
           </p>
           <Link href="/shop">
             <Button data-testid="pdp-not-found-shop-cta">Back to shop</Button>
@@ -521,8 +522,7 @@ function Hero({
   // Per-SKU low-stock threshold (A15). Falls back to the legacy
   // hardcoded 5 when the admin hasn't customized it. A threshold of
   // 0 means "never show the low-stock badge" (admin opt-out).
-  const lowThreshold =
-    product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+  const lowThreshold = product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
   const lowStockHint =
     typeof product.stockCount === "number" &&
     product.stockCount > 0 &&
@@ -532,8 +532,7 @@ function Hero({
       : null;
   const isSubscriptionMode =
     !!product.recurringPrice && mode === "subscription";
-  const addDisabled =
-    previewMode || (!isSubscriptionMode && oneTimeOutOfStock);
+  const addDisabled = previewMode || (!isSubscriptionMode && oneTimeOutOfStock);
 
   const handleAdd = () => {
     const result = addItem({
@@ -623,7 +622,7 @@ function Hero({
         failed={imgFailed}
         onFail={() => setImgFailed(true)}
       />
-      
+
       <div className="flex flex-col">
         {product.isBundle && (
           <Badge
@@ -931,8 +930,8 @@ function ReviewsSection({
             )
           ) : (
             <div className="text-sm text-muted-foreground py-4 flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading your
-              review status…
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading your review
+              status…
             </div>
           )}
         </SignedIn>
@@ -1040,9 +1039,7 @@ function ReviewList({ items }: { items: ReviewItem[] }) {
             <div>
               <StarRating value={r.rating} size="sm" hideCount />
               {r.title && (
-                <h3 className="font-semibold tracking-tight mt-2">
-                  {r.title}
-                </h3>
+                <h3 className="font-semibold tracking-tight mt-2">{r.title}</h3>
               )}
             </div>
             <div className="text-right text-xs text-muted-foreground shrink-0">
@@ -1139,9 +1136,9 @@ function MyReviewPanel({
               className="mt-2 text-xs text-[hsl(var(--penn-navy))]/75 leading-relaxed max-w-md"
               data-testid="pdp-my-review-pending-hint"
             >
-              Awaiting moderation — usually within one business day.
-              You can still edit or delete it until it's approved, and
-              your changes will be re-reviewed.
+              Awaiting moderation — usually within one business day. You can
+              still edit or delete it until it's approved, and your changes will
+              be re-reviewed.
             </p>
           )}
           {review.title && (
@@ -1235,9 +1232,7 @@ function WriteReviewForm({
   onSubmitted: (review: MyReview) => void;
   onCancel?: () => void;
 }) {
-  const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(
-    initial?.rating ?? 5,
-  );
+  const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5>(initial?.rating ?? 5);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
   const [submitting, setSubmitting] = useState(false);

@@ -65,5 +65,4 @@ export const messageAttachments = resupplySchema.table(
 );
 
 export type MessageAttachmentRow = typeof messageAttachments.$inferSelect;
-export type InsertMessageAttachmentRow =
-  typeof messageAttachments.$inferInsert;
+export type InsertMessageAttachmentRow = typeof messageAttachments.$inferInsert;

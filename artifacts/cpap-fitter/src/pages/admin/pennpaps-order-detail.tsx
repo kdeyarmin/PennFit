@@ -1,11 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui-shims";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/admin/ui-shims";
 import { Badge } from "@/components/admin/ui-shims";
 import { Button } from "@/components/admin/ui-shims";
 import { Skeleton } from "@/components/admin/ui-shims";
-import { Alert, AlertDescription, AlertTitle } from "@/components/admin/ui-shims";
-import { fetchAdminOrder, StorefrontAdminApiError } from "@/lib/admin/storefront-admin-api";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/admin/ui-shims";
+import {
+  fetchAdminOrder,
+  StorefrontAdminApiError,
+} from "@/lib/admin/storefront-admin-api";
 import { ArrowLeft, AlertCircle, ClipboardCheck } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
 
@@ -15,7 +27,10 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Delivery failed",
   skipped: "Skipped (email not configured)",
 };
-const STATUS_TONE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const STATUS_TONE: Record<
+  string,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
   pending: "outline",
   sent: "default",
   failed: "destructive",
@@ -70,7 +85,9 @@ export function AdminOrderDetail() {
         <BackLink />
         <Alert variant="destructive">
           <AlertCircle className="w-4 h-4" />
-          <AlertTitle>{status === 404 ? "Order not found" : "Could not load order"}</AlertTitle>
+          <AlertTitle>
+            {status === 404 ? "Order not found" : "Could not load order"}
+          </AlertTitle>
           <AlertDescription>{(error as Error).message}</AlertDescription>
         </Alert>
       </div>
@@ -106,7 +123,9 @@ export function AdminOrderDetail() {
 
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">Order reference</div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            Order reference
+          </div>
           <h1 className="text-display text-3xl font-bold tracking-tight font-mono mt-1">
             {o.orderReference}
           </h1>
@@ -115,7 +134,10 @@ export function AdminOrderDetail() {
           </p>
         </div>
         <div className="text-right">
-          <Badge variant={STATUS_TONE[o.emailStatus] ?? "outline"} className="text-sm">
+          <Badge
+            variant={STATUS_TONE[o.emailStatus] ?? "outline"}
+            className="text-sm"
+          >
             {STATUS_LABEL[o.emailStatus] ?? o.emailStatus}
           </Badge>
           {o.emailDeliveredAt && (
@@ -130,14 +152,19 @@ export function AdminOrderDetail() {
         <Alert variant="destructive">
           <AlertCircle className="w-4 h-4" />
           <AlertTitle>Email delivery failed</AlertTitle>
-          <AlertDescription className="font-mono text-xs">{o.emailError}</AlertDescription>
+          <AlertDescription className="font-mono text-xs">
+            {o.emailError}
+          </AlertDescription>
         </Alert>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Patient */}
         <Section title="Patient">
-          <Field label="Name" value={`${o.patientFirstName} ${o.patientLastName}`} />
+          <Field
+            label="Name"
+            value={`${o.patientFirstName} ${o.patientLastName}`}
+          />
           <Field label="Date of birth" value={o.patientDateOfBirth ?? "—"} />
           <Field label="Email" value={o.patientEmail} />
           <Field label="Phone" value={o.patientPhone ?? "—"} />
@@ -153,7 +180,9 @@ export function AdminOrderDetail() {
         {/* Shipping */}
         <Section title="Shipping address">
           <Field label="Street" value={shipping.street1 ?? "—"} />
-          {shipping.street2 && <Field label="Suite/Apt" value={shipping.street2} />}
+          {shipping.street2 && (
+            <Field label="Suite/Apt" value={shipping.street2} />
+          )}
           <Field
             label="City / State / ZIP"
             value={`${o.shippingCity}, ${o.shippingState} ${o.shippingZip}`}
@@ -164,8 +193,12 @@ export function AdminOrderDetail() {
         <Section title="Insurance">
           <Field label="Provider" value={insurance.provider ?? "—"} />
           <Field label="Member ID" value={insurance.memberId ?? "—"} mono />
-          {insurance.groupNumber && <Field label="Group #" value={insurance.groupNumber} mono />}
-          {insurance.planName && <Field label="Plan" value={insurance.planName} />}
+          {insurance.groupNumber && (
+            <Field label="Group #" value={insurance.groupNumber} mono />
+          )}
+          {insurance.planName && (
+            <Field label="Plan" value={insurance.planName} />
+          )}
           {insurance.policyholderName ? (
             <Field
               label="Policyholder"
@@ -180,26 +213,53 @@ export function AdminOrderDetail() {
         <Section title="Prescription">
           <Field
             label="Existing CPAP Rx on file"
-            value={prescription.hasExistingPrescription ? "Yes" : "No — PennPaps must obtain Rx before shipping"}
+            value={
+              prescription.hasExistingPrescription
+                ? "Yes"
+                : "No — PennPaps must obtain Rx before shipping"
+            }
           />
-          {prescription.physicianName && <Field label="Physician" value={prescription.physicianName} />}
-          {prescription.physicianPhone && <Field label="Physician phone" value={prescription.physicianPhone} />}
+          {prescription.physicianName && (
+            <Field label="Physician" value={prescription.physicianName} />
+          )}
+          {prescription.physicianPhone && (
+            <Field
+              label="Physician phone"
+              value={prescription.physicianPhone}
+            />
+          )}
         </Section>
 
         {/* Measurements */}
         {measurements && (
           <Section title="Facial measurements (mm)">
             {measurements.noseWidth != null && (
-              <Field label="Nose width" value={`${measurements.noseWidth.toFixed(1)} mm`} mono />
+              <Field
+                label="Nose width"
+                value={`${measurements.noseWidth.toFixed(1)} mm`}
+                mono
+              />
             )}
             {measurements.noseHeight != null && (
-              <Field label="Nose height" value={`${measurements.noseHeight.toFixed(1)} mm`} mono />
+              <Field
+                label="Nose height"
+                value={`${measurements.noseHeight.toFixed(1)} mm`}
+                mono
+              />
             )}
             {measurements.noseToChin != null && (
-              <Field label="Nose to chin" value={`${measurements.noseToChin.toFixed(1)} mm`} mono />
+              <Field
+                label="Nose to chin"
+                value={`${measurements.noseToChin.toFixed(1)} mm`}
+                mono
+              />
             )}
             {measurements.mouthWidth != null && (
-              <Field label="Mouth width" value={`${measurements.mouthWidth.toFixed(1)} mm`} mono />
+              <Field
+                label="Mouth width"
+                value={`${measurements.mouthWidth.toFixed(1)} mm`}
+                mono
+              />
             )}
             {measurements.faceWidthAtCheekbones != null && (
               <Field
@@ -209,7 +269,10 @@ export function AdminOrderDetail() {
               />
             )}
             {measurements.calibrationMethod && (
-              <Field label="Calibration" value={measurements.calibrationMethod} />
+              <Field
+                label="Calibration"
+                value={measurements.calibrationMethod}
+              />
             )}
           </Section>
         )}
@@ -233,14 +296,25 @@ export function AdminOrderDetail() {
 function BackLink() {
   return (
     <Link href="/admin/pennpaps/orders">
-      <Button variant="ghost" size="sm" className="gap-1 -ml-2" data-testid="button-back-to-orders">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="gap-1 -ml-2"
+        data-testid="button-back-to-orders"
+      >
         <ArrowLeft className="w-4 h-4" /> All orders
       </Button>
     </Link>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <Card className="border-0 glass-card rounded-2xl">
       <CardHeader className="pb-3">
@@ -253,10 +327,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Field({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-3">
-      <div className="text-xs text-muted-foreground sm:w-44 sm:shrink-0">{label}</div>
+      <div className="text-xs text-muted-foreground sm:w-44 sm:shrink-0">
+        {label}
+      </div>
       <div className={`text-sm ${mono ? "font-mono" : ""}`}>{value}</div>
     </div>
   );

@@ -12,13 +12,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 const sendEmailMock = vi.fn();
-const createSendgridClientMock = vi.fn<() => { sendEmail: typeof sendEmailMock }>(
-  () => ({ sendEmail: sendEmailMock }),
-);
+const createSendgridClientMock = vi.fn<
+  () => { sendEmail: typeof sendEmailMock }
+>(() => ({ sendEmail: sendEmailMock }));
 vi.mock("@workspace/resupply-email", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-email")>(
-    "@workspace/resupply-email",
-  );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
   return {
     ...actual,
     createSendgridClient: () => createSendgridClientMock(),
@@ -174,6 +174,8 @@ describe("sendOrderConfirmationEmail", () => {
     expect(arg.html).not.toContain("Shipping to");
     // Plain-text body still includes total + view-order link.
     expect(arg.text).toContain("Total: $0.00");
-    expect(arg.text).toContain("/shop/checkout-success?session_id=cs_test_empty");
+    expect(arg.text).toContain(
+      "/shop/checkout-success?session_id=cs_test_empty",
+    );
   });
 });

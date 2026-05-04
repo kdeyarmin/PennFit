@@ -112,9 +112,7 @@ router.post(
         paidAt: shopOrderItems.paidAt,
       })
       .from(shopOrderItems)
-      .where(
-        sql`${shopOrderItems.orderId} = ANY(${claimed.map((c) => c.id)})`,
-      );
+      .where(sql`${shopOrderItems.orderId} = ANY(${claimed.map((c) => c.id)})`);
     const firstProductByOrder = new Map<string, string>();
     for (const it of itemRows) {
       // First (oldest) line item per order wins. We don't bother

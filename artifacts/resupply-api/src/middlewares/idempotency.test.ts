@@ -9,7 +9,12 @@
 // familiar.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import request from "supertest";
 
 // In-memory store shared across the mocked db calls within one test.
@@ -69,7 +74,10 @@ function fluentInsert(): unknown {
       upsertSet = cfg.set;
       return obj;
     },
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => {
+    then: (
+      resolve: (v: unknown) => unknown,
+      reject: (e: unknown) => unknown,
+    ) => {
       try {
         if (!pendingValues) throw new Error("insert without values");
         const idx = store.findIndex(
@@ -123,7 +131,8 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 // Drizzle's actual `and` returns an opaque SQL object; we replace it
 // with a plain function that captures the filter.
 vi.mock("drizzle-orm", async () => {
-  const actual = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
+  const actual =
+    await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   const eqMock = (col: { name?: string } | unknown, val: unknown) => ({
     __eq: true,
     col: (col as { name?: string }).name ?? String(col),
@@ -151,10 +160,9 @@ vi.mock("drizzle-orm", async () => {
 });
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -174,18 +182,16 @@ function adminInjector(req: Request, _res: Response, next: NextFunction): void {
 function makeApp(handlerImpl?: (req: Request, res: Response) => void): Express {
   const app = express();
   app.use(express.json());
-  app.post(
-    "/echo",
-    adminInjector,
-    withIdempotency(ENDPOINT),
-    (req, res) => {
-      if (handlerImpl) {
-        handlerImpl(req, res);
-        return;
-      }
-      res.status(201).json({ id: "patient_" + Math.random().toString(36).slice(2, 8), echo: req.body });
-    },
-  );
+  app.post("/echo", adminInjector, withIdempotency(ENDPOINT), (req, res) => {
+    if (handlerImpl) {
+      handlerImpl(req, res);
+      return;
+    }
+    res.status(201).json({
+      id: "patient_" + Math.random().toString(36).slice(2, 8),
+      echo: req.body,
+    });
+  });
   return app;
 }
 
@@ -217,7 +223,10 @@ describe("withIdempotency middleware", () => {
       res.status(201).json({ id: `patient_${counter}`, echo: req.body });
     });
     const key = "abcdef-12345-fixed-key";
-    const a = await request(app).post("/echo").set("Idempotency-Key", key).send({ name: "Ada" });
+    const a = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ name: "Ada" });
     expect(a.status).toBe(201);
     expect(a.body).toEqual({ id: "patient_1", echo: { name: "Ada" } });
 
@@ -225,7 +234,10 @@ describe("withIdempotency middleware", () => {
     await new Promise((r) => setImmediate(r));
     expect(store).toHaveLength(1);
 
-    const b = await request(app).post("/echo").set("Idempotency-Key", key).send({ name: "Ada" });
+    const b = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ name: "Ada" });
     expect(b.status).toBe(201);
     expect(b.body).toEqual({ id: "patient_1", echo: { name: "Ada" } });
     // Handler ran exactly once across both calls.
@@ -235,7 +247,10 @@ describe("withIdempotency middleware", () => {
   it("returns 422 when the same key is reused with a different body", async () => {
     const app = makeApp();
     const key = "abcdef-12345-mismatch";
-    const a = await request(app).post("/echo").set("Idempotency-Key", key).send({ name: "Ada" });
+    const a = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ name: "Ada" });
     expect(a.status).toBe(201);
     await new Promise((r) => setImmediate(r));
 
@@ -254,9 +269,15 @@ describe("withIdempotency middleware", () => {
       res.status(201).json({ id: `patient_${counter}` });
     });
     const key = "abcdef-12345-order";
-    const a = await request(app).post("/echo").set("Idempotency-Key", key).send({ a: 1, b: 2 });
+    const a = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ a: 1, b: 2 });
     await new Promise((r) => setImmediate(r));
-    const b = await request(app).post("/echo").set("Idempotency-Key", key).send({ b: 2, a: 1 });
+    const b = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ b: 2, a: 1 });
     expect(a.status).toBe(201);
     expect(b.status).toBe(201);
     expect(b.body).toEqual(a.body);
@@ -268,7 +289,10 @@ describe("withIdempotency middleware", () => {
       res.status(409).json({ error: "duplicate" });
     });
     const key = "abcdef-12345-fail";
-    const r = await request(app).post("/echo").set("Idempotency-Key", key).send({ x: 1 });
+    const r = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ x: 1 });
     expect(r.status).toBe(409);
     await new Promise((r) => setImmediate(r));
     expect(store).toHaveLength(0);
@@ -291,7 +315,10 @@ describe("withIdempotency middleware", () => {
       responseBody: { id: "stale_patient" },
       expiresAt: new Date(Date.now() - 1000),
     });
-    const r = await request(app).post("/echo").set("Idempotency-Key", key).send({ y: 2 });
+    const r = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ y: 2 });
     expect(r.status).toBe(201);
     expect(r.body).toEqual({ id: "patient_1" });
     expect(counter).toBe(1);
@@ -303,7 +330,10 @@ describe("withIdempotency middleware", () => {
 
   it("rejects keys that are too short", async () => {
     const app = makeApp();
-    const r = await request(app).post("/echo").set("Idempotency-Key", "short").send({ a: 1 });
+    const r = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", "short")
+      .send({ a: 1 });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("invalid_idempotency_key");
   });

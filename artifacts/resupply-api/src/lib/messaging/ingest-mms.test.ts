@@ -33,20 +33,18 @@ vi.mock("drizzle-orm/node-postgres", () => ({
   drizzle: () => dbStub,
 }));
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
 // ObjectStorageService stub — both upload-url issuance and ACL set.
 const getUploadUrlMock = vi.fn(
-  async () =>
-    "https://storage.googleapis.com/test-bucket/uploads/abc?signed=1",
+  async () => "https://storage.googleapis.com/test-bucket/uploads/abc?signed=1",
 );
-const setAclMock = vi.fn(async (_url: string, _opts: unknown) =>
-  "/objects/uploads/abc",
+const setAclMock = vi.fn(
+  async (_url: string, _opts: unknown) => "/objects/uploads/abc",
 );
 vi.mock("../object-storage/objectStorage", () => ({
   ObjectNotFoundError: class extends Error {},
@@ -302,9 +300,9 @@ describe("ingestInboundMmsMedia", () => {
     );
 
     expect(result.attempted).toBeLessThanOrEqual(10);
-    expect(result.attempted + result.rejected + result.errored).toBeLessThanOrEqual(
-      10,
-    );
+    expect(
+      result.attempted + result.rejected + result.errored,
+    ).toBeLessThanOrEqual(10);
   });
 
   describe("persistInboundAttachment (shared validate→upload→insert tail)", () => {
@@ -411,7 +409,9 @@ describe("ingestInboundMmsMedia", () => {
       );
       expect(outcome).toBe("succeeded");
       // Falls back to "<source>-<random>.<ext>" — no sid available.
-      expect(String(insertCalls[0]!.filename)).toMatch(/^email-[a-z0-9]+\.png$/);
+      expect(String(insertCalls[0]!.filename)).toMatch(
+        /^email-[a-z0-9]+\.png$/,
+      );
     });
 
     it("scrubs path separators + control chars from caller-supplied names", async () => {
@@ -499,12 +499,12 @@ describe("ingestInboundMmsMedia", () => {
      *  AbortSignal handed to it is intentionally ignored — that's
      *  the failure mode the overall-budget guard exists for. */
     function neverSettlingFetch(): MockInstance {
-      return vi
-        .spyOn(globalThis, "fetch" as never)
-        .mockImplementation((async () =>
+      return vi.spyOn(globalThis, "fetch" as never).mockImplementation(
+        (async () =>
           new Promise(() => {
             /* never resolves */
-          })) as never);
+          })) as never,
+      );
     }
 
     it("returns within the 9s budget with every slot counted as errored", async () => {

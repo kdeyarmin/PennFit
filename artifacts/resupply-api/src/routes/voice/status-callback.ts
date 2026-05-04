@@ -52,7 +52,8 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   // patient's phone number). The audit row records ONLY structural
   // metadata (status + sid + conversation id).
   const body = (req.body ?? {}) as Record<string, string>;
-  const callStatus = typeof body.CallStatus === "string" ? body.CallStatus : null;
+  const callStatus =
+    typeof body.CallStatus === "string" ? body.CallStatus : null;
   const callSid = typeof body.CallSid === "string" ? body.CallSid : null;
   const conversationId =
     typeof req.query.conversationId === "string"

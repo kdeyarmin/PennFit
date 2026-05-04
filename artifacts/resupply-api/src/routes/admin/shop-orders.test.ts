@@ -103,10 +103,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
@@ -126,13 +125,13 @@ vi.mock("../../lib/stripe/config", () => ({
 // the UPDATE. We mock at module boundary so the helper itself runs
 // (escaping, body composition, idempotency check) but no socket opens.
 const sendEmailMock = vi.fn();
-const createSendgridClientMock = vi.fn<() => { sendEmail: typeof sendEmailMock }>(
-  () => ({ sendEmail: sendEmailMock }),
-);
+const createSendgridClientMock = vi.fn<
+  () => { sendEmail: typeof sendEmailMock }
+>(() => ({ sendEmail: sendEmailMock }));
 vi.mock("@workspace/resupply-email", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-email")>(
-    "@workspace/resupply-email",
-  );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
   return {
     ...actual,
     createSendgridClient: () => createSendgridClientMock(),
@@ -159,10 +158,9 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-function paidOrderRow(over: Partial<Record<string, unknown>> = {}): Record<
-  string,
-  unknown
-> {
+function paidOrderRow(
+  over: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
   return {
     id: VALID_ID,
     stripeSessionId: "cs_test_1",
@@ -213,7 +211,7 @@ beforeEach(() => {
   createSendgridClientMock.mockImplementation(() => ({
     sendEmail: sendEmailMock,
   }));
-    mockAdmin.current = null;
+  mockAdmin.current = null;
 });
 
 afterEach(() => {
@@ -229,7 +227,8 @@ afterEach(() => {
 // POST /admin/shop/orders/:orderId/tracking
 // =====================================================================
 describe("POST /admin/shop/orders/:orderId/tracking", () => {
-  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
       .send({ carrier: "UPS", number: "1Z999AA1" });
     expect([401, 403]).toContain(res.status);
@@ -550,9 +549,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     // Customer-lookup SELECT REJECTS — simulates a transient pg
     // error after the claim was acquired. The catch-all release
     // path must still fire so a future admin re-save can retry.
-    selectQueue.push(
-      new Error("ECONNRESET while reading shop_customers"),
-    );
+    selectQueue.push(new Error("ECONNRESET while reading shop_customers"));
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -606,7 +603,8 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
 // POST /admin/shop/orders/:orderId/delivered
 // =====================================================================
 describe("POST /admin/shop/orders/:orderId/delivered", () => {
-  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp()).post(
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp()).post(
       `/resupply-api/admin/shop/orders/${VALID_ID}/delivered`,
     );
     expect([401, 403]).toContain(res.status);
@@ -676,7 +674,8 @@ describe("PATCH /admin/shop/orders/:orderId/shipping-address", () => {
     country: "US",
   };
 
-  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp())
       .patch(`/resupply-api/admin/shop/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
     expect([401, 403]).toContain(res.status);
@@ -739,7 +738,8 @@ describe("PATCH /admin/shop/orders/:orderId/shipping-address", () => {
 // POST /admin/shop/orders/:orderId/refund
 // =====================================================================
 describe("POST /admin/shop/orders/:orderId/refund", () => {
-  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp())
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({});
     expect([401, 403]).toContain(res.status);

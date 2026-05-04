@@ -52,8 +52,8 @@ export function AdminShopReviewsPage() {
           Shop reviews
         </h1>
         <p className="text-sm text-slate-600">
-          Approve or reject customer reviews before they appear on the
-          public shop.
+          Approve or reject customer reviews before they appear on the public
+          shop.
         </p>
       </header>
       <TabStrip tab={tab} onChange={setTab} />
@@ -117,6 +117,11 @@ function ReviewsList({ tab }: { tab: Tab }) {
   // Optimistically removes a row from the current tab's pages — used
   // by both approve + reject, since the row drops out of the tab the
   // moderator is currently looking at.
+  //
+  // `typeof query.data` is a type-only reference (compile-time only),
+  // so it isn't a real runtime dependency. ESLint can't distinguish
+  // type queries from runtime reads, so we drop `query.data` from
+  // the deps and silence the rule with a pinned justification.
   const removeRowFromCache = useCallback(
     (id: string) => {
       queryClient.setQueryData<typeof query.data>(queryKey, (prev) => {
@@ -130,7 +135,8 @@ function ReviewsList({ tab }: { tab: Tab }) {
         };
       });
     },
-    [queryClient, queryKey, query.data],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [queryClient, queryKey],
   );
 
   const approveMutation = useMutation({
@@ -326,9 +332,7 @@ function ReviewRow({
         <div className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
           {review.moderationNote ? (
             <p>
-              <span className="font-semibold">
-                Customer-visible note:
-              </span>{" "}
+              <span className="font-semibold">Customer-visible note:</span>{" "}
               {review.moderationNote}
             </p>
           ) : (
@@ -367,8 +371,8 @@ function ReviewRow({
           data-testid={`shop-review-edit-note-form-${review.id}`}
         >
           <label className="block text-xs font-semibold text-slate-700">
-            Customer-visible note (≤500 chars). Saving doesn&apos;t
-            re-send the rejection email — that already went out.
+            Customer-visible note (≤500 chars). Saving doesn&apos;t re-send the
+            rejection email — that already went out.
           </label>
           <textarea
             value={noteDraft}
@@ -452,9 +456,7 @@ function ReviewRow({
             data-testid={`shop-review-reject-note-${review.id}`}
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-slate-500">
-              {note.length} / 500
-            </span>
+            <span className="text-xs text-slate-500">{note.length} / 500</span>
             <div className="flex gap-2">
               <button
                 type="button"

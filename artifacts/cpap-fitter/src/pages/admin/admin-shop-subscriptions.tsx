@@ -4,7 +4,10 @@
 // against the local shop_subscriptions mirror.
 
 import { useQuery } from "@tanstack/react-query";
-import { fetchSubsMetrics, type SubsMetrics } from "@/lib/admin/shop-subs-metrics-api";
+import {
+  fetchSubsMetrics,
+  type SubsMetrics,
+} from "@/lib/admin/shop-subs-metrics-api";
 
 export function AdminShopSubscriptionsPage() {
   const query = useQuery({
@@ -22,9 +25,9 @@ export function AdminShopSubscriptionsPage() {
           Subscription health
         </h1>
         <p className="text-sm text-slate-600">
-          Live counters across the auto-ship subscription pipeline.
-          Counts come from the local Stripe mirror so the page is fast
-          even with thousands of subscribers.
+          Live counters across the auto-ship subscription pipeline. Counts come
+          from the local Stripe mirror so the page is fast even with thousands
+          of subscribers.
         </p>
       </header>
 
@@ -33,7 +36,8 @@ export function AdminShopSubscriptionsPage() {
       ) : query.isError ? (
         <div className="text-sm text-rose-700" role="alert">
           Couldn&apos;t load metrics:{" "}
-          {query.error instanceof Error ? query.error.message : "unknown error"}.
+          {query.error instanceof Error ? query.error.message : "unknown error"}
+          .
         </div>
       ) : query.data ? (
         <Body data={query.data} />
@@ -110,7 +114,10 @@ function Body({ data }: { data: SubsMetrics }) {
                     ? (row.stillLive / row.totalCreated) * 100
                     : 0;
                 return (
-                  <tr key={row.cohortMonth} className="border-t border-slate-100">
+                  <tr
+                    key={row.cohortMonth}
+                    className="border-t border-slate-100"
+                  >
                     <td className="px-3 py-2 font-mono text-slate-700">
                       {row.cohortMonth}
                     </td>
@@ -130,10 +137,10 @@ function Body({ data }: { data: SubsMetrics }) {
           </table>
         </div>
         <p className="text-xs text-slate-500 mt-2">
-          A cohort is the set of subscriptions created in the calendar
-          month shown. &ldquo;Still live&rdquo; counts subs currently in
-          active, trialing, paused, or past_due — anything that hasn&apos;t
-          been canceled outright.
+          A cohort is the set of subscriptions created in the calendar month
+          shown. &ldquo;Still live&rdquo; counts subs currently in active,
+          trialing, paused, or past_due — anything that hasn&apos;t been
+          canceled outright.
         </p>
       </section>
 
@@ -153,7 +160,11 @@ function Body({ data }: { data: SubsMetrics }) {
           value={c?.canceledLifetime ?? 0}
           tone="slate"
         />
-        <Tile label="Lifetime new" value={(c?.activeNow ?? 0) + (c?.canceledLifetime ?? 0)} tone="slate" />
+        <Tile
+          label="Lifetime new"
+          value={(c?.activeNow ?? 0) + (c?.canceledLifetime ?? 0)}
+          tone="slate"
+        />
       </section>
     </div>
   );

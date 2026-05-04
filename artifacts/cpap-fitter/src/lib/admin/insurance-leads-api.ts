@@ -9,11 +9,7 @@
 // Auth: the browser sends the `pf_session` cookie automatically on
 // same-origin requests, so no per-call auth header is needed.
 
-export type InsuranceLeadStatus =
-  | "new"
-  | "contacted"
-  | "verified"
-  | "closed";
+export type InsuranceLeadStatus = "new" | "contacted" | "verified" | "closed";
 
 export interface InsuranceLeadRow {
   id: string;

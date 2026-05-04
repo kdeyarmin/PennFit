@@ -43,11 +43,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { safeAuditFromActor } from "./safe-audit";
-import type {
-  EmailSendConfig,
-  SendActor,
-  SmsSendConfig,
-} from "./types";
+import type { EmailSendConfig, SendActor, SmsSendConfig } from "./types";
 
 export interface ReplyInConversationInput {
   pool: Pool;

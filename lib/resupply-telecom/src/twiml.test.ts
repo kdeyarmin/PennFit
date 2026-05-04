@@ -42,9 +42,8 @@ describe("buildConnectStreamTwiml", () => {
     // The custom parameter must have all special chars escaped
     expect(xml).toContain('value="a&quot;b&lt;c&gt;d&amp;e"');
     // And, importantly, no raw < or " inside attribute values
-    const customLine = xml
-      .split("\n")
-      .find((l) => l.includes('name="note"')) ?? "";
+    const customLine =
+      xml.split("\n").find((l) => l.includes('name="note"')) ?? "";
     expect(customLine).not.toMatch(/value="[^"]*</);
   });
 

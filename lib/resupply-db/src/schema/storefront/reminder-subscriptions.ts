@@ -50,16 +50,14 @@ export const reminderSubscriptionsTable = pgTable(
       .default("active"),
 
     // [{ sku, lastReplacedAt: ISO date, intervalDays, nextDueAt: ISO date }]
-    items: jsonb("items")
-      .notNull()
-      .$type<
-        Array<{
-          sku: string;
-          lastReplacedAt: string;
-          intervalDays: number;
-          nextDueAt: string;
-        }>
-      >(),
+    items: jsonb("items").notNull().$type<
+      Array<{
+        sku: string;
+        lastReplacedAt: string;
+        intervalDays: number;
+        nextDueAt: string;
+      }>
+    >(),
 
     // When we last sent ANY reminder to this subscriber. Used to enforce
     // a quiet period across all of their items.
@@ -73,14 +71,20 @@ export const reminderSubscriptionsTable = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    emailUniqueIdx: uniqueIndex("reminder_subscriptions_email_unique_idx").on(t.email),
-    manageTokenUniqueIdx: uniqueIndex("reminder_subscriptions_manage_token_unique_idx").on(
-      t.manageToken,
+    emailUniqueIdx: uniqueIndex("reminder_subscriptions_email_unique_idx").on(
+      t.email,
     ),
+    manageTokenUniqueIdx: uniqueIndex(
+      "reminder_subscriptions_manage_token_unique_idx",
+    ).on(t.manageToken),
     statusIdx: index("reminder_subscriptions_status_idx").on(t.status),
-    createdAtIdx: index("reminder_subscriptions_created_at_idx").on(t.createdAt),
+    createdAtIdx: index("reminder_subscriptions_created_at_idx").on(
+      t.createdAt,
+    ),
   }),
 );
 
-export type ReminderSubscriptionRow = typeof reminderSubscriptionsTable.$inferSelect;
-export type InsertReminderSubscriptionRow = typeof reminderSubscriptionsTable.$inferInsert;
+export type ReminderSubscriptionRow =
+  typeof reminderSubscriptionsTable.$inferSelect;
+export type InsertReminderSubscriptionRow =
+  typeof reminderSubscriptionsTable.$inferInsert;

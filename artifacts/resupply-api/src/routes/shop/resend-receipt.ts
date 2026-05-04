@@ -84,7 +84,9 @@ router.post(
     // refactor can't silently break the assertion.
     const rawSessionId = req.params.sessionId;
     const sessionId =
-      typeof rawSessionId === "string" ? rawSessionId : (rawSessionId?.[0] ?? "");
+      typeof rawSessionId === "string"
+        ? rawSessionId
+        : (rawSessionId?.[0] ?? "");
     const customerId = req.userCustomerId!;
 
     // sessionId is path-segment-bounded by Express but we still
@@ -186,12 +188,10 @@ router.post(
       customerObj &&
       typeof customerObj === "object" &&
       !("deleted" in customerObj && customerObj.deleted)
-        ? (customerObj as { email?: string | null }).email ?? null
+        ? ((customerObj as { email?: string | null }).email ?? null)
         : null;
     const fallbackEmail =
-      charge.receipt_email ??
-      session.customer_details?.email ??
-      customerEmail;
+      charge.receipt_email ?? session.customer_details?.email ?? customerEmail;
     if (!fallbackEmail) {
       res.status(409).json({ error: "not_payable" });
       return;

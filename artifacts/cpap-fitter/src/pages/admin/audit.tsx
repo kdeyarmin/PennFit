@@ -146,20 +146,25 @@ export function AuditPage() {
     [action, targetTable, since, offset],
   );
 
-  const { data, isPending, isError, error, isFetching, refetch } =
-    useListAudit(params, {
+  const { data, isPending, isError, error, isFetching, refetch } = useListAudit(
+    params,
+    {
       query: {
         queryKey: getListAuditQueryKey(params),
         placeholderData: keepPreviousData,
       },
-    });
+    },
+  );
 
   const cols: Column<Row>[] = [
     {
       key: "occurred",
       header: "When",
       render: (r) => (
-        <span className="text-xs whitespace-nowrap" style={{ color: "hsl(var(--ink-2))" }}>
+        <span
+          className="text-xs whitespace-nowrap"
+          style={{ color: "hsl(var(--ink-2))" }}
+        >
           {formatDateTime(r.occurredAt)}
         </span>
       ),
@@ -217,7 +222,10 @@ export function AuditPage() {
           <span className="text-xs" style={{ color: "hsl(var(--ink-2))" }}>
             <span title={r.targetTable}>{humanizeAction(r.targetTable)}</span>
             {r.targetId && (
-              <span className="text-[10px] block" style={{ color: "hsl(var(--ink-3))" }}>
+              <span
+                className="text-[10px] block"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
                 {r.targetId.slice(0, 8)}…
               </span>
             )}
@@ -431,8 +439,10 @@ export function SafeMetadata({
 
 function renderPrimitive(value: unknown): string {
   if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value.length > 32 ? value.slice(0, 32) + "…" : value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "string")
+    return value.length > 32 ? value.slice(0, 32) + "…" : value;
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   // Object / array / other: don't render — would risk leaking nested
   // PHI keys that the sanitiser caught only at the top level.
   return "[object]";

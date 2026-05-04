@@ -27,7 +27,10 @@ import {
 import { desc, eq, ilike, or, and, sql, count, lte } from "drizzle-orm";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 import { logger } from "../../lib/logger.js";
-import { sendReminderDue, type ReminderItemForEmail } from "../../lib/storefront/reminderEmail.js";
+import {
+  sendReminderDue,
+  type ReminderItemForEmail,
+} from "../../lib/storefront/reminderEmail.js";
 import adminUsersRouter from "./admin-users.js";
 
 const router = Router();
@@ -57,7 +60,10 @@ const listOrdersQuery = z.object({
 router.get("/admin/orders", async (req, res) => {
   const parsed = listOrdersQuery.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid query", details: parsed.error.issues.map((i) => i.message) });
+    res.status(400).json({
+      error: "Invalid query",
+      details: parsed.error.issues.map((i) => i.message),
+    });
     return;
   }
   const { q, status, page, pageSize } = parsed.data;
@@ -137,11 +143,19 @@ router.get("/admin/orders/:id", async (req, res) => {
   const id = req.params.id;
   // Defensive uuid check (Drizzle would throw on a malformed id, surfacing
   // a less friendly 500 to the admin).
-  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
+  if (
+    !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+      id,
+    )
+  ) {
     res.status(400).json({ error: "Invalid order id" });
     return;
   }
-  const [row] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+  const [row] = await db
+    .select()
+    .from(ordersTable)
+    .where(eq(ordersTable.id, id))
+    .limit(1);
   if (!row) {
     res.status(404).json({ error: "Order not found" });
     return;
@@ -160,7 +174,10 @@ router.get("/admin/orders/:id", async (req, res) => {
         ip: req.ip ?? null,
       });
     } catch (err) {
-      logger.error({ err, orderId: row.id }, "Failed to write audit log for order view");
+      logger.error(
+        { err, orderId: row.id },
+        "Failed to write audit log for order view",
+      );
     }
   }
 
@@ -170,32 +187,28 @@ router.get("/admin/orders/:id", async (req, res) => {
 // ---------- GET /admin/analytics ----------
 
 router.get("/admin/analytics", async (_req, res) => {
-  const [
-    totalOrdersRow,
-    statusBreakdown,
-    maskBreakdown,
-    funnelBreakdown,
-  ] = await Promise.all([
-    db.select({ value: count() }).from(ordersTable),
-    db
-      .select({ status: ordersTable.emailStatus, count: count() })
-      .from(ordersTable)
-      .groupBy(ordersTable.emailStatus),
-    db
-      .select({
-        maskName: ordersTable.maskName,
-        maskManufacturer: ordersTable.maskManufacturer,
-        count: count(),
-      })
-      .from(ordersTable)
-      .groupBy(ordersTable.maskName, ordersTable.maskManufacturer)
-      .orderBy(desc(count()))
-      .limit(10),
-    db
-      .select({ step: usageEventsTable.step, count: count() })
-      .from(usageEventsTable)
-      .groupBy(usageEventsTable.step),
-  ]);
+  const [totalOrdersRow, statusBreakdown, maskBreakdown, funnelBreakdown] =
+    await Promise.all([
+      db.select({ value: count() }).from(ordersTable),
+      db
+        .select({ status: ordersTable.emailStatus, count: count() })
+        .from(ordersTable)
+        .groupBy(ordersTable.emailStatus),
+      db
+        .select({
+          maskName: ordersTable.maskName,
+          maskManufacturer: ordersTable.maskManufacturer,
+          count: count(),
+        })
+        .from(ordersTable)
+        .groupBy(ordersTable.maskName, ordersTable.maskManufacturer)
+        .orderBy(desc(count()))
+        .limit(10),
+      db
+        .select({ step: usageEventsTable.step, count: count() })
+        .from(usageEventsTable)
+        .groupBy(usageEventsTable.step),
+    ]);
 
   // Recent orders (last 30 days, by day) for a sparkline
   const recentByDay = await db.execute(sql`
@@ -309,7 +322,9 @@ const QUIET_PERIOD_DAYS = 7;
 
 router.post("/admin/reminders/send-due", async (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
-  const quietCutoff = new Date(Date.now() - QUIET_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+  const quietCutoff = new Date(
+    Date.now() - QUIET_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+  );
 
   const candidates = await db
     .select()
@@ -392,7 +407,9 @@ router.post("/admin/reminders/send-due", async (req, res) => {
     // actually do. There is no longer a separate PENN_FROM_EMAIL — every
     // outbound mail uses SENDGRID_FROM_EMAIL (operations sets this to
     // info@pennpaps.com).
-    sendgridConfigured: Boolean(process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL),
+    sendgridConfigured: Boolean(
+      process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL,
+    ),
   });
   // lte unused-import guard — referenced for future range queries
   void lte;

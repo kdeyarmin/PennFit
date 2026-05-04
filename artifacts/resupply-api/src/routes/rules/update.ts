@@ -38,10 +38,7 @@ const patchBody = z
     minTenureDays: z.number().int().min(0).max(36500).nullable().optional(),
     maxTenureDays: z.number().int().min(0).max(36500).nullable().optional(),
     cadenceDays: z.number().int().min(1).max(365).optional(),
-    defaultChannel: z
-      .enum(["sms", "email", "voice"])
-      .nullable()
-      .optional(),
+    defaultChannel: z.enum(["sms", "email", "voice"]).nullable().optional(),
     active: z.boolean().optional(),
     notes: z
       .string()
@@ -165,7 +162,10 @@ router.patch("/rules/:id", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "rules.update: audit write failed",
     );
   }

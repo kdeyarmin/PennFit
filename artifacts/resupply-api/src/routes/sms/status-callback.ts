@@ -43,42 +43,39 @@ const signatureMiddleware = requireTwilioSignature({
   },
 });
 
-router.post(
-  "/sms/status-callback",
-  signatureMiddleware,
-  async (req, res) => {
-    let parsed;
-    try {
-      parsed = parseSmsStatusCallbackParams(req.body);
-    } catch (err) {
-      logger.warn(
-        { event: "sms_status_invalid_body", err: serializeErr(err) },
-        "sms.status-callback: invalid body",
-      );
-      res.status(200).type("text/xml").send("<Response/>");
-      return;
-    }
+router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
+  let parsed;
+  try {
+    parsed = parseSmsStatusCallbackParams(req.body);
+  } catch (err) {
+    logger.warn(
+      { event: "sms_status_invalid_body", err: serializeErr(err) },
+      "sms.status-callback: invalid body",
+    );
+    res.status(200).type("text/xml").send("<Response/>");
+    return;
+  }
 
-    const conversationId =
-      typeof req.query.conversationId === "string"
-        ? req.query.conversationId
-        : null;
+  const conversationId =
+    typeof req.query.conversationId === "string"
+      ? req.query.conversationId
+      : null;
 
-    const messageSid = parsed.MessageSid;
-    const status = parsed.MessageStatus;
+  const messageSid = parsed.MessageSid;
+  const status = parsed.MessageStatus;
 
-    if (!TERMINAL_STATUSES.has(status)) {
-      // Intermediate states (queued/sending) — ignore quietly.
-      res.status(200).type("text/xml").send("<Response/>");
-      return;
-    }
+  if (!TERMINAL_STATUSES.has(status)) {
+    // Intermediate states (queued/sending) — ignore quietly.
+    res.status(200).type("text/xml").send("<Response/>");
+    return;
+  }
 
-    const pool = getDbPool();
-    const db = drizzle(pool);
-    try {
-      // Update the messages row whose vendorMetadata.twilio_message_sid
-      // matches. We can't FK on this so we use a jsonb predicate.
-      await db.execute(sql`
+  const pool = getDbPool();
+  const db = drizzle(pool);
+  try {
+    // Update the messages row whose vendorMetadata.twilio_message_sid
+    // matches. We can't FK on this so we use a jsonb predicate.
+    await db.execute(sql`
         update resupply.messages
         set
           delivery_status = ${status},
@@ -86,41 +83,40 @@ router.post(
           delivered_at = case when ${status} = 'delivered' then now() else delivered_at end
         where vendor_metadata->>'twilio_message_sid' = ${messageSid}
       `);
-    } catch (err) {
-      // Don't 500 — Twilio retries amplify the issue.
-      logger.warn(
-        {
-          event: "sms_status_update_failed",
-          message_sid: messageSid,
-          err: serializeErr(err),
-        },
-        "sms.status-callback: failed to update messages row",
-      );
-    }
+  } catch (err) {
+    // Don't 500 — Twilio retries amplify the issue.
+    logger.warn(
+      {
+        event: "sms_status_update_failed",
+        message_sid: messageSid,
+        err: serializeErr(err),
+      },
+      "sms.status-callback: failed to update messages row",
+    );
+  }
 
-    if (FAILURE_STATUSES.has(status)) {
-      await safeAudit({
-        action: "messaging.delivery.failed",
-        adminEmail: null,
-        adminUserId: null,
-        targetTable: "messages",
-        targetId: null,
-        metadata: {
-          channel: "sms",
-          conversation_id: conversationId,
-          twilio_message_sid: messageSid,
-          status,
-          error_code: parsed.ErrorCode ?? null,
-        },
-        ip: req.ip ?? null,
-        userAgent: req.get("user-agent") ?? null,
-      });
-    }
+  if (FAILURE_STATUSES.has(status)) {
+    await safeAudit({
+      action: "messaging.delivery.failed",
+      adminEmail: null,
+      adminUserId: null,
+      targetTable: "messages",
+      targetId: null,
+      metadata: {
+        channel: "sms",
+        conversation_id: conversationId,
+        twilio_message_sid: messageSid,
+        status,
+        error_code: parsed.ErrorCode ?? null,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
+  }
 
-    res.status(200).type("text/xml").send("<Response/>");
-    return;
-  },
-);
+  res.status(200).type("text/xml").send("<Response/>");
+  return;
+});
 
 function serializeErr(err: unknown): { name: string; message?: string } {
   if (err instanceof Error) return { name: err.name, message: err.message };

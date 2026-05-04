@@ -73,7 +73,10 @@ export function makeSignInHandler(deps: AuthDeps) {
   const rateConfig = deps.rateLimit ?? DEFAULT_RATE_LIMIT;
   const ttlDays = deps.env.sessionTtlDays;
 
-  return async function handleSignIn(req: Request, res: Response): Promise<void> {
+  return async function handleSignIn(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const parsed = SignInBody.safeParse(req.body);
     if (!parsed.success) {
       authError(res, 400, "invalid_input", "Email and password are required.");
@@ -156,10 +159,7 @@ export function makeSignInHandler(deps: AuthDeps) {
       return;
     }
 
-    const verify = await verifyPasswordCredential(
-      parsed.data.password,
-      cred,
-    );
+    const verify = await verifyPasswordCredential(parsed.data.password, cred);
     if (!verify.ok) {
       await deps.repo.recordLoginAttempt({
         emailLower,

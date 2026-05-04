@@ -54,5 +54,4 @@ export const patientLatestMessage = resupplySchema.table(
   }),
 );
 
-export type PatientLatestMessageRow =
-  typeof patientLatestMessage.$inferSelect;
+export type PatientLatestMessageRow = typeof patientLatestMessage.$inferSelect;

@@ -1,10 +1,4 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  index,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, index, uuid } from "drizzle-orm/pg-core";
 
 /**
  * Audit log — every time an admin views an individual patient record,
@@ -37,7 +31,9 @@ export const adminAuditLogTable = pgTable(
   (t) => ({
     occurredAtIdx: index("admin_audit_log_occurred_at_idx").on(t.occurredAt),
     adminEmailIdx: index("admin_audit_log_admin_email_idx").on(t.adminEmail),
-    targetOrderIdx: index("admin_audit_log_target_order_idx").on(t.targetOrderId),
+    targetOrderIdx: index("admin_audit_log_target_order_idx").on(
+      t.targetOrderId,
+    ),
   }),
 );
 

@@ -37,6 +37,7 @@ belt app run x/post-create --input '{"text": "Check this out!", "media": "./scre
 ```
 
 Supported paths:
+
 - Absolute paths: `/home/user/images/photo.jpg`
 - Relative paths: `./image.png`, `../data/video.mp4`
 - Home directory: `~/Pictures/photo.jpg`
@@ -158,11 +159,11 @@ Example output:
 
 ## Error Handling
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| "invalid input" | Schema mismatch | Check `belt app get` for required fields |
-| "app not found" | Wrong app name | Check `belt app list --search` |
-| "quota exceeded" | Out of credits | Check account balance |
+| Error            | Cause           | Solution                                 |
+| ---------------- | --------------- | ---------------------------------------- |
+| "invalid input"  | Schema mismatch | Check `belt app get` for required fields |
+| "app not found"  | Wrong app name  | Check `belt app list --search`           |
+| "quota exceeded" | Out of credits  | Check account balance                    |
 
 ## Documentation
 

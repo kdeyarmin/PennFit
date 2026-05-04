@@ -55,7 +55,7 @@ for "comms with patient", not two divergent ones.
 > original rationale below is preserved for context.
 
 The patients table used to store the phone number encrypted with
-pgcrypto (ADR 007, also superseded). Encrypted ciphertext is *not*
+pgcrypto (ADR 007, also superseded). Encrypted ciphertext is _not_
 indexable for equality lookup, so we couldn't answer "what patient
 does +12155551234 belong to?" directly from the patients table.
 
@@ -96,11 +96,12 @@ Inbound SMS replies go through a two-stage parser:
    so the SDK stays out of the pure semantic layer (Rule 11).
 
 This split exists because >95% of replies are happy-path keywords (cheap
-+ fast + auditable), and the rest deserve a real classifier rather than
-"sorry I didn't understand". The keyword router is the load-bearing
-path; the AI is the safety net. STOP and HELP are honored
-unconditionally (US carrier rule), regardless of conversation state or
-AI verdict.
+
+- fast + auditable), and the rest deserve a real classifier rather than
+  "sorry I didn't understand". The keyword router is the load-bearing
+  path; the AI is the safety net. STOP and HELP are honored
+  unconditionally (US carrier rule), regardless of conversation state or
+  AI verdict.
 
 ### 4. Email interactivity via HMAC-signed short-TTL link tokens
 

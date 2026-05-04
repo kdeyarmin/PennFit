@@ -24,10 +24,9 @@ const poolQuery = vi.fn(async () => {
 });
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({ query: poolQuery }) as never,
@@ -53,7 +52,11 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -76,7 +79,8 @@ describe("GET /audit", () => {
     }
   });
 
-  it("returns 401 with no session", async () => {    const res = await request(makeApp()).get("/resupply-api/audit");
+  it("returns 401 with no session", async () => {
+    const res = await request(makeApp()).get("/resupply-api/audit");
     expect(res.status).toBe(401);
   });
 
@@ -137,10 +141,7 @@ describe("GET /audit", () => {
     // Sanity-check: filter params were threaded into the SQL
     // bindings (action LIKE wildcard, targetTable equality, since
     // as Date).
-    const firstCall = poolQuery.mock.calls[0] as unknown as [
-      string,
-      unknown[],
-    ];
+    const firstCall = poolQuery.mock.calls[0] as unknown as [string, unknown[]];
     expect(firstCall[1]).toEqual([
       "%patient%",
       "patients",

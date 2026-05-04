@@ -46,10 +46,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 
 const poolQuery = vi.fn();
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({ query: poolQuery }) as never,
@@ -75,10 +74,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 // Imported AFTER the mocks so the module picks up the stubs.
 import { buildProductionSweepDeps } from "./prescription-attachment-sweep.js";
-import {
-  prescriptions,
-  messageAttachments,
-} from "@workspace/resupply-db";
+import { prescriptions, messageAttachments } from "@workspace/resupply-db";
 
 describe("buildProductionSweepDeps — query widening guard (Task #50)", () => {
   beforeEach(() => {
