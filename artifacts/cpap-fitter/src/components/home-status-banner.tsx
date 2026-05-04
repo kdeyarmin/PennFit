@@ -53,7 +53,6 @@ function SignedInBanner() {
         // any other error is a transient API blip. Either way, hide
         // the banner rather than rendering a broken state.
         if (!(err instanceof AccountApiError)) {
-          // eslint-disable-next-line no-console
           console.warn("dashboard fetch failed", err);
         }
       } finally {

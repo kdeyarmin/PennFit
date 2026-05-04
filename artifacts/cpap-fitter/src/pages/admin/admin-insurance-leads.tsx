@@ -88,7 +88,13 @@ export function AdminInsuranceLeadsPage() {
   });
 
   const rows = data?.rows ?? [];
-  const counts = data?.counts ?? { new: 0, contacted: 0, verified: 0, closed: 0 };
+  // Wrap `counts` in its own useMemo so the fallback object literal
+  // doesn't construct a fresh reference on every render — that
+  // reference is the dep of `total` below.
+  const counts = useMemo(
+    () => data?.counts ?? { new: 0, contacted: 0, verified: 0, closed: 0 },
+    [data?.counts],
+  );
   const total = useMemo(
     () => Object.values(counts).reduce((a, b) => a + b, 0),
     [counts],

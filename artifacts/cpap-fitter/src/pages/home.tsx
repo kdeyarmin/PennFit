@@ -11,7 +11,6 @@ import {
   HelpCircle,
   Compass,
   ShoppingBag,
-  PackageCheck,
   UserCircle2,
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";

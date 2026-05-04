@@ -1139,7 +1139,6 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
     // tradeoff to keep the empty-state silent.
     if (loadError) {
       // dev-mode breadcrumb; never user-visible.
-      // eslint-disable-next-line no-console
       console.debug("[account] subscriptions load skipped:", loadError);
     }
     return null;

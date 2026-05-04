@@ -15,7 +15,10 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement
 }
 
-const actionTypes = {
+// `_actionTypes` is consumed only via the `typeof` type alias below.
+// The leading underscore satisfies the no-unused-vars rule's
+// `varsIgnorePattern: "^_"` carve-out (see eslint.config.mjs).
+const _actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",
   DISMISS_TOAST: "DISMISS_TOAST",
@@ -29,7 +32,7 @@ function genId() {
   return count.toString()
 }
 
-type ActionType = typeof actionTypes
+type ActionType = typeof _actionTypes
 
 type Action =
   | {

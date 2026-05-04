@@ -13,6 +13,7 @@
 
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default [
@@ -52,6 +53,11 @@ export default [
       // was folded into src/worker/), so this single glob now covers
       // both the API and worker source.
       "artifacts/resupply-api/src/**/*.ts",
+      // cpap-fitter SPA — added in the post-Phase-4 follow-up. Same
+      // ruleset as the rest; any deviations are scoped per-file via
+      // documented eslint-disable comments.
+      "artifacts/cpap-fitter/src/**/*.ts",
+      "artifacts/cpap-fitter/src/**/*.tsx",
     ],
     languageOptions: {
       ecmaVersion: 2024,
@@ -67,10 +73,22 @@ export default [
     },
     plugins: {
       "@typescript-eslint": tseslint.plugin,
+      "react-hooks": reactHooks,
     },
     rules: {
       ...js.configs.recommended.rules,
       ...tseslint.configs.recommended[2].rules, // recommended (non-type-aware)
+      // react-hooks plugin — load only the two classic rules:
+      //   rules-of-hooks: catches conditional hook calls and similar
+      //                   runtime bugs (must always be obeyed).
+      //   exhaustive-deps: catches stale closures in effects/callbacks.
+      // We deliberately do NOT enable v7's broader `recommended` set
+      // (set-state-in-effect, refs, use-memo, purity, etc.) — those
+      // rules surface real but pre-existing patterns across the
+      // fitter SPA that need separate refactors, not blanket
+      // suppressions. Adding them is a follow-up.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       // Phase 0 carve-outs — these will tighten in later phases as
       // real code lands. Listed explicitly so the deviation is visible
       // rather than silently inherited.

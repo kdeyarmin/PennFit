@@ -117,8 +117,18 @@ export function Questionnaire() {
   const currentQ = questions[currentIndex];
   const progress = (currentIndex / questions.length) * 100;
 
-  const handleAnswer = (value: any) => {
-    updateAnswers({ [currentQ.id]: value });
+  // Answer values are heterogeneous: boolean for `type: "boolean"`
+  // questions and string (an option's `value`) for `type: "select"`.
+  // We can't narrow further at the call site because TS sees
+  // `currentQ.id` as `keyof QuestionnaireAnswers` (a union) and the
+  // value type per key varies — so the computed-key dispatch needs
+  // a cast to the destination shape. The runtime guarantee comes from
+  // the question schema: each question only emits a value compatible
+  // with its declared key.
+  const handleAnswer = (value: boolean | string) => {
+    updateAnswers({
+      [currentQ.id]: value,
+    } as Partial<QuestionnaireAnswers>);
 
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((curr) => curr + 1);

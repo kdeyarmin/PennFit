@@ -39,17 +39,19 @@ export function Capture() {
         videoRef.current.srcObject = stream;
       }
       setHasPermission(true);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Camera error:", err);
       setHasPermission(false);
-      if (err.name === "NotAllowedError") {
+      const name = err instanceof Error ? err.name : "";
+      const message = err instanceof Error ? err.message : String(err);
+      if (name === "NotAllowedError") {
         setError(
           "Camera access was denied. Please enable camera permissions in your browser settings to continue.",
         );
-      } else if (err.name === "NotFoundError") {
+      } else if (name === "NotFoundError") {
         setError("No camera found on this device.");
       } else {
-        setError("An error occurred while accessing the camera: " + err.message);
+        setError("An error occurred while accessing the camera: " + message);
       }
     }
   };
@@ -104,9 +106,10 @@ export function Capture() {
       track("capture_taken");
       setLocation("/measure");
       return true;
-    } catch (err: any) {
+    } catch (err) {
       console.error("Capture error:", err);
-      setError("Failed to capture an image: " + (err?.message ?? "unknown error"));
+      const message = err instanceof Error ? err.message : "unknown error";
+      setError("Failed to capture an image: " + message);
       return false;
     }
   };

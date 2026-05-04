@@ -1,6 +1,5 @@
 import React from "react";
 import { Link } from "wouter";
-import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   BookOpen,

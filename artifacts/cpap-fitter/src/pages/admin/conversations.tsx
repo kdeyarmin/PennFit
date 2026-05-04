@@ -68,11 +68,16 @@ export function ConversationsPage() {
   const [location, setLocation] = useLocation();
 
   // Read initial filter from URL on first mount so deep links from
-  // the dashboard ("Awaiting admin queue") land prefiltered.
+  // the dashboard ("Awaiting admin queue") land prefiltered. The empty
+  // deps array is deliberate — once the user starts navigating within
+  // the page we drive the state from local handlers, not the URL.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialStatus = useMemo(() => readQueryParam(location, "status"), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialChannel = useMemo(() => readQueryParam(location, "channel"), []);
   const initialView = useMemo(
     () => (readQueryParam(location, "view") as InboxView | null) ?? "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 

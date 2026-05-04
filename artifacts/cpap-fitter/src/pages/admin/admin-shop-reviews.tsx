@@ -117,6 +117,11 @@ function ReviewsList({ tab }: { tab: Tab }) {
   // Optimistically removes a row from the current tab's pages — used
   // by both approve + reject, since the row drops out of the tab the
   // moderator is currently looking at.
+  //
+  // `typeof query.data` is a type-only reference (compile-time only),
+  // so it isn't a real runtime dependency. ESLint can't distinguish
+  // type queries from runtime reads, so we drop `query.data` from
+  // the deps and silence the rule with a pinned justification.
   const removeRowFromCache = useCallback(
     (id: string) => {
       queryClient.setQueryData<typeof query.data>(queryKey, (prev) => {
@@ -130,7 +135,8 @@ function ReviewsList({ tab }: { tab: Tab }) {
         };
       });
     },
-    [queryClient, queryKey, query.data],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [queryClient, queryKey],
   );
 
   const approveMutation = useMutation({

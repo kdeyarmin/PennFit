@@ -95,10 +95,14 @@ export function EpisodesPage() {
   const [location, setLocation] = useLocation();
 
   // Default to overdue queue — that's the admin's primary triage view.
+  // Empty deps are deliberate: only the first-mount URL seeds state;
+  // the local filter UI takes over from then on.
   const initialStatus = useMemo(
     () => readQueryParam(location, "status") ?? "overdue",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const initialQ = useMemo(() => readQueryParam(location, "q") ?? "", []);
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   // Two q states: the live input (re-renders on every keystroke) and
