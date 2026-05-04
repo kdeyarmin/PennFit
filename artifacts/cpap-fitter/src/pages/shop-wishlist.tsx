@@ -18,6 +18,7 @@ import { Link } from "wouter";
 import { Heart, Trash2, ShoppingCart, ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ToastAction } from "@/components/ui/toast";
 import { useToast } from "@/hooks/use-toast";
 import {
   fetchShopProducts,
@@ -26,7 +27,7 @@ import {
   type ShopProductView,
 } from "@/lib/shop-api";
 import { useCart } from "@/hooks/use-cart";
-import { removeFromWishlist, useWishlist } from "@/lib/wishlist";
+import { addToWishlist, removeFromWishlist, useWishlist } from "@/lib/wishlist";
 
 export function ShopWishlist() {
   const { ids } = useWishlist();
@@ -245,6 +246,7 @@ function EmptyState() {
 
 function WishlistRow({ product }: { product: ShopProductView }) {
   const { addItem } = useCart();
+  const { toast } = useToast();
   const resolved = resolveProductImage(product.imageUrl);
   const oneTimeOutOfStock =
     typeof product.stockCount === "number" && product.stockCount <= 0;
@@ -345,7 +347,21 @@ function WishlistRow({ product }: { product: ShopProductView }) {
           </Button>
           <button
             type="button"
-            onClick={() => removeFromWishlist(product.id)}
+            onClick={() => {
+              removeFromWishlist(product.id);
+              toast({
+                title: "Removed from saved items",
+                description: `“${product.name}” removed.`,
+                action: (
+                  <ToastAction
+                    altText={`Undo removing ${product.name}`}
+                    onClick={() => addToWishlist(product.id)}
+                  >
+                    Undo
+                  </ToastAction>
+                ),
+              });
+            }}
             className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border/60 text-muted-foreground hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
             aria-label={`Remove ${product.name} from wishlist`}
             data-testid={`wishlist-remove-${product.id}`}

@@ -273,7 +273,36 @@ export function Shop() {
   // category. Case-insensitive, whitespace-trimmed, no fancy
   // tokenization — the catalog is small enough that substring is
   // the right tool.
-  const [query, setQuery] = useState("");
+  //
+  // The query is mirrored to the `?q=` URL search param so a refresh,
+  // back-button, or shared link round-trips cleanly. Initial value is
+  // read from the URL once on mount; subsequent edits use
+  // `history.replaceState` (NOT pushState) so each keystroke does
+  // NOT leave a back-button entry behind. Wouter's router doesn't
+  // observe the search portion of the URL, so reading
+  // `window.location.search` directly is the correct seam.
+  const [query, setQuery] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams(window.location.search);
+    return params.get("q") ?? "";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const trimmed = query.trim();
+    if (trimmed.length > 0) {
+      url.searchParams.set("q", trimmed);
+    } else {
+      url.searchParams.delete("q");
+    }
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    if (
+      next !==
+      `${window.location.pathname}${window.location.search}${window.location.hash}`
+    ) {
+      window.history.replaceState(null, "", next);
+    }
+  }, [query]);
   const trimmedQuery = query.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     if (!data || trimmedQuery.length === 0) return [];

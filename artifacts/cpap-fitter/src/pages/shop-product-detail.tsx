@@ -28,6 +28,7 @@ import {
   ArrowLeft,
   Bell,
   CheckCircle2,
+  Link2,
   Loader2,
   Package,
   ShieldCheck,
@@ -52,6 +53,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { useCart } from "@/hooks/use-cart";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
+import { useToast } from "@/hooks/use-toast";
 import { StarRating } from "@/components/star-rating";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
@@ -475,12 +477,56 @@ function Hero({
   previewMode: boolean;
 }) {
   const { addItem } = useCart();
+  const { toast } = useToast();
   const [justAdded, setJustAdded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [mode, setMode] = useState<"one_time" | "subscription">(
     product.recurringPrice ? "subscription" : "one_time",
   );
   const resolved = resolveProductImage(product.imageUrl);
+
+  // Share-by-link affordance. Tries the native Web Share sheet first
+  // (iOS Safari, Android Chrome — surfaces Messages, Mail, AirDrop,
+  // etc), falls back to clipboard copy with a toast confirmation.
+  // Both branches share the same canonical PDP URL — never the page
+  // URL, which can carry tracking query params like `?utm_…` we do
+  // NOT want to propagate when one shopper passes a link to another.
+  async function handleShare() {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}/shop/p/${encodeURIComponent(product.id)}`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: product.name,
+          text: product.tagline ?? `${product.name} at PennPaps`,
+          url,
+        });
+        return;
+      } catch (err) {
+        // User cancelled the share sheet, or share failed silently.
+        // We don't surface an error toast for cancellation — fall
+        // through to clipboard copy only when the API is missing.
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        // Any other failure: fall through to clipboard.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: "Link copied",
+        description: "Product link copied to your clipboard.",
+      });
+    } catch {
+      toast({
+        title: "Couldn't copy link",
+        description:
+          "Your browser blocked clipboard access — long-press the address bar to copy the URL instead.",
+        variant: "destructive",
+      });
+    }
+  }
 
   // Desktop sticky CTA: when the primary Add-to-cart button scrolls
   // out of view, slide a thin bar down from the top with the same
@@ -632,9 +678,21 @@ function Hero({
             Bundle
           </Badge>
         )}
-        <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight">
-          {product.name}
-        </h1>
+        <div className="flex items-start gap-3">
+          <h1 className="text-display text-3xl md:text-4xl font-bold tracking-tight flex-1 min-w-0">
+            {product.name}
+          </h1>
+          <button
+            type="button"
+            onClick={handleShare}
+            className="shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-full border border-border/60 bg-white text-[hsl(var(--penn-navy))] hover:border-[hsl(var(--penn-gold))]/60 hover:bg-[hsl(var(--penn-gold))]/5 transition-colors"
+            aria-label={`Share ${product.name}`}
+            title="Share this product"
+            data-testid="pdp-share"
+          >
+            <Link2 className="w-4 h-4" />
+          </button>
+        </div>
         {product.tagline && (
           <p className="text-base text-muted-foreground mt-2">
             {product.tagline}
