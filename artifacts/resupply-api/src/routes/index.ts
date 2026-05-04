@@ -7,6 +7,7 @@ import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
+import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
@@ -90,6 +91,10 @@ router.use(shopOrderNotesRouter);
 // received → refunded|replaced|closed) with strict from-state
 // assertions on every transition.
 router.use(shopReturnsAdminRouter);
+// /admin/shop/returns/:returnId/notes — internal CSR notes per
+// return (Phase 15). Mounted after the returns router so the more-
+// specific /notes path doesn't shadow the lifecycle endpoints.
+router.use(shopReturnNotesRouter);
 // /admin/csr-macros/* — admin CRUD for the canned-reply library used
 // by the in-thread reply composer. See migration 0017 + the
 // macroMerge helper in the dashboard for the {{namespace.key}}

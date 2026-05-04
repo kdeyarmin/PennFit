@@ -20,6 +20,7 @@ export * from "./shop-abandoned-carts";
 export * from "./shop-reviews";
 export * from "./shop-order-items";
 export * from "./shop-returns";
+export * from "./shop-return-notes";
 export * from "./insurance-leads";
 export * from "./back-in-stock";
 export * from "./csr-macros";
