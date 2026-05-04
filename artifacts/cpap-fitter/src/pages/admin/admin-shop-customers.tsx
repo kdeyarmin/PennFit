@@ -61,6 +61,7 @@ export function AdminShopCustomersPage() {
   const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState<AdminCustomerListSortBy>("last_order");
   const [subFilter, setSubFilter] = useState<"" | "active" | "none">("");
+  const [awaitingOnly, setAwaitingOnly] = useState(false);
   const [page, setPage] = useState(1);
 
   // Trim + reset page whenever search/filter changes — without this,
@@ -76,8 +77,9 @@ export function AdminShopCustomersPage() {
       sortBy,
       order: "desc",
       subscription: subFilter || undefined,
+      awaitingReply: awaitingOnly || undefined,
     }),
-    [trimmedQ, page, sortBy, subFilter],
+    [trimmedQ, page, sortBy, subFilter, awaitingOnly],
   );
 
   const { data, isPending, isError, error, isFetching, refetch } = useQuery({
@@ -175,6 +177,33 @@ export function AdminShopCustomersPage() {
           ]}
           testId="admin-customers-sub-filter"
         />
+        {/*
+          Phase 9 — toggle to restrict the directory to customers
+          whose in-app conversation is currently in awaiting_admin
+          status. Cheap server-side filter (a partial-indexed JOIN
+          to conversations).
+        */}
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 13,
+            color: "var(--text-muted, #475569)",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={awaitingOnly}
+            onChange={(e) => {
+              setAwaitingOnly(e.target.checked);
+              setPage(1);
+            }}
+            data-testid="admin-customers-awaiting-toggle"
+          />
+          Awaiting reply only
+        </label>
         <span
           style={{
             marginLeft: "auto",
@@ -199,7 +228,7 @@ export function AdminShopCustomersPage() {
       ) : isPending ? (
         <SkeletonTable />
       ) : data.customers.length === 0 ? (
-        <EmptyPanel hasFilter={!!trimmedQ || !!subFilter} />
+        <EmptyPanel hasFilter={!!trimmedQ || !!subFilter || awaitingOnly} />
       ) : (
         <div
           style={{
@@ -222,6 +251,7 @@ export function AdminShopCustomersPage() {
             <thead>
               <tr style={{ background: "#f8fafc", textAlign: "left" }}>
                 <Th>Customer</Th>
+                <Th>Status</Th>
                 <Th align="right">Orders</Th>
                 <Th align="right">Lifetime</Th>
                 <Th>Last order</Th>
@@ -262,6 +292,31 @@ export function AdminShopCustomersPage() {
                     >
                       {c.emailRedacted ?? "—"}
                     </div>
+                  </Td>
+                  <Td>
+                    {c.inAppNeedsReply ? (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: "#fef3c7",
+                          color: "#854d0e",
+                          border: "1px solid #fcd34d",
+                        }}
+                        data-testid={`admin-customers-awaiting-${c.userId}`}
+                        title="The customer's in-app conversation is in awaiting_admin status — a CSR owes them a reply."
+                      >
+                        Awaiting reply
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--text-muted, #94a3b8)" }}>
+                        —
+                      </span>
+                    )}
                   </Td>
                   <Td align="right">{c.ordersCount}</Td>
                   <Td align="right">

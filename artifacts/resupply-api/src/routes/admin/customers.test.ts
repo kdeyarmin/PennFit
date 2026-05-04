@@ -304,6 +304,73 @@ describe("GET /admin/shop/customers — happy path", () => {
     // Local-part is already <=2 chars; no asterisks needed.
     expect(res.body.customers[0].emailRedacted).toBe("ab@x.io");
   });
+
+  // ─── Phase 9: inAppNeedsReply column + ?awaitingReply=1 filter ────
+
+  it("surfaces inAppNeedsReply on each row (Phase 9)", async () => {
+    stubVerifiedAdmin();
+    executeQueue.push({
+      rows: [
+        {
+          user_id: "user_waiting",
+          display_name: "Anna",
+          email_lower: "anna@example.com",
+          stripe_customer_id: null,
+          created_at: "2026-01-01T00:00:00Z",
+          orders_count: 0,
+          lifetime_value_cents: 0,
+          last_order_at: null,
+          has_active_subscription: false,
+          in_app_needs_reply: true,
+        },
+        {
+          user_id: "user_caught_up",
+          display_name: "Bo",
+          email_lower: "bo@example.com",
+          stripe_customer_id: null,
+          created_at: "2026-01-01T00:00:00Z",
+          orders_count: 0,
+          lifetime_value_cents: 0,
+          last_order_at: null,
+          has_active_subscription: false,
+          in_app_needs_reply: false,
+        },
+      ],
+    });
+    executeQueue.push({ rows: [{ total: 2 }] });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      "/resupply-api/admin/shop/customers",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.customers[0].inAppNeedsReply).toBe(true);
+    expect(res.body.customers[1].inAppNeedsReply).toBe(false);
+  });
+
+  it("forwards ?awaitingReply=1 to the SQL filter (Phase 9)", async () => {
+    stubVerifiedAdmin();
+    executeQueue.push({ rows: [] });
+    executeQueue.push({ rows: [{ total: 0 }] });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      "/resupply-api/admin/shop/customers?awaitingReply=1",
+    );
+    expect(res.status).toBe(200);
+    // Both queries fire (list + count) — the filter is server-side
+    // so our test fixture pushed empty rows; we just verify the
+    // route accepted the param without 400ing.
+    expect(dbStub.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an invalid ?awaitingReply value (Phase 9)", async () => {
+    stubVerifiedAdmin();
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      "/resupply-api/admin/shop/customers?awaitingReply=garbage",
+    );
+    expect(res.status).toBe(400);
+    expect(dbStub.execute).not.toHaveBeenCalled();
+  });
 });
 
 // =====================================================================
