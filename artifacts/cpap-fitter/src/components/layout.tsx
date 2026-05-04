@@ -112,11 +112,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="container mx-auto flex h-16 md:h-20 items-center justify-between px-4 md:px-6">
             <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
               <div className="relative">
-                <div className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-navy)/0.10)] to-[hsl(var(--penn-gold)/0.20)] blur-md" aria-hidden="true" />
+                <div className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-cyan)/0.18)] via-[hsl(var(--penn-navy)/0.12)] to-[hsl(var(--penn-gold)/0.22)] blur-md" aria-hidden="true" />
                 <img
                   src={pennLogo}
                   alt="PennPaps"
-                  className="relative h-12 md:h-14 w-auto rounded-md"
+                  className="relative h-12 md:h-14 w-auto rounded-md ring-1 ring-[hsl(var(--penn-cyan)/0.18)]"
                 />
               </div>
               <div className="hidden sm:flex flex-col leading-tight border-l border-border/60 pl-3">
@@ -149,7 +149,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     data-testid={`nav-${l.href.replace(/\//g, "")}`}
                     className={`relative py-1 transition-colors hover:text-primary focus-visible:text-primary ${
                       isActive
-                        ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-[hsl(var(--penn-gold))]"
+                        ? "text-primary after:absolute after:left-0 after:right-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-gradient-to-r after:from-[hsl(var(--penn-cyan))] after:via-[hsl(var(--penn-gold))] after:to-[hsl(var(--penn-cyan))]"
                         : "text-foreground/75"
                     }`}
                   >
@@ -225,7 +225,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           )}
         </div>
-        <div className="aurora-divider" aria-hidden="true" />
+        <div className="aurora-divider-live" aria-hidden="true" />
       </header>
 
       {/*
@@ -251,7 +251,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       <footer className="relative mt-16">
-        <div className="aurora-divider" aria-hidden="true" />
+        <div className="aurora-divider-live" aria-hidden="true" />
         <div className="glass-panel border-x-0 border-b-0">
           <div className="container mx-auto px-4 md:px-6 py-10 md:py-12">
             {/* Top: brand block + link columns */}
@@ -283,9 +283,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   — fit a new mask, order supplies direct, and stay on a
                   resupply schedule with your local DME team.
                 </p>
-                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border/60 bg-white/40 px-3 py-1.5 text-xs text-muted-foreground">
-                  <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                  <span>Secure checkout · private on-device fitting.</span>
+                <div className="mt-4 inline-flex items-center gap-2">
+                  <span className="status-pill">
+                    <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                    Secure checkout · private on-device fitting
+                  </span>
                 </div>
               </div>
 

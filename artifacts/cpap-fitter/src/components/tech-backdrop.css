@@ -92,16 +92,26 @@ body.tech-backdrop-on {
 }
 
 .tech-backdrop__blob--c {
+  /*
+   * Cyan accent blob — replaces the third navy blob with the brand
+   * tech accent. Lower mix-blend opacity than the navy/gold blobs
+   * so it reads as a faint electric wash from below rather than a
+   * second navy aurora. This is what gives reminder/capture pages
+   * their "live instrument" feel.
+   */
   background: radial-gradient(
     circle,
-    hsl(var(--penn-steel) / 0.48),
+    hsl(var(--penn-cyan) / 0.55),
+
     transparent 70%
   );
   bottom: -28vmax;
   left: 22vmax;
   width: 55vmax;
   height: 55vmax;
-  animation: tech-blob-c 52s ease-in-out infinite alternate;
+  opacity: 0.22;
+  animation: tech-blob-c 44s ease-in-out infinite alternate;
+
 }
 
 @keyframes tech-blob-a {
@@ -140,10 +150,23 @@ body.tech-backdrop-on {
 .tech-backdrop__grid {
   position: absolute;
   inset: 0;
+  /*
+   * Two-tone lattice: navy hairlines + a coarser cyan major grid at
+   * 4x the cadence. Together they read as a CAD blueprint with a
+   * faint HUD overlay — same "professional instrument" feel as the
+   * global body grid, but a notch more present on these pages.
+   */
   background-image:
-    linear-gradient(to right, hsl(var(--penn-navy) / 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, hsl(var(--penn-navy) / 0.05) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(to right, hsl(var(--penn-navy) / 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--penn-navy) / 0.07) 1px, transparent 1px),
+    linear-gradient(to right, hsl(var(--penn-cyan-deep) / 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--penn-cyan-deep) / 0.08) 1px, transparent 1px);
+  background-size:
+    28px 28px,
+    28px 28px,
+    112px 112px,
+    112px 112px;
+
   -webkit-mask-image: radial-gradient(
     ellipse 85% 70% at 50% 40%,
     #000 35%,
@@ -155,19 +178,24 @@ body.tech-backdrop-on {
     transparent 100%
   );
   animation: tech-grid-drift 48s linear infinite;
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 @keyframes tech-grid-drift {
   0% {
     background-position:
       0 0,
+      0 0,
+      0 0,
       0 0;
   }
   100% {
     background-position:
-      32px 32px,
-      32px 32px;
+      28px 28px,
+      28px 28px,
+      112px 112px,
+      112px 112px;
+
   }
 }
 
@@ -182,12 +210,18 @@ body.tech-backdrop-on {
   left: -30vw;
   width: 160vw;
   height: 70vh;
+  /*
+   * Lacquer sheen with a cyan kiss in the middle — reads as polished
+   * glass with a faint laser pass rather than just a white sheen.
+   * The cyan is barely above noise but it's what ties this layer to
+   * the global tech accent.
+   */
   background: linear-gradient(
     115deg,
     transparent 30%,
-    hsl(0 0% 100% / 0.10) 48%,
-    hsl(0 0% 100% / 0.18) 50%,
-    hsl(0 0% 100% / 0.10) 52%,
+    hsl(0 0% 100% / 0.10) 46%,
+    hsl(var(--penn-cyan) / 0.20) 50%,
+    hsl(0 0% 100% / 0.10) 54%,
     transparent 70%
   );
   filter: blur(10px);
