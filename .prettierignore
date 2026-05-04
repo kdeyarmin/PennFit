@@ -12,3 +12,10 @@ pnpm-lock.yaml
 
 # Build output captured for diagnostic, not authored.
 **/dist-profile/**
+
+# Vendored third-party WASM glue downloaded by
+# scripts/setup-mediapipe.mjs at predev / prebuild time. Not in git
+# (.gitignore covers them) but they sit on disk after a build, and
+# `prettier --check .` walks the filesystem — without this entry
+# format:check fails locally any time the dev/build script has run.
+artifacts/cpap-fitter/public/mediapipe/**
