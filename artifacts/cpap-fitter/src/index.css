@@ -104,133 +104,138 @@
 }
 
 :root {
-  --button-outline: rgba(10, 22, 48, 0.10);
-  --badge-outline: rgba(10, 22, 48, 0.06);
+  --button-outline: rgba(8, 14, 28, 0.10);
+  --badge-outline: rgba(8, 14, 28, 0.06);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(10, 22, 48, 0.03);
-  --elevate-2: rgba(10, 22, 48, 0.08);
+  --elevate-1: rgba(8, 14, 28, 0.03);
+  --elevate-2: rgba(8, 14, 28, 0.08);
 
   /*
-   * PennPaps brand palette — "Onyx & Champagne".
+   * PennPaps brand palette — "Obsidian Aurum".
    *
-   * The story: deep midnight navy as the architectural anchor,
-   * warm champagne gold as the tactile accent, pearl-warm ivory
-   * as the canvas, with deliberate platinum highlights. Inspired
-   * by haute horlogerie — every surface should feel forged
-   * rather than painted.
+   * Evolution of the prior "Onyx & Champagne" — same DNA (deep
+   * inky primary, warm metallic accent, pearl canvas) but
+   * tightened toward an editorial / haute-horlogerie register:
    *
-   * Earlier revisions accidentally redefined --penn-navy / --penn-gold
-   * as cobalt; the current values (218°/40° hues) are the correct
-   * Penn brand. We also previously referenced --penn-navy-soft and
-   * --penn-gold-deep on hover but never defined them; both are now
-   * first-class tokens so the gradient stops resolve correctly.
+   *   - The canvas drops its warm 42° hue for a cool architectural
+   *     pearl (216°). Reads less hotel-lobby, more Apple flagship.
+   *   - The primary deepens toward true obsidian (222 / 60% / 9%)
+   *     so the ink reads near-black without going dead.
+   *   - The accent pulls back from honey-yellow to a refined
+   *     aurum bronze (34° / 46% / 50%) — restrained, not brassy.
+   *   - A sapphire-steel tertiary tone lets state colors breathe
+   *     without reaching for the accent every time.
+   *
+   * Tokens are raw HSL triplets so utilities can compose alpha
+   * through `hsl(var(--token) / alpha)`.
    */
 
-  /* Canvas + ink — warm pearl, not cool grey. The 42° hue of the
-   * background gives the page the same quiet warmth as fine paper,
-   * which sets up the cool navy ink for maximum legibility. */
-  --background: 42 28% 97.5%;
-  --foreground: 220 55% 11%;
+  /* Canvas + ink — cool architectural pearl, not warm cream. The
+   * 216° hue at very low saturation keeps the page calm and the
+   * obsidian ink crisp without ever feeling clinical. */
+  --background: 216 22% 98%;
+  --foreground: 222 50% 9%;
   --card: 0 0% 100%;
-  --card-foreground: 220 55% 11%;
-  --card-border: 220 20% 90%;
+  --card-foreground: 222 50% 9%;
+  --card-border: 218 18% 90%;
   --popover: 0 0% 100%;
-  --popover-foreground: 220 55% 10%;
-  --popover-border: 220 20% 90%;
+  --popover-foreground: 222 50% 8%;
+  --popover-border: 218 18% 90%;
 
-  /* Primary = midnight navy. Slightly less saturated and slightly
-   * deeper than the previous 75%/15% so the blue reads as inky
-   * midnight rather than pageant blue. */
-  --primary: 220 68% 13%;
+  /* Primary = obsidian. Pushed deeper and slightly cooler than
+   * the prior midnight navy so the brand ink reads as forged
+   * black-blue under directional light, not as a saturated blue. */
+  --primary: 222 60% 10%;
   --primary-foreground: 0 0% 100%;
 
-  /* Secondary = quiet platinum. Used for chip surfaces, secondary
-   * buttons, and hover wash. Cool enough to recede, warm enough
-   * not to feel clinical. */
-  --secondary: 220 22% 94%;
-  --secondary-foreground: 220 55% 14%;
+  /* Secondary = cool platinum. Slightly cooler and lower-sat
+   * than before so it recedes harder behind primary surfaces. */
+  --secondary: 218 20% 94%;
+  --secondary-foreground: 222 48% 12%;
 
-  --muted: 220 22% 95%;
-  --muted-foreground: 220 14% 38%;
+  --muted: 218 20% 95%;
+  --muted-foreground: 220 12% 36%;
 
-  /* Accent = champagne gold. Slightly more orange-warm than the
-   * previous 42° hue so it reads as champagne rather than brass. */
-  --accent: 40 58% 54%;
-  --accent-foreground: 220 68% 11%;
+  /* Accent = aurum bronze. Refined from the previous 40° honey
+   * champagne — same metallic intent, less saturated, more
+   * sophisticated. Reads as antique gold rather than brass. */
+  --accent: 34 46% 50%;
+  --accent-foreground: 222 60% 10%;
 
-  --destructive: 354 70% 48%;
+  --destructive: 354 64% 46%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 220 20% 89%;
-  --input: 220 20% 89%;
-  --ring: 220 68% 24%;
+  --border: 218 18% 89%;
+  --input: 218 18% 89%;
+  --ring: 222 60% 22%;
 
-  /* Charts — wider hue range for dashboards. Anchored on brand
-   * navy and gold, with three measured supports (steel, slate,
-   * burnt copper) that read as "from the same family". */
-  --chart-1: 220 68% 26%;
-  --chart-2: 40 58% 54%;
-  --chart-3: 200 60% 36%;
-  --chart-4: 220 40% 52%;
-  --chart-5: 28 70% 52%;
+  /* Charts — anchored on brand obsidian and aurum, with three
+   * supports (sapphire-steel, slate, burnt copper) that read as
+   * "from the same family" without ever competing. */
+  --chart-1: 222 60% 22%;
+  --chart-2: 34 46% 50%;
+  --chart-3: 204 52% 38%;
+  --chart-4: 220 32% 50%;
+  --chart-5: 24 58% 48%;
 
-  --sidebar: 220 30% 98.5%;
-  --sidebar-foreground: 220 55% 11%;
-  --sidebar-border: 220 20% 89%;
-  --sidebar-primary: 220 68% 13%;
+  --sidebar: 218 24% 98.5%;
+  --sidebar-foreground: 222 50% 9%;
+  --sidebar-border: 218 18% 89%;
+  --sidebar-primary: 222 60% 10%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 40 60% 88%;
-  --sidebar-accent-foreground: 220 68% 13%;
-  --sidebar-ring: 220 68% 24%;
+  --sidebar-accent: 34 50% 88%;
+  --sidebar-accent-foreground: 222 60% 10%;
+  --sidebar-ring: 222 60% 22%;
 
   --app-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --app-font-serif: "Georgia", "Times New Roman", serif;
   --app-font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
   --radius: 0.75rem;
 
-  /* Shadow scale — colored shadows tinted with the brand navy so
-   * every elevated surface shares one shadow language. The
-   * two-layer structure (1px sharp + larger soft) is what keeps
-   * cards feeling "lifted" rather than "floating". */
-  --shadow-2xs: 0 1px 1px hsl(220 60% 10% / 0.04);
-  --shadow-xs:  0 1px 2px hsl(220 60% 10% / 0.05);
-  --shadow-sm:  0 1px 2px hsl(220 60% 10% / 0.06), 0 1px 3px hsl(220 60% 10% / 0.04);
-  --shadow:     0 2px 4px hsl(220 60% 10% / 0.06), 0 4px 8px hsl(220 60% 10% / 0.05);
-  --shadow-md:  0 4px 8px hsl(220 60% 10% / 0.07), 0 8px 16px hsl(220 60% 10% / 0.05);
-  --shadow-lg:  0 8px 16px hsl(220 60% 10% / 0.08), 0 16px 32px hsl(220 60% 10% / 0.06);
-  --shadow-xl:  0 16px 32px hsl(220 60% 10% / 0.09), 0 24px 48px hsl(220 60% 10% / 0.07);
-  --shadow-2xl: 0 24px 48px hsl(220 60% 10% / 0.11), 0 40px 80px hsl(220 60% 10% / 0.09);
+  /* Shadow scale — tinted with the brand obsidian so every
+   * elevated surface shares one shadow language. Two-layer
+   * structure (1px sharp + larger soft) keeps cards lifted,
+   * not floating. */
+  --shadow-2xs: 0 1px 1px hsl(222 60% 8% / 0.04);
+  --shadow-xs:  0 1px 2px hsl(222 60% 8% / 0.05);
+  --shadow-sm:  0 1px 2px hsl(222 60% 8% / 0.06), 0 1px 3px hsl(222 60% 8% / 0.04);
+  --shadow:     0 2px 4px hsl(222 60% 8% / 0.06), 0 4px 8px hsl(222 60% 8% / 0.05);
+  --shadow-md:  0 4px 8px hsl(222 60% 8% / 0.07), 0 8px 16px hsl(222 60% 8% / 0.05);
+  --shadow-lg:  0 8px 16px hsl(222 60% 8% / 0.08), 0 16px 32px hsl(222 60% 8% / 0.06);
+  --shadow-xl:  0 16px 32px hsl(222 60% 8% / 0.09), 0 24px 48px hsl(222 60% 8% / 0.07);
+  --shadow-2xl: 0 24px 48px hsl(222 60% 8% / 0.11), 0 40px 80px hsl(222 60% 8% / 0.09);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
   /*
-   * Brand accents — raw HSL triplets so they compose with
-   * `hsl(var(--token) / alpha)` inside utilities.
+   * Brand accents — raw HSL triplets.
    *
-   *   --penn-onyx        deepest near-black navy for sentinel surfaces
-   *   --penn-navy-deep   deep navy for shadows / gradient feet
-   *   --penn-navy        primary brand navy
-   *   --penn-navy-soft   mid-tone navy for gradient highlights / hover
-   *   --penn-gold-deep   antique gold for gradient feet
-   *   --penn-gold        champagne brand gold
+   *   --penn-onyx        true obsidian black, sentinel surfaces
+   *   --penn-navy-deep   deep obsidian for shadows / gradient feet
+   *   --penn-navy        primary brand obsidian
+   *   --penn-navy-soft   sapphire-steel mid-tone for highlights / hover
+   *   --penn-gold-deep   antique aurum bronze for gradient feet
+   *   --penn-gold        refined aurum accent
    *   --penn-gold-soft   pale champagne for surfaces / halos
-   *   --penn-platinum    cool platinum grey for borders / hairlines
-   *   --penn-pearl       warm ivory canvas
-   *   --penn-mist        cool blue-grey ambient wash
+   *   --penn-platinum    cool platinum grey for hairlines
+   *   --penn-pearl       cool pearl canvas
+   *   --penn-mist        sapphire-steel ambient wash
+   *   --penn-steel       sapphire-steel for tertiary state colour
    */
-  --penn-onyx:        220 72% 7%;
-  --penn-navy-deep:   220 72% 9%;
-  --penn-navy:        220 68% 13%;
-  --penn-navy-soft:   216 38% 28%;
-  --penn-gold-deep:   34 58% 36%;
-  --penn-gold:        40 58% 54%;
-  --penn-gold-soft:   40 70% 86%;
-  --penn-platinum:    220 18% 88%;
-  --penn-pearl:       42 28% 97.5%;
-  --penn-mist:        220 30% 95%;
+  --penn-onyx:        222 70% 6%;
+  --penn-navy-deep:   222 65% 8%;
+  --penn-navy:        222 60% 10%;
+  --penn-navy-soft:   220 36% 24%;
+  --penn-gold-deep:   30 50% 32%;
+  --penn-gold:        34 46% 50%;
+  --penn-gold-soft:   36 56% 86%;
+  --penn-platinum:    218 16% 86%;
+  --penn-pearl:       216 22% 98%;
+  --penn-mist:        216 28% 95%;
+  --penn-steel:       210 38% 38%;
 
   --glass-bg: 255 255 255;
-  --glass-stroke: 220 22% 88%;
+  --glass-stroke: 218 20% 88%;
 
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
   --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
@@ -266,32 +271,30 @@
     background-color: hsl(var(--background));
     font-feature-settings: "ss01", "cv11", "tnum" 0;
     letter-spacing: -0.005em;
-    /* "Onyx & Champagne" atmosphere — four deliberate corner
-       aurorae plus a soft horizon plinth. Tuned to whisper,
-       never shout: the brand should land in interactions
+    /* "Obsidian Aurum" atmosphere — four restrained corner
+       aurorae plus a soft horizon plinth. Each layer is tuned
+       to whisper: the brand should land in interactions
        (buttons, hover, accents), not in a wall-to-wall wash.
 
        Layer stack, back-to-front:
-         1. Top-right: champagne aurora — warmth in the masthead corner.
-         2. Bottom-left: midnight-navy aurora — cool counterweight.
-         3. Top-left: platinum aurora — faint metallic catch-light
-            across the brow of the page.
-         4. Bottom plinth: cool mist that anchors the page floor.
-         5. A whisper of warm pearl tint behind everything to keep
-            the canvas from going clinical-grey.
+         1. Top-right: aurum corner glow — a bare metallic catch.
+         2. Bottom-left: obsidian aurora — quiet counterweight.
+         3. Top-left: sapphire-steel halo — architectural top-light.
+         4. Bottom plinth: cool mist anchoring the page floor.
+         5. A pearl wash behind everything for a calm, even canvas.
 
-       The 110s alternate `body-bloom-drift` is intentionally slower
-       than a heartbeat — a single breath in each direction. You
+       The 140s alternate `body-bloom-drift` is intentionally slower
+       than a heartbeat — one slow breath in each direction. You
        sense the page is alive; you never see motion. */
     background-image:
-      radial-gradient(ellipse 50% 40% at 96% 4%,  hsl(var(--penn-gold) / 0.10), transparent 70%),
-      radial-gradient(ellipse 55% 45% at 4% 96%,  hsl(var(--penn-navy) / 0.10), transparent 72%),
-      radial-gradient(ellipse 38% 30% at 4% 4%,   hsl(var(--penn-platinum) / 0.55), transparent 72%),
-      radial-gradient(ellipse 110% 38% at 50% 112%, hsl(var(--penn-mist) / 0.55), transparent 72%),
-      radial-gradient(ellipse 100% 80% at 50% 50%, hsl(var(--penn-pearl) / 0.85), hsl(var(--penn-pearl) / 0.6) 100%);
+      radial-gradient(ellipse 46% 36% at 96% 4%,  hsl(var(--penn-gold) / 0.07), transparent 70%),
+      radial-gradient(ellipse 52% 42% at 4% 96%,  hsl(var(--penn-navy) / 0.08), transparent 72%),
+      radial-gradient(ellipse 36% 28% at 4% 4%,   hsl(var(--penn-steel) / 0.10), transparent 72%),
+      radial-gradient(ellipse 110% 36% at 50% 112%, hsl(var(--penn-mist) / 0.55), transparent 72%),
+      radial-gradient(ellipse 100% 80% at 50% 50%, hsl(var(--penn-pearl) / 0.92), hsl(var(--penn-pearl) / 0.7) 100%);
     background-attachment: fixed;
     background-size: 112% 112%;
-    animation: body-bloom-drift 110s ease-in-out infinite alternate;
+    animation: body-bloom-drift 140s ease-in-out infinite alternate;
   }
 
   /* Slow ambient drift on the body mesh blooms — same character as the
@@ -318,12 +321,12 @@
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.06) 1px, transparent 0);
-    background-size: 28px 28px;
+    background-image: radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.05) 1px, transparent 0);
+    background-size: 32px 32px;
     mask-image: radial-gradient(ellipse 78% 68% at 50% 42%, black 8%, transparent 78%);
     -webkit-mask-image: radial-gradient(ellipse 78% 68% at 50% 42%, black 8%, transparent 78%);
-    opacity: 0.55;
-    animation: body-grid-drift 84s linear infinite;
+    opacity: 0.45;
+    animation: body-grid-drift 96s linear infinite;
   }
 
   @keyframes body-grid-drift {
@@ -331,7 +334,7 @@
       background-position: 0 0;
     }
     100% {
-      background-position: 28px 28px;
+      background-position: 32px 32px;
     }
   }
 
@@ -361,16 +364,16 @@
     letter-spacing: -0.022em;
   }
 
-  /* Refined focus rings — a 2px crisp navy ring sitting on a 1px
-     warm pearl halo, then a soft champagne corona at 6px. Reads as
-     a deliberate, on-brand focus state rather than a browser
-     default and stays accessible (WCAG 1.4.11) at every zoom. */
+  /* Refined focus rings — a 2px obsidian core sitting on a 2px
+     pearl halo, finished with an aurum corona at 6px. Reads as a
+     deliberate, on-brand focus state and stays accessible
+     (WCAG 1.4.11) at every zoom. */
   :focus-visible {
     outline: none;
     box-shadow:
       0 0 0 2px hsl(var(--background)),
-      0 0 0 4px hsl(var(--penn-navy) / 0.65),
-      0 0 0 6px hsl(var(--penn-gold) / 0.18);
+      0 0 0 4px hsl(var(--penn-navy) / 0.70),
+      0 0 0 6px hsl(var(--penn-gold) / 0.22);
     border-radius: var(--radius);
   }
 
@@ -438,38 +441,38 @@
 
   /* Glass card — premium frosted surface. Four-stop vertical
      gradient (bright top → mid → mid-cool → cool foot) gives the
-     card a true specular catch-light from above; the 1px hairline
-     highlight inside the top edge is what sells the polished-glass
-     illusion — never remove it. The two-tone shadow stack (warm
-     short shadow over cool long shadow) reads as crafted depth
-     rather than a generic drop-shadow. */
+     card a specular catch-light from above; the 1px hairline
+     highlight inside the top edge sells the polished-glass
+     illusion — never remove it. The two-tone shadow stack (sharp
+     1px contact + 12px / 32px obsidian-tinted falloff) reads as
+     crafted depth rather than a generic drop-shadow. */
   .glass-card {
     background:
       linear-gradient(180deg,
-        rgba(255, 255, 255, 0.94) 0%,
-        rgba(255, 255, 255, 0.84) 35%,
-        rgba(252, 252, 250, 0.78) 70%,
-        rgba(248, 250, 253, 0.74) 100%);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid hsl(var(--glass-stroke) / 0.80);
+        rgba(255, 255, 255, 0.96) 0%,
+        rgba(255, 255, 255, 0.88) 35%,
+        rgba(250, 251, 253, 0.82) 70%,
+        rgba(245, 248, 252, 0.76) 100%);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid hsl(var(--glass-stroke) / 0.85);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.96) inset,
-      0 0 0 1px hsl(var(--penn-navy) / 0.025),
+      0 1px 0 rgba(255, 255, 255, 0.98) inset,
+      0 0 0 1px hsl(var(--penn-navy) / 0.03),
       0 1px 2px hsl(var(--penn-navy-deep) / 0.06),
-      0 12px 28px hsl(var(--penn-navy-deep) / 0.08),
-      0 32px 64px hsl(var(--penn-navy-deep) / 0.06);
+      0 14px 32px hsl(var(--penn-navy-deep) / 0.09),
+      0 36px 72px hsl(var(--penn-navy-deep) / 0.07);
   }
 
   .glass-panel {
     background: linear-gradient(180deg,
-      rgba(255, 255, 255, 0.78) 0%,
-      rgba(255, 255, 255, 0.62) 100%);
-    backdrop-filter: blur(14px) saturate(170%);
-    -webkit-backdrop-filter: blur(14px) saturate(170%);
-    border: 1px solid hsl(var(--glass-stroke) / 0.60);
+      rgba(255, 255, 255, 0.82) 0%,
+      rgba(255, 255, 255, 0.66) 100%);
+    backdrop-filter: blur(16px) saturate(170%);
+    -webkit-backdrop-filter: blur(16px) saturate(170%);
+    border: 1px solid hsl(var(--glass-stroke) / 0.65);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.78) inset,
+      0 1px 0 rgba(255, 255, 255, 0.82) inset,
       0 1px 2px hsl(var(--penn-navy-deep) / 0.05);
   }
 
@@ -484,12 +487,12 @@
   }
   .lift-on-hover:hover {
     transform: translateY(-3px);
-    border-color: hsl(var(--penn-navy) / 0.30);
+    border-color: hsl(var(--penn-navy) / 0.32);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.96) inset,
-      0 0 0 1px hsl(var(--penn-navy) / 0.04),
-      0 16px 36px hsl(var(--penn-navy-deep) / 0.14),
-      0 40px 80px hsl(var(--penn-navy-deep) / 0.10);
+      0 1px 0 rgba(255, 255, 255, 0.98) inset,
+      0 0 0 1px hsl(var(--penn-navy) / 0.05),
+      0 18px 40px hsl(var(--penn-navy-deep) / 0.16),
+      0 44px 88px hsl(var(--penn-navy-deep) / 0.11);
   }
 
   /* Iconographic halos — gold and navy */
@@ -529,44 +532,47 @@
     color: transparent;
   }
 
-  /* Premium primary button — forged-midnight CTA.
-     A 4-stop vertical gradient (soft top → navy → navy-deep → onyx
-     foot) reads as polished metal under overhead light. The 1px
-     white inner top edge sells the polished bevel; the 1px deep
-     onyx inner bottom edge reads as the underside shadow. On hover
-     the surface lifts 1px and a soft champagne corona blooms 5px
-     out, so the button looks genuinely lit rather than elevated. */
+  /* Premium primary button — forged obsidian CTA.
+     A 4-stop vertical gradient (sapphire-steel top → navy →
+     deep → onyx foot) reads as polished metal under overhead
+     light. The 1px white inner top edge sells the bevel; the
+     1px onyx inner bottom edge reads as the underside shadow.
+     On hover the surface lifts 1px and an aurum corona blooms
+     5px out, so the button looks genuinely lit rather than
+     elevated. */
   .btn-primary-glow {
     background-image: linear-gradient(180deg,
       hsl(var(--penn-navy-soft)) 0%,
-      hsl(var(--penn-navy)) 35%,
-      hsl(var(--penn-navy-deep)) 80%,
+      hsl(var(--penn-navy)) 38%,
+      hsl(var(--penn-navy-deep)) 82%,
       hsl(var(--penn-onyx)) 100%);
     color: hsl(0 0% 100%);
-    text-shadow: 0 1px 0 hsl(var(--penn-navy-deep) / 0.6);
+    text-shadow: 0 1px 0 hsl(var(--penn-navy-deep) / 0.65);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.30) inset,
+      0 1px 0 rgba(255, 255, 255, 0.32) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
-      0 1px 2px hsl(var(--penn-navy-deep) / 0.32),
-      0 6px 14px hsl(var(--penn-navy-deep) / 0.28),
-      0 12px 28px hsl(var(--penn-navy-deep) / 0.22);
-    transition: box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                background-image 240ms ease;
+      0 0 0 1px hsl(var(--penn-onyx) / 0.30),
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.34),
+      0 6px 14px hsl(var(--penn-navy-deep) / 0.30),
+      0 14px 32px hsl(var(--penn-navy-deep) / 0.22);
+    transition: box-shadow 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                background-image 260ms ease;
   }
   .btn-primary-glow:hover {
     transform: translateY(-1px);
     background-image: linear-gradient(180deg,
-      hsl(216 38% 34%) 0%,
-      hsl(var(--penn-navy-soft)) 28%,
-      hsl(var(--penn-navy)) 75%,
+      hsl(220 36% 30%) 0%,
+      hsl(var(--penn-navy-soft)) 30%,
+      hsl(var(--penn-navy)) 76%,
       hsl(var(--penn-navy-deep)) 100%);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.38) inset,
+      0 1px 0 rgba(255, 255, 255, 0.40) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
-      0 1px 2px hsl(var(--penn-navy-deep) / 0.34),
-      0 14px 32px hsl(var(--penn-navy-deep) / 0.40),
-      0 6px 12px hsl(var(--penn-navy-deep) / 0.26),
+      0 0 0 1px hsl(var(--penn-onyx) / 0.32),
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.36),
+      0 16px 36px hsl(var(--penn-navy-deep) / 0.42),
+      0 6px 12px hsl(var(--penn-navy-deep) / 0.28),
       0 0 0 5px hsl(var(--penn-gold) / 0.22);
   }
   .btn-primary-glow:active {
@@ -574,69 +580,71 @@
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.18) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
-      0 1px 1px hsl(var(--penn-navy-deep) / 0.32),
+      0 1px 1px hsl(var(--penn-navy-deep) / 0.34),
       0 2px 6px hsl(var(--penn-navy-deep) / 0.20);
   }
 
-  /* Champagne CTA — gold-on-navy companion to btn-primary-glow.
-     Use sparingly: hero CTAs, "complete fit", premium upsell.
-     A 4-stop gradient (pale champagne → champagne → mid → antique
+  /* Aurum CTA — bronze-on-obsidian companion to btn-primary-glow.
+     Use sparingly: hero CTAs, "complete fit", premium upsell. A
+     4-stop gradient (pale champagne → mid aurum → aurum → antique
      foot) plus a 1px white inner bevel gives this button the same
      forged-metal language as the primary, just in warm tone. */
   .btn-gold-glow {
     background-image: linear-gradient(180deg,
       hsl(var(--penn-gold-soft)) 0%,
-      hsl(40 65% 62%) 30%,
-      hsl(var(--penn-gold)) 65%,
+      hsl(36 54% 60%) 30%,
+      hsl(var(--penn-gold)) 68%,
       hsl(var(--penn-gold-deep)) 100%);
     color: hsl(var(--penn-navy-deep));
-    text-shadow: 0 1px 0 hsl(var(--penn-gold-soft) / 0.7);
+    text-shadow: 0 1px 0 hsl(var(--penn-gold-soft) / 0.75);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.65) inset,
+      0 1px 0 rgba(255, 255, 255, 0.68) inset,
       0 -1px 0 hsl(var(--penn-gold-deep)) inset,
+      0 0 0 1px hsl(var(--penn-gold-deep) / 0.30),
       0 1px 2px hsl(var(--penn-gold-deep) / 0.32),
-      0 6px 14px hsl(var(--penn-gold) / 0.32),
-      0 12px 28px hsl(var(--penn-gold) / 0.26);
-    transition: box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                background-image 240ms ease;
+      0 6px 14px hsl(var(--penn-gold) / 0.30),
+      0 14px 32px hsl(var(--penn-gold) / 0.22);
+    transition: box-shadow 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                background-image 260ms ease;
   }
   .btn-gold-glow:hover {
     transform: translateY(-1px);
     background-image: linear-gradient(180deg,
-      hsl(40 75% 90%) 0%,
-      hsl(40 70% 70%) 30%,
-      hsl(40 60% 58%) 70%,
+      hsl(36 64% 90%) 0%,
+      hsl(34 58% 66%) 30%,
+      hsl(34 50% 54%) 70%,
       hsl(var(--penn-gold-deep)) 100%);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.78) inset,
+      0 1px 0 rgba(255, 255, 255, 0.80) inset,
       0 -1px 0 hsl(var(--penn-gold-deep)) inset,
-      0 14px 32px hsl(var(--penn-gold) / 0.42),
-      0 6px 12px hsl(var(--penn-gold-deep) / 0.32),
-      0 0 0 5px hsl(var(--penn-navy) / 0.18);
+      0 0 0 1px hsl(var(--penn-gold-deep) / 0.32),
+      0 16px 36px hsl(var(--penn-gold) / 0.40),
+      0 6px 12px hsl(var(--penn-gold-deep) / 0.30),
+      0 0 0 5px hsl(var(--penn-navy) / 0.20);
   }
   .btn-gold-glow:active {
     transform: translateY(0);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.45) inset,
+      0 1px 0 rgba(255, 255, 255, 0.46) inset,
       0 -1px 0 hsl(var(--penn-gold-deep)) inset,
       0 1px 1px hsl(var(--penn-gold-deep) / 0.34),
       0 2px 6px hsl(var(--penn-gold) / 0.18);
   }
 
   /* Aurora highlight strip — refined hairline for header/footer
-     dividers. The double-pass (1px hairline + 0.5px platinum
-     undertone) reads as a deliberate metallic seam rather than a
-     hard 1px border. */
+     dividers. The double-pass (1px aurum seam + 0.5px platinum
+     undertone) reads as a deliberate metallic thread rather than
+     a hard 1px border. */
   .aurora-divider {
     height: 1px;
     background: linear-gradient(90deg,
       transparent 0%,
-      hsl(var(--penn-navy) / 0.18) 22%,
+      hsl(var(--penn-navy) / 0.16) 20%,
       hsl(var(--penn-gold) / 0.55) 50%,
-      hsl(var(--penn-navy) / 0.18) 78%,
+      hsl(var(--penn-navy) / 0.16) 80%,
       transparent 100%);
-    box-shadow: 0 1px 0 hsl(var(--penn-platinum) / 0.4);
+    box-shadow: 0 1px 0 hsl(var(--penn-platinum) / 0.45);
   }
 
   /* Subtle entrance for hero sections */
@@ -659,33 +667,38 @@
 
   /* Brand-aligned price tier chips */
   .chip-tier-budget {
-    background: linear-gradient(135deg, hsl(var(--penn-mist)) 0%, hsl(200 50% 92%) 100%);
+    background: linear-gradient(135deg, hsl(var(--penn-mist)) 0%, hsl(204 42% 93%) 100%);
     color: hsl(var(--penn-navy-deep));
-    border: 1px solid hsl(var(--penn-navy) / 0.18);
+    border: 1px solid hsl(var(--penn-steel) / 0.30);
   }
   .chip-tier-standard {
     background: linear-gradient(135deg, hsl(var(--penn-navy) / 0.10) 0%, hsl(var(--penn-navy) / 0.04) 100%);
     color: hsl(var(--penn-navy-deep));
-    border: 1px solid hsl(var(--penn-navy) / 0.25);
+    border: 1px solid hsl(var(--penn-navy) / 0.26);
   }
   .chip-tier-premium {
-    background: linear-gradient(135deg, hsl(var(--penn-gold) / 0.30) 0%, hsl(var(--penn-gold) / 0.12) 100%);
+    background: linear-gradient(135deg, hsl(var(--penn-gold) / 0.30) 0%, hsl(var(--penn-gold) / 0.10) 100%);
     color: hsl(var(--penn-navy-deep));
-    border: 1px solid hsl(var(--penn-gold) / 0.55);
+    border: 1px solid hsl(var(--penn-gold) / 0.58);
+    box-shadow: 0 1px 0 hsl(var(--penn-gold-soft) / 0.55) inset;
   }
 
   /* Brand-aligned info callouts */
   .callout-navy {
-    background: linear-gradient(135deg, hsl(var(--penn-navy) / 0.05) 0%, hsl(var(--penn-mist) / 0.5) 100%);
+    background: linear-gradient(135deg, hsl(var(--penn-navy) / 0.05) 0%, hsl(var(--penn-mist) / 0.55) 100%);
     border: 1px solid hsl(var(--penn-navy) / 0.18);
   }
   .callout-gold {
     background: linear-gradient(135deg, hsl(var(--penn-gold) / 0.18) 0%, hsl(var(--penn-gold) / 0.06) 100%);
-    border: 1px solid hsl(var(--penn-gold) / 0.45);
+    border: 1px solid hsl(var(--penn-gold) / 0.46);
   }
   .callout-success {
-    background: linear-gradient(135deg, hsl(150 50% 94%) 0%, hsl(var(--penn-mist) / 0.6) 100%);
-    border: 1px solid hsl(150 35% 70%);
+    background: linear-gradient(135deg, hsl(152 42% 94%) 0%, hsl(var(--penn-mist) / 0.6) 100%);
+    border: 1px solid hsl(152 32% 68%);
+  }
+  .callout-steel {
+    background: linear-gradient(135deg, hsl(var(--penn-steel) / 0.10) 0%, hsl(var(--penn-mist) / 0.55) 100%);
+    border: 1px solid hsl(var(--penn-steel) / 0.32);
   }
 
   /* Premium form input refinement. The inset 1px white highlight
@@ -693,25 +706,25 @@
      champagne ring blooms outward at low alpha so the field reads
      as on-brand without competing with the focus-visible default. */
   .input-premium {
-    background: rgba(255, 255, 255, 0.78);
-    border: 1px solid hsl(var(--glass-stroke) / 0.85);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid hsl(var(--glass-stroke) / 0.90);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.6) inset,
+      0 1px 0 rgba(255, 255, 255, 0.65) inset,
       0 1px 2px hsl(var(--penn-navy) / 0.05);
     transition: background 200ms ease,
                 border-color 200ms ease,
                 box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .input-premium:hover {
-    border-color: hsl(var(--penn-navy) / 0.32);
+    border-color: hsl(var(--penn-navy) / 0.34);
   }
   .input-premium:focus,
   .input-premium:focus-visible {
-    background: rgba(255, 255, 255, 0.98);
-    border-color: hsl(var(--penn-navy) / 0.60);
+    background: rgba(255, 255, 255, 0.99);
+    border-color: hsl(var(--penn-navy) / 0.62);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.8) inset,
-      0 0 0 4px hsl(var(--penn-gold) / 0.16);
+      0 1px 0 rgba(255, 255, 255, 0.85) inset,
+      0 0 0 4px hsl(var(--penn-gold) / 0.18);
   }
 
   /* Selectable option button — radio/boolean choices. Refined to
@@ -721,34 +734,34 @@
      mere highlighted. */
   .option-tile {
     background: linear-gradient(180deg,
-      rgba(255, 255, 255, 0.66) 0%,
-      rgba(255, 255, 255, 0.50) 100%);
-    border: 2px solid hsl(var(--glass-stroke) / 0.75);
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0.54) 100%);
+    border: 2px solid hsl(var(--glass-stroke) / 0.80);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 1px 0 rgba(255, 255, 255, 0.75) inset,
       0 1px 2px hsl(var(--penn-navy) / 0.05);
-    transition: all 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: all 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .option-tile:hover {
     background: linear-gradient(180deg,
-      rgba(255, 255, 255, 0.90) 0%,
-      rgba(255, 255, 255, 0.78) 100%);
-    border-color: hsl(var(--penn-navy) / 0.40);
+      rgba(255, 255, 255, 0.94) 0%,
+      rgba(255, 255, 255, 0.82) 100%);
+    border-color: hsl(var(--penn-navy) / 0.42);
     transform: translateY(-1px);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.85) inset,
-      0 10px 24px hsl(var(--penn-navy) / 0.10);
+      0 1px 0 rgba(255, 255, 255, 0.88) inset,
+      0 12px 28px hsl(var(--penn-navy) / 0.12);
   }
   .option-tile.option-tile-selected {
     background: linear-gradient(135deg,
       hsl(var(--penn-navy) / 0.10) 0%,
       hsl(var(--penn-mist)) 60%,
-      hsl(var(--penn-gold) / 0.08) 100%);
+      hsl(var(--penn-gold) / 0.10) 100%);
     border-color: hsl(var(--penn-navy));
     box-shadow:
-      0 0 0 1px hsl(var(--penn-navy) / 0.12) inset,
-      0 0 0 4px hsl(var(--penn-gold) / 0.16),
-      0 10px 24px hsl(var(--penn-navy) / 0.14);
+      0 0 0 1px hsl(var(--penn-navy) / 0.14) inset,
+      0 0 0 4px hsl(var(--penn-gold) / 0.18),
+      0 12px 28px hsl(var(--penn-navy) / 0.16);
   }
   /* Restore the global focus-visible ring even when option-tile box-shadow is applied */
   .option-tile:focus-visible {
@@ -788,11 +801,30 @@
   .surface-platinum {
     background: linear-gradient(180deg,
       hsl(var(--penn-pearl)) 0%,
-      hsl(var(--penn-mist) / 0.85) 100%);
-    border: 1px solid hsl(var(--penn-platinum) / 0.85);
+      hsl(var(--penn-mist) / 0.88) 100%);
+    border: 1px solid hsl(var(--penn-platinum) / 0.90);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.85) inset,
+      0 1px 0 rgba(255, 255, 255, 0.90) inset,
       0 1px 2px hsl(var(--penn-navy-deep) / 0.04);
+  }
+
+  /* Forged obsidian surface — premium dark panel for hero
+     callouts, premium upsell, or footer chrome. Same forged-
+     metal language as btn-primary-glow but at panel scale. */
+  .surface-obsidian {
+    background: linear-gradient(180deg,
+      hsl(var(--penn-navy-soft)) 0%,
+      hsl(var(--penn-navy)) 35%,
+      hsl(var(--penn-navy-deep)) 80%,
+      hsl(var(--penn-onyx)) 100%);
+    color: hsl(0 0% 100%);
+    border: 1px solid hsl(var(--penn-onyx));
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.10) inset,
+      0 -1px 0 hsl(var(--penn-onyx)) inset,
+      0 1px 2px hsl(var(--penn-navy-deep) / 0.34),
+      0 16px 36px hsl(var(--penn-navy-deep) / 0.22),
+      0 36px 72px hsl(var(--penn-navy-deep) / 0.16);
   }
 
   /* Editorial pull-quote — uses the serif font for a single

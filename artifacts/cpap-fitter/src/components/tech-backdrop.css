@@ -47,8 +47,8 @@ body.tech-backdrop-on {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 90% 55% at 50% -5%, hsl(var(--penn-gold) / 0.10), transparent 65%),
-    radial-gradient(ellipse 90% 60% at 50% 110%, hsl(var(--penn-mist) / 0.6), transparent 70%);
+    radial-gradient(ellipse 90% 55% at 50% -5%, hsl(var(--penn-gold) / 0.08), transparent 65%),
+    radial-gradient(ellipse 90% 60% at 50% 110%, hsl(var(--penn-mist) / 0.62), transparent 70%);
 }
 
 /*
@@ -63,8 +63,8 @@ body.tech-backdrop-on {
   width: 60vmax;
   height: 60vmax;
   border-radius: 50%;
-  filter: blur(96px);
-  opacity: 0.32;
+  filter: blur(112px);
+  opacity: 0.28;
   mix-blend-mode: multiply;
   will-change: transform;
 }
@@ -72,36 +72,36 @@ body.tech-backdrop-on {
 .tech-backdrop__blob--a {
   background: radial-gradient(
     circle,
-    hsl(var(--penn-navy) / 0.55),
+    hsl(var(--penn-navy) / 0.50),
     transparent 70%
   );
   top: -22vmax;
   left: -18vmax;
-  animation: tech-blob-a 32s ease-in-out infinite alternate;
+  animation: tech-blob-a 38s ease-in-out infinite alternate;
 }
 
 .tech-backdrop__blob--b {
   background: radial-gradient(
     circle,
-    hsl(var(--penn-gold) / 0.65),
+    hsl(var(--penn-gold) / 0.55),
     transparent 70%
   );
   top: 12vh;
   right: -22vmax;
-  animation: tech-blob-b 38s ease-in-out infinite alternate;
+  animation: tech-blob-b 44s ease-in-out infinite alternate;
 }
 
 .tech-backdrop__blob--c {
   background: radial-gradient(
     circle,
-    hsl(var(--penn-navy) / 0.45),
+    hsl(var(--penn-steel) / 0.48),
     transparent 70%
   );
   bottom: -28vmax;
   left: 22vmax;
   width: 55vmax;
   height: 55vmax;
-  animation: tech-blob-c 44s ease-in-out infinite alternate;
+  animation: tech-blob-c 52s ease-in-out infinite alternate;
 }
 
 @keyframes tech-blob-a {
@@ -141,9 +141,9 @@ body.tech-backdrop-on {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(to right, hsl(var(--penn-navy) / 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, hsl(var(--penn-navy) / 0.06) 1px, transparent 1px);
-  background-size: 28px 28px;
+    linear-gradient(to right, hsl(var(--penn-navy) / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--penn-navy) / 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
   -webkit-mask-image: radial-gradient(
     ellipse 85% 70% at 50% 40%,
     #000 35%,
@@ -166,8 +166,8 @@ body.tech-backdrop-on {
   }
   100% {
     background-position:
-      28px 28px,
-      28px 28px;
+      32px 32px,
+      32px 32px;
   }
 }
 

@@ -22,7 +22,7 @@
 //   the patients/conversations endpoints.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
