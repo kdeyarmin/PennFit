@@ -61,6 +61,13 @@ export interface CommunicationPreferences {
   emailAbandonedCart: boolean;
   /** Post-purchase review-request emails. */
   emailReviewRequests: boolean;
+  /**
+   * "You have a new message from PennPaps customer service" nudge
+   * sent when a CSR replies on the in-account thread. Default ON
+   * because the customer is unlikely to know they have a reply
+   * otherwise; surfaced as a toggle on /account so they can mute.
+   */
+  emailInAppReplyNotifications: boolean;
   /** Marketing SMS. Promotions etc. */
   smsMarketing: boolean;
   /** Transactional SMS (order shipped, delivered). Off by default. */
@@ -80,6 +87,7 @@ export const DEFAULT_COMMUNICATION_PREFERENCES: CommunicationPreferences = {
   emailResupplyReminders: true,
   emailAbandonedCart: true,
   emailReviewRequests: true,
+  emailInAppReplyNotifications: true,
   smsMarketing: false,
   smsTransactional: false,
   preferredChannel: "email",

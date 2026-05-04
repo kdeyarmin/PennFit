@@ -35,6 +35,7 @@ const prefsSchema = z
     emailResupplyReminders: z.boolean().optional(),
     emailAbandonedCart: z.boolean().optional(),
     emailReviewRequests: z.boolean().optional(),
+    emailInAppReplyNotifications: z.boolean().optional(),
     smsMarketing: z.boolean().optional(),
     smsTransactional: z.boolean().optional(),
     preferredChannel: z.enum(["email", "sms"]).optional(),
