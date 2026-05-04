@@ -192,7 +192,12 @@ router.post("/email/click", async (req, res) => {
     .where(eq(conversations.id, conversationId))
     .limit(1);
   const conv = convRows[0];
-  if (!conv) {
+  // Post-0033 conversations.patientId is nullable so in-app shop-
+  // customer threads can omit it. Email click links are minted only
+  // for SMS/email patient-flow conversations, but defensively reject
+  // a null patientId here so the rest of the handler can treat the
+  // value as a string.
+  if (!conv || !conv.patientId) {
     res
       .status(400)
       .type("text/html")

@@ -93,6 +93,18 @@ export async function placeResupplyOrderForConversation(
       .limit(1);
     const conv = convRows[0];
     if (!conv) return { status: "conversation_not_found" };
+    // Post-0033 conversations.episodeId / patientId are nullable so
+    // in-app shop-customer threads can omit them. Order-flow only
+    // makes sense for patient-flow conversations (SMS/email replies
+    // that confirm a fulfillment); a missing episodeId here means
+    // the caller has wired this helper to an in-app row by mistake.
+    // Treat as `episode_not_found` so the route handler reports the
+    // correct error and we don't tx-rollback on a downstream null.
+    if (!conv.episodeId || !conv.patientId) {
+      return { status: "episode_not_found" };
+    }
+    const convEpisodeId: string = conv.episodeId;
+    const convPatientId: string = conv.patientId;
 
     // SELECT FOR UPDATE on the episode. drizzle-orm's `.for("update")`
     // emits the row-level lock clause; the lock is released on commit
@@ -108,7 +120,7 @@ export async function placeResupplyOrderForConversation(
         status: episodes.status,
       })
       .from(episodes)
-      .where(eq(episodes.id, conv.episodeId))
+      .where(eq(episodes.id, convEpisodeId))
       .limit(1)
       .for("update");
     const episode = episodeRows[0];
@@ -117,8 +129,8 @@ export async function placeResupplyOrderForConversation(
     if (episode.status === "confirmed" || episode.status === "fulfilled") {
       return {
         status: "already_confirmed",
-        patientId: conv.patientId,
-        episodeId: conv.episodeId,
+        patientId: convPatientId,
+        episodeId: convEpisodeId,
       };
     }
 
