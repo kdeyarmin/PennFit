@@ -16,7 +16,7 @@
 // `disabled` lets a parent gate the binding (e.g. when an in-page
 // modal is open and capturing keys).
 
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 interface Options {
   ref?: RefObject<HTMLInputElement | null>;
@@ -38,6 +38,15 @@ export function useSearchShortcut({
   disabled,
   onClear,
 }: Options): void {
+  // Store onClear in a ref so we can always call the latest version
+  // without needing to re-register the document listener. Call sites
+  // typically pass inline lambdas, so without this the listener would
+  // be removed and re-added on every render that updates the query.
+  const onClearRef = useRef(onClear);
+  useEffect(() => {
+    onClearRef.current = onClear;
+  });
+
   useEffect(() => {
     if (disabled) return;
     function resolveInput(): HTMLInputElement | null {
@@ -53,11 +62,11 @@ export function useSearchShortcut({
       const t = e.target as HTMLElement | null;
       const input = resolveInput();
 
-      if (e.key === "Escape" && onClear && input && t === input) {
+      if (e.key === "Escape" && onClearRef.current && input && t === input) {
         // Only fire when the input itself is focused — Escape
         // anywhere else on the page belongs to dialogs / popovers.
         e.preventDefault();
-        onClear();
+        onClearRef.current();
         input.blur();
         return;
       }
@@ -79,5 +88,5 @@ export function useSearchShortcut({
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [ref, selector, disabled, onClear]);
+  }, [ref, selector, disabled]); // onClear intentionally omitted — read via ref
 }

@@ -146,7 +146,12 @@ export const PasswordInput = forwardRef<HTMLInputElement, Props>(
             value={value}
             aria-describedby={
               [
-                helperText || rest["aria-describedby"] ? helperId : null,
+                // Preserve any IDs the caller already wired up.
+                rest["aria-describedby"] ?? null,
+                // Only point at the helper span when it will actually
+                // be rendered — avoids dangling IDREF warnings.
+                helperText ? helperId : null,
+                // Point at the meter only when it is mounted.
                 strength ? meterId : null,
               ]
                 .filter(Boolean)

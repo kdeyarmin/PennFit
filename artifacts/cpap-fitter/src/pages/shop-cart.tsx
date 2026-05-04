@@ -107,6 +107,11 @@ export function ShopCart() {
     replaceItems,
   } = useCart();
   const { toast } = useToast();
+  // Per-item draft quantity string. Lets the user clear the field
+  // mid-edit without the controlled input snapping back to the
+  // previous value. Cleared on blur so the display re-syncs with
+  // committed cart state.
+  const [draftQty, setDraftQty] = useState<Record<string, string>>({});
 
   /**
    * Remove a cart line and surface an Undo toast. The snapshot
@@ -116,7 +121,10 @@ export function ShopCart() {
    * removal had previously been a "Save for later" click); see
    * `handleSaveForLater` below for how the two flows compose.
    */
-  function handleRemove(it: CartItem, opts?: { savedForLater?: boolean }) {
+  function handleRemove(
+    it: CartItem,
+    opts?: { savedForLater?: boolean; addedToWishlist?: boolean },
+  ) {
     const snapshot: CartItem = { ...it };
     removeItem(it.priceId);
     toast({
@@ -132,11 +140,12 @@ export function ShopCart() {
             // and skips out-of-stock; both are correct fallbacks
             // for an Undo a few seconds after the original click.
             addItem(snapshot, snapshot.quantity);
-            if (opts?.savedForLater) {
+            if (opts?.addedToWishlist) {
               // Symmetrical undo: pull it back out of the wishlist
-              // since we put it there during Save-for-later. Safe
-              // even if the shopper had already wishlisted it
-              // independently — we only added it during this click.
+              // only when Save-for-later actually added it. If the
+              // item was already wishlisted before this click we
+              // leave it there — Undo shouldn't clobber a separate
+              // saved-item the shopper created independently.
               removeFromWishlist(snapshot.productId);
             }
           }}
@@ -149,10 +158,13 @@ export function ShopCart() {
 
   /** Wishlist-bound counterpart to handleRemove. */
   function handleSaveForLater(it: CartItem) {
-    if (!isInWishlist(it.productId)) {
+    // Track whether *this* click is responsible for the wishlist entry
+    // so the Undo handler knows whether to reverse the write.
+    const addedToWishlist = !isInWishlist(it.productId);
+    if (addedToWishlist) {
       addToWishlist(it.productId);
     }
-    handleRemove(it, { savedForLater: true });
+    handleRemove(it, { savedForLater: true, addedToWishlist });
   }
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -616,11 +628,14 @@ export function ShopCart() {
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"
-                        value={it.quantity}
+                        value={draftQty[it.priceId] ?? String(it.quantity)}
                         onChange={(e) => {
                           const raw = e.target.value;
-                          // Allow empty mid-edit; default to 1 only
-                          // if the field is blurred while empty.
+                          // Hold the raw string in draft state so the
+                          // user can clear the field mid-edit. The
+                          // controlled value is the draft when set,
+                          // falling back to committed cart quantity.
+                          setDraftQty((prev) => ({ ...prev, [it.priceId]: raw }));
                           if (raw === "") return;
                           const n = parseInt(raw, 10);
                           if (Number.isFinite(n)) {
@@ -628,9 +643,17 @@ export function ShopCart() {
                           }
                         }}
                         onBlur={(e) => {
-                          if (e.target.value === "") {
+                          const raw = e.target.value;
+                          if (raw === "") {
                             setQuantity(it.priceId, 1);
                           }
+                          // Clear draft so display re-syncs with committed
+                          // cart quantity after the user finishes editing.
+                          setDraftQty((prev) => {
+                            const next = { ...prev };
+                            delete next[it.priceId];
+                            return next;
+                          });
                         }}
                         onFocus={(e) => e.target.select()}
                         className="w-10 h-7 text-sm tabular-nums text-center bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-gold))]/40 rounded"
