@@ -36,6 +36,8 @@ import {
   IN_APP_MESSAGE_BODY_MAX,
   appendCustomerMessage,
   fetchInAppThread,
+  fetchInAppUnreadCount,
+  markInAppThreadRead,
 } from "../../lib/messaging/in-app-conversation";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { logger } from "../../lib/logger";
@@ -66,6 +68,42 @@ router.get("/shop/me/messages", requireSignedIn, async (req, res) => {
   });
   res.json(result);
 });
+
+// Cheap polling endpoint behind the header badge. Returns just the
+// count of unread CSR messages — the heavy thread fetch only happens
+// when the customer actually opens /account.
+router.get(
+  "/shop/me/messages/unread-count",
+  requireSignedIn,
+  async (req, res) => {
+    const customerId = req.userCustomerId!;
+    await ensureShopCustomerRow({ customerId, email: null });
+    const count = await fetchInAppUnreadCount({
+      pool: getDbPool(),
+      customerId,
+    });
+    res.json({ unreadFromCsr: count });
+  },
+);
+
+// Mark the customer's in-app thread fully read. Idempotent — the
+// AccountMessagesSection calls this on every render so the badge
+// disappears even if the customer keeps the page open while the CSR
+// keeps replying. Returns 200 even when the customer has no thread
+// yet (no-op).
+router.post(
+  "/shop/me/messages/mark-read",
+  requireSignedIn,
+  async (req, res) => {
+    const customerId = req.userCustomerId!;
+    await ensureShopCustomerRow({ customerId, email: null });
+    const updated = await markInAppThreadRead({
+      pool: getDbPool(),
+      customerId,
+    });
+    res.json({ ok: true, threadUpdated: updated });
+  },
+);
 
 router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
   const parsed = postBody.safeParse(req.body);
