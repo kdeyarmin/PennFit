@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopCustomersAdminRouter from "./admin/customers.js";
+import shopCustomerNotesRouter from "./admin/customer-notes.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
@@ -120,6 +121,10 @@ router.use(systemInfoRouter);
 // reorder action which creates a Stripe Checkout Session. Same
 // requireAdmin gate as the other shop-admin modules.
 router.use(shopCustomersAdminRouter);
+// /admin/shop/customers/:userId/notes — internal CSR notes per
+// shop customer (Phase 10). Mounted after the customers router so
+// the more-specific /notes path doesn't shadow the detail GET.
+router.use(shopCustomerNotesRouter);
 // /admin/shop/returns/* — comfort-guarantee swap / refund / RMA
 // queue. Linear lifecycle (requested → approved → shipped_back →
 // received → refunded|replaced|closed) with strict from-state
