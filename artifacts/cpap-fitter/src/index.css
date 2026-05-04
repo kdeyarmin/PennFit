@@ -555,6 +555,16 @@
       0 0 80px hsl(var(--penn-cyan) / 0.08);
   }
 
+  @media print {
+    .glass-card-tech {
+      background: #fff;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-shadow: none;
+      border-color: hsl(var(--border));
+    }
+  }
+
   /* Brand-tinted hover lift for cards */
 
   /* Brand-tinted hover lift for cards. The 3px rise + colored
