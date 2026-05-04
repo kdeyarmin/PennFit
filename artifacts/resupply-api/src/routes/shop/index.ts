@@ -12,6 +12,7 @@ import checkoutRouter from "./checkout";
 import insuranceLeadRouter from "./insurance-lead";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
+import meClinicalInfoRouter from "./me-clinical-info";
 import meCommPrefsRouter from "./me-comm-prefs";
 import meDashboardRouter from "./me-dashboard";
 import meMessagesRouter from "./me-messages";
@@ -35,6 +36,7 @@ router.use(orderRouter);
 // the same base path. The handlers themselves apply the auth provider gating
 // (requireSignedIn / attachSignedIn) per-endpoint.
 router.use(meRouter);
+router.use(meClinicalInfoRouter);
 router.use(meCommPrefsRouter);
 router.use(meDashboardRouter);
 router.use(meMessagesRouter);

@@ -79,6 +79,7 @@ import {
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
 import { AccountMessagesSection } from "@/components/account-messages-section";
+import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 
@@ -286,10 +287,17 @@ function AccountInner() {
             onSaved={() => void reload()}
           />
           {/*
+            Device + physician info — Phase 1 (PR #52). Stored on
+            shop_customers as JSONB and persisted via
+            PUT /shop/me/clinical-info, which audit-logs every change
+            with a non-PHI metadata envelope.
+          */}
+          <ClinicalInfoSection />
+          {/*
             In-account messaging with PennPaps customer service —
-            added in the Phase 2 messaging branch. Reuses the
-            existing conversations + messages tables via the new
-            in_app channel; admins reply from /admin/conversations.
+            Phase 2 (PR #53). Reuses the existing conversations +
+            messages tables via the new in_app channel; admins reply
+            from /admin/conversations.
           */}
           <AccountMessagesSection />
           <ReorderSuggestionsSection />

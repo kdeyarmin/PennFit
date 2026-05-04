@@ -88,6 +88,55 @@ export const DEFAULT_COMMUNICATION_PREFERENCES: CommunicationPreferences = {
   timezone: null,
 };
 
+/**
+ * The customer's CPAP machine, captured on /account so the
+ * storefront and customer-service team don't have to ask for it
+ * every time. All fields except `manufacturer` and `model` are
+ * optional — the shopper may not know their pressure setting or
+ * may have intentionally left it off the form.
+ *
+ * Stored as JSONB so we can add fields (humidifier toggle, ramp
+ * setting, mask compatibility hints) without another migration.
+ * Migration that introduced the column: 0032.
+ */
+export interface CpapDeviceInfo {
+  manufacturer: string;
+  model: string;
+  serialNumber?: string | null;
+  /** Human-readable, e.g. "8-12 cm H2O" or "10 cm H2O fixed". */
+  pressureSetting?: string | null;
+  /** Humidifier level if the device supports one, e.g. "3" or "auto". */
+  humidifierSetting?: string | null;
+  /** Free-form notes the customer wants to share with PennPaps. */
+  notes?: string | null;
+}
+
+/**
+ * The patient's prescribing physician. PHI when bound to the
+ * customer's identity — every write through this column goes
+ * through `routes/shop/clinical-info.ts` which audit-logs the
+ * change with a non-PHI metadata envelope.
+ *
+ * Mostly optional fields because the rich version (NPI, fax,
+ * full address) is only worth filling out when we're actually
+ * coordinating prescription verification — the lightweight
+ * version (name + phone) is enough to surface to a CSR.
+ */
+export interface PhysicianInfo {
+  name: string;
+  practice?: string | null;
+  phone?: string | null;
+  fax?: string | null;
+  email?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  /** National Provider Identifier — 10-digit NPI for downstream EHR lookups. */
+  npi?: string | null;
+}
+
 export const shopCustomers = resupplySchema.table(
   "shop_customers",
   {
@@ -131,6 +180,18 @@ export const shopCustomers = resupplySchema.table(
     communicationPreferences: jsonb(
       "communication_preferences",
     ).$type<CommunicationPreferences | null>(),
+    /**
+     * The customer's CPAP machine — see CpapDeviceInfo above.
+     * Migration 0032 added the column. Null when the customer
+     * hasn't filled the form out yet.
+     */
+    cpapDevice: jsonb("cpap_device_json").$type<CpapDeviceInfo | null>(),
+    /**
+     * The customer's prescribing physician — see PhysicianInfo
+     * above. Migration 0032 added the column. PHI; the writing
+     * route audit-logs every change with a non-PHI envelope.
+     */
+    physicianInfo: jsonb("physician_info_json").$type<PhysicianInfo | null>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

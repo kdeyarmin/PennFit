@@ -24,11 +24,47 @@ export interface SavedCard {
   expYear: number | null;
 }
 
+/**
+ * The customer's CPAP machine, captured on /account so the
+ * storefront and customer-service team don't have to ask for it
+ * every time. Stored server-side as JSONB on `shop_customers`;
+ * see `lib/resupply-db/src/schema/shop-customers.ts`.
+ */
+export interface CpapDeviceInfo {
+  manufacturer: string;
+  model: string;
+  serialNumber?: string | null;
+  pressureSetting?: string | null;
+  humidifierSetting?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * The customer's prescribing physician — PHI when bound to the
+ * customer's identity. Server audit-logs every write.
+ */
+export interface PhysicianInfo {
+  name: string;
+  practice?: string | null;
+  phone?: string | null;
+  fax?: string | null;
+  email?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  /** 10-digit National Provider Identifier. */
+  npi?: string | null;
+}
+
 export interface ShopMeProfile {
   customerId: string;
   email: string | null;
   displayName: string | null;
   shippingAddress: SavedShippingAddress | null;
+  cpapDevice: CpapDeviceInfo | null;
+  physicianInfo: PhysicianInfo | null;
 }
 
 export interface ShopRecentOrder {
@@ -85,6 +121,40 @@ export const updateShopMe = (input: {
   shippingAddress?: SavedShippingAddress | null;
 }) =>
   meFetch<{ profile: ShopMeProfile }>("/shop/me", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+
+/**
+ * Clinical info — CPAP device + prescribing physician — split out
+ * from the main /shop/me payload so the account-page sub-section
+ * can fetch and persist independently. The API returns BOTH fields
+ * on every call (each may be null when the customer hasn't filled
+ * the form out yet).
+ */
+export interface ShopClinicalInfoResponse {
+  cpapDevice: CpapDeviceInfo | null;
+  physicianInfo: PhysicianInfo | null;
+}
+
+export const fetchShopClinicalInfo = () =>
+  meFetch<ShopClinicalInfoResponse>("/shop/me/clinical-info");
+
+/**
+ * Update CPAP device and/or prescribing-physician info.
+ *
+ *   - Omit a field to leave it unchanged.
+ *   - Pass `null` to clear it.
+ *   - Pass an object to replace it.
+ *
+ * The server validates the shape with Zod and audit-logs every
+ * successful mutation with non-PHI metadata only.
+ */
+export const updateShopClinicalInfo = (input: {
+  cpapDevice?: CpapDeviceInfo | null;
+  physicianInfo?: PhysicianInfo | null;
+}) =>
+  meFetch<ShopClinicalInfoResponse>("/shop/me/clinical-info", {
     method: "PUT",
     body: JSON.stringify(input),
   });
