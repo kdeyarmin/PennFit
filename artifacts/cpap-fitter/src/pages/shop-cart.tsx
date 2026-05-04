@@ -52,6 +52,7 @@ import {
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { ShippingEta } from "@/components/shop/shipping-eta";
 import { CartCrossSell } from "@/components/shop/cart-cross-sell";
+import { HsaFsaBadge } from "@/components/shop/hsa-fsa-badge";
 
 // sessionStorage key written by /account when the user clicks
 // "Buy this again". Reading + clearing it here is the only handshake
@@ -755,6 +756,17 @@ export function ShopCart() {
                 >
                   {formatMoneyCents(totalCents)}
                 </span>
+              </div>
+              {/*
+                HSA/FSA reminder near the total — every CPAP supply
+                in this storefront is IRS-classified as a qualified
+                medical expense. Surfacing the badge here (instead of
+                only on per-product cards) reassures shoppers right
+                before checkout that the HSA/FSA card they're about
+                to use is the correct payment method.
+              */}
+              <div className="mb-4">
+                <HsaFsaBadge size="pdp" label="Pay with HSA / FSA card" />
               </div>
               {/*
                 Same shipping promise the customer saw on the PDP,
