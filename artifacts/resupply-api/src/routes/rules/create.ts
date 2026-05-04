@@ -40,10 +40,7 @@ const ruleBody = z
     minTenureDays: z.number().int().min(0).max(36500).nullable().optional(),
     maxTenureDays: z.number().int().min(0).max(36500).nullable().optional(),
     cadenceDays: z.number().int().min(1).max(365),
-    defaultChannel: z
-      .enum(["sms", "email", "voice"])
-      .nullable()
-      .optional(),
+    defaultChannel: z.enum(["sms", "email", "voice"]).nullable().optional(),
     active: z.boolean().default(true),
     notes: z
       .string()
@@ -112,7 +109,10 @@ router.post("/rules", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "rules.create: audit write failed",
     );
   }

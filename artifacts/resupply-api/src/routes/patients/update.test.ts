@@ -35,8 +35,10 @@ const dbStub = {
       from: () => obj,
       where: () => obj,
       limit: () => obj,
-      then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-        Promise.resolve(selectQueue.shift() ?? []).then(resolve, reject),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject: (e: unknown) => unknown,
+      ) => Promise.resolve(selectQueue.shift() ?? []).then(resolve, reject),
     };
     return obj;
   }),
@@ -44,7 +46,8 @@ const dbStub = {
     const obj: Record<string, unknown> = {
       values: () => obj,
       onConflictDoUpdate: () => obj,
-      then: (resolve: (v: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
+      then: (resolve: (v: unknown) => unknown) =>
+        Promise.resolve(undefined).then(resolve),
     };
     return obj;
   }),
@@ -54,10 +57,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -88,7 +90,11 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 

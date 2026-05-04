@@ -25,9 +25,9 @@ describe("hashPassword + verifyPassword", () => {
   });
 
   it("returns false (not throws) on malformed stored hash", async () => {
-    await expect(
-      verifyPassword("hunter2", "not-an-argon2-hash"),
-    ).resolves.toBe(false);
+    await expect(verifyPassword("hunter2", "not-an-argon2-hash")).resolves.toBe(
+      false,
+    );
   });
 });
 

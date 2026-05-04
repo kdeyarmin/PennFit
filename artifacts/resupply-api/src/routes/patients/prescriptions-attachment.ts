@@ -499,10 +499,7 @@ router.get(
       // pre-fills sensibly. Quote it per RFC 6266 to handle spaces
       // and other characters; ASCII-only fallback for older clients.
       if (rx.attachmentFilename) {
-        const safeAscii = rx.attachmentFilename.replace(
-          /[^\x20-\x7E]/g,
-          "_",
-        );
+        const safeAscii = rx.attachmentFilename.replace(/[^\x20-\x7E]/g, "_");
         const encoded = encodeURIComponent(rx.attachmentFilename);
         res.setHeader(
           "Content-Disposition",

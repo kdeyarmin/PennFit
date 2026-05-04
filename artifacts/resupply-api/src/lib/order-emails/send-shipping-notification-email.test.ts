@@ -9,13 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 const sendEmailMock = vi.fn();
-const createSendgridClientMock = vi.fn<() => { sendEmail: typeof sendEmailMock }>(
-  () => ({ sendEmail: sendEmailMock }),
-);
+const createSendgridClientMock = vi.fn<
+  () => { sendEmail: typeof sendEmailMock }
+>(() => ({ sendEmail: sendEmailMock }));
 vi.mock("@workspace/resupply-email", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-email")>(
-    "@workspace/resupply-email",
-  );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
   return {
     ...actual,
     createSendgridClient: () => createSendgridClientMock(),
@@ -52,11 +52,23 @@ describe("getCarrierTrackingUrl", () => {
     ["UPS", "1Z999AA10123456784", "https://www.ups.com/track?tracknum="],
     ["ups", "1Z999AA10123456784", "https://www.ups.com/track?tracknum="],
     ["U.P.S.", "1Z999AA10123456784", "https://www.ups.com/track?tracknum="],
-    ["USPS", "9400111899223123456784", "https://tools.usps.com/go/TrackConfirmAction?tLabels="],
+    [
+      "USPS",
+      "9400111899223123456784",
+      "https://tools.usps.com/go/TrackConfirmAction?tLabels=",
+    ],
     ["FedEx", "794613527122", "https://www.fedex.com/fedextrack/?trknbr="],
-    ["Federal Express", "794613527122", "https://www.fedex.com/fedextrack/?trknbr="],
+    [
+      "Federal Express",
+      "794613527122",
+      "https://www.fedex.com/fedextrack/?trknbr=",
+    ],
     ["DHL", "1234567890", "https://www.dhl.com/en/express/tracking.html?AWB="],
-    ["DHL Express", "1234567890", "https://www.dhl.com/en/express/tracking.html?AWB="],
+    [
+      "DHL Express",
+      "1234567890",
+      "https://www.dhl.com/en/express/tracking.html?AWB=",
+    ],
   ])("maps %s → known URL template", (carrier, num, prefix) => {
     const url = getCarrierTrackingUrl(carrier, num);
     expect(url).not.toBeNull();

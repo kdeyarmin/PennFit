@@ -43,10 +43,9 @@ const steps: Step[] = [
     title: "You tell us your insurance",
     body: (
       <>
-        On the order form you enter your insurance carrier, member ID,
-        group number, and the patient's date of birth. That's it — we
-        don't need a paper card, and you don't need to call your plan
-        first.
+        On the order form you enter your insurance carrier, member ID, group
+        number, and the patient's date of birth. That's it — we don't need a
+        paper card, and you don't need to call your plan first.
       </>
     ),
   },
@@ -55,10 +54,10 @@ const steps: Step[] = [
     title: "We verify your benefits",
     body: (
       <>
-        Our team checks your plan in real time: what's covered, what
-        replacement cadence your plan allows, your deductible status,
-        and any copay. If anything would cost you out-of-pocket, we
-        contact you before shipping — never a surprise bill.
+        Our team checks your plan in real time: what's covered, what replacement
+        cadence your plan allows, your deductible status, and any copay. If
+        anything would cost you out-of-pocket, we contact you before shipping —
+        never a surprise bill.
       </>
     ),
   },
@@ -67,10 +66,10 @@ const steps: Step[] = [
     title: "We coordinate the prescription",
     body: (
       <>
-        CPAP masks are prescription medical devices. If we don't already
-        have a current prescription on file, we reach out to your sleep
-        provider directly to get one — you don't have to be the
-        messenger. Most prescriptions come back within 1–3 business days.
+        CPAP masks are prescription medical devices. If we don't already have a
+        current prescription on file, we reach out to your sleep provider
+        directly to get one — you don't have to be the messenger. Most
+        prescriptions come back within 1–3 business days.
       </>
     ),
   },
@@ -79,10 +78,9 @@ const steps: Step[] = [
     title: "We ship and bill the plan",
     body: (
       <>
-        Once benefits and prescription are confirmed, your supplies
-        ship from our warehouse in 1–3 business days. We bill your
-        insurance directly. You get an email with tracking — and, in
-        most cases, no bill at all.
+        Once benefits and prescription are confirmed, your supplies ship from
+        our warehouse in 1–3 business days. We bill your insurance directly. You
+        get an email with tracking — and, in most cases, no bill at all.
       </>
     ),
   },
@@ -95,12 +93,36 @@ type ScheduleRow = {
 };
 
 const schedule: ScheduleRow[] = [
-  { item: "Mask cushions", cadence: "Every 2–4 weeks", note: "Highest impact on therapy comfort" },
-  { item: "Mask frame", cadence: "Every 3 months", note: "Per most commercial plans" },
-  { item: "Headgear", cadence: "Every 6 months", note: "Elastic stretches over time" },
-  { item: "Tubing (standard or heated)", cadence: "Every 3 months", note: "Mineral buildup compromises pressure" },
-  { item: "Disposable filters", cadence: "Every month", note: "Reusable filters: rinse weekly" },
-  { item: "Humidifier chamber", cadence: "Every 6 months", note: "Even with distilled water" },
+  {
+    item: "Mask cushions",
+    cadence: "Every 2–4 weeks",
+    note: "Highest impact on therapy comfort",
+  },
+  {
+    item: "Mask frame",
+    cadence: "Every 3 months",
+    note: "Per most commercial plans",
+  },
+  {
+    item: "Headgear",
+    cadence: "Every 6 months",
+    note: "Elastic stretches over time",
+  },
+  {
+    item: "Tubing (standard or heated)",
+    cadence: "Every 3 months",
+    note: "Mineral buildup compromises pressure",
+  },
+  {
+    item: "Disposable filters",
+    cadence: "Every month",
+    note: "Reusable filters: rinse weekly",
+  },
+  {
+    item: "Humidifier chamber",
+    cadence: "Every 6 months",
+    note: "Even with distilled water",
+  },
 ];
 
 type FaqRow = { q: string; a: React.ReactNode };
@@ -110,11 +132,11 @@ const faqs: FaqRow[] = [
     q: "What does insurance typically cost me out of pocket?",
     a: (
       <>
-        For most patients with active in-network coverage, CPAP supplies
-        are <strong>$0 out of pocket</strong> on the standard
-        replacement schedule. If you haven't met your deductible yet,
-        or your plan has a copay or coinsurance for durable medical
-        equipment, we'll tell you the exact amount before we ship.
+        For most patients with active in-network coverage, CPAP supplies are{" "}
+        <strong>$0 out of pocket</strong> on the standard replacement schedule.
+        If you haven't met your deductible yet, or your plan has a copay or
+        coinsurance for durable medical equipment, we'll tell you the exact
+        amount before we ship.
       </>
     ),
   },
@@ -123,11 +145,11 @@ const faqs: FaqRow[] = [
     a: (
       <>
         Penn Home Medical Supply works with <strong>Medicare</strong>,{" "}
-        <strong>Medicaid</strong>, and most major commercial insurers
-        (Aetna, Anthem/BCBS, Cigna, Humana, UnitedHealthcare, and many
-        regional plans). If you're not sure your plan is in-network,
-        start an order — verifying your coverage is the first thing we do
-        and there's no obligation to proceed.
+        <strong>Medicaid</strong>, and most major commercial insurers (Aetna,
+        Anthem/BCBS, Cigna, Humana, UnitedHealthcare, and many regional plans).
+        If you're not sure your plan is in-network, start an order — verifying
+        your coverage is the first thing we do and there's no obligation to
+        proceed.
       </>
     ),
   },
@@ -135,12 +157,11 @@ const faqs: FaqRow[] = [
     q: "What if I don't have a prescription?",
     a: (
       <>
-        Most patients who already use CPAP have an active prescription
-        on file with their sleep provider. If you do, we just need their
-        name and we'll request a copy directly. If you've never used
-        CPAP and don't have a sleep study yet, your primary care doctor
-        can refer you for one — we're for patients who already have a
-        diagnosis.
+        Most patients who already use CPAP have an active prescription on file
+        with their sleep provider. If you do, we just need their name and we'll
+        request a copy directly. If you've never used CPAP and don't have a
+        sleep study yet, your primary care doctor can refer you for one — we're
+        for patients who already have a diagnosis.
       </>
     ),
   },
@@ -149,9 +170,9 @@ const faqs: FaqRow[] = [
     a: (
       <>
         Both. Most plans cover a new mask every 3 months and replacement
-        cushions and headgear on the schedule above. If your current
-        mask doesn't fit and you're outside that window, your provider
-        can write a medical-necessity letter — we'll help coordinate it.
+        cushions and headgear on the schedule above. If your current mask
+        doesn't fit and you're outside that window, your provider can write a
+        medical-necessity letter — we'll help coordinate it.
       </>
     ),
   },
@@ -166,9 +187,9 @@ const faqs: FaqRow[] = [
         >
           shop
         </Link>{" "}
-        — usually the same supplies, billed directly to your card with
-        no insurance hoops. We'll tell you upfront if cash-pay is the
-        better path for any specific item.
+        — usually the same supplies, billed directly to your card with no
+        insurance hoops. We'll tell you upfront if cash-pay is the better path
+        for any specific item.
       </>
     ),
   },
@@ -176,11 +197,10 @@ const faqs: FaqRow[] = [
     q: "How quickly does this all happen?",
     a: (
       <>
-        Insurance verification and prescription confirmation typically
-        take 1–3 business days. Once both are cleared, supplies ship
-        within 1–3 business days from our warehouse. From submission to
-        delivery is usually under a week for repeat patients with
-        active prescriptions.
+        Insurance verification and prescription confirmation typically take 1–3
+        business days. Once both are cleared, supplies ship within 1–3 business
+        days from our warehouse. From submission to delivery is usually under a
+        week for repeat patients with active prescriptions.
       </>
     ),
   },
@@ -214,10 +234,10 @@ export function Insurance() {
           Most patients pay $0 out of pocket.
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          For in-network patients with active coverage, CPAP supplies are
-          billed directly to your insurance on a schedule your plan
-          already covers. We handle benefits, prescriptions, and the
-          claim — you just get the supplies.
+          For in-network patients with active coverage, CPAP supplies are billed
+          directly to your insurance on a schedule your plan already covers. We
+          handle benefits, prescriptions, and the claim — you just get the
+          supplies.
         </p>
       </header>
 
@@ -252,11 +272,15 @@ export function Insurance() {
             key={title}
             className="glass-card lift-on-hover rounded-2xl p-6 space-y-3"
           >
-            <div className={`h-11 w-11 rounded-xl ${halo} flex items-center justify-center`}>
+            <div
+              className={`h-11 w-11 rounded-xl ${halo} flex items-center justify-center`}
+            >
               <Icon className="w-5 h-5" />
             </div>
             <h3 className="font-semibold tracking-tight">{title}</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {body}
+            </p>
           </article>
         ))}
       </section>
@@ -268,8 +292,8 @@ export function Insurance() {
             How a PennPaps insurance order works
           </h2>
           <p className="text-muted-foreground">
-            From the order form to your front door, here's exactly what
-            happens — and what we do for you behind the scenes.
+            From the order form to your front door, here's exactly what happens
+            — and what we do for you behind the scenes.
           </p>
         </div>
         <div className="grid gap-4">
@@ -287,8 +311,12 @@ export function Insurance() {
                 </span>
               </div>
               <div className="space-y-2 flex-1">
-                <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
+                <h3 className="text-lg font-semibold tracking-tight">
+                  {title}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {body}
+                </p>
               </div>
             </article>
           ))}
@@ -306,10 +334,10 @@ export function Insurance() {
               What insurance typically covers
             </h2>
             <p className="text-sm text-muted-foreground">
-              The cadences below match the standard replacement schedule
-              most patients use. Some plans (Medicare in particular) may
-              cover specific items more frequently — we verify your
-              exact benefit before each order.
+              The cadences below match the standard replacement schedule most
+              patients use. Some plans (Medicare in particular) may cover
+              specific items more frequently — we verify your exact benefit
+              before each order.
             </p>
           </div>
         </div>
@@ -317,20 +345,32 @@ export function Insurance() {
           <table className="w-full text-sm">
             <thead className="bg-secondary/30 text-foreground">
               <tr>
-                <th scope="col" className="text-left font-semibold tracking-tight px-5 py-3">
+                <th
+                  scope="col"
+                  className="text-left font-semibold tracking-tight px-5 py-3"
+                >
                   Item
                 </th>
-                <th scope="col" className="text-left font-semibold tracking-tight px-5 py-3">
+                <th
+                  scope="col"
+                  className="text-left font-semibold tracking-tight px-5 py-3"
+                >
                   Replacement cadence
                 </th>
-                <th scope="col" className="text-left font-semibold tracking-tight px-5 py-3 hidden sm:table-cell">
+                <th
+                  scope="col"
+                  className="text-left font-semibold tracking-tight px-5 py-3 hidden sm:table-cell"
+                >
                   Note
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/40">
               {schedule.map((row) => (
-                <tr key={row.item} className="hover:bg-secondary/20 transition-colors">
+                <tr
+                  key={row.item}
+                  className="hover:bg-secondary/20 transition-colors"
+                >
                   <td className="px-5 py-3 font-medium">{row.item}</td>
                   <td className="px-5 py-3 text-muted-foreground tabular-nums">
                     {row.cadence}
@@ -361,19 +401,26 @@ export function Insurance() {
           <div className="h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
             <CheckCircle2 className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold tracking-tight">What we need from you</h3>
+          <h3 className="font-semibold tracking-tight">
+            What we need from you
+          </h3>
           <ul className="text-sm text-muted-foreground leading-relaxed space-y-2 list-disc list-inside">
             <li>Insurance carrier, member ID, group number</li>
             <li>Patient's full name and date of birth</li>
             <li>Shipping address</li>
-            <li>The name of your sleep provider (if we don't already have your prescription)</li>
+            <li>
+              The name of your sleep provider (if we don't already have your
+              prescription)
+            </li>
           </ul>
         </div>
         <div className="glass-card rounded-2xl p-6 space-y-3">
           <div className="h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
             <Sparkles className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold tracking-tight">What we handle for you</h3>
+          <h3 className="font-semibold tracking-tight">
+            What we handle for you
+          </h3>
           <ul className="text-sm text-muted-foreground leading-relaxed space-y-2 list-disc list-inside">
             <li>Real-time benefits verification with your plan</li>
             <li>Prescription request from your sleep provider</li>
@@ -441,10 +488,9 @@ export function Insurance() {
                 No insurance? You can still order direct.
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                The PennPaps shop sells the same cushions, filters,
-                tubing, and bundles on a cash-pay basis — no
-                prescription needed for most consumables, and we ship
-                fast.
+                The PennPaps shop sells the same cushions, filters, tubing, and
+                bundles on a cash-pay basis — no prescription needed for most
+                consumables, and we ship fast.
               </p>
               <div className="flex flex-wrap gap-3 pt-2">
                 <Link href="/shop">
@@ -469,9 +515,8 @@ export function Insurance() {
           Ready when you are.
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Start an insurance order in about three minutes. We'll verify
-          your benefits and reach out before any charge — no obligation
-          to proceed.
+          Start an insurance order in about three minutes. We'll verify your
+          benefits and reach out before any charge — no obligation to proceed.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">

@@ -1,6 +1,12 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Compass, Home as HomeIcon } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
@@ -39,19 +45,26 @@ export default function NotFound() {
             </Button>
           </Link>
           <Link href="/shop">
-            <Button variant="outline" className="w-full sm:w-auto rounded-full glass-panel border-0 px-6">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto rounded-full glass-panel border-0 px-6"
+            >
               Shop CPAP supplies
             </Button>
           </Link>
           <Link href="/consent">
-            <Button variant="outline" className="w-full sm:w-auto rounded-full glass-panel border-0 px-6">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto rounded-full glass-panel border-0 px-6"
+            >
               Get fitted for a mask
             </Button>
           </Link>
         </CardContent>
       </Card>
       <p className="text-center text-xs text-muted-foreground mt-6">
-        Need help? Contact PennPaps for help with mask fittings, supply orders, insurance, or resupply.
+        Need help? Contact PennPaps for help with mask fittings, supply orders,
+        insurance, or resupply.
       </p>
     </div>
   );

@@ -27,7 +27,9 @@ let lastUpdateSet: Record<string, unknown> | null = null;
 
 const dbStub = {
   select: vi.fn(() => ({
-    from: () => ({ where: () => ({ orderBy: () => ({ limit: () => Promise.resolve([]) }) }) }),
+    from: () => ({
+      where: () => ({ orderBy: () => ({ limit: () => Promise.resolve([]) }) }),
+    }),
   })),
   update: vi.fn(() => {
     const obj: Record<string, unknown> = {
@@ -46,10 +48,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
   drizzle: () => dbStub,
 }));
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
@@ -72,7 +73,11 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -85,7 +90,7 @@ beforeEach(() => {
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   updateQueue.length = 0;
   lastUpdateSet = null;
-    mockAdmin.current = null;
+  mockAdmin.current = null;
   dbStub.update.mockClear();
 });
 
@@ -97,7 +102,8 @@ afterEach(() => {
 });
 
 describe("POST /admin/shop/reviews/:id/approve", () => {
-  it("rejects callers without admin sign-in", async () => {    const res = await request(makeApp()).post(
+  it("rejects callers without admin sign-in", async () => {
+    const res = await request(makeApp()).post(
       "/resupply-api/admin/shop/reviews/rev_1/approve",
     );
     expect([401, 403]).toContain(res.status);

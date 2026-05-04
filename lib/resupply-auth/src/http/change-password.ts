@@ -24,7 +24,10 @@ const ChangeBody = z.object({
 export function makeChangePasswordHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
 
-  return async function handleChange(req: Request, res: Response): Promise<void> {
+  return async function handleChange(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const csrf = checkCsrf(req);
     if (!csrf.ok) {
       authError(
@@ -56,13 +59,10 @@ export function makeChangePasswordHandler(deps: AuthDeps) {
 
     const newPwCheck = validatePassword(parsed.data.newPassword);
     if (!newPwCheck.ok) {
-      authError(
-        res,
-        400,
-        "invalid_input",
-        newPwCheck.error.message,
-        { field: "newPassword", code: newPwCheck.error.code },
-      );
+      authError(res, 400, "invalid_input", newPwCheck.error.message, {
+        field: "newPassword",
+        code: newPwCheck.error.code,
+      });
       return;
     }
 

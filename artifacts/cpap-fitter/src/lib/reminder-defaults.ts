@@ -59,7 +59,8 @@ export const REMINDER_ITEMS: ReminderItemDef[] = [
   {
     sku: "disposableFilter",
     label: "Disposable filters (white / paper)",
-    description: "Trap dust, dander, and pollen. A clogged filter strains the motor.",
+    description:
+      "Trap dust, dander, and pollen. A clogged filter strains the motor.",
     defaultIntervalDays: 14,
     defaultEnabled: true,
   },

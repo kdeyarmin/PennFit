@@ -15,11 +15,7 @@ import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import {
-  conversations,
-  getDbPool,
-  patients,
-} from "@workspace/resupply-db";
+import { conversations, getDbPool, patients } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -96,9 +92,7 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     filters.push(
       sql`${conversations.slaDueAt} <= now() + interval '30 minutes'`,
     );
-    filters.push(
-      sql`${conversations.status} IN ('open','awaiting_admin')`,
-    );
+    filters.push(sql`${conversations.status} IN ('open','awaiting_admin')`);
   } else if (assignedTo) {
     filters.push(eq(conversations.assignedAdminUserId, assignedTo));
   }

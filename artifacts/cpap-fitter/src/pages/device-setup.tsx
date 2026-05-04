@@ -36,9 +36,9 @@ const setupSteps: SetupStep[] = [
       <>
         Lay everything out and confirm you have: the device itself, the heated
         humidifier chamber, the air hose (heated or standard), your prescribed
-        mask with headgear, the power cord and brick, a spare disposable
-        filter, and the user manual or quick-start card. If anything looks
-        damaged or is missing, set it aside and call us before plugging in.
+        mask with headgear, the power cord and brick, a spare disposable filter,
+        and the user manual or quick-start card. If anything looks damaged or is
+        missing, set it aside and call us before plugging in.
       </>
     ),
   },
@@ -47,12 +47,12 @@ const setupSteps: SetupStep[] = [
     title: "Choose the right spot",
     body: (
       <>
-        Place the machine on a stable, flat surface <strong>lower than your
-        mattress</strong> — typically a nightstand. Keeping it below the mask
-        prevents condensation ("rainout") from running back down the hose.
-        Leave at least 4 inches of clearance behind the air intake, keep it
-        away from heat vents, fans, curtains, and pets, and make sure a
-        grounded outlet is within reach so the cord isn't strained.
+        Place the machine on a stable, flat surface{" "}
+        <strong>lower than your mattress</strong> — typically a nightstand.
+        Keeping it below the mask prevents condensation ("rainout") from running
+        back down the hose. Leave at least 4 inches of clearance behind the air
+        intake, keep it away from heat vents, fans, curtains, and pets, and make
+        sure a grounded outlet is within reach so the cord isn't strained.
       </>
     ),
   },
@@ -62,13 +62,13 @@ const setupSteps: SetupStep[] = [
     body: (
       <>
         Slide out the humidifier chamber and fill to the marked maximum line
-        with <strong>distilled water</strong>. Tap, filtered, and bottled
-        spring water can leave mineral scale on the chamber and heater
-        plate over time, so distilled is the long-term standard. If you
-        run out for a night or two, keep using your therapy with whatever
-        water you have on hand and replenish distilled as soon as you can.
-        Reseat the chamber until it clicks. Empty and refill every
-        morning — never leave standing water for the next night.
+        with <strong>distilled water</strong>. Tap, filtered, and bottled spring
+        water can leave mineral scale on the chamber and heater plate over time,
+        so distilled is the long-term standard. If you run out for a night or
+        two, keep using your therapy with whatever water you have on hand and
+        replenish distilled as soon as you can. Reseat the chamber until it
+        clicks. Empty and refill every morning — never leave standing water for
+        the next night.
       </>
     ),
   },
@@ -77,11 +77,11 @@ const setupSteps: SetupStep[] = [
     title: "Connect the hose",
     body: (
       <>
-        Twist one end of the hose onto the air outlet on the back or side of
-        the machine until snug — it should rotate freely without falling off.
-        Connect the other end to the short connector elbow on your mask.
-        Heated tubing has a small electrical pin that lines up with a slot on
-        the outlet — never force it in the wrong orientation.
+        Twist one end of the hose onto the air outlet on the back or side of the
+        machine until snug — it should rotate freely without falling off.
+        Connect the other end to the short connector elbow on your mask. Heated
+        tubing has a small electrical pin that lines up with a slot on the
+        outlet — never force it in the wrong orientation.
       </>
     ),
   },
@@ -90,11 +90,11 @@ const setupSteps: SetupStep[] = [
     title: "Plug in and power on",
     body: (
       <>
-        Connect the power brick to the machine first, then to the wall.
-        Press the power button or touch the screen to wake it. Your
-        prescription pressure was pre-loaded by our team — you don't need to
-        change anything in the clinical menu. The first screen will show
-        date, time, and humidifier setting; that's it.
+        Connect the power brick to the machine first, then to the wall. Press
+        the power button or touch the screen to wake it. Your prescription
+        pressure was pre-loaded by our team — you don't need to change anything
+        in the clinical menu. The first screen will show date, time, and
+        humidifier setting; that's it.
       </>
     ),
   },
@@ -103,15 +103,14 @@ const setupSteps: SetupStep[] = [
     title: "Set ramp and humidity",
     body: (
       <>
-        Most patients start with <strong>Ramp = 20 minutes</strong> (the
-        machine begins at a low pressure and climbs to your prescribed level
-        gradually — exact starting pressure depends on the device and your
-        prescription) and <strong>Humidity</strong> in the middle of the
-        scale (often 4 or 5 on a 1–8 dial). If you wake up with a dry
-        mouth, raise humidity by one step. If you see water beads in the
-        hose, lower humidity by one step or add a hose cover. These are
-        usually the only two settings patients ever need to touch — check
-        your device's manual for the exact menu names.
+        Most patients start with <strong>Ramp = 20 minutes</strong> (the machine
+        begins at a low pressure and climbs to your prescribed level gradually —
+        exact starting pressure depends on the device and your prescription) and{" "}
+        <strong>Humidity</strong> in the middle of the scale (often 4 or 5 on a
+        1–8 dial). If you wake up with a dry mouth, raise humidity by one step.
+        If you see water beads in the hose, lower humidity by one step or add a
+        hose cover. These are usually the only two settings patients ever need
+        to touch — check your device's manual for the exact menu names.
       </>
     ),
   },
@@ -121,11 +120,11 @@ const setupSteps: SetupStep[] = [
     body: (
       <>
         Sit upright in bed first. Slip the mask on, then bring the top straps
-        over your head and adjust them <em>before</em> the bottom straps.
-        Snug, never tight — you should be able to slide a finger under any
-        strap. Lie down, breathe normally through your nose (or nose and
-        mouth if full-face), and the machine will detect your first breath
-        and start delivering air. Done.
+        over your head and adjust them <em>before</em> the bottom straps. Snug,
+        never tight — you should be able to slide a finger under any strap. Lie
+        down, breathe normally through your nose (or nose and mouth if
+        full-face), and the machine will detect your first breath and start
+        delivering air. Done.
       </>
     ),
   },
@@ -144,11 +143,11 @@ const troubleshooting: Issue[] = [
     fix: (
       <>
         Don't tighten further — overtight straps actually <em>break</em> the
-        seal by pulling the cushion off-shape. Pull the mask away from your
-        face an inch, then settle it back down so the cushion can re-inflate
-        against your skin. If it still leaks at the bridge of the nose, you
-        may need a smaller cushion size; at the chin, a larger one. Reach
-        out and we'll swap it.
+        seal by pulling the cushion off-shape. Pull the mask away from your face
+        an inch, then settle it back down so the cushion can re-inflate against
+        your skin. If it still leaks at the bridge of the nose, you may need a
+        smaller cushion size; at the chin, a larger one. Reach out and we'll
+        swap it.
       </>
     ),
   },
@@ -157,11 +156,10 @@ const troubleshooting: Issue[] = [
     problem: "Dry mouth in the morning",
     fix: (
       <>
-        You're likely opening your mouth during sleep with a nasal mask. Try
-        a chinstrap first (it gently keeps the jaw closed). If that's not
-        enough, a full-face mask is the right answer — it delivers the
-        pressure regardless of mouth position. Bumping humidity up one step
-        also helps.
+        You're likely opening your mouth during sleep with a nasal mask. Try a
+        chinstrap first (it gently keeps the jaw closed). If that's not enough,
+        a full-face mask is the right answer — it delivers the pressure
+        regardless of mouth position. Bumping humidity up one step also helps.
       </>
     ),
   },
@@ -170,11 +168,11 @@ const troubleshooting: Issue[] = [
     problem: "Stuffy or congested nose",
     fix: (
       <>
-        Increase humidity by one step and consider adding a heated hose if
-        you don't have one — cold air drying out the airway is the most
-        common cause. A saline nasal spray 30 minutes before bed helps.
-        Persistent congestion lasting more than two weeks deserves a call to
-        your prescriber to rule out allergies or sinusitis.
+        Increase humidity by one step and consider adding a heated hose if you
+        don't have one — cold air drying out the airway is the most common
+        cause. A saline nasal spray 30 minutes before bed helps. Persistent
+        congestion lasting more than two weeks deserves a call to your
+        prescriber to rule out allergies or sinusitis.
       </>
     ),
   },
@@ -183,13 +181,12 @@ const troubleshooting: Issue[] = [
     problem: "Pressure feels too strong",
     fix: (
       <>
-        Make sure ramp is on — it drops you to a lower starting pressure
-        for the first 20 minutes so you fall asleep before full pressure
-        kicks in. If your device has an exhale-relief feature (ResMed calls
-        it EPR; Philips calls it Flex), your prescriber may have already
-        configured it; ask before turning it on or changing the level
-        yourself. If pressure still feels wrong after a week, call us
-        before adjusting clinical settings.
+        Make sure ramp is on — it drops you to a lower starting pressure for the
+        first 20 minutes so you fall asleep before full pressure kicks in. If
+        your device has an exhale-relief feature (ResMed calls it EPR; Philips
+        calls it Flex), your prescriber may have already configured it; ask
+        before turning it on or changing the level yourself. If pressure still
+        feels wrong after a week, call us before adjusting clinical settings.
       </>
     ),
   },
@@ -199,9 +196,9 @@ const troubleshooting: Issue[] = [
     fix: (
       <>
         You're swallowing air. Sleeping on your side instead of your back
-        usually fixes it within a few nights. If it persists, your pressure
-        may be set higher than you actually need — call your prescriber and
-        we'll arrange a setting review with them.
+        usually fixes it within a few nights. If it persists, your pressure may
+        be set higher than you actually need — call your prescriber and we'll
+        arrange a setting review with them.
       </>
     ),
   },
@@ -211,10 +208,10 @@ const troubleshooting: Issue[] = [
     fix: (
       <>
         Practice during the day. Wear just the mask (no machine) for 10–15
-        minutes while reading or watching TV for a few days, then add the
-        hose with the machine running but stay sitting up. Build to wearing
-        it the full night. This desensitizes the response and is the single
-        biggest predictor of long-term success.
+        minutes while reading or watching TV for a few days, then add the hose
+        with the machine running but stay sitting up. Build to wearing it the
+        full night. This desensitizes the response and is the single biggest
+        predictor of long-term success.
       </>
     ),
   },
@@ -250,8 +247,7 @@ export function DeviceSetup() {
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
           A plain-language walkthrough — from opening the box on day one to
           comfortable, consistent therapy. Works for ResMed, Philips
-          Respironics, Fisher &amp; Paykel, and React Health CPAPs and
-          BiPAPs.
+          Respironics, Fisher &amp; Paykel, and React Health CPAPs and BiPAPs.
         </p>
 
         {/* Quick jump nav */}
@@ -364,10 +360,9 @@ export function DeviceSetup() {
             <p className="text-sm text-muted-foreground leading-relaxed">
               Night one is rarely perfect. Most patients need 5–10 nights to
               settle in — small mask adjustments, finding the right humidity
-              level, learning to fall asleep with the sensation. If you can
-              get four hours per night that first week, you're on track.
-              Don't quit because of one bad night; call us and we'll
-              troubleshoot.
+              level, learning to fall asleep with the sensation. If you can get
+              four hours per night that first week, you're on track. Don't quit
+              because of one bad night; call us and we'll troubleshoot.
             </p>
           </div>
         </div>
@@ -396,7 +391,11 @@ export function DeviceSetup() {
             </div>
             <h3 className="font-semibold tracking-tight">Once a week</h3>
             <ul className="text-sm text-muted-foreground leading-relaxed space-y-1.5 list-disc list-inside">
-              <li>Hand-wash the cushion, frame, and headgear in warm water with a drop of mild dish soap (no scented or antibacterial soaps — they degrade silicone)</li>
+              <li>
+                Hand-wash the cushion, frame, and headgear in warm water with a
+                drop of mild dish soap (no scented or antibacterial soaps — they
+                degrade silicone)
+              </li>
               <li>Air-dry away from direct sunlight</li>
               <li>Wipe the outside of the machine with a damp cloth</li>
             </ul>
@@ -407,15 +406,21 @@ export function DeviceSetup() {
             </div>
             <h3 className="font-semibold tracking-tight">Once a month</h3>
             <ul className="text-sm text-muted-foreground leading-relaxed space-y-1.5 list-disc list-inside">
-              <li>Hand-wash the hose end-to-end with warm soapy water; rinse well; hang to dry</li>
+              <li>
+                Hand-wash the hose end-to-end with warm soapy water; rinse well;
+                hang to dry
+              </li>
               <li>Replace the disposable filter (or rinse the reusable one)</li>
-              <li>Inspect cushion and headgear for stretching, tears, or discoloration — order replacements if you see any</li>
+              <li>
+                Inspect cushion and headgear for stretching, tears, or
+                discoloration — order replacements if you see any
+              </li>
             </ul>
           </article>
         </div>
         <p className="text-sm text-muted-foreground text-center">
-          For the full per-item replacement schedule (cushion, tubing,
-          chamber, filters, headgear), see the{" "}
+          For the full per-item replacement schedule (cushion, tubing, chamber,
+          filters, headgear), see the{" "}
           <Link
             href="/learn/replacement-schedule"
             className="text-primary font-medium underline-offset-4 hover:underline"
@@ -461,42 +466,41 @@ export function DeviceSetup() {
         <div className="glass-card rounded-2xl p-6 sm:p-8 space-y-4">
           <p className="text-sm text-muted-foreground leading-relaxed">
             BiPAP (also called BiLevel) machines deliver <strong>two</strong>{" "}
-            pressures — a higher one when you breathe in (IPAP) and a lower
-            one when you breathe out (EPAP). They're typically prescribed
-            when CPAP pressure would be too high to tolerate, or for
-            specific conditions like COPD overlap, neuromuscular disorders,
-            or central sleep apnea. The setup steps above are
-            identical — same humidifier, same hose, same mask, same daily
-            care. A few specific differences:
+            pressures — a higher one when you breathe in (IPAP) and a lower one
+            when you breathe out (EPAP). They're typically prescribed when CPAP
+            pressure would be too high to tolerate, or for specific conditions
+            like COPD overlap, neuromuscular disorders, or central sleep apnea.
+            The setup steps above are identical — same humidifier, same hose,
+            same mask, same daily care. A few specific differences:
           </p>
           <ul className="text-sm text-muted-foreground leading-relaxed space-y-2 list-disc list-inside">
             <li>
-              <strong>Exhale relief is the difference between IPAP and EPAP.</strong>{" "}
-              Your prescriber set both pressures directly, so most BiPAP
-              users do not need to add any additional exhale-relief
-              feature. If you think you need more (or less) help on
-              exhale, call us — don't adjust it on your own.
+              <strong>
+                Exhale relief is the difference between IPAP and EPAP.
+              </strong>{" "}
+              Your prescriber set both pressures directly, so most BiPAP users
+              do not need to add any additional exhale-relief feature. If you
+              think you need more (or less) help on exhale, call us — don't
+              adjust it on your own.
             </li>
             <li>
               <strong>Ramp behaves differently.</strong> Ramp on a BiPAP
-              typically raises both IPAP and EPAP together while keeping
-              the gap constant. Some devices also offer an "Auto-Start"
-              option that begins therapy as soon as you breathe in — check
-              your manual for what's available on your model.
+              typically raises both IPAP and EPAP together while keeping the gap
+              constant. Some devices also offer an "Auto-Start" option that
+              begins therapy as soon as you breathe in — check your manual for
+              what's available on your model.
             </li>
             <li>
               <strong>Mask choice matters more.</strong> Higher inspiratory
-              pressures push harder against the seal — many BiPAP patients
-              do best with a full-face mask or a well-fitted nasal mask.
-              Nasal pillows can work too, but seal becomes harder to
-              maintain as IPAP climbs; if you're leaking, ask us about a
-              different style.
+              pressures push harder against the seal — many BiPAP patients do
+              best with a full-face mask or a well-fitted nasal mask. Nasal
+              pillows can work too, but seal becomes harder to maintain as IPAP
+              climbs; if you're leaking, ask us about a different style.
             </li>
             <li>
-              <strong>Stick with your prescription.</strong> Never change
-              IPAP, EPAP, or backup rate yourself. If anything feels off,
-              call us and we'll coordinate a setting review with your
-              prescriber.
+              <strong>Stick with your prescription.</strong> Never change IPAP,
+              EPAP, or backup rate yourself. If anything feels off, call us and
+              we'll coordinate a setting review with your prescriber.
             </li>
           </ul>
         </div>
@@ -512,7 +516,9 @@ export function DeviceSetup() {
             <div className="h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
               <Phone className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold tracking-tight">Call Penn Home Medical Supply for</h3>
+            <h3 className="font-semibold tracking-tight">
+              Call Penn Home Medical Supply for
+            </h3>
             <ul className="text-sm text-muted-foreground leading-relaxed space-y-1.5 list-disc list-inside">
               <li>Equipment that arrived damaged or doesn't power on</li>
               <li>Mask leaks you can't resolve in a few nights</li>
@@ -525,11 +531,17 @@ export function DeviceSetup() {
             <div className="h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
               <Stethoscope className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold tracking-tight">Call your sleep doctor for</h3>
+            <h3 className="font-semibold tracking-tight">
+              Call your sleep doctor for
+            </h3>
             <ul className="text-sm text-muted-foreground leading-relaxed space-y-1.5 list-disc list-inside">
               <li>Pressure that still feels wrong after a week of ramp</li>
-              <li>New or worsening daytime sleepiness despite consistent use</li>
-              <li>Choking, gasping, or central apneas you notice on your data</li>
+              <li>
+                New or worsening daytime sleepiness despite consistent use
+              </li>
+              <li>
+                Choking, gasping, or central apneas you notice on your data
+              </li>
               <li>Persistent congestion or sinus pain &gt; 2 weeks</li>
               <li>Skin breakdown that doesn't heal between nights</li>
             </ul>
@@ -554,12 +566,11 @@ export function DeviceSetup() {
                 Educational, not medical advice
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                This guide is general patient education. It is not a
-                substitute for your prescriber's instructions or the user
-                manual that came with your specific device. If anything in
-                your setup or therapy doesn't match this guide, follow your
-                prescriber and the manufacturer's manual — and call us if
-                you're unsure.
+                This guide is general patient education. It is not a substitute
+                for your prescriber's instructions or the user manual that came
+                with your specific device. If anything in your setup or therapy
+                doesn't match this guide, follow your prescriber and the
+                manufacturer's manual — and call us if you're unsure.
               </p>
             </div>
           </div>

@@ -33,8 +33,7 @@ const dbStub = {
       from: () => obj,
       innerJoin: () => obj,
       where: () => obj,
-      limit: () =>
-        Promise.resolve(selectQueue.shift() ?? []),
+      limit: () => Promise.resolve(selectQueue.shift() ?? []),
     };
     return obj;
   }),
@@ -43,10 +42,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
   drizzle: () => dbStub,
 }));
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
@@ -77,11 +75,8 @@ vi.mock("../../lib/object-storage/objectStorage", () => ({
       objectStorageMocks.downloadObjectMock(file, ttl);
   },
 }));
-const {
-  StubObjectNotFoundError,
-  getObjectEntityFileMock,
-  downloadObjectMock,
-} = objectStorageMocks;
+const { StubObjectNotFoundError, getObjectEntityFileMock, downloadObjectMock } =
+  objectStorageMocks;
 
 import attachmentRouter from "./attachment";
 
@@ -96,7 +91,11 @@ function makeApp(): Express {
   return app;
 }
 function stubAdmin(): void {
-  mockAdmin.current = { userId: "user_op", email: ALLOWED_EMAIL, role: "admin" };
+  mockAdmin.current = {
+    userId: "user_op",
+    email: ALLOWED_EMAIL,
+    role: "admin",
+  };
 }
 
 const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;

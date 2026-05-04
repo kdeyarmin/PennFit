@@ -10,10 +10,7 @@
 // deliberately do not truncate the table — there may be other
 // concurrent integration tests we shouldn't blow away.
 
-import {
-  __resetDbPoolForTests,
-  getDbPool,
-} from "@workspace/resupply-db";
+import { __resetDbPoolForTests, getDbPool } from "@workspace/resupply-db";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import { AuditMetadataPhiError, logAudit } from "./index";

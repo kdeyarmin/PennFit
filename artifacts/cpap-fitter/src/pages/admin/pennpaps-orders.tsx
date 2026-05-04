@@ -6,7 +6,13 @@ import { Input } from "@/components/admin/ui-shims";
 import { Badge } from "@/components/admin/ui-shims";
 import { Button } from "@/components/admin/ui-shims";
 import { Skeleton } from "@/components/admin/ui-shims";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/admin/ui-shims";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/admin/ui-shims";
 import { fetchAdminOrders } from "@/lib/admin/storefront-admin-api";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
@@ -17,7 +23,10 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "Failed",
   skipped: "Skipped",
 };
-const STATUS_TONE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const STATUS_TONE: Record<
+  string,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
   pending: "outline",
   sent: "default",
   failed: "destructive",
@@ -61,11 +70,15 @@ export function AdminOrders() {
     <div className="space-y-5">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-display text-3xl font-bold tracking-tight" data-testid="admin-page-title">
+          <h1
+            className="text-display text-3xl font-bold tracking-tight"
+            data-testid="admin-page-title"
+          >
             Orders
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            All orders submitted through PennPaps. Click a row to view full patient detail.
+            All orders submitted through PennPaps. Click a row to view full
+            patient detail.
           </p>
         </div>
       </div>
@@ -93,7 +106,10 @@ export function AdminOrders() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-full sm:w-44" data-testid="select-admin-status">
+            <SelectTrigger
+              className="w-full sm:w-44"
+              data-testid="select-admin-status"
+            >
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
@@ -134,8 +150,13 @@ export function AdminOrders() {
                   ))}
                 {!isLoading && data && data.orders.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                      {debouncedQ ? `No orders match "${debouncedQ}".` : "No orders yet."}
+                    <td
+                      colSpan={7}
+                      className="py-12 text-center text-muted-foreground"
+                    >
+                      {debouncedQ
+                        ? `No orders match "${debouncedQ}".`
+                        : "No orders yet."}
                     </td>
                   </tr>
                 )}
@@ -156,10 +177,15 @@ export function AdminOrders() {
                     <td className="py-3 px-4">
                       {o.patientFirstName} {o.patientLastName}
                     </td>
-                    <td className="py-3 px-4 text-muted-foreground">{o.patientEmail}</td>
+                    <td className="py-3 px-4 text-muted-foreground">
+                      {o.patientEmail}
+                    </td>
                     <td className="py-3 px-4">
                       <span className="font-medium">{o.maskName}</span>
-                      <span className="text-muted-foreground text-xs"> · {o.maskManufacturer}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {" "}
+                        · {o.maskManufacturer}
+                      </span>
                     </td>
                     <td className="py-3 px-4">
                       {o.shippingCity}, {o.shippingState}

@@ -35,8 +35,10 @@ import { createPublicKey, createVerify, type KeyObject } from "node:crypto";
 
 const PUBLIC_KEY_ENV = "SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY";
 
-export const SENDGRID_SIGNATURE_HEADER = "x-twilio-email-event-webhook-signature";
-export const SENDGRID_TIMESTAMP_HEADER = "x-twilio-email-event-webhook-timestamp";
+export const SENDGRID_SIGNATURE_HEADER =
+  "x-twilio-email-event-webhook-signature";
+export const SENDGRID_TIMESTAMP_HEADER =
+  "x-twilio-email-event-webhook-timestamp";
 
 export interface ValidateSendgridSignatureInput {
   /** Raw request body bytes. NOT the parsed JSON. */
@@ -157,8 +159,7 @@ export function requireSendgridSignature(
     res: SendgridSigResponseLike,
     next: SendgridSigNext,
   ): void {
-    const publicKeyBase64 =
-      opts.publicKeyBase64 ?? process.env[PUBLIC_KEY_ENV];
+    const publicKeyBase64 = opts.publicKeyBase64 ?? process.env[PUBLIC_KEY_ENV];
     if (!publicKeyBase64) {
       res
         .status(503)

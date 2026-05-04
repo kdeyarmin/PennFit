@@ -61,7 +61,12 @@ interface Props {
   onOpenChange: (next: boolean) => void;
 }
 
-export function QuickViewDialog({ product, aggregate, open, onOpenChange }: Props) {
+export function QuickViewDialog({
+  product,
+  aggregate,
+  open,
+  onOpenChange,
+}: Props) {
   const { addItem } = useCart();
   const [mode, setMode] = useState<"one_time" | "subscription">(
     product.recurringPrice ? "subscription" : "one_time",
@@ -171,7 +176,10 @@ export function QuickViewDialog({ product, aggregate, open, onOpenChange }: Prop
             )}
             <div className="mt-4 flex items-baseline gap-3 flex-wrap">
               <span className="text-3xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
-                {formatMoneyCents(product.price.unitAmount, product.price.currency)}
+                {formatMoneyCents(
+                  product.price.unitAmount,
+                  product.price.currency,
+                )}
               </span>
               {oneTimeOutOfStock && (
                 <Badge

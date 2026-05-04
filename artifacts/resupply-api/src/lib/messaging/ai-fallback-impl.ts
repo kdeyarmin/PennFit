@@ -57,7 +57,7 @@ const SYSTEM_PROMPT = [
   "- help: patient asks what this is, how it works, or wants to talk to a human.",
   "- unknown: anything else, including ambiguous replies.",
   "",
-  "Output STRICT JSON: { \"intent\": \"confirm\"|\"decline\"|\"edit_address\"|\"stop\"|\"help\"|\"unknown\", \"reply\": \"...\" }",
+  'Output STRICT JSON: { "intent": "confirm"|"decline"|"edit_address"|"stop"|"help"|"unknown", "reply": "..." }',
   "",
   "The `reply` field is a short SMS-safe message we will send back to the",
   "patient (max 200 characters). NEVER include the patient's name, address,",
@@ -177,7 +177,9 @@ function parseModelOutput(content: string): AiFallbackResult {
 }
 
 function isValidIntent(v: unknown): v is Intent {
-  return typeof v === "string" && (INTENT_NAMES as readonly string[]).includes(v);
+  return (
+    typeof v === "string" && (INTENT_NAMES as readonly string[]).includes(v)
+  );
 }
 
 function truncate(s: string, max: number): string {

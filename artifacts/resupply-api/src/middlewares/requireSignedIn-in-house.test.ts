@@ -5,14 +5,7 @@
 
 import express, { type Express } from "express";
 import request from "supertest";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { issueToken, type AuthDeps } from "@workspace/resupply-auth";
 import {

@@ -4,7 +4,16 @@ import { useFitterStore } from "@/hooks/use-fitter-store";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2, Mail, Phone, Tag, Home, RefreshCcw, ShieldCheck, BookOpen } from "lucide-react";
+import {
+  CheckCircle2,
+  Mail,
+  Phone,
+  Tag,
+  Home,
+  RefreshCcw,
+  ShieldCheck,
+  BookOpen,
+} from "lucide-react";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 
 interface OrderConfirmation {
@@ -22,7 +31,9 @@ export function OrderSuccess() {
   useDocumentTitle("Order confirmed");
   const [, setLocation] = useLocation();
   const { reset } = useFitterStore();
-  const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
+  const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(
+    null,
+  );
 
   // The route-level OrderSuccessGate in App.tsx already verified that the
   // confirmation exists in sessionStorage before mounting this component.
@@ -63,7 +74,9 @@ export function OrderSuccess() {
         >
           Order Sent Successfully
         </h1>
-        <p className="text-lg text-muted-foreground max-w-lg mx-auto">{confirmation.message}</p>
+        <p className="text-lg text-muted-foreground max-w-lg mx-auto">
+          {confirmation.message}
+        </p>
       </div>
 
       <Card className="mb-6 border-0 glass-card rounded-2xl ring-gold-soft">
@@ -79,7 +92,8 @@ export function OrderSuccess() {
               {confirmation.orderReference}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Save this reference for your records and to mention when calling Penn Home Medical Supply.
+              Save this reference for your records and to mention when calling
+              Penn Home Medical Supply.
             </p>
           </div>
 
@@ -88,7 +102,9 @@ export function OrderSuccess() {
               <Tag className="w-3.5 h-3.5" />
               Mask Ordered
             </div>
-            <div className="font-semibold leading-tight tracking-tight">{confirmation.mask.name}</div>
+            <div className="font-semibold leading-tight tracking-tight">
+              {confirmation.mask.name}
+            </div>
             <div className="text-sm text-muted-foreground">
               {confirmation.mask.manufacturer} ·{" "}
               <code className="font-mono text-foreground bg-white/60 px-1.5 py-0.5 rounded text-xs">
@@ -101,19 +117,24 @@ export function OrderSuccess() {
 
       <Card className="mb-6 border-0 glass-card rounded-2xl">
         <CardContent className="p-6 space-y-4">
-          <h3 className="font-semibold text-lg tracking-tight">What happens next</h3>
+          <h3 className="font-semibold text-lg tracking-tight">
+            What happens next
+          </h3>
           <ol className="space-y-4 text-sm">
             <Step n={1}>
-              <strong>Within 1 business day:</strong> A Penn Home Medical Supply team member will call or
-              email you to confirm your order and verify your insurance benefits.
+              <strong>Within 1 business day:</strong> A Penn Home Medical Supply
+              team member will call or email you to confirm your order and
+              verify your insurance benefits.
             </Step>
             <Step n={2}>
-              <strong>Prescription verification:</strong> If we don't already have your CPAP prescription on
-              file, we'll coordinate with your physician.
+              <strong>Prescription verification:</strong> If we don't already
+              have your CPAP prescription on file, we'll coordinate with your
+              physician.
             </Step>
             <Step n={3}>
-              <strong>Shipping:</strong> Once your order is approved, your mask ships to the address you
-              provided. Most orders arrive within 5–7 business days.
+              <strong>Shipping:</strong> Once your order is approved, your mask
+              ships to the address you provided. Most orders arrive within 5–7
+              business days.
             </Step>
           </ol>
         </CardContent>
@@ -121,7 +142,9 @@ export function OrderSuccess() {
 
       <Card className="mb-8 border-0 glass-panel rounded-2xl">
         <CardContent className="p-5">
-          <h4 className="font-semibold mb-3 text-sm tracking-tight">Questions about your order?</h4>
+          <h4 className="font-semibold mb-3 text-sm tracking-tight">
+            Questions about your order?
+          </h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div className="flex items-center gap-2.5 text-muted-foreground">
               <div className="h-8 w-8 rounded-lg icon-halo-navy flex items-center justify-center shrink-0">
@@ -149,8 +172,9 @@ export function OrderSuccess() {
       <div className="flex items-start gap-3 text-xs text-muted-foreground p-4 rounded-xl callout-navy mb-8">
         <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
         <p>
-          Your order details have been securely transmitted to Penn Home Medical Supply. We do not store
-          your insurance, contact, or address information on this website.
+          Your order details have been securely transmitted to Penn Home Medical
+          Supply. We do not store your insurance, contact, or address
+          information on this website.
         </p>
       </div>
 
@@ -170,8 +194,8 @@ export function OrderSuccess() {
               New to CPAP or BiPAP? Read the setup guide.
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Step-by-step instructions for unboxing, your first night,
-              daily care, and fixes for the most common first-week issues.
+              Step-by-step instructions for unboxing, your first night, daily
+              care, and fixes for the most common first-week issues.
             </p>
           </div>
         </div>

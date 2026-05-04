@@ -1,11 +1,25 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchAdminReminders, sendDueReminders, type AdminReminderSubscriber } from "@/lib/admin/storefront-admin-api";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/admin/ui-shims";
+import {
+  fetchAdminReminders,
+  sendDueReminders,
+  type AdminReminderSubscriber,
+} from "@/lib/admin/storefront-admin-api";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/admin/ui-shims";
 import { Button } from "@/components/admin/ui-shims";
 import { Badge } from "@/components/admin/ui-shims";
 import { Skeleton } from "@/components/admin/ui-shims";
-import { Alert, AlertDescription, AlertTitle } from "@/components/admin/ui-shims";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/admin/ui-shims";
 import { Bell, Send, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/admin/use-document-title";
 import { labelForSku } from "@/lib/admin/reminder-skus";
@@ -38,9 +52,9 @@ export function AdminReminders() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Reminders</h1>
           <p className="text-muted-foreground mt-1">
-            People who asked to be reminded when supplies are due. Click
-            “Send due reminders now” to email everyone whose next reminder
-            falls today.
+            People who asked to be reminded when supplies are due. Click “Send
+            due reminders now” to email everyone whose next reminder falls
+            today.
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
             {list.isLoading
@@ -49,7 +63,9 @@ export function AdminReminders() {
           </p>
         </div>
         <Button
-          onClick={() => (confirmingSend ? send.mutate() : setConfirmingSend(true))}
+          onClick={() =>
+            confirmingSend ? send.mutate() : setConfirmingSend(true)
+          }
           disabled={send.isPending || list.isLoading}
           data-testid="button-send-due"
         >
@@ -71,13 +87,14 @@ export function AdminReminders() {
           )}
           <AlertTitle>Batch complete</AlertTitle>
           <AlertDescription>
-            Sent {send.data.sent} · Skipped within quiet period {send.data.skippedQuiet} ·
-            Skipped (no items due) {send.data.skippedNoneDue} · Failed {send.data.failed}
+            Sent {send.data.sent} · Skipped within quiet period{" "}
+            {send.data.skippedQuiet} · Skipped (no items due){" "}
+            {send.data.skippedNoneDue} · Failed {send.data.failed}
             {!send.data.sendgridConfigured && (
               <span className="block mt-1 text-amber-700">
-                Email sending is turned off in this environment, so no
-                reminders actually went out. Ask an engineer to enable email
-                delivery before running this in production.
+                Email sending is turned off in this environment, so no reminders
+                actually went out. Ask an engineer to enable email delivery
+                before running this in production.
               </span>
             )}
           </AlertDescription>

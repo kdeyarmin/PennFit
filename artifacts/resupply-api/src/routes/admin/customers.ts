@@ -104,8 +104,7 @@ function redactEmail(e: string | null | undefined): string | null {
 const listQuery = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   page: z.coerce.number().int().min(1).max(1000).default(1),
-  pageSize: z
-    .coerce
+  pageSize: z.coerce
     .number()
     .int()
     .min(1)
@@ -361,20 +360,17 @@ const userIdParam = z
   // The query itself uses parameter binding, this is belt-and-braces.
   .regex(/^[A-Za-z0-9_-]+$/);
 
-router.get(
-  "/admin/shop/customers/:userId",
-  requireAdmin,
-  async (req, res) => {
-    const parsed = userIdParam.safeParse(req.params.userId);
-    if (!parsed.success) {
-      res.status(400).json({ error: "invalid_user_id" });
-      return;
-    }
-    const userId = parsed.data;
-    const db = drizzle(getDbPool());
+router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
+  const parsed = userIdParam.safeParse(req.params.userId);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_user_id" });
+    return;
+  }
+  const userId = parsed.data;
+  const db = drizzle(getDbPool());
 
-    // 1. Customer mirror row (may be missing for guest-only users).
-    const customerResult = (await db.execute(sql`
+  // 1. Customer mirror row (may be missing for guest-only users).
+  const customerResult = (await db.execute(sql`
       SELECT
         customer_id                     AS user_id,
         display_name                      AS display_name,
@@ -391,11 +387,11 @@ router.get(
       WHERE customer_id = ${userId}
       LIMIT 1
     `)) as unknown as { rows: CustomerRow[] };
-    const customerRow = customerResult.rows[0] ?? null;
+  const customerRow = customerResult.rows[0] ?? null;
 
-    // 2. Recent orders (cap 25). Item count is computed by a
-    //    correlated subquery so we don't need a second round-trip.
-    const ordersResult = (await db.execute(sql`
+  // 2. Recent orders (cap 25). Item count is computed by a
+  //    correlated subquery so we don't need a second round-trip.
+  const ordersResult = (await db.execute(sql`
       SELECT
         o.id                       AS id,
         o.stripe_session_id        AS stripe_session_id,
@@ -421,18 +417,18 @@ router.get(
       LIMIT 25
     `)) as unknown as { rows: OrderRow[] };
 
-    // True 404 — neither a customer record nor any orders.
-    if (!customerRow && ordersResult.rows.length === 0) {
-      req.log?.info(
-        { userId, adminEmail: req.adminEmail },
-        "admin.shop.customers.detail.not_found",
-      );
-      res.status(404).json({ error: "customer_not_found" });
-      return;
-    }
+  // True 404 — neither a customer record nor any orders.
+  if (!customerRow && ordersResult.rows.length === 0) {
+    req.log?.info(
+      { userId, adminEmail: req.adminEmail },
+      "admin.shop.customers.detail.not_found",
+    );
+    res.status(404).json({ error: "customer_not_found" });
+    return;
+  }
 
-    // 3. Subscriptions (typically 0–2 per customer; no LIMIT needed).
-    const subsResult = (await db.execute(sql`
+  // 3. Subscriptions (typically 0–2 per customer; no LIMIT needed).
+  const subsResult = (await db.execute(sql`
       SELECT
         id                          AS id,
         stripe_subscription_id      AS stripe_subscription_id,
@@ -450,8 +446,8 @@ router.get(
       ORDER BY created_at DESC
     `)) as unknown as { rows: SubscriptionRow[] };
 
-    // 4. Abandoned cart (UNIQUE(customer_id) — at most 1).
-    const cartResult = (await db.execute(sql`
+  // 4. Abandoned cart (UNIQUE(customer_id) — at most 1).
+  const cartResult = (await db.execute(sql`
       SELECT
         id              AS id,
         items           AS items,
@@ -467,8 +463,8 @@ router.get(
       LIMIT 1
     `)) as unknown as { rows: AbandonedCartRow[] };
 
-    // 5. Reviews (typically a handful; cap at 100 for safety).
-    const reviewsResult = (await db.execute(sql`
+  // 5. Reviews (typically a handful; cap at 100 for safety).
+  const reviewsResult = (await db.execute(sql`
       SELECT
         id              AS id,
         product_id      AS product_id,
@@ -486,9 +482,9 @@ router.get(
       LIMIT 100
     `)) as unknown as { rows: ReviewRow[] };
 
-    // 6. Lifetime stats — over ALL orders (not just the recent 25
-    //    we returned), so the headline numbers are honest.
-    const statsResult = (await db.execute(sql`
+  // 6. Lifetime stats — over ALL orders (not just the recent 25
+  //    we returned), so the headline numbers are honest.
+  const statsResult = (await db.execute(sql`
       WITH paid AS (
         SELECT amount_total_cents, created_at
         FROM resupply.shop_orders
@@ -508,157 +504,156 @@ router.get(
            AND status = 'pending')                            AS pending_reviews_count
     `)) as unknown as { rows: StatsRow[] };
 
-    const statsRow = statsResult.rows[0] ?? {
-      orders_count: 0,
-      lifetime_value_cents: 0,
-      first_order_at: null,
-      last_order_at: null,
-      pending_reviews_count: 0,
-    };
+  const statsRow = statsResult.rows[0] ?? {
+    orders_count: 0,
+    lifetime_value_cents: 0,
+    first_order_at: null,
+    last_order_at: null,
+    pending_reviews_count: 0,
+  };
 
-    // Synthesize a minimal customer object for guest-only userIds.
-    // Pull the most-recent order's shipping address as a best-guess
-    // contact display so the admin doesn't see "Unknown customer"
-    // when there's clear order history to act on.
-    const guestSynth = !customerRow && ordersResult.rows.length > 0;
-    const customer = customerRow
-      ? {
-          userId: customerRow.user_id,
-          displayName: customerRow.display_name,
-          email: customerRow.email_lower,
-          stripeCustomerId: customerRow.stripe_customer_id,
-          shippingAddress: customerRow.shipping_address_json ?? null,
-          defaultPaymentMethod: customerRow.default_payment_method_brand
-            ? {
-                brand: customerRow.default_payment_method_brand,
-                last4: customerRow.default_payment_method_last4,
-                expMonth: customerRow.default_payment_method_exp_month,
-                expYear: customerRow.default_payment_method_exp_year,
-              }
-            : null,
-          createdAt: new Date(customerRow.created_at).toISOString(),
-          updatedAt: new Date(customerRow.updated_at).toISOString(),
-          isGuest: false as const,
-        }
-      : {
-          userId,
-          displayName: null,
-          email: null,
-          stripeCustomerId: null,
-          shippingAddress: ordersResult.rows[0]?.shipping_address_json ?? null,
-          defaultPaymentMethod: null,
-          createdAt: ordersResult.rows[ordersResult.rows.length - 1]
-            ? new Date(
-                ordersResult.rows[ordersResult.rows.length - 1]!.created_at,
-              ).toISOString()
-            : new Date().toISOString(),
-          updatedAt: ordersResult.rows[0]
-            ? new Date(ordersResult.rows[0]!.created_at).toISOString()
-            : new Date().toISOString(),
-          isGuest: true as const,
-        };
-
-    const ordersCount = statsRow.orders_count;
-    const lifetimeValueCents = statsRow.lifetime_value_cents;
-    const avgOrderValueCents =
-      ordersCount > 0 ? Math.round(lifetimeValueCents / ordersCount) : 0;
-
-    req.log?.info(
-      {
+  // Synthesize a minimal customer object for guest-only userIds.
+  // Pull the most-recent order's shipping address as a best-guess
+  // contact display so the admin doesn't see "Unknown customer"
+  // when there's clear order history to act on.
+  const guestSynth = !customerRow && ordersResult.rows.length > 0;
+  const customer = customerRow
+    ? {
+        userId: customerRow.user_id,
+        displayName: customerRow.display_name,
+        email: customerRow.email_lower,
+        stripeCustomerId: customerRow.stripe_customer_id,
+        shippingAddress: customerRow.shipping_address_json ?? null,
+        defaultPaymentMethod: customerRow.default_payment_method_brand
+          ? {
+              brand: customerRow.default_payment_method_brand,
+              last4: customerRow.default_payment_method_last4,
+              expMonth: customerRow.default_payment_method_exp_month,
+              expYear: customerRow.default_payment_method_exp_year,
+            }
+          : null,
+        createdAt: new Date(customerRow.created_at).toISOString(),
+        updatedAt: new Date(customerRow.updated_at).toISOString(),
+        isGuest: false as const,
+      }
+    : {
         userId,
-        ordersCount,
-        subscriptionsCount: subsResult.rows.length,
-        reviewsCount: reviewsResult.rows.length,
-        hasAbandonedCart: cartResult.rows.length > 0,
-        guestSynth,
-        adminEmail: req.adminEmail,
-      },
-      "admin.shop.customers.detail",
-    );
+        displayName: null,
+        email: null,
+        stripeCustomerId: null,
+        shippingAddress: ordersResult.rows[0]?.shipping_address_json ?? null,
+        defaultPaymentMethod: null,
+        createdAt: ordersResult.rows[ordersResult.rows.length - 1]
+          ? new Date(
+              ordersResult.rows[ordersResult.rows.length - 1]!.created_at,
+            ).toISOString()
+          : new Date().toISOString(),
+        updatedAt: ordersResult.rows[0]
+          ? new Date(ordersResult.rows[0]!.created_at).toISOString()
+          : new Date().toISOString(),
+        isGuest: true as const,
+      };
 
-    res.json({
-      customer,
-      orders: ordersResult.rows.map((o) => ({
-        id: o.id,
-        stripeSessionId: o.stripe_session_id,
-        stripePaymentIntentId: o.stripe_payment_intent_id,
-        status: o.status,
-        amountTotalCents: o.amount_total_cents,
-        currency: o.currency,
-        createdAt: new Date(o.created_at).toISOString(),
-        paidAt: o.paid_at ? new Date(o.paid_at).toISOString() : null,
-        shippedAt: o.shipped_at ? new Date(o.shipped_at).toISOString() : null,
-        deliveredAt: o.delivered_at
-          ? new Date(o.delivered_at).toISOString()
-          : null,
-        trackingCarrier: o.tracking_carrier,
-        trackingNumber: o.tracking_number,
-        shippingAddress: o.shipping_address_json ?? null,
-        itemCount: o.item_count,
-      })),
-      subscriptions: subsResult.rows.map((s) => ({
-        id: s.id,
-        stripeSubscriptionId: s.stripe_subscription_id,
-        stripeCustomerId: s.stripe_customer_id,
-        status: s.status,
-        items: s.items ?? [],
-        currentPeriodEnd: s.current_period_end
-          ? new Date(s.current_period_end).toISOString()
-          : null,
-        cancelAtPeriodEnd: s.cancel_at_period_end,
-        canceledAt: s.canceled_at ? new Date(s.canceled_at).toISOString() : null,
-        initialAmountTotalCents: s.initial_amount_total_cents,
-        createdAt: new Date(s.created_at).toISOString(),
-        updatedAt: new Date(s.updated_at).toISOString(),
-      })),
-      abandonedCart: cartResult.rows[0]
-        ? {
-            id: cartResult.rows[0].id,
-            items: cartResult.rows[0].items ?? [],
-            subtotalCents: cartResult.rows[0].subtotal_cents,
-            currency: cartResult.rows[0].currency,
-            updatedAt: new Date(cartResult.rows[0].updated_at).toISOString(),
-            remindedAt: cartResult.rows[0].reminded_at
-              ? new Date(cartResult.rows[0].reminded_at).toISOString()
-              : null,
-            recoveredAt: cartResult.rows[0].recovered_at
-              ? new Date(cartResult.rows[0].recovered_at).toISOString()
-              : null,
-            clearedAt: cartResult.rows[0].cleared_at
-              ? new Date(cartResult.rows[0].cleared_at).toISOString()
-              : null,
-            createdAt: new Date(cartResult.rows[0].created_at).toISOString(),
-          }
+  const ordersCount = statsRow.orders_count;
+  const lifetimeValueCents = statsRow.lifetime_value_cents;
+  const avgOrderValueCents =
+    ordersCount > 0 ? Math.round(lifetimeValueCents / ordersCount) : 0;
+
+  req.log?.info(
+    {
+      userId,
+      ordersCount,
+      subscriptionsCount: subsResult.rows.length,
+      reviewsCount: reviewsResult.rows.length,
+      hasAbandonedCart: cartResult.rows.length > 0,
+      guestSynth,
+      adminEmail: req.adminEmail,
+    },
+    "admin.shop.customers.detail",
+  );
+
+  res.json({
+    customer,
+    orders: ordersResult.rows.map((o) => ({
+      id: o.id,
+      stripeSessionId: o.stripe_session_id,
+      stripePaymentIntentId: o.stripe_payment_intent_id,
+      status: o.status,
+      amountTotalCents: o.amount_total_cents,
+      currency: o.currency,
+      createdAt: new Date(o.created_at).toISOString(),
+      paidAt: o.paid_at ? new Date(o.paid_at).toISOString() : null,
+      shippedAt: o.shipped_at ? new Date(o.shipped_at).toISOString() : null,
+      deliveredAt: o.delivered_at
+        ? new Date(o.delivered_at).toISOString()
         : null,
-      reviews: reviewsResult.rows.map((r) => ({
-        id: r.id,
-        productId: r.product_id,
-        rating: r.rating,
-        title: r.title,
-        body: r.body,
-        status: r.status,
-        moderationNote: r.moderation_note,
-        moderatedAt: r.moderated_at
-          ? new Date(r.moderated_at).toISOString()
-          : null,
-        createdAt: new Date(r.created_at).toISOString(),
-        updatedAt: new Date(r.updated_at).toISOString(),
-      })),
-      stats: {
-        ordersCount,
-        lifetimeValueCents,
-        avgOrderValueCents,
-        firstOrderAt: statsRow.first_order_at
-          ? new Date(statsRow.first_order_at).toISOString()
-          : null,
-        lastOrderAt: statsRow.last_order_at
-          ? new Date(statsRow.last_order_at).toISOString()
-          : null,
-        pendingReviewsCount: statsRow.pending_reviews_count,
-      },
-    });
-  },
-);
+      trackingCarrier: o.tracking_carrier,
+      trackingNumber: o.tracking_number,
+      shippingAddress: o.shipping_address_json ?? null,
+      itemCount: o.item_count,
+    })),
+    subscriptions: subsResult.rows.map((s) => ({
+      id: s.id,
+      stripeSubscriptionId: s.stripe_subscription_id,
+      stripeCustomerId: s.stripe_customer_id,
+      status: s.status,
+      items: s.items ?? [],
+      currentPeriodEnd: s.current_period_end
+        ? new Date(s.current_period_end).toISOString()
+        : null,
+      cancelAtPeriodEnd: s.cancel_at_period_end,
+      canceledAt: s.canceled_at ? new Date(s.canceled_at).toISOString() : null,
+      initialAmountTotalCents: s.initial_amount_total_cents,
+      createdAt: new Date(s.created_at).toISOString(),
+      updatedAt: new Date(s.updated_at).toISOString(),
+    })),
+    abandonedCart: cartResult.rows[0]
+      ? {
+          id: cartResult.rows[0].id,
+          items: cartResult.rows[0].items ?? [],
+          subtotalCents: cartResult.rows[0].subtotal_cents,
+          currency: cartResult.rows[0].currency,
+          updatedAt: new Date(cartResult.rows[0].updated_at).toISOString(),
+          remindedAt: cartResult.rows[0].reminded_at
+            ? new Date(cartResult.rows[0].reminded_at).toISOString()
+            : null,
+          recoveredAt: cartResult.rows[0].recovered_at
+            ? new Date(cartResult.rows[0].recovered_at).toISOString()
+            : null,
+          clearedAt: cartResult.rows[0].cleared_at
+            ? new Date(cartResult.rows[0].cleared_at).toISOString()
+            : null,
+          createdAt: new Date(cartResult.rows[0].created_at).toISOString(),
+        }
+      : null,
+    reviews: reviewsResult.rows.map((r) => ({
+      id: r.id,
+      productId: r.product_id,
+      rating: r.rating,
+      title: r.title,
+      body: r.body,
+      status: r.status,
+      moderationNote: r.moderation_note,
+      moderatedAt: r.moderated_at
+        ? new Date(r.moderated_at).toISOString()
+        : null,
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString(),
+    })),
+    stats: {
+      ordersCount,
+      lifetimeValueCents,
+      avgOrderValueCents,
+      firstOrderAt: statsRow.first_order_at
+        ? new Date(statsRow.first_order_at).toISOString()
+        : null,
+      lastOrderAt: statsRow.last_order_at
+        ? new Date(statsRow.last_order_at).toISOString()
+        : null,
+      pendingReviewsCount: statsRow.pending_reviews_count,
+    },
+  });
+});
 
 // =====================================================================
 // POST /admin/shop/customers/:userId/reorder

@@ -132,8 +132,7 @@ router.get("/me/subscriptions", requireSignedIn, async (req, res) => {
       stripeSubscriptionId: r.stripeSubscriptionId,
       status: r.status,
       items: r.items,
-      currentPeriodEnd:
-        r.currentPeriodEnd?.toISOString() ?? null,
+      currentPeriodEnd: r.currentPeriodEnd?.toISOString() ?? null,
       cancelAtPeriodEnd: r.cancelAtPeriodEnd,
       canceledAt: r.canceledAt?.toISOString() ?? null,
       createdAt: r.createdAt.toISOString(),
@@ -325,10 +324,8 @@ router.get(
           return 0;
       }
     };
-    const formatLabel = (
-      interval: string,
-      count: number,
-    ): string => (count === 1 ? interval : `${count} ${interval}s`);
+    const formatLabel = (interval: string, count: number): string =>
+      count === 1 ? interval : `${count} ${interval}s`;
 
     const options = priceList.data
       .filter((p) => p.recurring)
@@ -539,12 +536,8 @@ router.post(
     const newProductId =
       typeof newPrice.product === "string"
         ? newPrice.product
-        : newPrice.product?.id ?? null;
-    if (
-      !newProductId ||
-      !item.productId ||
-      newProductId !== item.productId
-    ) {
+        : (newPrice.product?.id ?? null);
+    if (!newProductId || !item.productId || newProductId !== item.productId) {
       res.status(400).json({ error: "price_product_mismatch" });
       return;
     }
@@ -554,9 +547,7 @@ router.post(
     // single item id, and swap.
     let liveSub: Stripe.Subscription;
     try {
-      liveSub = await stripe.subscriptions.retrieve(
-        sub.stripeSubscriptionId,
-      );
+      liveSub = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId);
     } catch (err) {
       req.log?.error(
         {

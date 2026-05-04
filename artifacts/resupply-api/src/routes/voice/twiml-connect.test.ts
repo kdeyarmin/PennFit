@@ -10,18 +10,14 @@ import express, { type Express } from "express";
 import request from "supertest";
 
 vi.mock("@workspace/resupply-telecom", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-telecom")>(
-      "@workspace/resupply-telecom",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
   return {
     ...actual,
-    requireTwilioSignature: () =>
-      (
-        _req: unknown,
-        _res: unknown,
-        next: (err?: unknown) => void,
-      ): void => {
+    requireTwilioSignature:
+      () =>
+      (_req: unknown, _res: unknown, next: (err?: unknown) => void): void => {
         next();
       },
   };

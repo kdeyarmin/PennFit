@@ -114,7 +114,9 @@ export async function sendReminderSms(
     .select({ id: patients.id })
     .from(patients)
     .where(eq(patients.phoneE164, normalizedPhone));
-  const otherIds = otherOwners.map((r) => r.id).filter((id) => id !== patientId);
+  const otherIds = otherOwners
+    .map((r) => r.id)
+    .filter((id) => id !== patientId);
   if (otherIds.length > 0) {
     await safeAuditFromActor({
       action: "messaging.phone_lookup.conflict",

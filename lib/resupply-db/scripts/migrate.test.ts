@@ -55,28 +55,24 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
   // live DB; running it twice + two count queries comfortably blows
   // past Vitest's 5s default once enough migrations stack up. 30s is
   // plenty of headroom while still failing fast on a real hang.
-  it(
-    "applies migrations against the live DB and is idempotent on re-run",
-    async () => {
-      const first = await runMigrate();
-      expect(first.stdout).toMatch(/migrations applied/);
+  it("applies migrations against the live DB and is idempotent on re-run", async () => {
+    const first = await runMigrate();
+    expect(first.stdout).toMatch(/migrations applied/);
 
-      const before = await pool.query<{ count: string }>(
-        "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
-      );
-      const beforeCount = Number(before.rows[0]!.count);
-      expect(beforeCount).toBeGreaterThan(0);
+    const before = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
+    );
+    const beforeCount = Number(before.rows[0]!.count);
+    expect(beforeCount).toBeGreaterThan(0);
 
-      const second = await runMigrate();
-      expect(second.stdout).toMatch(/migrations applied/);
+    const second = await runMigrate();
+    expect(second.stdout).toMatch(/migrations applied/);
 
-      const after = await pool.query<{ count: string }>(
-        "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
-      );
-      expect(Number(after.rows[0]!.count)).toBe(beforeCount);
-    },
-    30_000,
-  );
+    const after = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM drizzle.resupply_migrations",
+    );
+    expect(Number(after.rows[0]!.count)).toBe(beforeCount);
+  }, 30_000);
 
   // Regression test for task #29 ("Stop requiring the legacy pgcrypto
   // database extension"). Confirms that the migrate boot path runs
@@ -98,60 +94,56 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
   //   5. Re-creates pgcrypto in cleanup so any subsequent test or
   //      tooling that expects it (or pre-task-29 environments)
   //      continues to find it.
-  it(
-    "boots cleanly against a Postgres database without the pgcrypto extension",
-    async (ctx: TaskContext) => {
-      let droppedPgcrypto = false;
+  it("boots cleanly against a Postgres database without the pgcrypto extension", async (ctx: TaskContext) => {
+    let droppedPgcrypto = false;
+    try {
       try {
-        try {
-          await pool.query("DROP EXTENSION IF EXISTS pgcrypto");
-          droppedPgcrypto = true;
-        } catch (err) {
-          // The connecting role can't manage extensions — there's no
-          // way to actually exercise the "no pgcrypto" path on this
-          // DB. Skip via vitest's runtime skip so the result shows up
-          // as "skipped" with a reason rather than a silent pass or a
-          // failed assertion.
-          ctx.skip(
-            `DROP EXTENSION pgcrypto failed (likely insufficient privilege); ` +
-              `cannot exercise the no-pgcrypto boot path on this DB. Underlying error: ` +
-              (err instanceof Error ? err.message : String(err)),
-          );
-          return;
-        }
-
-        const beforeRun = await pool.query<{ exists: boolean }>(
-          "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = $1) AS exists",
-          ["pgcrypto"],
+        await pool.query("DROP EXTENSION IF EXISTS pgcrypto");
+        droppedPgcrypto = true;
+      } catch (err) {
+        // The connecting role can't manage extensions — there's no
+        // way to actually exercise the "no pgcrypto" path on this
+        // DB. Skip via vitest's runtime skip so the result shows up
+        // as "skipped" with a reason rather than a silent pass or a
+        // failed assertion.
+        ctx.skip(
+          `DROP EXTENSION pgcrypto failed (likely insufficient privilege); ` +
+            `cannot exercise the no-pgcrypto boot path on this DB. Underlying error: ` +
+            (err instanceof Error ? err.message : String(err)),
         );
-        expect(beforeRun.rows[0]?.exists).toBe(false);
-
-        const result = await runMigrate();
-        expect(result.stdout).toMatch(/migrations applied/);
-
-        const afterRun = await pool.query<{ exists: boolean }>(
-          "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = $1) AS exists",
-          ["pgcrypto"],
-        );
-        expect(afterRun.rows[0]?.exists).toBe(false);
-
-        const uuid = await pool.query<{ id: string }>(
-          "SELECT gen_random_uuid()::text AS id",
-        );
-        expect(uuid.rows[0]?.id).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-        );
-      } finally {
-        if (droppedPgcrypto) {
-          // Best-effort restore. If this fails, surface as a warning
-          // by failing the test — leaving the DB in a different state
-          // than we found it would silently affect downstream tests.
-          await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
-        }
+        return;
       }
-    },
-    30_000,
-  );
+
+      const beforeRun = await pool.query<{ exists: boolean }>(
+        "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = $1) AS exists",
+        ["pgcrypto"],
+      );
+      expect(beforeRun.rows[0]?.exists).toBe(false);
+
+      const result = await runMigrate();
+      expect(result.stdout).toMatch(/migrations applied/);
+
+      const afterRun = await pool.query<{ exists: boolean }>(
+        "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = $1) AS exists",
+        ["pgcrypto"],
+      );
+      expect(afterRun.rows[0]?.exists).toBe(false);
+
+      const uuid = await pool.query<{ id: string }>(
+        "SELECT gen_random_uuid()::text AS id",
+      );
+      expect(uuid.rows[0]?.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+    } finally {
+      if (droppedPgcrypto) {
+        // Best-effort restore. If this fails, surface as a warning
+        // by failing the test — leaving the DB in a different state
+        // than we found it would silently affect downstream tests.
+        await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
+      }
+    }
+  }, 30_000);
 
   // Task #32 regression: a brand-new deploy must roll forward
   // cleanly through the entire migration history (0000 .. latest)
@@ -188,86 +180,84 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
   //
   // Skips automatically if the connecting role lacks CREATEDB
   // (managed Postgres often restricts this).
-  it(
-    "applies the full migration history from scratch on a fresh database",
-    async (ctx: TaskContext) => {
-      const suffix = Math.random().toString(36).slice(2, 10);
-      const tempDbName = `resupply_fresh_${suffix}`;
+  it("applies the full migration history from scratch on a fresh database", async (ctx: TaskContext) => {
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const tempDbName = `resupply_fresh_${suffix}`;
 
-      // The migrator connects via DATABASE_URL. We rebuild the URL
-      // pointing at the temp DB, keeping the same role.
-      const tempUrl = new URL(dbUrl!);
-      tempUrl.pathname = `/${tempDbName}`;
-      const tempDbUrl = tempUrl.toString();
+    // The migrator connects via DATABASE_URL. We rebuild the URL
+    // pointing at the temp DB, keeping the same role.
+    const tempUrl = new URL(dbUrl!);
+    tempUrl.pathname = `/${tempDbName}`;
+    const tempDbUrl = tempUrl.toString();
 
-      let createdDb = false;
+    let createdDb = false;
+    try {
       try {
-        try {
-          await pool.query(`CREATE DATABASE "${tempDbName}"`);
-          createdDb = true;
-        } catch (err) {
-          ctx.skip(
-            `Could not CREATE DATABASE for the from-scratch test ` +
-              `(likely missing CREATEDB privilege on this Postgres). ` +
-              `Underlying error: ` +
-              (err instanceof Error ? err.message : String(err)),
-          );
-          return;
-        }
+        await pool.query(`CREATE DATABASE "${tempDbName}"`);
+        createdDb = true;
+      } catch (err) {
+        ctx.skip(
+          `Could not CREATE DATABASE for the from-scratch test ` +
+            `(likely missing CREATEDB privilege on this Postgres). ` +
+            `Underlying error: ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+        return;
+      }
 
-        // Connect to the temp DB to drop pgcrypto if it was
-        // inherited from template1. Best-effort: if we can't drop
-        // it, the test still validates the from-scratch migration
-        // path, just with pgcrypto present from the start.
-        const tempAdminPool = new Pool({
-          connectionString: tempDbUrl,
-          max: 1,
-        });
-        try {
-          await tempAdminPool
-            .query("DROP EXTENSION IF EXISTS pgcrypto")
-            .catch(() => undefined);
-        } finally {
-          await tempAdminPool.end();
-        }
+      // Connect to the temp DB to drop pgcrypto if it was
+      // inherited from template1. Best-effort: if we can't drop
+      // it, the test still validates the from-scratch migration
+      // path, just with pgcrypto present from the start.
+      const tempAdminPool = new Pool({
+        connectionString: tempDbUrl,
+        max: 1,
+      });
+      try {
+        await tempAdminPool
+          .query("DROP EXTENSION IF EXISTS pgcrypto")
+          .catch(() => undefined);
+      } finally {
+        await tempAdminPool.end();
+      }
 
-        // Run the migrator end-to-end. Exercises every migration
-        // 0000..latest for the FIRST time. With the task #32 fix:
-        //   - 0000's CREATE EXTENSION succeeds (we have privilege)
-        //     OR fails harmlessly (DO/EXCEPTION). Either way, the
-        //     migration completes.
-        //   - 0025 sees zero rows in every PHI table, returns early
-        //     from preflight, and skips every pgp_sym_decrypt
-        //     EXECUTE branch — running as a pure schema swap.
-        const result = await execFile("node", [MIGRATE_SCRIPT], {
-          env: { ...process.env, DATABASE_URL: tempDbUrl },
-        });
-        expect(result.stdout).toMatch(/migrations applied/);
+      // Run the migrator end-to-end. Exercises every migration
+      // 0000..latest for the FIRST time. With the task #32 fix:
+      //   - 0000's CREATE EXTENSION succeeds (we have privilege)
+      //     OR fails harmlessly (DO/EXCEPTION). Either way, the
+      //     migration completes.
+      //   - 0025 sees zero rows in every PHI table, returns early
+      //     from preflight, and skips every pgp_sym_decrypt
+      //     EXECUTE branch — running as a pure schema swap.
+      const result = await execFile("node", [MIGRATE_SCRIPT], {
+        env: { ...process.env, DATABASE_URL: tempDbUrl },
+      });
+      expect(result.stdout).toMatch(/migrations applied/);
 
-        // Re-open against the temp DB to validate post-migration
-        // state.
-        const verifyPool = new Pool({
-          connectionString: tempDbUrl,
-          max: 1,
-        });
-        try {
-          // The resupply schema must be fully provisioned.
-          const tableCount = await verifyPool.query<{ count: string }>(
-            `SELECT count(*)::text AS count
+      // Re-open against the temp DB to validate post-migration
+      // state.
+      const verifyPool = new Pool({
+        connectionString: tempDbUrl,
+        max: 1,
+      });
+      try {
+        // The resupply schema must be fully provisioned.
+        const tableCount = await verifyPool.query<{ count: string }>(
+          `SELECT count(*)::text AS count
              FROM information_schema.tables
              WHERE table_schema = 'resupply'`,
-          );
-          expect(Number(tableCount.rows[0]!.count)).toBeGreaterThan(0);
+        );
+        expect(Number(tableCount.rows[0]!.count)).toBeGreaterThan(0);
 
-          // Critical: PHI columns end up in their post-0025 types
-          // (text / jsonb), not the historical bytea. If 0025
-          // silently skipped any block, this catches it.
-          const phiColTypes = await verifyPool.query<{
-            table_name: string;
-            column_name: string;
-            data_type: string;
-          }>(
-            `SELECT table_name, column_name, data_type
+        // Critical: PHI columns end up in their post-0025 types
+        // (text / jsonb), not the historical bytea. If 0025
+        // silently skipped any block, this catches it.
+        const phiColTypes = await verifyPool.query<{
+          table_name: string;
+          column_name: string;
+          data_type: string;
+        }>(
+          `SELECT table_name, column_name, data_type
              FROM information_schema.columns
              WHERE table_schema = 'resupply'
                AND (
@@ -280,60 +270,58 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
                  OR (table_name = 'patient_latest_message'
                      AND column_name = 'last_message_preview')
                )`,
-          );
-          for (const row of phiColTypes.rows) {
-            expect(
-              row.data_type,
-              `${row.table_name}.${row.column_name} should not be bytea after 0025`,
-            ).not.toBe("bytea");
-          }
-
-          // gen_random_uuid (Postgres core since v13) must work —
-          // it's the only function the active schema cares about.
-          const uuid = await verifyPool.query<{ id: string }>(
-            "SELECT gen_random_uuid()::text AS id",
-          );
-          expect(uuid.rows[0]?.id).toMatch(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-          );
-        } finally {
-          await verifyPool.end();
+        );
+        for (const row of phiColTypes.rows) {
+          expect(
+            row.data_type,
+            `${row.table_name}.${row.column_name} should not be bytea after 0025`,
+          ).not.toBe("bytea");
         }
 
-        // Idempotence: re-running the migrator must succeed and
-        // apply zero new migrations.
-        const second = await execFile("node", [MIGRATE_SCRIPT], {
-          env: { ...process.env, DATABASE_URL: tempDbUrl },
-        });
-        expect(second.stdout).toMatch(/migrations applied/);
+        // gen_random_uuid (Postgres core since v13) must work —
+        // it's the only function the active schema cares about.
+        const uuid = await verifyPool.query<{ id: string }>(
+          "SELECT gen_random_uuid()::text AS id",
+        );
+        expect(uuid.rows[0]?.id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+        );
       } finally {
-        if (createdDb) {
-          // Best-effort terminate any lingering backends from the
-          // migrate.mjs subprocess BEFORE dropping the DB; Postgres
-          // refuses DROP DATABASE on a DB with active sessions.
-          await pool
-            .query(
-              `SELECT pg_terminate_backend(pid)
+        await verifyPool.end();
+      }
+
+      // Idempotence: re-running the migrator must succeed and
+      // apply zero new migrations.
+      const second = await execFile("node", [MIGRATE_SCRIPT], {
+        env: { ...process.env, DATABASE_URL: tempDbUrl },
+      });
+      expect(second.stdout).toMatch(/migrations applied/);
+    } finally {
+      if (createdDb) {
+        // Best-effort terminate any lingering backends from the
+        // migrate.mjs subprocess BEFORE dropping the DB; Postgres
+        // refuses DROP DATABASE on a DB with active sessions.
+        await pool
+          .query(
+            `SELECT pg_terminate_backend(pid)
                FROM pg_stat_activity
                WHERE datname = $1 AND pid <> pg_backend_pid()`,
-              [tempDbName],
-            )
-            .catch(() => undefined);
-          await pool
-            .query(`DROP DATABASE IF EXISTS "${tempDbName}"`)
-            .catch((err) => {
-              // eslint-disable-next-line no-console
-              console.warn(
-                `[test cleanup] DROP DATABASE ${tempDbName} failed: ${
-                  err instanceof Error ? err.message : String(err)
-                }`,
-              );
-            });
-        }
+            [tempDbName],
+          )
+          .catch(() => undefined);
+        await pool
+          .query(`DROP DATABASE IF EXISTS "${tempDbName}"`)
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[test cleanup] DROP DATABASE ${tempDbName} failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          });
       }
-    },
-    60_000,
-  );
+    }
+  }, 60_000);
 
   it("exits with code 2 when DATABASE_URL is unset", async () => {
     let exitCode: number | null = null;

@@ -37,10 +37,7 @@ import { getDbPool, shopOrderItems, shopReviews } from "@workspace/resupply-db";
 import type { InsertShopReviewRow } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
-import {
-  encodeCompositeCursor,
-  parseCompositeCursor,
-} from "../../lib/cursor";
+import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 
 const router: IRouter = Router();
 
@@ -155,7 +152,10 @@ async function resolveAuthorIdentity(
   // first letter of the LAST token is treated as the last initial.
   // Falls through to "PennPaps customer" when displayName is null
   // or unparseable.
-  const tokens = (profile.displayName ?? "").trim().split(/\s+/).filter(Boolean);
+  const tokens = (profile.displayName ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
   let displayName: string;
   if (tokens.length >= 2) {
     displayName = `${tokens[0]} ${tokens[tokens.length - 1]![0]}.`;
@@ -173,9 +173,7 @@ async function resolveAuthorIdentity(
  * Centralized so the public list and the bulk aggregate endpoint
  * report numbers in the same shape.
  */
-function aggregateFromRows(
-  rows: Array<{ rating: number; n: number }>,
-): {
+function aggregateFromRows(rows: Array<{ rating: number; n: number }>): {
   count: number;
   averageRating: number;
   distribution: Record<1 | 2 | 3 | 4 | 5, number>;
@@ -383,10 +381,8 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
     byProduct.set(r.productId, arr);
   }
 
-  const aggregates: Record<
-    string,
-    { count: number; averageRating: number }
-  > = {};
+  const aggregates: Record<string, { count: number; averageRating: number }> =
+    {};
   for (const pid of productIds) {
     const agg = aggregateFromRows(byProduct.get(pid) ?? []);
     aggregates[pid] = {
@@ -525,17 +521,14 @@ router.post(
  */
 async function db_insert(row: InsertShopReviewRow) {
   const db = drizzle(getDbPool());
-  return db
-    .insert(shopReviews)
-    .values(row)
-    .returning({
-      id: shopReviews.id,
-      status: shopReviews.status,
-      rating: shopReviews.rating,
-      title: shopReviews.title,
-      body: shopReviews.body,
-      createdAt: shopReviews.createdAt,
-    });
+  return db.insert(shopReviews).values(row).returning({
+    id: shopReviews.id,
+    status: shopReviews.status,
+    rating: shopReviews.rating,
+    title: shopReviews.title,
+    body: shopReviews.body,
+    createdAt: shopReviews.createdAt,
+  });
 }
 
 router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {

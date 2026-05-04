@@ -1,10 +1,4 @@
-import {
-  pgTable,
-  text,
-  timestamp,
-  index,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, index, uuid } from "drizzle-orm/pg-core";
 
 /**
  * Anonymous funnel-tracking events. NEVER stores IP, user agent, or any

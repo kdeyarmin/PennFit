@@ -42,11 +42,7 @@ export interface AuthHooks {
     { email: string; password: string; displayName?: string }
   >;
   useSignOut(): UseMutationResult<void, AuthError, void>;
-  useForgotPassword(): UseMutationResult<
-    void,
-    AuthError,
-    { email: string }
-  >;
+  useForgotPassword(): UseMutationResult<void, AuthError, { email: string }>;
   useResetPassword(): UseMutationResult<
     void,
     AuthError,

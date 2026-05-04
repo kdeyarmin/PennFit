@@ -99,7 +99,9 @@ describe("POST /auth/sign-up", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
 
-    const created = h.repo.__users().find((u) => u.emailLower === "newbie@example.com");
+    const created = h.repo
+      .__users()
+      .find((u) => u.emailLower === "newbie@example.com");
     expect(created).toBeDefined();
     expect(created!.status).toBe("invited");
     expect(created!.emailVerifiedAt).toBeNull();
@@ -291,9 +293,10 @@ describe("POST /auth/reset-password", () => {
     expect(oldFail.status).toBe(401);
 
     // New one does.
-    const newOk = await supertest(h.app)
-      .post("/auth/sign-in")
-      .send({ email: "alice@example.com", password: "brand new long password" });
+    const newOk = await supertest(h.app).post("/auth/sign-in").send({
+      email: "alice@example.com",
+      password: "brand new long password",
+    });
     expect(newOk.status).toBe(200);
 
     expect(h.audit.actions).toContain("auth.password_reset_completed");
@@ -446,7 +449,9 @@ describe("POST /auth/change-password", () => {
     // Two parallel sessions: A and B.
     const a = await signInAs(h, "alice@example.com", "current password");
     await signInAs(h, "alice@example.com", "current password");
-    expect(h.repo.__sessions().filter((s) => s.revokedAt === null)).toHaveLength(2);
+    expect(
+      h.repo.__sessions().filter((s) => s.revokedAt === null),
+    ).toHaveLength(2);
 
     const res = await supertest(h.app)
       .post("/auth/change-password")

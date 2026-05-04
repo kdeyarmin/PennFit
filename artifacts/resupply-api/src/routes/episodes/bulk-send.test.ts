@@ -39,10 +39,9 @@ vi.mock("../../middlewares/requireAdmin", () =>
 
 const queryMock: Mock = vi.fn();
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({ query: queryMock }) as never,
@@ -52,10 +51,9 @@ vi.mock("@workspace/resupply-db", async () => {
 const sendReminderSmsMock = vi.fn();
 const sendReminderEmailMock = vi.fn();
 vi.mock("@workspace/resupply-reminders", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-reminders")>(
-      "@workspace/resupply-reminders",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-reminders")
+  >("@workspace/resupply-reminders");
   return {
     ...actual,
     sendReminderSms: (...a: unknown[]) => sendReminderSmsMock(...a),
@@ -172,8 +170,10 @@ describe("POST /episodes/bulk-send", () => {
     const tooMany = await request(makeApp())
       .post("/resupply-api/episodes/bulk-send")
       .send({
-        episodeIds: Array.from({ length: 51 }, (_, i) =>
-          `${(i + 10).toString().padStart(8, "0")}-1111-4111-8111-111111111111`,
+        episodeIds: Array.from(
+          { length: 51 },
+          (_, i) =>
+            `${(i + 10).toString().padStart(8, "0")}-1111-4111-8111-111111111111`,
         ),
         channel: "sms",
       });
@@ -204,9 +204,9 @@ describe("POST /episodes/bulk-send", () => {
     expect(res.status).toBe(200);
     expect(res.body.summary).toEqual({ total: 3, sent: 3, failed: 0 });
     expect(res.body.results).toHaveLength(3);
-    expect(res.body.results.every((r: { status: string }) => r.status === "ok")).toBe(
-      true,
-    );
+    expect(
+      res.body.results.every((r: { status: string }) => r.status === "ok"),
+    ).toBe(true);
     expect(sendReminderSmsMock).toHaveBeenCalledTimes(3);
     expect(sendReminderEmailMock).not.toHaveBeenCalled();
   });
@@ -270,11 +270,12 @@ describe("POST /episodes/bulk-send", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.summary).toEqual({ total: 2, sent: 1, failed: 1 });
-    expect(res.body.results.find((r: { episodeId: string }) => r.episodeId === EP2))
-      .toMatchObject({
-        status: "error",
-        error: "episode_not_found",
-      });
+    expect(
+      res.body.results.find((r: { episodeId: string }) => r.episodeId === EP2),
+    ).toMatchObject({
+      status: "error",
+      error: "episode_not_found",
+    });
     expect(sendReminderSmsMock).toHaveBeenCalledTimes(1);
   });
 
@@ -363,8 +364,9 @@ describe("POST /episodes/bulk-send", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.summary.total).toBe(2);
-    expect(res.body.results.map((r: { episodeId: string }) => r.episodeId))
-      .toEqual([EP1, EP2]);
+    expect(
+      res.body.results.map((r: { episodeId: string }) => r.episodeId),
+    ).toEqual([EP1, EP2]);
     expect(sendReminderSmsMock).toHaveBeenCalledTimes(2);
   });
 

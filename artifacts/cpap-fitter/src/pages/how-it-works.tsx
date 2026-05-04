@@ -160,7 +160,10 @@ export function HowItWorks() {
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           {steps.map(({ icon: Icon, title, body }) => (
-            <Card key={title} className="border-0 glass-card lift-on-hover rounded-2xl">
+            <Card
+              key={title}
+              className="border-0 glass-card lift-on-hover rounded-2xl"
+            >
               <CardContent className="pt-6 flex gap-4">
                 <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-navy flex items-center justify-center">
                   <Icon className="w-5 h-5" />
@@ -184,13 +187,16 @@ export function HowItWorks() {
             Best Practices for an Accurate Scan
           </h2>
           <p className="text-muted-foreground">
-            The single biggest factor in mask-fit accuracy is the quality of your
-            face capture. Follow these tips before you tap "Capture."
+            The single biggest factor in mask-fit accuracy is the quality of
+            your face capture. Follow these tips before you tap "Capture."
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {captureTips.map(({ icon: Icon, title, body }) => (
-            <Card key={title} className="border-0 glass-card lift-on-hover rounded-2xl">
+            <Card
+              key={title}
+              className="border-0 glass-card lift-on-hover rounded-2xl"
+            >
               <CardContent className="pt-6 flex gap-4">
                 <div className="shrink-0 h-11 w-11 rounded-xl icon-halo-gold flex items-center justify-center">
                   <Icon className="w-5 h-5" />
@@ -230,8 +236,8 @@ export function HowItWorks() {
                 <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                 <span>
                   <strong>Answer for your typical night</strong>, not your ideal
-                  one. If you mostly sleep on your side, pick "side sleeper" even
-                  if you sometimes start on your back.
+                  one. If you mostly sleep on your side, pick "side sleeper"
+                  even if you sometimes start on your back.
                 </span>
               </li>
               <li className="flex gap-3">
@@ -285,10 +291,10 @@ export function HowItWorks() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Your photo is processed entirely in your browser and is never
-                uploaded. The only information sent to PennPaps
-                is your numerical face measurements, your questionnaire answers,
-                and — if you place an order — the contact, insurance, and
-                prescription details you submit on the order form.
+                uploaded. The only information sent to PennPaps is your
+                numerical face measurements, your questionnaire answers, and —
+                if you place an order — the contact, insurance, and prescription
+                details you submit on the order form.
               </p>
               <Link
                 href="/privacy"
@@ -308,7 +314,10 @@ export function HowItWorks() {
         </h2>
         <div className="space-y-3">
           {faqs.map(({ q, a }) => (
-            <Card key={q} className="border-0 glass-card lift-on-hover rounded-2xl">
+            <Card
+              key={q}
+              className="border-0 glass-card lift-on-hover rounded-2xl"
+            >
               <CardContent className="pt-6 space-y-2">
                 <h3 className="font-semibold text-foreground flex gap-2 tracking-tight">
                   <HelpCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -345,8 +354,8 @@ export function HowItWorks() {
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Our online fitter and shop are convenient, but they're not a
                 substitute for clinical advice. If you have severe pressure
-                sores, an open facial wound, a recent facial injury, or you're
-                a pediatric patient, please contact our team directly so a
+                sores, an open facial wound, a recent facial injury, or you're a
+                pediatric patient, please contact our team directly so a
                 respiratory therapist can fit you in person.
               </p>
             </div>
@@ -360,13 +369,16 @@ export function HowItWorks() {
           Ready to get started?
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          New mask? The fitter takes about 3 minutes and your camera image
-          never leaves your device. Already know what you need? Skip straight
-          to the shop.
+          New mask? The fitter takes about 3 minutes and your camera image never
+          leaves your device. Already know what you need? Skip straight to the
+          shop.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">
-            <Button size="lg" className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow">
+            <Button
+              size="lg"
+              className="w-full sm:w-auto h-12 px-8 rounded-full btn-primary-glow"
+            >
               Get fitted for a mask
             </Button>
           </Link>

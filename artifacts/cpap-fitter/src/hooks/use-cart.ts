@@ -76,7 +76,9 @@ function readStorage(): CartItem[] {
     // rather than crashing the app on a malformed legacy entry.
     return parsed
       .filter(
-        (it): it is Partial<CartItem> & {
+        (
+          it,
+        ): it is Partial<CartItem> & {
           productId: string;
           priceId: string;
           name: string;
@@ -116,8 +118,7 @@ function readStorage(): CartItem[] {
           // Backwards-compat: legacy rows have no `stockCount`. Treat
           // them as untracked (null) which preserves prior behaviour
           // — addItem only blocks at literal 0.
-          stockCount:
-            typeof it.stockCount === "number" ? it.stockCount : null,
+          stockCount: typeof it.stockCount === "number" ? it.stockCount : null,
         }),
       );
   } catch {
@@ -149,9 +150,7 @@ export function useCart(): {
   addItem: (
     item: Omit<CartItem, "quantity">,
     quantity?: number,
-  ) =>
-    | { ok: true }
-    | { ok: false; reason: "out_of_stock" };
+  ) => { ok: true } | { ok: false; reason: "out_of_stock" };
   setQuantity: (priceId: string, quantity: number) => void;
   setItemMode: (priceId: string, mode: "one_time" | "subscription") => void;
   removeItem: (priceId: string) => void;
@@ -216,12 +215,12 @@ export function useCart(): {
     // that briefly emits 1.5 mid-keystroke) — Stripe rejects fractional
     // line-item quantities, so it's worth catching here on entry rather
     // than failing at checkout.
-    const safeQty = Math.floor(Math.max(0, Math.min(20, Number.isFinite(quantity) ? quantity : 0)));
+    const safeQty = Math.floor(
+      Math.max(0, Math.min(20, Number.isFinite(quantity) ? quantity : 0)),
+    );
     setItems((current) => {
       const next = current
-        .map((i) =>
-          i.priceId === priceId ? { ...i, quantity: safeQty } : i,
-        )
+        .map((i) => (i.priceId === priceId ? { ...i, quantity: safeQty } : i))
         .filter((i) => i.quantity > 0);
       writeStorage(next);
       return next;

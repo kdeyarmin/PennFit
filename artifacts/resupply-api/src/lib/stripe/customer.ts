@@ -29,7 +29,11 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
-import { getDbPool, shopCustomers, type ShopCustomerRow } from "@workspace/resupply-db";
+import {
+  getDbPool,
+  shopCustomers,
+  type ShopCustomerRow,
+} from "@workspace/resupply-db";
 
 import { getStripeClient, type StripeConfig } from "./config";
 
@@ -161,7 +165,11 @@ async function readRow(
 
 async function insertRow(
   db: Db,
-  args: { customerId: string; email: string | null; displayName?: string | null },
+  args: {
+    customerId: string;
+    email: string | null;
+    displayName?: string | null;
+  },
 ): Promise<ShopCustomerRow> {
   const inserted = await db
     .insert(shopCustomers)
@@ -226,7 +234,13 @@ export async function readDefaultPaymentMethod(
     ?.default_payment_method;
   if (!dpm || typeof dpm === "string") return null;
   if (dpm.type !== "card" || !dpm.card) {
-    return { id: dpm.id, brand: null, last4: null, expMonth: null, expYear: null };
+    return {
+      id: dpm.id,
+      brand: null,
+      last4: null,
+      expMonth: null,
+      expYear: null,
+    };
   }
   return {
     id: dpm.id,

@@ -27,11 +27,7 @@ import { resupplySchema } from "./_schema";
  * states rather than rename existing ones so historical rows stay
  * readable.
  */
-export type InsuranceLeadStatus =
-  | "new"
-  | "contacted"
-  | "verified"
-  | "closed";
+export type InsuranceLeadStatus = "new" | "contacted" | "verified" | "closed";
 
 export const INSURANCE_LEAD_STATUSES: readonly InsuranceLeadStatus[] = [
   "new",
@@ -66,7 +62,10 @@ export const insuranceLeads = resupplySchema.table(
     prescribingPhysician: text("prescribing_physician"),
     notes: text("notes"),
     /** See InsuranceLeadStatus jsdoc above. */
-    status: text("status").$type<InsuranceLeadStatus>().notNull().default("new"),
+    status: text("status")
+      .$type<InsuranceLeadStatus>()
+      .notNull()
+      .default("new"),
     /** Free-text CSR note attached to the row. ≤2000 chars at the
      * API layer. Separate from the patient's `notes` so the two
      * never silently collide. */

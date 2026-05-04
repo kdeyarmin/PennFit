@@ -34,8 +34,8 @@ export function AdminReportsPage() {
           Reports
         </h1>
         <p className="text-sm text-slate-600">
-          CSV downloads for ops and finance reconciliation. Pick a date
-          range (max 90 days per export) and click a report.
+          CSV downloads for ops and finance reconciliation. Pick a date range
+          (max 90 days per export) and click a report.
         </p>
       </header>
 

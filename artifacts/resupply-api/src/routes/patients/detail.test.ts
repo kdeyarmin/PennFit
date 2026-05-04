@@ -38,10 +38,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -76,7 +75,11 @@ function stubVerifiedAdmin(): void {
   };
 }
 
-const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV", "RESUPPLY_DATA_KEY"] as const;
+const ENV_KEYS = [
+  "RESUPPLY_ADMIN_EMAILS",
+  "NODE_ENV",
+  "RESUPPLY_DATA_KEY",
+] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -100,7 +103,8 @@ describe("GET /patients/:id", () => {
     }
   });
 
-  it("returns 401 with no session", async () => {    const res = await request(makeApp()).get(
+  it("returns 401 with no session", async () => {
+    const res = await request(makeApp()).get(
       `/resupply-api/patients/${PATIENT_ID}`,
     );
     expect(res.status).toBe(401);
@@ -108,7 +112,9 @@ describe("GET /patients/:id", () => {
 
   it("returns 404 for non-uuid id", async () => {
     stubVerifiedAdmin();
-    const res = await request(makeApp()).get("/resupply-api/patients/not-a-uuid");
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients/not-a-uuid",
+    );
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
   });

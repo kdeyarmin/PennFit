@@ -282,7 +282,8 @@ export const OPENAI_TOOL_DESCRIPTORS: readonly OpenAiToolDescriptor[] = [
         },
         postal_code: {
           type: "string",
-          description: "US ZIP code, optionally ZIP+4 (e.g. 19103 or 19103-1234).",
+          description:
+            "US ZIP code, optionally ZIP+4 (e.g. 19103 or 19103-1234).",
         },
       },
       required: ["street", "city", "state", "postal_code"],
@@ -428,7 +429,8 @@ export function summarizeToolArgsForAudit(
   name: ToolName,
   args: unknown,
 ): Record<string, unknown> {
-  if (args === null || typeof args !== "object") return { name, args_kind: typeof args };
+  if (args === null || typeof args !== "object")
+    return { name, args_kind: typeof args };
   const a = args as Record<string, unknown>;
   switch (name) {
     case "verify_patient_identity":

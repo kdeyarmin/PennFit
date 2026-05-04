@@ -39,7 +39,8 @@ const dbStub = {
     const obj: Record<string, unknown> = {
       values: () => obj,
       onConflictDoUpdate: () => obj,
-      then: (resolve: (v: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
+      then: (resolve: (v: unknown) => unknown) =>
+        Promise.resolve(undefined).then(resolve),
     };
     return obj;
   }),
@@ -52,10 +53,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 // the test fixture provided directly. Mocking here keeps the test
 // hermetic from pgcrypto.
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -94,7 +94,9 @@ const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 // route aliases decrypted columns as `firstName/lastName/...`, so
 // the fake rows mirror the post-SELECT shape (decryption already
 // applied, mock just hands back the plaintext values directly).
-function fakeRow(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+function fakeRow(
+  overrides: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
   return {
     pacwareId: "PAC-1",
     firstName: "Ada",
@@ -131,7 +133,9 @@ describe("GET /patients/export.csv", () => {
   it("returns text/csv with the documented header row", async () => {
     selectQueue.push([fakeRow()]);
 
-    const res = await request(makeApp()).get("/resupply-api/patients/export.csv");
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients/export.csv",
+    );
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/csv/);
@@ -146,10 +150,10 @@ describe("GET /patients/export.csv", () => {
   });
 
   it("CSV-escapes commas and quotes in decrypted PHI cells", async () => {
-    selectQueue.push([
-      fakeRow({ lastName: 'O"Brien, Sr.' }),
-    ]);
-    const res = await request(makeApp()).get("/resupply-api/patients/export.csv");
+    selectQueue.push([fakeRow({ lastName: 'O"Brien, Sr.' })]);
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients/export.csv",
+    );
     expect(res.status).toBe(200);
     // The cell should be wrapped in quotes and embedded quotes
     // doubled per RFC 4180.
@@ -164,7 +168,9 @@ describe("GET /patients/export.csv", () => {
       fakeRow({ pacwareId: `PAC-${i}` }),
     );
     selectQueue.push(rows);
-    const res = await request(makeApp()).get("/resupply-api/patients/export.csv");
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients/export.csv",
+    );
     expect(res.status).toBe(200);
     expect(res.headers["x-truncated"]).toBe("true");
     // Header + 5000 capped rows.
@@ -192,7 +198,9 @@ describe("GET /patients/export.csv", () => {
 
   it("rejects unauthenticated callers with 401", async () => {
     mockAdmin.current = null;
-    const res = await request(makeApp()).get("/resupply-api/patients/export.csv");
+    const res = await request(makeApp()).get(
+      "/resupply-api/patients/export.csv",
+    );
     expect(res.status).toBe(401);
   });
 

@@ -16,11 +16,7 @@ import { Router, type IRouter } from "express";
 import { and, gte, lte, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
-import {
-  getDbPool,
-  shopOrders,
-  shopReturns,
-} from "@workspace/resupply-db";
+import { getDbPool, shopOrders, shopReturns } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -62,10 +58,7 @@ function escapeCsv(v: unknown): string {
 
 function setCsvHeaders(res: import("express").Response, filename: string) {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${filename}"`,
-  );
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 }
 
 router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
@@ -88,12 +81,7 @@ router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
       trackingNumber: shopOrders.trackingNumber,
     })
     .from(shopOrders)
-    .where(
-      and(
-        gte(shopOrders.createdAt, from),
-        lte(shopOrders.createdAt, to),
-      ),
-    )
+    .where(and(gte(shopOrders.createdAt, from), lte(shopOrders.createdAt, to)))
     .orderBy(desc(shopOrders.createdAt));
 
   // Line-item joining is intentionally not in the orders CSV — the
@@ -151,10 +139,7 @@ router.get("/admin/reports/returns.csv", requireAdmin, async (req, res) => {
     .select()
     .from(shopReturns)
     .where(
-      and(
-        gte(shopReturns.createdAt, from),
-        lte(shopReturns.createdAt, to),
-      ),
+      and(gte(shopReturns.createdAt, from), lte(shopReturns.createdAt, to)),
     )
     .orderBy(desc(shopReturns.createdAt));
 

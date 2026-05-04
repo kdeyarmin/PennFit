@@ -83,7 +83,10 @@ export function ResetPasswordPage() {
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
             style={{ borderColor: "hsl(var(--line-1))" }}
           />
-          <span className="block text-xs mt-1" style={{ color: "hsl(var(--ink-3))" }}>
+          <span
+            className="block text-xs mt-1"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
             At least 12 characters.
           </span>
         </label>

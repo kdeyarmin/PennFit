@@ -40,13 +40,17 @@ describe("buildSystemPrompt", () => {
   it("requires identity verification before any other tool", () => {
     const prompt = buildSystemPrompt(baseInput);
     expect(prompt).toMatch(/verify_patient_identity/);
-    expect(prompt).toMatch(/MUST be called and succeed|MUST call|MUST be called|first/i);
+    expect(prompt).toMatch(
+      /MUST be called and succeed|MUST call|MUST be called|first/i,
+    );
   });
 
   it("enumerates the load-bearing safety clauses (PHI privacy + medical-advice + handoff + hangup)", () => {
     const prompt = buildSystemPrompt(baseInput);
     // PHI privacy
-    expect(prompt).toMatch(/never read.*verbatim|never read the patient's full/i);
+    expect(prompt).toMatch(
+      /never read.*verbatim|never read the patient's full/i,
+    );
     // No medical advice
     expect(prompt).toMatch(/medical advice/i);
     // Hand-off triggers
@@ -63,6 +67,8 @@ describe("buildSystemPrompt", () => {
   });
 
   it("rejects empty callContext (zod validation)", () => {
-    expect(() => buildSystemPrompt({ ...baseInput, callContext: "" })).toThrow();
+    expect(() =>
+      buildSystemPrompt({ ...baseInput, callContext: "" }),
+    ).toThrow();
   });
 });

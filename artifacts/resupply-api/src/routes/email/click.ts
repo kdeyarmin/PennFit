@@ -98,7 +98,9 @@ router.get("/email/click", async (req, res) => {
     res
       .status(503)
       .type("text/html")
-      .send(renderClickError({ practiceName: "the practice", reason: "malformed" }));
+      .send(
+        renderClickError({ practiceName: "the practice", reason: "malformed" }),
+      );
     return;
   }
 
@@ -118,7 +120,12 @@ router.get("/email/click", async (req, res) => {
     res
       .status(400)
       .type("text/html")
-      .send(renderClickError({ practiceName: cfg.practiceName, reason: "malformed" }));
+      .send(
+        renderClickError({
+          practiceName: cfg.practiceName,
+          reason: "malformed",
+        }),
+      );
     return;
   }
 
@@ -138,8 +145,7 @@ router.get("/email/click", async (req, res) => {
   });
 
   // Build the form action URL so the POST carries the same signed token.
-  const formActionUrl =
-    `${cfg.email.publicBaseUrl}/resupply-api/email/click?t=${encodeURIComponent(typeof req.query.t === "string" ? req.query.t : "")}`;
+  const formActionUrl = `${cfg.email.publicBaseUrl}/resupply-api/email/click?t=${encodeURIComponent(typeof req.query.t === "string" ? req.query.t : "")}`;
 
   res
     .status(200)
@@ -163,7 +169,9 @@ router.post("/email/click", async (req, res) => {
     res
       .status(503)
       .type("text/html")
-      .send(renderClickError({ practiceName: "the practice", reason: "malformed" }));
+      .send(
+        renderClickError({ practiceName: "the practice", reason: "malformed" }),
+      );
     return;
   }
 
@@ -188,7 +196,12 @@ router.post("/email/click", async (req, res) => {
     res
       .status(400)
       .type("text/html")
-      .send(renderClickError({ practiceName: cfg.practiceName, reason: "malformed" }));
+      .send(
+        renderClickError({
+          practiceName: cfg.practiceName,
+          reason: "malformed",
+        }),
+      );
     return;
   }
 

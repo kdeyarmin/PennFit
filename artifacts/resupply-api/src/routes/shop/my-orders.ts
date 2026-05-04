@@ -49,18 +49,11 @@ import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import {
-  getDbPool,
-  shopOrderItems,
-  shopOrders,
-} from "@workspace/resupply-db";
+import { getDbPool, shopOrderItems, shopOrders } from "@workspace/resupply-db";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
-import {
-  encodeCompositeCursor,
-  parseCompositeCursor,
-} from "../../lib/cursor";
+import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -118,7 +111,8 @@ function computeTrackingUrl(
 
 // UUID-formatted text id; matches the gen_random_uuid()::text values
 // in shop_orders. Same regex used by the admin router.
-const ORDER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ORDER_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function validateOrderId(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   return ORDER_ID_RE.test(raw) ? raw : null;

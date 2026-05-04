@@ -69,7 +69,9 @@ const buildSystemPromptInputSchema = z.object({
   callContext: z.string().trim().min(1),
 });
 
-export type BuildSystemPromptInput = z.input<typeof buildSystemPromptInputSchema>;
+export type BuildSystemPromptInput = z.input<
+  typeof buildSystemPromptInputSchema
+>;
 
 /**
  * Build the system prompt the OpenAI Realtime session is initialised

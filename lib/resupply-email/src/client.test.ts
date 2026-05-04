@@ -61,10 +61,12 @@ describe("createSendgridClient", () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     process.env.SENDGRID_FROM_NAME = "Penn Sleep Center";
-    const send = vi.fn().mockResolvedValue([
-      { statusCode: 202, headers: { "x-message-id": "msg-abc" } },
-      undefined,
-    ]);
+    const send = vi
+      .fn()
+      .mockResolvedValue([
+        { statusCode: 202, headers: { "x-message-id": "msg-abc" } },
+        undefined,
+      ]);
     const setApiKey = vi.fn();
     const client = createSendgridClient({
       sgFactory: () => fakeSdk(send, setApiKey),
@@ -93,10 +95,12 @@ describe("createSendgridClient", () => {
   it("sends without from-name when SENDGRID_FROM_NAME is unset", async () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
-    const send = vi.fn().mockResolvedValue([
-      { statusCode: 202, headers: { "x-message-id": "msg-abc" } },
-      undefined,
-    ]);
+    const send = vi
+      .fn()
+      .mockResolvedValue([
+        { statusCode: 202, headers: { "x-message-id": "msg-abc" } },
+        undefined,
+      ]);
     const client = createSendgridClient({
       sgFactory: () => fakeSdk(send),
     });
@@ -116,10 +120,12 @@ describe("createSendgridClient", () => {
   it("forwards customArgs and replyTo", async () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
-    const send = vi.fn().mockResolvedValue([
-      { statusCode: 202, headers: { "x-message-id": "msg-abc" } },
-      undefined,
-    ]);
+    const send = vi
+      .fn()
+      .mockResolvedValue([
+        { statusCode: 202, headers: { "x-message-id": "msg-abc" } },
+        undefined,
+      ]);
     const client = createSendgridClient({
       sgFactory: () => fakeSdk(send),
     });
@@ -142,10 +148,9 @@ describe("createSendgridClient", () => {
   it("throws EmailApiError when response is missing x-message-id", async () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
-    const send = vi.fn().mockResolvedValue([
-      { statusCode: 202, headers: {} },
-      undefined,
-    ]);
+    const send = vi
+      .fn()
+      .mockResolvedValue([{ statusCode: 202, headers: {} }, undefined]);
     const client = createSendgridClient({
       sgFactory: () => fakeSdk(send),
     });
@@ -164,7 +169,10 @@ describe("createSendgridClient", () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     const send = vi.fn().mockRejectedValue({
-      response: { statusCode: 400, body: { errors: [{ message: "bad addr" }] } },
+      response: {
+        statusCode: 400,
+        body: { errors: [{ message: "bad addr" }] },
+      },
       message: "Bad Request",
     });
     const client = createSendgridClient({
@@ -188,10 +196,12 @@ describe("createSendgridClient", () => {
   it("accepts x-message-id as a string array (multi-value header)", async () => {
     process.env.SENDGRID_API_KEY = "SG.xxx";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
-    const send = vi.fn().mockResolvedValue([
-      { statusCode: 202, headers: { "x-message-id": ["msg-array"] } },
-      undefined,
-    ]);
+    const send = vi
+      .fn()
+      .mockResolvedValue([
+        { statusCode: 202, headers: { "x-message-id": ["msg-array"] } },
+        undefined,
+      ]);
     const client = createSendgridClient({
       sgFactory: () => fakeSdk(send),
     });

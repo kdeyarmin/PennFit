@@ -21,12 +21,9 @@ export interface SubsMetrics {
 }
 
 export async function fetchSubsMetrics(): Promise<SubsMetrics> {
-  const res = await fetch(
-    "/resupply-api/admin/shop/subscriptions/metrics",
-    {
-      headers: { Accept: "application/json" },
-    },
-  );
+  const res = await fetch("/resupply-api/admin/shop/subscriptions/metrics", {
+    headers: { Accept: "application/json" },
+  });
   if (!res.ok) throw new Error(`Failed to load metrics (${res.status})`);
   return (await res.json()) as SubsMetrics;
 }

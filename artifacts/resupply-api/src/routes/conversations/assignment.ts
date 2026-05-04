@@ -110,11 +110,12 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
     updatedAt: now,
   };
   if (slaDueAt !== undefined) updates.slaDueAt = slaDueAt;
-  await db
-    .update(conversations)
-    .set(updates)
-    .where(eq(conversations.id, id));
-  res.json({ ok: true, assignedTo: adminId, slaDueAt: slaDueAt?.toISOString() ?? null });
+  await db.update(conversations).set(updates).where(eq(conversations.id, id));
+  res.json({
+    ok: true,
+    assignedTo: adminId,
+    slaDueAt: slaDueAt?.toISOString() ?? null,
+  });
 });
 
 router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
@@ -161,37 +162,33 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
 
 const assignBody = z.object({ userId: z.string().min(1) }).strict();
 
-router.post(
-  "/conversations/:id/assign",
-  requireAdminOnly,
-  async (req, res) => {
-    const id = parseId(req);
-    if (!id) {
-      res.status(400).json({ error: "missing_id" });
-      return;
-    }
-    const parsed = assignBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "invalid_body" });
-      return;
-    }
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(conversations)
-      .set({
-        assignedAdminUserId: parsed.data.userId,
-        assignedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(conversations.id, id))
-      .returning({ id: conversations.id });
-    if (updated.length === 0) {
-      res.status(404).json({ error: "conversation_not_found" });
-      return;
-    }
-    res.json({ ok: true });
-  },
-);
+router.post("/conversations/:id/assign", requireAdminOnly, async (req, res) => {
+  const id = parseId(req);
+  if (!id) {
+    res.status(400).json({ error: "missing_id" });
+    return;
+  }
+  const parsed = assignBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+  const db = drizzle(getDbPool());
+  const updated = await db
+    .update(conversations)
+    .set({
+      assignedAdminUserId: parsed.data.userId,
+      assignedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(conversations.id, id))
+    .returning({ id: conversations.id });
+  if (updated.length === 0) {
+    res.status(404).json({ error: "conversation_not_found" });
+    return;
+  }
+  res.json({ ok: true });
+});
 
 const priorityBody = z
   .object({

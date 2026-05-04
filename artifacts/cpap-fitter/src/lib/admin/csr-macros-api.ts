@@ -25,9 +25,12 @@ export async function listMacros(opts?: {
 }): Promise<{ macros: CsrMacro[] }> {
   const qs = new URLSearchParams();
   if (opts?.includeInactive) qs.set("includeInactive", "1");
-  const res = await fetch(`${BASE}${qs.toString() ? `?${qs.toString()}` : ""}`, {
-    headers: { Accept: "application/json" },
-  });
+  const res = await fetch(
+    `${BASE}${qs.toString() ? `?${qs.toString()}` : ""}`,
+    {
+      headers: { Accept: "application/json" },
+    },
+  );
   if (!res.ok) throw new Error(`Failed to load macros (${res.status})`);
   return (await res.json()) as { macros: CsrMacro[] };
 }
@@ -50,10 +53,13 @@ export async function createMacro(body: {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Create failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Create failed (${res.status})`,
+    );
   }
   return (await res.json()) as { macro: CsrMacro };
 }
@@ -79,10 +85,13 @@ export async function patchMacro(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Patch failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Patch failed (${res.status})`,
+    );
   }
   return (await res.json()) as { macro: CsrMacro };
 }
@@ -95,9 +104,12 @@ export async function deleteMacro(id: string, hard = false): Promise<void> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Delete failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Delete failed (${res.status})`,
+    );
   }
 }

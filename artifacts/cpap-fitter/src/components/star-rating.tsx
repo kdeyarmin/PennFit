@@ -78,10 +78,7 @@ export function StarRating({
         {stars.map((s) => {
           // Display-mode fill: clip to the fractional part so 4.6
           // shows the 5th star ~60% gold.
-          const fillPct = Math.max(
-            0,
-            Math.min(1, clamped - (s - 1)),
-          );
+          const fillPct = Math.max(0, Math.min(1, clamped - (s - 1)));
           if (interactive) {
             return (
               <button
@@ -104,11 +101,7 @@ export function StarRating({
             );
           }
           return (
-            <span
-              key={s}
-              className="relative inline-block"
-              aria-hidden="true"
-            >
+            <span key={s} className="relative inline-block" aria-hidden="true">
               <Star
                 className={sizeCls}
                 style={{ color: EMPTY_COLOR, fill: "transparent" }}
@@ -133,9 +126,7 @@ export function StarRating({
           className={`${textCls} font-medium text-[hsl(var(--penn-navy))]/80`}
         >
           {value > 0 ? value.toFixed(1) : "0.0"}{" "}
-          <span className="text-muted-foreground font-normal">
-            ({count})
-          </span>
+          <span className="text-muted-foreground font-normal">({count})</span>
         </span>
       )}
     </div>

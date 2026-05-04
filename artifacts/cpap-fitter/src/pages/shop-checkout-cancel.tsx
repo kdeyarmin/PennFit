@@ -13,7 +13,10 @@ export function ShopCheckoutCancel() {
   useDocumentTitle("Checkout canceled");
   return (
     <div className="container mx-auto px-4 md:px-6 py-16 md:py-24 max-w-xl">
-      <div className="glass-card rounded-2xl p-8 md:p-10 text-center" data-testid="cancel-card">
+      <div
+        className="glass-card rounded-2xl p-8 md:p-10 text-center"
+        data-testid="cancel-card"
+      >
         <div className="flex justify-center mb-5">
           <div className="h-14 w-14 rounded-2xl icon-halo-navy flex items-center justify-center">
             <ShoppingCart className="w-7 h-7" />
@@ -23,9 +26,8 @@ export function ShopCheckoutCancel() {
           No charge made — your cart is saved.
         </h1>
         <p className="text-muted-foreground mb-8 leading-relaxed">
-          You closed the secure checkout window before completing
-          payment. Your items are still in your cart whenever you&apos;re
-          ready.
+          You closed the secure checkout window before completing payment. Your
+          items are still in your cart whenever you&apos;re ready.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Link href="/shop/cart">

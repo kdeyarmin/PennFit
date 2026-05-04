@@ -25,7 +25,11 @@ export function TechBackdrop() {
   }, []);
 
   return (
-    <div className="tech-backdrop" aria-hidden="true" data-testid="tech-backdrop">
+    <div
+      className="tech-backdrop"
+      aria-hidden="true"
+      data-testid="tech-backdrop"
+    >
       <div className="tech-backdrop__base" />
       <div className="tech-backdrop__blob tech-backdrop__blob--a" />
       <div className="tech-backdrop__blob tech-backdrop__blob--b" />

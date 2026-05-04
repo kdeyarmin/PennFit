@@ -44,7 +44,10 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
     );
   }
 
-  const recentPrescriptions = (data.prescriptions ?? []).slice(0, DISPLAY_LIMIT);
+  const recentPrescriptions = (data.prescriptions ?? []).slice(
+    0,
+    DISPLAY_LIMIT,
+  );
   const recentEpisodes = (data.episodes ?? []).slice(0, DISPLAY_LIMIT);
   const recentFulfillments = (data.fulfillments ?? []).slice(0, DISPLAY_LIMIT);
 
@@ -66,7 +69,10 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
       <div className="space-y-4 text-sm">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+            <div
+              className="font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
               {fullName(data.firstName, data.lastName)}
             </div>
             <div className="text-xs text-slate-500">
@@ -140,13 +146,9 @@ export function Patient360Panel({ patientId }: { patientId: string }) {
                 >
                   <span className="text-xs text-slate-700 truncate">
                     {f.itemSku ?? "supply"}{" "}
-                    <span className="text-slate-400">
-                      · qty {f.quantity}
-                    </span>
+                    <span className="text-slate-400">· qty {f.quantity}</span>
                   </span>
-                  <Badge variant="neutral">
-                    {humanizeStatus(f.status)}
-                  </Badge>
+                  <Badge variant="neutral">{humanizeStatus(f.status)}</Badge>
                 </li>
               ))}
             </ul>
@@ -209,9 +211,7 @@ function ContactsRow({
           <Badge variant="muted">No contact methods</Badge>
         )}
         {channelPref && (
-          <Badge variant="muted">
-            Prefers {humanizeStatus(channelPref)}
-          </Badge>
+          <Badge variant="muted">Prefers {humanizeStatus(channelPref)}</Badge>
         )}
       </div>
     </div>

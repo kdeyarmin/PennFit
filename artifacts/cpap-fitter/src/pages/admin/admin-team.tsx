@@ -9,11 +9,7 @@
 //   - Revoked rows (collapsed by default, kept for audit)
 
 import { useMemo, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   inviteMember,
   listTeam,
@@ -47,9 +43,9 @@ export function AdminTeamPage() {
           Team
         </h1>
         <p className="text-sm text-slate-600">
-          Invite admins and customer-service reps. Invitees receive a
-          sign-up link by email and must accept before they can log in.
-          Revoking removes access immediately.
+          Invite admins and customer-service reps. Invitees receive a sign-up
+          link by email and must accept before they can log in. Revoking removes
+          access immediately.
         </p>
       </header>
       <InviteCard />
@@ -73,7 +69,8 @@ function TeamList() {
     };
   }, [query.data]);
 
-  if (query.isPending) return <div className="text-sm text-slate-500">Loading…</div>;
+  if (query.isPending)
+    return <div className="text-sm text-slate-500">Loading…</div>;
   if (query.isError) {
     return (
       <div className="text-sm text-rose-700" role="alert">
@@ -136,7 +133,13 @@ function Section({
   );
 }
 
-function MemberRow({ member, subtle }: { member: TeamMember; subtle?: boolean }) {
+function MemberRow({
+  member,
+  subtle,
+}: {
+  member: TeamMember;
+  subtle?: boolean;
+}) {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-team"] });
 
@@ -194,23 +197,22 @@ function MemberRow({ member, subtle }: { member: TeamMember; subtle?: boolean })
             <div className="text-xs text-slate-500 mt-0.5">{member.email}</div>
           )}
           <div className="text-[11px] text-slate-500 mt-1 space-x-2">
-            <span>Invited {new Date(member.invitedAt).toLocaleDateString()}</span>
+            <span>
+              Invited {new Date(member.invitedAt).toLocaleDateString()}
+            </span>
             {member.acceptedAt && (
               <span>
-                · accepted{" "}
-                {new Date(member.acceptedAt).toLocaleDateString()}
+                · accepted {new Date(member.acceptedAt).toLocaleDateString()}
               </span>
             )}
             {member.lastLoginAt && (
               <span>
-                · last login{" "}
-                {new Date(member.lastLoginAt).toLocaleDateString()}
+                · last login {new Date(member.lastLoginAt).toLocaleDateString()}
               </span>
             )}
             {member.revokedAt && (
               <span>
-                · revoked{" "}
-                {new Date(member.revokedAt).toLocaleDateString()}
+                · revoked {new Date(member.revokedAt).toLocaleDateString()}
               </span>
             )}
           </div>

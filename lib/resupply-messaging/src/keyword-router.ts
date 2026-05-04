@@ -43,10 +43,7 @@ export interface KeywordRouterResult {
    * (YES / NO / EDIT). `unknown` means nothing matched and the caller
    * should escalate to the AI fallback.
    */
-  matched:
-    | "keyword-anywhere"
-    | "keyword-leading"
-    | "unknown";
+  matched: "keyword-anywhere" | "keyword-leading" | "unknown";
 }
 
 // Carrier-mandated set. CASE-INSENSITIVE, and we accept variants the
@@ -125,7 +122,9 @@ function tokenize(body: string): string[] {
  *   3. First token matches confirm/decline/edit set → that intent.
  *   4. Otherwise → `unknown` (caller escalates to AI fallback).
  */
-export function parseSmsIntent(body: string | null | undefined): KeywordRouterResult {
+export function parseSmsIntent(
+  body: string | null | undefined,
+): KeywordRouterResult {
   const raw = body ?? "";
   const normalized = raw.trim().toLowerCase();
   const tokens = tokenize(raw);

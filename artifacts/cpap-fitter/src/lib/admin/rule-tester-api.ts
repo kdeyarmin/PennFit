@@ -59,7 +59,9 @@ export interface RuleTestResponse {
   evaluated: RuleTestEvaluatedRow[];
 }
 
-export async function testRules(input: RuleTestInput): Promise<RuleTestResponse> {
+export async function testRules(
+  input: RuleTestInput,
+): Promise<RuleTestResponse> {
   const res = await fetch("/resupply-api/rules/test", {
     method: "POST",
     credentials: "include",
@@ -70,10 +72,13 @@ export async function testRules(input: RuleTestInput): Promise<RuleTestResponse>
     body: JSON.stringify(input),
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Test failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Test failed (${res.status})`,
+    );
   }
   return (await res.json()) as RuleTestResponse;
 }

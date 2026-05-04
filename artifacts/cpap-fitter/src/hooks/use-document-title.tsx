@@ -36,7 +36,9 @@ export function useDocumentTitle(pageTitle: string, description?: string) {
     );
     const previousDesc = metaDesc?.getAttribute("content") ?? null;
 
-    document.title = pageTitle ? `${pageTitle}${SITE_TITLE_SUFFIX}` : previousTitle;
+    document.title = pageTitle
+      ? `${pageTitle}${SITE_TITLE_SUFFIX}`
+      : previousTitle;
     if (description && metaDesc) {
       metaDesc.setAttribute("content", description);
     }

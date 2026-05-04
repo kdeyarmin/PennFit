@@ -73,12 +73,15 @@ export async function listAdminShopReturns(params: {
   return (await res.json()) as AdminReturnListResponse;
 }
 
-export async function approveReturn(id: string, body: {
-  note?: string;
-  returnLabelUrl?: string | null;
-  returnCarrier?: string | null;
-  returnTrackingNumber?: string | null;
-}): Promise<{ return: AdminReturn }> {
+export async function approveReturn(
+  id: string,
+  body: {
+    note?: string;
+    returnLabelUrl?: string | null;
+    returnCarrier?: string | null;
+    returnTrackingNumber?: string | null;
+  },
+): Promise<{ return: AdminReturn }> {
   return action(id, "approve", body);
 }
 
@@ -94,16 +97,22 @@ export async function markReceived(id: string, note?: string) {
   return action(id, "mark-received", { note });
 }
 
-export async function refundReturn(id: string, body: { amountCents?: number; note?: string }) {
+export async function refundReturn(
+  id: string,
+  body: { amountCents?: number; note?: string },
+) {
   return action(id, "refund", body);
 }
 
-export async function replaceReturn(id: string, body: {
-  exchangeProductId: string;
-  exchangePriceId: string;
-  exchangeOrderId?: string | null;
-  note?: string;
-}) {
+export async function replaceReturn(
+  id: string,
+  body: {
+    exchangeProductId: string;
+    exchangePriceId: string;
+    exchangeOrderId?: string | null;
+    note?: string;
+  },
+) {
   return action(id, "replace", body);
 }
 
@@ -126,10 +135,13 @@ async function action(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Action failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Action failed (${res.status})`,
+    );
   }
   return (await res.json()) as { return: AdminReturn };
 }

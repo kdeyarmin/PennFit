@@ -24,7 +24,10 @@ import type { AuthDeps } from "./types";
 export function makeSignOutHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
 
-  return async function handleSignOut(req: Request, res: Response): Promise<void> {
+  return async function handleSignOut(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const csrf = checkCsrf(req);
     if (!csrf.ok) {
       authError(

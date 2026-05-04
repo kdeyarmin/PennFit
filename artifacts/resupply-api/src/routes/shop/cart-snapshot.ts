@@ -134,7 +134,10 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   // re-tick (e.g. price metadata refresh) doesn't reset; a quantity
   // or composition change does.
   const existingRows = await db
-    .select({ items: shopAbandonedCarts.items, email: shopAbandonedCarts.email })
+    .select({
+      items: shopAbandonedCarts.items,
+      email: shopAbandonedCarts.email,
+    })
     .from(shopAbandonedCarts)
     .where(eq(shopAbandonedCarts.customerId, customerId))
     .limit(1);

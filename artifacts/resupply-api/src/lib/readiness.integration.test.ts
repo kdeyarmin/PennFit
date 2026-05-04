@@ -20,13 +20,7 @@
 //   - The connecting role lacks `CREATE DATABASE` (e.g. CI on a
 //     restricted DB user). The skip message explains the situation.
 
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -96,7 +90,8 @@ await checkCreateDatabasePerm();
 
 const skipReason = (() => {
   if (!baseDbUrl) return "DATABASE_URL is not set";
-  if (permissionCheckErr) return `permission probe failed: ${permissionCheckErr}`;
+  if (permissionCheckErr)
+    return `permission probe failed: ${permissionCheckErr}`;
   if (!canCreateDatabase) return "connecting role lacks CREATE DATABASE";
   return null;
 })();

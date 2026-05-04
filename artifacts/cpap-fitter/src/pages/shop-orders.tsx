@@ -110,8 +110,8 @@ function SignedOutPrompt() {
         Sign in to view your orders
       </h2>
       <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-        Order history is tied to your PennPaps account so we can match it
-        to your prescription on file.
+        Order history is tied to your PennPaps account so we can match it to
+        your prescription on file.
       </p>
       <Link href="/sign-in?redirect=/shop/orders" className="inline-block mt-5">
         <Button>Sign in</Button>
@@ -132,9 +132,7 @@ function SignedInOrders() {
   // and avoids a flash of "Loading…". The PATCH is a single-order
   // operation so a list-wide refresh would be wasteful.
   const replaceOrder = useCallback((next: OrderHistoryItem) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === next.id ? next : o)),
-    );
+    setOrders((prev) => prev.map((o) => (o.id === next.id ? next : o)));
   }, []);
 
   // Initial load. Run once on mount; the user-id-bound effect lives
@@ -213,31 +211,24 @@ function SignedInOrders() {
         data-testid="orders-empty"
       >
         <Package className="w-10 h-10 text-[hsl(var(--penn-navy))]/60 mx-auto mb-3" />
-        <h2 className="text-lg font-semibold tracking-tight">
-          No orders yet
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">No orders yet</h2>
         <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
-          When you place an order in the shop, it shows up here so you
-          can track shipping and re-order in one tap.
+          When you place an order in the shop, it shows up here so you can track
+          shipping and re-order in one tap.
         </p>
         <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
           <Link href="/shop">
-            <Button data-testid="orders-empty-shop-cta">
-              Browse the shop
-            </Button>
+            <Button data-testid="orders-empty-shop-cta">Browse the shop</Button>
           </Link>
           <Link href="/">
-            <Button
-              variant="outline"
-              data-testid="orders-empty-fitter-cta"
-            >
+            <Button variant="outline" data-testid="orders-empty-fitter-cta">
               Get a mask recommendation first
             </Button>
           </Link>
         </div>
         <p className="text-xs text-muted-foreground/80 mt-5 max-w-md mx-auto">
-          Not sure which mask is right? Our 60-second fitter measures
-          your face and recommends the top 3 — no card or ruler needed.
+          Not sure which mask is right? Our 60-second fitter measures your face
+          and recommends the top 3 — no card or ruler needed.
         </p>
       </div>
     );
@@ -374,7 +365,9 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<string>("fit");
   const [note, setNote] = useState("");
-  const [resolution, setResolution] = useState<"refund" | "exchange">("exchange");
+  const [resolution, setResolution] = useState<"refund" | "exchange">(
+    "exchange",
+  );
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<
     | { kind: "success"; id: string }
@@ -426,9 +419,11 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
         const json = (await res.json()) as { id: string };
         setResult({ kind: "success", id: json.id });
       } else {
-        const json = (await res.json().catch(() => null)) as
-          | { error?: string; message?: string; returnId?: string }
-          | null;
+        const json = (await res.json().catch(() => null)) as {
+          error?: string;
+          message?: string;
+          returnId?: string;
+        } | null;
         setResult({
           kind: "error",
           message:
@@ -537,7 +532,8 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
           className="text-xs font-semibold text-[hsl(var(--penn-navy))] block mb-1.5"
           htmlFor={`return-note-${order.id}`}
         >
-          Anything we should know? <span className="text-muted-foreground font-normal">(optional)</span>
+          Anything we should know?{" "}
+          <span className="text-muted-foreground font-normal">(optional)</span>
         </label>
         <textarea
           id={`return-note-${order.id}`}
@@ -712,7 +708,9 @@ function ShipmentSection({
               data-testid={`order-${order.id}-address`}
             >
               {order.shippingAddress.line1}
-              {order.shippingAddress.line2 ? `, ${order.shippingAddress.line2}` : ""}
+              {order.shippingAddress.line2
+                ? `, ${order.shippingAddress.line2}`
+                : ""}
               <br />
               {order.shippingAddress.city}, {order.shippingAddress.state}{" "}
               {order.shippingAddress.postalCode}

@@ -177,8 +177,7 @@ export function renderClickLanding(input: RenderClickLandingInput): string {
         ? "Request address change"
         : "Stop reminders";
 
-  const buttonColor =
-    input.action === "stop" ? "#dc2626" : "#0f766e";
+  const buttonColor = input.action === "stop" ? "#dc2626" : "#0f766e";
 
   return `<!DOCTYPE html>
 <html lang="en">

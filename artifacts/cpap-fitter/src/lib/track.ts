@@ -38,7 +38,10 @@ export type TrackStep =
   | "order_started"
   | "order_submitted_success";
 
-export function track(step: TrackStep, metadata?: Record<string, unknown>): void {
+export function track(
+  step: TrackStep,
+  metadata?: Record<string, unknown>,
+): void {
   // Fire-and-forget. Use the BASE_URL so this works behind path-based routing.
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   const body = {

@@ -1,10 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  index,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { episodes } from "./episodes";
 import { patients } from "./patients";

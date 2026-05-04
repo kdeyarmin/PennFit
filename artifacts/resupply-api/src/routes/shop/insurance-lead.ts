@@ -177,8 +177,7 @@ router.post("/shop/insurance-leads", async (req, res) => {
   // "something went wrong" after they trustingly typed a member ID.
   res.json({
     ok: true,
-    delivered:
-      result.notificationDelivered || result.confirmationDelivered,
+    delivered: result.notificationDelivered || result.confirmationDelivered,
   });
 });
 

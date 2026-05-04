@@ -84,14 +84,14 @@ Implementation: `artifacts/resupply-worker/src/jobs/prescription-attachment-swee
      AND younger than 24h → leave for next run (in-flight finalize
      grace). Unreferenced AND older than 24h → **per-candidate DB
      recheck** (`SELECT 1 FROM prescriptions WHERE
-     attachment_object_key = $1 LIMIT 1`); if the recheck still
+attachment_object_key = $1 LIMIT 1`); if the recheck still
      says unreferenced, delete the bytes. The recheck closes the
      race window between bulk Set-build and per-object delete.
   4. A delete that returns 404 is treated as idempotent success
      (mirrors the api's `ObjectNotFoundError` policy on the user-
      facing DELETE handler).
 - Audit row per run via `logAudit({ action:
-  "prescription.attachment.sweep" })` with counters
+"prescription.attachment.sweep" })` with counters
   `objects_scanned`, `references_loaded`, `orphans_deleted`,
   `orphans_too_young`, `orphans_no_time_created`, `delete_errors`,
   `delete_404_idempotent`, `recheck_saved`,
@@ -119,7 +119,7 @@ Operational follow-ups:
   `PhiSweepStatusCard` on the admin home. Three states: never run /
   healthy / needs attention. "Needs attention" fires on any
   `deleteErrors`, any `orphansNoTimeCreated`, or `lastRunAt > 14
-  days`.
+days`.
 - Promote to nightly cron if any single weekly run deletes >10
   objects, indicating volume has grown past the cheap-to-leave
   threshold.

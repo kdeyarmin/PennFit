@@ -56,10 +56,7 @@ export class AccountApiError extends Error {
   }
 }
 
-async function meFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function meFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
     headers: {

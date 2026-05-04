@@ -56,9 +56,7 @@ export function AuthLayout({ variant, children }: Props) {
                 PennPaps<span className="text-muted-foreground">.com</span>
               </span>
               <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                {isAdmin
-                  ? "Staff sign-in"
-                  : "Penn Home Medical Supply"}
+                {isAdmin ? "Staff sign-in" : "Penn Home Medical Supply"}
               </span>
             </span>
           </Link>
@@ -92,11 +90,17 @@ export function AuthLayout({ variant, children }: Props) {
         <div className="container mx-auto px-4 md:px-6 py-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
           {isAdmin ? (
             <>
-              <Link href="/" className="hover:text-[hsl(var(--penn-navy))] transition-colors">
+              <Link
+                href="/"
+                className="hover:text-[hsl(var(--penn-navy))] transition-colors"
+              >
                 PennPaps.com
               </Link>
               <span aria-hidden="true">·</span>
-              <Link href="/faq" className="hover:text-[hsl(var(--penn-navy))] transition-colors">
+              <Link
+                href="/faq"
+                className="hover:text-[hsl(var(--penn-navy))] transition-colors"
+              >
                 Patient FAQ
               </Link>
               <span aria-hidden="true">·</span>
@@ -107,19 +111,31 @@ export function AuthLayout({ variant, children }: Props) {
             </>
           ) : (
             <>
-              <Link href="/" className="hover:text-[hsl(var(--penn-navy))] transition-colors">
+              <Link
+                href="/"
+                className="hover:text-[hsl(var(--penn-navy))] transition-colors"
+              >
                 Home
               </Link>
               <span aria-hidden="true">·</span>
-              <Link href="/shop" className="hover:text-[hsl(var(--penn-navy))] transition-colors">
+              <Link
+                href="/shop"
+                className="hover:text-[hsl(var(--penn-navy))] transition-colors"
+              >
                 Shop
               </Link>
               <span aria-hidden="true">·</span>
-              <Link href="/learn" className="hover:text-[hsl(var(--penn-navy))] transition-colors">
+              <Link
+                href="/learn"
+                className="hover:text-[hsl(var(--penn-navy))] transition-colors"
+              >
                 Learn
               </Link>
               <span aria-hidden="true">·</span>
-              <Link href="/faq" className="hover:text-[hsl(var(--penn-navy))] transition-colors">
+              <Link
+                href="/faq"
+                className="hover:text-[hsl(var(--penn-navy))] transition-colors"
+              >
                 FAQ
               </Link>
               <span aria-hidden="true">·</span>

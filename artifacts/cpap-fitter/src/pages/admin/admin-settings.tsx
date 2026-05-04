@@ -38,10 +38,7 @@ interface SystemInfo {
     agentAllowlistCount: number;
     legacyAdminAllowlistCount: number;
   };
-  vendors: Record<
-    string,
-    Record<string, boolean>
-  >;
+  vendors: Record<string, Record<string, boolean>>;
   encryption: {
     phiKeyConfigured: boolean;
     phoneHmacKeyConfigured: boolean;
@@ -73,8 +70,8 @@ export function AdminSettingsPage() {
         </h1>
         <p className="text-sm text-slate-600">
           Deployment metadata, vendor configuration, and encryption-key
-          presence. Read-only — env-var values are never surfaced; only
-          "is this set?" booleans plus a few benign-to-display fields.
+          presence. Read-only — env-var values are never surfaced; only "is this
+          set?" booleans plus a few benign-to-display fields.
         </p>
       </header>
       {query.isPending ? (
@@ -156,8 +153,8 @@ function Body({ data }: { data: SystemInfo }) {
           DB-backed members managed via{" "}
           <a className="underline decoration-dotted" href="/admin/team">
             /admin/team
-          </a>
-          {" "}layer on top of these env-var bootstrap lists.
+          </a>{" "}
+          layer on top of these env-var bootstrap lists.
         </p>
       </Card>
 
@@ -166,19 +163,13 @@ function Body({ data }: { data: SystemInfo }) {
       <Card title="Encryption keys">
         <DefList
           rows={[
-            [
-              "PHI encryption key",
-              flag(data.encryption.phiKeyConfigured),
-            ],
-            [
-              "Phone HMAC key",
-              flag(data.encryption.phoneHmacKeyConfigured),
-            ],
+            ["PHI encryption key", flag(data.encryption.phiKeyConfigured)],
+            ["Phone HMAC key", flag(data.encryption.phoneHmacKeyConfigured)],
           ]}
         />
         <p className="text-xs text-slate-500 mt-2">
-          Both keys MUST be set in production. The dashboard displays
-          presence only — never the key value or any fingerprint.
+          Both keys MUST be set in production. The dashboard displays presence
+          only — never the key value or any fingerprint.
         </p>
       </Card>
     </div>

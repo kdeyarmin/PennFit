@@ -39,8 +39,8 @@ export function ComfortGuaranteePage() {
         </h1>
         <p className="text-muted-foreground text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
           Mask fit is personal. If the one you ordered isn&apos;t comfortable,
-          tell us within 30 days and we&apos;ll send a different size or
-          style — and cover return shipping. No restocking fees.
+          tell us within 30 days and we&apos;ll send a different size or style —
+          and cover return shipping. No restocking fees.
         </p>
       </header>
 
@@ -49,7 +49,9 @@ export function ComfortGuaranteePage() {
           <div className="h-12 w-12 rounded-xl icon-halo-gold flex items-center justify-center">
             <CalendarClock className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold tracking-tight">30 days from delivery</h3>
+          <h3 className="font-semibold tracking-tight">
+            30 days from delivery
+          </h3>
           <p className="text-sm text-muted-foreground">
             The clock starts the day your order is delivered, not the day you
             placed it. Plenty of time to actually sleep with the mask.
@@ -60,10 +62,12 @@ export function ComfortGuaranteePage() {
           <div className="h-12 w-12 rounded-xl icon-halo-navy flex items-center justify-center">
             <Truck className="w-5 h-5" />
           </div>
-          <h3 className="font-semibold tracking-tight">We pay return shipping</h3>
+          <h3 className="font-semibold tracking-tight">
+            We pay return shipping
+          </h3>
           <p className="text-sm text-muted-foreground">
-            We email a prepaid label. Drop the original mask at any USPS or
-            UPS location. Your replacement ships as soon as the return scans.
+            We email a prepaid label. Drop the original mask at any USPS or UPS
+            location. Your replacement ships as soon as the return scans.
           </p>
         </article>
 
@@ -141,7 +145,9 @@ export function ComfortGuaranteePage() {
               <h3 className="font-semibold">Covered</h3>
             </div>
             <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-5">
-              <li>Mask systems (frame + cushion + headgear) bought from PennPaps.</li>
+              <li>
+                Mask systems (frame + cushion + headgear) bought from PennPaps.
+              </li>
               <li>Mask cushions purchased on their own.</li>
               <li>Headgear and frames purchased on their own.</li>
               <li>One swap per order (size, style, or different family).</li>
@@ -153,7 +159,9 @@ export function ComfortGuaranteePage() {
               <h3 className="font-semibold">Not covered</h3>
             </div>
             <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-5">
-              <li>Disposable supplies — filters, tubing, water chambers (hygiene).</li>
+              <li>
+                Disposable supplies — filters, tubing, water chambers (hygiene).
+              </li>
               <li>CPAP machines (covered by the manufacturer warranty).</li>
               <li>Returns started after 30 days from delivery.</li>
               <li>Items missing original parts (frame, clips, headgear).</li>

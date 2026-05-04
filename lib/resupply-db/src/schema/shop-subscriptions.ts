@@ -25,7 +25,14 @@
 // actually finalizes the cancellation.
 
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 
@@ -113,7 +120,9 @@ export const shopSubscriptions = resupplySchema.table(
      * before this column existed (the first new event always wins
      * for those).
      */
-    lastStripeEventAt: timestamp("last_stripe_event_at", { withTimezone: true }),
+    lastStripeEventAt: timestamp("last_stripe_event_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

@@ -28,22 +28,27 @@ const ResetBody = z.object({
 export function makeResetPasswordHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
 
-  return async function handleReset(req: Request, res: Response): Promise<void> {
+  return async function handleReset(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const parsed = ResetBody.safeParse(req.body);
     if (!parsed.success) {
-      authError(res, 400, "invalid_input", "Token and new password are required.");
+      authError(
+        res,
+        400,
+        "invalid_input",
+        "Token and new password are required.",
+      );
       return;
     }
 
     const passwordCheck = validatePassword(parsed.data.password);
     if (!passwordCheck.ok) {
-      authError(
-        res,
-        400,
-        "invalid_input",
-        passwordCheck.error.message,
-        { field: "password", code: passwordCheck.error.code },
-      );
+      authError(res, 400, "invalid_input", passwordCheck.error.message, {
+        field: "password",
+        code: passwordCheck.error.code,
+      });
       return;
     }
 

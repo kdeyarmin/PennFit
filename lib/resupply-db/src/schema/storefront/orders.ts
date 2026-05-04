@@ -69,7 +69,9 @@ export const ordersTable = pgTable(
   (t) => ({
     createdAtIdx: index("orders_created_at_idx").on(t.createdAt),
     patientEmailIdx: index("orders_patient_email_idx").on(t.patientEmail),
-    patientLastNameIdx: index("orders_patient_last_name_idx").on(t.patientLastName),
+    patientLastNameIdx: index("orders_patient_last_name_idx").on(
+      t.patientLastName,
+    ),
     emailStatusIdx: index("orders_email_status_idx").on(t.emailStatus),
   }),
 );

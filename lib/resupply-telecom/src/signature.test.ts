@@ -22,7 +22,9 @@ function computeSig(
   const sortedKeys = Object.keys(params).sort();
   let canonical = url;
   for (const k of sortedKeys) canonical += k + (params[k] ?? "");
-  return createHmac("sha1", authToken).update(canonical, "utf8").digest("base64");
+  return createHmac("sha1", authToken)
+    .update(canonical, "utf8")
+    .digest("base64");
 }
 
 const TOKEN = "test-auth-token-1234567890";
@@ -237,7 +239,11 @@ describe("requireTwilioSignature middleware", () => {
       onReject,
     });
     const { res } = fakeRes();
-    mw(fakeReq({ signature: sig, body: PARAMS }), res, next as SignatureNextFunction);
+    mw(
+      fakeReq({ signature: sig, body: PARAMS }),
+      res,
+      next as SignatureNextFunction,
+    );
     expect(next).toHaveBeenCalledTimes(1);
     expect(onReject).not.toHaveBeenCalled();
   });

@@ -69,9 +69,24 @@ const COUNT_CHIPS: ReadonlyArray<{
   tone: "danger" | "warn" | "primary" | "muted";
 }> = [
   { key: "overdue", status: "overdue", label: "Overdue", tone: "danger" },
-  { key: "outreach_pending", status: "outreach_pending", label: "Outreach", tone: "warn" },
-  { key: "awaiting_response", status: "awaiting_response", label: "Awaiting reply", tone: "warn" },
-  { key: "confirmed", status: "confirmed", label: "Confirmed", tone: "primary" },
+  {
+    key: "outreach_pending",
+    status: "outreach_pending",
+    label: "Outreach",
+    tone: "warn",
+  },
+  {
+    key: "awaiting_response",
+    status: "awaiting_response",
+    label: "Awaiting reply",
+    tone: "warn",
+  },
+  {
+    key: "confirmed",
+    status: "confirmed",
+    label: "Confirmed",
+    tone: "primary",
+  },
   { key: "fulfilled", status: "fulfilled", label: "Fulfilled", tone: "muted" },
   { key: "declined", status: "declined", label: "Declined", tone: "muted" },
   { key: "expired", status: "expired", label: "Expired", tone: "muted" },
@@ -124,9 +139,8 @@ export function EpisodesPage() {
   // dispatches reminders to rows they can no longer see (which
   // would otherwise be a "what did I just send to?!" footgun).
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [bulkChannel, setBulkChannel] = useState<
-    EpisodesBulkSendRequestChannel
-  >("sms");
+  const [bulkChannel, setBulkChannel] =
+    useState<EpisodesBulkSendRequestChannel>("sms");
   const [lastBulkResult, setLastBulkResult] =
     useState<EpisodesBulkSendResponse | null>(null);
 
@@ -156,7 +170,9 @@ export function EpisodesPage() {
     if (statusFilter) params.set("status", statusFilter);
     if (qDebounced) params.set("q", qDebounced);
     const qs = params.toString();
-    setLocation(qs ? `/admin/episodes?${qs}` : "/admin/episodes", { replace: true });
+    setLocation(qs ? `/admin/episodes?${qs}` : "/admin/episodes", {
+      replace: true,
+    });
   }, [statusFilter, qDebounced, setLocation]);
 
   const params: ListEpisodesParams = useMemo(
@@ -342,8 +358,8 @@ export function EpisodesPage() {
               className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
             <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              Substring match on the patient name (case-insensitive),
-              or paste an exact patient/episode id.
+              Substring match on the patient name (case-insensitive), or paste
+              an exact patient/episode id.
             </p>
           </div>
           <div>
@@ -379,7 +395,9 @@ export function EpisodesPage() {
             // Clear selection only for ids that succeeded so the
             // dispatcher can re-attempt the failures with one click.
             const okIds = new Set(
-              r.results.filter((x) => x.status === "ok").map((x) => x.episodeId),
+              r.results
+                .filter((x) => x.status === "ok")
+                .map((x) => x.episodeId),
             );
             setSelected((prev) => {
               const next = new Set(prev);
@@ -414,7 +432,9 @@ export function EpisodesPage() {
                 columns={cols}
                 rows={data.items}
                 rowKey={(r) => r.id}
-                onRowClick={(r) => setLocation(`/admin/patients/${r.patientId}`)}
+                onRowClick={(r) =>
+                  setLocation(`/admin/patients/${r.patientId}`)
+                }
                 emptyState={
                   <EmptyState
                     title="No episodes match this view."
@@ -557,9 +577,7 @@ function BulkSendToolbar({
           }}
           data-testid="episodes-bulk-toolbar"
         >
-          <span className="text-sm font-medium">
-            {selectedCount} selected
-          </span>
+          <span className="text-sm font-medium">{selectedCount} selected</span>
           <span className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
             Channel:
           </span>
@@ -597,9 +615,7 @@ function BulkSendToolbar({
         </div>
       )}
 
-      {result && (
-        <BulkSendResultBanner result={result} />
-      )}
+      {result && <BulkSendResultBanner result={result} />}
     </div>
   );
 }
@@ -616,10 +632,12 @@ function BulkSendResultBanner({
       : result.summary.sent === 0
         ? "error"
         : "mixed";
-  const bg = tone === "ok" ? "#ecfdf5" : tone === "error" ? "#fef2f2" : "#fffbeb";
+  const bg =
+    tone === "ok" ? "#ecfdf5" : tone === "error" ? "#fef2f2" : "#fffbeb";
   const border =
     tone === "ok" ? "#a7f3d0" : tone === "error" ? "#fecaca" : "#fde68a";
-  const fg = tone === "ok" ? "#065f46" : tone === "error" ? "#991b1b" : "#854d0e";
+  const fg =
+    tone === "ok" ? "#065f46" : tone === "error" ? "#991b1b" : "#854d0e";
 
   return (
     <div

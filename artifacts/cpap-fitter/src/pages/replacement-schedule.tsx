@@ -211,9 +211,7 @@ export function ReplacementSchedule() {
             <thead>
               <tr className="bg-[hsl(var(--penn-navy)/0.06)] text-left text-xs uppercase tracking-wider text-[hsl(var(--penn-navy))]/80">
                 <th className="py-4 px-5 font-semibold">Item</th>
-                <th className="py-4 px-5 font-semibold">
-                  Insurance cadence
-                </th>
+                <th className="py-4 px-5 font-semibold">Insurance cadence</th>
                 <th className="py-4 px-5 font-semibold">
                   Manufacturer guidance
                 </th>
@@ -279,8 +277,8 @@ export function ReplacementSchedule() {
 
         <p className="text-xs text-muted-foreground text-center max-w-3xl mx-auto leading-relaxed">
           Cadences shown reflect typical Medicare and commercial insurance
-          allowances in the United States. Your specific plan may differ —
-          Penn Home Medical Supply verifies your benefit before each shipment.
+          allowances in the United States. Your specific plan may differ — Penn
+          Home Medical Supply verifies your benefit before each shipment.
         </p>
       </section>
 
@@ -308,9 +306,9 @@ export function ReplacementSchedule() {
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                If any of these sound familiar, you're due for resupply.
-                None of them are emergencies — but they're real signs your
-                therapy is being undermined.
+                If any of these sound familiar, you're due for resupply. None of
+                them are emergencies — but they're real signs your therapy is
+                being undermined.
               </p>
             </div>
             <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-3 pt-2">
@@ -347,10 +345,10 @@ export function ReplacementSchedule() {
               </h3>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              We verify your benefit, request the prescription if needed,
-              and ship on the cadence your plan covers — usually with no
-              out-of-pocket cost. Approval typically takes 3–5 business
-              days for the first shipment.
+              We verify your benefit, request the prescription if needed, and
+              ship on the cadence your plan covers — usually with no
+              out-of-pocket cost. Approval typically takes 3–5 business days for
+              the first shipment.
             </p>
             <p className="text-xs text-muted-foreground/80 italic">
               Best for: routine resupply on the standard cycle.
@@ -366,14 +364,12 @@ export function ReplacementSchedule() {
               </h3>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Need a replacement before your insurance cycle resets? Ran
-              out on a trip? Want extras your plan won't cover? Pay by
-              card and we'll ship — no prescription, no insurance
-              paperwork.
+              Need a replacement before your insurance cycle resets? Ran out on
+              a trip? Want extras your plan won't cover? Pay by card and we'll
+              ship — no prescription, no insurance paperwork.
             </p>
             <p className="text-xs text-muted-foreground/80 italic">
-              Best for: mid-cycle replacements, accessories, and travel
-              kits.
+              Best for: mid-cycle replacements, accessories, and travel kits.
             </p>
             <div className="pt-2 mt-auto">
               <Link href="/shop">
@@ -411,11 +407,10 @@ export function ReplacementSchedule() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Replacement schedules above reflect typical insurance and
-                manufacturer guidance. They aren't a substitute for advice
-                from your sleep medicine provider. If your therapy feels
-                different — new leaks, mask sores, daytime sleepiness —
-                please reach out to your provider in addition to your
-                supplier.
+                manufacturer guidance. They aren't a substitute for advice from
+                your sleep medicine provider. If your therapy feels different —
+                new leaks, mask sores, daytime sleepiness — please reach out to
+                your provider in addition to your supplier.
               </p>
             </div>
           </div>

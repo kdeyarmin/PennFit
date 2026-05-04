@@ -93,13 +93,10 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
     parsed.data.dndEndHour !== undefined
       ? parsed.data.dndEndHour
       : current.dndEndHour;
-  if (
-    (proposedDndStart === null) !== (proposedDndEnd === null)
-  ) {
+  if ((proposedDndStart === null) !== (proposedDndEnd === null)) {
     res.status(400).json({
       error: "dnd_partial",
-      message:
-        "DND requires both dndStartHour and dndEndHour or neither.",
+      message: "DND requires both dndStartHour and dndEndHour or neither.",
     });
     return;
   }

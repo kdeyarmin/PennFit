@@ -205,9 +205,7 @@ describe("parseInboundSmsParams", () => {
   });
 
   it("rejects payloads missing From/To/MessageSid", () => {
-    expect(() =>
-      parseInboundSmsParams({ Body: "hi" }),
-    ).toThrow();
+    expect(() => parseInboundSmsParams({ Body: "hi" })).toThrow();
   });
 });
 

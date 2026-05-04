@@ -95,9 +95,9 @@ describe("readWorkerMessagingConfig (worker env preflight)", () => {
   });
 
   it("hmacKeysReady is false when RESUPPLY_LINK_HMAC_KEY is missing", () => {
-    expect(
-      readWorkerMessagingConfigForTest({ ...baseEnv }).hmacKeysReady,
-    ).toBe(false);
+    expect(readWorkerMessagingConfigForTest({ ...baseEnv }).hmacKeysReady).toBe(
+      false,
+    );
   });
 
   it("hmacKeysReady is true when RESUPPLY_LINK_HMAC_KEY is set", () => {

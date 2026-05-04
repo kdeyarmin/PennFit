@@ -117,9 +117,7 @@ export async function listAttachmentObjects(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<AttachmentObject[]> {
   const { bucketName, entityPrefix } = getPrivateObjectLocation(env);
-  const prefix = entityPrefix
-    ? `${entityPrefix}/uploads/`
-    : "uploads/";
+  const prefix = entityPrefix ? `${entityPrefix}/uploads/` : "uploads/";
   const bucket = objectStorageClient.bucket(bucketName);
   const [files] = await bucket.getFiles({ prefix, autoPaginate: true });
   return files.map((f) => {
@@ -180,9 +178,7 @@ export function attachmentKeyForObjectName(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
   const { entityPrefix } = getPrivateObjectLocation(env);
-  const expected = entityPrefix
-    ? `${entityPrefix}/uploads/`
-    : "uploads/";
+  const expected = entityPrefix ? `${entityPrefix}/uploads/` : "uploads/";
   if (!objectName.startsWith(expected)) return null;
   const tail = objectName.slice(expected.length);
   if (!tail) return null;

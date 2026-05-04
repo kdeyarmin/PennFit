@@ -2,7 +2,14 @@ import React, { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Camera, AlertCircle, RefreshCw, Eye, Sun, ScanFace } from "lucide-react";
+import {
+  Camera,
+  AlertCircle,
+  RefreshCw,
+  Eye,
+  Sun,
+  ScanFace,
+} from "lucide-react";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { track } from "@/lib/track";
@@ -33,7 +40,11 @@ export function Capture() {
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -128,7 +139,10 @@ export function Capture() {
       if (!ok) setCountdown(null);
       return;
     }
-    const t = setTimeout(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
+    const t = setTimeout(
+      () => setCountdown((c) => (c === null ? null : c - 1)),
+      1000,
+    );
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countdown]);
@@ -149,7 +163,7 @@ export function Capture() {
     let howTo: string;
     if (isIos) {
       howTo =
-        "On iPhone or iPad: open Settings → Safari → Camera and pick \"Allow\" for this site, then come back and tap Try again.";
+        'On iPhone or iPad: open Settings → Safari → Camera and pick "Allow" for this site, then come back and tap Try again.';
     } else if (isAndroid) {
       howTo =
         "On Android: tap the lock icon to the left of the address bar → Permissions → Camera → Allow, then tap Try again.";
@@ -158,7 +172,7 @@ export function Capture() {
         "In Firefox: click the camera icon in the address bar (or Settings → Privacy & Security → Permissions → Camera) and grant access for this site, then tap Try again.";
     } else {
       howTo =
-        "Click the lock or camera icon to the left of the address bar, set Camera to \"Allow\" for this site, refresh, then tap Try again.";
+        'Click the lock or camera icon to the left of the address bar, set Camera to "Allow" for this site, refresh, then tap Try again.';
     }
     const isPermissionDenied = /denied|notallowederror/i.test(error ?? "");
     const isNoDevice = /no camera/i.test(error ?? "");
@@ -212,10 +226,10 @@ export function Capture() {
         </div>
 
         <p className="text-xs text-center text-muted-foreground/85 max-w-md mx-auto leading-relaxed">
-          The camera is only used to measure your face on this device.
-          Photos never leave your phone. If you'd rather not use the
-          camera, you can still browse our shop or use insurance —
-          PennPaps will help you pick a mask in person.
+          The camera is only used to measure your face on this device. Photos
+          never leave your phone. If you'd rather not use the camera, you can
+          still browse our shop or use insurance — PennPaps will help you pick a
+          mask in person.
         </p>
       </div>
     );
@@ -226,7 +240,9 @@ export function Capture() {
       <div className="text-center mb-8 max-w-xl">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-xs font-medium mb-4">
           <ScanFace className="w-3.5 h-3.5" />
-          <span className="font-semibold tracking-wide">Step 1 of 3 · Capture</span>
+          <span className="font-semibold tracking-wide">
+            Step 1 of 3 · Capture
+          </span>
         </div>
         <div className="inline-flex items-center justify-center gap-3 mb-3">
           <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
@@ -239,10 +255,10 @@ export function Capture() {
           Position Your Face
         </h1>
         <p className="text-muted-foreground leading-relaxed">
-          Center your face in the oval and look straight at the camera.
-          We measure off your iris — it's almost exactly the same size in
-          every adult — so you don't need a ruler or a credit card in the
-          shot. The photo never leaves your device.
+          Center your face in the oval and look straight at the camera. We
+          measure off your iris — it's almost exactly the same size in every
+          adult — so you don't need a ruler or a credit card in the shot. The
+          photo never leaves your device.
         </p>
       </div>
 
@@ -300,7 +316,12 @@ export function Capture() {
           overlay) — without this live region, a screen-reader user
           would have no idea the photo is about to be taken.
         */}
-        <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">
+        <div
+          className="sr-only"
+          role="status"
+          aria-live="assertive"
+          aria-atomic="true"
+        >
           {countdown === null
             ? ""
             : countdown > 0
@@ -341,10 +362,18 @@ function CornerBrackets() {
     "absolute w-8 h-8 border-primary/70 transition-opacity duration-300";
   return (
     <>
-      <div className={`${cornerClass} top-6 left-6 border-t-2 border-l-2 rounded-tl-md`} />
-      <div className={`${cornerClass} top-6 right-6 border-t-2 border-r-2 rounded-tr-md`} />
-      <div className={`${cornerClass} bottom-6 left-6 border-b-2 border-l-2 rounded-bl-md`} />
-      <div className={`${cornerClass} bottom-6 right-6 border-b-2 border-r-2 rounded-br-md`} />
+      <div
+        className={`${cornerClass} top-6 left-6 border-t-2 border-l-2 rounded-tl-md`}
+      />
+      <div
+        className={`${cornerClass} top-6 right-6 border-t-2 border-r-2 rounded-tr-md`}
+      />
+      <div
+        className={`${cornerClass} bottom-6 left-6 border-b-2 border-l-2 rounded-bl-md`}
+      />
+      <div
+        className={`${cornerClass} bottom-6 right-6 border-b-2 border-r-2 rounded-br-md`}
+      />
     </>
   );
 }

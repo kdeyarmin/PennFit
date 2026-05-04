@@ -154,9 +154,7 @@ export class AuditMetadataDepthError extends Error {
     public readonly depth: number,
     public readonly limit: number,
   ) {
-    super(
-      `audit metadata: nesting depth ${depth} exceeds limit ${limit}`,
-    );
+    super(`audit metadata: nesting depth ${depth} exceeds limit ${limit}`);
     this.name = "AuditMetadataDepthError";
   }
 }
@@ -203,9 +201,7 @@ function tokenizeKey(rawKey: string): {
     .replace(/(\d)([A-Za-z])/g, "$1 $2");
   const lowered = camelSplit.toLowerCase();
   // Letter-only token list (for the strong-token check).
-  const tokens = lowered
-    .split(/[^a-z]+/)
-    .filter((t) => t.length > 0);
+  const tokens = lowered.split(/[^a-z]+/).filter((t) => t.length > 0);
   // Joined alpha form (for whole-key matches that ignore digits,
   // e.g. `name` vs `name2`).
   const joinedAlpha = tokens.join("");
@@ -368,9 +364,7 @@ function validateAndClone(
  * as 500, do not silently swallow. The point of this gate is to
  * make a "PHI in audit metadata" bug LOUD, not absorb it.
  */
-export function sanitizeMetadata(
-  metadata: unknown,
-): Record<string, unknown> {
+export function sanitizeMetadata(metadata: unknown): Record<string, unknown> {
   if (metadata === undefined || metadata === null) return {};
   if (typeof metadata !== "object" || Array.isArray(metadata)) {
     throw new AuditMetadataShapeError(

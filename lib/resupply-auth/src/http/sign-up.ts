@@ -19,10 +19,7 @@ import { hashPassword } from "../password";
 import { validatePassword } from "../password-policy";
 import { issueToken } from "../token";
 
-import {
-  renderVerifyEmail,
-  type AuthEmailContext,
-} from "./email-templates";
+import { renderVerifyEmail, type AuthEmailContext } from "./email-templates";
 import { authError } from "./responses";
 import type { AuthDeps } from "./types";
 
@@ -45,7 +42,10 @@ export function makeSignUpHandler(
   const role = deps.signUpRole ?? "customer";
   const now = deps.now ?? (() => new Date());
 
-  return async function handleSignUp(req: Request, res: Response): Promise<void> {
+  return async function handleSignUp(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const parsed = SignUpBody.safeParse(req.body);
     if (!parsed.success) {
       authError(res, 400, "invalid_input", "Email and password are required.");
@@ -54,13 +54,10 @@ export function makeSignUpHandler(
 
     const passwordCheck = validatePassword(parsed.data.password);
     if (!passwordCheck.ok) {
-      authError(
-        res,
-        400,
-        "invalid_input",
-        passwordCheck.error.message,
-        { field: "password", code: passwordCheck.error.code },
-      );
+      authError(res, 400, "invalid_input", passwordCheck.error.message, {
+        field: "password",
+        code: passwordCheck.error.code,
+      });
       return;
     }
 

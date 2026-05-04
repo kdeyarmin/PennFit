@@ -335,11 +335,10 @@ function DataExportSection() {
     >
       <h2 className="font-semibold">Your data</h2>
       <p className="text-sm text-muted-foreground">
-        Download every record we hold for your account on the cash-pay
-        shop — orders, subscriptions, returns, reviews, communication
-        preferences. The download is a JSON file; clinical / insurance
-        data isn&apos;t included (those live in a separate system —
-        email{" "}
+        Download every record we hold for your account on the cash-pay shop —
+        orders, subscriptions, returns, reviews, communication preferences. The
+        download is a JSON file; clinical / insurance data isn&apos;t included
+        (those live in a separate system — email{" "}
         <a
           className="font-medium text-[hsl(var(--penn-navy))] underline-offset-2 hover:underline"
           href="mailto:support@pennpaps.com"
@@ -397,9 +396,15 @@ function ProfileSection({
         country: "US",
       };
       const hasAnyField =
-        cleanAddr.line1 || cleanAddr.city || cleanAddr.state || cleanAddr.postalCode;
+        cleanAddr.line1 ||
+        cleanAddr.city ||
+        cleanAddr.state ||
+        cleanAddr.postalCode;
       const allRequiredFilled =
-        cleanAddr.line1 && cleanAddr.city && cleanAddr.state && cleanAddr.postalCode;
+        cleanAddr.line1 &&
+        cleanAddr.city &&
+        cleanAddr.state &&
+        cleanAddr.postalCode;
       if (hasAnyField && !allRequiredFilled) {
         setError(
           "Fill in street, city, state, and ZIP — or clear all four to remove the saved address.",
@@ -615,15 +620,15 @@ function SavedCardSection({ card }: { card: SavedCard | null }) {
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            We never see your card number. Stripe holds the actual data —
-            we only see the last 4 digits for display.
+            We never see your card number. Stripe holds the actual data — we
+            only see the last 4 digits for display.
           </p>
         </div>
       ) : (
         <div>
           <p className="text-sm text-muted-foreground mb-3">
-            No card saved yet. Your next checkout can save the card you use,
-            so future orders are one tap.
+            No card saved yet. Your next checkout can save the card you use, so
+            future orders are one tap.
           </p>
           <Link
             href="/shop"
@@ -645,8 +650,8 @@ function KeepShoppingCard() {
         <h2 className="font-semibold">Keep CPAP fresh</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-4">
-        Cushions every 2 weeks, headgear twice a year, full reset every
-        6 months. We'll have your saved info ready when it's time.
+        Cushions every 2 weeks, headgear twice a year, full reset every 6
+        months. We'll have your saved info ready when it's time.
       </p>
       <div className="flex flex-col gap-2">
         <Link
@@ -694,7 +699,9 @@ function OrdersSection({
       // priceId), so silently dropping it is the safest default.
       const reorderable: CartItem[] = summary.lineItems
         .filter(
-          (li): li is typeof li & { priceId: string; unitAmountCents: number } =>
+          (
+            li,
+          ): li is typeof li & { priceId: string; unitAmountCents: number } =>
             !!li.priceId && typeof li.unitAmountCents === "number",
         )
         .map((li) => ({
@@ -784,8 +791,8 @@ function OrdersSection({
       </div>
       {orders.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No orders yet. Your first purchase will show up here for
-          one-tap reorders.
+          No orders yet. Your first purchase will show up here for one-tap
+          reorders.
         </p>
       ) : (
         <ul className="divide-y divide-border/40">
@@ -1222,7 +1229,8 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
       <ul className="divide-y divide-border/40">
         {subs.map((sub) => {
           const isActive = sub.status === "active" || sub.status === "trialing";
-          const isPastDue = sub.status === "past_due" || sub.status === "unpaid";
+          const isPastDue =
+            sub.status === "past_due" || sub.status === "unpaid";
           const isCanceled =
             sub.status === "canceled" || sub.status === "incomplete_expired";
           const nextShip = sub.currentPeriodEnd
@@ -1522,8 +1530,8 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
             <DialogTitle>Before you cancel — would a pause work?</DialogTitle>
             <DialogDescription>
               Most patients who hit Cancel just need a temporary break. Pause
-              keeps your subscription on file with no charges; you resume in
-              one tap when you&apos;re ready.
+              keeps your subscription on file with no charges; you resume in one
+              tap when you&apos;re ready.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -1582,7 +1590,8 @@ function SubscriptionsSection({ previewMode }: { previewMode: boolean }) {
             </Button>
             <Button
               onClick={() =>
-                cancelInterceptSub && void pauseFromIntercept(cancelInterceptSub)
+                cancelInterceptSub &&
+                void pauseFromIntercept(cancelInterceptSub)
               }
               disabled={pending !== null}
               data-testid="account-cancel-intercept-pause"

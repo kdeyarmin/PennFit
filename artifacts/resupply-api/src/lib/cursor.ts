@@ -18,10 +18,7 @@ export function parseCompositeCursor(
 ): ParsedCompositeCursor {
   if (!cursor) return { ok: true, date: null, id: null };
   const idx = cursor.indexOf(COMPOSITE_CURSOR_DELIM);
-  if (
-    idx <= 0 ||
-    idx >= cursor.length - COMPOSITE_CURSOR_DELIM.length
-  ) {
+  if (idx <= 0 || idx >= cursor.length - COMPOSITE_CURSOR_DELIM.length) {
     return { ok: false };
   }
   const tsPart = cursor.slice(0, idx);

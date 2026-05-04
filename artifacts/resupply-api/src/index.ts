@@ -207,10 +207,7 @@ process.on("unhandledRejection", (reason) => {
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) {
-    logger.warn(
-      { signal },
-      "second shutdown signal — exiting immediately",
-    );
+    logger.warn({ signal }, "second shutdown signal — exiting immediately");
     await flushLogsAndExit(0);
   }
   shuttingDown = true;
@@ -221,9 +218,7 @@ async function shutdown(signal: string): Promise<void> {
   });
   wss.close();
 
-  const timeout = new Promise<void>((resolve) =>
-    setTimeout(resolve, 25_000),
-  );
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 25_000));
   await Promise.race([httpClosed, timeout]);
 
   // Stop pg-boss BEFORE the DB pool closes — pg-boss owns its own
@@ -232,19 +227,13 @@ async function shutdown(signal: string): Promise<void> {
   try {
     await stopWorker();
   } catch (err) {
-    logger.warn(
-      { err: serializeErr(err) },
-      "shutdown: worker stop errored",
-    );
+    logger.warn({ err: serializeErr(err) }, "shutdown: worker stop errored");
   }
 
   try {
     await getDbPool().end();
   } catch (err) {
-    logger.warn(
-      { err: serializeErr(err) },
-      "shutdown: db pool close errored",
-    );
+    logger.warn({ err: serializeErr(err) }, "shutdown: db pool close errored");
   }
 
   logger.info({ signal }, "shutdown: complete");
@@ -282,6 +271,9 @@ async function start(): Promise<void> {
 }
 
 start().catch((err) => {
-  logger.fatal({ err: serializeErr(err) }, "fatal: resupply-api failed to start");
+  logger.fatal(
+    { err: serializeErr(err) },
+    "fatal: resupply-api failed to start",
+  );
   void flushLogsAndExit(1);
 });

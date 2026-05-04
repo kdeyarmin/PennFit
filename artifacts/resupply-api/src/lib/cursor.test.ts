@@ -26,9 +26,7 @@ describe("composite pagination cursor", () => {
     const parsed = parseCompositeCursor(encoded);
     expect(parsed.ok).toBe(true);
     if (parsed.ok) {
-      expect(parsed.date?.toISOString()).toBe(
-        "2026-04-29T14:30:00.000Z",
-      );
+      expect(parsed.date?.toISOString()).toBe("2026-04-29T14:30:00.000Z");
       expect(parsed.id).toBe("shrev_01HZX6Y3K9");
     }
   });
@@ -48,9 +46,7 @@ describe("composite pagination cursor", () => {
   });
 
   it("rejects an empty id half", () => {
-    expect(
-      parseCompositeCursor("2026-04-29T14:30:00.000Z__").ok,
-    ).toBe(false);
+    expect(parseCompositeCursor("2026-04-29T14:30:00.000Z__").ok).toBe(false);
   });
 
   it("rejects an unparseable timestamp", () => {
@@ -60,9 +56,7 @@ describe("composite pagination cursor", () => {
   it("rejects an oversized id half (DoS guard)", () => {
     const oversized = "x".repeat(81);
     expect(
-      parseCompositeCursor(
-        `2026-04-29T14:30:00.000Z__${oversized}`,
-      ).ok,
+      parseCompositeCursor(`2026-04-29T14:30:00.000Z__${oversized}`).ok,
     ).toBe(false);
   });
 

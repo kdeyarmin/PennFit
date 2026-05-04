@@ -36,7 +36,11 @@ import {
   UnsubscribeFromRemindersQueryParams,
   type ReminderItem,
 } from "../../lib/api-zod/index.js";
-import { db, reminderSubscriptionsTable, type ReminderSubscriptionRow } from "../../lib/storefront/db.js";
+import {
+  db,
+  reminderSubscriptionsTable,
+  type ReminderSubscriptionRow,
+} from "../../lib/storefront/db.js";
 import { eq } from "drizzle-orm";
 import {
   sendReminderConfirmation,
@@ -93,13 +97,17 @@ function findInvalidDates(items: ReminderItem[]): string[] | null {
   const issues: string[] = [];
   items.forEach((it, i) => {
     if (!parseStrictIsoDate(it.lastReplacedAt)) {
-      issues.push(`items[${i}].lastReplacedAt: not a valid calendar date (got "${it.lastReplacedAt}")`);
+      issues.push(
+        `items[${i}].lastReplacedAt: not a valid calendar date (got "${it.lastReplacedAt}")`,
+      );
     }
   });
   return issues.length > 0 ? issues : null;
 }
 
-function withNextDue(items: ReminderItem[]): Array<ReminderItem & { nextDueAt: string }> {
+function withNextDue(
+  items: ReminderItem[],
+): Array<ReminderItem & { nextDueAt: string }> {
   return items.map((it) => ({
     ...it,
     nextDueAt: addDays(it.lastReplacedAt, it.intervalDays),
@@ -123,7 +131,8 @@ function toView(row: ReminderSubscriptionRow): {
 // ---------- POST /reminders ----------
 router.post("/reminders", async (req, res) => {
   // Honeypot must run before zod (zod strip would drop the unknown field).
-  const honeypot = (req.body as Record<string, unknown> | null | undefined)?.website;
+  const honeypot = (req.body as Record<string, unknown> | null | undefined)
+    ?.website;
   if (typeof honeypot === "string" && honeypot.trim().length > 0) {
     res.json({
       success: true,
@@ -137,7 +146,9 @@ router.post("/reminders", async (req, res) => {
   if (!parsed.success) {
     res.status(400).json({
       error: "Invalid subscription",
-      details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
+      details: parsed.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
     });
     return;
   }
@@ -147,7 +158,9 @@ router.post("/reminders", async (req, res) => {
   // become bad nextDueAt values.
   const dateIssues = findInvalidDates(parsed.data.items);
   if (dateIssues) {
-    res.status(400).json({ error: "Invalid subscription", details: dateIssues });
+    res
+      .status(400)
+      .json({ error: "Invalid subscription", details: dateIssues });
     return;
   }
 
@@ -181,7 +194,11 @@ router.post("/reminders", async (req, res) => {
         toEmail: existing[0]!.email,
         manageToken: existing[0]!.manageToken,
       });
-      emailStatus = !result.configured ? "skipped" : result.delivered ? "sent" : "failed";
+      emailStatus = !result.configured
+        ? "skipped"
+        : result.delivered
+          ? "sent"
+          : "failed";
     } catch (err) {
       req.log.warn({ err }, "reminder manage-link send threw");
       emailStatus = "failed";
@@ -190,7 +207,8 @@ router.post("/reminders", async (req, res) => {
     res.json({
       success: true,
       emailStatus,
-      message: "Check your email for a manage link to view or update your reminders.",
+      message:
+        "Check your email for a manage link to view or update your reminders.",
     });
     return;
   }
@@ -220,7 +238,11 @@ router.post("/reminders", async (req, res) => {
       manageToken: row.manageToken,
       items: itemsWithDue,
     });
-    emailStatus = !result.configured ? "skipped" : result.delivered ? "sent" : "failed";
+    emailStatus = !result.configured
+      ? "skipped"
+      : result.delivered
+        ? "sent"
+        : "failed";
   } catch (err) {
     req.log.warn({ err }, "reminder confirmation send threw");
     emailStatus = "failed";
@@ -229,7 +251,8 @@ router.post("/reminders", async (req, res) => {
   res.json({
     success: true,
     emailStatus,
-    message: "Check your email for a manage link to view or update your reminders.",
+    message:
+      "Check your email for a manage link to view or update your reminders.",
   });
 });
 
@@ -237,7 +260,9 @@ router.post("/reminders", async (req, res) => {
 router.get("/reminders/manage", async (req, res) => {
   const parsed = GetReminderSubscriptionQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid query", details: ["token: required"] });
+    res
+      .status(400)
+      .json({ error: "Invalid query", details: ["token: required"] });
     return;
   }
   const row = await db
@@ -254,16 +279,22 @@ router.get("/reminders/manage", async (req, res) => {
 
 // ---------- PATCH /reminders/manage?token=... ----------
 router.patch("/reminders/manage", async (req, res) => {
-  const queryParsed = UpdateReminderSubscriptionQueryParams.safeParse(req.query);
+  const queryParsed = UpdateReminderSubscriptionQueryParams.safeParse(
+    req.query,
+  );
   const bodyParsed = UpdateReminderSubscriptionBody.safeParse(req.body);
   if (!queryParsed.success) {
-    res.status(400).json({ error: "Invalid query", details: ["token: required"] });
+    res
+      .status(400)
+      .json({ error: "Invalid query", details: ["token: required"] });
     return;
   }
   if (!bodyParsed.success) {
     res.status(400).json({
       error: "Invalid update",
-      details: bodyParsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
+      details: bodyParsed.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
     });
     return;
   }
@@ -293,7 +324,9 @@ router.patch("/reminders/manage", async (req, res) => {
 router.post("/reminders/manage/unsubscribe", async (req, res) => {
   const parsed = UnsubscribeFromRemindersQueryParams.safeParse(req.query);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid query", details: ["token: required"] });
+    res
+      .status(400)
+      .json({ error: "Invalid query", details: ["token: required"] });
     return;
   }
   const updated = await db

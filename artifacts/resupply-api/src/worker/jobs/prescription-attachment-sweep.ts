@@ -446,7 +446,9 @@ export async function registerPrescriptionAttachmentSweepJob(
     // will log it, and SOC will see the gap in the audit-row summary
     // for that week. Silently swallowing here would hide a broken
     // sweep from the only place it's visible.
-    const counters = await sweepOrphans(buildProductionSweepDeps(asOf, graceMs));
+    const counters = await sweepOrphans(
+      buildProductionSweepDeps(asOf, graceMs),
+    );
     logger.info(
       { ...counters, grace_ms: graceMs },
       "attachment-sweep: run complete",
@@ -454,8 +456,5 @@ export async function registerPrescriptionAttachmentSweepJob(
   });
 
   await boss.schedule(SWEEP_JOB, SWEEP_CRON);
-  logger.info(
-    { cron: SWEEP_CRON },
-    "prescriptions.attachment.sweep scheduled",
-  );
+  logger.info({ cron: SWEEP_CRON }, "prescriptions.attachment.sweep scheduled");
 }

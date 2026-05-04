@@ -53,10 +53,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -65,10 +64,9 @@ vi.mock("@workspace/resupply-db", async () => {
 
 const sendSmsMock = vi.fn();
 vi.mock("@workspace/resupply-telecom", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-telecom")>(
-      "@workspace/resupply-telecom",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
   return {
     ...actual,
     createTwilioSmsClient: vi.fn(() => ({ sendSms: sendSmsMock })),
@@ -166,7 +164,8 @@ describe("POST /sms/send-reminder", () => {
   });
 
   it("returns 401 when there is no session", async () => {
-    setMessagingEnv();    const res = await request(makeApp())
+    setMessagingEnv();
+    const res = await request(makeApp())
       .post("/resupply-api/sms/send-reminder")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
     expect(res.status).toBe(401);
@@ -319,9 +318,7 @@ describe("POST /sms/send-reminder", () => {
     // Twilio failure short-circuits before the messages insert.
     insertQueue.push([{ id: CONVERSATION_ID }]);
     const { TwilioApiError } = await import("@workspace/resupply-telecom");
-    sendSmsMock.mockRejectedValue(
-      new TwilioApiError("rejected", 400, "21610"),
-    );
+    sendSmsMock.mockRejectedValue(new TwilioApiError("rejected", 400, "21610"));
 
     const res = await request(makeApp())
       .post("/resupply-api/sms/send-reminder")

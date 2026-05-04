@@ -60,10 +60,7 @@ export function MiniCart() {
           aria-label={`Cart (${count} item${count === 1 ? "" : "s"})`}
           data-testid="nav-cart-icon"
         >
-          <ShoppingCart
-            className="h-5 w-5"
-            strokeWidth={hasItems ? 2.25 : 2}
-          />
+          <ShoppingCart className="h-5 w-5" strokeWidth={hasItems ? 2.25 : 2} />
           {hasItems && (
             <span
               className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1.5 rounded-full bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] text-[11px] font-bold leading-none flex items-center justify-center tabular-nums ring-2 ring-white shadow-sm"
@@ -91,8 +88,7 @@ export function MiniCart() {
               Your cart is empty.
             </p>
             <p className="text-xs text-muted-foreground mt-1 mb-4">
-              Cushions, tubing, filters, and curated bundles are a
-              tap away.
+              Cushions, tubing, filters, and curated bundles are a tap away.
             </p>
             <Link href="/shop" data-testid="mini-cart-browse">
               <Button size="sm" className="w-full">
@@ -153,9 +149,7 @@ export function MiniCart() {
                       {item.name}
                     </div>
                     <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                      <span className="tabular-nums">
-                        Qty {item.quantity}
-                      </span>
+                      <span className="tabular-nums">Qty {item.quantity}</span>
                       {item.mode === "subscription" &&
                         item.recurringIntervalLabel && (
                           <span className="inline-flex items-center px-1.5 rounded bg-[hsl(var(--penn-gold))]/15 text-[hsl(var(--penn-navy))] font-semibold uppercase tracking-wide text-[9px]">

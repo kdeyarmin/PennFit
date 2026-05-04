@@ -129,7 +129,9 @@ export interface AdminOrderDetail extends AdminOrderRow {
 }
 
 export const fetchAdminOrder = (id: string) =>
-  adminFetch<{ order: AdminOrderDetail }>(`/admin/orders/${encodeURIComponent(id)}`);
+  adminFetch<{ order: AdminOrderDetail }>(
+    `/admin/orders/${encodeURIComponent(id)}`,
+  );
 
 /* ------------------------------ Audit log -------------------------------- */
 

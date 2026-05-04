@@ -30,7 +30,10 @@ const createBody = z
       .trim()
       .min(2)
       .max(60)
-      .regex(/^[a-z0-9][a-z0-9_-]*$/, "lower-case alphanumerics, dash, underscore"),
+      .regex(
+        /^[a-z0-9][a-z0-9_-]*$/,
+        "lower-case alphanumerics, dash, underscore",
+      ),
     label: z.string().trim().min(1).max(120),
     category: z.string().trim().max(60).optional().nullable(),
     body: z.string().trim().min(1).max(4000),

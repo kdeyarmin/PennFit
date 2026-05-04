@@ -3,7 +3,12 @@ import { useLocation } from "wouter";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
-import { BrainCircuit, ScanFace, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  BrainCircuit,
+  ScanFace,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -17,7 +22,9 @@ export function Measure() {
   const [, setLocation] = useLocation();
   const { capturedImage, setMeasurements, setCapturedImage } = useFitterStore();
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("Initializing secure on-device processor…");
+  const [status, setStatus] = useState(
+    "Initializing secure on-device processor…",
+  );
   const [error, setError] = useState<string | null>(null);
   // Guard so the effect doesn't redirect us back to /capture once we
   // intentionally clear the captured image for privacy after extracting
@@ -62,7 +69,9 @@ export function Measure() {
         // is what backs PennPaps's "100% private" claim end-to-end and
         // also lets the app pass a strict same-origin CSP.
         const base = import.meta.env.BASE_URL; // includes trailing slash
-        const vision = await FilesetResolver.forVisionTasks(`${base}mediapipe/wasm`);
+        const vision = await FilesetResolver.forVisionTasks(
+          `${base}mediapipe/wasm`,
+        );
 
         if (!isMountedRef.current) return;
         setProgress(40);
@@ -90,7 +99,10 @@ export function Measure() {
         img.src = capturedImage;
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(
-            () => reject(new Error("Image decode timed out. Please retake the photo.")),
+            () =>
+              reject(
+                new Error("Image decode timed out. Please retake the photo."),
+              ),
             8000,
           );
           img.onload = () => {
@@ -99,7 +111,9 @@ export function Measure() {
           };
           img.onerror = () => {
             clearTimeout(timer);
-            reject(new Error("Could not load the captured photo. Please retake it."));
+            reject(
+              new Error("Could not load the captured photo. Please retake it."),
+            );
           };
         });
 
@@ -148,7 +162,8 @@ export function Measure() {
             );
           }
 
-          const mm = (pixels: number) => Math.round((pixels / pxPerMm) * 10) / 10;
+          const mm = (pixels: number) =>
+            Math.round((pixels / pxPerMm) * 10) / 10;
 
           const noseWidthPx = dist(landmarks[129], landmarks[358]);
           const noseHeightPx = dist(landmarks[6], landmarks[4]);
@@ -179,12 +194,15 @@ export function Measure() {
             if (isMountedRef.current) setLocation("/questionnaire");
           }, 900);
         } else {
-          throw new Error("No face detected in the image. Please try the capture again.");
+          throw new Error(
+            "No face detected in the image. Please try the capture again.",
+          );
         }
       } catch (err: unknown) {
         console.error("Measurement error:", err);
         const msg = err instanceof Error ? err.message : String(err);
-        if (isMountedRef.current) setError(msg || "An error occurred during measurement extraction.");
+        if (isMountedRef.current)
+          setError(msg || "An error occurred during measurement extraction.");
       } finally {
         // Release the WASM-backed landmarker eagerly — both on success
         // (we've already extracted what we need) and on error (so a retry
@@ -212,11 +230,17 @@ export function Measure() {
   if (error) {
     return (
       <div className="container max-w-md mx-auto px-4 py-24 text-center animate-shimmer-in">
-        <Alert variant="destructive" className="mb-6 text-left glass-card border-destructive/30">
+        <Alert
+          variant="destructive"
+          className="mb-6 text-left glass-card border-destructive/30"
+        >
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-        <Button onClick={() => setLocation("/capture")} className="rounded-full btn-primary-glow px-6">
+        <Button
+          onClick={() => setLocation("/capture")}
+          className="rounded-full btn-primary-glow px-6"
+        >
           Return to Camera
         </Button>
       </div>
@@ -281,7 +305,9 @@ export function Measure() {
           <div className="p-8 space-y-5">
             <div className="space-y-2">
               <h2 className="text-display text-2xl font-bold tracking-tight text-gradient-brand">
-                {progress === 100 ? "Measurements Ready" : "Processing Your Measurements"}
+                {progress === 100
+                  ? "Measurements Ready"
+                  : "Processing Your Measurements"}
               </h2>
               {/*
                 aria-live=polite so screen-reader users hear the changing
@@ -309,9 +335,9 @@ export function Measure() {
             <div className="flex items-start gap-2.5 text-xs text-foreground/80 callout-navy px-4 py-3 rounded-xl">
               <BrainCircuit className="h-4 w-4 shrink-0 text-primary mt-0.5" />
               <span className="leading-relaxed">
-                Your photo is being processed entirely on this device by Google's
-                MediaPipe library. The image is discarded the moment your
-                measurements are extracted.
+                Your photo is being processed entirely on this device by
+                Google's MediaPipe library. The image is discarded the moment
+                your measurements are extracted.
               </span>
             </div>
           </div>
@@ -348,10 +374,18 @@ function CornerBrackets() {
   const cornerClass = "absolute w-6 h-6 border-primary/80";
   return (
     <>
-      <div className={`${cornerClass} top-3 left-3 border-t-2 border-l-2 rounded-tl-md`} />
-      <div className={`${cornerClass} top-3 right-3 border-t-2 border-r-2 rounded-tr-md`} />
-      <div className={`${cornerClass} bottom-3 left-3 border-b-2 border-l-2 rounded-bl-md`} />
-      <div className={`${cornerClass} bottom-3 right-3 border-b-2 border-r-2 rounded-br-md`} />
+      <div
+        className={`${cornerClass} top-3 left-3 border-t-2 border-l-2 rounded-tl-md`}
+      />
+      <div
+        className={`${cornerClass} top-3 right-3 border-t-2 border-r-2 rounded-tr-md`}
+      />
+      <div
+        className={`${cornerClass} bottom-3 left-3 border-b-2 border-l-2 rounded-bl-md`}
+      />
+      <div
+        className={`${cornerClass} bottom-3 right-3 border-b-2 border-r-2 rounded-br-md`}
+      />
     </>
   );
 }

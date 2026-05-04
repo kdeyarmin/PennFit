@@ -154,7 +154,9 @@ describe("summarizeToolArgsForAudit", () => {
       reason: "patient_distress",
     });
     expect(handoff.reason).toBe("patient_distress");
-    const end = summarizeToolArgsForAudit("end_call", { outcome: "order_placed" });
+    const end = summarizeToolArgsForAudit("end_call", {
+      outcome: "order_placed",
+    });
     expect(end.outcome).toBe("order_placed");
   });
 });

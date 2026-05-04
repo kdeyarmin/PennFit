@@ -102,7 +102,10 @@ export function getCarrierTrackingUrl(
   carrier: string,
   trackingNumber: string,
 ): string | null {
-  const c = carrier.trim().toLowerCase().replace(/[^a-z]/g, "");
+  const c = carrier
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
   const num = encodeURIComponent(trackingNumber.trim());
   if (!num) return null;
   switch (c) {

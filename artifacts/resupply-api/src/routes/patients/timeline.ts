@@ -146,10 +146,7 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
           createdAt: messages.createdAt,
         })
         .from(messages)
-        .innerJoin(
-          conversations,
-          eq(conversations.id, messages.conversationId),
-        )
+        .innerJoin(conversations, eq(conversations.id, messages.conversationId))
         .where(eq(conversations.patientId, id))
         .orderBy(desc(messages.createdAt)),
       db
@@ -214,7 +211,8 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
     // Prefer the explicit sentAt over the row's createdAt — for
     // outbound messages they will match, for inbound messages
     // sentAt is the vendor-reported send-time (more accurate).
-    const at = toIso(m.sentAt) ?? toIso(m.createdAt) ?? new Date(0).toISOString();
+    const at =
+      toIso(m.sentAt) ?? toIso(m.createdAt) ?? new Date(0).toISOString();
     const dirVerb = m.direction === "inbound" ? "received" : "sent";
     const channelLabel =
       m.channel === "sms" ? "SMS" : m.channel === "email" ? "Email" : "Voice";
@@ -303,7 +301,10 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "patients.timeline: audit write failed",
     );
   }

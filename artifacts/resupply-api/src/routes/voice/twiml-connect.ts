@@ -58,7 +58,10 @@ router.post("/voice/twiml-connect", signatureMiddleware, (req, res) => {
     // Should be unreachable: if voice config were missing, the
     // signature middleware would have 403'd above (no auth token).
     // Belt + braces.
-    res.status(503).type("text/xml").send(buildHangupTwiml("Service unavailable."));
+    res
+      .status(503)
+      .type("text/xml")
+      .send(buildHangupTwiml("Service unavailable."));
     return;
   }
 

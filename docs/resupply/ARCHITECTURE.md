@@ -53,7 +53,7 @@ share one Express process (resupply-api) and one Drizzle lib
 (resupply-db) on top of the same physical Postgres. The two table
 sets still live in distinct schemas — fitter/storefront in `public.*`,
 resupply in `resupply.*` — and the architecture-check script enforces
-that resupply-* libs do not pull in the storefront UI client.
+that resupply-\* libs do not pull in the storefront UI client.
 
 ## Data flow (Phase 0 baseline)
 
@@ -98,18 +98,18 @@ which runs as part of the `resupply-check` validation step.
 
 ### Allowed dependency edges
 
-| Package                  | May import from                                                                  |
-|--------------------------|----------------------------------------------------------------------------------|
-| `resupply-contracts`     | `zod` only                                                                       |
-| `resupply-domain`        | `resupply-contracts`, `zod`                                                      |
-| `resupply-db`            | `resupply-contracts`, `resupply-domain`, `drizzle-orm`, `pg`, `zod`              |
-| `resupply-audit`         | `resupply-contracts`, `resupply-db`, `drizzle-orm`, `zod`                        |
-| `resupply-telecom`       | `resupply-contracts`, `resupply-domain`, `zod` (vendor SDKs added in Phase 3)    |
-| `resupply-ai`            | `resupply-contracts`, `resupply-domain`, `zod` (Anthropic SDK added in Phase 6)  |
-| `resupply-testing`       | `resupply-contracts`, `resupply-domain`, faker, `zod` — **devDeps only**         |
-| `artifacts/resupply-api` | any `lib/resupply-*` package + Express stack                                     |
-| `artifacts/resupply-worker` | any `lib/resupply-*` package + `pg-boss`                                      |
-| `artifacts/resupply-dashboard` | any `lib/resupply-*` package + React stack (no `resupply-db` at runtime)   |
+| Package                        | May import from                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| `resupply-contracts`           | `zod` only                                                                      |
+| `resupply-domain`              | `resupply-contracts`, `zod`                                                     |
+| `resupply-db`                  | `resupply-contracts`, `resupply-domain`, `drizzle-orm`, `pg`, `zod`             |
+| `resupply-audit`               | `resupply-contracts`, `resupply-db`, `drizzle-orm`, `zod`                       |
+| `resupply-telecom`             | `resupply-contracts`, `resupply-domain`, `zod` (vendor SDKs added in Phase 3)   |
+| `resupply-ai`                  | `resupply-contracts`, `resupply-domain`, `zod` (Anthropic SDK added in Phase 6) |
+| `resupply-testing`             | `resupply-contracts`, `resupply-domain`, faker, `zod` — **devDeps only**        |
+| `artifacts/resupply-api`       | any `lib/resupply-*` package + Express stack                                    |
+| `artifacts/resupply-worker`    | any `lib/resupply-*` package + `pg-boss`                                        |
+| `artifacts/resupply-dashboard` | any `lib/resupply-*` package + React stack (no `resupply-db` at runtime)        |
 
 ### Forbidden edges (these will fail the check script)
 

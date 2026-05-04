@@ -51,9 +51,7 @@ function shouldHide(rawPath: string): boolean {
   if (qIdx >= 0) end = Math.min(end, qIdx);
   if (hIdx >= 0) end = Math.min(end, hIdx);
   const path = rawPath.slice(0, end);
-  return HIDDEN_PREFIXES.some(
-    (p) => path === p || path.startsWith(`${p}/`),
-  );
+  return HIDDEN_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
 export function MobileCtaBar() {
@@ -91,7 +89,11 @@ export function MobileCtaBar() {
           className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 text-[hsl(var(--penn-navy))] active:bg-secondary/40 transition-colors"
           data-testid="mobile-cta-talk"
         >
-          <MessageCircle className="w-5 h-5" strokeWidth={2} aria-hidden="true" />
+          <MessageCircle
+            className="w-5 h-5"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
           <span>Talk to us</span>
         </Link>
       </div>

@@ -48,7 +48,9 @@ describe("buildClearCookies", () => {
 
 describe("readCookie", () => {
   function makeReq(header?: string) {
-    return { headers: { cookie: header } } as unknown as import("express").Request;
+    return {
+      headers: { cookie: header },
+    } as unknown as import("express").Request;
   }
 
   it("returns null when there's no Cookie header", () => {

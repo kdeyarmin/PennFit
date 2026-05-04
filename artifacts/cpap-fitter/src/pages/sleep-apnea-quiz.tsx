@@ -87,8 +87,7 @@ const QUESTIONS: Question[] = [
   {
     id: "pressure",
     letter: "P",
-    prompt:
-      "Do you have, or are you being treated for, high blood pressure?",
+    prompt: "Do you have, or are you being treated for, high blood pressure?",
     helper:
       "Including any prescription medication for hypertension, even if your readings are now normal.",
     section: "health",
@@ -176,17 +175,16 @@ const RISK_COPY: Record<RiskBand, RiskCopy> = {
     label: "Lower risk",
     range: "Score 0–2",
     Icon: ShieldCheck,
-    toneClass:
-      "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200",
+    toneClass: "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200",
     haloClass: "icon-halo-navy",
     headline: "Your responses suggest a lower risk on this screener.",
     body: (
       <>
-        Most people who score in this range don't have moderate-to-severe
-        sleep apnea — but this is a screening tool, not a diagnosis.
-        Snoring, daytime fatigue, or witnessed breathing pauses still
-        deserve a conversation at your next physician visit, especially
-        if a bed partner has voiced concern.
+        Most people who score in this range don't have moderate-to-severe sleep
+        apnea — but this is a screening tool, not a diagnosis. Snoring, daytime
+        fatigue, or witnessed breathing pauses still deserve a conversation at
+        your next physician visit, especially if a bed partner has voiced
+        concern.
       </>
     ),
     primaryCta: {
@@ -206,13 +204,12 @@ const RISK_COPY: Record<RiskBand, RiskCopy> = {
       "Your responses suggest a moderate risk that's worth discussing with a physician.",
     body: (
       <>
-        Patients in this range often have undiagnosed obstructive sleep
-        apnea — particularly when the "yes" answers cluster around
-        snoring, observed breathing pauses, or daytime sleepiness. We
-        recommend bringing these results to your primary care physician
-        or directly to a sleep medicine provider. A formal sleep study
-        (often a take-home test) is the only way to confirm or rule
-        out apnea.
+        Patients in this range often have undiagnosed obstructive sleep apnea —
+        particularly when the "yes" answers cluster around snoring, observed
+        breathing pauses, or daytime sleepiness. We recommend bringing these
+        results to your primary care physician or directly to a sleep medicine
+        provider. A formal sleep study (often a take-home test) is the only way
+        to confirm or rule out apnea.
       </>
     ),
     primaryCta: {
@@ -228,17 +225,15 @@ const RISK_COPY: Record<RiskBand, RiskCopy> = {
     Icon: AlertTriangle,
     toneClass: "bg-rose-50 text-rose-900 ring-1 ring-rose-200",
     haloClass: "icon-halo-gold",
-    headline:
-      "Your responses suggest a high risk of obstructive sleep apnea.",
+    headline: "Your responses suggest a high risk of obstructive sleep apnea.",
     body: (
       <>
-        A score in this range is strongly associated with
-        moderate-to-severe sleep apnea in the published research.
-        Untreated, sleep apnea is linked to high blood pressure,
-        cardiovascular events, type-2 diabetes complications, and a
-        meaningful increase in motor-vehicle-accident risk. Please
-        contact your physician promptly — both to discuss the
-        symptoms above and to ask about a sleep study.
+        A score in this range is strongly associated with moderate-to-severe
+        sleep apnea in the published research. Untreated, sleep apnea is linked
+        to high blood pressure, cardiovascular events, type-2 diabetes
+        complications, and a meaningful increase in motor-vehicle-accident risk.
+        Please contact your physician promptly — both to discuss the symptoms
+        above and to ask about a sleep study.
       </>
     ),
     primaryCta: {
@@ -263,9 +258,9 @@ export function SleepApneaQuiz() {
     "An 8-question STOP-BANG screener that estimates your risk of obstructive sleep apnea and helps you decide whether to talk to a physician.",
   );
 
-  const [answers, setAnswers] = useState<
-    Partial<Record<QuestionId, boolean>>
-  >({});
+  const [answers, setAnswers] = useState<Partial<Record<QuestionId, boolean>>>(
+    {},
+  );
 
   const answeredCount = Object.keys(answers).length;
   const score = useMemo(
@@ -305,10 +300,10 @@ export function SleepApneaQuiz() {
           Do You Have Sleep Apnea?
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          Answer 8 quick yes-or-no questions. The result is an estimate of
-          your risk based on the validated <strong>STOP-BANG</strong>{" "}
-          screener used by sleep clinics — it isn't a diagnosis. We'll
-          help you decide whether to bring it up with your physician.
+          Answer 8 quick yes-or-no questions. The result is an estimate of your
+          risk based on the validated <strong>STOP-BANG</strong> screener used
+          by sleep clinics — it isn't a diagnosis. We'll help you decide whether
+          to bring it up with your physician.
         </p>
       </header>
 
@@ -325,10 +320,10 @@ export function SleepApneaQuiz() {
             This is a screening tool, not a diagnosis.
           </p>
           <p className="text-muted-foreground leading-relaxed">
-            Only a qualified physician can diagnose obstructive sleep
-            apnea, typically with a take-home or in-lab sleep study.
-            PennPaps fits and supplies CPAP equipment once your physician
-            has prescribed it — we don't diagnose or prescribe.
+            Only a qualified physician can diagnose obstructive sleep apnea,
+            typically with a take-home or in-lab sleep study. PennPaps fits and
+            supplies CPAP equipment once your physician has prescribed it — we
+            don't diagnose or prescribe.
           </p>
         </div>
       </section>
@@ -407,8 +402,8 @@ export function SleepApneaQuiz() {
         ) : (
           <div className="glass-card rounded-2xl p-6 sm:p-8 text-center space-y-2">
             <p className="text-sm text-muted-foreground">
-              Answer all {QUESTIONS.length} questions to see your risk band
-              and next-step recommendation.
+              Answer all {QUESTIONS.length} questions to see your risk band and
+              next-step recommendation.
             </p>
             <p className="text-xs text-muted-foreground">
               {QUESTIONS.length - answeredCount} remaining
@@ -432,8 +427,8 @@ export function SleepApneaQuiz() {
               Read the Learn guides
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Plain-English articles on sleep apnea, CPAP basics, mask
-              choice, cleaning, and what to expect on therapy.
+              Plain-English articles on sleep apnea, CPAP basics, mask choice,
+              cleaning, and what to expect on therapy.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -451,8 +446,8 @@ export function SleepApneaQuiz() {
               Already prescribed CPAP? Get fitted
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Once your physician has prescribed therapy, our on-device
-              fitter matches you to a comfortable mask in a few minutes.
+              Once your physician has prescribed therapy, our on-device fitter
+              matches you to a comfortable mask in a few minutes.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -549,8 +544,16 @@ interface ResultCardProps {
 }
 
 function ResultCard({ score, copy, onReset }: ResultCardProps) {
-  const { Icon, label, range, headline, body, primaryCta, toneClass, haloClass } =
-    copy;
+  const {
+    Icon,
+    label,
+    range,
+    headline,
+    body,
+    primaryCta,
+    toneClass,
+    haloClass,
+  } = copy;
   return (
     <div
       className="glass-card rounded-2xl relative overflow-hidden"
@@ -620,24 +623,24 @@ function ResultCard({ score, copy, onReset }: ResultCardProps) {
             <li className="flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-[hsl(var(--penn-gold))] mt-0.5 shrink-0" />
               <span>
-                Anything a bed partner has noticed — snoring, gasping,
-                pauses, restless sleep.
+                Anything a bed partner has noticed — snoring, gasping, pauses,
+                restless sleep.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-[hsl(var(--penn-gold))] mt-0.5 shrink-0" />
               <span>
-                A request to discuss <strong>at-home sleep testing</strong>{" "}
-                — most insurers cover it and it's far less involved than a
-                lab study.
+                A request to discuss <strong>at-home sleep testing</strong> —
+                most insurers cover it and it's far less involved than a lab
+                study.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-[hsl(var(--penn-gold))] mt-0.5 shrink-0" />
               <span>
                 Any history of high blood pressure, type-2 diabetes, atrial
-                fibrillation, or recent unexplained weight gain — all
-                relevant to apnea risk.
+                fibrillation, or recent unexplained weight gain — all relevant
+                to apnea risk.
               </span>
             </li>
           </ul>

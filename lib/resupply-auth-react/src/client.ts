@@ -151,15 +151,16 @@ export function createAuthClient(config: AuthClientConfig): AuthClient {
         return null;
       }
     }
-    let body: { error?: string; message?: string } & Record<string, unknown> = {};
+    let body: { error?: string; message?: string } & Record<string, unknown> =
+      {};
     try {
       body = (await res.json()) as typeof body;
     } catch {
       // server returned non-JSON — that's an internal error
     }
-    const code = (typeof body.error === "string"
-      ? body.error
-      : "unknown") as AuthErrorCode;
+    const code = (
+      typeof body.error === "string" ? body.error : "unknown"
+    ) as AuthErrorCode;
     const message =
       (typeof body.message === "string" && body.message) ||
       defaultMessageForStatus(res.status);

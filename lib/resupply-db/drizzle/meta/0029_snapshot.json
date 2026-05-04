@@ -223,12 +223,8 @@
           "tableFrom": "patient_notes",
           "tableTo": "patients",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "patient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["patient_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -397,12 +393,8 @@
           "tableFrom": "prescriptions",
           "tableTo": "patients",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "patient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["patient_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -545,12 +537,8 @@
           "tableFrom": "episodes",
           "tableTo": "patients",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "patient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["patient_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -559,12 +547,8 @@
           "tableFrom": "episodes",
           "tableTo": "prescriptions",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "prescription_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["prescription_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -755,12 +739,8 @@
           "tableFrom": "conversations",
           "tableTo": "patients",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "patient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["patient_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -769,12 +749,8 @@
           "tableFrom": "conversations",
           "tableTo": "episodes",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "episode_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["episode_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -918,12 +894,8 @@
           "tableFrom": "messages",
           "tableTo": "conversations",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["conversation_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -999,12 +971,8 @@
           "tableFrom": "patient_latest_message",
           "tableTo": "patients",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "patient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["patient_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1013,12 +981,8 @@
           "tableFrom": "patient_latest_message",
           "tableTo": "conversations",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "last_message_conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["last_message_conversation_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1186,12 +1150,8 @@
           "tableFrom": "fulfillments",
           "tableTo": "patients",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "patient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["patient_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1200,12 +1160,8 @@
           "tableFrom": "fulfillments",
           "tableTo": "episodes",
           "schemaTo": "resupply",
-          "columnsFrom": [
-            "episode_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["episode_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1558,11 +1514,7 @@
       "compositePrimaryKeys": {
         "idempotency_keys_user_id_endpoint_key_pk": {
           "name": "idempotency_keys_user_id_endpoint_key_pk",
-          "columns": [
-            "user_id",
-            "endpoint",
-            "key"
-          ]
+          "columns": ["user_id", "endpoint", "key"]
         }
       },
       "uniqueConstraints": {},
@@ -1752,9 +1704,7 @@
         "shop_orders_stripe_session_id_unique": {
           "name": "shop_orders_stripe_session_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "stripe_session_id"
-          ]
+          "columns": ["stripe_session_id"]
         }
       },
       "policies": {},
@@ -1869,9 +1819,7 @@
         "shop_customers_stripe_customer_id_unique": {
           "name": "shop_customers_stripe_customer_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "stripe_customer_id"
-          ]
+          "columns": ["stripe_customer_id"]
         }
       },
       "policies": {},
@@ -2004,9 +1952,7 @@
         "shop_subscriptions_stripe_subscription_id_unique": {
           "name": "shop_subscriptions_stripe_subscription_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "stripe_subscription_id"
-          ]
+          "columns": ["stripe_subscription_id"]
         }
       },
       "policies": {},
@@ -2113,9 +2059,7 @@
         "shop_abandoned_carts_customer_id_unique": {
           "name": "shop_abandoned_carts_customer_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "customer_id"
-          ]
+          "columns": ["customer_id"]
         }
       },
       "policies": {},
@@ -2791,9 +2735,7 @@
         "csr_macros_key_unique": {
           "name": "csr_macros_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "key"
-          ]
+          "columns": ["key"]
         }
       },
       "policies": {},
@@ -2924,9 +2866,7 @@
         "admin_users_email_lower_unique": {
           "name": "admin_users_email_lower_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email_lower"
-          ]
+          "columns": ["email_lower"]
         }
       },
       "policies": {},
@@ -3029,9 +2969,7 @@
         "users_email_lower_unique": {
           "name": "users_email_lower_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email_lower"
-          ]
+          "columns": ["email_lower"]
         }
       },
       "policies": {},
@@ -3083,12 +3021,8 @@
           "tableFrom": "password_credentials",
           "tableTo": "users",
           "schemaTo": "auth",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3205,12 +3139,8 @@
           "tableFrom": "sessions",
           "tableTo": "users",
           "schemaTo": "auth",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3220,9 +3150,7 @@
         "sessions_token_hash_unique": {
           "name": "sessions_token_hash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token_hash"
-          ]
+          "columns": ["token_hash"]
         }
       },
       "policies": {},
@@ -3300,12 +3228,8 @@
           "tableFrom": "email_tokens",
           "tableTo": "users",
           "schemaTo": "auth",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3593,9 +3517,7 @@
         "orders_order_reference_unique": {
           "name": "orders_order_reference_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "order_reference"
-          ]
+          "columns": ["order_reference"]
         }
       },
       "policies": {},

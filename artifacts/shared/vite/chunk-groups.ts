@@ -1,4 +1,6 @@
-export function dashboardChunkForPackage(packageName: string): string | undefined {
+export function dashboardChunkForPackage(
+  packageName: string,
+): string | undefined {
   if (packageName === "react" || packageName === "react-dom") return "react";
   if (packageName === "@tanstack/react-query") return "query";
   if (packageName === "wouter") return "router";

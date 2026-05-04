@@ -258,7 +258,10 @@ router.post(
     try {
       const baseParams: Omit<
         Stripe.Checkout.SessionCreateParams,
-        "mode" | "payment_intent_data" | "subscription_data" | "payment_method_collection"
+        | "mode"
+        | "payment_intent_data"
+        | "subscription_data"
+        | "payment_method_collection"
       > = {
         customer: stripeCustomerId,
         line_items: basket.map((it) => ({
@@ -330,7 +333,10 @@ router.post(
     }
 
     if (!session.url) {
-      req.log?.error({ sessionId: session.id }, "quick-checkout session has no url");
+      req.log?.error(
+        { sessionId: session.id },
+        "quick-checkout session has no url",
+      );
       res.status(502).json({ error: "stripe_create_failed" });
       return;
     }

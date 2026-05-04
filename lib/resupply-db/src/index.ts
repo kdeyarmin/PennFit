@@ -13,11 +13,7 @@
 // pgcrypto column-level encryption; migration 0025 stripped it.
 
 export * from "./schema/index";
-export {
-  getDbPool,
-  setPoolErrorLogger,
-  __resetDbPoolForTests,
-} from "./pool";
+export { getDbPool, setPoolErrorLogger, __resetDbPoolForTests } from "./pool";
 export {
   PREVIEW_MAX_CHARS,
   buildPreview,

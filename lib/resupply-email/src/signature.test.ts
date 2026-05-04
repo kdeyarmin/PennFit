@@ -180,7 +180,8 @@ describe("requireSendgridSignature middleware", () => {
     delete process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY;
   });
   afterEach(() => {
-    if (saved === undefined) delete process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY;
+    if (saved === undefined)
+      delete process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY;
     else process.env.SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY = saved;
   });
 
