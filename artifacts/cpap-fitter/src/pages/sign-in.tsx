@@ -11,6 +11,7 @@ import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
+import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -64,13 +65,12 @@ export function SignInPage() {
 
         <label className="block text-sm">
           <span className="font-medium">Password</span>
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            inputTestId="signin-password-input"
           />
         </label>
 
