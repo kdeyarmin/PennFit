@@ -78,6 +78,7 @@ import {
   formatMoneyCents,
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
+import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { AccountMessagesSection } from "@/components/account-messages-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
@@ -286,6 +287,14 @@ function AccountInner() {
             profile={data.profile!}
             onSaved={() => void reload()}
           />
+          {/*
+            Device + physician info — added in the
+            customer-clinical-info-and-messaging-foundation branch.
+            Both fields are stored on shop_customers as JSONB and
+            persist via PUT /shop/me/clinical-info, which audit-logs
+            every change with a non-PHI metadata envelope.
+          */}
+          <ClinicalInfoSection />
           {/*
             In-account messaging with PennPaps customer service —
             added in the Phase 2 messaging branch. Reuses the
