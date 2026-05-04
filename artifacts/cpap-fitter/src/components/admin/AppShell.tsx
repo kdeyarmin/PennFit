@@ -159,6 +159,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Return requests, restocks, refund decisions",
       },
       {
+        href: "/admin/shop/customers",
+        label: "Customers",
+        icon: UsersRound,
+        matchPrefix: "/admin/shop/customers",
+        hint: "Registered shop accounts, with clinical info + in-app messaging",
+      },
+      {
         href: "/admin/shop/abandoned-carts",
         label: "Abandoned Carts",
         icon: ShoppingCart,

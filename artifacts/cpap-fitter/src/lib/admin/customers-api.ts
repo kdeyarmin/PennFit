@@ -161,6 +161,80 @@ export class AdminCustomerNotFoundError extends Error {
   }
 }
 
+// =====================================================================
+// List endpoint (paginated directory)
+// =====================================================================
+
+/**
+ * Each row carries a redacted email (e.g. "ja******@example.com")
+ * NOT the full address — the directory view is intentionally
+ * read-light. The full email comes from the detail endpoint.
+ */
+export interface AdminCustomerListRow {
+  userId: string;
+  displayName: string | null;
+  emailRedacted: string | null;
+  stripeCustomerId: string | null;
+  ordersCount: number;
+  lifetimeValueCents: number;
+  lastOrderAt: string | null;
+  hasActiveSubscription: boolean;
+  createdAt: string;
+}
+
+export type AdminCustomerListSortBy =
+  | "last_order"
+  | "lifetime_value"
+  | "created_at";
+
+export interface AdminCustomerListInput {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: AdminCustomerListSortBy;
+  order?: "asc" | "desc";
+  /**
+   * `'active'` → only customers with at least one active subscription.
+   * `'none'`   → only customers with no active subscription.
+   * undefined  → both.
+   */
+  subscription?: "active" | "none";
+}
+
+export interface AdminCustomerListResponse {
+  customers: AdminCustomerListRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export async function listAdminCustomers(
+  input: AdminCustomerListInput = {},
+): Promise<AdminCustomerListResponse> {
+  const qs = new URLSearchParams();
+  if (input.q) qs.set("q", input.q);
+  if (input.page) qs.set("page", String(input.page));
+  if (input.pageSize) qs.set("pageSize", String(input.pageSize));
+  if (input.sortBy) qs.set("sortBy", input.sortBy);
+  if (input.order) qs.set("order", input.order);
+  if (input.subscription) qs.set("subscription", input.subscription);
+  const suffix = qs.toString();
+  const res = await fetch(
+    `/resupply-api/admin/shop/customers${suffix ? `?${suffix}` : ""}`,
+    {
+      headers: { Accept: "application/json" },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load customers (${res.status})`);
+  }
+  return (await res.json()) as AdminCustomerListResponse;
+}
+
+// =====================================================================
+// Detail endpoint (single customer)
+// =====================================================================
+
 export async function getAdminCustomerDetail(
   userId: string,
 ): Promise<AdminCustomerDetailResponse> {
