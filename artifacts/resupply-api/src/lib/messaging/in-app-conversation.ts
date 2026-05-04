@@ -72,6 +72,13 @@ export interface InAppThreadView {
 export interface FetchInAppThreadResult {
   thread: InAppThreadView | null;
   messages: InAppMessageView[];
+  /**
+   * Count of outbound CSR messages that arrived AFTER the customer
+   * last marked the thread read (or every outbound message when
+   * the customer has never read). Drives the header badge + the
+   * "X new replies" pill on the /account messages section.
+   */
+  unreadFromCsr: number;
 }
 
 function dbFromPool(
@@ -101,6 +108,7 @@ export async function fetchInAppThread(input: {
       status: conversations.status,
       lastMessageAt: conversations.lastMessageAt,
       createdAt: conversations.createdAt,
+      customerLastReadAt: conversations.customerLastReadAt,
     })
     .from(conversations)
     .where(
@@ -113,7 +121,7 @@ export async function fetchInAppThread(input: {
     .limit(1);
   const conv = convRows[0];
   if (!conv) {
-    return { thread: null, messages: [] };
+    return { thread: null, messages: [], unreadFromCsr: 0 };
   }
   const msgRows = await db
     .select({
@@ -127,6 +135,19 @@ export async function fetchInAppThread(input: {
     .from(messages)
     .where(eq(messages.conversationId, conv.id))
     .orderBy(asc(messages.createdAt));
+
+  // Compute unread-from-CSR. Walk the message list once; cheaper
+  // than a second SQL aggregate when v1 thread sizes are tens of
+  // messages. If we ever see threads with hundreds of messages we
+  // can push this into a SQL count(*) FILTER (WHERE …).
+  const lastReadMs = conv.customerLastReadAt?.getTime() ?? 0;
+  let unreadFromCsr = 0;
+  for (const m of msgRows) {
+    if (m.direction === "outbound" && m.createdAt.getTime() > lastReadMs) {
+      unreadFromCsr += 1;
+    }
+  }
+
   return {
     thread: {
       id: conv.id,
@@ -148,7 +169,80 @@ export async function fetchInAppThread(input: {
       createdAt: m.createdAt.toISOString(),
       deliveryStatus: m.deliveryStatus,
     })),
+    unreadFromCsr,
   };
+}
+
+/**
+ * Count just the unread CSR messages without fetching the full
+ * message list. Used by the cheap polling endpoint behind the
+ * header badge — N customers × every-page-load shouldn't pay the
+ * full thread read cost.
+ *
+ * Returns 0 when:
+ *   - the customer has no in-app thread,
+ *   - the thread exists but has no outbound messages,
+ *   - or every outbound message arrived before customer_last_read_at.
+ */
+export async function fetchInAppUnreadCount(input: {
+  pool: WorkspacePool;
+  customerId: string;
+}): Promise<number> {
+  const db = dbFromPool(input.pool);
+  const convRows = await db
+    .select({
+      id: conversations.id,
+      customerLastReadAt: conversations.customerLastReadAt,
+    })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.customerId, input.customerId),
+        eq(conversations.channel, "in_app"),
+      ),
+    )
+    .limit(1);
+  const conv = convRows[0];
+  if (!conv) return 0;
+  const msgRows = await db
+    .select({ createdAt: messages.createdAt })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conv.id),
+        eq(messages.direction, "outbound"),
+      ),
+    );
+  const lastReadMs = conv.customerLastReadAt?.getTime() ?? 0;
+  let count = 0;
+  for (const m of msgRows) {
+    if (m.createdAt.getTime() > lastReadMs) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Mark the customer's in-app thread as fully read. Sets
+ * `customer_last_read_at = now()` on the conversation. No-op when
+ * the customer has no thread (returns false).
+ */
+export async function markInAppThreadRead(input: {
+  pool: WorkspacePool;
+  customerId: string;
+}): Promise<boolean> {
+  const db = dbFromPool(input.pool);
+  const now = new Date();
+  const result = await db
+    .update(conversations)
+    .set({ customerLastReadAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(conversations.customerId, input.customerId),
+        eq(conversations.channel, "in_app"),
+      ),
+    )
+    .returning({ id: conversations.id });
+  return result.length > 0;
 }
 
 export interface AppendCustomerMessageResult {

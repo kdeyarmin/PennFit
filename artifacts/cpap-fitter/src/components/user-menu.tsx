@@ -12,9 +12,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { LogIn, LogOut, User } from "lucide-react";
+import { LogIn, LogOut, MessageSquare, User } from "lucide-react";
 
 import { SignedIn, useShopIdentity } from "@/lib/identity";
+import { useShopMessagesUnread } from "@/hooks/use-shop-messages-unread";
 
 export function UserMenu() {
   const [location] = useLocation();
@@ -59,6 +60,7 @@ function UserPill() {
   const [open, setOpen] = useState(false);
   const [, setLocation] = useLocation();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const unreadCsr = useShopMessagesUnread();
 
   // Close the menu when the user clicks anywhere else on the page.
   useEffect(() => {
@@ -82,11 +84,28 @@ function UserPill() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="h-9 w-9 rounded-full bg-[hsl(var(--penn-navy)/0.10)] text-[hsl(var(--penn-navy))] font-semibold text-sm flex items-center justify-center hover:bg-[hsl(var(--penn-navy)/0.18)] transition-colors"
+        // Compose a screen-reader label that always conveys both the
+        // account context AND the unread count, so a screen reader user
+        // doesn't depend on the visual dot.
+        aria-label={
+          unreadCsr > 0
+            ? `Account menu — ${unreadCsr} new message${unreadCsr === 1 ? "" : "s"} from PennPaps`
+            : "Account menu"
+        }
+        className="relative h-9 w-9 rounded-full bg-[hsl(var(--penn-navy)/0.10)] text-[hsl(var(--penn-navy))] font-semibold text-sm flex items-center justify-center hover:bg-[hsl(var(--penn-navy)/0.18)] transition-colors"
         data-testid="user-menu-button"
         title={email ?? "Account"}
       >
         {initialFor(email, displayName)}
+        {unreadCsr > 0 && (
+          <span
+            // Small red dot in the top-right corner of the avatar.
+            // Decorative — the count is in the menu row + aria-label.
+            aria-hidden="true"
+            data-testid="user-menu-unread-dot"
+            className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-rose-600 ring-2 ring-background"
+          />
+        )}
       </button>
       {open && (
         <div
@@ -97,6 +116,20 @@ function UserPill() {
             <div className="px-3 py-2 border-b text-xs text-muted-foreground truncate">
               {email}
             </div>
+          )}
+          {unreadCsr > 0 && (
+            <Link
+              href="/account#messages"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-rose-50 text-rose-700"
+              role="menuitem"
+              data-testid="user-menu-unread-row"
+            >
+              <MessageSquare className="h-4 w-4" />
+              {unreadCsr === 1
+                ? "1 new message from PennPaps"
+                : `${unreadCsr} new messages from PennPaps`}
+            </Link>
           )}
           <Link
             href="/account"

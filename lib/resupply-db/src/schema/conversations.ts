@@ -78,6 +78,18 @@ export const conversations = resupplySchema.table(
     // admin inbox sort order.
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
 
+    /**
+     * In-app channel only. Updated by `POST /shop/me/messages/mark-read`
+     * when the customer opens their /account messaging section.
+     * Null until the customer reads at least once. The unread-count
+     * helper compares this against `max(messages.created_at WHERE
+     * direction='outbound')` to determine how many CSR replies are
+     * still unread. Patient-flow rows leave this null forever.
+     */
+    customerLastReadAt: timestamp("customer_last_read_at", {
+      withTimezone: true,
+    }),
+
     // Assignment + SLA columns (migration 0021). assignedAdminUserId
     // mirrors the auth user id directly (no FK) so threads handled by
     // bootstrap env-var admins still work — those admins don't have

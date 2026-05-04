@@ -60,7 +60,14 @@ const fetchInAppThreadMock = vi.hoisted(() =>
       createdAt: string;
       deliveryStatus: string | null;
     }>,
+    unreadFromCsr: 0,
   })),
+);
+const fetchInAppUnreadCountMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<number>>(async () => 0),
+);
+const markInAppThreadReadMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<boolean>>(async () => true),
 );
 const appendCustomerMessageMock = vi.hoisted(() =>
   vi.fn(async () => ({
@@ -76,6 +83,8 @@ vi.mock("../../lib/messaging/in-app-conversation", async () => {
   return {
     ...actual,
     fetchInAppThread: fetchInAppThreadMock,
+    fetchInAppUnreadCount: fetchInAppUnreadCountMock,
+    markInAppThreadRead: markInAppThreadReadMock,
     appendCustomerMessage: appendCustomerMessageMock,
   };
 });
@@ -119,7 +128,15 @@ beforeEach(() => {
   logAuditMock.mockClear();
   ensureShopCustomerRowMock.mockClear();
   fetchInAppThreadMock.mockClear();
-  fetchInAppThreadMock.mockResolvedValue({ thread: null, messages: [] });
+  fetchInAppThreadMock.mockResolvedValue({
+    thread: null,
+    messages: [],
+    unreadFromCsr: 0,
+  });
+  fetchInAppUnreadCountMock.mockClear();
+  fetchInAppUnreadCountMock.mockResolvedValue(0);
+  markInAppThreadReadMock.mockClear();
+  markInAppThreadReadMock.mockResolvedValue(true);
   appendCustomerMessageMock.mockClear();
   appendCustomerMessageMock.mockResolvedValue({
     threadId: "conv_1",
@@ -143,7 +160,11 @@ describe("GET /shop/me/messages", () => {
     mockSignedIn.current = "cust_1";
     const res = await request(makeApp()).get("/shop/me/messages");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ thread: null, messages: [] });
+    expect(res.body).toEqual({
+      thread: null,
+      messages: [],
+      unreadFromCsr: 0,
+    });
     expect(fetchInAppThreadMock).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "cust_1" }),
     );
@@ -168,6 +189,7 @@ describe("GET /shop/me/messages", () => {
           deliveryStatus: null,
         },
       ],
+      unreadFromCsr: 0,
     });
     const res = await request(makeApp()).get("/shop/me/messages");
     expect(res.status).toBe(200);
@@ -347,5 +369,63 @@ describe("POST /shop/me/messages — CSR-inbox notification (Phase 6)", () => {
     expect(res.body.threadId).toBe("conv_1");
     // Audit still wrote even though notification email failed.
     expect(logAuditMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("GET /shop/me/messages/unread-count (Phase 7)", () => {
+  it("401s when no session", async () => {
+    const res = await request(makeApp()).get("/shop/me/messages/unread-count");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 0 when the customer has no thread", async () => {
+    mockSignedIn.current = "cust_1";
+    fetchInAppUnreadCountMock.mockResolvedValueOnce(0);
+    const res = await request(makeApp()).get("/shop/me/messages/unread-count");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ unreadFromCsr: 0 });
+  });
+
+  it("returns the helper's count for an existing thread", async () => {
+    mockSignedIn.current = "cust_1";
+    fetchInAppUnreadCountMock.mockResolvedValueOnce(3);
+    const res = await request(makeApp()).get("/shop/me/messages/unread-count");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ unreadFromCsr: 3 });
+    expect(fetchInAppUnreadCountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "cust_1" }),
+    );
+  });
+});
+
+describe("POST /shop/me/messages/mark-read (Phase 7)", () => {
+  it("401s when no session", async () => {
+    const res = await request(makeApp())
+      .post("/shop/me/messages/mark-read")
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("returns ok + threadUpdated true when the helper updated a row", async () => {
+    mockSignedIn.current = "cust_1";
+    markInAppThreadReadMock.mockResolvedValueOnce(true);
+    const res = await request(makeApp())
+      .post("/shop/me/messages/mark-read")
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, threadUpdated: true });
+    expect(markInAppThreadReadMock).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "cust_1" }),
+    );
+  });
+
+  it("returns ok + threadUpdated false when the customer has no thread (no-op)", async () => {
+    mockSignedIn.current = "cust_1";
+    markInAppThreadReadMock.mockResolvedValueOnce(false);
+    const res = await request(makeApp())
+      .post("/shop/me/messages/mark-read")
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, threadUpdated: false });
   });
 });
