@@ -29,7 +29,7 @@ vi.mock("../../middlewares/requireSignedIn", () =>
 
 // Stub the audit helper. Tests assert payload shape without
 // touching a real audit log.
-const logAuditMock = vi.hoisted(() => vi.fn(async () => undefined));
+const logAuditMock = vi.hoisted(() => vi.fn(async (_arg: unknown) => undefined));
 vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
@@ -215,7 +215,7 @@ describe("PUT /shop/me/clinical-info", () => {
     expect(res.status).toBe(200);
     expect(res.body.cpapDevice.manufacturer).toBe("ResMed");
     expect(logAuditMock).toHaveBeenCalledTimes(1);
-    const auditCall = logAuditMock.mock.calls[0]?.[0] as {
+    const auditCall = logAuditMock.mock.calls[0]?.[0] as unknown as {
       action: string;
       targetTable: string;
       targetId: string;
