@@ -29,6 +29,7 @@ import { applyMacro, applyLegacyFirstName } from "@/lib/admin/macro-merge";
 import { listMacros, type CsrMacro } from "@/lib/admin/csr-macros-api";
 import { useQuery } from "@tanstack/react-query";
 import { Patient360Panel } from "@/components/admin/Patient360Panel";
+import { Customer360Panel } from "@/components/admin/Customer360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
 import { useDraftAutosave } from "@/lib/admin/use-draft-autosave";
 import { setConversationStatus } from "@/lib/admin/conversation-assignment-api";
@@ -278,14 +279,14 @@ export function ConversationDetailPage({ id }: { id: string }) {
         </div>
         <aside className="space-y-4">
           {/*
-            Patient360Panel pulls patient timeline + episodes —
-            patient-flow only. For in-app threads we render a small
-            customer-context callout instead with a deep link to the
-            customer-360 page where the CSR can see saved device +
-            physician info + lifetime stats.
+            For patient-flow threads: Patient360Panel pulls timeline +
+            episodes. For in-app threads (Phase 11): Customer360Panel
+            pulls device + latest order + recent internal notes inline
+            so the CSR can answer most questions without leaving this
+            page.
           */}
           {data.channel === "in_app" && data.customerId ? (
-            <InAppCustomerContextPanel
+            <Customer360Panel
               customerId={data.customerId}
               displayName={data.customerDisplayName ?? null}
               email={data.customerEmail ?? null}
@@ -873,54 +874,6 @@ function ActionBar({
           {feedback.text}
         </p>
       )}
-    </Card>
-  );
-}
-
-/**
- * Customer-context sidebar shown in place of Patient360Panel for
- * in-app threads. Keeps the right column populated with something
- * useful (deep link to customer-360, contact crumbs) so an in-app
- * conversation doesn't render with an empty rail.
- */
-function InAppCustomerContextPanel({
-  customerId,
-  displayName,
-  email,
-}: {
-  customerId: string;
-  displayName: string | null;
-  email: string | null;
-}) {
-  return (
-    <Card>
-      <div style={{ padding: 16 }} data-testid="conv-detail-customer-panel">
-        <p
-          className="text-xs uppercase tracking-wider mb-2"
-          style={{ color: "hsl(var(--penn-gold-deep))" }}
-        >
-          Customer
-        </p>
-        <h3
-          className="text-base font-semibold mb-1"
-          style={{ color: "hsl(var(--ink-1))" }}
-        >
-          {displayName ?? email ?? "Shop customer"}
-        </h3>
-        {email && displayName && (
-          <p className="text-xs mb-3" style={{ color: "hsl(var(--ink-3))" }}>
-            {email}
-          </p>
-        )}
-        <Link
-          href={`/admin/shop/customers/${encodeURIComponent(customerId)}`}
-          className="text-xs underline decoration-dotted"
-          style={{ color: "hsl(var(--ink-1))" }}
-          data-testid="conv-detail-customer-360-link"
-        >
-          View full customer profile →
-        </Link>
-      </div>
     </Card>
   );
 }
