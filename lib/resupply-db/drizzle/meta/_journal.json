@@ -239,6 +239,13 @@
       "when": 1810627200000,
       "tag": "0031_back_in_stock_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1810713600000,
+      "tag": "0032_shop_customer_clinical_info",
+      "breakpoints": true
     }
   ]
 }

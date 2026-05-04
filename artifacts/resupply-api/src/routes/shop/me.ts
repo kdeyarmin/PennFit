@@ -73,6 +73,15 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
       email: row.emailLower,
       displayName: row.displayName,
       shippingAddress: row.shippingAddress ?? null,
+      // Clinical info added in 0032 — both nullable, both freshly
+      // null on a brand-new account. The dedicated
+      // GET /shop/me/clinical-info endpoint returns the same shape
+      // alone for the account-page sub-section, but surfacing here
+      // means callers that already fetch /shop/me (e.g. the cart
+      // for a future "ship to my CPAP" handoff) don't need a
+      // second round-trip to read the device.
+      cpapDevice: row.cpapDevice ?? null,
+      physicianInfo: row.physicianInfo ?? null,
     },
     savedCard: row.defaultPaymentMethodId
       ? {

@@ -78,6 +78,7 @@ import {
   formatMoneyCents,
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
+import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 
@@ -284,6 +285,14 @@ function AccountInner() {
             profile={data.profile!}
             onSaved={() => void reload()}
           />
+          {/*
+            Device + physician info — added in the
+            customer-clinical-info-and-messaging-foundation branch.
+            Both fields are stored on shop_customers as JSONB and
+            persist via PUT /shop/me/clinical-info, which audit-logs
+            every change with a non-PHI metadata envelope.
+          */}
+          <ClinicalInfoSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection
