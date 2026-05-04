@@ -13,12 +13,15 @@
     "format:check": "prettier --check .",
     "test": "pnpm -r --if-present run test",
     "test:coverage": "pnpm -r --if-present run test:coverage",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:e2e:ui": "playwright test --ui --config e2e/playwright.config.ts",
     "audit": "pnpm audit --audit-level=high"
   },
   "private": true,
   "packageManager": "pnpm@10.33.2",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.49.0",
     "@vitest/coverage-v8": "^2.1.8",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
