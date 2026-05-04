@@ -267,6 +267,13 @@
       "when": 1810972800000,
       "tag": "0035_shop_customer_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1811059200000,
+      "tag": "0036_conversations_in_app_notification_throttle",
+      "breakpoints": true
     }
   ]
 }

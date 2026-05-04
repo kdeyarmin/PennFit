@@ -345,6 +345,20 @@ async function handleInAppReply(input: {
   });
 }
 
+/**
+ * Throttle window for in-app reply notification emails (Phase 13).
+ * If a CSR posts multiple replies on the same thread within this
+ * window, only the first triggers an email — subsequent replies are
+ * silently swallowed (logged at debug level). The customer still
+ * sees every message in /account on next sign-in.
+ *
+ * 15 min is short enough that a customer who's been away for a few
+ * hours still gets a fresh nudge, but long enough to absorb a
+ * multi-message CSR clarification ("Hi Anna — actually one more
+ * question — and one more thing…").
+ */
+const IN_APP_NOTIFICATION_THROTTLE_MS = 15 * 60 * 1000;
+
 async function tryNotifyCustomerOfReply(input: {
   conversationId: string;
   bodyLength: number;
@@ -358,6 +372,7 @@ async function tryNotifyCustomerOfReply(input: {
       email: shopCustomers.emailLower,
       displayName: shopCustomers.displayName,
       prefs: shopCustomers.communicationPreferences,
+      lastNotifiedAt: conversations.lastInAppNotificationAt,
     })
     .from(conversations)
     .innerJoin(
@@ -383,6 +398,24 @@ async function tryNotifyCustomerOfReply(input: {
   };
   if (!prefs.emailInAppReplyNotifications) {
     return;
+  }
+
+  // Throttle: skip if we've sent a notification on this thread within
+  // the throttle window. Phase 13. Null = never sent (or pre-13 row),
+  // which always passes the gate.
+  if (row.lastNotifiedAt) {
+    const sinceMs = Date.now() - row.lastNotifiedAt.getTime();
+    if (sinceMs < IN_APP_NOTIFICATION_THROTTLE_MS) {
+      logger.debug(
+        {
+          conversation_id: input.conversationId,
+          since_ms: sinceMs,
+          throttle_ms: IN_APP_NOTIFICATION_THROTTLE_MS,
+        },
+        "in_app_reply_notification: throttled (recent send on same thread)",
+      );
+      return;
+    }
   }
 
   let sg;
@@ -421,6 +454,16 @@ async function tryNotifyCustomerOfReply(input: {
       kind: "in_app_reply_notification",
     },
   });
+
+  // Stamp the throttle timestamp AFTER a successful SendGrid send.
+  // Stamping before would make a SendGrid 5xx silently mute the next
+  // reply too, which is wrong — we want the next reply to retry.
+  // The rare race where two replies dispatch concurrently before the
+  // first stamp lands is acceptable for a notification email.
+  await db
+    .update(conversations)
+    .set({ lastInAppNotificationAt: new Date() })
+    .where(eq(conversations.id, input.conversationId));
 }
 
 export default router;
