@@ -227,14 +227,14 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "timeline" && (
           <TimelineTab
             patientId={id}
-            onConversationClick={(cid) => setLocation(`/conversations/${cid}`)}
+            onConversationClick={(cid) => setLocation(`/admin/conversations/${cid}`)}
           />
         )}
         {tab === "episodes" && <EpisodesTab episodes={data.episodes} />}
         {tab === "conversations" && (
           <ConversationsTab
             conversations={data.conversations}
-            onRowClick={(cid) => setLocation(`/conversations/${cid}`)}
+            onRowClick={(cid) => setLocation(`/admin/conversations/${cid}`)}
           />
         )}
         {tab === "fulfillments" && (
