@@ -16,10 +16,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+import {
+  makeRequireSignedInMock,
+  type MockSignedInProfile,
+} from "../../test-helpers/auth-mocks";
 
 const { mockSignedIn } = vi.hoisted(() => ({
-  mockSignedIn: { current: null as string | null },
+  mockSignedIn: {
+    current: null as null | string | MockSignedInProfile,
+  },
 }));
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
@@ -82,6 +87,24 @@ vi.mock("@workspace/resupply-db", async () => {
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
+// SendGrid notification — Phase 6. The test toggles
+// SHOP_CSR_INBOX_EMAIL in beforeEach; the mocked client lets us
+// assert the subject + recipient without real env vars.
+const sendEmailMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<{ messageId: string }>>(async () => ({
+    messageId: "sg_csr_1",
+  })),
+);
+vi.mock("@workspace/resupply-email", async () => {
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
+  return {
+    ...actual,
+    createSendgridClient: () => ({ sendEmail: sendEmailMock }),
+  };
+});
+
 import meMessagesRouter from "./me-messages";
 
 function makeApp(): Express {
@@ -103,6 +126,11 @@ beforeEach(() => {
     messageId: "msg_1",
     threadCreated: true,
   });
+  sendEmailMock.mockClear();
+  sendEmailMock.mockResolvedValue({ messageId: "sg_csr_1" });
+  // Default: notification disabled. Individual tests opt in.
+  delete process.env["SHOP_CSR_INBOX_EMAIL"];
+  delete process.env["SHOP_PUBLIC_BASE_URL"];
 });
 
 describe("GET /shop/me/messages", () => {
@@ -220,5 +248,104 @@ describe("POST /shop/me/messages", () => {
     expect(appendCustomerMessageMock).toHaveBeenCalledWith(
       expect.objectContaining({ body: "hello there" }),
     );
+  });
+});
+
+describe("POST /shop/me/messages — CSR-inbox notification (Phase 6)", () => {
+  it("does NOT send when SHOP_CSR_INBOX_EMAIL is unset", async () => {
+    mockSignedIn.current = "cust_1";
+    // No env var set — notification disabled.
+    const res = await request(makeApp())
+      .post("/shop/me/messages")
+      .send({ body: "hi" });
+    expect(res.status).toBe(201);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("sends a subject-only notification when SHOP_CSR_INBOX_EMAIL is set", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    process.env["SHOP_PUBLIC_BASE_URL"] = "https://pennpaps.com";
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: "Anna Singh",
+    };
+
+    const res = await request(makeApp())
+      .post("/shop/me/messages")
+      .send({ body: "I have a question about my mask seal." });
+
+    expect(res.status).toBe(201);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const call = sendEmailMock.mock.calls[0]?.[0] as {
+      to: string;
+      subject: string;
+      text: string;
+      html: string;
+    };
+    expect(call.to).toBe("csr-inbox@pennpaps.com");
+    // First message → "New customer message"
+    expect(call.subject).toContain("New customer message");
+    expect(call.subject).toContain("Anna Singh");
+    // Critical: NO message body in subject or body text/html.
+    expect(call.subject).not.toContain("mask seal");
+    expect(call.text).not.toContain("mask seal");
+    expect(call.html).not.toContain("mask seal");
+    // Link to the inbox thread surfaces.
+    expect(call.text).toContain(
+      "https://pennpaps.com/admin/conversations/conv_1",
+    );
+  });
+
+  it("uses 'Reply on customer message' subject for follow-ups", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    appendCustomerMessageMock.mockResolvedValueOnce({
+      threadId: "conv_1",
+      messageId: "msg_2",
+      threadCreated: false, // follow-up on existing thread
+    });
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: "Anna",
+    };
+
+    await request(makeApp()).post("/shop/me/messages").send({ body: "ping" });
+
+    const call = sendEmailMock.mock.calls[0]?.[0] as { subject: string };
+    expect(call.subject).toContain("Reply on customer message");
+  });
+
+  it("falls back to email when displayName is missing", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: null,
+    };
+
+    await request(makeApp()).post("/shop/me/messages").send({ body: "ping" });
+
+    const call = sendEmailMock.mock.calls[0]?.[0] as { subject: string };
+    expect(call.subject).toContain("shopper@example.com");
+  });
+
+  it("treats SendGrid failure as best-effort (still 201)", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    sendEmailMock.mockRejectedValueOnce(new Error("sendgrid down"));
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: "Anna",
+    };
+
+    const res = await request(makeApp())
+      .post("/shop/me/messages")
+      .send({ body: "ping" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.threadId).toBe("conv_1");
+    // Audit still wrote even though notification email failed.
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
   });
 });
