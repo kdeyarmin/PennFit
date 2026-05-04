@@ -115,6 +115,17 @@ const listQuery = z.object({
     .default("last_order"),
   order: z.enum(["asc", "desc"]).default("desc"),
   subscription: z.enum(["active", "none"]).optional(),
+  /**
+   * Phase 9 — restrict the directory to customers with an in-app
+   * conversation currently in `awaiting_admin` status (the customer
+   * is waiting on a CSR reply). Coerced from the URL query string,
+   * so `?awaitingReply=1` and `?awaitingReply=true` both work; any
+   * other value is treated as falsy.
+   */
+  awaitingReply: z
+    .union([z.literal("1"), z.literal("true")])
+    .optional()
+    .transform((v) => v !== undefined),
 });
 
 interface ListRow {
@@ -127,6 +138,12 @@ interface ListRow {
   lifetime_value_cents: number;
   last_order_at: string | Date | null;
   has_active_subscription: boolean;
+  /**
+   * Phase 9: true when the customer's in-app conversation is in
+   * `awaiting_admin` status. Drives the "Awaiting reply" badge on
+   * the directory + the new `?awaitingReply=1` filter.
+   */
+  in_app_needs_reply: boolean;
 }
 
 router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
@@ -138,7 +155,8 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
     });
     return;
   }
-  const { q, page, pageSize, sortBy, order, subscription } = parsed.data;
+  const { q, page, pageSize, sortBy, order, subscription, awaitingReply } =
+    parsed.data;
   const offset = (page - 1) * pageSize;
 
   // ILIKE pattern is built from a trimmed/length-capped Zod-validated
@@ -169,6 +187,8 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
   // bring in per-customer order rollup and an "any active sub" flag.
   // Tie-break by customer_id for stable pagination across pages
   // when the primary sort key has duplicates (e.g. lifetime=0).
+  const awaitingReplyFilterSql = awaitingReply ? sql`true` : sql`false`;
+
   const listResult = (await db.execute(sql`
     WITH order_agg AS (
       SELECT
@@ -187,6 +207,17 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
       FROM resupply.shop_subscriptions
       WHERE status = 'active'
       GROUP BY customer_id
+    ),
+    -- Phase 9: which customers have an in-app conversation currently
+    -- in awaiting_admin? The partial index added in 0033 keeps this
+    -- LEFT JOIN cheap (one row per customer at most). DISTINCT in
+    -- case a future "multi-thread per customer" policy lands.
+    needs_reply_agg AS (
+      SELECT DISTINCT customer_id
+      FROM resupply.conversations
+      WHERE channel = 'in_app'
+        AND status = 'awaiting_admin'
+        AND customer_id IS NOT NULL
     )
     SELECT
       c.customer_id              AS user_id,
@@ -197,16 +228,19 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
       COALESCE(o.orders_count, 0)  AS orders_count,
       COALESCE(o.lifetime_cents, 0) AS lifetime_value_cents,
       o.last_order_at              AS last_order_at,
-      COALESCE(s.has_active, false) AS has_active_subscription
+      COALESCE(s.has_active, false) AS has_active_subscription,
+      (n.customer_id IS NOT NULL)  AS in_app_needs_reply
     FROM resupply.shop_customers c
     LEFT JOIN order_agg o ON o.customer_id = c.customer_id
     LEFT JOIN sub_agg s   ON s.customer_id = c.customer_id
+    LEFT JOIN needs_reply_agg n ON n.customer_id = c.customer_id
     WHERE (${qPattern}::text IS NULL OR c.email_lower ILIKE ${qPattern})
       AND (
         ${subFilter}::text IS NULL
         OR (${subFilter}::text = 'active' AND s.has_active IS TRUE)
         OR (${subFilter}::text = 'none' AND s.has_active IS NOT TRUE)
       )
+      AND (${awaitingReplyFilterSql} = false OR n.customer_id IS NOT NULL)
     ORDER BY ${orderClauseExpr} ${orderDirSql}, c.customer_id ASC
     LIMIT ${pageSize} OFFSET ${offset}
   `)) as unknown as { rows: ListRow[] };
@@ -219,16 +253,25 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
       FROM resupply.shop_subscriptions
       WHERE status = 'active'
       GROUP BY customer_id
+    ),
+    needs_reply_agg AS (
+      SELECT DISTINCT customer_id
+      FROM resupply.conversations
+      WHERE channel = 'in_app'
+        AND status = 'awaiting_admin'
+        AND customer_id IS NOT NULL
     )
     SELECT COUNT(*)::int AS total
     FROM resupply.shop_customers c
     LEFT JOIN sub_agg s ON s.customer_id = c.customer_id
+    LEFT JOIN needs_reply_agg n ON n.customer_id = c.customer_id
     WHERE (${qPattern}::text IS NULL OR c.email_lower ILIKE ${qPattern})
       AND (
         ${subFilter}::text IS NULL
         OR (${subFilter}::text = 'active' AND s.has_active IS TRUE)
         OR (${subFilter}::text = 'none' AND s.has_active IS NOT TRUE)
       )
+      AND (${awaitingReplyFilterSql} = false OR n.customer_id IS NOT NULL)
   `)) as unknown as { rows: Array<{ total: number }> };
 
   const total = totalResult.rows[0]?.total ?? 0;
@@ -243,6 +286,7 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
       sortBy,
       qPresent: !!q,
       hasSubFilter: !!subscription,
+      awaitingReplyFilter: awaitingReply,
       adminEmail: req.adminEmail,
     },
     "admin.shop.customers.list",
@@ -260,6 +304,7 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
         ? new Date(r.last_order_at).toISOString()
         : null,
       hasActiveSubscription: r.has_active_subscription,
+      inAppNeedsReply: r.in_app_needs_reply,
       createdAt: new Date(r.created_at).toISOString(),
     })),
     total,

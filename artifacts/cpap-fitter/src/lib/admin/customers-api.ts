@@ -179,6 +179,14 @@ export interface AdminCustomerListRow {
   lifetimeValueCents: number;
   lastOrderAt: string | null;
   hasActiveSubscription: boolean;
+  /**
+   * Phase 9: true when the customer's in-app conversation is in
+   * `awaiting_admin` status — i.e. a CSR owes them a reply. Drives
+   * the "Awaiting reply" badge on the directory.
+   * Optional + nullable so older clients hitting an upgraded server
+   * don't crash if the field is missing.
+   */
+  inAppNeedsReply?: boolean;
   createdAt: string;
 }
 
@@ -199,6 +207,12 @@ export interface AdminCustomerListInput {
    * undefined  → both.
    */
   subscription?: "active" | "none";
+  /**
+   * Phase 9: when true, restrict to customers whose in-app
+   * conversation is currently in `awaiting_admin` status. Surfaces
+   * as `?awaitingReply=1` on the wire.
+   */
+  awaitingReply?: boolean;
 }
 
 export interface AdminCustomerListResponse {
@@ -218,6 +232,7 @@ export async function listAdminCustomers(
   if (input.sortBy) qs.set("sortBy", input.sortBy);
   if (input.order) qs.set("order", input.order);
   if (input.subscription) qs.set("subscription", input.subscription);
+  if (input.awaitingReply) qs.set("awaitingReply", "1");
   const suffix = qs.toString();
   const res = await fetch(
     `/resupply-api/admin/shop/customers${suffix ? `?${suffix}` : ""}`,
