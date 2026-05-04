@@ -48,6 +48,7 @@ import {
   type ShopProductsResponse,
 } from "@/lib/shop-api";
 import { useCart } from "@/hooks/use-cart";
+import { useSearchShortcut } from "@/hooks/use-search-shortcut";
 import { StarRating } from "@/components/star-rating";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import {
@@ -161,6 +162,16 @@ export function Shop() {
   const retry = useCallback(() => {
     setAttempt((n) => n + 1);
   }, []);
+
+  // "/" anywhere on /shop jumps focus into the search input rendered
+  // by ShopFilterBar. The bar lives in a child component and doesn't
+  // expose a ref, so we resolve it by data-testid (already wired for
+  // tests). Disabled while the catalog is still loading to avoid
+  // grabbing a key event before the input exists.
+  useSearchShortcut({
+    selector: '[data-testid="shop-search-input"]',
+    disabled: loading,
+  });
 
   useEffect(() => {
     let active = true;

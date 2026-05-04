@@ -16,6 +16,7 @@ import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
+import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -96,18 +97,16 @@ export function SignUpPage() {
 
         <label className="block text-sm">
           <span className="font-medium">Password</span>
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             minLength={12}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            showStrength
+            helperText="At least 12 characters. Longer is stronger — passphrases of 4+ random words work great."
+            inputTestId="signup-password-input"
           />
-          <span className="block text-xs mt-1 text-muted-foreground">
-            At least 12 characters.
-          </span>
         </label>
 
         {submitError && (

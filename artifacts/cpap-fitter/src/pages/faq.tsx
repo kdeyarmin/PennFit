@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useSearchShortcut } from "@/hooks/use-search-shortcut";
 import {
   Accordion,
   AccordionContent,
@@ -18,6 +20,8 @@ import {
   Wrench,
   PhoneCall,
   ArrowRight,
+  Search,
+  X,
 } from "lucide-react";
 
 type FaqEntry = { q: string; a: React.ReactNode };
@@ -421,11 +425,75 @@ const sections: FaqSection[] = [
   },
 ];
 
+/**
+ * Walk a React node tree and return its plain-text content.
+ * Used by the FAQ search to make answer copy searchable without
+ * forcing each entry to ship a parallel `searchText` string.
+ * Strings + numbers are stringified, fragments + elements recurse,
+ * everything else is dropped (e.g. icons, booleans).
+ */
+function nodeToText(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean")
+    return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeToText).join(" ");
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return nodeToText(node.props.children);
+  }
+  return "";
+}
+
+interface FaqMatch {
+  sectionId: string;
+  sectionTitle: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  index: number;
+  q: string;
+  a: React.ReactNode;
+}
+
+function filterFaqs(query: string): FaqMatch[] {
+  const q = query.trim().toLowerCase();
+  if (q.length === 0) return [];
+  const out: FaqMatch[] = [];
+  for (const section of sections) {
+    section.items.forEach((item, index) => {
+      const haystack = `${item.q} ${nodeToText(item.a)}`.toLowerCase();
+      if (haystack.includes(q)) {
+        out.push({
+          sectionId: section.id,
+          sectionTitle: section.title,
+          Icon: section.Icon,
+          index,
+          q: item.q,
+          a: item.a,
+        });
+      }
+    });
+  }
+  return out;
+}
+
 export function Faq() {
   useDocumentTitle(
     "Frequently asked questions",
     "Answers about CPAP fitting, supplies, prescriptions, insurance, and resupply from Penn Home Medical Supply.",
   );
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const trimmed = query.trim();
+  const isSearching = trimmed.length > 0;
+  // Memoize so a parent re-render (e.g. document title effect) doesn't
+  // re-walk every Q&A node tree on each render. Cheap to compute, but
+  // the search runs on every keystroke — keep it tight.
+  const matches = useMemo(() => filterFaqs(query), [query]);
+
+  // Press "/" anywhere on the page to jump focus into the FAQ
+  // search, mirroring the convention used by Slack, GitHub, Discord,
+  // et al. The hook ignores the keypress when the user is already
+  // typing in another input.
+  useSearchShortcut({ ref: searchRef });
+
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 space-y-14 animate-shimmer-in">
       {/* Hero */}
@@ -453,11 +521,74 @@ export function Faq() {
           covering CPAP basics, choosing a mask, ordering, daily care, and
           common troubleshooting.
         </p>
+
+        {/*
+          Inline FAQ search. Filters across every Q&A's question text
+          AND its rendered answer body — the answer copy is the long
+          tail of useful keyword matches (e.g. "humidifier", "leak",
+          "Medicare"). When the input has a non-empty query the
+          section index + per-section accordions hide and a flat
+          results list takes their place. Empty input restores the
+          original grouped layout. Press "/" anywhere on the page to
+          jump focus into the input.
+        */}
+        <div className="max-w-xl mx-auto pt-2">
+          <div className="relative">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+              aria-hidden="true"
+            />
+            <Input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search the FAQ — try “mask leak”, “Medicare”, “cleaning”…"
+              aria-label="Search frequently asked questions"
+              className="pl-9 pr-20 h-11 bg-white"
+              data-testid="faq-search-input"
+            />
+            {isSearching ? (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+                aria-label="Clear FAQ search"
+                data-testid="faq-search-clear"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : (
+              <kbd
+                aria-hidden="true"
+                className="hidden sm:inline-flex absolute right-2 top-1/2 -translate-y-1/2 items-center justify-center h-6 min-w-6 px-1.5 rounded border border-border/60 bg-secondary/40 text-[11px] font-mono font-semibold text-muted-foreground"
+                title="Press / to search"
+              >
+                /
+              </kbd>
+            )}
+          </div>
+          {isSearching && (
+            <p
+              className="mt-2 text-xs text-muted-foreground tabular-nums text-left"
+              aria-live="polite"
+              data-testid="faq-search-result-count"
+            >
+              {matches.length === 0
+                ? `No matches for “${trimmed}”.`
+                : `${matches.length} ${
+                    matches.length === 1 ? "match" : "matches"
+                  } for “${trimmed}”.`}
+            </p>
+          )}
+        </div>
       </header>
 
-      {/* Section index — quick jump links */}
+      {/* Section index — quick jump links. Hidden during a search so
+          the results take centre stage. */}
       <nav
         aria-label="FAQ sections"
+        hidden={isSearching}
         className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3"
       >
         {sections.map(({ id, title, Icon }) => (
@@ -477,41 +608,112 @@ export function Faq() {
         ))}
       </nav>
 
-      {/* Sections */}
-      {sections.map(({ id, title, blurb, Icon, items }) => (
-        <section key={id} id={id} className="space-y-4 scroll-mt-24">
-          <div className="flex items-start gap-4">
-            <div className="h-12 w-12 rounded-2xl icon-halo-navy flex items-center justify-center shrink-0">
-              <Icon className="w-5 h-5" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-              <p className="text-muted-foreground">{blurb}</p>
-            </div>
-          </div>
-          <div className="glass-card rounded-2xl p-2 sm:p-4">
-            <Accordion type="single" collapsible className="w-full">
-              {items.map(({ q, a }, idx) => (
-                <AccordionItem
-                  key={q}
-                  value={`${id}-${idx}`}
-                  className="border-border/50 last:border-b-0"
+      {/* Search results — flat list across every section. We render
+          each match as its own collapsed Accordion (rather than one
+          Accordion with many items) because matches from different
+          sections shouldn't share single-open behaviour, and a per-
+          match Accordion lets us label every result with its source
+          section without a custom expander. */}
+      {isSearching && (
+        <section
+          aria-label="FAQ search results"
+          className="space-y-3"
+          data-testid="faq-search-results"
+        >
+          {matches.length === 0 ? (
+            <div
+              className="glass-card rounded-2xl p-6 text-center"
+              data-testid="faq-search-empty"
+            >
+              <div className="mx-auto h-10 w-10 rounded-xl icon-halo-navy flex items-center justify-center text-[hsl(var(--penn-navy))] mb-3">
+                <Search className="w-4 h-4" />
+              </div>
+              <h2 className="text-base font-semibold mb-1">
+                No matching answers
+              </h2>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Try a different keyword, or{" "}
+                <Link
+                  href="/learn"
+                  className="text-primary underline underline-offset-2"
                 >
-                  <AccordionTrigger
-                    className="text-left text-base font-semibold hover:no-underline hover:text-primary px-2"
-                    data-testid={`faq-trigger-${id}-${idx}`}
+                  browse the Learn library
+                </Link>{" "}
+                for longer-form guides.
+              </p>
+            </div>
+          ) : (
+            matches.map(({ sectionId, sectionTitle, Icon, index, q, a }) => (
+              <div
+                key={`${sectionId}-${index}`}
+                className="glass-card rounded-2xl p-2 sm:p-4"
+                data-testid={`faq-search-match-${sectionId}-${index}`}
+              >
+                <div className="px-2 pt-2 pb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  <Icon className="w-3.5 h-3.5 text-[hsl(var(--penn-navy))]/70" />
+                  {sectionTitle}
+                </div>
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem
+                    value={`${sectionId}-${index}`}
+                    className="border-border/50 last:border-b-0"
                   >
-                    {q}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground leading-relaxed text-sm px-2 pb-4">
-                    {a}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </div>
+                    <AccordionTrigger
+                      className="text-left text-base font-semibold hover:no-underline hover:text-primary px-2"
+                      data-testid={`faq-search-trigger-${sectionId}-${index}`}
+                    >
+                      {q}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground leading-relaxed text-sm px-2 pb-4">
+                      {a}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
+            ))
+          )}
         </section>
-      ))}
+      )}
+
+      {/* Sections — full grouped layout. Hidden during search so the
+          flat results list takes the page. */}
+      {!isSearching &&
+        sections.map(({ id, title, blurb, Icon, items }) => (
+          <section key={id} id={id} className="space-y-4 scroll-mt-24">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl icon-halo-navy flex items-center justify-center shrink-0">
+                <Icon className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-2xl font-semibold tracking-tight">
+                  {title}
+                </h2>
+                <p className="text-muted-foreground">{blurb}</p>
+              </div>
+            </div>
+            <div className="glass-card rounded-2xl p-2 sm:p-4">
+              <Accordion type="single" collapsible className="w-full">
+                {items.map(({ q, a }, idx) => (
+                  <AccordionItem
+                    key={q}
+                    value={`${id}-${idx}`}
+                    className="border-border/50 last:border-b-0"
+                  >
+                    <AccordionTrigger
+                      className="text-left text-base font-semibold hover:no-underline hover:text-primary px-2"
+                      data-testid={`faq-trigger-${id}-${idx}`}
+                    >
+                      {q}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground leading-relaxed text-sm px-2 pb-4">
+                      {a}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
+          </section>
+        ))}
 
       {/* Still have questions */}
       <section>

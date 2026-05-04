@@ -18,6 +18,7 @@ import { Link } from "wouter";
 import { Heart, Trash2, ShoppingCart, ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import {
   fetchShopProducts,
   formatMoneyCents,
@@ -29,6 +30,8 @@ import { removeFromWishlist, useWishlist } from "@/lib/wishlist";
 
 export function ShopWishlist() {
   const { ids } = useWishlist();
+  const { addItem } = useCart();
+  const { toast } = useToast();
   const [catalog, setCatalog] = useState<ShopProductView[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +84,51 @@ export function ShopWishlist() {
     for (const id of stale) removeFromWishlist(id);
   }, [catalog, ids]);
 
+  // In-stock subset — drives both the per-row Add buttons (which
+  // already gate on stockCount) and the bulk Move-all action below.
+  const inStockItems = useMemo(
+    () =>
+      items.filter(
+        (p) => !(typeof p.stockCount === "number" && p.stockCount <= 0),
+      ),
+    [items],
+  );
+
+  function handleMoveAllToCart() {
+    if (inStockItems.length === 0) return;
+    let added = 0;
+    for (const product of inStockItems) {
+      const result = addItem({
+        productId: product.id,
+        priceId: product.price.id,
+        name: product.name,
+        unitAmountCents: product.price.unitAmount,
+        currency: product.price.currency,
+        imageUrl: resolveProductImage(product.imageUrl),
+        isBundle: product.isBundle,
+        // Bulk Move stays consistent with the per-row Move button —
+        // always one-time. Subscriptions remain a per-product opt-in
+        // on the PDP (which is the only surface that can show the
+        // cadence the shopper is committing to).
+        mode: "one_time" as const,
+        recurringPriceId: null,
+        recurringIntervalLabel: null,
+        stockCount: product.stockCount,
+      });
+      if (result.ok) {
+        removeFromWishlist(product.id);
+        added += 1;
+      }
+    }
+    toast({
+      title: added > 0 ? "Added to cart" : "Nothing added",
+      description:
+        added > 0
+          ? `${added} item${added === 1 ? "" : "s"} moved from your saved list to your cart.`
+          : "Items couldn't be added — they may be out of stock.",
+    });
+  }
+
   return (
     <div className="container mx-auto px-4 md:px-6 py-10 md:py-14 max-w-5xl">
       <Link
@@ -121,14 +169,50 @@ export function ShopWishlist() {
       ) : items.length === 0 ? (
         <EmptyState />
       ) : (
-        <div
-          className="grid grid-cols-1 md:grid-cols-2 gap-5"
-          data-testid="wishlist-grid"
-        >
-          {items.map((p) => (
-            <WishlistRow key={p.id} product={p} />
-          ))}
-        </div>
+        <>
+          {/* Bulk-action toolbar — only renders when at least one
+              in-stock item is present. Hidden in the all-out-of-stock
+              edge case so the button isn't permanently disabled. */}
+          {inStockItems.length > 0 && (
+            <div
+              className="mb-4 flex items-center justify-between flex-wrap gap-3"
+              data-testid="wishlist-bulk-toolbar"
+            >
+              <div className="text-sm text-muted-foreground">
+                {items.length} saved
+                {inStockItems.length !== items.length && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span className="text-amber-700">
+                      {items.length - inStockItems.length} out of stock
+                    </span>
+                  </>
+                )}
+              </div>
+              <Button
+                size="sm"
+                onClick={handleMoveAllToCart}
+                data-testid="wishlist-move-all"
+              >
+                <ShoppingCart className="w-3.5 h-3.5 mr-1.5" />
+                Move{" "}
+                {inStockItems.length === items.length
+                  ? "all"
+                  : "in-stock items"}{" "}
+                to cart
+              </Button>
+            </div>
+          )}
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 gap-5"
+            data-testid="wishlist-grid"
+          >
+            {items.map((p) => (
+              <WishlistRow key={p.id} product={p} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

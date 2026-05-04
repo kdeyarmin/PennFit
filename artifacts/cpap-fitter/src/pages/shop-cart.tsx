@@ -29,8 +29,14 @@ import {
 
 import { Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useCart } from "@/hooks/use-cart";
-import { addToWishlist, isInWishlist } from "@/lib/wishlist";
+import { ToastAction } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast";
+import { useCart, type CartItem } from "@/hooks/use-cart";
+import {
+  addToWishlist,
+  isInWishlist,
+  removeFromWishlist,
+} from "@/lib/wishlist";
 import {
   fetchShopProducts,
   formatMoneyCents,
@@ -95,9 +101,58 @@ export function ShopCart() {
     totalCents,
     setQuantity,
     removeItem,
+    addItem,
     setItemMode,
     replaceItems,
   } = useCart();
+  const { toast } = useToast();
+
+  /**
+   * Remove a cart line and surface an Undo toast. The snapshot
+   * captures the full CartItem at click time so Undo can replay the
+   * exact quantity / mode / subscription cadence — not just the SKU.
+   * If the shopper undoes, we also re-stamp the wishlist (when the
+   * removal had previously been a "Save for later" click); see
+   * `handleSaveForLater` below for how the two flows compose.
+   */
+  function handleRemove(it: CartItem, opts?: { savedForLater?: boolean }) {
+    const snapshot: CartItem = { ...it };
+    removeItem(it.priceId);
+    toast({
+      title: opts?.savedForLater ? "Saved for later" : "Removed from cart",
+      description: opts?.savedForLater
+        ? `“${it.name}” moved to your saved items.`
+        : `“${it.name}” removed.`,
+      action: (
+        <ToastAction
+          altText={`Undo removing ${it.name}`}
+          onClick={() => {
+            // Re-add at the original quantity. addItem caps at 20
+            // and skips out-of-stock; both are correct fallbacks
+            // for an Undo a few seconds after the original click.
+            addItem(snapshot, snapshot.quantity);
+            if (opts?.savedForLater) {
+              // Symmetrical undo: pull it back out of the wishlist
+              // since we put it there during Save-for-later. Safe
+              // even if the shopper had already wishlisted it
+              // independently — we only added it during this click.
+              removeFromWishlist(snapshot.productId);
+            }
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    });
+  }
+
+  /** Wishlist-bound counterpart to handleRemove. */
+  function handleSaveForLater(it: CartItem) {
+    if (!isInWishlist(it.productId)) {
+      addToWishlist(it.productId);
+    }
+    handleRemove(it, { savedForLater: true });
+  }
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Reorder breadcrumb — populated from sessionStorage on mount if the
@@ -569,12 +624,7 @@ export function ShopCart() {
                     */}
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!isInWishlist(it.productId)) {
-                          addToWishlist(it.productId);
-                        }
-                        removeItem(it.priceId);
-                      }}
+                      onClick={() => handleSaveForLater(it)}
                       className="text-xs text-muted-foreground hover:text-[hsl(var(--penn-navy))] flex items-center gap-1.5 transition-colors"
                       data-testid={`cart-save-for-later-${it.priceId}`}
                     >
@@ -582,7 +632,7 @@ export function ShopCart() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => removeItem(it.priceId)}
+                      onClick={() => handleRemove(it)}
                       className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1.5 transition-colors"
                       data-testid={`cart-remove-${it.priceId}`}
                     >
