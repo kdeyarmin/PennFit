@@ -820,7 +820,6 @@
       hsl(var(--penn-gold) / 0.55) 50%,
       hsl(var(--penn-cyan) / 0.45) 58%,
       hsl(var(--penn-navy) / 0.18) 78%,
-
       transparent 100%);
     box-shadow: 0 1px 0 hsl(var(--penn-platinum) / 0.45);
   }
