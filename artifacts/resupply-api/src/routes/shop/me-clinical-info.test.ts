@@ -29,7 +29,9 @@ vi.mock("../../middlewares/requireSignedIn", () =>
 
 // Stub the audit helper. Tests assert payload shape without
 // touching a real audit log.
-const logAuditMock = vi.hoisted(() => vi.fn(async () => undefined));
+const logAuditMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
+);
 vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));

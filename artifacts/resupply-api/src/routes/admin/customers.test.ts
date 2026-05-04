@@ -329,11 +329,19 @@ function pushDetailQueue(opts: {
   subscriptions?: Array<Record<string, unknown>>;
   abandonedCart?: Record<string, unknown> | null;
   reviews?: Array<Record<string, unknown>>;
+  /**
+   * In-app conversation summary (added in PR #54). Defaults to no
+   * thread (empty rows) so existing tests don't have to be aware of
+   * the new query unless they specifically exercise the in-app
+   * surface. Pushed in the same order as the route's SQL: between
+   * reviews and stats.
+   */
+  inAppConversation?: Record<string, unknown> | null;
   stats?: Record<string, unknown>;
 }): void {
   executeQueue.push({ rows: opts.customer ? [opts.customer] : [] });
   executeQueue.push({ rows: opts.orders });
-  // The remaining four queries are only issued if the 404 short-
+  // The remaining queries are only issued if the 404 short-
   // circuit was NOT triggered.
   const not404 = !!opts.customer || opts.orders.length > 0;
   if (!not404) return;
@@ -342,6 +350,9 @@ function pushDetailQueue(opts: {
     rows: opts.abandonedCart ? [opts.abandonedCart] : [],
   });
   executeQueue.push({ rows: opts.reviews ?? [] });
+  executeQueue.push({
+    rows: opts.inAppConversation ? [opts.inAppConversation] : [],
+  });
   executeQueue.push({
     rows: [
       opts.stats ?? {
@@ -662,6 +673,165 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
     expect(res.body.stats.ordersCount).toBe(0);
     expect(res.body.stats.avgOrderValueCents).toBe(0);
     expect(res.body.abandonedCart).toBeNull();
+  });
+
+  // ─── PR #54: clinical info + in-app conversation surfacing ─────
+
+  it("surfaces clinicalInfo from shop_customers (PR #54)", async () => {
+    stubVerifiedAdmin();
+    pushDetailQueue({
+      customer: {
+        user_id: VALID_USER_ID,
+        display_name: "Anna Singh",
+        email_lower: "anna@example.com",
+        stripe_customer_id: null,
+        shipping_address_json: null,
+        default_payment_method_brand: null,
+        default_payment_method_last4: null,
+        default_payment_method_exp_month: null,
+        default_payment_method_exp_year: null,
+        cpap_device_json: {
+          manufacturer: "ResMed",
+          model: "AirSense 11 AutoSet",
+          serialNumber: null,
+          pressureSetting: "8-12 cm H2O",
+          humidifierSetting: null,
+          notes: null,
+        },
+        physician_info_json: {
+          name: "Dr. Lee",
+          practice: "Penn Sleep Medicine",
+          phone: null,
+          fax: null,
+          email: null,
+          addressLine1: null,
+          addressLine2: null,
+          city: null,
+          state: null,
+          postalCode: null,
+          npi: null,
+        },
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-04-01T00:00:00Z",
+      },
+      orders: [],
+    });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.customer.clinicalInfo.cpapDevice.manufacturer).toBe(
+      "ResMed",
+    );
+    expect(res.body.customer.clinicalInfo.cpapDevice.model).toBe(
+      "AirSense 11 AutoSet",
+    );
+    expect(res.body.customer.clinicalInfo.physicianInfo.name).toBe("Dr. Lee");
+  });
+
+  it("returns null clinicalInfo for guest checkouts (no shop_customers row)", async () => {
+    stubVerifiedAdmin();
+    pushDetailQueue({
+      customer: null,
+      orders: [
+        {
+          id: "ord_guest",
+          stripe_session_id: "cs_guest",
+          stripe_payment_intent_id: "pi_guest",
+          status: "paid",
+          amount_total_cents: 5000,
+          currency: "usd",
+          created_at: "2026-04-30T00:00:00Z",
+          paid_at: "2026-04-30T00:01:00Z",
+          shipped_at: null,
+          delivered_at: null,
+          tracking_carrier: null,
+          tracking_number: null,
+          shipping_address_json: { line1: "1 Guest Ln" },
+          item_count: 1,
+        },
+      ],
+    });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.customer.isGuest).toBe(true);
+    expect(res.body.customer.clinicalInfo.cpapDevice).toBeNull();
+    expect(res.body.customer.clinicalInfo.physicianInfo).toBeNull();
+  });
+
+  it("surfaces inAppConversation summary when present (PR #54)", async () => {
+    stubVerifiedAdmin();
+    pushDetailQueue({
+      customer: {
+        user_id: VALID_USER_ID,
+        display_name: "Anna",
+        email_lower: "a@x.io",
+        stripe_customer_id: null,
+        shipping_address_json: null,
+        default_payment_method_brand: null,
+        default_payment_method_last4: null,
+        default_payment_method_exp_month: null,
+        default_payment_method_exp_year: null,
+        cpap_device_json: null,
+        physician_info_json: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-04-01T00:00:00Z",
+      },
+      orders: [],
+      inAppConversation: {
+        id: "conv_in_app_1",
+        status: "awaiting_admin",
+        last_message_at: "2026-05-01T12:00:00Z",
+        created_at: "2026-04-25T00:00:00Z",
+        message_count: 4,
+        unread_from_customer: 2,
+        last_inbound_at: "2026-05-01T12:00:00Z",
+        last_outbound_at: "2026-04-30T08:00:00Z",
+      },
+    });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.inAppConversation).toMatchObject({
+      id: "conv_in_app_1",
+      status: "awaiting_admin",
+      messageCount: 4,
+      unreadFromCustomer: 2,
+    });
+  });
+
+  it("returns null inAppConversation when the customer has never messaged", async () => {
+    stubVerifiedAdmin();
+    pushDetailQueue({
+      customer: {
+        user_id: VALID_USER_ID,
+        display_name: null,
+        email_lower: null,
+        stripe_customer_id: null,
+        shipping_address_json: null,
+        default_payment_method_brand: null,
+        default_payment_method_last4: null,
+        default_payment_method_exp_month: null,
+        default_payment_method_exp_year: null,
+        cpap_device_json: null,
+        physician_info_json: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-04-01T00:00:00Z",
+      },
+      orders: [],
+    });
+    const router = await loadRouter();
+    const res = await request(makeApp(router)).get(
+      `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.inAppConversation).toBeNull();
   });
 });
 
