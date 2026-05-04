@@ -31,51 +31,53 @@
  */
 .admin-root {
   /* ──────────────────────────────────────────────────────────────────
-   * Brand palette — kept in sync with the storefront's "Onyx &
-   * Champagne" palette in index.css so the two SPAs read as one
-   * product. Values are HSL components (no hsl() wrapper) so we can
-   * compose alpha via `hsl(var(--penn-navy) / 0.18)` exactly like
-   * the customer app.
+   * Brand palette — kept in lockstep with the storefront's
+   * "Obsidian Aurum" palette in index.css so the two SPAs read as
+   * one product. Values are HSL components (no hsl() wrapper) so
+   * we can compose alpha via `hsl(var(--penn-navy) / 0.18)`
+   * exactly like the customer app.
    *
-   * The admin canvas trades the storefront's warm pearl background
-   * for a quieter cool grey — operators stare at this for hours and
-   * the page reads as "work surface", not "marketing surface".
+   * The admin canvas trades the storefront's pearl background for
+   * a quieter platinum grey — operators stare at this for hours
+   * and the page reads as "work surface", not "marketing surface".
    * ────────────────────────────────────────────────────────────────── */
-  --penn-onyx:        220 72% 7%;
-  --penn-navy-deep:   220 72% 9%;
-  --penn-navy:        220 68% 13%;
-  --penn-navy-soft:   216 38% 28%;
-  --penn-gold-deep:   34 58% 36%;
-  --penn-gold:        40 58% 54%;
-  --penn-gold-soft:   40 70% 86%;
-  --penn-platinum:    220 18% 88%;
-  --penn-pearl:       42 28% 97.5%;
-  --penn-mist:        220 30% 95%;
+  --penn-onyx:        222 70% 6%;
+  --penn-navy-deep:   222 65% 8%;
+  --penn-navy:        222 60% 10%;
+  --penn-navy-soft:   220 36% 24%;
+  --penn-gold-deep:   30 50% 32%;
+  --penn-gold:        34 46% 50%;
+  --penn-gold-soft:   36 56% 86%;
+  --penn-platinum:    218 16% 86%;
+  --penn-pearl:       216 22% 98%;
+  --penn-mist:        216 28% 95%;
+  --penn-steel:       210 38% 38%;
 
-  /* Surface scale — cool greys tuned to sit calmly under dense
-   * tables. `surface-1` is the page canvas; `surface-2` is the
-   * card body; `surface-3` is for nested rows / hovered states. */
-  --surface-0: 220 28% 97.5%;
-  --surface-1: 220 26% 99%;
+  /* Surface scale — cool platinum greys tuned to sit calmly
+   * under dense tables. `surface-1` is the page canvas;
+   * `surface-2` is the card body; `surface-3` is for nested rows
+   * and hovered states. */
+  --surface-0: 218 24% 97.5%;
+  --surface-1: 218 26% 99%;
   --surface-2: 0 0% 100%;
-  --surface-3: 220 22% 96%;
+  --surface-3: 218 22% 96%;
 
   /* Border + text scale. Keeping body text at navy-deep (instead of
-   * pure black) gives the page a slight warm tint that ties back to
-   * the brand without ever feeling "branded". */
-  --ink-1: 220 55% 11%;
-  --ink-2: 220 22% 30%;
-  --ink-3: 220 16% 46%;
-  --ink-muted: 220 14% 58%;
-  --line-1: 220 20% 89%;
-  --line-2: 220 22% 84%;
+   * pure black) gives the page a deliberate cool ink tint that
+   * ties back to the brand without ever feeling "branded". */
+  --ink-1: 222 50% 10%;
+  --ink-2: 220 22% 28%;
+  --ink-3: 220 14% 44%;
+  --ink-muted: 220 12% 56%;
+  --line-1: 218 18% 89%;
+  --line-2: 218 20% 84%;
 
-  /* Status tones. Match the customer-app emerald/rose so badges in both
-   * apps share the same visual language. */
-  --tone-emerald: 152 55% 36%;
-  --tone-amber: 36 92% 46%;
-  --tone-rose: 354 70% 49%;
-  --tone-blue: 215 75% 48%;
+  /* Status tones. Match the customer-app emerald/rose so badges in
+   * both apps share the same visual language. */
+  --tone-emerald: 152 48% 34%;
+  --tone-amber: 34 88% 44%;
+  --tone-rose: 354 64% 46%;
+  --tone-blue: 210 68% 42%;
 
   /* Component shape. */
   --radius-card: 10px;
@@ -159,9 +161,9 @@
    * here — the dashboard is a work surface, motion lives in
    * interactions. */
   background-image:
-    radial-gradient(ellipse 60% 40% at 0% 100%, hsl(var(--penn-navy) / 0.055), transparent 70%),
-    radial-gradient(ellipse 50% 35% at 100% 0%, hsl(var(--penn-gold) / 0.07), transparent 70%),
-    radial-gradient(ellipse 30% 20% at 100% 100%, hsl(var(--penn-platinum) / 0.45), transparent 70%);
+    radial-gradient(ellipse 60% 40% at 0% 100%, hsl(var(--penn-navy) / 0.05), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 100% 0%, hsl(var(--penn-gold) / 0.06), transparent 70%),
+    radial-gradient(ellipse 36% 24% at 100% 100%, hsl(var(--penn-steel) / 0.10), transparent 70%);
   background-attachment: fixed;
   font-feature-settings: "ss01", "cv11";
   letter-spacing: -0.005em;
@@ -289,25 +291,25 @@
     );
   }
 
-  /* The navy chrome band that hosts the brand logo + global lookup +
-   * sign-out. A 4-stop forged-metal gradient (soft top → navy →
-   * navy-deep → onyx foot) plus a champagne radial glow centered on
-   * the masthead reads as a crafted, lit surface rather than a flat
-   * block. The 1px champagne hairline at the bottom edge ties it to
-   * the page below. */
+  /* The obsidian chrome band that hosts the brand logo + global
+   * lookup + sign-out. A 4-stop forged-metal gradient (sapphire-
+   * steel top → navy → deep → onyx foot) plus an aurum radial
+   * glow centred on the masthead reads as a crafted, lit surface
+   * rather than a flat block. The 1px aurum hairline at the
+   * bottom edge ties it to the page below. */
   .brand-band {
     background:
       var(--header-glow),
       linear-gradient(
         180deg,
         hsl(var(--penn-navy-soft)) 0%,
-        hsl(var(--penn-navy)) 30%,
-        hsl(var(--penn-navy-deep)) 75%,
+        hsl(var(--penn-navy)) 32%,
+        hsl(var(--penn-navy-deep)) 78%,
         hsl(var(--penn-onyx)) 100%
       );
     box-shadow:
-      0 1px 0 hsl(var(--penn-gold) / 0.30),
-      0 4px 12px hsl(var(--penn-navy-deep) / 0.18);
+      0 1px 0 hsl(var(--penn-gold) / 0.32),
+      0 4px 14px hsl(var(--penn-navy-deep) / 0.20);
   }
 
   /* Sidebar surface — a hairline gradient toward the content area so

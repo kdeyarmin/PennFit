@@ -380,6 +380,11 @@ function sanitizeFilename(
   const ext = extensionForContentType(contentType);
   if (raw && raw.trim().length > 0) {
     const cleaned = raw
+      // Strip ASCII control chars (U+0000-U+001F) and path separators
+      // from caller-supplied filenames. The control-char range is
+      // intentional - we are sanitising hostile input, not embedding
+      // literal control characters in the regex source.
+      // eslint-disable-next-line no-control-regex
       .replace(/[\u0000-\u001f/\\]+/g, "_")
       .trim()
       .slice(0, 240);
