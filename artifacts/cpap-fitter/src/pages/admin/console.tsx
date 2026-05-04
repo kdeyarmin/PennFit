@@ -51,6 +51,7 @@ import { AdminShopProductNewPage } from "@/pages/admin/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-carts";
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
+import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminOrders as PennpapsOrdersPage } from "@/pages/admin/pennpaps-orders";
 import { AdminOrderDetail as PennpapsOrderDetailPage } from "@/pages/admin/pennpaps-order-detail";
 import { AdminAuditLog as PennpapsAuditPage } from "@/pages/admin/pennpaps-audit";
@@ -124,6 +125,9 @@ function AdminConsole() {
           path="/admin/shop/insurance-leads"
           component={AdminInsuranceLeadsPage}
         />
+        <Route path="/admin/shop/customers/:userId">
+          {(params) => <AdminCustomerDetailPage userId={params.userId} />}
+        </Route>
         <Route path="/admin/shop/returns" component={AdminShopReturnsPage} />
         <Route path="/admin/macros" component={AdminMacrosPage} />
         <Route

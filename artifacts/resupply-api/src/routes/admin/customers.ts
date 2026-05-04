@@ -282,8 +282,32 @@ interface CustomerRow {
   default_payment_method_last4: string | null;
   default_payment_method_exp_month: number | null;
   default_payment_method_exp_year: number | null;
+  /**
+   * Clinical info added in migration 0032 (PR #52): the customer's
+   * CPAP machine + prescribing physician. Both nullable until the
+   * customer fills the form out on /account.
+   */
+  cpap_device_json: unknown;
+  physician_info_json: unknown;
   created_at: string | Date;
   updated_at: string | Date;
+}
+
+interface InAppConversationRow {
+  id: string;
+  status: string;
+  last_message_at: string | Date | null;
+  created_at: string | Date;
+  message_count: number;
+  /**
+   * Number of inbound messages from the customer that arrived AFTER
+   * the most-recent outbound CSR reply. Drives the "X new from
+   * customer" badge in the admin UI. When there's no CSR reply yet
+   * (a brand-new thread) this counts every inbound message.
+   */
+  unread_from_customer: number;
+  last_inbound_at: string | Date | null;
+  last_outbound_at: string | Date | null;
 }
 
 interface OrderRow {
@@ -381,6 +405,8 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         default_payment_method_last4      AS default_payment_method_last4,
         default_payment_method_exp_month  AS default_payment_method_exp_month,
         default_payment_method_exp_year   AS default_payment_method_exp_year,
+        cpap_device_json                  AS cpap_device_json,
+        physician_info_json               AS physician_info_json,
         created_at                        AS created_at,
         updated_at                        AS updated_at
       FROM resupply.shop_customers
@@ -482,6 +508,61 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
       LIMIT 100
     `)) as unknown as { rows: ReviewRow[] };
 
+  // 6a. In-app conversation thread (added in PR #53 / migration 0033).
+  //     At most one row per customer (single-thread-per-customer
+  //     policy enforced by appendCustomerMessage). The message_count
+  //     and unread_from_customer crumbs let the admin UI render
+  //     "5 messages · 2 new from customer" without a second
+  //     round-trip. unread_from_customer counts inbound messages
+  //     that landed AFTER the most-recent CSR reply (or every
+  //     inbound message when there's no CSR reply yet).
+  const inAppResult = (await db.execute(sql`
+      WITH conv AS (
+        SELECT id, status, last_message_at, created_at
+        FROM resupply.conversations
+        WHERE customer_id = ${userId}
+          AND channel = 'in_app'
+        ORDER BY created_at ASC
+        LIMIT 1
+      ),
+      msg_stats AS (
+        SELECT
+          c.id AS conversation_id,
+          COUNT(m.id)::int AS message_count,
+          MAX(m.created_at) FILTER (WHERE m.direction = 'inbound')
+            AS last_inbound_at,
+          MAX(m.created_at) FILTER (WHERE m.direction = 'outbound')
+            AS last_outbound_at,
+          COUNT(m.id) FILTER (
+            WHERE m.direction = 'inbound'
+              AND (
+                (SELECT MAX(m2.created_at) FROM resupply.messages m2
+                  WHERE m2.conversation_id = c.id AND m2.direction = 'outbound'
+                ) IS NULL
+                OR m.created_at > (
+                  SELECT MAX(m2.created_at) FROM resupply.messages m2
+                  WHERE m2.conversation_id = c.id AND m2.direction = 'outbound'
+                )
+              )
+          )::int AS unread_from_customer
+        FROM conv c
+        LEFT JOIN resupply.messages m ON m.conversation_id = c.id
+        GROUP BY c.id
+      )
+      SELECT
+        c.id                       AS id,
+        c.status                   AS status,
+        c.last_message_at          AS last_message_at,
+        c.created_at               AS created_at,
+        COALESCE(s.message_count, 0)        AS message_count,
+        COALESCE(s.unread_from_customer, 0) AS unread_from_customer,
+        s.last_inbound_at          AS last_inbound_at,
+        s.last_outbound_at         AS last_outbound_at
+      FROM conv c
+      LEFT JOIN msg_stats s ON s.conversation_id = c.id
+    `)) as unknown as { rows: InAppConversationRow[] };
+  const inAppRow = inAppResult.rows[0] ?? null;
+
   // 6. Lifetime stats — over ALL orders (not just the recent 25
   //    we returned), so the headline numbers are honest.
   const statsResult = (await db.execute(sql`
@@ -532,6 +613,15 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
               expYear: customerRow.default_payment_method_exp_year,
             }
           : null,
+        // Clinical info — added in PR #52, surfaced here so the CSR
+        // can answer "what device does this customer have?" and
+        // "who's their prescriber?" without bouncing to another
+        // page. Both nullable until the customer fills the form
+        // out on /account.
+        clinicalInfo: {
+          cpapDevice: customerRow.cpap_device_json ?? null,
+          physicianInfo: customerRow.physician_info_json ?? null,
+        },
         createdAt: new Date(customerRow.created_at).toISOString(),
         updatedAt: new Date(customerRow.updated_at).toISOString(),
         isGuest: false as const,
@@ -543,6 +633,11 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         stripeCustomerId: null,
         shippingAddress: ordersResult.rows[0]?.shipping_address_json ?? null,
         defaultPaymentMethod: null,
+        // Guest checkouts have no shop_customers row, so they
+        // can't have stored clinical info. Surface explicit nulls
+        // so the UI doesn't have to special-case `clinicalInfo`
+        // being undefined.
+        clinicalInfo: { cpapDevice: null, physicianInfo: null },
         createdAt: ordersResult.rows[ordersResult.rows.length - 1]
           ? new Date(
               ordersResult.rows[ordersResult.rows.length - 1]!.created_at,
@@ -652,6 +747,32 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         : null,
       pendingReviewsCount: statsRow.pending_reviews_count,
     },
+    /**
+     * In-app conversation summary — added in PR #54 (this PR).
+     * Null when the customer has never messaged customer service.
+     * The `id` field can be plugged into the existing
+     * /admin/conversations/:id detail page for the full thread +
+     * reply composer; the `unreadFromCustomer` count drives the
+     * "X new from customer" badge in the admin UI.
+     */
+    inAppConversation: inAppRow
+      ? {
+          id: inAppRow.id,
+          status: inAppRow.status,
+          messageCount: inAppRow.message_count,
+          unreadFromCustomer: inAppRow.unread_from_customer,
+          lastMessageAt: inAppRow.last_message_at
+            ? new Date(inAppRow.last_message_at).toISOString()
+            : null,
+          lastInboundAt: inAppRow.last_inbound_at
+            ? new Date(inAppRow.last_inbound_at).toISOString()
+            : null,
+          lastOutboundAt: inAppRow.last_outbound_at
+            ? new Date(inAppRow.last_outbound_at).toISOString()
+            : null,
+          createdAt: new Date(inAppRow.created_at).toISOString(),
+        }
+      : null,
   });
 });
 

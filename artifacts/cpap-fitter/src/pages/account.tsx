@@ -297,9 +297,9 @@ function AccountInner() {
           <ClinicalInfoSection />
           {/*
             In-account messaging with PennPaps customer service —
-            added in the Phase 2 messaging branch. Reuses the
-            existing conversations + messages tables via the new
-            in_app channel; admins reply from /admin/conversations.
+            Phase 2 (PR #53). Reuses the existing conversations +
+            messages tables via the new in_app channel; admins reply
+            from /admin/conversations.
           */}
           <AccountMessagesSection />
           <ReorderSuggestionsSection />
