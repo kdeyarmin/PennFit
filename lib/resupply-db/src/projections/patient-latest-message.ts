@@ -123,6 +123,15 @@ export async function upsertPatientLatestMessage(
     return false;
   }
   const patientId = rows[0]!.patientId;
+  if (!patientId) {
+    // Post-0033: conversations can be customer-keyed (in_app) with
+    // patient_id NULL. The patient_latest_message projection is
+    // patient-only by design (it powers the patient list page). For
+    // an in-app, customer-keyed conversation we have nothing to
+    // project here — surface as a no-op. The customer-facing
+    // /shop/me/messages endpoint reads from `messages` directly.
+    return false;
+  }
 
   const result = await db
     .insert(patientLatestMessage)

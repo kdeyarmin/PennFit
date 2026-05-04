@@ -79,6 +79,7 @@ import {
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
 import { ClinicalInfoSection } from "@/components/clinical-info-section";
+import { AccountMessagesSection } from "@/components/account-messages-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
@@ -294,6 +295,13 @@ function AccountInner() {
             every change with a non-PHI metadata envelope.
           */}
           <ClinicalInfoSection />
+          {/*
+            In-account messaging with PennPaps customer service —
+            added in the Phase 2 messaging branch. Reuses the
+            existing conversations + messages tables via the new
+            in_app channel; admins reply from /admin/conversations.
+          */}
+          <AccountMessagesSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection

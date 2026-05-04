@@ -246,6 +246,13 @@
       "when": 1810713600000,
       "tag": "0032_shop_customer_clinical_info",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1810800000000,
+      "tag": "0033_in_app_conversations",
+      "breakpoints": true
     }
   ]
 }
