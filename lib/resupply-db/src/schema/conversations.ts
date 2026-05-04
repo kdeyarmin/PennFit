@@ -3,34 +3,66 @@ import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { episodes } from "./episodes";
 import { patients } from "./patients";
+import { shopCustomers } from "./shop-customers";
 import { resupplySchema } from "./_schema";
 
 /**
- * Conversations — one thread of back-and-forth with a patient on a single
- * channel for a single episode.
+ * Conversations — one thread of back-and-forth with a patient OR a
+ * shop customer on a single channel.
+ *
+ * Subject identity is polymorphic and enforced by the DB-side
+ * `conversations_subject_xor_check` (added in migration 0033):
+ *
+ *   * patient flow → patient_id + episode_id set, customer_id NULL.
+ *     Channels: "sms" | "voice" | "email" (Twilio / SendGrid).
+ *   * in-app flow  → customer_id set, patient_id + episode_id NULL.
+ *     Channel: "in_app" (no vendor dispatch — pure DB persistence
+ *     plus an out-of-band SendGrid notification email).
  *
  * A patient + episode can have multiple conversations (e.g. an SMS thread
  * that reached `closed`, then a follow-up phone call started a second
  * conversation). Channels do not mix inside one conversation row — that
  * keeps the message history readable and makes channel-specific
  * vendor metadata (Twilio SID, SendGrid message id) live with the right
- * rows.
+ * rows. In-app threads use a single thread per customer (the customer-
+ * facing /shop/me/messages endpoint upserts on customer_id).
  *
- * No PHI on this table. The patient is identified by `patientId`; the
- * messages themselves carry the encrypted content (see `messages.ts`).
+ * No PHI on this table. Subject is identified by patient_id/episode_id
+ * or customer_id; the messages themselves carry the body content (see
+ * `messages.ts`).
  */
 export const conversations = resupplySchema.table(
   "conversations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    patientId: uuid("patient_id")
-      .notNull()
-      .references(() => patients.id, { onDelete: "cascade" }),
-    episodeId: uuid("episode_id")
-      .notNull()
-      .references(() => episodes.id, { onDelete: "cascade" }),
+    /**
+     * Patient flow only. Nullable post-0033 so in-app shop-customer
+     * threads can omit it. The XOR check enforces "set together with
+     * episode_id (and customer_id null), or all-null with customer_id
+     * set".
+     */
+    patientId: uuid("patient_id").references(() => patients.id, {
+      onDelete: "cascade",
+    }),
+    /**
+     * Patient flow only. Nullable post-0033 — see patientId comment.
+     */
+    episodeId: uuid("episode_id").references(() => episodes.id, {
+      onDelete: "cascade",
+    }),
+    /**
+     * Shop-customer (in-app) flow only. Nullable for backwards
+     * compatibility with patient/episode rows. FK to
+     * shop_customers.customer_id ON DELETE CASCADE so deleting a
+     * shop customer also tears down their conversation history.
+     */
+    customerId: text("customer_id").references(() => shopCustomers.customerId, {
+      onDelete: "cascade",
+    }),
 
-    channel: text("channel", { enum: ["sms", "voice", "email"] }).notNull(),
+    channel: text("channel", {
+      enum: ["sms", "voice", "email", "in_app"],
+    }).notNull(),
 
     status: text("status", {
       enum: ["open", "awaiting_patient", "awaiting_admin", "closed"],
@@ -79,8 +111,11 @@ export const conversations = resupplySchema.table(
     //   conversations_assignee_active_idx
     //   conversations_sla_due_active_idx
     //   conversations_escalated_idx
+    // Migration 0033 adds the customer_id partial index
+    //   conversations_customer_id_idx (WHERE customer_id IS NOT NULL)
+    // and the conversations_subject_xor_check CHECK constraint.
     // Drizzle can't express the WHERE clauses; the migration SQL is
-    // the source of truth for those indexes.
+    // the source of truth for those indexes / constraints.
   }),
 );
 

@@ -24,8 +24,21 @@ export const messages = resupplySchema.table(
       .references(() => conversations.id, { onDelete: "cascade" }),
 
     direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
+    /**
+     * Who sent this message.
+     *
+     *   patient  — the resupply patient (SMS/voice/email channels)
+     *   customer — the signed-in shop customer (in_app channel only)
+     *   admin    — internal staff with full admin role
+     *   agent    — internal staff with the limited customer-service-agent role
+     *   system   — automated, e.g. workflow-generated event notes
+     *
+     * The role enum is enforced at the application layer (Drizzle
+     * TS-only `text({ enum: [...] })`) — the underlying column is a
+     * plain `text`, no Postgres enum type.
+     */
     senderRole: text("sender_role", {
-      enum: ["patient", "admin", "agent", "system"],
+      enum: ["patient", "customer", "admin", "agent", "system"],
     }).notNull(),
 
     body: text("body").notNull(),

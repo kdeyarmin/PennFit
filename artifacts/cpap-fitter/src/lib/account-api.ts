@@ -252,6 +252,61 @@ export const updateCommPrefs = (input: Partial<CommunicationPreferences>) =>
     body: JSON.stringify(input),
   });
 
+/**
+ * In-account customer ↔ CSR messaging — Phase 2 of the account
+ * messaging foundation. Server-side these are stored in the same
+ * `conversations` + `messages` tables that the resupply patient
+ * flow uses, on the new `in_app` channel introduced in
+ * migration 0033. The customer's view here is intentionally narrow:
+ * one thread per customer, append-only history, simple compose.
+ */
+export interface AccountMessage {
+  id: string;
+  direction: "inbound" | "outbound";
+  /**
+   * Who sent the message:
+   *   "customer" — the signed-in shopper (this user)
+   *   "admin"    — full admin role at PennPaps
+   *   "agent"    — limited customer-service-agent role at PennPaps
+   *   "system"   — automated event marker
+   */
+  senderRole: "customer" | "admin" | "agent" | "system";
+  body: string;
+  /** ISO 8601 string. */
+  createdAt: string;
+  /** Always null for in-app channel; included for shape symmetry. */
+  deliveryStatus: string | null;
+}
+
+export interface AccountThread {
+  id: string;
+  status: "open" | "awaiting_patient" | "awaiting_admin" | "closed";
+  /** ISO 8601 string. Null when the thread has no messages yet. */
+  lastMessageAt: string | null;
+  /** ISO 8601 string. */
+  createdAt: string;
+}
+
+export interface ShopMessagesResponse {
+  thread: AccountThread | null;
+  messages: AccountMessage[];
+}
+
+export const fetchShopMessages = () =>
+  meFetch<ShopMessagesResponse>("/shop/me/messages");
+
+export interface ShopMessagePostResponse {
+  threadId: string;
+  messageId: string;
+  threadCreated: boolean;
+}
+
+export const postShopMessage = (body: string) =>
+  meFetch<ShopMessagePostResponse>("/shop/me/messages", {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  });
+
 export interface ReorderSuggestion {
   productId: string;
   productName: string;

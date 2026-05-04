@@ -71,6 +71,13 @@ export type ReplyInConversationOutcome =
   | { status: "conversation_closed" }
   | { status: "patient_missing_contact"; channel: "sms" | "email" }
   | { status: "patient_phone_unnormalizable" }
+  /**
+   * The conversation is on a channel this dispatcher doesn't handle
+   * (currently only `in_app`). Callers must branch BEFORE invoking
+   * this helper for in-app threads — see
+   * `routes/conversations/reply.ts` for the dispatch split.
+   */
+  | { status: "unsupported_channel"; channel: string }
   | {
       status: "vendor_api_error";
       vendor: "sms_vendor" | "email_vendor";
@@ -106,6 +113,27 @@ export async function replyInConversation(
     return { status: "patient_missing_contact", channel: "sms" };
   }
 
+  // In-app shop-customer threads (added in 0033) are handled by a
+  // separate code path; this dispatcher is patient-flow-only. Return
+  // `unsupported_channel` so the caller knows to branch — in
+  // practice the route handler already branches BEFORE this call,
+  // so this is a defense-in-depth safety return.
+  if (conv.channel === "in_app") {
+    return { status: "unsupported_channel", channel: "in_app" };
+  }
+
+  // Post-0033 the schema marks patient_id nullable so in-app threads
+  // can omit it, but the CHECK constraint guarantees that any row
+  // whose channel is sms/voice/email has patient_id set. Voice was
+  // returned above; in_app was returned above; we're SMS or email
+  // here. The defensive null check below catches a corrupted row
+  // (CHECK should prevent this from being reachable).
+  if (!conv.patientId) {
+    return { status: "conversation_not_found" };
+  }
+  const patientId: string = conv.patientId;
+  const episodeId: string | null = conv.episodeId ?? null;
+
   const patientRows = await db
     .select({
       id: patients.id,
@@ -113,7 +141,7 @@ export async function replyInConversation(
       email: patients.email,
     })
     .from(patients)
-    .where(eq(patients.id, conv.patientId))
+    .where(eq(patients.id, patientId))
     .limit(1);
   const patient = patientRows[0];
   if (!patient) {
@@ -157,8 +185,8 @@ export async function replyInConversation(
           targetId: conversationId,
           metadata: {
             channel: "sms",
-            patient_id: conv.patientId,
-            episode_id: conv.episodeId,
+            patient_id: patientId,
+            episode_id: episodeId,
             conversation_id: conversationId,
             status: "twilio_error",
             twilio_status: err.status ?? null,
@@ -198,8 +226,8 @@ export async function replyInConversation(
         html: `<p style="white-space: pre-wrap; font-family: -apple-system, system-ui, sans-serif; line-height: 1.5">${escapeHtml(body)}</p>`,
         customArgs: {
           conversation_id: conversationId,
-          patient_id: conv.patientId,
-          episode_id: conv.episodeId,
+          patient_id: patientId,
+          episode_id: episodeId ?? "",
         },
       });
       vendorRef = r.messageId;
@@ -213,8 +241,8 @@ export async function replyInConversation(
           targetId: conversationId,
           metadata: {
             channel: "email",
-            patient_id: conv.patientId,
-            episode_id: conv.episodeId,
+            patient_id: patientId,
+            episode_id: episodeId,
             conversation_id: conversationId,
             status: "sendgrid_error",
             sendgrid_status: err.status ?? null,
@@ -288,8 +316,8 @@ export async function replyInConversation(
     targetId: conversationId,
     metadata: {
       channel: conv.channel,
-      patient_id: conv.patientId,
-      episode_id: conv.episodeId,
+      patient_id: patientId,
+      episode_id: episodeId,
       conversation_id: conversationId,
       message_id: messageId,
       status: "ok",
