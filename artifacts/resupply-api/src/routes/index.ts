@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import abandonedCartsRouter from "./admin/abandoned-carts.js";
 import shopCustomersAdminRouter from "./admin/customers.js";
 import shopCustomerNotesRouter from "./admin/customer-notes.js";
+import shopOrderNotesRouter from "./admin/order-notes.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
@@ -80,6 +81,10 @@ router.use(shopProductsAdminRouter);
 // (tracking entry, mark-delivered, address override, refund issuance).
 // requireAdmin gate is on the router itself.
 router.use(shopOrdersAdminRouter);
+// /admin/shop/orders/:orderId/notes — internal CSR notes per shop
+// order (Phase 14). Mounted after the orders router so the more-
+// specific /notes path doesn't shadow any future detail GET.
+router.use(shopOrderNotesRouter);
 // /admin/shop/returns/* — comfort-guarantee swap / refund / RMA
 // queue. Linear lifecycle (requested → approved → shipped_back →
 // received → refunded|replaced|closed) with strict from-state
