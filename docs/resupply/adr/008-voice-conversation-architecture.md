@@ -75,12 +75,12 @@ routes WebSocket handshakes whose path is
 
 ### Endpoints
 
-| Method | Path                              | Caller                          | Auth                  |
-|--------|-----------------------------------|---------------------------------|-----------------------|
-| POST   | `/resupply-api/voice/place-call`  | Admin dashboard              | `requireAdmin`     |
-| POST   | `/resupply-api/voice/twiml-connect` | Twilio (after dial picks up)  | Twilio HMAC signature |
-| POST   | `/resupply-api/voice/status-callback` | Twilio (lifecycle webhook)  | Twilio HMAC signature |
-| WS     | `/resupply-api/voice/stream`      | Twilio Media Stream             | Pending-session claim |
+| Method | Path                                  | Caller                       | Auth                  |
+| ------ | ------------------------------------- | ---------------------------- | --------------------- |
+| POST   | `/resupply-api/voice/place-call`      | Admin dashboard              | `requireAdmin`        |
+| POST   | `/resupply-api/voice/twiml-connect`   | Twilio (after dial picks up) | Twilio HMAC signature |
+| POST   | `/resupply-api/voice/status-callback` | Twilio (lifecycle webhook)   | Twilio HMAC signature |
+| WS     | `/resupply-api/voice/stream`          | Twilio Media Stream          | Pending-session claim |
 
 `twiml-connect` is intentionally **excluded** from
 `lib/resupply-api-spec/openapi.yaml`. Twilio is the only legitimate
@@ -103,7 +103,7 @@ The model is never given a patient identifier. Instead:
    URL and **claims** the pending session (a one-shot operation — a
    second claim returns `null` and the upgrade is rejected).
 4. The tool dispatcher is constructed bound to `{ patientId,
-   conversationId, episodeId }`. **All** tool calls operate on the
+conversationId, episodeId }`. **All** tool calls operate on the
    bound patient; the model can never select a different patient by
    passing an argument.
 
@@ -121,7 +121,7 @@ and turned into OpenAI tool descriptors at the same site:
 
 1. `verify_patient_identity({ date_of_birth })` — **3-attempt limit**;
    constant-time DOB compare via `Buffer.from(...) +
-   timingSafeEqual`. Until this passes, every other patient-data tool
+timingSafeEqual`. Until this passes, every other patient-data tool
    returns `{ error: "identity_not_verified" }`.
 2. `lookup_resupply_inventory()` — supplies due for the bound patient.
 3. `get_shipping_address()` — current address for verbal confirmation.
@@ -178,14 +178,14 @@ mentions in code comments don't trip the gate.
 Voice routes are conditionally registered on env presence. The check
 returns 503 with a stable error code when missing:
 
-| Env var                              | Required for                | Source                  |
-|--------------------------------------|-----------------------------|-------------------------|
-| `OPENAI_API_KEY`                     | WS bridge + `place-call`    | OpenAI BAA project key  |
-| `TWILIO_ACCOUNT_SID`                 | All voice routes            | Twilio integration      |
-| `TWILIO_AUTH_TOKEN`                  | Signature validation + REST | Twilio integration      |
-| `RESUPPLY_VOICE_PUBLIC_BASE_URL`     | TwiML + Status callback URL | Admin-supplied       |
-| `TWILIO_PHONE_NUMBER`                | `place-call` only           | Admin-supplied (E.164)|
-| `RESUPPLY_PRACTICE_NAME` (optional)  | System prompt branding      | Admin-supplied       |
+| Env var                             | Required for                | Source                 |
+| ----------------------------------- | --------------------------- | ---------------------- |
+| `OPENAI_API_KEY`                    | WS bridge + `place-call`    | OpenAI BAA project key |
+| `TWILIO_ACCOUNT_SID`                | All voice routes            | Twilio integration     |
+| `TWILIO_AUTH_TOKEN`                 | Signature validation + REST | Twilio integration     |
+| `RESUPPLY_VOICE_PUBLIC_BASE_URL`    | TwiML + Status callback URL | Admin-supplied         |
+| `TWILIO_PHONE_NUMBER`               | `place-call` only           | Admin-supplied (E.164) |
+| `RESUPPLY_PRACTICE_NAME` (optional) | System prompt branding      | Admin-supplied         |
 
 The 503 is the published behaviour, not a bug. The OpenAPI spec lists
 it explicitly.

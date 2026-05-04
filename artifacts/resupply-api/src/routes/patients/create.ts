@@ -100,119 +100,131 @@ router.post(
   requireAdmin,
   withIdempotency("POST /patients"),
   async (req, res) => {
-  const parsed = bodySchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-  const body = parsed.data;
-
-  const db = drizzle(getDbPool());
-
-  // Build the insert payload. PHI columns are plaintext text/jsonb
-  // post-migration 0025, so values pass through directly. `status`
-  // defaults to active when the body omits it — same default as
-  // the schema's `.default("active")`.
-  const now = new Date();
-  try {
-    const inserted = await db
-      .insert(patients)
-      .values({
-        pacwareId: body.pacwareId,
-        legalFirstName: body.legalFirstName,
-        legalLastName: body.legalLastName,
-        dateOfBirth: body.dateOfBirth,
-        phoneE164: body.phoneE164 ?? null,
-        email: body.email ?? null,
-        address: body.address ?? null,
-        status: body.status ?? "active",
-        insurancePayer: body.insurancePayer ?? null,
-        cadenceOverrideDays: body.cadenceOverrideDays ?? null,
-        channelPreference: body.channelPreference ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning({ id: patients.id });
-
-    const id = inserted[0]?.id;
-    if (!id) {
-      // Should be impossible — RETURNING on a single insert always
-      // yields one row. Fail loudly rather than respond with a
-      // half-shaped success.
-      throw new Error("INSERT returned no rows");
-    }
-
-    // Phone search now hits the indexed `patients.phone_e164`
-    // column directly (see ./list.ts), so there's no separate
-    // lookup table to backfill on intake.
-
-    // Audit: list of fields the admin actually populated. NO PHI
-    // values; the column names alone are safe — they're enums of
-    // schema fields, not patient data.
-    const populated: string[] = ["pacwareId", "legalFirstName", "legalLastName", "dateOfBirth"];
-    if (body.phoneE164) populated.push("phoneE164");
-    if (body.email) populated.push("email");
-    if (body.address) populated.push("address");
-    if (body.insurancePayer) populated.push("insurancePayer");
-    if (body.cadenceOverrideDays != null) populated.push("cadenceOverrideDays");
-    if (body.channelPreference) populated.push("channelPreference");
-
-    try {
-      await logAudit({
-        action: "patient.create",
-        adminEmail: req.adminEmail ?? null,
-        adminUserId: req.adminUserId ?? null,
-        targetTable: "patients",
-        targetId: id,
-        ip: req.ip ?? null,
-        userAgent: req.get("user-agent") ?? null,
-        metadata: {
-          fields: populated,
-          status: body.status ?? "active",
-        },
-      });
-    } catch (err) {
-      // Audit-log failures are loud-but-non-fatal: the patient row is
-      // already in the DB, so failing the response would tell the
-      // admin "create failed" when in fact it succeeded. Surface the
-      // failure in logs so we can chase it up out-of-band.
-      logger.error(
-        { err: err instanceof Error ? { name: err.name, message: err.message } : err },
-        "patients.create: audit write failed",
-      );
-    }
-
-    res.status(201).json({ id });
-  } catch (err) {
-    // Postgres unique-violation on patients_pacware_id_unique → 409.
-    // We check BOTH the SQLSTATE code (23505) AND the constraint name
-    // so a future unique index on (say) email doesn't silently get
-    // misclassified as a "duplicate Pacware id" — that would be a
-    // confusing error in the UI and a debugging dead end. Any other
-    // DB error bubbles up to the express error handler, which logs
-    // and returns 500.
-    const dbErr = err as
-      | { code?: string; constraint?: string }
-      | null
-      | undefined;
-    if (
-      dbErr?.code === "23505" &&
-      dbErr.constraint === "patients_pacware_id_unique"
-    ) {
-      res.status(409).json({
-        error: "duplicate_pacware_id",
-        message: `Pacware id "${body.pacwareId}" is already in use.`,
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
       });
       return;
     }
-    throw err;
-  }
-});
+    const body = parsed.data;
+
+    const db = drizzle(getDbPool());
+
+    // Build the insert payload. PHI columns are plaintext text/jsonb
+    // post-migration 0025, so values pass through directly. `status`
+    // defaults to active when the body omits it — same default as
+    // the schema's `.default("active")`.
+    const now = new Date();
+    try {
+      const inserted = await db
+        .insert(patients)
+        .values({
+          pacwareId: body.pacwareId,
+          legalFirstName: body.legalFirstName,
+          legalLastName: body.legalLastName,
+          dateOfBirth: body.dateOfBirth,
+          phoneE164: body.phoneE164 ?? null,
+          email: body.email ?? null,
+          address: body.address ?? null,
+          status: body.status ?? "active",
+          insurancePayer: body.insurancePayer ?? null,
+          cadenceOverrideDays: body.cadenceOverrideDays ?? null,
+          channelPreference: body.channelPreference ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: patients.id });
+
+      const id = inserted[0]?.id;
+      if (!id) {
+        // Should be impossible — RETURNING on a single insert always
+        // yields one row. Fail loudly rather than respond with a
+        // half-shaped success.
+        throw new Error("INSERT returned no rows");
+      }
+
+      // Phone search now hits the indexed `patients.phone_e164`
+      // column directly (see ./list.ts), so there's no separate
+      // lookup table to backfill on intake.
+
+      // Audit: list of fields the admin actually populated. NO PHI
+      // values; the column names alone are safe — they're enums of
+      // schema fields, not patient data.
+      const populated: string[] = [
+        "pacwareId",
+        "legalFirstName",
+        "legalLastName",
+        "dateOfBirth",
+      ];
+      if (body.phoneE164) populated.push("phoneE164");
+      if (body.email) populated.push("email");
+      if (body.address) populated.push("address");
+      if (body.insurancePayer) populated.push("insurancePayer");
+      if (body.cadenceOverrideDays != null)
+        populated.push("cadenceOverrideDays");
+      if (body.channelPreference) populated.push("channelPreference");
+
+      try {
+        await logAudit({
+          action: "patient.create",
+          adminEmail: req.adminEmail ?? null,
+          adminUserId: req.adminUserId ?? null,
+          targetTable: "patients",
+          targetId: id,
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+          metadata: {
+            fields: populated,
+            status: body.status ?? "active",
+          },
+        });
+      } catch (err) {
+        // Audit-log failures are loud-but-non-fatal: the patient row is
+        // already in the DB, so failing the response would tell the
+        // admin "create failed" when in fact it succeeded. Surface the
+        // failure in logs so we can chase it up out-of-band.
+        logger.error(
+          {
+            err:
+              err instanceof Error
+                ? { name: err.name, message: err.message }
+                : err,
+          },
+          "patients.create: audit write failed",
+        );
+      }
+
+      res.status(201).json({ id });
+    } catch (err) {
+      // Postgres unique-violation on patients_pacware_id_unique → 409.
+      // We check BOTH the SQLSTATE code (23505) AND the constraint name
+      // so a future unique index on (say) email doesn't silently get
+      // misclassified as a "duplicate Pacware id" — that would be a
+      // confusing error in the UI and a debugging dead end. Any other
+      // DB error bubbles up to the express error handler, which logs
+      // and returns 500.
+      const dbErr = err as
+        | { code?: string; constraint?: string }
+        | null
+        | undefined;
+      if (
+        dbErr?.code === "23505" &&
+        dbErr.constraint === "patients_pacware_id_unique"
+      ) {
+        res.status(409).json({
+          error: "duplicate_pacware_id",
+          message: `Pacware id "${body.pacwareId}" is already in use.`,
+        });
+        return;
+      }
+      throw err;
+    }
+  },
+);
 
 export default router;

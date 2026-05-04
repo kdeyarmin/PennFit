@@ -42,9 +42,9 @@ export function AdminOperationsPage() {
           Operations
         </h1>
         <p className="text-sm text-slate-600">
-          Vendor connectivity, dispatcher controls, and team summary.
-          Run dispatchers from here when ops needs to fire them
-          out-of-band; otherwise they'll fire on their normal cadence.
+          Vendor connectivity, dispatcher controls, and team summary. Run
+          dispatchers from here when ops needs to fire them out-of-band;
+          otherwise they'll fire on their normal cadence.
         </p>
       </header>
 
@@ -62,13 +62,7 @@ export function AdminOperationsPage() {
   );
 }
 
-function Body({
-  data,
-  onRefresh,
-}: {
-  data: OpsStatus;
-  onRefresh: () => void;
-}) {
+function Body({ data, onRefresh }: { data: OpsStatus; onRefresh: () => void }) {
   return (
     <div className="space-y-6">
       <VendorStrip vendors={data.vendors} />
@@ -79,7 +73,11 @@ function Body({
 }
 
 function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
-  const items: Array<{ key: keyof OpsStatus["vendors"]; label: string; hint: string }> = [
+  const items: Array<{
+    key: keyof OpsStatus["vendors"];
+    label: string;
+    hint: string;
+  }> = [
     {
       key: "sendgrid",
       label: "SendGrid",
@@ -87,7 +85,11 @@ function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
     },
     { key: "twilioSms", label: "Twilio SMS", hint: "Outbound resupply SMS" },
     { key: "twilioVoice", label: "Twilio Voice", hint: "Outbound voice calls" },
-    { key: "stripe", label: "Stripe", hint: "Cash-pay shop checkout + refunds" },
+    {
+      key: "stripe",
+      label: "Stripe",
+      hint: "Cash-pay shop checkout + refunds",
+    },
     {
       key: "objectStorage",
       label: "Object storage (GCS)",
@@ -140,8 +142,8 @@ function VendorStrip({ vendors }: { vendors: OpsStatus["vendors"] }) {
       </div>
       <p className="text-xs text-slate-500 mt-2">
         &ldquo;Configured&rdquo; means the vendor&apos;s required env vars are
-        present. It does NOT mean the most recent send succeeded —
-        check the dispatcher result panels below for that.
+        present. It does NOT mean the most recent send succeeded — check the
+        dispatcher result panels below for that.
       </p>
     </section>
   );
@@ -239,14 +241,18 @@ function DispatcherCard({
           {error}
         </p>
       )}
-      {result && (
-        <ResultPanel result={result} ranAt={ranAt} />
-      )}
+      {result && <ResultPanel result={result} ranAt={ranAt} />}
     </div>
   );
 }
 
-function ResultPanel({ result, ranAt }: { result: DispatcherResult; ranAt: string | null }) {
+function ResultPanel({
+  result,
+  ranAt,
+}: {
+  result: DispatcherResult;
+  ranAt: string | null;
+}) {
   const rows = useMemo(() => {
     const items: Array<[string, number]> = [];
     if (result.scanned !== undefined) items.push(["Scanned", result.scanned]);

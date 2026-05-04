@@ -78,10 +78,7 @@ export interface CreateTwilioSmsClientOptions {
   /** Default messaging service SID; takes precedence over `from`. */
   messagingServiceSid?: string;
   /** Test-only seam. Production callers leave undefined. */
-  sdkFactory?: (
-    accountSid: string,
-    authToken: string,
-  ) => RawTwilioMessagingSdk;
+  sdkFactory?: (accountSid: string, authToken: string) => RawTwilioMessagingSdk;
 }
 
 export interface TwilioSmsClient {

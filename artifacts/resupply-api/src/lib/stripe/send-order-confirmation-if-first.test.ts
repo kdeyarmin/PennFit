@@ -50,10 +50,8 @@ function selectFluent(): Record<string, unknown> {
     from: () => obj,
     where: () => obj,
     limit: () => settle(),
-    then: (
-      resolve: (v: unknown) => unknown,
-      reject: (e: unknown) => unknown,
-    ) => settle().then(resolve, reject),
+    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+      settle().then(resolve, reject),
   };
   return obj;
 }
@@ -89,21 +87,20 @@ const dbStub = {
 vi.mock("drizzle-orm/node-postgres", () => ({ drizzle: () => dbStub }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
 const sendEmailMock = vi.fn();
-const createSendgridClientMock = vi.fn<() => { sendEmail: typeof sendEmailMock }>(
-  () => ({ sendEmail: sendEmailMock }),
-);
+const createSendgridClientMock = vi.fn<
+  () => { sendEmail: typeof sendEmailMock }
+>(() => ({ sendEmail: sendEmailMock }));
 vi.mock("@workspace/resupply-email", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-email")>(
-    "@workspace/resupply-email",
-  );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
   return {
     ...actual,
     createSendgridClient: () => createSendgridClientMock(),
@@ -121,13 +118,17 @@ const ENV_KEYS = [
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
-function makeSession(over: Partial<Stripe.Checkout.Session> = {}): Stripe.Checkout.Session {
+function makeSession(
+  over: Partial<Stripe.Checkout.Session> = {},
+): Stripe.Checkout.Session {
   return {
     id: "cs_test_X",
     object: "checkout.session",
     amount_total: 9000,
     currency: "usd",
-    customer_details: { email: "guest@example.com" } as unknown as Stripe.Checkout.Session["customer_details"],
+    customer_details: {
+      email: "guest@example.com",
+    } as unknown as Stripe.Checkout.Session["customer_details"],
     ...over,
   } as unknown as Stripe.Checkout.Session;
 }
@@ -369,7 +370,8 @@ describe("sendOrderConfirmationIfFirst", () => {
       claimedOrderRow({ customerId: null, customerEmail: null }),
     ]);
     const session = makeSession({
-      customer_details: null as unknown as Stripe.Checkout.Session["customer_details"],
+      customer_details:
+        null as unknown as Stripe.Checkout.Session["customer_details"],
     });
 
     const result = await sendOrderConfirmationIfFirst({

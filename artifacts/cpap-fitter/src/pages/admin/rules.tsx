@@ -133,9 +133,8 @@ function Header({ onCreate }: { onCreate: () => void }) {
           Frequency rules
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-          Default reminder cadences and channels by therapy type,
-          payer, and customer tenure. Per-patient overrides always
-          win.
+          Default reminder cadences and channels by therapy type, payer, and
+          customer tenure. Per-patient overrides always win.
         </p>
       </div>
       <Button onClick={onCreate}>+ New rule</Button>
@@ -154,9 +153,7 @@ function RulesTable({
     {
       key: "priority",
       header: "Pri",
-      render: (r) => (
-        <span className="font-mono text-xs">{r.priority}</span>
-      ),
+      render: (r) => <span className="font-mono text-xs">{r.priority}</span>,
     },
     {
       key: "name",
@@ -219,7 +216,10 @@ function RulesTable({
       key: "actions",
       header: "",
       render: () => (
-        <span className="text-xs underline" style={{ color: "hsl(var(--ink-1))" }}>
+        <span
+          className="text-xs underline"
+          style={{ color: "hsl(var(--ink-1))" }}
+        >
           Edit →
         </span>
       ),
@@ -239,8 +239,10 @@ function RulesTable({
 
 function MatchSummary({ rule }: { rule: FrequencyRule }) {
   const parts: string[] = [];
-  if (rule.matchItemSkuPrefix) parts.push(`SKU starts with ${rule.matchItemSkuPrefix}`);
-  if (rule.matchInsurancePayer) parts.push(`Payer = ${rule.matchInsurancePayer}`);
+  if (rule.matchItemSkuPrefix)
+    parts.push(`SKU starts with ${rule.matchItemSkuPrefix}`);
+  if (rule.matchInsurancePayer)
+    parts.push(`Payer = ${rule.matchInsurancePayer}`);
   if (rule.minTenureDays != null && rule.maxTenureDays != null) {
     parts.push(`Tenure ${rule.minTenureDays}–${rule.maxTenureDays}d`);
   } else if (rule.minTenureDays != null) {
@@ -274,10 +276,8 @@ function ruleToForm(rule: FrequencyRule): FormState {
     priority: String(rule.priority),
     matchItemSkuPrefix: rule.matchItemSkuPrefix ?? "",
     matchInsurancePayer: rule.matchInsurancePayer ?? "",
-    minTenureDays:
-      rule.minTenureDays != null ? String(rule.minTenureDays) : "",
-    maxTenureDays:
-      rule.maxTenureDays != null ? String(rule.maxTenureDays) : "",
+    minTenureDays: rule.minTenureDays != null ? String(rule.minTenureDays) : "",
+    maxTenureDays: rule.maxTenureDays != null ? String(rule.maxTenureDays) : "",
     cadenceDays: String(rule.cadenceDays),
     defaultChannel: (rule.defaultChannel ?? "") as ChannelChoice,
     active: rule.active,
@@ -375,7 +375,10 @@ function RuleFormModal({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function buildBody(): { body: FrequencyRuleCreate | null; error: string | null } {
+  function buildBody(): {
+    body: FrequencyRuleCreate | null;
+    error: string | null;
+  } {
     const name = form.name.trim();
     if (name === "") return { body: null, error: "Name is required." };
     if (name.length > 200) {
@@ -420,8 +423,7 @@ function RuleFormModal({
       matchInsurancePayer: payer === "" ? null : payer,
       minTenureDays: minTen.value,
       maxTenureDays: maxTen.value,
-      defaultChannel:
-        form.defaultChannel === "" ? null : form.defaultChannel,
+      defaultChannel: form.defaultChannel === "" ? null : form.defaultChannel,
       active: form.active,
       notes: notes === "" ? null : notes,
     };
@@ -472,9 +474,7 @@ function RuleFormModal({
   async function onDelete() {
     if (!initial) return;
     if (
-      !window.confirm(
-        `Delete rule "${initial.name}"? This cannot be undone.`,
-      )
+      !window.confirm(`Delete rule "${initial.name}"? This cannot be undone.`)
     ) {
       return;
     }
@@ -535,7 +535,10 @@ function RuleFormModal({
                 required
                 disabled={isPending}
               />
-              <p className="mt-1 text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+              <p
+                className="mt-1 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
                 Lower runs first.
               </p>
             </div>
@@ -592,7 +595,9 @@ function RuleFormModal({
               />
             </div>
             <div>
-              <Label htmlFor="rule-min-tenure">Min tenure days (optional)</Label>
+              <Label htmlFor="rule-min-tenure">
+                Min tenure days (optional)
+              </Label>
               <Input
                 id="rule-min-tenure"
                 type="number"
@@ -604,7 +609,9 @@ function RuleFormModal({
               />
             </div>
             <div>
-              <Label htmlFor="rule-max-tenure">Max tenure days (optional)</Label>
+              <Label htmlFor="rule-max-tenure">
+                Max tenure days (optional)
+              </Label>
               <Input
                 id="rule-max-tenure"
                 type="number"
@@ -647,16 +654,15 @@ function RuleFormModal({
           </div>
 
           {error && (
-            <p
-              className="text-sm"
-              style={{ color: "#b91c1c" }}
-              role="alert"
-            >
+            <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
               {error}
             </p>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t" style={{ borderColor: "hsl(var(--line-1))" }}>
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
             <div className="flex gap-2">
               {mode === "edit" && initial && (
                 <Button

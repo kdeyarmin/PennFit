@@ -14,12 +14,7 @@
 //   bytes by the time our handler runs. We re-parse the buffer
 //   ourselves after validating.
 
-import {
-  Router,
-  raw,
-  type IRouter,
-  type RequestHandler,
-} from "express";
+import { Router, raw, type IRouter, type RequestHandler } from "express";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 

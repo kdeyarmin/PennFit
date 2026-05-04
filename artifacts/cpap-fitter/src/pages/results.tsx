@@ -159,7 +159,8 @@ export function Results() {
           Your Recommended Masks
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Based on your precise facial measurements and clinical preferences, here are the best fits for you.
+          Based on your precise facial measurements and clinical preferences,
+          here are the best fits for you.
         </p>
         <div className="flex justify-center pt-2">
           <ComfortGuarantee variant="badge" />
@@ -167,7 +168,11 @@ export function Results() {
       </div>
 
       {/* Patient measurements panel — collapsible, builds trust by showing exactly what was measured */}
-      <Collapsible open={showMeasurements} onOpenChange={setShowMeasurements} className="mb-8">
+      <Collapsible
+        open={showMeasurements}
+        onOpenChange={setShowMeasurements}
+        className="mb-8"
+      >
         <Card className="border-0 glass-card rounded-2xl">
           <CollapsibleTrigger asChild>
             <button
@@ -181,8 +186,8 @@ export function Results() {
                 <div>
                   <div className="font-semibold">Your facial measurements</div>
                   <div className="text-xs text-muted-foreground">
-                    Calibrated on-device using your iris diameter (~11.7 mm). Tap to{" "}
-                    {showMeasurements ? "hide" : "view"}.
+                    Calibrated on-device using your iris diameter (~11.7 mm).
+                    Tap to {showMeasurements ? "hide" : "view"}.
                   </div>
                 </div>
               </div>
@@ -195,10 +200,26 @@ export function Results() {
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="px-5 pb-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-              <Measurement label="Nose width" value={measurements.noseWidth} testid="meas-nose-width" />
-              <Measurement label="Nose height" value={measurements.noseHeight} testid="meas-nose-height" />
-              <Measurement label="Nose to chin" value={measurements.noseToChin} testid="meas-nose-chin" />
-              <Measurement label="Mouth width" value={measurements.mouthWidth} testid="meas-mouth-width" />
+              <Measurement
+                label="Nose width"
+                value={measurements.noseWidth}
+                testid="meas-nose-width"
+              />
+              <Measurement
+                label="Nose height"
+                value={measurements.noseHeight}
+                testid="meas-nose-height"
+              />
+              <Measurement
+                label="Nose to chin"
+                value={measurements.noseToChin}
+                testid="meas-nose-chin"
+              />
+              <Measurement
+                label="Mouth width"
+                value={measurements.mouthWidth}
+                testid="meas-mouth-width"
+              />
               <Measurement
                 label="Face width"
                 value={measurements.faceWidthAtCheekbones}
@@ -206,7 +227,8 @@ export function Results() {
               />
             </div>
             <p className="px-5 pb-4 text-xs text-muted-foreground italic">
-              These dimensions never left your device — only the numeric values were sent to find your match.
+              These dimensions never left your device — only the numeric values
+              were sent to find your match.
             </p>
           </CollapsibleContent>
         </Card>
@@ -222,8 +244,8 @@ export function Results() {
             <span className="font-medium text-foreground/80">
               why it matched
             </span>{" "}
-            — your sleep style, breathing, and how your measurements
-            line up against each mask's documented size range. Tap{" "}
+            — your sleep style, breathing, and how your measurements line up
+            against each mask's documented size range. Tap{" "}
             <span className="font-medium text-foreground/80">
               Match confidence
             </span>{" "}
@@ -245,7 +267,9 @@ export function Results() {
 
       <div className="glass-card rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 mb-12">
         <div className="space-y-2">
-          <h3 className="font-semibold text-lg tracking-tight">Looking for more options?</h3>
+          <h3 className="font-semibold text-lg tracking-tight">
+            Looking for more options?
+          </h3>
           <p className="text-sm text-muted-foreground">
             Browse the full catalog to see all available masks.
           </p>
@@ -288,10 +312,16 @@ function Measurement({
   testid: string;
 }) {
   return (
-    <div className="bg-background border border-border rounded-lg p-3" data-testid={testid}>
-      <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{label}</div>
+    <div
+      className="bg-background border border-border rounded-lg p-3"
+      data-testid={testid}
+    >
+      <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+        {label}
+      </div>
       <div className="text-lg font-semibold tabular-nums">
-        {value.toFixed(1)} <span className="text-xs font-normal text-muted-foreground">mm</span>
+        {value.toFixed(1)}{" "}
+        <span className="text-xs font-normal text-muted-foreground">mm</span>
       </div>
     </div>
   );

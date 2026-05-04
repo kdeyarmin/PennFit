@@ -92,7 +92,9 @@ export const shopOrders = resupplySchema.table(
      * shape as shop_customers.shipping_address_json so the existing
      * Zod validator + UI form can be reused. Migration 0014.
      */
-    shippingAddress: jsonb("shipping_address_json").$type<SavedShippingAddress | null>(),
+    shippingAddress: jsonb(
+      "shipping_address_json",
+    ).$type<SavedShippingAddress | null>(),
     /**
      * Carrier name (free-form: "UPS", "USPS", "FedEx", "DHL"). The
      * track-link projection layer maps this to a known URL template;

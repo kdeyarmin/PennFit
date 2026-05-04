@@ -26,7 +26,11 @@ const wsUrlSchema = z
 
 const customParamsSchema = z
   .record(
-    z.string().min(1).max(64).regex(/^[A-Za-z0-9_]+$/),
+    z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9_]+$/),
     z.string().max(2048),
   )
   .optional();

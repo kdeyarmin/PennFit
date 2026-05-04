@@ -215,10 +215,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     });
-    res
-      .status(200)
-      .type("text/xml")
-      .send("<Response/>");
+    res.status(200).type("text/xml").send("<Response/>");
     return;
   }
   const pool = getDbPool();
@@ -252,7 +249,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       .status(200)
       .type("text/xml")
       .send(
-        '<Response><Message>This number is on multiple accounts. ' +
+        "<Response><Message>This number is on multiple accounts. " +
           "Please contact your provider directly so we can route your message correctly. " +
           "Reply STOP to opt out.</Message></Response>",
       );
@@ -313,7 +310,7 @@ router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
       .status(200)
       .type("text/xml")
       .send(
-        '<Response><Message>This number isn\'t set up to receive replies. ' +
+        "<Response><Message>This number isn't set up to receive replies. " +
           "If you meant to contact your CPAP supplier, please call your provider directly. " +
           "Reply STOP to opt out.</Message></Response>",
       );

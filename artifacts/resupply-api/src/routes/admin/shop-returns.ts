@@ -124,9 +124,7 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
   const nextCursor =
-    hasMore && last
-      ? `${last.createdAt.toISOString()}__${last.id}`
-      : null;
+    hasMore && last ? `${last.createdAt.toISOString()}__${last.id}` : null;
 
   res.json({
     returns: page.map(serializeReturnRow),
@@ -529,7 +527,12 @@ router.post("/admin/shop/returns/:id/note", requireAdmin, async (req, res) => {
   const updated = await db
     .update(shopReturns)
     .set({
-      adminNote: appendNote(parsed.data.note, adminId, "Note added", ret.adminNote),
+      adminNote: appendNote(
+        parsed.data.note,
+        adminId,
+        "Note added",
+        ret.adminNote,
+      ),
       adminUserId: adminId,
       updatedAt: new Date(),
     })

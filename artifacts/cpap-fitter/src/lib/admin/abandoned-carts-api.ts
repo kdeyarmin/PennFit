@@ -47,13 +47,10 @@ export async function listAdminAbandonedCarts(): Promise<ListAbandonedCartsRespo
 }
 
 export async function sendDueAbandonedCarts(): Promise<SendDueResponse> {
-  const res = await fetch(
-    `/resupply-api/admin/shop/abandoned-carts/send-due`,
-    {
-      method: "POST",
-      headers: { Accept: "application/json" },
-    },
-  );
+  const res = await fetch(`/resupply-api/admin/shop/abandoned-carts/send-due`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
   if (!res.ok) {
     throw new Error(`Send-due failed (${res.status})`);
   }

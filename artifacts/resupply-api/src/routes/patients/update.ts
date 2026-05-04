@@ -55,17 +55,8 @@ const bodySchema = z
       .nullable()
       .optional()
       .transform((v) => (v === "" ? null : v)),
-    cadenceOverrideDays: z
-      .number()
-      .int()
-      .min(1)
-      .max(365)
-      .nullable()
-      .optional(),
-    channelPreference: z
-      .enum(["sms", "email", "voice"])
-      .nullable()
-      .optional(),
+    cadenceOverrideDays: z.number().int().min(1).max(365).nullable().optional(),
+    channelPreference: z.enum(["sms", "email", "voice"]).nullable().optional(),
     status: z.enum(["active", "paused", "closed"]).optional(),
     // Optional optimistic-concurrency precondition. When present,
     // the UPDATE is gated on `updated_at = $expected`; if the row
@@ -110,7 +101,8 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
   // `expectedUpdatedAt` is a precondition, not a column — it never
   // lands in `updates`.
   const updates: Record<string, unknown> = {};
-  if ("insurancePayer" in body) updates.insurancePayer = body.insurancePayer ?? null;
+  if ("insurancePayer" in body)
+    updates.insurancePayer = body.insurancePayer ?? null;
   if ("cadenceOverrideDays" in body)
     updates.cadenceOverrideDays = body.cadenceOverrideDays ?? null;
   if ("channelPreference" in body)
@@ -210,7 +202,10 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     logger.error(
-      { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+      {
+        err:
+          err instanceof Error ? { name: err.name, message: err.message } : err,
+      },
       "patients.update: audit write failed",
     );
   }

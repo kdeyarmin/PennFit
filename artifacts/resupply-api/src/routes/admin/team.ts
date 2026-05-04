@@ -297,7 +297,8 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
   if (row.authUserId && row.authUserId === req.adminUserId) {
     res.status(409).json({
       error: "cannot_revoke_self",
-      message: "You can't revoke your own admin access. Have another admin revoke your seat.",
+      message:
+        "You can't revoke your own admin access. Have another admin revoke your seat.",
     });
     return;
   }
@@ -353,7 +354,8 @@ router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
     ) {
       res.status(409).json({
         error: "cannot_demote_self",
-        message: "You can't demote yourself to agent. Have another admin do it.",
+        message:
+          "You can't demote yourself to agent. Have another admin do it.",
       });
       return;
     }

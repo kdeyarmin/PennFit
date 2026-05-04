@@ -62,7 +62,10 @@ function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
 }
 
 /** Pull the value of a Set-Cookie header by cookie name. */
-function getCookieValue(setCookie: string | string[] | undefined, name: string): string | null {
+function getCookieValue(
+  setCookie: string | string[] | undefined,
+  name: string,
+): string | null {
   if (!setCookie) return null;
   const list = Array.isArray(setCookie) ? setCookie : [setCookie];
   for (const c of list) {
@@ -81,7 +84,9 @@ describe("POST /auth/sign-in", () => {
     h = buildHarness();
   });
 
-  async function seedAlice(opts: { verified?: boolean; status?: "active" | "locked" | "revoked" } = {}) {
+  async function seedAlice(
+    opts: { verified?: boolean; status?: "active" | "locked" | "revoked" } = {},
+  ) {
     return seedUserWithPassword(h.repo, {
       id: "u_alice",
       emailLower: "alice@example.com",
@@ -95,12 +100,10 @@ describe("POST /auth/sign-in", () => {
   it("returns 200 + sets session + csrf cookies on valid creds", async () => {
     await seedAlice();
 
-    const res = await supertest(h.app)
-      .post("/auth/sign-in")
-      .send({
-        email: "alice@example.com",
-        password: "correct horse battery staple",
-      });
+    const res = await supertest(h.app).post("/auth/sign-in").send({
+      email: "alice@example.com",
+      password: "correct horse battery staple",
+    });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
@@ -146,12 +149,10 @@ describe("POST /auth/sign-in", () => {
   it("returns 403 email_unverified when account exists but email not verified", async () => {
     await seedAlice({ verified: false });
 
-    const res = await supertest(h.app)
-      .post("/auth/sign-in")
-      .send({
-        email: "alice@example.com",
-        password: "correct horse battery staple",
-      });
+    const res = await supertest(h.app).post("/auth/sign-in").send({
+      email: "alice@example.com",
+      password: "correct horse battery staple",
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("email_unverified");
@@ -160,12 +161,10 @@ describe("POST /auth/sign-in", () => {
   it("returns the generic message when account is locked", async () => {
     await seedAlice({ status: "locked" });
 
-    const res = await supertest(h.app)
-      .post("/auth/sign-in")
-      .send({
-        email: "alice@example.com",
-        password: "correct horse battery staple",
-      });
+    const res = await supertest(h.app).post("/auth/sign-in").send({
+      email: "alice@example.com",
+      password: "correct horse battery staple",
+    });
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("invalid_credentials");
@@ -183,12 +182,10 @@ describe("POST /auth/sign-in", () => {
     await seedAlice();
     h.repo.__forceFailures("alice@example.com", DEFAULT_RATE_LIMIT.maxPerEmail);
 
-    const res = await supertest(h.app)
-      .post("/auth/sign-in")
-      .send({
-        email: "alice@example.com",
-        password: "correct horse battery staple",
-      });
+    const res = await supertest(h.app).post("/auth/sign-in").send({
+      email: "alice@example.com",
+      password: "correct horse battery staple",
+    });
 
     expect(res.status).toBe(429);
     expect(res.body.error).toBe("rate_limited");

@@ -86,10 +86,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -97,14 +96,13 @@ vi.mock("@workspace/resupply-db", async () => {
 });
 
 const sendEmailMock = vi.fn();
-const createSendgridClientMock = vi.fn<() => { sendEmail: typeof sendEmailMock }>(
-  () => ({ sendEmail: sendEmailMock }),
-);
+const createSendgridClientMock = vi.fn<
+  () => { sendEmail: typeof sendEmailMock }
+>(() => ({ sendEmail: sendEmailMock }));
 vi.mock("@workspace/resupply-email", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-email")>(
-      "@workspace/resupply-email",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
   return {
     ...actual,
     createSendgridClient: () => createSendgridClientMock(),
@@ -228,7 +226,9 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     expect(sqlText).toMatch(/SELECT id/i);
     // The four suppression-flag checks (3× IS NULL + 1× IS NOT NULL).
     // The fourth IS NULL coverage is the recovered_at flag.
-    expect((sqlText.match(/\bIS NULL\b/gi) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(
+      (sqlText.match(/\bIS NULL\b/gi) ?? []).length,
+    ).toBeGreaterThanOrEqual(3);
     expect(sqlText).toMatch(/\bIS NOT NULL\b/i);
     // Non-empty items predicate.
     expect(sqlText).toMatch(/jsonb_array_length/i);
@@ -344,7 +344,10 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     stubVerifiedAdmin();
     executeQueue.push({ rows: [makeRow({ id: ROW_A })] });
     sendEmailMock.mockRejectedValue(
-      Object.assign(new Error("blocked"), { name: "EmailApiError", status: 550 }),
+      Object.assign(new Error("blocked"), {
+        name: "EmailApiError",
+        status: 550,
+      }),
     );
     // Reserve one update slot for the unclaim.
     updateQueue.push(undefined);

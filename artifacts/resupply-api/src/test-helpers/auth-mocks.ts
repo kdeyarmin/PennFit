@@ -67,11 +67,7 @@ export interface MockSignedInRef {
  */
 export function makeRequireAdminMock(ref: MockAdminRef): {
   requireAdmin: (req: Request, res: Response, next: NextFunction) => void;
-  requireAdminOnly: (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) => void;
+  requireAdminOnly: (req: Request, res: Response, next: NextFunction) => void;
 } {
   const attach = (req: Request, ctx: MockAdminCtx): void => {
     req.adminUserId = ctx.userId;
@@ -112,21 +108,10 @@ export function makeRequireAdminMock(ref: MockAdminRef): {
  * when the ref is set.
  */
 export function makeRequireSignedInMock(ref: MockSignedInRef): {
-  requireSignedIn: (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) => void;
-  attachSignedIn: (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) => void;
+  requireSignedIn: (req: Request, res: Response, next: NextFunction) => void;
+  attachSignedIn: (req: Request, res: Response, next: NextFunction) => void;
 } {
-  const attach = (
-    req: Request,
-    value: string | MockSignedInProfile,
-  ): void => {
+  const attach = (req: Request, value: string | MockSignedInProfile): void => {
     if (typeof value === "string") {
       req.userCustomerId = value;
       return;

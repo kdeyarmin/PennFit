@@ -138,23 +138,33 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
   lines.push("─── SHIPPING ADDRESS ───");
   lines.push(order.shippingAddress.street1);
   if (order.shippingAddress.street2) lines.push(order.shippingAddress.street2);
-  lines.push(`${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.zip}`);
+  lines.push(
+    `${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.zip}`,
+  );
   lines.push("");
   lines.push("─── INSURANCE ───");
   lines.push(`Provider:  ${order.insurance.provider}`);
   lines.push(`Member ID: ${order.insurance.memberId}`);
-  if (order.insurance.groupNumber) lines.push(`Group #:   ${order.insurance.groupNumber}`);
-  if (order.insurance.planName) lines.push(`Plan:      ${order.insurance.planName}`);
+  if (order.insurance.groupNumber)
+    lines.push(`Group #:   ${order.insurance.groupNumber}`);
+  if (order.insurance.planName)
+    lines.push(`Plan:      ${order.insurance.planName}`);
   if (order.insurance.policyholderName) {
-    lines.push(`Policyholder: ${order.insurance.policyholderName} (${order.insurance.policyholderRelationship ?? "—"})`);
+    lines.push(
+      `Policyholder: ${order.insurance.policyholderName} (${order.insurance.policyholderRelationship ?? "—"})`,
+    );
   } else {
     lines.push(`Policyholder: patient`);
   }
   lines.push("");
   lines.push("─── PRESCRIPTION ───");
-  lines.push(`Has existing CPAP Rx on file: ${order.prescription.hasExistingPrescription ? "YES" : "NO — Penn must obtain Rx before shipping"}`);
-  if (order.prescription.physicianName) lines.push(`Physician: ${order.prescription.physicianName}`);
-  if (order.prescription.physicianPhone) lines.push(`Phone:     ${order.prescription.physicianPhone}`);
+  lines.push(
+    `Has existing CPAP Rx on file: ${order.prescription.hasExistingPrescription ? "YES" : "NO — Penn must obtain Rx before shipping"}`,
+  );
+  if (order.prescription.physicianName)
+    lines.push(`Physician: ${order.prescription.physicianName}`);
+  if (order.prescription.physicianPhone)
+    lines.push(`Phone:     ${order.prescription.physicianPhone}`);
   lines.push("");
   if (order.notes) {
     lines.push("─── PATIENT NOTES ───");
@@ -162,9 +172,13 @@ function composeEmailBody(order: OrderPayload, orderReference: string): string {
     lines.push("");
   }
   lines.push("─── CONSENT ───");
-  lines.push(`Patient consents to be contacted about this order: ${order.consentToContact ? "YES" : "NO"}`);
+  lines.push(
+    `Patient consents to be contacted about this order: ${order.consentToContact ? "YES" : "NO"}`,
+  );
   lines.push("");
-  lines.push("This order was submitted through PennPaps. No data is stored on the server.");
+  lines.push(
+    "This order was submitted through PennPaps. No data is stored on the server.",
+  );
   return lines.join("\n");
 }
 
@@ -268,7 +282,8 @@ export async function sendOrderToPenn(
       delivered: false,
       orderReference,
       deliveredAt,
-      error: err instanceof Error ? err.message : "Unknown email delivery error",
+      error:
+        err instanceof Error ? err.message : "Unknown email delivery error",
     };
   }
 }

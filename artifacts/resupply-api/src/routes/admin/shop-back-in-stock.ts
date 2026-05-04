@@ -20,7 +20,10 @@ import { Router, type IRouter } from "express";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 
-import { getDbPool, shopBackInStockNotifications } from "@workspace/resupply-db";
+import {
+  getDbPool,
+  shopBackInStockNotifications,
+} from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import {

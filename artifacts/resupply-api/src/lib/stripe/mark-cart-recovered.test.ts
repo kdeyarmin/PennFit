@@ -37,10 +37,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -100,10 +99,7 @@ describe("markCartRecovered", () => {
   it("does not log when no row matched (already recovered or never created)", async () => {
     const log = makeLog();
     updateQueue.push([]); // no row updated
-    await markCartRecovered(
-      makeSession({ customer_id: "user_no_cart" }),
-      log,
-    );
+    await markCartRecovered(makeSession({ customer_id: "user_no_cart" }), log);
     expect(dbStub.update).toHaveBeenCalledTimes(1);
     expect(log.info).not.toHaveBeenCalled();
   });

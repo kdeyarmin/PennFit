@@ -40,12 +40,23 @@ describe("parseSmsIntent", () => {
   });
 
   describe("CONFIRM family (leading word)", () => {
-    it.each(["YES", "yes", "Y", "y", "Yeah", "yep", "OK", "okay", "sure", "confirm", "go", "send", "ship it"])(
-      "classifies %j as confirm",
-      (body) => {
-        expect(parseSmsIntent(body).intent).toBe("confirm");
-      },
-    );
+    it.each([
+      "YES",
+      "yes",
+      "Y",
+      "y",
+      "Yeah",
+      "yep",
+      "OK",
+      "okay",
+      "sure",
+      "confirm",
+      "go",
+      "send",
+      "ship it",
+    ])("classifies %j as confirm", (body) => {
+      expect(parseSmsIntent(body).intent).toBe("confirm");
+    });
 
     it("yes-then-comment still confirms", () => {
       expect(parseSmsIntent("yes please send them").intent).toBe("confirm");

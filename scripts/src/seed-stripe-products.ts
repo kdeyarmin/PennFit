@@ -393,7 +393,10 @@ async function main(): Promise<void> {
 
     let product: Stripe.Product;
     if (existing.data[0]) {
-      product = await stripe.products.update(existing.data[0].id, updatePayload);
+      product = await stripe.products.update(
+        existing.data[0].id,
+        updatePayload,
+      );
       console.log(`  ↻ ${item.sku}  (${product.id}) — updated`);
     } else {
       product = await stripe.products.create(createPayload);

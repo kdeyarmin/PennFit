@@ -10,11 +10,7 @@
 // browser console either.
 
 import { useMemo, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   type InsuranceLeadRow,
@@ -88,7 +84,13 @@ export function AdminInsuranceLeadsPage() {
   });
 
   const rows = data?.rows ?? [];
-  const counts = data?.counts ?? { new: 0, contacted: 0, verified: 0, closed: 0 };
+  // Wrap `counts` in its own useMemo so the fallback object literal
+  // doesn't construct a fresh reference on every render — that
+  // reference is the dep of `total` below.
+  const counts = useMemo(
+    () => data?.counts ?? { new: 0, contacted: 0, verified: 0, closed: 0 },
+    [data?.counts],
+  );
   const total = useMemo(
     () => Object.values(counts).reduce((a, b) => a + b, 0),
     [counts],
@@ -106,10 +108,10 @@ export function AdminInsuranceLeadsPage() {
         </h1>
         <p className="text-sm text-slate-600 max-w-2xl">
           Patients who submitted the verify-my-coverage form on{" "}
-          <span className="font-mono text-xs">/insurance</span>. Mark
-          each one as you work it so the queue stays a true to-do
-          list. Email notifications still go out when SendGrid is
-          configured; this view is the durable record.
+          <span className="font-mono text-xs">/insurance</span>. Mark each one
+          as you work it so the queue stays a true to-do list. Email
+          notifications still go out when SendGrid is configured; this view is
+          the durable record.
         </p>
       </header>
 
@@ -126,8 +128,7 @@ export function AdminInsuranceLeadsPage() {
               onClick={() => setFilter(filter === s ? "all" : s)}
               className="text-left border rounded-lg p-3 bg-white hover:shadow transition-shadow"
               style={{
-                borderColor:
-                  filter === s ? sty.fg : "hsl(var(--line-1))",
+                borderColor: filter === s ? sty.fg : "hsl(var(--line-1))",
                 outline: filter === s ? `2px solid ${sty.fg}` : "none",
                 outlineOffset: "-2px",
               }}
@@ -178,7 +179,8 @@ export function AdminInsuranceLeadsPage() {
           Refresh
         </button>
         <span className="text-xs text-slate-500">
-          Showing {rows.length} {filter === "all" ? "lead(s)" : `${filter} lead(s)`}
+          Showing {rows.length}{" "}
+          {filter === "all" ? "lead(s)" : `${filter} lead(s)`}
         </span>
       </div>
 
@@ -201,15 +203,22 @@ export function AdminInsuranceLeadsPage() {
           <tbody>
             {isPending && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                <td
+                  colSpan={5}
+                  className="px-3 py-6 text-center text-slate-500"
+                >
                   Loading…
                 </td>
               </tr>
             )}
             {!isPending && rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
-                  No leads {filter === "all" ? "yet" : `with status "${filter}"`}.
+                <td
+                  colSpan={5}
+                  className="px-3 py-6 text-center text-slate-500"
+                >
+                  No leads{" "}
+                  {filter === "all" ? "yet" : `with status "${filter}"`}.
                 </td>
               </tr>
             )}
@@ -218,9 +227,7 @@ export function AdminInsuranceLeadsPage() {
                 key={r.id}
                 row={r}
                 pending={pendingId === r.id}
-                onPatch={(patch) =>
-                  updateMut.mutate({ id: r.id, patch })
-                }
+                onPatch={(patch) => updateMut.mutate({ id: r.id, patch })}
                 nowMs={nowMs}
               />
             ))}
@@ -283,10 +290,7 @@ function LeadRow({
           </div>
         )}
         {row.notes && (
-          <div
-            className="text-slate-500 mt-1 italic"
-            title={row.notes}
-          >
+          <div className="text-slate-500 mt-1 italic" title={row.notes}>
             "{row.notes.length > 80 ? `${row.notes.slice(0, 80)}…` : row.notes}"
           </div>
         )}
@@ -295,12 +299,13 @@ function LeadRow({
         <div>{formatRelative(row.createdAt, nowMs)}</div>
         <div className="text-[10px] text-slate-400 mt-0.5">
           {!row.notificationEmailDelivered && (
-            <span title="Team notification email did not deliver">
-              ⚠ team
-            </span>
+            <span title="Team notification email did not deliver">⚠ team</span>
           )}
           {!row.confirmationEmailDelivered && (
-            <span title="Patient confirmation email did not deliver" className="ml-1">
+            <span
+              title="Patient confirmation email did not deliver"
+              className="ml-1"
+            >
               ⚠ patient
             </span>
           )}

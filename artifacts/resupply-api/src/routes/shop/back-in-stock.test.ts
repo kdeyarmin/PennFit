@@ -101,10 +101,12 @@ describe("POST /shop/back-in-stock", () => {
   it("rate-limits after the 10th submit from the same ip", async () => {
     const app = makeApp();
     for (let i = 0; i < 10; i++) {
-      const r = await request(app).post("/shop/back-in-stock").send({
-        productId: "prod_ABC123",
-        email: `patient${i}@example.com`,
-      });
+      const r = await request(app)
+        .post("/shop/back-in-stock")
+        .send({
+          productId: "prod_ABC123",
+          email: `patient${i}@example.com`,
+        });
       expect(r.status).toBe(200);
     }
     const blocked = await request(app)

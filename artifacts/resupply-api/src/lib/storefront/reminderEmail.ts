@@ -70,7 +70,9 @@ export function labelForSku(sku: string): string {
 }
 
 export function manageLinkFor(token: string): string {
-  const base = (process.env.REMINDER_PUBLIC_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  const base = (
+    process.env.REMINDER_PUBLIC_BASE_URL ?? DEFAULT_BASE_URL
+  ).replace(/\/$/, "");
   return `${base}/reminders/manage?token=${encodeURIComponent(token)}`;
 }
 
@@ -146,7 +148,8 @@ async function sendViaSendGrid(opts: {
     return {
       configured: true,
       delivered: false,
-      error: err instanceof Error ? err.message : "Unknown email delivery error",
+      error:
+        err instanceof Error ? err.message : "Unknown email delivery error",
     };
   }
 }
@@ -194,15 +197,21 @@ export async function sendReminderManageLink(opts: {
 }): Promise<SendEmailResult> {
   const link = manageLinkFor(opts.manageToken);
   const lines: string[] = [];
-  lines.push("Someone — possibly you — re-submitted the PennPaps reminder signup form");
+  lines.push(
+    "Someone — possibly you — re-submitted the PennPaps reminder signup form",
+  );
   lines.push("with this email address.");
   lines.push("");
-  lines.push("You're already subscribed. To update the supplies you want reminders for,");
+  lines.push(
+    "You're already subscribed. To update the supplies you want reminders for,",
+  );
   lines.push("change replacement dates, or unsubscribe, use your manage link:");
   lines.push("");
   lines.push(link);
   lines.push("");
-  lines.push("If this wasn't you, no action is needed — your subscription is unchanged.");
+  lines.push(
+    "If this wasn't you, no action is needed — your subscription is unchanged.",
+  );
   lines.push("");
   lines.push("— PennPaps by Penn Home Medical Supply");
 
@@ -240,7 +249,9 @@ export async function sendReminderDue(opts: {
     "Need a refill? Visit the PennPaps shop to order — or call Penn Home Medical Supply.",
   );
   lines.push("");
-  lines.push("Already replaced these on your own? Update your dates here so we don't");
+  lines.push(
+    "Already replaced these on your own? Update your dates here so we don't",
+  );
   lines.push("nag you again:");
   lines.push(link);
   lines.push("");

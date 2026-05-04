@@ -139,7 +139,13 @@ router.post(
         });
       } catch (err) {
         logger.warn(
-          { err: err instanceof Error ? { name: err.name, message: err.message } : err, patient_id: row.id },
+          {
+            err:
+              err instanceof Error
+                ? { name: err.name, message: err.message }
+                : err,
+            patient_id: row.id,
+          },
           "patients/bulk-status: per-row audit write failed",
         );
       }
@@ -163,7 +169,12 @@ router.post(
       });
     } catch (err) {
       logger.warn(
-        { err: err instanceof Error ? { name: err.name, message: err.message } : err },
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+        },
         "patients/bulk-status: summary audit write failed",
       );
     }

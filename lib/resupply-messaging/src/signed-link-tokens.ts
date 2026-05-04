@@ -74,11 +74,7 @@ export type VerifyLinkTokenResult =
     }
   | {
       valid: false;
-      reason:
-        | "malformed"
-        | "bad-signature"
-        | "expired"
-        | "unknown-action";
+      reason: "malformed" | "bad-signature" | "expired" | "unknown-action";
     };
 
 function base64urlEncode(buf: Buffer): string {

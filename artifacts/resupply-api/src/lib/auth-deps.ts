@@ -202,8 +202,3 @@ function makeSendgridSender(): EmailSender {
     }
   };
 }
-
-/** Reset for tests. */
-export function __resetAuthDepsCache(): void {
-  cachedDeps = undefined;
-}

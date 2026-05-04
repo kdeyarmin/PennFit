@@ -123,7 +123,11 @@ const slideOut = interpolate(
   frame,
   [slideOutStart, slideOutStart + slideOutDuration],
   [0, 1],
-  { easing: Easing.in(Easing.cubic), extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  {
+    easing: Easing.in(Easing.cubic),
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  },
 );
 const progress = slideIn - slideOut;
 

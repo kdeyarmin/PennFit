@@ -82,9 +82,7 @@ export interface AuthRepository {
     mustChange?: boolean;
   }): Promise<void>;
 
-  findSessionByTokenHash(
-    tokenHash: Buffer,
-  ): Promise<AuthSession | null>;
+  findSessionByTokenHash(tokenHash: Buffer): Promise<AuthSession | null>;
   insertSession(input: {
     tokenHash: Buffer;
     userId: string;
@@ -143,7 +141,8 @@ export function pgAuthRepository(pool: Pool): AuthRepository {
     findUserById: (id) => findUserById(pool, id),
     insertUser: (input) => insertUser(pool, input),
     markEmailVerified: (userId, at) => markEmailVerified(pool, userId, at),
-    updateUserStatus: (userId, status) => updateUserStatus(pool, userId, status),
+    updateUserStatus: (userId, status) =>
+      updateUserStatus(pool, userId, status),
 
     findCredentialByUserId: (userId) => findCredentialByUserId(pool, userId),
     upsertCredential: (input) => upsertCredential(pool, input),

@@ -68,7 +68,9 @@ export interface ValidateSignatureInput {
  * have sent for the given (url, params, authToken). Constant-time
  * compare. NEVER throws on bad input — wrong → false.
  */
-export function validateTwilioSignature(input: ValidateSignatureInput): boolean {
+export function validateTwilioSignature(
+  input: ValidateSignatureInput,
+): boolean {
   if (!input.authToken || !input.signatureHeader) return false;
 
   // Build the canonical string Twilio expects: URL + sorted(k+v) join.
@@ -142,7 +144,9 @@ export function requireTwilioSignature(
     // string).
     const params: Record<string, string> = {};
     if (req.body && typeof req.body === "object") {
-      for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
+      for (const [k, v] of Object.entries(
+        req.body as Record<string, unknown>,
+      )) {
         if (typeof v === "string") params[k] = v;
       }
     }

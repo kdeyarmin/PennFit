@@ -129,11 +129,9 @@ export function PhiSweepStatusCard({ data, isLoading }: Props) {
     if (isLoading && data === undefined) return "loading";
     if (!data) return "never";
     const lastRunMs = new Date(data.lastRunAt).getTime();
-    const stale =
-      Number.isFinite(lastRunMs) && now - lastRunMs > STALENESS_MS;
+    const stale = Number.isFinite(lastRunMs) && now - lastRunMs > STALENESS_MS;
     const hasErrors =
-      data.counters.deleteErrors > 0 ||
-      data.counters.orphansNoTimeCreated > 0;
+      data.counters.deleteErrors > 0 || data.counters.orphansNoTimeCreated > 0;
     return hasErrors || stale ? "attention" : "healthy";
   })();
 
@@ -173,9 +171,8 @@ export function PhiSweepStatusCard({ data, isLoading }: Props) {
 
       {tone === "never" && (
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          No sweep has run yet. The job is scheduled weekly at
-          03:13 UTC on Sunday — first run will appear here once it
-          completes.
+          No sweep has run yet. The job is scheduled weekly at 03:13 UTC on
+          Sunday — first run will appear here once it completes.
         </p>
       )}
 
@@ -224,16 +221,15 @@ function PhiSweepDetails({
           {c.deleteErrors > 0 && (
             <li>
               <strong>{c.deleteErrors}</strong> delete error
-              {c.deleteErrors === 1 ? "" : "s"} — object-storage
-              delete API failed; investigate worker logs.
+              {c.deleteErrors === 1 ? "" : "s"} — object-storage delete API
+              failed; investigate worker logs.
             </li>
           )}
           {c.orphansNoTimeCreated > 0 && (
             <li>
               <strong>{c.orphansNoTimeCreated}</strong> orphan
-              {c.orphansNoTimeCreated === 1 ? "" : "s"} could not be
-              age-checked (no <code>timeCreated</code>); manual
-              review recommended.
+              {c.orphansNoTimeCreated === 1 ? "" : "s"} could not be age-checked
+              (no <code>timeCreated</code>); manual review recommended.
             </li>
           )}
         </ul>
@@ -253,10 +249,7 @@ function PhiSweepDetails({
           testId="phi-sweep-bytes-reclaimed"
         />
         <Counter label="Too young (skipped)" value={c.orphansTooYoung} />
-        <Counter
-          label="404 (already gone)"
-          value={c.delete404Idempotent}
-        />
+        <Counter label="404 (already gone)" value={c.delete404Idempotent} />
         <Counter label="Recheck saved" value={c.recheckSaved} />
       </dl>
     </div>

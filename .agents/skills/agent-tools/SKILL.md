@@ -20,6 +20,7 @@ belt login
 > **What does the installer do?** The [install script](https://cli.inference.sh) detects your OS and architecture, downloads the correct binary from `dist.inference.sh`, verifies its SHA-256 checksum, and places it in your PATH. That's it — no elevated permissions, no background processes, no telemetry. If you have [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) installed, the installer also verifies the Sigstore signature automatically.
 >
 > **Manual install** (if you prefer not to pipe to sh):
+>
 > ```bash
 > # Download the binary and checksums
 > curl -LO https://dist.inference.sh/cli/checksums.txt
@@ -73,28 +74,28 @@ belt app run x/post-create --input '{"text": "Check this out!", "media": "./scre
 
 ## Commands
 
-| Task | Command |
-|------|---------|
-| List all apps | `belt app list` |
-| Search apps | `belt app list --search "flux"` |
-| Filter by category | `belt app list --category image` |
-| Get app details | `belt app get google/veo-3-1-fast` |
+| Task                  | Command                                                 |
+| --------------------- | ------------------------------------------------------- |
+| List all apps         | `belt app list`                                         |
+| Search apps           | `belt app list --search "flux"`                         |
+| Filter by category    | `belt app list --category image`                        |
+| Get app details       | `belt app get google/veo-3-1-fast`                      |
 | Generate sample input | `belt app sample google/veo-3-1-fast --save input.json` |
-| Run app | `belt app run google/veo-3-1-fast --input input.json` |
-| Run without waiting | `belt app run <app> --input input.json --no-wait` |
-| Check task status | `belt task get <task-id>` |
+| Run app               | `belt app run google/veo-3-1-fast --input input.json`   |
+| Run without waiting   | `belt app run <app> --input input.json --no-wait`       |
+| Check task status     | `belt task get <task-id>`                               |
 
 ## What's Available
 
-| Category | Examples |
-|----------|----------|
-| **Image** | FLUX, Gemini 3 Pro, Grok Imagine, Seedream 4.5, Reve, Topaz Upscaler |
-| **Video** | Veo 3.1, Seedance 1.5, Wan 2.5, OmniHuman, Fabric, HunyuanVideo Foley |
-| **LLMs** | Claude Opus/Sonnet/Haiku, Gemini 3 Pro, Kimi K2, GLM-4, any OpenRouter model |
-| **Search** | Tavily Search, Tavily Extract, Exa Search, Exa Answer, Exa Extract |
-| **3D** | Rodin 3D Generator |
-| **Twitter/X** | post-tweet, post-create, dm-send, user-follow, post-like, post-retweet |
-| **Utilities** | Media merger, caption videos, image stitching, audio extraction |
+| Category      | Examples                                                                     |
+| ------------- | ---------------------------------------------------------------------------- |
+| **Image**     | FLUX, Gemini 3 Pro, Grok Imagine, Seedream 4.5, Reve, Topaz Upscaler         |
+| **Video**     | Veo 3.1, Seedance 1.5, Wan 2.5, OmniHuman, Fabric, HunyuanVideo Foley        |
+| **LLMs**      | Claude Opus/Sonnet/Haiku, Gemini 3 Pro, Kimi K2, GLM-4, any OpenRouter model |
+| **Search**    | Tavily Search, Tavily Extract, Exa Search, Exa Answer, Exa Extract           |
+| **3D**        | Rodin 3D Generator                                                           |
+| **Twitter/X** | post-tweet, post-create, dm-send, user-follow, post-like, post-retweet       |
+| **Utilities** | Media merger, caption videos, image stitching, audio extraction              |
 
 ## Related Skills
 
@@ -142,4 +143,3 @@ npx skills add inference-sh/skills@background-removal
 - [CLI Setup](https://inference.sh/docs/extend/cli-setup) - Installing the CLI
 - [Workflows vs Agents](https://inference.sh/blog/concepts/workflows-vs-agents) - When to use each
 - [Why Agent Runtimes Matter](https://inference.sh/blog/agent-runtime/why-runtimes-matter) - Runtime benefits
-

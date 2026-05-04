@@ -299,10 +299,9 @@ router.delete(
     const lookup = await pool.query<{
       email_lower: string;
       status: string;
-    }>(
-      `SELECT email_lower, status FROM auth.users WHERE id = $1 LIMIT 1`,
-      [invId],
-    );
+    }>(`SELECT email_lower, status FROM auth.users WHERE id = $1 LIMIT 1`, [
+      invId,
+    ]);
     const row = lookup.rows[0];
     if (!row) {
       res.status(404).json({
@@ -320,10 +319,7 @@ router.delete(
 
     await revokeTeamMember(pool, invId);
 
-    await writeAudit(
-      req,
-      `team.invitation_revoke email=${row.email_lower}`,
-    );
+    await writeAudit(req, `team.invitation_revoke email=${row.email_lower}`);
     res.json({ ok: true, invitationId: invId });
   },
 );

@@ -5,17 +5,38 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { useSubmitOrder, ApiError } from "@workspace/api-client-react/storefront";
+import {
+  useSubmitOrder,
+  ApiError,
+} from "@workspace/api-client-react/storefront";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, ShieldCheck, Tag, AlertCircle, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ShieldCheck,
+  Tag,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 
@@ -31,7 +52,10 @@ const formSchema = z.object({
     street1: z.string().min(1, "Required").max(200),
     street2: z.string().max(200).optional().or(z.literal("")),
     city: z.string().min(1, "Required").max(100),
-    state: z.string().length(2, "Use 2-letter state code").regex(/^[A-Za-z]{2}$/, "Letters only"),
+    state: z
+      .string()
+      .length(2, "Use 2-letter state code")
+      .regex(/^[A-Za-z]{2}$/, "Letters only"),
     zip: z.string().regex(/^\d{5}(-\d{4})?$/, "Use 12345 or 12345-6789"),
   }),
   insurance: z.object({
@@ -40,7 +64,9 @@ const formSchema = z.object({
     groupNumber: z.string().max(50).optional().or(z.literal("")),
     planName: z.string().max(100).optional().or(z.literal("")),
     policyholderName: z.string().max(200).optional().or(z.literal("")),
-    policyholderRelationship: z.enum(["self", "spouse", "parent", "child", "other"]).optional(),
+    policyholderRelationship: z
+      .enum(["self", "spouse", "parent", "child", "other"])
+      .optional(),
   }),
   prescription: z.object({
     hasExistingPrescription: z.boolean(),
@@ -52,11 +78,9 @@ const formSchema = z.object({
   // so we can write `setValue("consentToContact", false)` without an awful
   // `false as unknown as true` cast. The refine() still enforces the same
   // submit-blocking behaviour.
-  consentToContact: z
-    .boolean()
-    .refine((v) => v === true, {
-      message: "You must consent to be contacted to submit an order",
-    }),
+  consentToContact: z.boolean().refine((v) => v === true, {
+    message: "You must consent to be contacted to submit an order",
+  }),
   // Honeypot — this field is hidden from real users via CSS + aria. Bots
   // tend to fill in every input they see; if this is non-empty we
   // silently pretend the submission succeeded. Backend has the same check.
@@ -66,9 +90,57 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 const US_STATES = [
-  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
-  "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
-  "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
+  "AL",
+  "AK",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DE",
+  "FL",
+  "GA",
+  "HI",
+  "ID",
+  "IL",
+  "IN",
+  "IA",
+  "KS",
+  "KY",
+  "LA",
+  "ME",
+  "MD",
+  "MA",
+  "MI",
+  "MN",
+  "MS",
+  "MO",
+  "MT",
+  "NE",
+  "NV",
+  "NH",
+  "NJ",
+  "NM",
+  "NY",
+  "NC",
+  "ND",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UT",
+  "VT",
+  "VA",
+  "WA",
+  "WV",
+  "WI",
+  "WY",
+  "DC",
 ];
 
 export function Order() {
@@ -136,7 +208,9 @@ export function Order() {
           patient: values.patient,
           shippingAddress: {
             street1: values.shippingAddress.street1,
-            ...(values.shippingAddress.street2 ? { street2: values.shippingAddress.street2 } : {}),
+            ...(values.shippingAddress.street2
+              ? { street2: values.shippingAddress.street2 }
+              : {}),
             city: values.shippingAddress.city,
             state: values.shippingAddress.state.toUpperCase(),
             zip: values.shippingAddress.zip,
@@ -144,19 +218,29 @@ export function Order() {
           insurance: {
             provider: values.insurance.provider,
             memberId: values.insurance.memberId,
-            ...(values.insurance.groupNumber ? { groupNumber: values.insurance.groupNumber } : {}),
-            ...(values.insurance.planName ? { planName: values.insurance.planName } : {}),
+            ...(values.insurance.groupNumber
+              ? { groupNumber: values.insurance.groupNumber }
+              : {}),
+            ...(values.insurance.planName
+              ? { planName: values.insurance.planName }
+              : {}),
             ...(values.insurance.policyholderName
               ? {
                   policyholderName: values.insurance.policyholderName,
-                  policyholderRelationship: values.insurance.policyholderRelationship,
+                  policyholderRelationship:
+                    values.insurance.policyholderRelationship,
                 }
               : {}),
           },
           prescription: {
-            hasExistingPrescription: values.prescription.hasExistingPrescription,
-            ...(values.prescription.physicianName ? { physicianName: values.prescription.physicianName } : {}),
-            ...(values.prescription.physicianPhone ? { physicianPhone: values.prescription.physicianPhone } : {}),
+            hasExistingPrescription:
+              values.prescription.hasExistingPrescription,
+            ...(values.prescription.physicianName
+              ? { physicianName: values.prescription.physicianName }
+              : {}),
+            ...(values.prescription.physicianPhone
+              ? { physicianPhone: values.prescription.physicianPhone }
+              : {}),
           },
           ...(values.notes ? { notes: values.notes } : {}),
           consentToContact: values.consentToContact,
@@ -185,7 +269,10 @@ export function Order() {
   // Type the React-Query mutation error as our generated ApiError so we
   // can read the typed `.data.error` / `.data.details` payload without
   // sprinkling `as any` everywhere.
-  const apiError = error as ApiError<{ error?: string; details?: string[] }> | null;
+  const apiError = error as ApiError<{
+    error?: string;
+    details?: string[];
+  }> | null;
 
   return (
     <div className="container max-w-3xl mx-auto px-4 py-12 animate-shimmer-in">
@@ -214,8 +301,8 @@ export function Order() {
           Order Your Mask
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-          Tell us where to send your mask and how to bill your insurance. Your order goes directly to
-          Penn Home Medical Supply for fulfillment.
+          Tell us where to send your mask and how to bill your insurance. Your
+          order goes directly to Penn Home Medical Supply for fulfillment.
         </p>
       </div>
 
@@ -228,7 +315,9 @@ export function Order() {
             <div className="text-xs uppercase tracking-[0.2em] text-[hsl(var(--penn-navy))]/70 font-semibold mb-1">
               Selected Mask
             </div>
-            <div className="font-semibold text-lg leading-tight tracking-tight">{chosenMask.name}</div>
+            <div className="font-semibold text-lg leading-tight tracking-tight">
+              {chosenMask.name}
+            </div>
             <div className="text-sm text-muted-foreground">
               {chosenMask.manufacturer} ·{" "}
               <code className="font-mono text-foreground bg-white/60 px-1.5 py-0.5 rounded text-xs">
@@ -250,7 +339,11 @@ export function Order() {
       </Card>
 
       {apiError && (
-        <Alert variant="destructive" className="mb-6 glass-card border-destructive/30" data-testid="alert-order-error">
+        <Alert
+          variant="destructive"
+          className="mb-6 glass-card border-destructive/30"
+          data-testid="alert-order-error"
+        >
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>We couldn't submit your order</AlertTitle>
           <AlertDescription>
@@ -258,13 +351,14 @@ export function Order() {
               {apiError.data?.error ??
                 "Something went wrong while sending your order. Please try again or call Penn Home Medical Supply directly."}
             </div>
-            {Array.isArray(apiError.data?.details) && apiError.data!.details!.length > 0 && (
-              <ul className="mt-2 text-xs list-disc list-inside space-y-0.5 opacity-90">
-                {apiError.data!.details!.map((d, i) => (
-                  <li key={i}>{d}</li>
-                ))}
-              </ul>
-            )}
+            {Array.isArray(apiError.data?.details) &&
+              apiError.data!.details!.length > 0 && (
+                <ul className="mt-2 text-xs list-disc list-inside space-y-0.5 opacity-90">
+                  {apiError.data!.details!.map((d, i) => (
+                    <li key={i}>{d}</li>
+                  ))}
+                </ul>
+              )}
           </AlertDescription>
         </Alert>
       )}
@@ -273,17 +367,41 @@ export function Order() {
         {/* Patient info */}
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl tracking-tight font-bold">Your Information</CardTitle>
-            <CardDescription>This is the patient who will be using the mask.</CardDescription>
+            <CardTitle className="text-xl tracking-tight font-bold">
+              Your Information
+            </CardTitle>
+            <CardDescription>
+              This is the patient who will be using the mask.
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="First name" error={errors.patient?.firstName?.message} required>
-              <Input data-testid="input-firstName" {...register("patient.firstName")} autoComplete="given-name" />
+            <Field
+              label="First name"
+              error={errors.patient?.firstName?.message}
+              required
+            >
+              <Input
+                data-testid="input-firstName"
+                {...register("patient.firstName")}
+                autoComplete="given-name"
+              />
             </Field>
-            <Field label="Last name" error={errors.patient?.lastName?.message} required>
-              <Input data-testid="input-lastName" {...register("patient.lastName")} autoComplete="family-name" />
+            <Field
+              label="Last name"
+              error={errors.patient?.lastName?.message}
+              required
+            >
+              <Input
+                data-testid="input-lastName"
+                {...register("patient.lastName")}
+                autoComplete="family-name"
+              />
             </Field>
-            <Field label="Date of birth" error={errors.patient?.dateOfBirth?.message} required>
+            <Field
+              label="Date of birth"
+              error={errors.patient?.dateOfBirth?.message}
+              required
+            >
               <Input
                 data-testid="input-dob"
                 type="date"
@@ -291,7 +409,11 @@ export function Order() {
                 autoComplete="bday"
               />
             </Field>
-            <Field label="Phone" error={errors.patient?.phone?.message} required>
+            <Field
+              label="Phone"
+              error={errors.patient?.phone?.message}
+              required
+            >
               <Input
                 data-testid="input-phone"
                 type="tel"
@@ -300,7 +422,12 @@ export function Order() {
                 autoComplete="tel"
               />
             </Field>
-            <Field label="Email" error={errors.patient?.email?.message} required className="md:col-span-2">
+            <Field
+              label="Email"
+              error={errors.patient?.email?.message}
+              required
+              className="md:col-span-2"
+            >
               <Input
                 data-testid="input-email"
                 type="email"
@@ -315,18 +442,46 @@ export function Order() {
         {/* Shipping address */}
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl tracking-tight font-bold">Shipping Address</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">
+              Shipping Address
+            </CardTitle>
             <CardDescription>Where should we ship your mask?</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-6 gap-4">
-            <Field label="Street address" error={errors.shippingAddress?.street1?.message} required className="md:col-span-6">
-              <Input data-testid="input-street1" {...register("shippingAddress.street1")} autoComplete="address-line1" />
+            <Field
+              label="Street address"
+              error={errors.shippingAddress?.street1?.message}
+              required
+              className="md:col-span-6"
+            >
+              <Input
+                data-testid="input-street1"
+                {...register("shippingAddress.street1")}
+                autoComplete="address-line1"
+              />
             </Field>
-            <Field label="Apartment, suite, etc. (optional)" error={errors.shippingAddress?.street2?.message} className="md:col-span-6">
-              <Input data-testid="input-street2" {...register("shippingAddress.street2")} autoComplete="address-line2" />
+            <Field
+              label="Apartment, suite, etc. (optional)"
+              error={errors.shippingAddress?.street2?.message}
+              className="md:col-span-6"
+            >
+              <Input
+                data-testid="input-street2"
+                {...register("shippingAddress.street2")}
+                autoComplete="address-line2"
+              />
             </Field>
-            <Field label="City" error={errors.shippingAddress?.city?.message} required className="md:col-span-3">
-              <Input data-testid="input-city" {...register("shippingAddress.city")} autoComplete="address-level2" />
+            <Field
+              label="City"
+              error={errors.shippingAddress?.city?.message}
+              required
+              className="md:col-span-3"
+            >
+              <Input
+                data-testid="input-city"
+                {...register("shippingAddress.city")}
+                autoComplete="address-level2"
+              />
             </Field>
             <Field
               label="State"
@@ -338,19 +493,28 @@ export function Order() {
             >
               <Select
                 value={stateValue}
-                onValueChange={(v) => setValue("shippingAddress.state", v, { shouldValidate: true })}
+                onValueChange={(v) =>
+                  setValue("shippingAddress.state", v, { shouldValidate: true })
+                }
               >
                 <SelectTrigger data-testid="select-state">
                   <SelectValue placeholder="Select state" />
                 </SelectTrigger>
                 <SelectContent>
                   {US_STATES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="ZIP" error={errors.shippingAddress?.zip?.message} required className="md:col-span-2">
+            <Field
+              label="ZIP"
+              error={errors.shippingAddress?.zip?.message}
+              required
+              className="md:col-span-2"
+            >
               <Input
                 data-testid="input-zip"
                 placeholder="12345"
@@ -364,27 +528,53 @@ export function Order() {
         {/* Insurance */}
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl tracking-tight font-bold">Insurance Information</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">
+              Insurance Information
+            </CardTitle>
             <CardDescription>
-              Penn Home Medical Supply will bill your insurance directly. Have your card ready.
+              Penn Home Medical Supply will bill your insurance directly. Have
+              your card ready.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="Insurance provider" error={errors.insurance?.provider?.message} required>
+            <Field
+              label="Insurance provider"
+              error={errors.insurance?.provider?.message}
+              required
+            >
               <Input
                 data-testid="input-insurance-provider"
                 placeholder="e.g. Aetna, Medicare, BCBS"
                 {...register("insurance.provider")}
               />
             </Field>
-            <Field label="Member ID" error={errors.insurance?.memberId?.message} required>
-              <Input data-testid="input-member-id" {...register("insurance.memberId")} />
+            <Field
+              label="Member ID"
+              error={errors.insurance?.memberId?.message}
+              required
+            >
+              <Input
+                data-testid="input-member-id"
+                {...register("insurance.memberId")}
+              />
             </Field>
-            <Field label="Group number (optional)" error={errors.insurance?.groupNumber?.message}>
-              <Input data-testid="input-group-number" {...register("insurance.groupNumber")} />
+            <Field
+              label="Group number (optional)"
+              error={errors.insurance?.groupNumber?.message}
+            >
+              <Input
+                data-testid="input-group-number"
+                {...register("insurance.groupNumber")}
+              />
             </Field>
-            <Field label="Plan name (optional)" error={errors.insurance?.planName?.message}>
-              <Input data-testid="input-plan-name" {...register("insurance.planName")} />
+            <Field
+              label="Plan name (optional)"
+              error={errors.insurance?.planName?.message}
+            >
+              <Input
+                data-testid="input-plan-name"
+                {...register("insurance.planName")}
+              />
             </Field>
             <Field
               label="Policyholder name (if not you)"
@@ -406,9 +596,13 @@ export function Order() {
               <Select
                 value={relationshipValue ?? ""}
                 onValueChange={(v) =>
-                  setValue("insurance.policyholderRelationship", v as FormValues["insurance"]["policyholderRelationship"], {
-                    shouldValidate: true,
-                  })
+                  setValue(
+                    "insurance.policyholderRelationship",
+                    v as FormValues["insurance"]["policyholderRelationship"],
+                    {
+                      shouldValidate: true,
+                    },
+                  )
                 }
               >
                 <SelectTrigger data-testid="select-relationship">
@@ -429,40 +623,74 @@ export function Order() {
         {/* Prescription */}
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl tracking-tight font-bold">Prescription</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">
+              Prescription
+            </CardTitle>
             <CardDescription>
-              CPAP equipment requires a valid prescription. We'll work with your physician if needed.
+              CPAP equipment requires a valid prescription. We'll work with your
+              physician if needed.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div>
-              <Label className="mb-2 block">Do you have an existing CPAP prescription?</Label>
+              <Label className="mb-2 block">
+                Do you have an existing CPAP prescription?
+              </Label>
               <RadioGroup
                 value={hasRxValue ? "yes" : "no"}
                 onValueChange={(v) =>
-                  setValue("prescription.hasExistingPrescription", v === "yes", { shouldValidate: true })
+                  setValue(
+                    "prescription.hasExistingPrescription",
+                    v === "yes",
+                    { shouldValidate: true },
+                  )
                 }
                 className="flex gap-6"
               >
                 <div className="flex items-center gap-2">
-                  <RadioGroupItem value="yes" id="rx-yes" data-testid="radio-rx-yes" />
-                  <Label htmlFor="rx-yes" className="cursor-pointer font-normal">Yes, on file with a doctor</Label>
+                  <RadioGroupItem
+                    value="yes"
+                    id="rx-yes"
+                    data-testid="radio-rx-yes"
+                  />
+                  <Label
+                    htmlFor="rx-yes"
+                    className="cursor-pointer font-normal"
+                  >
+                    Yes, on file with a doctor
+                  </Label>
                 </div>
                 <div className="flex items-center gap-2">
-                  <RadioGroupItem value="no" id="rx-no" data-testid="radio-rx-no" />
-                  <Label htmlFor="rx-no" className="cursor-pointer font-normal">No / not sure</Label>
+                  <RadioGroupItem
+                    value="no"
+                    id="rx-no"
+                    data-testid="radio-rx-no"
+                  />
+                  <Label htmlFor="rx-no" className="cursor-pointer font-normal">
+                    No / not sure
+                  </Label>
                 </div>
               </RadioGroup>
               <p className="text-xs text-muted-foreground mt-2">
-                If you don't have one yet, Penn Home Medical Supply can help you obtain one before shipping.
+                If you don't have one yet, Penn Home Medical Supply can help you
+                obtain one before shipping.
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Prescribing physician name (optional)" error={errors.prescription?.physicianName?.message}>
-                <Input data-testid="input-physician-name" {...register("prescription.physicianName")} />
+              <Field
+                label="Prescribing physician name (optional)"
+                error={errors.prescription?.physicianName?.message}
+              >
+                <Input
+                  data-testid="input-physician-name"
+                  {...register("prescription.physicianName")}
+                />
               </Field>
-              <Field label="Physician phone (optional)" error={errors.prescription?.physicianPhone?.message}>
+              <Field
+                label="Physician phone (optional)"
+                error={errors.prescription?.physicianPhone?.message}
+              >
                 <Input
                   data-testid="input-physician-phone"
                   type="tel"
@@ -476,10 +704,15 @@ export function Order() {
         {/* Notes + consent */}
         <Card className="border-0 glass-card rounded-2xl">
           <CardHeader>
-            <CardTitle className="text-xl tracking-tight font-bold">Notes & Consent</CardTitle>
+            <CardTitle className="text-xl tracking-tight font-bold">
+              Notes & Consent
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            <Field label="Anything else we should know? (optional)" error={errors.notes?.message}>
+            <Field
+              label="Anything else we should know? (optional)"
+              error={errors.notes?.message}
+            >
               <Textarea
                 data-testid="input-notes"
                 placeholder="Allergies, special requests, preferred contact times, etc."
@@ -494,32 +727,51 @@ export function Order() {
                 data-testid="checkbox-consent"
                 checked={!!consentValue}
                 onCheckedChange={(c) =>
-                  setValue("consentToContact", c === true, { shouldValidate: true })
+                  setValue("consentToContact", c === true, {
+                    shouldValidate: true,
+                  })
                 }
               />
               <div className="flex-1 -mt-0.5 space-y-2">
-                <Label htmlFor="consent" className="cursor-pointer font-normal text-sm leading-relaxed block">
-                  I authorize Penn Home Medical Supply to <strong>contact me</strong> by phone, email, and SMS
-                  text message at the number and email above regarding this order, insurance
-                  verification, shipping updates, and ongoing CPAP resupply reminders, and to{" "}
-                  <strong>store the order details I've entered above</strong> (including my contact, shipping,
-                  insurance, and prescription information) in Penn Home Medical Supply's secure system for fulfillment and
-                  recordkeeping.
+                <Label
+                  htmlFor="consent"
+                  className="cursor-pointer font-normal text-sm leading-relaxed block"
+                >
+                  I authorize Penn Home Medical Supply to{" "}
+                  <strong>contact me</strong> by phone, email, and SMS text
+                  message at the number and email above regarding this order,
+                  insurance verification, shipping updates, and ongoing CPAP
+                  resupply reminders, and to{" "}
+                  <strong>store the order details I've entered above</strong>{" "}
+                  (including my contact, shipping, insurance, and prescription
+                  information) in Penn Home Medical Supply's secure system for
+                  fulfillment and recordkeeping.
                 </Label>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  <strong>SMS terms:</strong> By providing your mobile number you consent to
-                  receive transactional text messages from Penn Home Medical Supply at that number, including via
-                  automated systems. Approximately 1–2 messages per resupply cycle (typically
-                  every 30–90 days). No marketing texts. <strong>Message and data rates may
-                  apply.</strong> Reply <strong>HELP</strong> for help, <strong>STOP</strong> to
+                  <strong>SMS terms:</strong> By providing your mobile number
+                  you consent to receive transactional text messages from Penn
+                  Home Medical Supply at that number, including via automated
+                  systems. Approximately 1–2 messages per resupply cycle
+                  (typically every 30–90 days). No marketing texts.{" "}
+                  <strong>Message and data rates may apply.</strong> Reply{" "}
+                  <strong>HELP</strong> for help, <strong>STOP</strong> to
                   unsubscribe at any time. See our{" "}
-                  <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
+                  <Link
+                    href="/privacy"
+                    className="underline hover:text-primary"
+                  >
+                    Privacy Policy
+                  </Link>{" "}
                   and{" "}
-                  <Link href="/terms" className="underline hover:text-primary">Terms of Service</Link>{" "}
+                  <Link href="/terms" className="underline hover:text-primary">
+                    Terms of Service
+                  </Link>{" "}
                   for full SMS program details.
                 </p>
                 {isSubmitted && errors.consentToContact && (
-                  <p className="text-xs text-destructive mt-1">{errors.consentToContact.message}</p>
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.consentToContact.message}
+                  </p>
                 )}
               </div>
             </div>
@@ -527,14 +779,21 @@ export function Order() {
             <div className="flex items-start gap-3 text-xs text-muted-foreground">
               <ShieldCheck className="w-4 h-4 mt-0.5 text-primary shrink-0" />
               <p>
-                Your order is sent securely to Penn Home Medical Supply and stored in their secure
-                order-fulfillment database, including the contact, shipping, insurance, and prescription details
-                above plus the numeric facial measurements that were used to recommend your mask. Your
-                camera image and video stream were never uploaded — only the measurement numbers leave your
-                device. By submitting, you agree to our{" "}
-                <Link href="/privacy" className="underline hover:text-primary">Privacy Policy</Link>{" "}
+                Your order is sent securely to Penn Home Medical Supply and
+                stored in their secure order-fulfillment database, including the
+                contact, shipping, insurance, and prescription details above
+                plus the numeric facial measurements that were used to recommend
+                your mask. Your camera image and video stream were never
+                uploaded — only the measurement numbers leave your device. By
+                submitting, you agree to our{" "}
+                <Link href="/privacy" className="underline hover:text-primary">
+                  Privacy Policy
+                </Link>{" "}
                 and{" "}
-                <Link href="/terms" className="underline hover:text-primary">Terms of Service</Link>.
+                <Link href="/terms" className="underline hover:text-primary">
+                  Terms of Service
+                </Link>
+                .
               </p>
             </div>
           </CardContent>
@@ -546,7 +805,10 @@ export function Order() {
           skip past it. Bots that crawl forms tend to fill in everything
           they can find. The submit handler short-circuits if this is set.
         */}
-        <div aria-hidden="true" className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden"
+        >
           <label htmlFor="penn-website-hp">Website (leave blank)</label>
           <input
             id="penn-website-hp"
@@ -575,10 +837,10 @@ export function Order() {
               No surprise bills.
             </p>
             <p className="text-muted-foreground mt-0.5">
-              Submitting this form does not charge your card. Penn Home
-              Medical Supply will verify your insurance benefit and
-              prescription first, then contact you to confirm before
-              anything ships. You'll know your out-of-pocket — usually
+              Submitting this form does not charge your card. Penn Home Medical
+              Supply will verify your insurance benefit and prescription first,
+              then contact you to confirm before anything ships. You'll know
+              your out-of-pocket — usually
               <span className="font-semibold"> $0 with prescription</span> —
               before they fulfill the order.
             </p>
@@ -605,7 +867,8 @@ export function Order() {
           >
             {isPending ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending order...
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending
+                order...
               </>
             ) : (
               "Send Order to Penn Home Medical Supply"
@@ -647,13 +910,16 @@ function Field({
   const child =
     !skipHtmlFor && isValidElement(children)
       ? cloneElement(children as React.ReactElement<{ id?: string }>, {
-          id: (children as React.ReactElement<{ id?: string }>).props.id ?? generatedId,
+          id:
+            (children as React.ReactElement<{ id?: string }>).props.id ??
+            generatedId,
         })
       : children;
   const inputId = skipHtmlFor
     ? undefined
     : isValidElement(children)
-      ? ((children as React.ReactElement<{ id?: string }>).props.id ?? generatedId)
+      ? ((children as React.ReactElement<{ id?: string }>).props.id ??
+        generatedId)
       : undefined;
 
   return (

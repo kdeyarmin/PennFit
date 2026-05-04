@@ -90,8 +90,14 @@ type ResumeState = "rehydrated" | "needs_signin" | "nothing_to_do" | null;
 
 export function ShopCart() {
   useDocumentTitle("Your cart");
-  const { items, totalCents, setQuantity, removeItem, setItemMode, replaceItems } =
-    useCart();
+  const {
+    items,
+    totalCents,
+    setQuantity,
+    removeItem,
+    setItemMode,
+    replaceItems,
+  } = useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Reorder breadcrumb — populated from sessionStorage on mount if the
@@ -421,8 +427,8 @@ export function ShopCart() {
               Sign in to restore your cart
             </p>
             <p className="text-muted-foreground mt-0.5">
-              You came from a saved-cart email. Sign in with the email
-              that received it and we'll bring your items back.
+              You came from a saved-cart email. Sign in with the email that
+              received it and we'll bring your items back.
             </p>
           </div>
           <button
@@ -453,8 +459,8 @@ export function ShopCart() {
                     We restored your cart from the email reminder
                   </p>
                   <p className="text-muted-foreground mt-0.5">
-                    Adjust quantities or remove anything you don't need
-                    before checking out.
+                    Adjust quantities or remove anything you don't need before
+                    checking out.
                   </p>
                 </div>
                 <button
@@ -483,22 +489,22 @@ export function ShopCart() {
                     )}
                   </p>
                   <p className="text-muted-foreground mt-0.5">
-                    Adjust quantities or remove anything you don't need
-                    before checking out.
+                    Adjust quantities or remove anything you don't need before
+                    checking out.
                   </p>
                   {(reorderSource.droppedCount ?? 0) > 0 && (
-                      <p
-                        className="text-amber-700 mt-1.5 flex items-start gap-1.5"
-                        data-testid="cart-reorder-banner-dropped"
-                      >
-                        <Info className="h-4 w-4 shrink-0 mt-0.5" />
-                        <span>
-                          {reorderSource.droppedCount === 1
-                            ? "1 item from that order is no longer available and was skipped."
-                            : `${reorderSource.droppedCount} items from that order are no longer available and were skipped.`}
-                        </span>
-                      </p>
-                    )}
+                    <p
+                      className="text-amber-700 mt-1.5 flex items-start gap-1.5"
+                      data-testid="cart-reorder-banner-dropped"
+                    >
+                      <Info className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>
+                        {reorderSource.droppedCount === 1
+                          ? "1 item from that order is no longer available and was skipped."
+                          : `${reorderSource.droppedCount} items from that order are no longer available and were skipped.`}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -653,7 +659,9 @@ export function ShopCart() {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Shipping</dt>
-                  <dd className="text-muted-foreground">Calculated by Stripe</dd>
+                  <dd className="text-muted-foreground">
+                    Calculated by Stripe
+                  </dd>
                 </div>
               </dl>
               <div className="border-t border-border/40 pt-4 mb-4 flex justify-between">
@@ -673,10 +681,7 @@ export function ShopCart() {
                 gracefully renders even if the catalog is still
                 loading — the dates are computed locally.
               */}
-              <ShippingEta
-                className="mb-4"
-                testIdPrefix="cart-shipping-eta"
-              />
+              <ShippingEta className="mb-4" testIdPrefix="cart-shipping-eta" />
               <ComfortGuarantee variant="badge" className="mb-4" />
               {error && (
                 <div
@@ -703,9 +708,9 @@ export function ShopCart() {
                           Your previous checkout window expired.
                         </p>
                         <p className="text-xs text-rose-700 mt-0.5 leading-relaxed">
-                          Stripe checkout pages time out after about
-                          24 hours. Your cart is still here — just
-                          tap Try again to start a fresh checkout.
+                          Stripe checkout pages time out after about 24 hours.
+                          Your cart is still here — just tap Try again to start
+                          a fresh checkout.
                         </p>
                       </>
                     ) : (
@@ -758,8 +763,9 @@ export function ShopCart() {
                     ) : (
                       <>
                         <Lock className="w-4 h-4 mr-2" />
-                        Express checkout — pay with{" "}
-                        {savedCard?.brand ?? "card"} ••••{savedCard?.last4}
+                        Express checkout — pay with {savedCard?.brand ??
+                          "card"}{" "}
+                        ••••{savedCard?.last4}
                       </>
                     )}
                   </Button>
@@ -833,8 +839,9 @@ export function ShopCart() {
                       (i) =>
                         catalog.find((p) => p.id === i.productId)?.category,
                     )
-                    .filter((c): c is ShopProductView["category"] =>
-                      typeof c === "string",
+                    .filter(
+                      (c): c is ShopProductView["category"] =>
+                        typeof c === "string",
                     ),
                 ),
               )}
@@ -861,8 +868,8 @@ function EmptyCart() {
         Your cart is empty.
       </h2>
       <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
-        Browse cushions, tubing, filters, and curated bundles, or skip
-        the cash flow entirely and use your insurance.
+        Browse cushions, tubing, filters, and curated bundles, or skip the cash
+        flow entirely and use your insurance.
       </p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <Link href="/shop">

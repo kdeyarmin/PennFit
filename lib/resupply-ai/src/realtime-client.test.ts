@@ -1,10 +1,7 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  RealtimeClient,
-  type WebSocketLike,
-} from "./realtime-client";
+import { RealtimeClient, type WebSocketLike } from "./realtime-client";
 import { OPENAI_TOOL_DESCRIPTORS, TOOL_NAMES } from "./tools";
 
 // A minimal WebSocket fake. Tests reach into `.received` to assert the
@@ -60,7 +57,14 @@ function build(opts: { instructions?: string } = {}): {
       return fake;
     },
   });
-  return { client, fake, capturedHeaders, get capturedUrl() { return capturedUrl; } } as unknown as {
+  return {
+    client,
+    fake,
+    capturedHeaders,
+    get capturedUrl() {
+      return capturedUrl;
+    },
+  } as unknown as {
     client: RealtimeClient;
     fake: FakeWebSocket;
     capturedHeaders: Record<string, string>;
@@ -119,12 +123,17 @@ describe("RealtimeClient", () => {
       apiKey: "sk-test",
       instructions: "x",
       tools: OPENAI_TOOL_DESCRIPTORS,
-      allowedToolNames: new Set(["end_call", "verify_patient_identity"] as const),
+      allowedToolNames: new Set([
+        "end_call",
+        "verify_patient_identity",
+      ] as const),
       webSocketFactory: () => fake,
     });
     fake.fakeOpen();
     const sent = JSON.parse(fake.received[0]!);
-    const names = sent.session.tools.map((t: { name: string }) => t.name).sort();
+    const names = sent.session.tools
+      .map((t: { name: string }) => t.name)
+      .sort();
     expect(names).toEqual(["end_call", "verify_patient_identity"]);
   });
 
@@ -272,7 +281,10 @@ describe("RealtimeClient", () => {
     const { client, fake } = build();
     fake.fakeOpen();
     fake.received.length = 0;
-    client.submitToolResult("call_xyz", { matched: true, attempts_remaining: 2 });
+    client.submitToolResult("call_xyz", {
+      matched: true,
+      attempts_remaining: 2,
+    });
     expect(fake.received).toHaveLength(2);
     const created = JSON.parse(fake.received[0]!);
     expect(created.type).toBe("conversation.item.create");

@@ -47,7 +47,8 @@ interface Hit {
   hint?: string | null;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STRIPE_SESSION_RE = /^cs_[a-zA-Z0-9_]{20,}$/;
 const HEX_TAIL_RE = /^[A-Za-z0-9_-]{8,40}$/;
 const PHONE_RE = /^\+?\d[\d\s().-]{6,18}$/;
@@ -65,7 +66,9 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
   // Phone? Strip non-digits and check.
   const digits = q.replace(/\D/g, "");
   if (PHONE_RE.test(q) && digits.length >= 7) {
-    const e164 = normalizeE164(digits.length === 10 ? `+1${digits}` : `+${digits}`);
+    const e164 = normalizeE164(
+      digits.length === 10 ? `+1${digits}` : `+${digits}`,
+    );
     if (e164) {
       const rows = await db
         .select({
@@ -129,7 +132,10 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
       .where(eq(patients.id, q))
       .limit(1);
     if (pat) {
-      const name = [pat.firstName, pat.lastName].filter(Boolean).join(" ").trim();
+      const name = [pat.firstName, pat.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
       hits.push({
         kind: "patient",
         id: pat.id,
@@ -157,7 +163,11 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
       });
     }
     const [ep] = await db
-      .select({ id: episodes.id, status: episodes.status, dueAt: episodes.dueAt })
+      .select({
+        id: episodes.id,
+        status: episodes.status,
+        dueAt: episodes.dueAt,
+      })
       .from(episodes)
       .where(eq(episodes.id, q))
       .limit(1);

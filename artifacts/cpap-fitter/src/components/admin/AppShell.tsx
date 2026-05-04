@@ -1,4 +1,10 @@
-import { useEffect, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import {
+  useEffect,
+  useState,
+  type ComponentType,
+  type ReactNode,
+  type SVGProps,
+} from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -300,10 +306,7 @@ function NavItem({
       aria-current={isActive ? "page" : undefined}
       data-testid={`admin-nav-${href.replace(/\//g, "-").replace(/^-/, "")}`}
     >
-      <Icon
-        className="h-4 w-4 shrink-0 opacity-90"
-        aria-hidden="true"
-      />
+      <Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden="true" />
       <span className="truncate">{label}</span>
     </Link>
   );
@@ -445,18 +448,18 @@ export function AppShell({
 
   return (
     <RoleProvider role={adminRole}>
-    <div className="admin-root min-h-screen flex flex-col">
-      <BrandHeader
-        rightSlot={
-          adminEmail ? (
-            <div className="flex items-center gap-3">
-              <GlobalLookup />
-              <AdminHeaderChip email={adminEmail} role={adminRole} />
-            </div>
-          ) : undefined
-        }
-      />
-      {/*
+      <div className="admin-root min-h-screen flex flex-col">
+        <BrandHeader
+          rightSlot={
+            adminEmail ? (
+              <div className="flex items-center gap-3">
+                <GlobalLookup />
+                <AdminHeaderChip email={adminEmail} role={adminRole} />
+              </div>
+            ) : undefined
+          }
+        />
+        {/*
         Mobile-only sub-bar: hamburger trigger that opens the same
         grouped nav inside a left-anchored Sheet drawer. Hidden at
         lg+ where the persistent sidebar takes over. We render this
@@ -464,23 +467,23 @@ export function AppShell({
         existing header chrome stays untouched and the trigger has
         room to be a comfortable 44px tap target.
       */}
-      {adminEmail ? (
-        <div className="lg:hidden border-b border-border/60 bg-white px-4 py-2 flex items-center gap-2">
-          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-            <SheetTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 px-3 h-10 rounded-md border border-border bg-white text-sm font-semibold text-[hsl(var(--penn-navy))] hover:bg-secondary/60"
-                aria-label="Open admin navigation"
-                data-testid="admin-mobile-nav-trigger"
-              >
-                <Menu className="h-4 w-4" aria-hidden="true" />
-                Menu
-              </button>
-            </SheetTrigger>
-            <SheetContent
-              side="left"
-              /*
+        {adminEmail ? (
+          <div className="lg:hidden border-b border-border/60 bg-white px-4 py-2 flex items-center gap-2">
+            <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+              <SheetTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 px-3 h-10 rounded-md border border-border bg-white text-sm font-semibold text-[hsl(var(--penn-navy))] hover:bg-secondary/60"
+                  aria-label="Open admin navigation"
+                  data-testid="admin-mobile-nav-trigger"
+                >
+                  <Menu className="h-4 w-4" aria-hidden="true" />
+                  Menu
+                </button>
+              </SheetTrigger>
+              <SheetContent
+                side="left"
+                /*
                 Radix portals SheetContent to <body>, OUTSIDE the
                 <div className="admin-root"> wrapper, so the admin
                 CSS variables (--surface-2, --penn-navy, etc) don't
@@ -490,28 +493,28 @@ export function AppShell({
                 portal scopes those tokens locally so the drawer
                 renders opaque with the correct admin chrome.
               */
-              className="admin-root w-72 p-0 sidebar-surface flex flex-col bg-white"
-            >
-              <SheetHeader className="px-4 py-3 border-b border-border/60">
-                <SheetTitle className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-                  Admin navigation
-                </SheetTitle>
-              </SheetHeader>
-              <nav
-                className="flex-1 overflow-y-auto px-3 py-4"
-                aria-label="Admin navigation"
+                className="admin-root w-72 p-0 sidebar-surface flex flex-col bg-white"
               >
-                <SidebarNavBody
-                  location={location}
-                  onItemClick={() => setMobileNavOpen(false)}
-                />
-              </nav>
-            </SheetContent>
-          </Sheet>
-        </div>
-      ) : null}
-      <div className="flex-1 flex">
-        {/*
+                <SheetHeader className="px-4 py-3 border-b border-border/60">
+                  <SheetTitle className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+                    Admin navigation
+                  </SheetTitle>
+                </SheetHeader>
+                <nav
+                  className="flex-1 overflow-y-auto px-3 py-4"
+                  aria-label="Admin navigation"
+                >
+                  <SidebarNavBody
+                    location={location}
+                    onItemClick={() => setMobileNavOpen(false)}
+                  />
+                </nav>
+              </SheetContent>
+            </Sheet>
+          </div>
+        ) : null}
+        <div className="flex-1 flex">
+          {/*
           Persistent grouped sidebar — desktop only. Each section
           gets a small gold uppercase header so reps can locate the
           right family of pages at a glance rather than scanning a
@@ -522,23 +525,23 @@ export function AppShell({
           the sidebar is hidden in favour of the slide-out drawer
           above so the main content can claim the full width.
         */}
-        <aside
-          className="sidebar-surface w-64 shrink-0 hidden lg:flex flex-col"
-          aria-label="Admin navigation"
-        >
-          <nav
-            className="flex-1 overflow-y-auto px-3 py-4 sticky top-0"
-            style={{ maxHeight: "calc(100vh - 4rem)" }}
+          <aside
+            className="sidebar-surface w-64 shrink-0 hidden lg:flex flex-col"
+            aria-label="Admin navigation"
           >
-            <SidebarNavBody location={location} />
-          </nav>
-        </aside>
-        <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
-          {children}
-        </main>
+            <nav
+              className="flex-1 overflow-y-auto px-3 py-4 sticky top-0"
+              style={{ maxHeight: "calc(100vh - 4rem)" }}
+            >
+              <SidebarNavBody location={location} />
+            </nav>
+          </aside>
+          <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
+            {children}
+          </main>
+        </div>
+        <BrandFooter />
       </div>
-      <BrandFooter />
-    </div>
     </RoleProvider>
   );
 }

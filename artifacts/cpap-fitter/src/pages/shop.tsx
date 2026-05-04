@@ -201,10 +201,11 @@ export function Shop() {
   }, [attempt]);
 
   const sections = useMemo(() => {
-    if (!data) return [] as Array<{ category: Category; items: ShopProductView[] }>;
-    return SECTION_ORDER.filter((c) => (data.byCategory[c] ?? []).length > 0).map(
-      (c) => ({ category: c, items: data.byCategory[c] ?? [] }),
-    );
+    if (!data)
+      return [] as Array<{ category: Category; items: ShopProductView[] }>;
+    return SECTION_ORDER.filter(
+      (c) => (data.byCategory[c] ?? []).length > 0,
+    ).map((c) => ({ category: c, items: data.byCategory[c] ?? [] }));
   }, [data]);
 
   // Sort selection from the filter bar. Hoisted above applySort
@@ -431,8 +432,8 @@ function ShopHero() {
         Get fresh CPAP supplies, fast.
       </h1>
       <p className="text-lg text-muted-foreground leading-relaxed">
-        No prescription? No insurance? No problem. Order direct, ship to
-        your door. Already covered?{" "}
+        No prescription? No insurance? No problem. Order direct, ship to your
+        door. Already covered?{" "}
         <Link
           href="/insurance"
           className="text-primary font-medium underline-offset-4 hover:underline"
@@ -469,7 +470,9 @@ function CategorySection({
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
             {meta.label}
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">{meta.description}</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {meta.description}
+          </p>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -520,8 +523,7 @@ function ProductCard({
   // hardcoded 5 when the admin hasn't customized it. A threshold of
   // 0 means "never show the low-stock badge" (admin opt-out for SKUs
   // where stock anxiety isn't a useful signal).
-  const lowThreshold =
-    product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+  const lowThreshold = product.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
   const lowStockHint =
     typeof product.stockCount === "number" &&
     product.stockCount > 0 &&
@@ -653,7 +655,9 @@ function ProductCard({
           </Link>
         )}
         {product.tagline && (
-          <p className="text-sm text-muted-foreground mt-1">{product.tagline}</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {product.tagline}
+          </p>
         )}
         {product.description && (
           <p className="text-sm text-foreground/70 leading-relaxed mt-3 line-clamp-3">
@@ -768,8 +772,8 @@ function ProductCard({
               <span className="font-semibold">
                 Auto-ships every {product.recurringPrice.intervalLabel}.
               </span>{" "}
-              Never run out · same price · skip or cancel anytime from
-              your account.
+              Never run out · same price · skip or cancel anytime from your
+              account.
             </p>
           </div>
         )}
@@ -780,8 +784,7 @@ function ProductCard({
           >
             <Repeat className="w-3 h-3 shrink-0" />
             Or subscribe to auto-ship every{" "}
-            {product.recurringPrice.intervalLabel} — same price, cancel
-            anytime.
+            {product.recurringPrice.intervalLabel} — same price, cancel anytime.
           </p>
         )}
         <div className="mt-auto space-y-2">
@@ -870,9 +873,8 @@ function InsuranceFooter() {
           Have insurance? Skip the cash-pay path.
         </h3>
         <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-          Most CPAP supplies are 100% covered on a defined cadence. We
-          verify your benefit, file the claim, and ship — typically $0
-          out of pocket.
+          Most CPAP supplies are 100% covered on a defined cadence. We verify
+          your benefit, file the claim, and ship — typically $0 out of pocket.
         </p>
       </div>
       <Link href="/insurance">
@@ -915,15 +917,15 @@ function PreviewModeBanner() {
           Preview mode — payments not yet enabled
         </p>
         <p className="text-foreground/80 mt-0.5">
-          You&apos;re browsing a demo of the PennPaps storefront. Card
-          checkout will be enabled as soon as Stripe is connected.{" "}
+          You&apos;re browsing a demo of the PennPaps storefront. Card checkout
+          will be enabled as soon as Stripe is connected.{" "}
           <Link
             href="/insurance"
             className="text-primary font-medium underline-offset-4 hover:underline"
           >
             Insurance billing
           </Link>{" "}
-          is fully live and {" "}
+          is fully live and{" "}
           <span className="font-medium">$0 with prescription.</span>
         </p>
       </div>
@@ -960,9 +962,9 @@ function ShopLoadError({
         We couldn&apos;t load the shop right now.
       </h2>
       <p className="text-sm text-muted-foreground leading-relaxed mb-6 max-w-md mx-auto">
-        It&apos;s usually a quick connection hiccup. Try again — if it
-        keeps happening, your insurance order is fully live and you can
-        place one in a few minutes.
+        It&apos;s usually a quick connection hiccup. Try again — if it keeps
+        happening, your insurance order is fully live and you can place one in a
+        few minutes.
       </p>
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <Button onClick={onRetry} data-testid="shop-error-retry">

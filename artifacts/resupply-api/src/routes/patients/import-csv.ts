@@ -86,138 +86,139 @@ router.post(
   requireAdmin,
   withIdempotency("POST /patients/import-csv"),
   async (req, res) => {
-  const parsed = bodySchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "invalid_body",
-      issues: parsed.error.issues.map((i) => ({
-        path: i.path.join("."),
-        message: i.message,
-      })),
-    });
-    return;
-  }
-
-  const db = drizzle(getDbPool());
-  const now = new Date();
-
-  let created = 0;
-  let skippedDuplicates = 0;
-  const errors: RowError[] = [];
-  const createdIds: string[] = [];
-
-  for (let i = 0; i < parsed.data.rows.length; i++) {
-    const raw = parsed.data.rows[i];
-    const rowParsed = rowSchema.safeParse(raw);
-    if (!rowParsed.success) {
-      const first = rowParsed.error.issues[0];
-      errors.push({
-        rowIndex: i,
-        field: first ? first.path.join(".") : undefined,
-        message: first ? first.message : "invalid row",
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
       });
-      continue;
+      return;
     }
-    const row = rowParsed.data;
 
-    // Build optional address blob from the flat CSV columns. We
-    // require the four core address fields together — a partial
-    // address (street but no city) is more confusing than no
-    // address at all.
-    const hasAnyAddress =
-      row.addressLine1 || row.city || row.state || row.postalCode;
-    const hasFullAddress =
-      row.addressLine1 && row.city && row.state && row.postalCode;
-    if (hasAnyAddress && !hasFullAddress) {
-      errors.push({
-        rowIndex: i,
-        field: "address",
-        message:
-          "Partial address. Provide all of addressLine1, city, state, postalCode (or none).",
-      });
-      continue;
-    }
-    const address = hasFullAddress
-      ? {
-          line1: row.addressLine1!,
-          line2: row.addressLine2 || undefined,
-          city: row.city!,
-          state: row.state!,
-          postalCode: row.postalCode!,
-          country: row.country || "US",
-        }
-      : null;
+    const db = drizzle(getDbPool());
+    const now = new Date();
 
-    try {
-      const inserted = await db
-        .insert(patients)
-        .values({
-          pacwareId: row.pacwareId,
-          legalFirstName: row.legalFirstName,
-          legalLastName: row.legalLastName,
-          dateOfBirth: row.dateOfBirth,
-          phoneE164: row.phoneE164 ?? null,
-          email: row.email ?? null,
-          address,
-          status: "active",
-          insurancePayer: row.insurancePayer ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning({ id: patients.id });
-      const newId = inserted[0]?.id;
-      if (newId) {
-        created += 1;
-        createdIds.push(newId);
-      }
-    } catch (err) {
-      // Mirror the create.ts duplicate-detection: 23505 + the
-      // pacware_id unique constraint name = duplicate. Anything
-      // else is logged and surfaced as a generic row error.
-      const e = err as { code?: unknown; constraint?: unknown };
-      if (
-        e &&
-        e.code === "23505" &&
-        e.constraint === "patients_pacware_id_unique"
-      ) {
-        skippedDuplicates += 1;
+    let created = 0;
+    let skippedDuplicates = 0;
+    const errors: RowError[] = [];
+    const createdIds: string[] = [];
+
+    for (let i = 0; i < parsed.data.rows.length; i++) {
+      const raw = parsed.data.rows[i];
+      const rowParsed = rowSchema.safeParse(raw);
+      if (!rowParsed.success) {
+        const first = rowParsed.error.issues[0];
+        errors.push({
+          rowIndex: i,
+          field: first ? first.path.join(".") : undefined,
+          message: first ? first.message : "invalid row",
+        });
         continue;
       }
-      logger.warn(
-        { err, row_index: i, pacware_id: row.pacwareId },
-        "patients/import-csv: row insert failed",
-      );
-      errors.push({
-        rowIndex: i,
-        message: "database write failed for this row",
-      });
+      const row = rowParsed.data;
+
+      // Build optional address blob from the flat CSV columns. We
+      // require the four core address fields together — a partial
+      // address (street but no city) is more confusing than no
+      // address at all.
+      const hasAnyAddress =
+        row.addressLine1 || row.city || row.state || row.postalCode;
+      const hasFullAddress =
+        row.addressLine1 && row.city && row.state && row.postalCode;
+      if (hasAnyAddress && !hasFullAddress) {
+        errors.push({
+          rowIndex: i,
+          field: "address",
+          message:
+            "Partial address. Provide all of addressLine1, city, state, postalCode (or none).",
+        });
+        continue;
+      }
+      const address = hasFullAddress
+        ? {
+            line1: row.addressLine1!,
+            line2: row.addressLine2 || undefined,
+            city: row.city!,
+            state: row.state!,
+            postalCode: row.postalCode!,
+            country: row.country || "US",
+          }
+        : null;
+
+      try {
+        const inserted = await db
+          .insert(patients)
+          .values({
+            pacwareId: row.pacwareId,
+            legalFirstName: row.legalFirstName,
+            legalLastName: row.legalLastName,
+            dateOfBirth: row.dateOfBirth,
+            phoneE164: row.phoneE164 ?? null,
+            email: row.email ?? null,
+            address,
+            status: "active",
+            insurancePayer: row.insurancePayer ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: patients.id });
+        const newId = inserted[0]?.id;
+        if (newId) {
+          created += 1;
+          createdIds.push(newId);
+        }
+      } catch (err) {
+        // Mirror the create.ts duplicate-detection: 23505 + the
+        // pacware_id unique constraint name = duplicate. Anything
+        // else is logged and surfaced as a generic row error.
+        const e = err as { code?: unknown; constraint?: unknown };
+        if (
+          e &&
+          e.code === "23505" &&
+          e.constraint === "patients_pacware_id_unique"
+        ) {
+          skippedDuplicates += 1;
+          continue;
+        }
+        logger.warn(
+          { err, row_index: i, pacware_id: row.pacwareId },
+          "patients/import-csv: row insert failed",
+        );
+        errors.push({
+          rowIndex: i,
+          message: "database write failed for this row",
+        });
+      }
     }
-  }
 
-  await logAudit({
-    action: "patient.bulk_create",
-    adminEmail: req.adminEmail ?? null,
-    adminUserId: req.adminUserId ?? null,
-    targetTable: "patients",
-    targetId: null,
-    metadata: {
-      row_count: parsed.data.rows.length,
+    await logAudit({
+      action: "patient.bulk_create",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patients",
+      targetId: null,
+      metadata: {
+        row_count: parsed.data.rows.length,
+        created,
+        skipped_duplicates: skippedDuplicates,
+        error_count: errors.length,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.bulk_create audit write failed");
+    });
+
+    res.status(200).json({
       created,
-      skipped_duplicates: skippedDuplicates,
-      error_count: errors.length,
-    },
-    ip: req.ip ?? null,
-    userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "patient.bulk_create audit write failed");
-  });
-
-  res.status(200).json({
-    created,
-    skippedDuplicates,
-    errors,
-    createdIds,
-  });
-});
+      skippedDuplicates,
+      errors,
+      createdIds,
+    });
+  },
+);
 
 export default router;

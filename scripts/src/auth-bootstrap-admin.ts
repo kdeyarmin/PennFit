@@ -172,7 +172,9 @@ async function main(): Promise<void> {
 
     const link = `${argsParsed.publicBaseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
-    process.stdout.write(`\n[auth:bootstrap-admin] Bootstrap link (valid 1 hour):\n  ${link}\n\n`);
+    process.stdout.write(
+      `\n[auth:bootstrap-admin] Bootstrap link (valid 1 hour):\n  ${link}\n\n`,
+    );
 
     if (argsParsed.sendEmail) {
       const ctx = {

@@ -47,12 +47,12 @@ scripts/
 
 The system runs three workflows per service:
 
-| Workflow                                | Where it's defined                                | Auto-start |
-|------------------------------------------|----------------------------------------------------|------------|
-| `artifacts/resupply-api: Resupply API`   | `artifacts/resupply-api/.replit-artifact/artifact.toml` | yes |
-| `artifacts/resupply-dashboard: web`      | `artifacts/resupply-dashboard/.replit-artifact/artifact.toml` | yes |
-| `Resupply Worker`                        | `.replit` (workflows section)                       | yes |
-| `resupply-check`                         | `.replit` (validation step)                        | manual |
+| Workflow                               | Where it's defined                                            | Auto-start |
+| -------------------------------------- | ------------------------------------------------------------- | ---------- |
+| `artifacts/resupply-api: Resupply API` | `artifacts/resupply-api/.replit-artifact/artifact.toml`       | yes        |
+| `artifacts/resupply-dashboard: web`    | `artifacts/resupply-dashboard/.replit-artifact/artifact.toml` | yes        |
+| `Resupply Worker`                      | `.replit` (workflows section)                                 | yes        |
+| `resupply-check`                       | `.replit` (validation step)                                   | manual     |
 
 The first two are auto-managed by the artifact system — do **not** add
 duplicate entries to `.replit`. The worker has no preview surface so it

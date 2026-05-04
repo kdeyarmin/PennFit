@@ -77,10 +77,9 @@ const patchBody = z
       .transform((v) => (v === undefined || v === null || v === "" ? null : v)),
   })
   .strict()
-  .refine(
-    (b) => b.status !== undefined || b.csrNote !== undefined,
-    { message: "must include status or csrNote" },
-  );
+  .refine((b) => b.status !== undefined || b.csrNote !== undefined, {
+    message: "must include status or csrNote",
+  });
 
 router.get("/admin/shop/insurance-leads", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);

@@ -73,25 +73,33 @@ export async function resendInvite(id: string): Promise<InviteResponse> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Resend failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Resend failed (${res.status})`,
+    );
   }
   return (await res.json()) as InviteResponse;
 }
 
-export async function revokeMember(id: string): Promise<{ member: TeamMember }> {
+export async function revokeMember(
+  id: string,
+): Promise<{ member: TeamMember }> {
   const res = await fetch(`${BASE}/${encodeURIComponent(id)}/revoke`, {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Revoke failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Revoke failed (${res.status})`,
+    );
   }
   return (await res.json()) as { member: TeamMember };
 }
@@ -114,10 +122,13 @@ export async function patchMember(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const json = (await res.json().catch(() => null)) as
-      | { error?: string; message?: string }
-      | null;
-    throw new Error(json?.message ?? json?.error ?? `Patch failed (${res.status})`);
+    const json = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new Error(
+      json?.message ?? json?.error ?? `Patch failed (${res.status})`,
+    );
   }
   return (await res.json()) as { member: TeamMember };
 }

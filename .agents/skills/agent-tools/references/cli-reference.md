@@ -8,67 +8,67 @@ curl -fsSL https://cli.inference.sh | sh
 
 ## Global Commands
 
-| Command | Description |
-|---------|-------------|
-| `belt help` | Show help |
-| `belt version` | Show CLI version |
-| `belt update` | Update CLI to latest |
-| `belt login` | Authenticate |
-| `belt me` | Show current user |
+| Command        | Description          |
+| -------------- | -------------------- |
+| `belt help`    | Show help            |
+| `belt version` | Show CLI version     |
+| `belt update`  | Update CLI to latest |
+| `belt login`   | Authenticate         |
+| `belt me`      | Show current user    |
 
 ## App Commands
 
 ### Discovery
 
-| Command | Description |
-|---------|-------------|
-| `belt app list` | List available apps |
+| Command                          | Description                                           |
+| -------------------------------- | ----------------------------------------------------- |
+| `belt app list`                  | List available apps                                   |
 | `belt app list --category <cat>` | Filter by category (image, video, audio, text, other) |
-| `belt app search <query>` | Search apps |
-| `belt app list --search <query>` | Search apps (flag form) |
-| `belt app list --featured` | Show featured apps |
-| `belt app list --new` | Sort by newest |
-| `belt app list --page <n>` | Pagination |
-| `belt app list -l` | Detailed table view |
-| `belt app list --save <file>` | Save to JSON file |
-| `belt app my` | List your deployed apps |
-| `belt app get <app>` | Get app details |
-| `belt app get <app> --json` | Get app details as JSON |
+| `belt app search <query>`        | Search apps                                           |
+| `belt app list --search <query>` | Search apps (flag form)                               |
+| `belt app list --featured`       | Show featured apps                                    |
+| `belt app list --new`            | Sort by newest                                        |
+| `belt app list --page <n>`       | Pagination                                            |
+| `belt app list -l`               | Detailed table view                                   |
+| `belt app list --save <file>`    | Save to JSON file                                     |
+| `belt app my`                    | List your deployed apps                               |
+| `belt app get <app>`             | Get app details                                       |
+| `belt app get <app> --json`      | Get app details as JSON                               |
 
 ### Execution
 
-| Command | Description |
-|---------|-------------|
-| `belt app run <app> --input <file>` | Run app with input file |
-| `belt app run <app> --input '<json>'` | Run with inline JSON |
+| Command                                       | Description                        |
+| --------------------------------------------- | ---------------------------------- |
+| `belt app run <app> --input <file>`           | Run app with input file            |
+| `belt app run <app> --input '<json>'`         | Run with inline JSON               |
 | `belt app run <app> --input <file> --no-wait` | Run without waiting for completion |
-| `belt app sample <app>` | Show sample input |
-| `belt app sample <app> --save <file>` | Save sample to file |
+| `belt app sample <app>`                       | Show sample input                  |
+| `belt app sample <app> --save <file>`         | Save sample to file                |
 
 ## Task Commands
 
-| Command | Description |
-|---------|-------------|
-| `belt task get <task-id>` | Get task status and result |
-| `belt task get <task-id> --json` | Get task as JSON |
-| `belt task get <task-id> --save <file>` | Save task result to file |
+| Command                                 | Description                |
+| --------------------------------------- | -------------------------- |
+| `belt task get <task-id>`               | Get task status and result |
+| `belt task get <task-id> --json`        | Get task as JSON           |
+| `belt task get <task-id> --save <file>` | Save task result to file   |
 
 ### Development
 
-| Command | Description |
-|---------|-------------|
-| `belt app init` | Create new app (interactive) |
-| `belt app init <name>` | Create new app with name |
-| `belt app test --input <file>` | Test app locally |
-| `belt app deploy` | Deploy app |
-| `belt app deploy --dry-run` | Validate without deploying |
-| `belt app pull <id>` | Pull app source |
-| `belt app pull --all` | Pull all your apps |
+| Command                        | Description                  |
+| ------------------------------ | ---------------------------- |
+| `belt app init`                | Create new app (interactive) |
+| `belt app init <name>`         | Create new app with name     |
+| `belt app test --input <file>` | Test app locally             |
+| `belt app deploy`              | Deploy app                   |
+| `belt app deploy --dry-run`    | Validate without deploying   |
+| `belt app pull <id>`           | Pull app source              |
+| `belt app pull --all`          | Pull all your apps           |
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
+| Variable        | Description                |
+| --------------- | -------------------------- |
 | `INFSH_API_KEY` | API key (overrides config) |
 
 ## Shell Completions

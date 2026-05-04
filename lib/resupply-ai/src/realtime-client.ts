@@ -108,7 +108,10 @@ export interface RealtimeClientOptions {
    * Optional WebSocket factory. Tests pass a fake; production callers
    * leave it undefined and we use real `ws`.
    */
-  webSocketFactory?: (url: string, headers: Record<string, string>) => WebSocketLike;
+  webSocketFactory?: (
+    url: string,
+    headers: Record<string, string>,
+  ) => WebSocketLike;
 }
 
 /**
@@ -120,7 +123,10 @@ export interface WebSocketLike {
   send(data: string | Buffer): void;
   close(code?: number, reason?: string): void;
   on(event: "open", listener: () => void): void;
-  on(event: "message", listener: (data: Buffer | ArrayBuffer | string) => void): void;
+  on(
+    event: "message",
+    listener: (data: Buffer | ArrayBuffer | string) => void,
+  ): void;
   on(event: "error", listener: (err: Error) => void): void;
   on(event: "close", listener: (code: number, reason: Buffer) => void): void;
 }
@@ -277,8 +283,11 @@ export class RealtimeClient extends EventEmitter {
           text,
           done: false,
           responseId:
-            typeof payload.response_id === "string" ? payload.response_id : undefined,
-          itemId: typeof payload.item_id === "string" ? payload.item_id : undefined,
+            typeof payload.response_id === "string"
+              ? payload.response_id
+              : undefined,
+          itemId:
+            typeof payload.item_id === "string" ? payload.item_id : undefined,
         });
         return;
       }
@@ -291,8 +300,11 @@ export class RealtimeClient extends EventEmitter {
           text,
           done: true,
           responseId:
-            typeof payload.response_id === "string" ? payload.response_id : undefined,
-          itemId: typeof payload.item_id === "string" ? payload.item_id : undefined,
+            typeof payload.response_id === "string"
+              ? payload.response_id
+              : undefined,
+          itemId:
+            typeof payload.item_id === "string" ? payload.item_id : undefined,
         });
         return;
       }
@@ -303,7 +315,8 @@ export class RealtimeClient extends EventEmitter {
           source: "input",
           text,
           done: false,
-          itemId: typeof payload.item_id === "string" ? payload.item_id : undefined,
+          itemId:
+            typeof payload.item_id === "string" ? payload.item_id : undefined,
         });
         return;
       }
@@ -314,7 +327,8 @@ export class RealtimeClient extends EventEmitter {
           source: "input",
           text,
           done: true,
-          itemId: typeof payload.item_id === "string" ? payload.item_id : undefined,
+          itemId:
+            typeof payload.item_id === "string" ? payload.item_id : undefined,
         });
         return;
       }
@@ -333,7 +347,9 @@ export class RealtimeClient extends EventEmitter {
           name,
           argumentsJson: argsJson,
           responseId:
-            typeof payload.response_id === "string" ? payload.response_id : undefined,
+            typeof payload.response_id === "string"
+              ? payload.response_id
+              : undefined,
         });
         return;
       }
@@ -341,7 +357,7 @@ export class RealtimeClient extends EventEmitter {
         const responseId =
           typeof (payload.response as { id?: unknown } | undefined)?.id ===
           "string"
-            ? ((payload.response as { id: string }).id)
+            ? (payload.response as { id: string }).id
             : "";
         this.emit("response.done", { responseId });
         return;
@@ -349,7 +365,8 @@ export class RealtimeClient extends EventEmitter {
       case "error": {
         const errBody = (payload.error ?? {}) as Record<string, unknown>;
         this.emit("error", {
-          code: typeof errBody.code === "string" ? errBody.code : "openai_error",
+          code:
+            typeof errBody.code === "string" ? errBody.code : "openai_error",
           message:
             typeof errBody.message === "string"
               ? errBody.message

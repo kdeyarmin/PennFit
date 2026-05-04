@@ -35,16 +35,13 @@ export interface SafeAuditInput {
   metadata: Record<string, unknown>;
 }
 
-export async function safeAuditFromActor(
-  input: SafeAuditInput,
-): Promise<void> {
+export async function safeAuditFromActor(input: SafeAuditInput): Promise<void> {
   const adminEmail =
     input.actor.kind === "admin" ? input.actor.adminEmail : null;
   const adminUserId =
     input.actor.kind === "admin" ? input.actor.adminUserId : null;
   const ip = input.actor.kind === "admin" ? input.actor.ip : null;
-  const userAgent =
-    input.actor.kind === "admin" ? input.actor.userAgent : null;
+  const userAgent = input.actor.kind === "admin" ? input.actor.userAgent : null;
   const metadata =
     input.actor.kind === "system"
       ? {

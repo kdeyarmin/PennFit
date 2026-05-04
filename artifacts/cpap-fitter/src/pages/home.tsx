@@ -11,7 +11,6 @@ import {
   HelpCircle,
   Compass,
   ShoppingBag,
-  PackageCheck,
   UserCircle2,
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
@@ -40,12 +39,14 @@ export function Home() {
         </h1>
 
         <p className="text-base sm:text-lg md:text-xl text-muted-foreground leading-relaxed mb-8 md:mb-10 max-w-2xl mx-auto">
-          <span className="font-semibold text-foreground">PennPaps.com</span> is the
-          online CPAP storefront from{" "}
-          <span className="font-semibold text-foreground">Penn Home Medical Supply</span>{" "}
-          — your local DME team. Get clinically matched to the right mask,
-          order cushions, filters, and tubing direct, and let us keep your
-          resupply on schedule.
+          <span className="font-semibold text-foreground">PennPaps.com</span> is
+          the online CPAP storefront from{" "}
+          <span className="font-semibold text-foreground">
+            Penn Home Medical Supply
+          </span>{" "}
+          — your local DME team. Get clinically matched to the right mask, order
+          cushions, filters, and tubing direct, and let us keep your resupply on
+          schedule.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -75,14 +76,16 @@ export function Home() {
               artifact. Patients now see the inline how-it-works copy
               and animated step rail on /how-it-works instead. */}
         </div>
-
       </div>
 
       {/* Trust-signal strip — live aggregate review rating + static brand promises */}
       <TrustSignalStrip />
 
       {/* Three ways to use PennPaps — surfaces shop + accounts alongside the fitter */}
-      <div className="w-full mb-20 animate-shimmer-in" style={{ animationDelay: "60ms" }}>
+      <div
+        className="w-full mb-20 animate-shimmer-in"
+        style={{ animationDelay: "60ms" }}
+      >
         <div className="text-center mb-8">
           <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-foreground/90">
             Three ways to start
@@ -124,11 +127,17 @@ export function Home() {
               className="glass-card lift-on-hover rounded-2xl p-6 flex flex-col items-start text-left group"
               data-testid={testid}
             >
-              <div className={`relative h-12 w-12 rounded-2xl flex items-center justify-center mb-4 ${halo}`}>
+              <div
+                className={`relative h-12 w-12 rounded-2xl flex items-center justify-center mb-4 ${halo}`}
+              >
                 <Icon className="w-5 h-5" strokeWidth={2} />
               </div>
-              <h3 className="text-lg font-semibold tracking-tight mb-2">{title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4 flex-1">{body}</p>
+              <h3 className="text-lg font-semibold tracking-tight mb-2">
+                {title}
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed mb-4 flex-1">
+                {body}
+              </p>
               <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all">
                 {cta}
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
@@ -139,7 +148,10 @@ export function Home() {
       </div>
 
       {/* Section heading scopes the feature grid to the fitter specifically */}
-      <div className="w-full text-center mb-8 animate-shimmer-in" style={{ animationDelay: "100ms" }}>
+      <div
+        className="w-full text-center mb-8 animate-shimmer-in"
+        style={{ animationDelay: "100ms" }}
+      >
         <div className="flex justify-center mb-3">
           <div className="inline-flex items-center gap-3">
             <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
@@ -153,12 +165,16 @@ export function Home() {
           A clinical-grade fitting, in about three minutes.
         </h2>
         <p className="text-muted-foreground leading-relaxed max-w-2xl mx-auto mt-3">
-          If you're new or your current mask isn't sealing right, our fitter is the fastest way to a mask that actually works.
+          If you're new or your current mask isn't sealing right, our fitter is
+          the fastest way to a mask that actually works.
         </p>
       </div>
 
       {/* Feature grid */}
-      <div className="grid md:grid-cols-3 gap-6 w-full animate-shimmer-in" style={{ animationDelay: "120ms" }}>
+      <div
+        className="grid md:grid-cols-3 gap-6 w-full animate-shimmer-in"
+        style={{ animationDelay: "120ms" }}
+      >
         {[
           {
             Icon: ScanFace,
@@ -195,15 +211,22 @@ export function Home() {
       </div>
 
       {/* Subtle stat strip — mixes fitter-specific stats with shop signal */}
-      <div className="mt-20 w-full grid grid-cols-1 sm:grid-cols-3 gap-4 animate-shimmer-in" style={{ animationDelay: "240ms" }}>
+      <div
+        className="mt-20 w-full grid grid-cols-1 sm:grid-cols-3 gap-4 animate-shimmer-in"
+        style={{ animationDelay: "240ms" }}
+      >
         {[
           { v: "~3 min", l: "Average fitting time" },
           { v: "100%", l: "On-device face capture" },
           { v: "Direct", l: "From your local DME" },
         ].map(({ v, l }) => (
           <div key={l} className="glass-card-tech rounded-xl px-5 py-4">
-            <div className="text-2xl md:text-3xl font-bold tracking-tight text-gradient-tech font-mono">{v}</div>
-            <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-[0.22em]">{l}</div>
+            <div className="text-2xl md:text-3xl font-bold tracking-tight text-gradient-tech font-mono">
+              {v}
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-[0.22em]">
+              {l}
+            </div>
           </div>
         ))}
       </div>

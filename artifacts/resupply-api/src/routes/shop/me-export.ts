@@ -101,10 +101,7 @@ router.get("/shop/me/export", requireSignedIn, async (req, res) => {
     .replace(/-/g, "")}.json`;
 
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${filename}"`,
-  );
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
   res.send(
     JSON.stringify(
@@ -123,8 +120,7 @@ router.get("/shop/me/export", requireSignedIn, async (req, res) => {
         notes: {
           coverage:
             "This file contains every record the PennPaps cash-pay shop holds for your account.",
-          phi:
-            "Insurance / Rx / clinical data lives in a separate system and is not included here. Contact support@pennpaps.com to request that data.",
+          phi: "Insurance / Rx / clinical data lives in a separate system and is not included here. Contact support@pennpaps.com to request that data.",
         },
       },
       null,

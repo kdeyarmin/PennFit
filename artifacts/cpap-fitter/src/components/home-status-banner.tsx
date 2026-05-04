@@ -53,7 +53,6 @@ function SignedInBanner() {
         // any other error is a transient API blip. Either way, hide
         // the banner rather than rendering a broken state.
         if (!(err instanceof AccountApiError)) {
-          // eslint-disable-next-line no-console
           console.warn("dashboard fetch failed", err);
         }
       } finally {
@@ -108,15 +107,9 @@ function SignedInBanner() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {data.latestOrder && (
-              <OrderTile order={data.latestOrder} />
-            )}
-            {data.nextShipment && (
-              <ShipmentTile shipment={data.nextShipment} />
-            )}
-            {data.abandonedCart && (
-              <CartTile cart={data.abandonedCart} />
-            )}
+            {data.latestOrder && <OrderTile order={data.latestOrder} />}
+            {data.nextShipment && <ShipmentTile shipment={data.nextShipment} />}
+            {data.abandonedCart && <CartTile cart={data.abandonedCart} />}
           </div>
 
           {(data.activeSubscriptions > 0 || data.pendingOrders > 0) && (

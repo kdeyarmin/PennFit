@@ -47,8 +47,16 @@ body.tech-backdrop-on {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 90% 55% at 50% -5%, hsl(var(--penn-gold) / 0.08), transparent 65%),
-    radial-gradient(ellipse 90% 60% at 50% 110%, hsl(var(--penn-mist) / 0.62), transparent 70%);
+    radial-gradient(
+      ellipse 90% 55% at 50% -5%,
+      hsl(var(--penn-gold) / 0.08),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse 90% 60% at 50% 110%,
+      hsl(var(--penn-mist) / 0.62),
+      transparent 70%
+    );
 }
 
 /*
@@ -72,7 +80,7 @@ body.tech-backdrop-on {
 .tech-backdrop__blob--a {
   background: radial-gradient(
     circle,
-    hsl(var(--penn-navy) / 0.50),
+    hsl(var(--penn-navy) / 0.5),
     transparent 70%
   );
   top: -22vmax;
@@ -102,7 +110,6 @@ body.tech-backdrop-on {
   background: radial-gradient(
     circle,
     hsl(var(--penn-cyan) / 0.55),
-
     transparent 70%
   );
   bottom: -28vmax;
@@ -111,7 +118,6 @@ body.tech-backdrop-on {
   height: 55vmax;
   opacity: 0.22;
   animation: tech-blob-c 44s ease-in-out infinite alternate;
-
 }
 
 @keyframes tech-blob-a {
@@ -137,7 +143,7 @@ body.tech-backdrop-on {
     transform: translate3d(0, 0, 0) scale(0.96);
   }
   100% {
-    transform: translate3d(8vw, -12vh, 0) scale(1.10);
+    transform: translate3d(8vw, -12vh, 0) scale(1.1);
   }
 }
 
@@ -157,10 +163,26 @@ body.tech-backdrop-on {
    * global body grid, but a notch more present on these pages.
    */
   background-image:
-    linear-gradient(to right, hsl(var(--penn-navy) / 0.07) 1px, transparent 1px),
-    linear-gradient(to bottom, hsl(var(--penn-navy) / 0.07) 1px, transparent 1px),
-    linear-gradient(to right, hsl(var(--penn-cyan-deep) / 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, hsl(var(--penn-cyan-deep) / 0.08) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      hsl(var(--penn-navy) / 0.07) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      hsl(var(--penn-navy) / 0.07) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to right,
+      hsl(var(--penn-cyan-deep) / 0.08) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      hsl(var(--penn-cyan-deep) / 0.08) 1px,
+      transparent 1px
+    );
   background-size:
     28px 28px,
     28px 28px,
@@ -195,7 +217,6 @@ body.tech-backdrop-on {
       28px 28px,
       112px 112px,
       112px 112px;
-
   }
 }
 
@@ -219,9 +240,9 @@ body.tech-backdrop-on {
   background: linear-gradient(
     115deg,
     transparent 30%,
-    hsl(0 0% 100% / 0.10) 46%,
-    hsl(var(--penn-cyan) / 0.20) 50%,
-    hsl(0 0% 100% / 0.10) 54%,
+    hsl(0 0% 100% / 0.1) 46%,
+    hsl(var(--penn-cyan) / 0.2) 50%,
+    hsl(0 0% 100% / 0.1) 54%,
     transparent 70%
   );
   filter: blur(10px);

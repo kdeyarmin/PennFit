@@ -50,9 +50,8 @@ export function SignUpPage() {
         <div className="w-full max-w-sm rounded-lg shadow-sm border bg-white p-6 space-y-3 text-sm">
           <h1 className="text-xl font-semibold">Check your email</h1>
           <p>
-            We've sent a verification link to <strong>{email}</strong>. Click
-            it to finish setting up your account. The link expires in 24
-            hours.
+            We've sent a verification link to <strong>{email}</strong>. Click it
+            to finish setting up your account. The link expires in 24 hours.
           </p>
           <p className="text-xs text-muted-foreground">
             Didn't get it? Check your spam folder, or{" "}

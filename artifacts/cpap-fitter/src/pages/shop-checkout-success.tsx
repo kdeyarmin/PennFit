@@ -106,14 +106,19 @@ export function ShopCheckoutSuccess() {
           </Link>
         </div>
       ) : order ? (
-        <div className="glass-card rounded-2xl p-8 md:p-10" data-testid="success-card">
+        <div
+          className="glass-card rounded-2xl p-8 md:p-10"
+          data-testid="success-card"
+        >
           <div className="flex justify-center mb-5">
             <div className="h-14 w-14 rounded-2xl icon-halo-gold flex items-center justify-center">
               <CheckCircle2 className="w-7 h-7" />
             </div>
           </div>
           <h1 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-center mb-3">
-            {isPaid ? "Thanks — your order is in." : "We're confirming your payment…"}
+            {isPaid
+              ? "Thanks — your order is in."
+              : "We're confirming your payment…"}
           </h1>
           {isPaid ? (
             <p
@@ -134,10 +139,10 @@ export function ShopCheckoutSuccess() {
               className="text-center text-muted-foreground mb-8 leading-relaxed"
               data-testid="success-pending-copy"
             >
-              Your payment is finishing up. This page will reflect the
-              final status shortly — refresh in a minute or check the
-              email Stripe sent for the receipt. If the charge doesn&apos;t
-              go through, your cart is still saved.
+              Your payment is finishing up. This page will reflect the final
+              status shortly — refresh in a minute or check the email Stripe
+              sent for the receipt. If the charge doesn&apos;t go through, your
+              cart is still saved.
             </p>
           )}
 
@@ -158,10 +163,7 @@ export function ShopCheckoutSuccess() {
                   </span>
                   <span className="tabular-nums text-muted-foreground">
                     {li.amountSubtotalCents != null && order.currency
-                      ? formatMoneyCents(
-                          li.amountSubtotalCents,
-                          order.currency,
-                        )
+                      ? formatMoneyCents(li.amountSubtotalCents, order.currency)
                       : ""}
                   </span>
                 </li>

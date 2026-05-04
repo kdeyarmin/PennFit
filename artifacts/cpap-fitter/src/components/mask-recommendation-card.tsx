@@ -6,7 +6,11 @@ import type {
 import { Card, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Activity,
   HardHat,
@@ -90,36 +94,54 @@ export function MaskRecommendationCard({
                       data-testid={`confidence-explainer-${mask.maskId}`}
                     >
                       Match confidence:{" "}
-                      <span className="font-semibold text-foreground">{confidencePct}%</span>
+                      <span className="font-semibold text-foreground">
+                        {confidencePct}%
+                      </span>
                       <HelpCircle className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-primary transition-colors" />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 text-sm space-y-2" align="start">
-                    <div className="font-semibold">How we calculated {confidencePct}%</div>
+                  <PopoverContent
+                    className="w-80 text-sm space-y-2"
+                    align="start"
+                  >
+                    <div className="font-semibold">
+                      How we calculated {confidencePct}%
+                    </div>
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       Confidence blends two signals:
                     </p>
                     <ul className="text-xs space-y-1.5 text-muted-foreground">
                       <li className="flex gap-2">
-                        <span className="font-semibold text-primary shrink-0">60%</span>
+                        <span className="font-semibold text-primary shrink-0">
+                          60%
+                        </span>
                         <span>
-                          <strong className="text-foreground">Mask type fit</strong> — how well this
-                          type matches your sleep style, breathing, facial hair, congestion, prior
-                          experience, and CPAP pressure.
+                          <strong className="text-foreground">
+                            Mask type fit
+                          </strong>{" "}
+                          — how well this type matches your sleep style,
+                          breathing, facial hair, congestion, prior experience,
+                          and CPAP pressure.
                         </span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="font-semibold text-primary shrink-0">40%</span>
+                        <span className="font-semibold text-primary shrink-0">
+                          40%
+                        </span>
                         <span>
-                          <strong className="text-foreground">Physical fit</strong> — how your nose
-                          width, height, mouth width, and nose-to-chin distance line up with this
-                          mask's documented size range.
+                          <strong className="text-foreground">
+                            Physical fit
+                          </strong>{" "}
+                          — how your nose width, height, mouth width, and
+                          nose-to-chin distance line up with this mask's
+                          documented size range.
                         </span>
                       </li>
                     </ul>
                     <p className="text-xs text-muted-foreground italic pt-1">
-                      Penalties apply for contraindications and pressure mismatches. The score is
-                      guidance — the final fitting confirmation happens with PennPaps.
+                      Penalties apply for contraindications and pressure
+                      mismatches. The score is guidance — the final fitting
+                      confirmation happens with PennPaps.
                     </p>
                   </PopoverContent>
                 </Popover>
@@ -138,7 +160,9 @@ export function MaskRecommendationCard({
               <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--penn-gold))]" />
               Why this fits you
             </h4>
-            <p className="text-sm text-foreground leading-relaxed">{mask.summary}</p>
+            <p className="text-sm text-foreground leading-relaxed">
+              {mask.summary}
+            </p>
           </div>
 
           {details?.description && (
@@ -149,16 +173,28 @@ export function MaskRecommendationCard({
 
           {details && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 p-3 glass-panel rounded-xl text-xs">
-              <Spec icon={<Weight className="w-3.5 h-3.5 text-primary" />} label="Weight">
+              <Spec
+                icon={<Weight className="w-3.5 h-3.5 text-primary" />}
+                label="Weight"
+              >
                 {details.weightGrams} g
               </Spec>
-              <Spec icon={<Activity className="w-3.5 h-3.5 text-primary" />} label="Pressure">
+              <Spec
+                icon={<Activity className="w-3.5 h-3.5 text-primary" />}
+                label="Pressure"
+              >
                 {details.pressureRangeMin}–{details.pressureRangeMax} cmH₂O
               </Spec>
-              <Spec icon={<Wind className="w-3.5 h-3.5 text-primary" />} label="Hose">
+              <Spec
+                icon={<Wind className="w-3.5 h-3.5 text-primary" />}
+                label="Hose"
+              >
                 <span className="capitalize">{details.hoseConnection}</span>
               </Spec>
-              <Spec icon={<Layers className="w-3.5 h-3.5 text-primary" />} label="Cushion">
+              <Spec
+                icon={<Layers className="w-3.5 h-3.5 text-primary" />}
+                label="Cushion"
+              >
                 {details.cushionMaterial}
               </Spec>
               <Spec
@@ -178,7 +214,10 @@ export function MaskRecommendationCard({
               </h4>
               <ul className="space-y-2">
                 {mask.reasoning.map((reason, i) => (
-                  <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                  <li
+                    key={i}
+                    className="text-sm text-muted-foreground flex items-start gap-2"
+                  >
                     <div className="w-1.5 h-1.5 rounded-full bg-primary/50 mt-1.5 shrink-0" />
                     <span>{reason}</span>
                   </li>
@@ -212,7 +251,11 @@ export function MaskRecommendationCard({
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
                   {details.sizesAvailable.map((s, i) => (
-                    <Badge key={i} variant="outline" className="text-xs font-normal">
+                    <Badge
+                      key={i}
+                      variant="outline"
+                      className="text-xs font-normal"
+                    >
                       {s}
                     </Badge>
                   ))}
@@ -233,7 +276,8 @@ export function MaskRecommendationCard({
               Order This Mask
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-2">
-              We'll collect your insurance and shipping info, then send your order to PennPaps.
+              We'll collect your insurance and shipping info, then send your
+              order to PennPaps.
             </p>
           </div>
         </div>

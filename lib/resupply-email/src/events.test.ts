@@ -40,9 +40,9 @@ describe("parseSendgridEventBatch", () => {
         custom_unknown_field: "anything",
       },
     ]);
-    expect(
-      (batch[0] as Record<string, unknown>).custom_unknown_field,
-    ).toBe("anything");
+    expect((batch[0] as Record<string, unknown>).custom_unknown_field).toBe(
+      "anything",
+    );
   });
 
   it("parses an empty batch", () => {
@@ -51,15 +51,11 @@ describe("parseSendgridEventBatch", () => {
   });
 
   it("rejects a non-array payload", () => {
-    expect(() =>
-      parseSendgridEventBatch({ event: "delivered" }),
-    ).toThrow();
+    expect(() => parseSendgridEventBatch({ event: "delivered" })).toThrow();
   });
 
   it("rejects an event without `event` field", () => {
-    expect(() =>
-      parseSendgridEventBatch([{ sg_message_id: "x" }]),
-    ).toThrow();
+    expect(() => parseSendgridEventBatch([{ sg_message_id: "x" }])).toThrow();
   });
 
   it("HANDLED list contains the events the audit handler reacts to", () => {

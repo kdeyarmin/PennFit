@@ -81,12 +81,7 @@ function nextBusinessDay(year: number, month: number, day: number) {
   return cur;
 }
 
-function addBusinessDays(
-  year: number,
-  month: number,
-  day: number,
-  n: number,
-) {
+function addBusinessDays(year: number, month: number, day: number, n: number) {
   let cur = {
     year,
     month,
@@ -128,8 +123,7 @@ export function computeShippingEta(now: Date): ShippingEtaState {
 
   if (beforeCutoff) {
     shipDate = { year: et.year, month: et.month, day: et.day };
-    const minsUntilCutoff =
-      (SHIP_CUTOFF_HOUR_ET - et.hour) * 60 - et.minute;
+    const minsUntilCutoff = (SHIP_CUTOFF_HOUR_ET - et.hour) * 60 - et.minute;
     const hours = Math.floor(minsUntilCutoff / 60);
     const minutes = minsUntilCutoff % 60;
     countdown =

@@ -37,7 +37,10 @@ export function makeForgotPasswordHandler(
 ) {
   const now = deps.now ?? (() => new Date());
 
-  return async function handleForgot(req: Request, res: Response): Promise<void> {
+  return async function handleForgot(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     const parsed = ForgotBody.safeParse(req.body);
     if (!parsed.success) {
       // Even input validation has to NOT enumerate. Return the

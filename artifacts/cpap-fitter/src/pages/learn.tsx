@@ -103,15 +103,15 @@ const articles: Article[] = [
     category: "basics",
     body: (
       <>
-        Obstructive sleep apnea (OSA) happens when the soft tissues in the
-        back of your throat relax during sleep and block your airway, causing
+        Obstructive sleep apnea (OSA) happens when the soft tissues in the back
+        of your throat relax during sleep and block your airway, causing
         breathing pauses (apneas) and shallow breaths (hypopneas) — sometimes
-        hundreds of times a night. Each pause briefly drops your blood
-        oxygen, jolts your nervous system out of deep sleep, and prevents
-        the restorative rest your body needs. Over time, untreated OSA is
-        linked to high blood pressure, heart disease, stroke risk, daytime
-        accidents, and worsened diabetes. The good news: it's one of the
-        most treatable sleep disorders we know of.
+        hundreds of times a night. Each pause briefly drops your blood oxygen,
+        jolts your nervous system out of deep sleep, and prevents the
+        restorative rest your body needs. Over time, untreated OSA is linked to
+        high blood pressure, heart disease, stroke risk, daytime accidents, and
+        worsened diabetes. The good news: it's one of the most treatable sleep
+        disorders we know of.
       </>
     ),
   },
@@ -124,14 +124,13 @@ const articles: Article[] = [
     category: "basics",
     body: (
       <>
-        Your CPAP machine takes in room air, gently pressurizes it (often
-        with optional warmed humidification), and sends it through a hose
-        and mask. That continuous pressure acts like an air splint —
-        keeping your throat from collapsing as you breathe in and out.
-        You're not breathing for the machine; the machine is just keeping
-        the door open. Modern CPAPs are quiet (~26 dB, quieter than a
-        whisper), compact, and automatically adjust to your breathing
-        pattern.
+        Your CPAP machine takes in room air, gently pressurizes it (often with
+        optional warmed humidification), and sends it through a hose and mask.
+        That continuous pressure acts like an air splint — keeping your throat
+        from collapsing as you breathe in and out. You're not breathing for the
+        machine; the machine is just keeping the door open. Modern CPAPs are
+        quiet (~26 dB, quieter than a whisper), compact, and automatically
+        adjust to your breathing pattern.
       </>
     ),
   },
@@ -144,15 +143,14 @@ const articles: Article[] = [
     category: "basics",
     body: (
       <>
-        Patients who use CPAP consistently report sharper morning focus,
-        less daytime sleepiness, fewer headaches, and dramatically better
-        sleep quality for their bed partner. Long-term, controlled studies
-        link consistent CPAP use to lower blood pressure, fewer
-        cardiovascular events, better blood sugar control in diabetics,
-        and reduced risk of motor vehicle accidents. The therapy only
-        works while you're using it — which is why getting a comfortable,
-        well-fitting mask is the single biggest predictor of whether
-        you'll stick with treatment.
+        Patients who use CPAP consistently report sharper morning focus, less
+        daytime sleepiness, fewer headaches, and dramatically better sleep
+        quality for their bed partner. Long-term, controlled studies link
+        consistent CPAP use to lower blood pressure, fewer cardiovascular
+        events, better blood sugar control in diabetics, and reduced risk of
+        motor vehicle accidents. The therapy only works while you're using it —
+        which is why getting a comfortable, well-fitting mask is the single
+        biggest predictor of whether you'll stick with treatment.
       </>
     ),
   },
@@ -167,16 +165,15 @@ const articles: Article[] = [
     category: "equipment",
     body: (
       <>
-        <strong>Nasal pillows</strong> are minimal — small silicone tips
-        that sit just inside the nostrils. They're light, low-contact, and
-        ideal for side sleepers and patients with claustrophobia, but
-        deliver less pressure stability at higher settings.{" "}
-        <strong>Nasal masks</strong> cover only the nose with a triangular
-        cushion — a comfortable middle ground for most patients.{" "}
-        <strong>Full-face masks</strong> cover both nose and mouth — the
-        right call if you're a mouth-breather, run high pressures, or
-        struggle with chronic congestion. PennPaps weighs all three
-        against your face shape and questionnaire answers before
+        <strong>Nasal pillows</strong> are minimal — small silicone tips that
+        sit just inside the nostrils. They're light, low-contact, and ideal for
+        side sleepers and patients with claustrophobia, but deliver less
+        pressure stability at higher settings. <strong>Nasal masks</strong>{" "}
+        cover only the nose with a triangular cushion — a comfortable middle
+        ground for most patients. <strong>Full-face masks</strong> cover both
+        nose and mouth — the right call if you're a mouth-breather, run high
+        pressures, or struggle with chronic congestion. PennPaps weighs all
+        three against your face shape and questionnaire answers before
         recommending.
       </>
     ),
@@ -190,15 +187,14 @@ const articles: Article[] = [
     category: "equipment",
     body: (
       <>
-        If you sleep on your side, a bulky full-face mask will dig into
-        the pillow and break its seal at every roll — nasal pillows or a
-        slim nasal mask is almost always the better choice. Stomach
-        sleepers face the same constraint and benefit from minimal-contact
-        styles. Back sleepers can wear any mask comfortably, so the
-        decision comes down to whether you mouth-breathe and what
-        pressure you're prescribed. PennPaps's questionnaire asks about
-        position so we don't recommend a mask that'll fight your
-        favorite sleeping pose.
+        If you sleep on your side, a bulky full-face mask will dig into the
+        pillow and break its seal at every roll — nasal pillows or a slim nasal
+        mask is almost always the better choice. Stomach sleepers face the same
+        constraint and benefit from minimal-contact styles. Back sleepers can
+        wear any mask comfortably, so the decision comes down to whether you
+        mouth-breathe and what pressure you're prescribed. PennPaps's
+        questionnaire asks about position so we don't recommend a mask that'll
+        fight your favorite sleeping pose.
       </>
     ),
   },
@@ -214,19 +210,18 @@ const articles: Article[] = [
     body: (
       <>
         A clean CPAP isn't a deep-clean ritual — it's a few small habits.{" "}
-        <strong>Daily:</strong> empty leftover water from the humidifier
-        and let the chamber air-dry. Wipe the mask cushion with a soft
-        damp cloth or a CPAP wipe to remove face oils.{" "}
-        <strong>Weekly:</strong> take the mask apart and hand-wash the
-        cushion, frame, and headgear in warm water with mild dish soap —
-        no scented soaps, no bleach, no alcohol, all of which break down
-        silicone and void the warranty. Rinse thoroughly and air-dry.
+        <strong>Daily:</strong> empty leftover water from the humidifier and let
+        the chamber air-dry. Wipe the mask cushion with a soft damp cloth or a
+        CPAP wipe to remove face oils. <strong>Weekly:</strong> take the mask
+        apart and hand-wash the cushion, frame, and headgear in warm water with
+        mild dish soap — no scented soaps, no bleach, no alcohol, all of which
+        break down silicone and void the warranty. Rinse thoroughly and air-dry.
         Wash the tubing the same way and hang it to drip-dry.{" "}
-        <strong>Monthly:</strong> swap your filter, give the water
-        chamber a vinegar-and-water soak (1:1 for 30 minutes), then
-        rinse. Skip the UV sanitizers and ozone "cleaners" — the FDA
-        has cautioned against them and they can damage equipment without
-        proven benefit over routine soap and water.
+        <strong>Monthly:</strong> swap your filter, give the water chamber a
+        vinegar-and-water soak (1:1 for 30 minutes), then rinse. Skip the UV
+        sanitizers and ozone "cleaners" — the FDA has cautioned against them and
+        they can damage equipment without proven benefit over routine soap and
+        water.
       </>
     ),
   },
@@ -240,13 +235,15 @@ const articles: Article[] = [
     body: (
       <>
         CPAP supplies wear out faster than you'd think. Silicone cushions
-        gradually lose their shape and seal, headgear elastic stretches,
-        tubing collects mineral deposits, and filters trap dust. Most US
-        insurance plans cover replacements on a roughly: <em>cushions
-        every 2–4 weeks, headgear every 6 months, tubing every 3 months,
-        filters monthly</em> cadence. PennPaps's resupply
-        program tracks your schedule and reaches out when you're due —
-        you don't have to remember.
+        gradually lose their shape and seal, headgear elastic stretches, tubing
+        collects mineral deposits, and filters trap dust. Most US insurance
+        plans cover replacements on a roughly:{" "}
+        <em>
+          cushions every 2–4 weeks, headgear every 6 months, tubing every 3
+          months, filters monthly
+        </em>{" "}
+        cadence. PennPaps's resupply program tracks your schedule and reaches
+        out when you're due — you don't have to remember.
       </>
     ),
   },
@@ -261,21 +258,19 @@ const articles: Article[] = [
     category: "living",
     body: (
       <>
-        The first nights with CPAP almost always feel strange. Your face
-        is wearing something new, your bedroom has a new sound profile,
-        and your brain is processing "is this safe to sleep with?" Plan
-        for it. <strong>Nights 1–3:</strong> wear the mask 30 minutes
-        during the day (reading, watching TV) before you ever sleep with
-        it on — it builds the "oh, that's just my mask" familiarity
-        faster than white-knuckling it through bedtime.{" "}
-        <strong>Nights 4–10:</strong> many patients experience a
-        deeper-sleep "rebound" and may sleep more than usual as the body
+        The first nights with CPAP almost always feel strange. Your face is
+        wearing something new, your bedroom has a new sound profile, and your
+        brain is processing "is this safe to sleep with?" Plan for it.{" "}
+        <strong>Nights 1–3:</strong> wear the mask 30 minutes during the day
+        (reading, watching TV) before you ever sleep with it on — it builds the
+        "oh, that's just my mask" familiarity faster than white-knuckling it
+        through bedtime. <strong>Nights 4–10:</strong> many patients experience
+        a deeper-sleep "rebound" and may sleep more than usual as the body
         catches up on years of fragmented sleep. That's a good sign.{" "}
-        <strong>Nights 11–21:</strong> the mask starts to feel normal,
-        you wake up clearer-headed, and the morning improvements
-        compound. If you're past three weeks and still struggling, the
-        mask probably isn't right for you — message us and we'll
-        re-fit you.
+        <strong>Nights 11–21:</strong> the mask starts to feel normal, you wake
+        up clearer-headed, and the morning improvements compound. If you're past
+        three weeks and still struggling, the mask probably isn't right for you
+        — message us and we'll re-fit you.
       </>
     ),
   },
@@ -288,19 +283,17 @@ const articles: Article[] = [
     category: "living",
     body: (
       <>
-        CPAP only works while it's on. Aim for every sleep session,
-        every night — including naps and weekends. Even a few nights off
-        early on can re-introduce the daytime fatigue and partner-
-        disturbing snoring you signed up to fix. A few tactics that help:
-        keep the machine on the same nightstand every night so it
-        becomes part of your bedtime cue, plug it in <em>before</em> you
-        brush your teeth so it's ready when you are, keep a backup
-        cushion in your nightstand for the inevitable weak-strap night,
-        and pack the travel bag the day before any trip so you don't
-        "forget" to bring it. Insurance compliance windows (typically 4
-        hours/night, 70% of nights, in the first 90 days) exist
-        precisely because consistency is what makes the therapy
-        clinically effective.
+        CPAP only works while it's on. Aim for every sleep session, every night
+        — including naps and weekends. Even a few nights off early on can
+        re-introduce the daytime fatigue and partner- disturbing snoring you
+        signed up to fix. A few tactics that help: keep the machine on the same
+        nightstand every night so it becomes part of your bedtime cue, plug it
+        in <em>before</em> you brush your teeth so it's ready when you are, keep
+        a backup cushion in your nightstand for the inevitable weak-strap night,
+        and pack the travel bag the day before any trip so you don't "forget" to
+        bring it. Insurance compliance windows (typically 4 hours/night, 70% of
+        nights, in the first 90 days) exist precisely because consistency is
+        what makes the therapy clinically effective.
       </>
     ),
   },
@@ -313,16 +306,15 @@ const articles: Article[] = [
     category: "living",
     body: (
       <>
-        Patients often worry their CPAP will disturb a bed partner —
-        the reverse is usually true. Modern CPAPs run quieter than a
-        ceiling fan, and eliminating snoring and gasping pauses makes
-        the bedroom calmer, not louder. The most common partner
-        complaints are mask air leaks (a fit issue we can solve) and
-        the sound of the heated humidifier (turn it down or off). If a
-        partner is sensitive to the hose movement, a hose hanger above
-        the bed keeps it out of the way. Patients also report renewed
-        intimacy once both partners are sleeping deeply through the
-        night — chronic exhaustion is its own relationship strain.
+        Patients often worry their CPAP will disturb a bed partner — the reverse
+        is usually true. Modern CPAPs run quieter than a ceiling fan, and
+        eliminating snoring and gasping pauses makes the bedroom calmer, not
+        louder. The most common partner complaints are mask air leaks (a fit
+        issue we can solve) and the sound of the heated humidifier (turn it down
+        or off). If a partner is sensitive to the hose movement, a hose hanger
+        above the bed keeps it out of the way. Patients also report renewed
+        intimacy once both partners are sleeping deeply through the night —
+        chronic exhaustion is its own relationship strain.
       </>
     ),
   },
@@ -335,14 +327,13 @@ const articles: Article[] = [
     category: "living",
     body: (
       <>
-        CPAP machines do not count toward your carry-on allowance on US
-        airlines and almost all international carriers — bring it in
-        addition to your carry-on. TSA may ask you to remove it from its
-        bag at security. For longer trips, pack a backup mask cushion, a
-        spare filter, and your prescription (in case airport security or
-        a hotel asks). Since tap water varies, plan for distilled water
-        at your destination or skip the humidifier for a few nights —
-        your therapy still works without it.
+        CPAP machines do not count toward your carry-on allowance on US airlines
+        and almost all international carriers — bring it in addition to your
+        carry-on. TSA may ask you to remove it from its bag at security. For
+        longer trips, pack a backup mask cushion, a spare filter, and your
+        prescription (in case airport security or a hotel asks). Since tap water
+        varies, plan for distilled water at your destination or skip the
+        humidifier for a few nights — your therapy still works without it.
       </>
     ),
   },
@@ -357,22 +348,21 @@ const articles: Article[] = [
     category: "concerns",
     body: (
       <>
-        A few of the objections we hear most often, and what's actually
-        true. <em>"It's claustrophobic"</em> — nasal pillows weigh less
-        than a pair of glasses and don't cover your face at all; most
-        claustrophobia complaints disappear with the right mask style.{" "}
-        <em>"I'll become dependent on it"</em> — CPAP is a treatment,
-        not a drug. It works while you wear it; your body doesn't lose
-        the ability to breathe on its own. <em>"It's noisy"</em> —
-        modern machines run at ~26 dB, quieter than a whisper and
-        quieter than your own breathing. <em>"I only need it on bad
-        nights"</em> — apnea events happen every night you sleep on
-        your back without therapy, whether you feel it the next day or
-        not. <em>"I should lose weight first"</em> — losing weight can
-        reduce apnea severity in some patients, but you need restorative
-        sleep to have the energy to exercise and the hormonal balance
-        to lose weight. Treating apnea makes weight loss easier, not the
-        other way around.
+        A few of the objections we hear most often, and what's actually true.{" "}
+        <em>"It's claustrophobic"</em> — nasal pillows weigh less than a pair of
+        glasses and don't cover your face at all; most claustrophobia complaints
+        disappear with the right mask style.{" "}
+        <em>"I'll become dependent on it"</em> — CPAP is a treatment, not a
+        drug. It works while you wear it; your body doesn't lose the ability to
+        breathe on its own. <em>"It's noisy"</em> — modern machines run at ~26
+        dB, quieter than a whisper and quieter than your own breathing.{" "}
+        <em>"I only need it on bad nights"</em> — apnea events happen every
+        night you sleep on your back without therapy, whether you feel it the
+        next day or not. <em>"I should lose weight first"</em> — losing weight
+        can reduce apnea severity in some patients, but you need restorative
+        sleep to have the energy to exercise and the hormonal balance to lose
+        weight. Treating apnea makes weight loss easier, not the other way
+        around.
       </>
     ),
   },
@@ -385,21 +375,19 @@ const articles: Article[] = [
     category: "concerns",
     body: (
       <>
-        Almost every adherence problem traces back to one of four
-        issues, all fixable. <strong>Mask leaks:</strong> usually a fit
-        problem (wrong size or worn-out cushion) or a sleeping-position
-        mismatch — we'll re-measure and try a different style.{" "}
-        <strong>Dry mouth or sore throat:</strong> turn up the heated
-        humidifier, or if you're a mouth-breather wearing a nasal mask,
-        switch to full-face. <strong>Nasal congestion:</strong>{" "}
-        humidification helps, and your provider can prescribe a nasal
-        steroid. Don't skip CPAP nights because you're stuffy — that
-        often makes the next morning worse. <strong>Pressure feels too
-        strong:</strong> turn on the "ramp" feature so the machine
-        starts low and builds up over 20–45 minutes while you fall
-        asleep; ask your provider whether an APAP (auto-adjusting)
-        setting would suit you better. The point: adherence problems
-        are signals, not verdicts. Tell us what's happening and we'll
+        Almost every adherence problem traces back to one of four issues, all
+        fixable. <strong>Mask leaks:</strong> usually a fit problem (wrong size
+        or worn-out cushion) or a sleeping-position mismatch — we'll re-measure
+        and try a different style. <strong>Dry mouth or sore throat:</strong>{" "}
+        turn up the heated humidifier, or if you're a mouth-breather wearing a
+        nasal mask, switch to full-face. <strong>Nasal congestion:</strong>{" "}
+        humidification helps, and your provider can prescribe a nasal steroid.
+        Don't skip CPAP nights because you're stuffy — that often makes the next
+        morning worse. <strong>Pressure feels too strong:</strong> turn on the
+        "ramp" feature so the machine starts low and builds up over 20–45
+        minutes while you fall asleep; ask your provider whether an APAP
+        (auto-adjusting) setting would suit you better. The point: adherence
+        problems are signals, not verdicts. Tell us what's happening and we'll
         iterate until it works.
       </>
     ),
@@ -415,14 +403,13 @@ const articles: Article[] = [
     category: "team",
     body: (
       <>
-        PennPaps handles the equipment side: mask
-        fitting, ordering, insurance verification, and resupply. Your
-        sleep medicine provider handles the clinical side: diagnosing
-        apnea, prescribing CPAP, setting your pressure, and adjusting
-        therapy if symptoms change. The two work together — we'll
-        coordinate prescriptions and pressure changes with your
-        provider's office on your behalf, so you don't have to be the
-        messenger between us.
+        PennPaps handles the equipment side: mask fitting, ordering, insurance
+        verification, and resupply. Your sleep medicine provider handles the
+        clinical side: diagnosing apnea, prescribing CPAP, setting your
+        pressure, and adjusting therapy if symptoms change. The two work
+        together — we'll coordinate prescriptions and pressure changes with your
+        provider's office on your behalf, so you don't have to be the messenger
+        between us.
       </>
     ),
   },
@@ -467,10 +454,10 @@ export function Learn() {
           Understand Your CPAP Therapy
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-          Short, plain-language guides on sleep apnea, CPAP basics, mask
-          choice, cleaning, building a nightly routine, and the common
-          concerns that keep people from sticking with therapy — written
-          by the same team that fits you.
+          Short, plain-language guides on sleep apnea, CPAP basics, mask choice,
+          cleaning, building a nightly routine, and the common concerns that
+          keep people from sticking with therapy — written by the same team that
+          fits you.
         </p>
       </header>
 
@@ -623,12 +610,11 @@ export function Learn() {
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 These articles are general patient education from the team at
-                PennPaps. They aren't a substitute for
-                personalized advice from your sleep medicine provider. If
-                you're experiencing new or worsening symptoms — daytime
-                sleepiness, choking episodes, persistent skin breakdown, or
-                changes in how your therapy feels — please contact your
-                provider.
+                PennPaps. They aren't a substitute for personalized advice from
+                your sleep medicine provider. If you're experiencing new or
+                worsening symptoms — daytime sleepiness, choking episodes,
+                persistent skin breakdown, or changes in how your therapy feels
+                — please contact your provider.
               </p>
             </div>
           </div>
@@ -650,9 +636,9 @@ export function Learn() {
               Take the sleep apnea self-screener
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Eight quick questions based on the validated STOP-BANG
-              clinical screener. Get a risk band and a clear, physician-
-              focused next step — no diagnosis, no sales pitch.
+              Eight quick questions based on the validated STOP-BANG clinical
+              screener. Get a risk band and a clear, physician- focused next
+              step — no diagnosis, no sales pitch.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -689,8 +675,8 @@ export function Learn() {
               Set up your CPAP or BiPAP
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Step-by-step new-patient guide — unboxing, first night,
-              daily care, and fixes for the most common first-week issues.
+              Step-by-step new-patient guide — unboxing, first night, daily
+              care, and fixes for the most common first-week issues.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -708,8 +694,8 @@ export function Learn() {
               Full replacement schedule
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Per-item cadences for cushions, tubing, filters, headgear,
-              and chambers — plus the warning signs you're overdue.
+              Per-item cadences for cushions, tubing, filters, headgear, and
+              chambers — plus the warning signs you're overdue.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
@@ -742,7 +728,8 @@ export function Learn() {
         </h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
           New to CPAP? Get matched to the right mask with our on-device fitter.
-          Already have your machine? Reorder cushions, filters, and tubing direct from the shop.
+          Already have your machine? Reorder cushions, filters, and tubing
+          direct from the shop.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
           <Link href="/consent">

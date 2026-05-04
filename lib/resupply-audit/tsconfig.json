@@ -9,5 +9,5 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "references": [{"path":"../resupply-db"}]
+  "references": [{ "path": "../resupply-db" }]
 }

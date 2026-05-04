@@ -25,10 +25,7 @@ import { z } from "zod";
 import { getDbPool, shopReviews } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
-import {
-  encodeCompositeCursor,
-  parseCompositeCursor,
-} from "../../lib/cursor";
+import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 import {
   sendReviewApprovedEmail,
   sendReviewRejectedEmail,
@@ -120,7 +117,11 @@ router.get("/admin/shop/reviews", requireAdmin, async (req, res) => {
     (c): c is NonNullable<typeof c> => c != null,
   );
   const whereClause =
-    clauses.length === 0 ? undefined : clauses.length === 1 ? clauses[0] : and(...clauses);
+    clauses.length === 0
+      ? undefined
+      : clauses.length === 1
+        ? clauses[0]
+        : and(...clauses);
 
   const rows = await db
     .select({
@@ -394,57 +395,53 @@ router.post(
 // customer already got one when the review was first rejected. If a
 // fresh notice is desired, the operator should un-reject and
 // re-reject, which goes through the existing email path.
-router.patch(
-  "/admin/shop/reviews/:id/note",
-  requireAdmin,
-  async (req, res) => {
-    const id = String(req.params.id ?? "");
-    if (!id) {
-      res.status(400).json({ error: "missing_id" });
-      return;
-    }
-    const parse = noteBody.safeParse(req.body ?? {});
-    if (!parse.success) {
-      res.status(400).json({ error: "invalid_body" });
-      return;
-    }
-    const note =
-      typeof parse.data.note === "string" && parse.data.note.trim() !== ""
-        ? parse.data.note.trim()
-        : null;
-    const db = drizzle(getDbPool());
-    // Same guard as unreject: only `rejected` rows can have their
-    // note edited. Approved + pending rows have no public note slot.
-    const updated = await db
-      .update(shopReviews)
-      .set({
-        moderationNote: note,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "rejected")))
-      .returning({
-        id: shopReviews.id,
-        status: shopReviews.status,
-        moderationNote: shopReviews.moderationNote,
-        moderatedAt: shopReviews.moderatedAt,
-      });
-    const row = updated[0];
-    if (!row) {
-      res.status(404).json({ error: "not_found_or_not_rejected" });
-      return;
-    }
-    req.log?.info?.(
-      { reviewId: row.id },
-      "shop/admin/reviews: rejection note edited",
-    );
-    res.json({
-      id: row.id,
-      status: row.status,
-      moderationNote: row.moderationNote,
-      moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
+router.patch("/admin/shop/reviews/:id/note", requireAdmin, async (req, res) => {
+  const id = String(req.params.id ?? "");
+  if (!id) {
+    res.status(400).json({ error: "missing_id" });
+    return;
+  }
+  const parse = noteBody.safeParse(req.body ?? {});
+  if (!parse.success) {
+    res.status(400).json({ error: "invalid_body" });
+    return;
+  }
+  const note =
+    typeof parse.data.note === "string" && parse.data.note.trim() !== ""
+      ? parse.data.note.trim()
+      : null;
+  const db = drizzle(getDbPool());
+  // Same guard as unreject: only `rejected` rows can have their
+  // note edited. Approved + pending rows have no public note slot.
+  const updated = await db
+    .update(shopReviews)
+    .set({
+      moderationNote: note,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "rejected")))
+    .returning({
+      id: shopReviews.id,
+      status: shopReviews.status,
+      moderationNote: shopReviews.moderationNote,
+      moderatedAt: shopReviews.moderatedAt,
     });
-  },
-);
+  const row = updated[0];
+  if (!row) {
+    res.status(404).json({ error: "not_found_or_not_rejected" });
+    return;
+  }
+  req.log?.info?.(
+    { reviewId: row.id },
+    "shop/admin/reviews: rejection note edited",
+  );
+  res.json({
+    id: row.id,
+    status: row.status,
+    moderationNote: row.moderationNote,
+    moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
+  });
+});
 
 /**
  * Look up a product's display name from Stripe. Wrapped in

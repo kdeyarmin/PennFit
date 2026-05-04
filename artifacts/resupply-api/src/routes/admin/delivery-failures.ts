@@ -124,8 +124,10 @@ router.get("/admin/delivery-failures", requireAdmin, async (req, res) => {
     conversationId: r.conversationId,
     patientId: r.patientId,
     patientName:
-      [r.patientFirstName, r.patientLastName].filter(Boolean).join(" ").trim() ||
-      null,
+      [r.patientFirstName, r.patientLastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || null,
   }));
 
   const auditEvents = (auditRows.rows ?? []).map((r) => ({

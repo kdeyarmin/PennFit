@@ -9,5 +9,5 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "references": [{"path":"../resupply-domain"}]
+  "references": [{ "path": "../resupply-domain" }]
 }

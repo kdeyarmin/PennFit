@@ -9,7 +9,8 @@ function setCsrfCookie(value: string): void {
 function clearCookies(): void {
   for (const c of document.cookie.split(";")) {
     const name = c.split("=")[0]?.trim();
-    if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+    if (name)
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
   }
 }
 
@@ -25,9 +26,10 @@ interface RecordedCall {
   credentials: RequestCredentials | undefined;
 }
 
-function makeFetch(
-  responses: Array<{ status: number; body?: unknown }>,
-): { fetch: typeof fetch; calls: RecordedCall[] } {
+function makeFetch(responses: Array<{ status: number; body?: unknown }>): {
+  fetch: typeof fetch;
+  calls: RecordedCall[];
+} {
   const calls: RecordedCall[] = [];
   let idx = 0;
   const fakeFetch: typeof fetch = async (input, init) => {
@@ -156,7 +158,9 @@ describe("createAuthClient", () => {
   });
 
   it("falls back to a default user message when the server omits one", async () => {
-    const { fetch } = makeFetch([{ status: 410, body: { error: "invalid_input" } }]);
+    const { fetch } = makeFetch([
+      { status: 410, body: { error: "invalid_input" } },
+    ]);
     const client = createAuthClient({ basePath: "/api/auth", fetch });
     const err = (await client
       .verifyEmail({ token: "t" })

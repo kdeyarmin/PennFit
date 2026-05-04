@@ -111,9 +111,7 @@ export async function removePrescriptionAttachment(args: {
     { method: "DELETE", credentials: "same-origin" },
   );
   if (!res.ok) {
-    throw new Error(
-      await readErrorMessage(res, "Couldn't remove attachment."),
-    );
+    throw new Error(await readErrorMessage(res, "Couldn't remove attachment."));
   }
 }
 

@@ -60,7 +60,8 @@ const router: IRouter = Router();
 // stray path param can't be smuggled into the WHERE clause as a
 // substring match. (Drizzle parameterises so this is belt-and-
 // suspenders defence.)
-const ORDER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ORDER_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateOrderId(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -192,9 +193,14 @@ async function loadOrder(orderId: string): Promise<OrderRow | null> {
 async function sendShippingNotificationIfNew(args: {
   orderId: string;
   log:
-    | { info?: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void }
+    | {
+        info?: (...args: unknown[]) => void;
+        warn?: (...args: unknown[]) => void;
+      }
     | undefined;
-}): Promise<{ skipped: true; reason: string } | { skipped: false; delivered: boolean }> {
+}): Promise<
+  { skipped: true; reason: string } | { skipped: false; delivered: boolean }
+> {
   const { orderId, log } = args;
   const db = drizzle(getDbPool());
 
@@ -206,10 +212,7 @@ async function sendShippingNotificationIfNew(args: {
     .update(shopOrders)
     .set({ shippingEmailSentAt: sql`now()`, updatedAt: sql`now()` })
     .where(
-      and(
-        eq(shopOrders.id, orderId),
-        isNull(shopOrders.shippingEmailSentAt),
-      ),
+      and(eq(shopOrders.id, orderId), isNull(shopOrders.shippingEmailSentAt)),
     )
     .returning({
       id: shopOrders.id,
@@ -246,7 +249,10 @@ async function sendShippingNotificationIfNew(args: {
       log?.warn?.(
         {
           orderId: claimed.id,
-          err: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+          err:
+            releaseErr instanceof Error
+              ? releaseErr.message
+              : String(releaseErr),
         },
         "shipping notification email claim release failed",
       );
@@ -323,7 +329,10 @@ async function sendShippingNotificationIfNew(args: {
     // permanently suppress the shipping notification.
     await releaseClaim();
     log?.warn?.(
-      { orderId: claimed.id, err: err instanceof Error ? err.message : String(err) },
+      {
+        orderId: claimed.id,
+        err: err instanceof Error ? err.message : String(err),
+      },
       "shipping notification email post-claim threw (non-fatal, claim released)",
     );
     return { skipped: false, delivered: false };
@@ -449,8 +458,7 @@ router.post(
       req.log?.warn?.(
         {
           orderId,
-          err:
-            emailErr instanceof Error ? emailErr.message : String(emailErr),
+          err: emailErr instanceof Error ? emailErr.message : String(emailErr),
         },
         "admin/shop/orders: shipping notification failed (non-fatal)",
       );

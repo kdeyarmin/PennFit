@@ -331,9 +331,7 @@ export async function createShopProduct(
         issues?: Array<{ path: string; message: string }>;
       };
       if (body.issues && body.issues.length > 0) {
-        detail = body.issues
-          .map((i) => `${i.path}: ${i.message}`)
-          .join("; ");
+        detail = body.issues.map((i) => `${i.path}: ${i.message}`).join("; ");
       } else if (body.error) {
         detail = body.error;
       }

@@ -85,10 +85,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return { ...actual, getDbPool: () => ({}) as never };
 });
 
@@ -103,8 +102,7 @@ vi.mock("../../lib/stripe/config", () => ({
   getStripeClient: () => ({
     subscriptions: {
       update: (...a: unknown[]) => stripeSubscriptionsUpdateMock(...a),
-      retrieve: (...a: unknown[]) =>
-        stripeSubscriptionsRetrieveMock(...a),
+      retrieve: (...a: unknown[]) => stripeSubscriptionsRetrieveMock(...a),
     },
     prices: {
       retrieve: (...a: unknown[]) => stripePricesRetrieveMock(...a),
@@ -154,10 +152,9 @@ function stubSignedIn(userId: string): void {
   mockSignedIn.current = userId;
 }
 
-function activeSubRow(over: Partial<Record<string, unknown>> = {}): Record<
-  string,
-  unknown
-> {
+function activeSubRow(
+  over: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
   return {
     id: VALID_ID,
     stripeSubscriptionId: STRIPE_SUB_ID,
@@ -198,8 +195,10 @@ afterEach(() => {
 
 describe("POST /shop/me/subscriptions/:id/pause", () => {
   it("401 when unsigned", async () => {
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+    ).send({});
     expect(r.status).toBe(401);
     expect(r.body.error).toBe("sign_in_required");
   });
@@ -207,8 +206,10 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
   it("404 when not owned (no row matches id+customerId)", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([]); // owner lookup returns nothing
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+    ).send({});
     expect(r.status).toBe(404);
     expect(r.body.error).toBe("subscription_not_found");
     expect(stripeSubscriptionsUpdateMock).not.toHaveBeenCalled();
@@ -217,8 +218,10 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
   it("409 when subscription is canceled", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([activeSubRow({ status: "canceled" })]);
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+    ).send({});
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("subscription_canceled");
     expect(stripeSubscriptionsUpdateMock).not.toHaveBeenCalled();
@@ -228,8 +231,10 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     stubSignedIn(USER_ID);
     selectQueue.push([activeSubRow()]);
     stripeConfigured = false;
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+    ).send({});
     expect(r.status).toBe(503);
     expect(r.body.error).toBe("shop_unavailable");
   });
@@ -240,8 +245,10 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     stripeSubscriptionsUpdateMock.mockRejectedValueOnce(
       new Error("network blip"),
     );
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+    ).send({});
     expect(r.status).toBe(502);
     expect(r.body.error).toBe("stripe_update_failed");
   });
@@ -252,15 +259,16 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     stripeSubscriptionsUpdateMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
     });
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/pause`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+    ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
     expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledTimes(1);
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
-      STRIPE_SUB_ID,
-      { pause_collection: { behavior: "void" } },
-    );
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
+      pause_collection: { behavior: "void" },
+    });
   });
 });
 
@@ -273,21 +281,24 @@ describe("POST /shop/me/subscriptions/:id/resume", () => {
     stripeSubscriptionsUpdateMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
     });
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/resume`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/resume`,
+    ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
-      STRIPE_SUB_ID,
-      { pause_collection: "" },
-    );
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
+      pause_collection: "",
+    });
   });
 
   it("409 when subscription is canceled (shared guard)", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([activeSubRow({ status: "canceled" })]);
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/resume`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/resume`,
+    ).send({});
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("subscription_canceled");
     expect(stripeSubscriptionsUpdateMock).not.toHaveBeenCalled();
@@ -298,15 +309,19 @@ describe("POST /shop/me/subscriptions/:id/resume", () => {
 
 describe("POST /shop/me/subscriptions/:id/cadence", () => {
   it("401 when unsigned", async () => {
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(401);
   });
 
   it("400 when body is missing priceId", async () => {
     stubSignedIn(USER_ID);
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({});
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("invalid_body");
   });
@@ -314,16 +329,20 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
   it("404 when not owned", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([]);
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(404);
   });
 
   it("409 when subscription is canceled", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([activeSubRow({ status: "canceled" })]);
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("subscription_canceled");
   });
@@ -354,8 +373,10 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
         ],
       }),
     ]);
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("multi_item_subscription");
   });
@@ -363,8 +384,10 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
   it("200 unchanged: true when new priceId equals current", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([activeSubRow()]);
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: CURRENT_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: CURRENT_PRICE_ID });
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true, unchanged: true });
     expect(stripePricesRetrieveMock).not.toHaveBeenCalled();
@@ -373,11 +396,11 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
   it("400 invalid_price when prices.retrieve throws", async () => {
     stubSignedIn(USER_ID);
     selectQueue.push([activeSubRow()]);
-    stripePricesRetrieveMock.mockRejectedValueOnce(
-      new Error("no such price"),
-    );
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    stripePricesRetrieveMock.mockRejectedValueOnce(new Error("no such price"));
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("invalid_price");
   });
@@ -391,8 +414,10 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
       recurring: null,
       product: STRIPE_PRODUCT_ID,
     });
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("price_not_recurring");
   });
@@ -406,8 +431,10 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
       recurring: { interval: "day", interval_count: 60 },
       product: "prod_other",
     });
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("price_product_mismatch");
   });
@@ -424,8 +451,10 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     stripeSubscriptionsRetrieveMock.mockRejectedValueOnce(
       new Error("network blip"),
     );
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(502);
     expect(r.body.error).toBe("stripe_fetch_failed");
   });
@@ -441,22 +470,23 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     });
     stripeSubscriptionsRetrieveMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
-      items: { data: [{ id: STRIPE_ITEM_ID, price: { id: CURRENT_PRICE_ID } }] },
+      items: {
+        data: [{ id: STRIPE_ITEM_ID, price: { id: CURRENT_PRICE_ID } }],
+      },
     });
     stripeSubscriptionsUpdateMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
     });
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cadence`)
-      .send({ priceId: NEW_PRICE_ID });
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+    ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
-      STRIPE_SUB_ID,
-      {
-        items: [{ id: STRIPE_ITEM_ID, price: NEW_PRICE_ID }],
-        proration_behavior: "none",
-      },
-    );
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
+      items: [{ id: STRIPE_ITEM_ID, price: NEW_PRICE_ID }],
+      proration_behavior: "none",
+    });
   });
 });
 
@@ -636,13 +666,14 @@ describe("POST /shop/me/subscriptions/:id/cancel (smoke)", () => {
     stripeSubscriptionsUpdateMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
     });
-    const r = await post(makeApp(), `/resupply-api/me/subscriptions/${VALID_ID}/cancel`)
-      .send({});
+    const r = await post(
+      makeApp(),
+      `/resupply-api/me/subscriptions/${VALID_ID}/cancel`,
+    ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
-    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(
-      STRIPE_SUB_ID,
-      { cancel_at_period_end: true },
-    );
+    expect(stripeSubscriptionsUpdateMock).toHaveBeenCalledWith(STRIPE_SUB_ID, {
+      cancel_at_period_end: true,
+    });
   });
 });

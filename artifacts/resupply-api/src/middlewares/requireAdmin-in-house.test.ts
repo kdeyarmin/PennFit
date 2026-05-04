@@ -3,14 +3,7 @@
 
 import express, { type Express } from "express";
 import request from "supertest";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   hashPassword,
@@ -157,7 +150,9 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       role: "admin",
     });
 
-    const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
+    const res = await request(makeApp())
+      .get("/protected")
+      .set("Cookie", cookie);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -166,8 +161,6 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       adminUserId: "u_admin",
       adminRole: "admin",
     });
-
-
   });
 
   it("admits an agent via pf_session cookie", async () => {
@@ -179,7 +172,9 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       role: "agent",
     });
 
-    const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
+    const res = await request(makeApp())
+      .get("/protected")
+      .set("Cookie", cookie);
 
     expect(res.status).toBe(200);
     expect(res.body.adminRole).toBe("agent");
@@ -210,11 +205,11 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       role: "customer",
     });
 
-    const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
+    const res = await request(makeApp())
+      .get("/protected")
+      .set("Cookie", cookie);
 
     expect(res.status).toBe(401);
-
-
   });
 
   it("returns 401 when the session is expired", async () => {
@@ -227,7 +222,9 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       expiresAt: new Date(Date.now() - 1000),
     });
 
-    const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
+    const res = await request(makeApp())
+      .get("/protected")
+      .set("Cookie", cookie);
 
     expect(res.status).toBe(401);
   });
@@ -242,7 +239,9 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       revokedAt: new Date(),
     });
 
-    const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
+    const res = await request(makeApp())
+      .get("/protected")
+      .set("Cookie", cookie);
 
     expect(res.status).toBe(401);
   });
@@ -257,7 +256,9 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       status: "locked",
     });
 
-    const res = await request(makeApp()).get("/protected").set("Cookie", cookie);
+    const res = await request(makeApp())
+      .get("/protected")
+      .set("Cookie", cookie);
 
     expect(res.status).toBe(401);
   });
@@ -282,7 +283,6 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
       .set("Cookie", "pf_session=anything");
 
     expect(res.status).toBe(401);
-
   });
 
   it("returns 401 when no cookie is present", async () => {
@@ -292,7 +292,5 @@ describe("requireAdmin — in-house pf_session cookie path", () => {
     const res = await request(makeApp()).get("/protected");
 
     expect(res.status).toBe(401);
-
-
   });
 });

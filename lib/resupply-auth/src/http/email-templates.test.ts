@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  renderPasswordResetEmail,
-  renderVerifyEmail,
-} from "./email-templates";
+import { renderPasswordResetEmail, renderVerifyEmail } from "./email-templates";
 
 describe("renderVerifyEmail", () => {
   const ctx = {
@@ -14,8 +11,12 @@ describe("renderVerifyEmail", () => {
   it("includes the verify URL with the token URL-encoded", () => {
     const r = renderVerifyEmail(ctx, "abc-token");
     expect(r.subject).toContain("TestProduct");
-    expect(r.html).toContain("https://shop.example.com/verify-email?token=abc-token");
-    expect(r.text).toContain("https://shop.example.com/verify-email?token=abc-token");
+    expect(r.html).toContain(
+      "https://shop.example.com/verify-email?token=abc-token",
+    );
+    expect(r.text).toContain(
+      "https://shop.example.com/verify-email?token=abc-token",
+    );
   });
 
   it("escapes HTML in the product name", () => {
@@ -37,7 +38,11 @@ describe("renderPasswordResetEmail", () => {
   it("includes the reset URL", () => {
     const r = renderPasswordResetEmail(ctx, "tok123");
     expect(r.subject).toContain("Reset your TestProduct password");
-    expect(r.html).toContain("https://shop.example.com/reset-password?token=tok123");
-    expect(r.text).toContain("https://shop.example.com/reset-password?token=tok123");
+    expect(r.html).toContain(
+      "https://shop.example.com/reset-password?token=tok123",
+    );
+    expect(r.text).toContain(
+      "https://shop.example.com/reset-password?token=tok123",
+    );
   });
 });

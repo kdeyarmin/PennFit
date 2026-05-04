@@ -9,7 +9,9 @@ import {
 
 const NOW = new Date("2026-04-28T12:00:00Z");
 
-function basePatient(overrides: Partial<OutreachPatient> = {}): OutreachPatient {
+function basePatient(
+  overrides: Partial<OutreachPatient> = {},
+): OutreachPatient {
   return {
     id: "p1",
     // Default: ~400 days (well over 1 year tenured).
@@ -172,9 +174,7 @@ describe("resolveOutreachPlan — rule predicates", () => {
     const inWindow = resolveOutreachPlan({
       patient,
       prescription: basePrescription(),
-      rules: [
-        rule({ minTenureDays: 30, maxTenureDays: 365, cadenceDays: 75 }),
-      ],
+      rules: [rule({ minTenureDays: 30, maxTenureDays: 365, cadenceDays: 75 })],
       now: NOW,
     });
     expect(inWindow.cadenceDays).toBe(75);
@@ -182,9 +182,7 @@ describe("resolveOutreachPlan — rule predicates", () => {
     const tooNew = resolveOutreachPlan({
       patient,
       prescription: basePrescription(),
-      rules: [
-        rule({ minTenureDays: 31, maxTenureDays: 365, cadenceDays: 75 }),
-      ],
+      rules: [rule({ minTenureDays: 31, maxTenureDays: 365, cadenceDays: 75 })],
       now: NOW,
     });
     expect(tooNew.cadenceSource).toBe("prescription");
@@ -192,9 +190,7 @@ describe("resolveOutreachPlan — rule predicates", () => {
     const tooOld = resolveOutreachPlan({
       patient,
       prescription: basePrescription(),
-      rules: [
-        rule({ minTenureDays: 0, maxTenureDays: 29, cadenceDays: 75 }),
-      ],
+      rules: [rule({ minTenureDays: 0, maxTenureDays: 29, cadenceDays: 75 })],
       now: NOW,
     });
     expect(tooOld.cadenceSource).toBe("prescription");

@@ -1,5 +1,11 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
+import {
+  Switch,
+  Route,
+  Router as WouterRouter,
+  Redirect,
+  useLocation,
+} from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -290,7 +296,10 @@ function PatientRouter() {
           <Route path="/how-it-works" component={HowItWorks} />
           <Route path="/faq" component={Faq} />
           <Route path="/learn" component={Learn} />
-          <Route path="/learn/replacement-schedule" component={ReplacementSchedule} />
+          <Route
+            path="/learn/replacement-schedule"
+            component={ReplacementSchedule}
+          />
           <Route path="/learn/device-setup" component={DeviceSetup} />
           <Route path="/learn/sleep-apnea-quiz" component={SleepApneaQuiz} />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
@@ -300,7 +309,10 @@ function PatientRouter() {
             {(params) => <ShopProductDetail productId={params.productId} />}
           </Route>
           <Route path="/shop/cart" component={ShopCart} />
-          <Route path="/shop/checkout-success" component={ShopCheckoutSuccess} />
+          <Route
+            path="/shop/checkout-success"
+            component={ShopCheckoutSuccess}
+          />
           <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
           <Route path="/shop/orders" component={ShopOrders} />
           <Route path="/shop/wishlist" component={ShopWishlist} />
@@ -364,9 +376,7 @@ function TopRouter() {
           <LegacyResupplyRedirect rest="" />
         </Route>
         <Route path="/resupply/:rest*">
-          {(params) => (
-            <LegacyResupplyRedirect rest={params["rest*"] ?? ""} />
-          )}
+          {(params) => <LegacyResupplyRedirect rest={params["rest*"] ?? ""} />}
         </Route>
 
         {/*

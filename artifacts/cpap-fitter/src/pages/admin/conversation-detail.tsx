@@ -21,7 +21,10 @@ import { EmptyState } from "@/components/admin/EmptyState";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import { fullName, formatDateTime } from "@/lib/admin/format";
-import { applyTemplate, templatesForChannel } from "@/lib/admin/reply-templates";
+import {
+  applyTemplate,
+  templatesForChannel,
+} from "@/lib/admin/reply-templates";
 import { applyMacro, applyLegacyFirstName } from "@/lib/admin/macro-merge";
 import { listMacros, type CsrMacro } from "@/lib/admin/csr-macros-api";
 import { useQuery } from "@tanstack/react-query";
@@ -73,128 +76,141 @@ export function ConversationDetailPage({ id }: { id: string }) {
       <BackLink />
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-6 min-w-0">
-      <Card>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: "hsl(var(--penn-gold-deep))" }}>
-              Conversation
-            </p>
-            <h1 className="text-2xl font-semibold mb-1" style={{ color: "hsl(var(--ink-1))" }}>
-              <Link
-                href={`/patients/${data.patientId}`}
-                className="underline decoration-dotted"
-                style={{ color: "hsl(var(--ink-1))" }}
-              >
-                {fullName(data.patientFirstName, data.patientLastName)}
-              </Link>
-            </h1>
-            <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
-              Started {formatDateTime(data.createdAt)} · Last message{" "}
-              {formatDateTime(data.lastMessageAt)}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={channelVariant(data.channel)}>
-              {humanizeStatus(data.channel)}
-            </Badge>
-            <Badge variant={conversationStatusVariant(data.status)}>
-              {humanizeStatus(data.status)}
-            </Badge>
-          </div>
-        </div>
-        <ConversationAssignmentBar
-          conversationId={data.id}
-          assignedAdminUserId={
-            (data as { assignedAdminUserId?: string | null }).assignedAdminUserId ?? null
-          }
-          priority={
-            ((data as { priority?: string }).priority ?? "normal") as
-              | "low"
-              | "normal"
-              | "high"
-              | "urgent"
-          }
-          slaDueAt={(data as { slaDueAt?: string | null }).slaDueAt ?? null}
-          escalatedAt={(data as { escalatedAt?: string | null }).escalatedAt ?? null}
-          escalationReason={
-            (data as { escalationReason?: string | null }).escalationReason ?? null
-          }
-          status={data.status}
-          onChange={() => void refetch()}
-        />
-      </Card>
-
-      <Card>
-        {data.messages.length === 0 ? (
-          <EmptyState
-            title="No messages yet."
-            hint="Use the action bar below to send the first reminder."
-          />
-        ) : (
-          <ol className="flex flex-col gap-3">
-            {data.messages.map((m) => {
-              const isOutbound = m.direction === "outbound";
-              return (
-                <li
-                  key={m.id}
-                  className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}
+          <Card>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p
+                  className="text-xs uppercase tracking-wider mb-1"
+                  style={{ color: "hsl(var(--penn-gold-deep))" }}
                 >
-                  <div className="max-w-[70%]">
-                    <div
-                      className="rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words border"
-                      style={
-                        isOutbound
-                          ? {
-                              backgroundColor: "#0a1f44",
-                              color: "#ffffff",
-                              borderColor: "#0a1f44",
-                            }
-                          : {
-                              backgroundColor: "#ffffff",
-                              color: "hsl(var(--ink-1))",
-                              borderColor: "hsl(var(--line-1))",
-                            }
-                      }
-                    >
-                      {m.body}
-                    </div>
-                    {m.attachments && m.attachments.length > 0 && (
-                      <MessageAttachments
-                        conversationId={data.id}
-                        messageId={m.id}
-                        attachments={m.attachments}
-                        isOutbound={isOutbound}
-                      />
-                    )}
-                    <p
-                      className="text-[10px] mt-1 px-1"
-                      style={{ color: "hsl(var(--ink-3))", textAlign: isOutbound ? "right" : "left" }}
-                    >
-                      {humanizeStatus(m.senderRole)} ·{" "}
-                      {formatDateTime(m.sentAt ?? m.createdAt)}
-                      {m.deliveryStatus ? ` · ${m.deliveryStatus}` : ""}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </Card>
+                  Conversation
+                </p>
+                <h1
+                  className="text-2xl font-semibold mb-1"
+                  style={{ color: "hsl(var(--ink-1))" }}
+                >
+                  <Link
+                    href={`/patients/${data.patientId}`}
+                    className="underline decoration-dotted"
+                    style={{ color: "hsl(var(--ink-1))" }}
+                  >
+                    {fullName(data.patientFirstName, data.patientLastName)}
+                  </Link>
+                </h1>
+                <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                  Started {formatDateTime(data.createdAt)} · Last message{" "}
+                  {formatDateTime(data.lastMessageAt)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={channelVariant(data.channel)}>
+                  {humanizeStatus(data.channel)}
+                </Badge>
+                <Badge variant={conversationStatusVariant(data.status)}>
+                  {humanizeStatus(data.status)}
+                </Badge>
+              </div>
+            </div>
+            <ConversationAssignmentBar
+              conversationId={data.id}
+              assignedAdminUserId={
+                (data as { assignedAdminUserId?: string | null })
+                  .assignedAdminUserId ?? null
+              }
+              priority={
+                ((data as { priority?: string }).priority ?? "normal") as
+                  | "low"
+                  | "normal"
+                  | "high"
+                  | "urgent"
+              }
+              slaDueAt={(data as { slaDueAt?: string | null }).slaDueAt ?? null}
+              escalatedAt={
+                (data as { escalatedAt?: string | null }).escalatedAt ?? null
+              }
+              escalationReason={
+                (data as { escalationReason?: string | null })
+                  .escalationReason ?? null
+              }
+              status={data.status}
+              onChange={() => void refetch()}
+            />
+          </Card>
 
-      <ReplyComposer
-        conversationId={data.id}
-        channel={data.channel}
-        status={data.status}
-        patientFirstName={data.patientFirstName}
-        onAfterSend={() => void refetch()}
-      />
+          <Card>
+            {data.messages.length === 0 ? (
+              <EmptyState
+                title="No messages yet."
+                hint="Use the action bar below to send the first reminder."
+              />
+            ) : (
+              <ol className="flex flex-col gap-3">
+                {data.messages.map((m) => {
+                  const isOutbound = m.direction === "outbound";
+                  return (
+                    <li
+                      key={m.id}
+                      className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}
+                    >
+                      <div className="max-w-[70%]">
+                        <div
+                          className="rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words border"
+                          style={
+                            isOutbound
+                              ? {
+                                  backgroundColor: "#0a1f44",
+                                  color: "#ffffff",
+                                  borderColor: "#0a1f44",
+                                }
+                              : {
+                                  backgroundColor: "#ffffff",
+                                  color: "hsl(var(--ink-1))",
+                                  borderColor: "hsl(var(--line-1))",
+                                }
+                          }
+                        >
+                          {m.body}
+                        </div>
+                        {m.attachments && m.attachments.length > 0 && (
+                          <MessageAttachments
+                            conversationId={data.id}
+                            messageId={m.id}
+                            attachments={m.attachments}
+                            isOutbound={isOutbound}
+                          />
+                        )}
+                        <p
+                          className="text-[10px] mt-1 px-1"
+                          style={{
+                            color: "hsl(var(--ink-3))",
+                            textAlign: isOutbound ? "right" : "left",
+                          }}
+                        >
+                          {humanizeStatus(m.senderRole)} ·{" "}
+                          {formatDateTime(m.sentAt ?? m.createdAt)}
+                          {m.deliveryStatus ? ` · ${m.deliveryStatus}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </Card>
 
-      <ActionBar
-        patientId={data.patientId}
-        episodeId={data.episodeId}
-        onAfterAction={() => void refetch()}
-      />
+          <ReplyComposer
+            conversationId={data.id}
+            channel={data.channel}
+            status={data.status}
+            patientFirstName={data.patientFirstName}
+            onAfterSend={() => void refetch()}
+          />
+
+          <ActionBar
+            patientId={data.patientId}
+            episodeId={data.episodeId}
+            onAfterAction={() => void refetch()}
+          />
         </div>
         <aside className="space-y-4">
           <Patient360Panel patientId={data.patientId} />
@@ -249,9 +265,7 @@ function ReplyComposer({
   const dbMacros = macrosQuery.data?.macros ?? [];
   const filteredMacros: CsrMacro[] =
     channel === "sms" || channel === "email"
-      ? dbMacros.filter((m) =>
-          m.channels.includes(channel as "sms" | "email"),
-        )
+      ? dbMacros.filter((m) => m.channels.includes(channel as "sms" | "email"))
       : [];
   // Hardcoded fallback only when the DB list is empty AND the query
   // resolved (success with no rows OR error). While loading, show
@@ -272,7 +286,10 @@ function ReplyComposer({
       <Card title="Reply">
         <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
           Voice conversations don't support typed replies. Use{" "}
-          <span className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+          <span
+            className="font-semibold"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
             Place voice call
           </span>{" "}
           below to call the patient back.
@@ -283,9 +300,7 @@ function ReplyComposer({
 
   function describeError(err: unknown): string {
     if (err instanceof ApiError) {
-      const data = err.data as
-        | { error?: string; message?: string }
-        | undefined;
+      const data = err.data as { error?: string; message?: string } | undefined;
       // 503 messaging-not-configured is the most actionable case for
       // an operator — surface the deployer-facing hint as-is.
       if (err.status === 503) {
@@ -378,28 +393,29 @@ function ReplyComposer({
                 if (e.target.value) onInsertTemplate(e.target.value);
               }}
               className="rounded border px-2 py-1 text-xs"
-              style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
+              style={{
+                borderColor: "hsl(var(--line-1))",
+                color: "hsl(var(--ink-1))",
+              }}
             >
               <option value="">Choose a reply…</option>
-              {filteredMacros.length > 0 ? (
-                Object.entries(groupByCategory(filteredMacros)).map(
-                  ([category, items]) => (
-                    <optgroup key={category} label={category}>
-                      {items.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ),
-                )
-              ) : (
-                fallbackTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))
-              )}
+              {filteredMacros.length > 0
+                ? Object.entries(groupByCategory(filteredMacros)).map(
+                    ([category, items]) => (
+                      <optgroup key={category} label={category}>
+                        {items.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ),
+                  )
+                : fallbackTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
             </select>
           </div>
         )}
@@ -429,7 +445,10 @@ function ReplyComposer({
           }
         }}
         className="w-full rounded border px-3 py-2 text-sm font-sans resize-y"
-        style={{ borderColor: "hsl(var(--line-1))", color: "hsl(var(--ink-1))" }}
+        style={{
+          borderColor: "hsl(var(--line-1))",
+          color: "hsl(var(--ink-1))",
+        }}
         data-testid="conv-reply-textarea"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
@@ -452,20 +471,12 @@ function ReplyComposer({
         </Button>
       </div>
       {error && (
-        <p
-          className="mt-3 text-sm"
-          style={{ color: "#b91c1c" }}
-          role="alert"
-        >
+        <p className="mt-3 text-sm" style={{ color: "#b91c1c" }} role="alert">
           {error}
         </p>
       )}
       {statusMsg && !error && (
-        <p
-          className="mt-3 text-sm"
-          style={{ color: "#166534" }}
-          role="status"
-        >
+        <p className="mt-3 text-sm" style={{ color: "#166534" }} role="status">
           {statusMsg}
         </p>
       )}
@@ -509,9 +520,8 @@ function MessageAttachments({
   attachments: ConversationMessageAttachment[];
   isOutbound: boolean;
 }) {
-  const [lightbox, setLightbox] = useState<ConversationMessageAttachment | null>(
-    null,
-  );
+  const [lightbox, setLightbox] =
+    useState<ConversationMessageAttachment | null>(null);
 
   function urlFor(a: ConversationMessageAttachment): string {
     return `/resupply-api/conversations/${conversationId}/messages/${messageId}/attachments/${a.id}`;
@@ -719,10 +729,7 @@ function ActionBar({
 
   const isBusy = sms.isPending || email.isPending || voice.isPending;
 
-  function fire(
-    label: string,
-    promise: Promise<unknown>,
-  ) {
+  function fire(label: string, promise: Promise<unknown>) {
     setFeedback(null);
     promise
       .then(() => {

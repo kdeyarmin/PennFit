@@ -101,7 +101,10 @@ export function NotAuthorizedPage({
             <div className="text-white font-semibold tracking-tight">
               PennPaps Console
             </div>
-            <div className="text-xs" style={{ color: "hsl(var(--penn-gold-deep))" }}>
+            <div
+              className="text-xs"
+              style={{ color: "hsl(var(--penn-gold-deep))" }}
+            >
               {isTransient ? "Access pending" : "Access denied"}
             </div>
           </div>
@@ -137,17 +140,16 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                The resupply API doesn't have an admin allowlist
-                configured, so it's refusing every sign-in until an
-                administrator finishes the setup. This is a deploy-side
-                fix — signing out and back in won't change the result.
+                The resupply API doesn't have an admin allowlist configured, so
+                it's refusing every sign-in until an administrator finishes the
+                setup. This is a deploy-side fix — signing out and back in won't
+                change the result.
               </p>
               <p
                 className="text-sm leading-relaxed mb-2"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                Please contact your PennPaps IT
-                administrator and reference{" "}
+                Please contact your PennPaps IT administrator and reference{" "}
                 <code className="text-xs px-1 py-0.5 bg-gray-100 rounded">
                   RESUPPLY_ADMIN_EMAILS
                 </code>
@@ -160,17 +162,17 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                The dashboard couldn't confirm your admin access just
-                now — the server may be restarting, or your connection
-                may have dropped briefly. This is almost always a few-
-                seconds blip, not a permissions change.
+                The dashboard couldn't confirm your admin access just now — the
+                server may be restarting, or your connection may have dropped
+                briefly. This is almost always a few- seconds blip, not a
+                permissions change.
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                Try refreshing the page in a moment. If it keeps
-                happening, contact{" "}
+                Try refreshing the page in a moment. If it keeps happening,
+                contact{" "}
                 <a
                   href={`mailto:${contactEmail}`}
                   className="underline font-semibold"
@@ -198,8 +200,8 @@ export function NotAuthorizedPage({
                 style={{ color: "hsl(var(--ink-2))" }}
               >
                 You're signed in as{" "}
-                <span className="font-semibold">{email}</span>, but that
-                address isn't on the resupply admin allowlist.
+                <span className="font-semibold">{email}</span>, but that address
+                isn't on the resupply admin allowlist.
               </p>
               <p
                 className="text-sm leading-relaxed mb-4"
@@ -219,8 +221,8 @@ export function NotAuthorizedPage({
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "hsl(var(--ink-2))" }}
               >
-                Already approved under a different email? Sign out and
-                sign back in with the right account.
+                Already approved under a different email? Sign out and sign back
+                in with the right account.
               </p>
               <div className="flex gap-3">
                 <button

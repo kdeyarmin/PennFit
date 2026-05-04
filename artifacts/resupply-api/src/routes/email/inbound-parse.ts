@@ -94,9 +94,7 @@ router.post("/email/inbound-parse", async (req, res) => {
     // Fail closed — the route is registered but not configured yet.
     // 503 not 401 so admins notice the missing env var rather than
     // assuming SendGrid has bad credentials.
-    res
-      .status(503)
-      .json({ error: "inbound_parse_not_configured" });
+    res.status(503).json({ error: "inbound_parse_not_configured" });
     return;
   }
   if (!checkBasicAuth(req.get("authorization") ?? null, expected)) {
@@ -524,10 +522,7 @@ function extractMessageIdHeader(headers: string | undefined): string | null {
  * here because the secret is a configuration value (not user
  * input that could be probed online) but it costs nothing.
  */
-function checkBasicAuth(
-  authHeader: string | null,
-  expected: string,
-): boolean {
+function checkBasicAuth(authHeader: string | null, expected: string): boolean {
   if (!authHeader || !authHeader.toLowerCase().startsWith("basic ")) {
     return false;
   }

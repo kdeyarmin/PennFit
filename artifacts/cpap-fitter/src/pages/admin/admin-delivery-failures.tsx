@@ -28,7 +28,10 @@ export function AdminDeliveryFailuresPage() {
   });
 
   return (
-    <div className="space-y-6 max-w-6xl" data-testid="admin-delivery-failures-page">
+    <div
+      className="space-y-6 max-w-6xl"
+      data-testid="admin-delivery-failures-page"
+    >
       <header className="space-y-1">
         <h1
           className="text-2xl font-bold tracking-tight"
@@ -43,7 +46,10 @@ export function AdminDeliveryFailuresPage() {
       </header>
 
       <div className="flex flex-wrap items-center gap-3">
-        <div role="tablist" className="inline-flex gap-1 p-1 rounded-lg bg-slate-100">
+        <div
+          role="tablist"
+          className="inline-flex gap-1 p-1 rounded-lg bg-slate-100"
+        >
           {(["messages", "audit"] as Tab[]).map((t) => {
             const active = t === tab;
             const label =
@@ -137,7 +143,8 @@ function MessageFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
           <span
             key={status}
             className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-              STATUS_TONE[status] ?? "bg-slate-100 text-slate-700 border-slate-300"
+              STATUS_TONE[status] ??
+              "bg-slate-100 text-slate-700 border-slate-300"
             }`}
           >
             {status} · {count}
@@ -256,7 +263,9 @@ function AuditRow({ row }: { row: AuditFailureEvent }) {
       <td className="px-3 py-2 text-xs text-slate-700 tabular-nums whitespace-nowrap">
         {new Date(row.occurredAt).toLocaleString()}
       </td>
-      <td className="px-3 py-2 text-xs font-mono text-slate-900">{row.action}</td>
+      <td className="px-3 py-2 text-xs font-mono text-slate-900">
+        {row.action}
+      </td>
       <td className="px-3 py-2 text-xs">
         {row.targetTable ? (
           <span className="text-slate-700">

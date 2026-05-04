@@ -34,6 +34,7 @@ export const authPasswordCredentials = authSchema.table(
   },
 );
 
-export type AuthPasswordCredentialRow = typeof authPasswordCredentials.$inferSelect;
+export type AuthPasswordCredentialRow =
+  typeof authPasswordCredentials.$inferSelect;
 export type InsertAuthPasswordCredentialRow =
   typeof authPasswordCredentials.$inferInsert;

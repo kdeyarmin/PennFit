@@ -109,15 +109,14 @@ export function InsuranceLeadForm() {
         </h3>
         <p className="text-sm text-muted-foreground leading-relaxed">
           A member of the PennPaps team will reach out within{" "}
-          <strong>one business day</strong> to confirm your benefits and
-          walk you through the next step. We just sent a copy to{" "}
-          <strong>{form.email}</strong> — check your inbox (and spam,
-          just in case).
+          <strong>one business day</strong> to confirm your benefits and walk
+          you through the next step. We just sent a copy to{" "}
+          <strong>{form.email}</strong> — check your inbox (and spam, just in
+          case).
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          You won't be charged anything until we've confirmed your
-          coverage and told you what — if anything — is owed out of
-          pocket.
+          You won't be charged anything until we've confirmed your coverage and
+          told you what — if anything — is owed out of pocket.
         </p>
       </div>
     );
@@ -141,8 +140,8 @@ export function InsuranceLeadForm() {
             Verify your insurance — about 90 seconds
           </h3>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            We'll check your benefits and call you back within one
-            business day. No charge, no obligation.
+            We'll check your benefits and call you back within one business day.
+            No charge, no obligation.
           </p>
         </div>
       </div>
@@ -314,8 +313,8 @@ export function InsuranceLeadForm() {
 
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          By submitting you agree to be contacted about your CPAP
-          coverage. We'll never share your info.
+          By submitting you agree to be contacted about your CPAP coverage.
+          We'll never share your info.
         </p>
         <Button
           type="submit"

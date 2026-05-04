@@ -77,7 +77,8 @@ function StockCell({
       // Optimistic update: snapshot prior, write the new value,
       // return the snapshot so onError can roll back.
       await queryClient.cancelQueries({ queryKey: QUERY_KEY });
-      const prev = queryClient.getQueryData<ListShopInventoryResponse>(QUERY_KEY);
+      const prev =
+        queryClient.getQueryData<ListShopInventoryResponse>(QUERY_KEY);
       if (prev) {
         queryClient.setQueryData<ListShopInventoryResponse>(QUERY_KEY, {
           ...prev,
@@ -180,7 +181,8 @@ function StockCell({
             borderRadius: 4,
             fontSize: 13,
             fontWeight: 500,
-            cursor: dirty && !saveMutation.isPending ? "pointer" : "not-allowed",
+            cursor:
+              dirty && !saveMutation.isPending ? "pointer" : "not-allowed",
           }}
         >
           {saveMutation.isPending ? "Saving…" : "Save"}
@@ -233,7 +235,9 @@ function StockBadge({
 }) {
   if (count === null) {
     return (
-      <span style={{ color: "hsl(var(--ink-3))", fontSize: 12 }}>Not tracked</span>
+      <span style={{ color: "hsl(var(--ink-3))", fontSize: 12 }}>
+        Not tracked
+      </span>
     );
   }
   if (count === 0) {
@@ -270,7 +274,9 @@ function StockBadge({
     );
   }
   return (
-    <span style={{ color: "hsl(var(--ink-2))", fontSize: 13 }}>{count} in stock</span>
+    <span style={{ color: "hsl(var(--ink-2))", fontSize: 13 }}>
+      {count} in stock
+    </span>
   );
 }
 
@@ -285,9 +291,7 @@ function ThresholdCell({
   onSaved: (next: InventoryProductRow) => void;
 }) {
   const [draft, setDraft] = useState<string>(
-    product.lowStockThreshold === null
-      ? ""
-      : String(product.lowStockThreshold),
+    product.lowStockThreshold === null ? "" : String(product.lowStockThreshold),
   );
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -389,7 +393,8 @@ function ThresholdCell({
             borderRadius: 4,
             fontSize: 13,
             fontWeight: 500,
-            cursor: dirty && !saveMutation.isPending ? "pointer" : "not-allowed",
+            cursor:
+              dirty && !saveMutation.isPending ? "pointer" : "not-allowed",
           }}
         >
           {saveMutation.isPending ? "Saving…" : "Save"}
@@ -435,8 +440,11 @@ function BulkStockBar({
       if (prev) {
         const map = new Map(
           results
-            .filter((r): r is BulkStockResultItem & { product: InventoryProductRow } =>
-              Boolean(r.ok && r.product),
+            .filter(
+              (
+                r,
+              ): r is BulkStockResultItem & { product: InventoryProductRow } =>
+                Boolean(r.ok && r.product),
             )
             .map((r) => [r.product.id, r.product]),
         );
@@ -598,8 +606,7 @@ export function AdminShopInventoryPage() {
     [data],
   );
   const allVisibleSelected =
-    visibleIds.length > 0 &&
-    visibleIds.every((id) => selectedIds.has(id));
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const someVisibleSelected = visibleIds.some((id) => selectedIds.has(id));
 
   function toggleRow(id: string, on: boolean) {
@@ -669,11 +676,10 @@ export function AdminShopInventoryPage() {
             lineHeight: 1.5,
           }}
         >
-          Stock counts are stored in Stripe product metadata. Setting a
-          count to <strong>0</strong> hides the “Add to cart” button on
-          the storefront and shows an out-of-stock badge. Leave a SKU
-          untracked to keep the storefront treating it as always
-          available.
+          Stock counts are stored in Stripe product metadata. Setting a count to{" "}
+          <strong>0</strong> hides the “Add to cart” button on the storefront
+          and shows an out-of-stock badge. Leave a SKU untracked to keep the
+          storefront treating it as always available.
         </p>
       </header>
 
@@ -690,10 +696,9 @@ export function AdminShopInventoryPage() {
             marginBottom: 16,
           }}
         >
-          Preview mode: this environment has no Stripe key, so the
-          catalog below is a built-in fixture and saves will fail with a
-          clear error. Set <code>STRIPE_SECRET_KEY</code> to make
-          inventory editable.
+          Preview mode: this environment has no Stripe key, so the catalog below
+          is a built-in fixture and saves will fail with a clear error. Set{" "}
+          <code>STRIPE_SECRET_KEY</code> to make inventory editable.
         </div>
       ) : null}
 
@@ -751,19 +756,54 @@ export function AdminShopInventoryPage() {
                     onChange={(e) => toggleAll(e.target.checked)}
                   />
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
+                <th
+                  style={{
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "hsl(var(--ink-2))",
+                  }}
+                >
                   Product
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
+                <th
+                  style={{
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "hsl(var(--ink-2))",
+                  }}
+                >
                   Price
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
+                <th
+                  style={{
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "hsl(var(--ink-2))",
+                  }}
+                >
                   Stock
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
+                <th
+                  style={{
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "hsl(var(--ink-2))",
+                  }}
+                >
                   Edit stock
                 </th>
-                <th style={{ padding: "10px 12px", fontSize: 12, fontWeight: 600, color: "hsl(var(--ink-2))" }}>
+                <th
+                  style={{
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "hsl(var(--ink-2))",
+                  }}
+                >
                   Low-stock threshold
                 </th>
               </tr>
@@ -790,10 +830,18 @@ export function AdminShopInventoryPage() {
                       />
                     </td>
                     <td style={{ padding: "12px", verticalAlign: "top" }}>
-                      <div style={{ fontWeight: 500, color: "hsl(var(--ink-1))" }}>
+                      <div
+                        style={{ fontWeight: 500, color: "hsl(var(--ink-1))" }}
+                      >
                         {p.name}
                       </div>
-                      <div style={{ fontSize: 12, color: "hsl(var(--ink-3))", marginTop: 2 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "hsl(var(--ink-3))",
+                          marginTop: 2,
+                        }}
+                      >
                         {p.category} · {p.id}
                       </div>
                     </td>

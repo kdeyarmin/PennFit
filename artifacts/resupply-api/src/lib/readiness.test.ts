@@ -7,10 +7,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // export is preserved so unrelated imports keep working.
 const queryMock = vi.fn();
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({ query: queryMock }),
@@ -33,7 +32,8 @@ describe("checkReadiness()", () => {
 
   it("returns status=ready when both checks succeed", async () => {
     queryMock.mockImplementation((sql: string) => {
-      if (isQueueCheck(sql)) return Promise.resolve({ rows: [{ exists: true }] });
+      if (isQueueCheck(sql))
+        return Promise.resolve({ rows: [{ exists: true }] });
       return Promise.resolve({ rows: [{}] });
     });
     const result = await checkReadiness();
@@ -44,7 +44,8 @@ describe("checkReadiness()", () => {
 
   it("returns status=not_ready with categorized db error when SELECT 1 fails with ECONNREFUSED", async () => {
     queryMock.mockImplementation((sql: string) => {
-      if (isQueueCheck(sql)) return Promise.resolve({ rows: [{ exists: true }] });
+      if (isQueueCheck(sql))
+        return Promise.resolve({ rows: [{ exists: true }] });
       const err = Object.assign(
         new Error("connect ECONNREFUSED 127.0.0.1:5432"),
         { code: "ECONNREFUSED" },
@@ -60,7 +61,8 @@ describe("checkReadiness()", () => {
 
   it("flags queue as schema_not_initialized when the pg-boss schema is absent", async () => {
     queryMock.mockImplementation((sql: string) => {
-      if (isQueueCheck(sql)) return Promise.resolve({ rows: [{ exists: false }] });
+      if (isQueueCheck(sql))
+        return Promise.resolve({ rows: [{ exists: false }] });
       return Promise.resolve({ rows: [{}] });
     });
     const result = await checkReadiness();

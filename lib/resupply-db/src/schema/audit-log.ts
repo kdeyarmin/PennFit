@@ -1,11 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  index,
-  jsonb,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { index, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 

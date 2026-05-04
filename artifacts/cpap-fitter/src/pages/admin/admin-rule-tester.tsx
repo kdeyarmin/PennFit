@@ -52,9 +52,13 @@ export function AdminRuleTesterPage() {
         </h1>
         <p className="text-sm text-slate-600">
           Simulate a (patient, prescription) pair against the live
-          frequency-rules table. Read-only — nothing is modified by
-          running a test.{" "}
-          <Link href="/admin/rules" className="underline decoration-dotted" style={{ color: "hsl(var(--ink-1))" }}>
+          frequency-rules table. Read-only — nothing is modified by running a
+          test.{" "}
+          <Link
+            href="/admin/rules"
+            className="underline decoration-dotted"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
             Edit rules →
           </Link>
         </p>
@@ -216,7 +220,8 @@ function ResultPanel({ data }: { data: RuleTestResponse }) {
           </span>
         </div>
         <p className="text-[11px] text-emerald-800">
-          Source: {SOURCE_LABEL[data.plan.cadenceSource] ?? data.plan.cadenceSource}
+          Source:{" "}
+          {SOURCE_LABEL[data.plan.cadenceSource] ?? data.plan.cadenceSource}
         </p>
       </div>
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-1">
@@ -229,7 +234,8 @@ function ResultPanel({ data }: { data: RuleTestResponse }) {
           </span>
         </div>
         <p className="text-[11px] text-blue-800">
-          Source: {SOURCE_LABEL[data.plan.channelSource] ?? data.plan.channelSource}
+          Source:{" "}
+          {SOURCE_LABEL[data.plan.channelSource] ?? data.plan.channelSource}
         </p>
       </div>
       {data.plan.matchedRuleId && (
@@ -273,10 +279,22 @@ function ResultPanel({ data }: { data: RuleTestResponse }) {
                   ) : null}
                 </div>
                 <div className="text-[11px] text-slate-600 mt-0.5">
-                  {r.matchItemSkuPrefix && <>SKU starts with <code>{r.matchItemSkuPrefix}</code> · </>}
-                  {r.matchInsurancePayer && <>payer = <code>{r.matchInsurancePayer}</code> · </>}
-                  {r.minTenureDays !== null && <>tenure ≥ {r.minTenureDays}d · </>}
-                  {r.maxTenureDays !== null && <>tenure ≤ {r.maxTenureDays}d · </>}
+                  {r.matchItemSkuPrefix && (
+                    <>
+                      SKU starts with <code>{r.matchItemSkuPrefix}</code> ·{" "}
+                    </>
+                  )}
+                  {r.matchInsurancePayer && (
+                    <>
+                      payer = <code>{r.matchInsurancePayer}</code> ·{" "}
+                    </>
+                  )}
+                  {r.minTenureDays !== null && (
+                    <>tenure ≥ {r.minTenureDays}d · </>
+                  )}
+                  {r.maxTenureDays !== null && (
+                    <>tenure ≤ {r.maxTenureDays}d · </>
+                  )}
                   {!r.matchItemSkuPrefix &&
                     !r.matchInsurancePayer &&
                     r.minTenureDays === null &&

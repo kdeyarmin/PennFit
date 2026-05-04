@@ -186,9 +186,7 @@ export async function startCheckout(
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(
-      body.message ?? `Couldn't start checkout (${res.status})`,
-    );
+    throw new Error(body.message ?? `Couldn't start checkout (${res.status})`);
   }
   return (await res.json()) as { url: string; sessionId: string };
 }
@@ -539,7 +537,14 @@ export async function resendOrderReceipt(
 export async function updateOrderShippingAddress(
   orderId: string,
   address: OrderShippingAddress,
-): Promise<{ order: { id: string; shippingAddress: OrderShippingAddress; shippedAt: string | null; canEditAddress: boolean } }> {
+): Promise<{
+  order: {
+    id: string;
+    shippingAddress: OrderShippingAddress;
+    shippedAt: string | null;
+    canEditAddress: boolean;
+  };
+}> {
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -664,7 +669,10 @@ export async function submitInsuranceLead(
 export async function submitBackInStockNotify(input: {
   productId: string;
   email: string;
-}): Promise<{ ok: true; status: "inserted" | "duplicate" | "error" | "queued" }> {
+}): Promise<{
+  ok: true;
+  status: "inserted" | "duplicate" | "error" | "queued";
+}> {
   const res = await fetch("/resupply-api/shop/back-in-stock", {
     method: "POST",
     headers: {

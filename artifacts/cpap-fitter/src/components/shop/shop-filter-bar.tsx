@@ -129,16 +129,16 @@ export function ShopFilterBar({
           )}
         </div>
         <div className="flex items-center justify-between sm:justify-end gap-3">
-        {isSearching && (
-          <span
-            className="text-xs text-muted-foreground tabular-nums shrink-0"
-            data-testid="shop-search-result-count"
-            aria-live="polite"
-          >
-            {resultCount} result{resultCount === 1 ? "" : "s"}
-          </span>
-        )}
-        {/*
+          {isSearching && (
+            <span
+              className="text-xs text-muted-foreground tabular-nums shrink-0"
+              data-testid="shop-search-result-count"
+              aria-live="polite"
+            >
+              {resultCount} result{resultCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {/*
           Sort selector. Native <select> keeps the bundle small
           and gets accessible keyboard + mobile-OS pickers for
           free. Wrapped in a chip so it visually matches the
@@ -147,26 +147,26 @@ export function ShopFilterBar({
           on narrow widths so the search input keeps as much
           horizontal space as possible.
         */}
-        <label
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-white pl-2.5 pr-1 h-9 text-xs text-[hsl(var(--penn-navy))] focus-within:ring-2 focus-within:ring-[hsl(var(--penn-gold))]/40"
-          data-testid="shop-sort-wrap"
-        >
-          <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="hidden md:inline font-semibold">Sort</span>
-          <select
-            value={sort}
-            onChange={(e) => onSortChange(e.target.value as ShopSort)}
-            aria-label="Sort products"
-            className="bg-transparent border-0 outline-none pr-1 py-1 font-medium cursor-pointer"
-            data-testid="shop-sort-select"
+          <label
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-white pl-2.5 pr-1 h-9 text-xs text-[hsl(var(--penn-navy))] focus-within:ring-2 focus-within:ring-[hsl(var(--penn-gold))]/40"
+            data-testid="shop-sort-wrap"
           >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="hidden md:inline font-semibold">Sort</span>
+            <select
+              value={sort}
+              onChange={(e) => onSortChange(e.target.value as ShopSort)}
+              aria-label="Sort products"
+              className="bg-transparent border-0 outline-none pr-1 py-1 font-medium cursor-pointer"
+              data-testid="shop-sort-select"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </div>
       {!isSearching && categories.length > 0 && (

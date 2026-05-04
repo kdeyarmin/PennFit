@@ -109,9 +109,7 @@ export function useDocumentMeta(opts: UseDocumentMetaOptions): void {
   // Stable serialization keys — passing `openGraph` / `jsonLd` directly
   // would re-run the effect on every render even when the actual
   // values are unchanged (object identity flips on re-render).
-  const ogKey = openGraph
-    ? JSON.stringify(openGraph)
-    : null;
+  const ogKey = openGraph ? JSON.stringify(openGraph) : null;
   const jsonLdKey = jsonLd ? JSON.stringify(jsonLd) : null;
 
   useEffect(() => {

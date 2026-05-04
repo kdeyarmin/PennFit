@@ -43,9 +43,9 @@ const sections: FaqSection[] = [
           <>
             CPAP stands for Continuous Positive Airway Pressure. A small bedside
             machine sends a steady, gentle stream of pressurized room air
-            through a hose and mask, which keeps the soft tissues at the back
-            of your throat from collapsing while you sleep. That open airway
-            stops the breathing pauses that define obstructive sleep apnea.
+            through a hose and mask, which keeps the soft tissues at the back of
+            your throat from collapsing while you sleep. That open airway stops
+            the breathing pauses that define obstructive sleep apnea.
           </>
         ),
       },
@@ -54,11 +54,11 @@ const sections: FaqSection[] = [
         a: (
           <>
             CPAP is prescribed by a clinician after a sleep study (in a lab or
-            at home) confirms obstructive sleep apnea. If you snore loudly,
-            wake gasping for air, fall asleep during the day, or your bed
-            partner has noticed you stop breathing, ask your primary care
-            provider about a sleep study. PennPaps is for patients who already
-            have a prescription — we don't diagnose sleep apnea.
+            at home) confirms obstructive sleep apnea. If you snore loudly, wake
+            gasping for air, fall asleep during the day, or your bed partner has
+            noticed you stop breathing, ask your primary care provider about a
+            sleep study. PennPaps is for patients who already have a
+            prescription — we don't diagnose sleep apnea.
           </>
         ),
       },
@@ -69,9 +69,9 @@ const sections: FaqSection[] = [
             CPAP doesn't cure sleep apnea, but it manages it very effectively
             for most patients while the mask is worn. Think of it the way you'd
             think of glasses for nearsightedness — it works while you're using
-            it. Some patients reduce their need for therapy through weight
-            loss, positional changes, or surgery, but those are clinical
-            decisions to make with your provider.
+            it. Some patients reduce their need for therapy through weight loss,
+            positional changes, or surgery, but those are clinical decisions to
+            make with your provider.
           </>
         ),
       },
@@ -82,9 +82,9 @@ const sections: FaqSection[] = [
             Most patients adapt within two to four weeks. The first few nights
             often feel strange — slightly claustrophobic, mildly noisy, or like
             too much air. The mask matters more than anything else here:
-            switching to a better-fitting mask is the single most common fix
-            for early CPAP frustration, which is exactly what PennPaps is built
-            to help with.
+            switching to a better-fitting mask is the single most common fix for
+            early CPAP frustration, which is exactly what PennPaps is built to
+            help with.
           </>
         ),
       },
@@ -93,11 +93,10 @@ const sections: FaqSection[] = [
         a: (
           <>
             Yes. CPAP is a low-risk therapy when used as prescribed. The most
-            common side effects are dry mouth, nasal congestion, mask marks,
-            or air swallowing — and almost all of them respond to mask
-            adjustments, humidifier changes, or pressure tuning by your
-            provider. Severe or persistent issues should always be reviewed
-            clinically.
+            common side effects are dry mouth, nasal congestion, mask marks, or
+            air swallowing — and almost all of them respond to mask adjustments,
+            humidifier changes, or pressure tuning by your provider. Severe or
+            persistent issues should always be reviewed clinically.
           </>
         ),
       },
@@ -118,8 +117,8 @@ const sections: FaqSection[] = [
             inserts that sit at the nostrils — minimal contact, great for side
             and stomach sleepers), <strong>nasal masks</strong> (a triangular
             cushion over the nose — a good middle ground), and{" "}
-            <strong>full-face masks</strong> (covering nose and mouth — best
-            for mouth breathers, higher pressures, or congestion). PennPaps
+            <strong>full-face masks</strong> (covering nose and mouth — best for
+            mouth breathers, higher pressures, or congestion). PennPaps
             considers all three and ranks the best matches for your face and
             sleep style.
           </>
@@ -129,9 +128,9 @@ const sections: FaqSection[] = [
         q: "How do I know which mask style is right for me?",
         a: (
           <>
-            The biggest factors are: do you breathe through your mouth at
-            night, what pressure has your provider prescribed, do you sleep on
-            your side, and do you have facial hair, claustrophobia, or skin
+            The biggest factors are: do you breathe through your mouth at night,
+            what pressure has your provider prescribed, do you sleep on your
+            side, and do you have facial hair, claustrophobia, or skin
             sensitivities. The PennPaps questionnaire walks you through all of
             these and weights the recommendations accordingly.
           </>
@@ -143,9 +142,9 @@ const sections: FaqSection[] = [
           <>
             Mask seal and comfort improve with adjustment — most masks have
             multiple cushion sizes, and the headgear straps need a snug-but-not
-            -tight fit. If you've adjusted and it still doesn't seal, contact
-            us and we'll exchange it for an alternative within the first 30
-            days at no charge.
+            -tight fit. If you've adjusted and it still doesn't seal, contact us
+            and we'll exchange it for an alternative within the first 30 days at
+            no charge.
           </>
         ),
       },
@@ -155,9 +154,8 @@ const sections: FaqSection[] = [
           <>
             Significant weight loss or gain, dental work, or facial surgery can
             change how a mask seals. If your mask suddenly leaks more or feels
-            wrong, retake the PennPaps scan — your measurements may have
-            shifted enough that a different size or style is now a better
-            match.
+            wrong, retake the PennPaps scan — your measurements may have shifted
+            enough that a different size or style is now a better match.
           </>
         ),
       },
@@ -186,8 +184,8 @@ const sections: FaqSection[] = [
         q: "Do I need a prescription to order a CPAP mask?",
         a: (
           <>
-            Yes — CPAP masks are FDA-classified prescription medical devices.
-            On the order form, you can either confirm we have an existing
+            Yes — CPAP masks are FDA-classified prescription medical devices. On
+            the order form, you can either confirm we have an existing
             prescription on file for you, or we'll reach out to your sleep
             provider directly to coordinate one. We won't ship without a valid
             prescription.
@@ -200,9 +198,9 @@ const sections: FaqSection[] = [
           <>
             Most US insurance plans (Medicare, Medicaid, and most commercial
             insurers) cover CPAP supplies on a regular replacement schedule —
-            typically a new mask every three months and replacement cushions
-            and headgear monthly. PennPaps will verify your
-            coverage and let you know your out-of-pocket cost before shipping.
+            typically a new mask every three months and replacement cushions and
+            headgear monthly. PennPaps will verify your coverage and let you
+            know your out-of-pocket cost before shipping.
           </>
         ),
       },
@@ -221,12 +219,15 @@ const sections: FaqSection[] = [
         a: (
           <>
             Yes, two ways. (1) <strong>Resupply program</strong> — once you're
-            an established patient, we'll reach out by SMS, email, or phone
-            when you're due for new cushions, headgear, filters, and tubing,
-            and bill insurance on the standard replacement schedule. (2){" "}
+            an established patient, we'll reach out by SMS, email, or phone when
+            you're due for new cushions, headgear, filters, and tubing, and bill
+            insurance on the standard replacement schedule. (2){" "}
             <strong>Shop direct</strong> — you can also browse and order
             supplies any time at the{" "}
-            <Link href="/shop" className="text-primary underline-offset-4 hover:underline">
+            <Link
+              href="/shop"
+              className="text-primary underline-offset-4 hover:underline"
+            >
               PennPaps shop
             </Link>{" "}
             on a cash-pay basis (no prescription needed for most consumables
@@ -240,7 +241,10 @@ const sections: FaqSection[] = [
         a: (
           <>
             No — you can check out as a guest. Creating a free{" "}
-            <Link href="/account" className="text-primary underline-offset-4 hover:underline">
+            <Link
+              href="/account"
+              className="text-primary underline-offset-4 hover:underline"
+            >
               account
             </Link>{" "}
             simply saves your shipping address and order history so future
@@ -291,8 +295,8 @@ const sections: FaqSection[] = [
             <strong>headgear every 6 months</strong> (elastic stretches),{" "}
             <strong>tubing every 3 months</strong>, and{" "}
             <strong>filters monthly</strong>. Insurance typically covers this
-            cadence — PennPaps's resupply program tracks it
-            for you automatically.
+            cadence — PennPaps's resupply program tracks it for you
+            automatically.
           </>
         ),
       },
@@ -303,8 +307,8 @@ const sections: FaqSection[] = [
             Empty and rinse the humidifier chamber daily, refill with{" "}
             <strong>distilled water only</strong> (tap water leaves mineral
             deposits and breeds bacteria), and wash the chamber in warm soapy
-            water weekly. Wipe the machine exterior with a slightly damp cloth
-            — never spray cleaner directly on the device.
+            water weekly. Wipe the machine exterior with a slightly damp cloth —
+            never spray cleaner directly on the device.
           </>
         ),
       },
@@ -313,11 +317,10 @@ const sections: FaqSection[] = [
         a: (
           <>
             The FDA has{" "}
-            <strong>cautioned against ozone-based CPAP cleaners</strong> —
-            they can damage the mask materials and leave irritating ozone
-            residue. Soap and water remains the manufacturer-recommended
-            cleaning method. If you want to disinfect periodically, ask us
-            about CPAP-safe wipes.
+            <strong>cautioned against ozone-based CPAP cleaners</strong> — they
+            can damage the mask materials and leave irritating ozone residue.
+            Soap and water remains the manufacturer-recommended cleaning method.
+            If you want to disinfect periodically, ask us about CPAP-safe wipes.
           </>
         ),
       },
@@ -325,11 +328,10 @@ const sections: FaqSection[] = [
         q: "What if my mask leaves marks on my face?",
         a: (
           <>
-            Mask marks usually mean the headgear is too tight or the cushion
-            is the wrong size. Loosen the straps until you hear a slight leak,
-            then tighten in tiny increments until it stops. If marks persist,
-            it's a fit issue — retake the PennPaps scan or contact us for an
-            exchange.
+            Mask marks usually mean the headgear is too tight or the cushion is
+            the wrong size. Loosen the straps until you hear a slight leak, then
+            tighten in tiny increments until it stops. If marks persist, it's a
+            fit issue — retake the PennPaps scan or contact us for an exchange.
           </>
         ),
       },
@@ -348,10 +350,10 @@ const sections: FaqSection[] = [
           <>
             Most leaks come from one of three things: the cushion is the wrong
             size, the headgear is uneven (one side tighter than the other), or
-            the cushion is past its replacement date. Try a fresh cushion
-            first, re-seat the mask with both straps balanced, and lie down
-            (not sit) when re-checking the seal — masks that seal sitting up
-            often leak when you move at night.
+            the cushion is past its replacement date. Try a fresh cushion first,
+            re-seat the mask with both straps balanced, and lie down (not sit)
+            when re-checking the seal — masks that seal sitting up often leak
+            when you move at night.
           </>
         ),
       },
@@ -362,8 +364,8 @@ const sections: FaqSection[] = [
             Dry mouth almost always means you're mouth-breathing at night — a
             chin strap or switching from a nasal mask to a full-face mask
             usually solves it. A stuffy nose often responds to turning up the
-            heated humidifier, using a saline nasal rinse before bed, or
-            adding a heated tubing accessory if you don't already have one.
+            heated humidifier, using a saline nasal rinse before bed, or adding
+            a heated tubing accessory if you don't already have one.
           </>
         ),
       },
@@ -395,10 +397,10 @@ const sections: FaqSection[] = [
         a: (
           <>
             This is almost always a comfort issue — the mask is too tight, the
-            cushion is wrong, or the pressure feels too high. Don't push
-            through it. Retake the PennPaps scan and contact us; we'll help
-            you switch to a better-tolerated style at no extra charge during
-            your first 30 days.
+            cushion is wrong, or the pressure feels too high. Don't push through
+            it. Retake the PennPaps scan and contact us; we'll help you switch
+            to a better-tolerated style at no extra charge during your first 30
+            days.
           </>
         ),
       },
@@ -407,11 +409,11 @@ const sections: FaqSection[] = [
         a: (
           <>
             Stop using the mask and contact us if you develop persistent skin
-            breakdown, an allergic reaction, severe ear pain, or you suspect
-            the device itself is malfunctioning. For a sudden change in how
-            your sleep apnea feels (much more daytime sleepiness, choking
-            episodes returning), contact your sleep provider — that's a
-            therapy issue, not a supply issue.
+            breakdown, an allergic reaction, severe ear pain, or you suspect the
+            device itself is malfunctioning. For a sudden change in how your
+            sleep apnea feels (much more daytime sleepiness, choking episodes
+            returning), contact your sleep provider — that's a therapy issue,
+            not a supply issue.
           </>
         ),
       },
@@ -531,19 +533,25 @@ export function Faq() {
                 Still have questions?
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                PennPaps's care team is available to help with
-                clinical fit, insurance, prescriptions, and resupply timing.
-                Anything you don't see here, we're happy to answer one-on-one.
+                PennPaps's care team is available to help with clinical fit,
+                insurance, prescriptions, and resupply timing. Anything you
+                don't see here, we're happy to answer one-on-one.
               </p>
               <div className="flex flex-wrap gap-3 pt-2">
                 <Link href="/learn">
-                  <Button variant="outline" className="rounded-full glass-panel border-border/60 gap-2">
+                  <Button
+                    variant="outline"
+                    className="rounded-full glass-panel border-border/60 gap-2"
+                  >
                     Browse educational resources
                     <ArrowRight className="w-4 h-4" />
                   </Button>
                 </Link>
                 <Link href="/how-it-works">
-                  <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-primary gap-2">
+                  <Button
+                    variant="ghost"
+                    className="rounded-full text-muted-foreground hover:text-primary gap-2"
+                  >
                     See how PennPaps works
                   </Button>
                 </Link>

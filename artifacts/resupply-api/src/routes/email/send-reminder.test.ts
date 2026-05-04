@@ -47,10 +47,9 @@ vi.mock("drizzle-orm/node-postgres", () => ({
 }));
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
   return {
     ...actual,
     getDbPool: () => ({}) as never,
@@ -59,10 +58,9 @@ vi.mock("@workspace/resupply-db", async () => {
 
 const sendEmailMock = vi.fn();
 vi.mock("@workspace/resupply-email", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-email")>(
-      "@workspace/resupply-email",
-    );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
   return {
     ...actual,
     createSendgridClient: vi.fn(() => ({ sendEmail: sendEmailMock })),

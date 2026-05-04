@@ -43,8 +43,8 @@ export function AdminMacrosPage() {
           Canned replies
         </h1>
         <p className="text-sm text-slate-600">
-          Edit the picker that powers the in-thread reply composer.
-          Bodies support merge tokens like{" "}
+          Edit the picker that powers the in-thread reply composer. Bodies
+          support merge tokens like{" "}
           <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
             {"{{patient.firstName}}"}
           </code>
@@ -87,12 +87,7 @@ function MacroList() {
     <div className="space-y-6">
       <Section title="Active" rows={active} emptyText="No active macros." />
       {inactive.length > 0 && (
-        <Section
-          title="Disabled"
-          rows={inactive}
-          emptyText=""
-          subtle
-        />
+        <Section title="Disabled" rows={inactive} emptyText="" subtle />
       )}
     </div>
   );
@@ -163,9 +158,7 @@ function MacroRow({ item, subtle }: { item: CsrMacro; subtle?: boolean }) {
           onSubmit={(body) => patch.mutate(body)}
           onCancel={() => setEditing(false)}
           submitting={patch.isPending}
-          error={
-            patch.error instanceof Error ? patch.error.message : null
-          }
+          error={patch.error instanceof Error ? patch.error.message : null}
         />
       </li>
     );
@@ -174,9 +167,7 @@ function MacroRow({ item, subtle }: { item: CsrMacro; subtle?: boolean }) {
   return (
     <li
       className={`rounded-lg border bg-white p-3 ${
-        subtle
-          ? "border-slate-200 opacity-70"
-          : "border-slate-200"
+        subtle ? "border-slate-200 opacity-70" : "border-slate-200"
       }`}
       data-testid={`macro-row-${item.key}`}
     >
@@ -277,9 +268,7 @@ function NewMacroCard() {
       }
       onCancel={() => setOpen(false)}
       submitting={create.isPending}
-      error={
-        create.error instanceof Error ? create.error.message : null
-      }
+      error={create.error instanceof Error ? create.error.message : null}
     />
   );
 }
@@ -326,7 +315,10 @@ function MacroForm({
   const isNew = initial === null;
 
   function insertToken(tok: string) {
-    setBody((prev) => `${prev}${prev.endsWith(" ") || prev.length === 0 ? "" : " "}${tok}`);
+    setBody(
+      (prev) =>
+        `${prev}${prev.endsWith(" ") || prev.length === 0 ? "" : " "}${tok}`,
+    );
   }
 
   return (

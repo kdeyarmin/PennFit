@@ -69,9 +69,7 @@ export function KpiCard({
   tone?: "navy" | "gold";
 }) {
   const accent =
-    tone === "gold"
-      ? "hsl(var(--penn-gold-deep))"
-      : "hsl(var(--penn-navy))";
+    tone === "gold" ? "hsl(var(--penn-gold-deep))" : "hsl(var(--penn-navy))";
   return (
     <div
       className="surface-card relative overflow-hidden p-5 lift-on-hover animate-shimmer-in"

@@ -74,8 +74,8 @@ export function DashboardPage() {
           Dashboard
         </h1>
         <p className="text-sm" style={{ color: "hsl(var(--ink-2))" }}>
-          Live counters across the resupply pipeline. Each tile links to
-          its filtered queue.
+          Live counters across the resupply pipeline. Each tile links to its
+          filtered queue.
         </p>
       </header>
 

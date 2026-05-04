@@ -165,16 +165,22 @@ export function AdminShopProductNewPage() {
     if (collisionProductId) setCollisionProductId(null);
   }
 
-  function buildInput(): {
-    ok: true;
-    input: CreateShopProductInput;
-  } | { ok: false; reason: string } {
+  function buildInput():
+    | {
+        ok: true;
+        input: CreateShopProductInput;
+      }
+    | { ok: false; reason: string } {
     // Local validation mirrors the server schema closely so the
     // operator gets immediate feedback without a round-trip. The
     // server still validates (defense in depth); this is just UX.
     const sku = form.sku.trim();
     if (!/^[a-z0-9-]+$/.test(sku) || sku.length < 2 || sku.length > 120) {
-      return { ok: false, reason: "SKU must be 2–120 chars, lowercase letters / digits / hyphens." };
+      return {
+        ok: false,
+        reason:
+          "SKU must be 2–120 chars, lowercase letters / digits / hyphens.",
+      };
     }
     const name = form.name.trim();
     if (name.length < 2 || name.length > 250) {
@@ -205,15 +211,29 @@ export function AdminShopProductNewPage() {
       }
       const n = parseInt(trimmed, 10);
       if (n < min || n > max) {
-        return { ok: false, reason: `${label} must be between ${min} and ${max}.` };
+        return {
+          ok: false,
+          reason: `${label} must be between ${min} and ${max}.`,
+        };
       }
       return { ok: true, value: n };
     }
 
-    const stockResult = parseOptionalInt(form.stockCount, "Stock count", 0, 1_000_000);
+    const stockResult = parseOptionalInt(
+      form.stockCount,
+      "Stock count",
+      0,
+      1_000_000,
+    );
     if (!stockResult.ok) return { ok: false, reason: stockResult.reason };
-    const thresholdResult = parseOptionalInt(form.lowStockThreshold, "Low-stock threshold", 0, 1000);
-    if (!thresholdResult.ok) return { ok: false, reason: thresholdResult.reason };
+    const thresholdResult = parseOptionalInt(
+      form.lowStockThreshold,
+      "Low-stock threshold",
+      0,
+      1000,
+    );
+    if (!thresholdResult.ok)
+      return { ok: false, reason: thresholdResult.reason };
 
     let bundleContents: string[] | null = null;
     if (form.category === "bundle") {
@@ -222,7 +242,10 @@ export function AdminShopProductNewPage() {
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
       if (lines.length === 0) {
-        return { ok: false, reason: "Bundles must list at least one content line." };
+        return {
+          ok: false,
+          reason: "Bundles must list at least one content line.",
+        };
       }
       if (lines.length > 20) {
         return { ok: false, reason: "Bundle contents capped at 20 lines." };
@@ -240,7 +263,10 @@ export function AdminShopProductNewPage() {
     let recurringIntervalCount: number | null = null;
     if (form.recurringInterval || form.recurringIntervalCount.trim() !== "") {
       if (!form.recurringInterval) {
-        return { ok: false, reason: "Recurring interval required for cadence price." };
+        return {
+          ok: false,
+          reason: "Recurring interval required for cadence price.",
+        };
       }
       const countResult = parseOptionalInt(
         form.recurringIntervalCount,
@@ -250,7 +276,10 @@ export function AdminShopProductNewPage() {
       );
       if (!countResult.ok) return { ok: false, reason: countResult.reason };
       if (countResult.value === null) {
-        return { ok: false, reason: "Recurring interval count required for cadence price." };
+        return {
+          ok: false,
+          reason: "Recurring interval count required for cadence price.",
+        };
       }
       recurringInterval = form.recurringInterval;
       recurringIntervalCount = countResult.value;
@@ -335,11 +364,10 @@ export function AdminShopProductNewPage() {
             lineHeight: 1.5,
           }}
         >
-          Creates a new Stripe Product + Price. The SKU you choose here
-          becomes the stable identifier — re-using it later (e.g. via
-          the seed script) updates this product instead of creating a
-          duplicate. The storefront's 60-second product cache will pick
-          the new SKU up on its next flush.
+          Creates a new Stripe Product + Price. The SKU you choose here becomes
+          the stable identifier — re-using it later (e.g. via the seed script)
+          updates this product instead of creating a duplicate. The storefront's
+          60-second product cache will pick the new SKU up on its next flush.
         </p>
       </header>
 
@@ -367,7 +395,13 @@ export function AdminShopProductNewPage() {
           {collisionProductId ? (
             <p style={{ margin: "8px 0 0" }}>
               Existing Stripe product:{" "}
-              <code style={{ background: "#fff", padding: "2px 6px", borderRadius: 3 }}>
+              <code
+                style={{
+                  background: "#fff",
+                  padding: "2px 6px",
+                  borderRadius: 3,
+                }}
+              >
                 {collisionProductId}
               </code>
               {" — "}
@@ -402,10 +436,9 @@ export function AdminShopProductNewPage() {
               disabled={isSubmitting}
             />
             <p style={FIELD_HINT_STYLE}>
-              Lowercase letters, digits, and hyphens. Must be unique
-              across the catalog. Stable identifier — used by the seed
-              script and webhook handlers; changing it later requires
-              archiving the old product.
+              Lowercase letters, digits, and hyphens. Must be unique across the
+              catalog. Stable identifier — used by the seed script and webhook
+              handlers; changing it later requires archiving the old product.
             </p>
           </div>
 
@@ -574,9 +607,9 @@ export function AdminShopProductNewPage() {
               disabled={isSubmitting}
             />
             <p style={FIELD_HINT_STYLE}>
-              Public HTTPS URL Stripe can fetch. Until object storage
-              is configured (W4), use a path under the cpap-fitter
-              public/ directory served from your deploy domain.
+              Public HTTPS URL Stripe can fetch. Until object storage is
+              configured (W4), use a path under the cpap-fitter public/
+              directory served from your deploy domain.
             </p>
           </div>
         </section>
@@ -642,7 +675,8 @@ export function AdminShopProductNewPage() {
               disabled={isSubmitting}
             />
             <p style={FIELD_HINT_STYLE}>
-              Up to 20 lines. Each line renders as a bullet on the storefront card.
+              Up to 20 lines. Each line renders as a bullet on the storefront
+              card.
             </p>
           </section>
         ) : null}

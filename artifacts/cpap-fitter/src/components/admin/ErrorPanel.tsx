@@ -24,10 +24,7 @@ export function ErrorPanel({
       style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca" }}
       role="alert"
     >
-      <p
-        className="text-sm font-semibold mb-1"
-        style={{ color: "#991b1b" }}
-      >
+      <p className="text-sm font-semibold mb-1" style={{ color: "#991b1b" }}>
         {title}
         {statusLabel && (
           <span

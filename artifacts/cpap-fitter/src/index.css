@@ -104,7 +104,7 @@
 }
 
 :root {
-  --button-outline: rgba(8, 14, 28, 0.10);
+  --button-outline: rgba(8, 14, 28, 0.1);
   --badge-outline: rgba(8, 14, 28, 0.06);
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(8, 14, 28, 0.03);
@@ -187,9 +187,11 @@
   --sidebar-accent-foreground: 222 60% 10%;
   --sidebar-ring: 222 60% 22%;
 
-  --app-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --app-font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
   --app-font-serif: "Georgia", "Times New Roman", serif;
-  --app-font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --app-font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
   --radius: 0.75rem;
 
   /* Shadow scale — tinted with the brand obsidian so every
@@ -197,13 +199,18 @@
    * structure (1px sharp + larger soft) keeps cards lifted,
    * not floating. */
   --shadow-2xs: 0 1px 1px hsl(222 60% 8% / 0.04);
-  --shadow-xs:  0 1px 2px hsl(222 60% 8% / 0.05);
-  --shadow-sm:  0 1px 2px hsl(222 60% 8% / 0.06), 0 1px 3px hsl(222 60% 8% / 0.04);
-  --shadow:     0 2px 4px hsl(222 60% 8% / 0.06), 0 4px 8px hsl(222 60% 8% / 0.05);
-  --shadow-md:  0 4px 8px hsl(222 60% 8% / 0.07), 0 8px 16px hsl(222 60% 8% / 0.05);
-  --shadow-lg:  0 8px 16px hsl(222 60% 8% / 0.08), 0 16px 32px hsl(222 60% 8% / 0.06);
-  --shadow-xl:  0 16px 32px hsl(222 60% 8% / 0.09), 0 24px 48px hsl(222 60% 8% / 0.07);
-  --shadow-2xl: 0 24px 48px hsl(222 60% 8% / 0.11), 0 40px 80px hsl(222 60% 8% / 0.09);
+  --shadow-xs: 0 1px 2px hsl(222 60% 8% / 0.05);
+  --shadow-sm:
+    0 1px 2px hsl(222 60% 8% / 0.06), 0 1px 3px hsl(222 60% 8% / 0.04);
+  --shadow: 0 2px 4px hsl(222 60% 8% / 0.06), 0 4px 8px hsl(222 60% 8% / 0.05);
+  --shadow-md:
+    0 4px 8px hsl(222 60% 8% / 0.07), 0 8px 16px hsl(222 60% 8% / 0.05);
+  --shadow-lg:
+    0 8px 16px hsl(222 60% 8% / 0.08), 0 16px 32px hsl(222 60% 8% / 0.06);
+  --shadow-xl:
+    0 16px 32px hsl(222 60% 8% / 0.09), 0 24px 48px hsl(222 60% 8% / 0.07);
+  --shadow-2xl:
+    0 24px 48px hsl(222 60% 8% / 0.11), 0 40px 80px hsl(222 60% 8% / 0.09);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -222,17 +229,17 @@
    *   --penn-mist        sapphire-steel ambient wash
    *   --penn-steel       sapphire-steel for tertiary state colour
    */
-  --penn-onyx:        222 70% 6%;
-  --penn-navy-deep:   222 65% 8%;
-  --penn-navy:        222 60% 10%;
-  --penn-navy-soft:   220 36% 24%;
-  --penn-gold-deep:   30 50% 32%;
-  --penn-gold:        34 46% 50%;
-  --penn-gold-soft:   36 56% 86%;
-  --penn-platinum:    218 16% 86%;
-  --penn-pearl:       216 22% 98%;
-  --penn-mist:        216 28% 95%;
-  --penn-steel:       210 38% 38%;
+  --penn-onyx: 222 70% 6%;
+  --penn-navy-deep: 222 65% 8%;
+  --penn-navy: 222 60% 10%;
+  --penn-navy-soft: 220 36% 24%;
+  --penn-gold-deep: 30 50% 32%;
+  --penn-gold: 34 46% 50%;
+  --penn-gold-soft: 36 56% 86%;
+  --penn-platinum: 218 16% 86%;
+  --penn-pearl: 216 22% 98%;
+  --penn-mist: 216 28% 95%;
+  --penn-steel: 210 38% 38%;
 
   /*
    * Tech accent — an electric cyan that signals "computer vision /
@@ -252,13 +259,34 @@
   --glass-bg: 255 255 255;
   --glass-stroke: 218 20% 88%;
 
-  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --sidebar-primary-border: hsl(
+    from hsl(var(--sidebar-primary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --sidebar-accent-border: hsl(
+    from hsl(var(--sidebar-accent)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --primary-border: hsl(
+    from hsl(var(--primary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --secondary-border: hsl(
+    from hsl(var(--secondary)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --muted-border: hsl(
+    from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) /
+      alpha
+  );
+  --accent-border: hsl(
+    from hsl(var(--accent)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
+  --destructive-border: hsl(
+    from hsl(var(--destructive)) h s
+      calc(l + var(--opaque-button-border-intensity)) / alpha
+  );
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -284,7 +312,10 @@
   body {
     @apply font-sans antialiased text-foreground;
     background-color: hsl(var(--background));
-    font-feature-settings: "ss01", "cv11", "tnum" 0;
+    font-feature-settings:
+      "ss01",
+      "cv11",
+      "tnum" 0;
     letter-spacing: -0.005em;
     /* "Obsidian Aurum" atmosphere — four restrained corner
        aurorae plus a soft horizon plinth. Each layer is tuned
@@ -303,11 +334,31 @@
        than a heartbeat — one slow breath in each direction. You
        sense the page is alive; you never see motion. */
     background-image:
-      radial-gradient(ellipse 46% 36% at 96% 4%,  hsl(var(--penn-gold) / 0.07), transparent 70%),
-      radial-gradient(ellipse 52% 42% at 4% 96%,  hsl(var(--penn-navy) / 0.08), transparent 72%),
-      radial-gradient(ellipse 36% 28% at 4% 4%,   hsl(var(--penn-steel) / 0.10), transparent 72%),
-      radial-gradient(ellipse 110% 36% at 50% 112%, hsl(var(--penn-mist) / 0.55), transparent 72%),
-      radial-gradient(ellipse 100% 80% at 50% 50%, hsl(var(--penn-pearl) / 0.92), hsl(var(--penn-pearl) / 0.7) 100%);
+      radial-gradient(
+        ellipse 46% 36% at 96% 4%,
+        hsl(var(--penn-gold) / 0.07),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse 52% 42% at 4% 96%,
+        hsl(var(--penn-navy) / 0.08),
+        transparent 72%
+      ),
+      radial-gradient(
+        ellipse 36% 28% at 4% 4%,
+        hsl(var(--penn-steel) / 0.1),
+        transparent 72%
+      ),
+      radial-gradient(
+        ellipse 110% 36% at 50% 112%,
+        hsl(var(--penn-mist) / 0.55),
+        transparent 72%
+      ),
+      radial-gradient(
+        ellipse 100% 80% at 50% 50%,
+        hsl(var(--penn-pearl) / 0.92),
+        hsl(var(--penn-pearl) / 0.7) 100%
+      );
 
     background-attachment: fixed;
     background-size: 112% 112%;
@@ -346,11 +397,31 @@
     pointer-events: none;
     z-index: 0;
     background-image:
-      radial-gradient(circle at 1px 1px, hsl(var(--penn-navy) / 0.08) 1px, transparent 0),
-      linear-gradient(to right, hsl(var(--penn-navy) / 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--penn-navy) / 0.04) 1px, transparent 1px),
-      linear-gradient(to right, hsl(var(--penn-cyan-deep) / 0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--penn-cyan-deep) / 0.05) 1px, transparent 1px);
+      radial-gradient(
+        circle at 1px 1px,
+        hsl(var(--penn-navy) / 0.08) 1px,
+        transparent 0
+      ),
+      linear-gradient(
+        to right,
+        hsl(var(--penn-navy) / 0.04) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        hsl(var(--penn-navy) / 0.04) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to right,
+        hsl(var(--penn-cyan-deep) / 0.05) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        hsl(var(--penn-cyan-deep) / 0.05) 1px,
+        transparent 1px
+      );
     background-size:
       32px 32px,
       128px 128px,
@@ -363,11 +434,18 @@
       0 0,
       64px 64px,
       64px 64px;
-    mask-image: radial-gradient(ellipse 85% 75% at 50% 45%, black 10%, transparent 78%);
-    -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 45%, black 10%, transparent 78%);
+    mask-image: radial-gradient(
+      ellipse 85% 75% at 50% 45%,
+      black 10%,
+      transparent 78%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 85% 75% at 50% 45%,
+      black 10%,
+      transparent 78%
+    );
     opacity: 0.6;
     animation: body-grid-drift 72s linear infinite;
-
   }
 
   @keyframes body-grid-drift {
@@ -423,7 +501,7 @@
     outline: none;
     box-shadow:
       0 0 0 2px hsl(var(--background)),
-      0 0 0 4px hsl(var(--penn-navy) / 0.70),
+      0 0 0 4px hsl(var(--penn-navy) / 0.7),
       0 0 0 6px hsl(var(--penn-gold) / 0.22);
     border-radius: var(--radius);
   }
@@ -501,12 +579,13 @@
 
   .glass-card {
     position: relative;
-    background:
-      linear-gradient(180deg,
-        rgba(255, 255, 255, 0.96) 0%,
-        rgba(255, 255, 255, 0.88) 35%,
-        rgba(250, 251, 253, 0.82) 70%,
-        rgba(245, 248, 252, 0.76) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(255, 255, 255, 0.88) 35%,
+      rgba(250, 251, 253, 0.82) 70%,
+      rgba(245, 248, 252, 0.76) 100%
+    );
     backdrop-filter: blur(22px) saturate(180%);
     -webkit-backdrop-filter: blur(22px) saturate(180%);
     border: 1px solid hsl(var(--glass-stroke) / 0.85);
@@ -520,9 +599,11 @@
   }
 
   .glass-panel {
-    background: linear-gradient(180deg,
+    background: linear-gradient(
+      180deg,
       rgba(255, 255, 255, 0.82) 0%,
-      rgba(255, 255, 255, 0.66) 100%);
+      rgba(255, 255, 255, 0.66) 100%
+    );
     backdrop-filter: blur(16px) saturate(170%);
     -webkit-backdrop-filter: blur(16px) saturate(170%);
     border: 1px solid hsl(var(--glass-stroke) / 0.65);
@@ -539,17 +620,18 @@
      ledger badge. Used too widely and the cyan loses its meaning. */
   .glass-card-tech {
     position: relative;
-    background:
-      linear-gradient(180deg,
-        rgba(255, 255, 255, 0.94) 0%,
-        rgba(248, 252, 255, 0.82) 55%,
-        rgba(242, 248, 254, 0.76) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.94) 0%,
+      rgba(248, 252, 255, 0.82) 55%,
+      rgba(242, 248, 254, 0.76) 100%
+    );
     backdrop-filter: blur(18px) saturate(195%);
     -webkit-backdrop-filter: blur(18px) saturate(195%);
-    border: 1px solid hsl(var(--penn-cyan) / 0.30);
+    border: 1px solid hsl(var(--penn-cyan) / 0.3);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.98) inset,
-      0 0 0 1px hsl(var(--penn-cyan) / 0.10),
+      0 0 0 1px hsl(var(--penn-cyan) / 0.1),
       0 1px 2px hsl(var(--penn-navy-deep) / 0.05),
       0 12px 30px hsl(var(--penn-navy-deep) / 0.08),
       0 0 80px hsl(var(--penn-cyan) / 0.08);
@@ -573,9 +655,10 @@
      brand-tinted shadow rather than a generic grey one. */
 
   .lift-on-hover {
-    transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                box-shadow 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                border-color 320ms ease;
+    transition:
+      transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-color 320ms ease;
   }
   .lift-on-hover:hover {
     transform: translateY(-3px);
@@ -589,36 +672,46 @@
 
   /* Iconographic halos — gold and navy */
   .icon-halo-navy {
-    background:
-      radial-gradient(circle at 30% 25%, hsl(var(--penn-navy) / 0.18), hsl(var(--penn-navy) / 0.06) 70%);
+    background: radial-gradient(
+      circle at 30% 25%,
+      hsl(var(--penn-navy) / 0.18),
+      hsl(var(--penn-navy) / 0.06) 70%
+    );
     box-shadow:
       0 0 0 1px hsl(var(--penn-navy) / 0.18) inset,
       0 8px 20px hsl(var(--penn-navy) / 0.18);
     color: hsl(var(--penn-navy));
   }
   .icon-halo-gold {
-    background:
-      radial-gradient(circle at 30% 25%, hsl(var(--penn-gold) / 0.30), hsl(var(--penn-gold) / 0.10) 70%);
+    background: radial-gradient(
+      circle at 30% 25%,
+      hsl(var(--penn-gold) / 0.3),
+      hsl(var(--penn-gold) / 0.1) 70%
+    );
     box-shadow:
-      0 0 0 1px hsl(var(--penn-gold) / 0.40) inset,
+      0 0 0 1px hsl(var(--penn-gold) / 0.4) inset,
       0 8px 20px hsl(var(--penn-gold) / 0.25);
     color: hsl(var(--penn-navy));
   }
 
   /* Gradient text accent — deep navy with a slight luminosity sweep */
   .text-gradient-brand {
-    background: linear-gradient(135deg,
+    background: linear-gradient(
+      135deg,
       hsl(var(--penn-navy-deep)) 0%,
       hsl(var(--penn-navy)) 50%,
-      hsl(213 55% 30%) 100%);
+      hsl(213 55% 30%) 100%
+    );
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
   .text-gradient-stat {
-    background: linear-gradient(180deg,
+    background: linear-gradient(
+      180deg,
       hsl(var(--penn-navy-deep)) 0%,
-      hsl(var(--penn-navy)) 100%);
+      hsl(var(--penn-navy)) 100%
+    );
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -637,49 +730,55 @@
     position: relative;
     overflow: hidden;
     isolation: isolate;
-    background-image: linear-gradient(180deg,
+    background-image: linear-gradient(
+      180deg,
       hsl(var(--penn-navy-soft)) 0%,
       hsl(var(--penn-navy)) 38%,
       hsl(var(--penn-navy-deep)) 82%,
-      hsl(var(--penn-onyx)) 100%);
+      hsl(var(--penn-onyx)) 100%
+    );
     color: hsl(0 0% 100%);
     text-shadow: 0 1px 0 hsl(var(--penn-navy-deep) / 0.65);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.32) inset,
       0 0 0 1px hsl(var(--penn-cyan) / 0.16) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
-      0 0 0 1px hsl(var(--penn-onyx) / 0.30),
+      0 0 0 1px hsl(var(--penn-onyx) / 0.3),
       0 1px 2px hsl(var(--penn-navy-deep) / 0.34),
-      0 6px 14px hsl(var(--penn-navy-deep) / 0.30),
+      0 6px 14px hsl(var(--penn-navy-deep) / 0.3),
       0 14px 32px hsl(var(--penn-navy-deep) / 0.22);
-    transition: box-shadow 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                background-image 260ms ease;
-
+    transition:
+      box-shadow 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      background-image 260ms ease;
   }
   .btn-primary-glow::after {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(115deg,
+    background: linear-gradient(
+      115deg,
       transparent 35%,
       hsl(0 0% 100% / 0.18) 48%,
-      hsl(var(--penn-cyan) / 0.20) 50%,
+      hsl(var(--penn-cyan) / 0.2) 50%,
       hsl(0 0% 100% / 0.18) 52%,
-      transparent 65%);
+      transparent 65%
+    );
     transform: translateX(-110%);
     transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .btn-primary-glow:hover {
     transform: translateY(-1px);
-    background-image: linear-gradient(180deg,
+    background-image: linear-gradient(
+      180deg,
       hsl(220 36% 30%) 0%,
       hsl(var(--penn-navy-soft)) 30%,
       hsl(var(--penn-navy)) 76%,
-      hsl(var(--penn-navy-deep)) 100%);
+      hsl(var(--penn-navy-deep)) 100%
+    );
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.40) inset,
+      0 1px 0 rgba(255, 255, 255, 0.4) inset,
       0 0 0 1px hsl(var(--penn-cyan) / 0.28) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
       0 0 0 1px hsl(var(--penn-onyx) / 0.32),
@@ -687,7 +786,7 @@
       0 16px 36px hsl(var(--penn-navy-deep) / 0.42),
       0 6px 12px hsl(var(--penn-navy-deep) / 0.28),
       0 0 0 5px hsl(var(--penn-gold) / 0.22),
-      0 0 26px hsl(var(--penn-cyan) / 0.30);
+      0 0 26px hsl(var(--penn-cyan) / 0.3);
   }
   .btn-primary-glow:hover::after {
     transform: translateX(110%);
@@ -698,10 +797,10 @@
       0 1px 0 rgba(255, 255, 255, 0.18) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
       0 1px 1px hsl(var(--penn-navy-deep) / 0.34),
-      0 2px 6px hsl(var(--penn-navy-deep) / 0.20);
+      0 2px 6px hsl(var(--penn-navy-deep) / 0.2);
   }
   .btn-primary-glow:focus-visible {
-    outline: 2px solid hsl(var(--penn-gold) / 0.80);
+    outline: 2px solid hsl(var(--penn-gold) / 0.8);
     outline-offset: 2px;
   }
 
@@ -715,51 +814,57 @@
     position: relative;
     overflow: hidden;
     isolation: isolate;
-    background-image: linear-gradient(180deg,
+    background-image: linear-gradient(
+      180deg,
       hsl(var(--penn-gold-soft)) 0%,
       hsl(36 54% 60%) 30%,
       hsl(var(--penn-gold)) 68%,
-      hsl(var(--penn-gold-deep)) 100%);
+      hsl(var(--penn-gold-deep)) 100%
+    );
     color: hsl(var(--penn-navy-deep));
     text-shadow: 0 1px 0 hsl(var(--penn-gold-soft) / 0.75);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.68) inset,
       0 -1px 0 hsl(var(--penn-gold-deep)) inset,
-      0 0 0 1px hsl(var(--penn-gold-deep) / 0.30),
+      0 0 0 1px hsl(var(--penn-gold-deep) / 0.3),
       0 1px 2px hsl(var(--penn-gold-deep) / 0.32),
-      0 6px 14px hsl(var(--penn-gold) / 0.30),
+      0 6px 14px hsl(var(--penn-gold) / 0.3),
       0 14px 32px hsl(var(--penn-gold) / 0.22);
-    transition: box-shadow 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-                background-image 260ms ease;
-
+    transition:
+      box-shadow 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      background-image 260ms ease;
   }
   .btn-gold-glow::after {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(115deg,
+    background: linear-gradient(
+      115deg,
       transparent 35%,
       hsl(0 0% 100% / 0.55) 50%,
-      transparent 65%);
+      transparent 65%
+    );
     transform: translateX(-110%);
     transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .btn-gold-glow:hover {
     transform: translateY(-1px);
-    background-image: linear-gradient(180deg,
+    background-image: linear-gradient(
+      180deg,
       hsl(36 64% 90%) 0%,
       hsl(34 58% 66%) 30%,
       hsl(34 50% 54%) 70%,
-      hsl(var(--penn-gold-deep)) 100%);
+      hsl(var(--penn-gold-deep)) 100%
+    );
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.80) inset,
+      0 1px 0 rgba(255, 255, 255, 0.8) inset,
       0 -1px 0 hsl(var(--penn-gold-deep)) inset,
       0 0 0 1px hsl(var(--penn-gold-deep) / 0.32),
-      0 16px 36px hsl(var(--penn-gold) / 0.40),
-      0 6px 12px hsl(var(--penn-gold-deep) / 0.30),
-      0 0 0 5px hsl(var(--penn-navy) / 0.20);
+      0 16px 36px hsl(var(--penn-gold) / 0.4),
+      0 6px 12px hsl(var(--penn-gold-deep) / 0.3),
+      0 0 0 5px hsl(var(--penn-navy) / 0.2);
   }
   .btn-gold-glow:hover::after {
     transform: translateX(110%);
@@ -773,7 +878,7 @@
       0 2px 6px hsl(var(--penn-gold) / 0.18);
   }
   .btn-gold-glow:focus-visible {
-    outline: 2px solid hsl(var(--penn-navy) / 0.80);
+    outline: 2px solid hsl(var(--penn-navy) / 0.8);
     outline-offset: 2px;
   }
 
@@ -786,31 +891,34 @@
     position: relative;
     overflow: hidden;
     isolation: isolate;
-    background-image: linear-gradient(180deg,
+    background-image: linear-gradient(
+      180deg,
       hsl(var(--penn-cyan)) 0%,
-      hsl(var(--penn-cyan-deep)) 100%);
+      hsl(var(--penn-cyan-deep)) 100%
+    );
     color: white;
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.40) inset,
+      0 1px 0 rgba(255, 255, 255, 0.4) inset,
       0 -1px 0 hsl(var(--penn-cyan-deep)) inset,
-      0 1px 2px hsl(var(--penn-cyan-deep) / 0.30),
-      0 10px 24px hsl(var(--penn-cyan) / 0.40),
-      0 0 0 1px hsl(var(--penn-cyan-deep) / 0.40);
-    transition: box-shadow 220ms ease,
-                transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      0 1px 2px hsl(var(--penn-cyan-deep) / 0.3),
+      0 10px 24px hsl(var(--penn-cyan) / 0.4),
+      0 0 0 1px hsl(var(--penn-cyan-deep) / 0.4);
+    transition:
+      box-shadow 220ms ease,
+      transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .btn-tech-glow:focus-visible {
-    outline: 2px solid hsl(var(--penn-cyan) / 0.80);
+    outline: 2px solid hsl(var(--penn-cyan) / 0.8);
     outline-offset: 2px;
   }
   .btn-tech-glow:hover {
     transform: translateY(-1px);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.50) inset,
+      0 1px 0 rgba(255, 255, 255, 0.5) inset,
       0 -1px 0 hsl(var(--penn-cyan-deep)) inset,
       0 16px 36px hsl(var(--penn-cyan) / 0.55),
       0 6px 14px hsl(var(--penn-cyan-deep) / 0.32),
-      0 0 0 5px hsl(var(--penn-cyan) / 0.20),
+      0 0 0 5px hsl(var(--penn-cyan) / 0.2),
       0 0 32px hsl(var(--penn-cyan) / 0.45);
   }
   .btn-tech-glow:active {
@@ -823,44 +931,54 @@
      pans the highlight left-to-right so the chrome feels alive. */
   .aurora-divider {
     height: 1px;
-    background: linear-gradient(90deg,
+    background: linear-gradient(
+      90deg,
       transparent 0%,
       hsl(var(--penn-navy) / 0.18) 22%,
       hsl(var(--penn-cyan) / 0.45) 42%,
       hsl(var(--penn-gold) / 0.55) 50%,
       hsl(var(--penn-cyan) / 0.45) 58%,
       hsl(var(--penn-navy) / 0.18) 78%,
-      transparent 100%);
+      transparent 100%
+    );
     box-shadow: 0 1px 0 hsl(var(--penn-platinum) / 0.45);
   }
   .aurora-divider-live {
     height: 1px;
-    background: linear-gradient(90deg,
+    background: linear-gradient(
+      90deg,
       transparent 0%,
-      hsl(var(--penn-navy) / 0.10) 20%,
-      hsl(var(--penn-cyan) / 0.50) 40%,
+      hsl(var(--penn-navy) / 0.1) 20%,
+      hsl(var(--penn-cyan) / 0.5) 40%,
       hsl(var(--penn-gold) / 0.65) 50%,
-      hsl(var(--penn-cyan) / 0.50) 60%,
-      hsl(var(--penn-navy) / 0.10) 80%,
-      transparent 100%);
+      hsl(var(--penn-cyan) / 0.5) 60%,
+      hsl(var(--penn-navy) / 0.1) 80%,
+      transparent 100%
+    );
     background-size: 220% 100%;
     background-position: 0% 0%;
     animation: aurora-pan 14s linear infinite;
   }
   @keyframes aurora-pan {
-    0% { background-position: 0% 0%; }
-    100% { background-position: 200% 0%; }
+    0% {
+      background-position: 0% 0%;
+    }
+    100% {
+      background-position: 200% 0%;
+    }
   }
 
   /* Cyan/navy gradient text — for "Powered by computer vision" sub-
      heads, stat numerals, and any "this is the technology" callout.
      Companion to .text-gradient-brand (which is pure navy). */
   .text-gradient-tech {
-    background: linear-gradient(135deg,
+    background: linear-gradient(
+      135deg,
       hsl(var(--penn-navy-deep)) 0%,
       hsl(var(--penn-navy)) 35%,
       hsl(var(--penn-cyan-deep)) 80%,
-      hsl(var(--penn-cyan)) 100%);
+      hsl(var(--penn-cyan)) 100%
+    );
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -891,11 +1009,22 @@
     box-shadow: 0 0 0 0 hsl(var(--penn-cyan) / 0.6);
     animation: status-pulse 2s ease-in-out infinite;
   }
-  .status-pill.status-pill-gold::before { background: hsl(var(--penn-gold)); box-shadow: 0 0 0 0 hsl(var(--penn-gold) / 0.6); }
-  .status-pill.status-pill-success::before { background: hsl(150 60% 45%); box-shadow: 0 0 0 0 hsl(150 60% 45% / 0.6); }
+  .status-pill.status-pill-gold::before {
+    background: hsl(var(--penn-gold));
+    box-shadow: 0 0 0 0 hsl(var(--penn-gold) / 0.6);
+  }
+  .status-pill.status-pill-success::before {
+    background: hsl(150 60% 45%);
+    box-shadow: 0 0 0 0 hsl(150 60% 45% / 0.6);
+  }
   @keyframes status-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--penn-cyan) / 0.55); }
-    50%      { box-shadow: 0 0 0 6px hsl(var(--penn-cyan) / 0); }
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--penn-cyan) / 0.55);
+    }
+    50% {
+      box-shadow: 0 0 0 6px hsl(var(--penn-cyan) / 0);
+    }
   }
 
   /* Faint scan line — for "we are processing" / capture surfaces.
@@ -914,18 +1043,30 @@
     left: 0;
     right: 0;
     height: 2px;
-    background: linear-gradient(90deg,
+    background: linear-gradient(
+      90deg,
       transparent,
       hsl(var(--penn-cyan) / 0.65) 50%,
-      transparent);
+      transparent
+    );
     box-shadow: 0 0 16px hsl(var(--penn-cyan) / 0.55);
     animation: scan-sweep 3.2s ease-in-out infinite;
   }
   @keyframes scan-sweep {
-    0%   { top: -2px; opacity: 0; }
-    8%   { opacity: 1; }
-    92%  { opacity: 1; }
-    100% { top: 100%; opacity: 0; }
+    0% {
+      top: -2px;
+      opacity: 0;
+    }
+    8% {
+      opacity: 1;
+    }
+    92% {
+      opacity: 1;
+    }
+    100% {
+      top: 100%;
+      opacity: 0;
+    }
   }
 
   /* Holographic outline — color-cycling conic ring for "best match" cards
@@ -938,22 +1079,36 @@
     position: relative;
     border-radius: calc(var(--radius) + 2px);
     padding: 1px;
-    background: conic-gradient(from 0deg,
+    background: conic-gradient(
+      from 0deg,
       hsl(var(--penn-cyan) / 0.55),
       hsl(var(--penn-gold) / 0.55),
       hsl(var(--penn-navy) / 0.55),
-      hsl(var(--penn-cyan) / 0.55));
+      hsl(var(--penn-cyan) / 0.55)
+    );
     animation: holo-spin 12s linear infinite;
   }
   @keyframes holo-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Subtle entrance for hero sections */
   @keyframes shimmer-in {
-    0% { opacity: 0; transform: translateY(8px) scale(0.995); filter: blur(6px); }
-    100% { opacity: 1; transform: none; filter: none; }
+    0% {
+      opacity: 0;
+      transform: translateY(8px) scale(0.995);
+      filter: blur(6px);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
   }
   .animate-shimmer-in {
     animation: shimmer-in 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -961,8 +1116,13 @@
 
   /* Ambient pulse for the privacy badge */
   @keyframes pulse-soft {
-    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--penn-navy) / 0.18); }
-    50% { box-shadow: 0 0 0 8px hsl(var(--penn-navy) / 0); }
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--penn-navy) / 0.18);
+    }
+    50% {
+      box-shadow: 0 0 0 8px hsl(var(--penn-navy) / 0);
+    }
   }
   .pulse-soft {
     animation: pulse-soft 3.2s ease-in-out infinite;
@@ -970,17 +1130,29 @@
 
   /* Brand-aligned price tier chips */
   .chip-tier-budget {
-    background: linear-gradient(135deg, hsl(var(--penn-mist)) 0%, hsl(204 42% 93%) 100%);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-mist)) 0%,
+      hsl(204 42% 93%) 100%
+    );
     color: hsl(var(--penn-navy-deep));
-    border: 1px solid hsl(var(--penn-steel) / 0.30);
+    border: 1px solid hsl(var(--penn-steel) / 0.3);
   }
   .chip-tier-standard {
-    background: linear-gradient(135deg, hsl(var(--penn-navy) / 0.10) 0%, hsl(var(--penn-navy) / 0.04) 100%);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-navy) / 0.1) 0%,
+      hsl(var(--penn-navy) / 0.04) 100%
+    );
     color: hsl(var(--penn-navy-deep));
     border: 1px solid hsl(var(--penn-navy) / 0.26);
   }
   .chip-tier-premium {
-    background: linear-gradient(135deg, hsl(var(--penn-gold) / 0.30) 0%, hsl(var(--penn-gold) / 0.10) 100%);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-gold) / 0.3) 0%,
+      hsl(var(--penn-gold) / 0.1) 100%
+    );
     color: hsl(var(--penn-navy-deep));
     border: 1px solid hsl(var(--penn-gold) / 0.58);
     box-shadow: 0 1px 0 hsl(var(--penn-gold-soft) / 0.55) inset;
@@ -988,19 +1160,35 @@
 
   /* Brand-aligned info callouts */
   .callout-navy {
-    background: linear-gradient(135deg, hsl(var(--penn-navy) / 0.05) 0%, hsl(var(--penn-mist) / 0.55) 100%);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-navy) / 0.05) 0%,
+      hsl(var(--penn-mist) / 0.55) 100%
+    );
     border: 1px solid hsl(var(--penn-navy) / 0.18);
   }
   .callout-gold {
-    background: linear-gradient(135deg, hsl(var(--penn-gold) / 0.18) 0%, hsl(var(--penn-gold) / 0.06) 100%);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-gold) / 0.18) 0%,
+      hsl(var(--penn-gold) / 0.06) 100%
+    );
     border: 1px solid hsl(var(--penn-gold) / 0.46);
   }
   .callout-success {
-    background: linear-gradient(135deg, hsl(152 42% 94%) 0%, hsl(var(--penn-mist) / 0.6) 100%);
+    background: linear-gradient(
+      135deg,
+      hsl(152 42% 94%) 0%,
+      hsl(var(--penn-mist) / 0.6) 100%
+    );
     border: 1px solid hsl(152 32% 68%);
   }
   .callout-steel {
-    background: linear-gradient(135deg, hsl(var(--penn-steel) / 0.10) 0%, hsl(var(--penn-mist) / 0.55) 100%);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-steel) / 0.1) 0%,
+      hsl(var(--penn-mist) / 0.55) 100%
+    );
     border: 1px solid hsl(var(--penn-steel) / 0.32);
   }
 
@@ -1010,13 +1198,14 @@
      as on-brand without competing with the focus-visible default. */
   .input-premium {
     background: rgba(255, 255, 255, 0.82);
-    border: 1px solid hsl(var(--glass-stroke) / 0.90);
+    border: 1px solid hsl(var(--glass-stroke) / 0.9);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.65) inset,
       0 1px 2px hsl(var(--penn-navy) / 0.05);
-    transition: background 200ms ease,
-                border-color 200ms ease,
-                box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition:
+      background 200ms ease,
+      border-color 200ms ease,
+      box-shadow 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .input-premium:hover {
     border-color: hsl(var(--penn-navy) / 0.34);
@@ -1036,19 +1225,23 @@
      selected state that reads as deliberately chosen rather than
      mere highlighted. */
   .option-tile {
-    background: linear-gradient(180deg,
+    background: linear-gradient(
+      180deg,
       rgba(255, 255, 255, 0.72) 0%,
-      rgba(255, 255, 255, 0.54) 100%);
-    border: 2px solid hsl(var(--glass-stroke) / 0.80);
+      rgba(255, 255, 255, 0.54) 100%
+    );
+    border: 2px solid hsl(var(--glass-stroke) / 0.8);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.75) inset,
       0 1px 2px hsl(var(--penn-navy) / 0.05);
     transition: all 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .option-tile:hover {
-    background: linear-gradient(180deg,
+    background: linear-gradient(
+      180deg,
       rgba(255, 255, 255, 0.94) 0%,
-      rgba(255, 255, 255, 0.82) 100%);
+      rgba(255, 255, 255, 0.82) 100%
+    );
     border-color: hsl(var(--penn-navy) / 0.42);
     transform: translateY(-1px);
     box-shadow:
@@ -1056,10 +1249,12 @@
       0 12px 28px hsl(var(--penn-navy) / 0.12);
   }
   .option-tile.option-tile-selected {
-    background: linear-gradient(135deg,
-      hsl(var(--penn-navy) / 0.10) 0%,
+    background: linear-gradient(
+      135deg,
+      hsl(var(--penn-navy) / 0.1) 0%,
       hsl(var(--penn-mist)) 60%,
-      hsl(var(--penn-gold) / 0.10) 100%);
+      hsl(var(--penn-gold) / 0.1) 100%
+    );
     border-color: hsl(var(--penn-navy));
     box-shadow:
       0 0 0 1px hsl(var(--penn-navy) / 0.14) inset,
@@ -1073,7 +1268,7 @@
     box-shadow:
       0 0 0 2px hsl(var(--background)),
       0 0 0 4px hsl(var(--ring) / 0.6),
-      0 8px 20px hsl(var(--penn-navy) / 0.10);
+      0 8px 20px hsl(var(--penn-navy) / 0.1);
   }
 
   /* Subtle inner gold ring for "best match" / featured items.
@@ -1081,8 +1276,8 @@
      reads as a polished frame around the card. */
   .ring-gold-soft {
     box-shadow:
-      0 0 0 1px hsl(var(--penn-gold) / 0.60),
-      0 0 0 5px hsl(var(--penn-gold) / 0.20),
+      0 0 0 1px hsl(var(--penn-gold) / 0.6),
+      0 0 0 5px hsl(var(--penn-gold) / 0.2),
       0 18px 40px hsl(var(--penn-navy) / 0.14);
   }
 
@@ -1091,23 +1286,27 @@
      language, just lighter. */
   .divider-hairline {
     height: 1px;
-    background: linear-gradient(90deg,
+    background: linear-gradient(
+      90deg,
       transparent 0%,
       hsl(var(--penn-platinum) / 0.9) 25%,
       hsl(var(--penn-platinum) / 0.9) 75%,
-      transparent 100%);
+      transparent 100%
+    );
   }
 
   /* Premium platinum surface — for tertiary panels (account
      summaries, sidebars-in-card) that want depth without competing
      with the primary glass-card. */
   .surface-platinum {
-    background: linear-gradient(180deg,
+    background: linear-gradient(
+      180deg,
       hsl(var(--penn-pearl)) 0%,
-      hsl(var(--penn-mist) / 0.88) 100%);
-    border: 1px solid hsl(var(--penn-platinum) / 0.90);
+      hsl(var(--penn-mist) / 0.88) 100%
+    );
+    border: 1px solid hsl(var(--penn-platinum) / 0.9);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.90) inset,
+      0 1px 0 rgba(255, 255, 255, 0.9) inset,
       0 1px 2px hsl(var(--penn-navy-deep) / 0.04);
   }
 
@@ -1115,15 +1314,17 @@
      callouts, premium upsell, or footer chrome. Same forged-
      metal language as btn-primary-glow but at panel scale. */
   .surface-obsidian {
-    background: linear-gradient(180deg,
+    background: linear-gradient(
+      180deg,
       hsl(var(--penn-navy-soft)) 0%,
       hsl(var(--penn-navy)) 35%,
       hsl(var(--penn-navy-deep)) 80%,
-      hsl(var(--penn-onyx)) 100%);
+      hsl(var(--penn-onyx)) 100%
+    );
     color: hsl(0 0% 100%);
     border: 1px solid hsl(var(--penn-onyx));
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.10) inset,
+      0 1px 0 rgba(255, 255, 255, 0.1) inset,
       0 -1px 0 hsl(var(--penn-onyx)) inset,
       0 1px 2px hsl(var(--penn-navy-deep) / 0.34),
       0 16px 36px hsl(var(--penn-navy-deep) / 0.22),

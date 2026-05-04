@@ -156,7 +156,9 @@ export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> 
   // dashboard on a single corrupted row).
   const occurredAt = row.occurred_at;
   const dateCandidate =
-    occurredAt instanceof Date ? occurredAt : new Date(String(occurredAt ?? ""));
+    occurredAt instanceof Date
+      ? occurredAt
+      : new Date(String(occurredAt ?? ""));
   if (Number.isNaN(dateCandidate.getTime())) {
     logger.warn(
       "phi-sweep-status: latest audit row has missing/invalid occurred_at; surfacing null",
