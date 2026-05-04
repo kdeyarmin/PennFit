@@ -116,6 +116,14 @@ export function CommPrefsSection() {
           testId="comm-toggle-review"
         />
         <Toggle
+          label="Customer-service replies"
+          description="Email me when our team replies on my account message thread."
+          enabled={prefs.emailInAppReplyNotifications}
+          onChange={() => toggle("emailInAppReplyNotifications")}
+          disabled={saving}
+          testId="comm-toggle-in-app-reply"
+        />
+        <Toggle
           label="Promotions & news"
           description="Occasional updates about new products and seasonal offers."
           enabled={prefs.emailMarketing}

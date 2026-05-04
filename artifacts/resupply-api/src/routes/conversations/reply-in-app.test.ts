@@ -232,6 +232,58 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
+  it("skips the notification email when the customer has opted out", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ channel: "in_app" }]); // early channel check
+    selectQueue.push([
+      {
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+        prefs: { emailInAppReplyNotifications: false },
+      },
+    ]);
+
+    const res = await request(makeApp())
+      .post(`/conversations/${CONV_ID}/reply`)
+      .send({ body: "Thanks — your replacement ships today." });
+
+    expect(res.status).toBe(201);
+    // Message persisted + audit written, but no notification email sent.
+    expect(appendAdminInAppReplyMock).toHaveBeenCalledTimes(1);
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("sends the notification email when prefs are missing entirely (default-on)", async () => {
+    // Pre-Phase-12 customer rows have a null prefs blob; the
+    // coalesce-against-defaults logic must keep them in the "send"
+    // bucket rather than fail-closed.
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ channel: "in_app" }]);
+    selectQueue.push([
+      {
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+        prefs: null,
+      },
+    ]);
+
+    const res = await request(makeApp())
+      .post(`/conversations/${CONV_ID}/reply`)
+      .send({ body: "ping" });
+
+    expect(res.status).toBe(201);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+  });
+
   it("treats notification email failure as best-effort (still 201)", async () => {
     mockAdmin.current = {
       userId: "u_admin",

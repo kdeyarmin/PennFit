@@ -305,6 +305,7 @@ export interface CommunicationPreferences {
   emailResupplyReminders: boolean;
   emailAbandonedCart: boolean;
   emailReviewRequests: boolean;
+  emailInAppReplyNotifications: boolean;
   smsMarketing: boolean;
   smsTransactional: boolean;
   preferredChannel: "email" | "sms";

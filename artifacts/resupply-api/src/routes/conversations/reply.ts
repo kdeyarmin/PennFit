@@ -24,8 +24,10 @@ import { z } from "zod";
 
 import {
   conversations,
+  DEFAULT_COMMUNICATION_PREFERENCES,
   getDbPool,
   shopCustomers,
+  type CommunicationPreferences,
 } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 import {
@@ -355,6 +357,7 @@ async function tryNotifyCustomerOfReply(input: {
     .select({
       email: shopCustomers.emailLower,
       displayName: shopCustomers.displayName,
+      prefs: shopCustomers.communicationPreferences,
     })
     .from(conversations)
     .innerJoin(
@@ -365,6 +368,20 @@ async function tryNotifyCustomerOfReply(input: {
     .limit(1);
   const row = rows[0];
   if (!row || !row.email) {
+    return;
+  }
+
+  // Customer comm-prefs opt-out (Phase 12). The default is ON so a
+  // null/missing prefs row keeps today's behavior; the toggle on
+  // /account flips this to false to mute reply-notification emails.
+  // We coalesce missing keys against DEFAULT_COMMUNICATION_PREFERENCES
+  // so a customer whose row predates the new key still gets the
+  // notification (rather than spuriously failing-closed to "muted").
+  const prefs: CommunicationPreferences = {
+    ...DEFAULT_COMMUNICATION_PREFERENCES,
+    ...((row.prefs ?? {}) as Partial<CommunicationPreferences>),
+  };
+  if (!prefs.emailInAppReplyNotifications) {
     return;
   }
 
