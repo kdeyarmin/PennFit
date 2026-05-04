@@ -528,7 +528,9 @@ function Hero({
   // NOT want to propagate when one shopper passes a link to another.
   async function handleShare() {
     if (typeof window === "undefined") return;
-    const url = `${window.location.origin}/shop/p/${encodeURIComponent(product.id)}`;
+    const basePath = (import.meta.env.BASE_URL || "").replace(/\/$/, "");
+    const canonicalBasePath = basePath === "/" ? "" : basePath;
+    const url = `${window.location.origin}${canonicalBasePath}/shop/p/${encodeURIComponent(product.id)}`;
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({
