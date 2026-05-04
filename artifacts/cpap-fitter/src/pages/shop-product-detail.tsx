@@ -48,6 +48,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
@@ -278,9 +279,7 @@ export function ShopProductDetail({ productId }: { productId: string }) {
   if (state === "loading") {
     return (
       <PageShell>
-        <div className="flex items-center justify-center py-24 text-muted-foreground">
-          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Loading product…
-        </div>
+        <PdpSkeleton />
       </PageShell>
     );
   }
@@ -451,6 +450,42 @@ function ProductImageWithZoom({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * PdpSkeleton — reflows to the shape of a real product detail
+ * (square hero image on the left, title + tagline + price + CTA on
+ * the right). Used while the catalog + reviews are in flight.
+ *
+ * The previous loading state was a centered spinner; the skeleton
+ * keeps the page from looking empty above the fold and means the
+ * layout doesn't lurch when data lands.
+ */
+function PdpSkeleton() {
+  return (
+    <div
+      className="grid md:grid-cols-2 gap-8 md:gap-10 mt-2"
+      data-testid="pdp-skeleton"
+      role="status"
+      aria-label="Loading product"
+    >
+      <div>
+        <Skeleton className="aspect-square w-full rounded-2xl" />
+      </div>
+      <div className="space-y-4">
+        <Skeleton className="h-9 w-3/4" />
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+        <Skeleton className="h-10 w-32 mt-4" />
+        <div className="flex gap-3 pt-2">
+          <Skeleton className="h-12 flex-1 rounded-full" />
+          <Skeleton className="h-12 w-12 rounded-full" />
+        </div>
+      </div>
+      <span className="sr-only">Loading product…</span>
+    </div>
   );
 }
 
