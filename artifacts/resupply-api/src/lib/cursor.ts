@@ -8,7 +8,6 @@
 // predicate `created_at < ts OR (created_at = ts AND id < cursorId)`.
 
 export const COMPOSITE_CURSOR_DELIM = "__";
-export const COMPOSITE_CURSOR_MAX_LEN = 120;
 
 export type ParsedCompositeCursor =
   | { ok: true; date: Date | null; id: string | null }

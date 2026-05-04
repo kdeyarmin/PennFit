@@ -7,7 +7,12 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "lint:resupply": "eslint --max-warnings 0 \"lib/resupply-*/src/**/*.{ts,tsx}\" \"artifacts/resupply-api/src/**/*.ts\""
+    "lint": "pnpm run lint:resupply",
+    "lint:resupply": "eslint --max-warnings 0 \"lib/resupply-*/src/**/*.{ts,tsx}\" \"artifacts/resupply-api/src/**/*.ts\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r --if-present run test",
+    "audit": "pnpm audit --audit-level=high"
   },
   "private": true,
   "packageManager": "pnpm@10.33.2",
