@@ -360,10 +360,34 @@ export interface AccountThread {
 export interface ShopMessagesResponse {
   thread: AccountThread | null;
   messages: AccountMessage[];
+  /**
+   * Count of CSR replies that arrived after the customer last
+   * marked the thread read. 0 when the thread doesn't exist or is
+   * fully caught up. Drives the header badge + the "X new replies"
+   * pill on the messages section.
+   */
+  unreadFromCsr: number;
 }
 
 export const fetchShopMessages = () =>
   meFetch<ShopMessagesResponse>("/shop/me/messages");
+
+/**
+ * Cheap polling endpoint for the header badge — returns just the
+ * unread count without fetching the full thread.
+ */
+export const fetchShopMessagesUnreadCount = () =>
+  meFetch<{ unreadFromCsr: number }>("/shop/me/messages/unread-count");
+
+/**
+ * Mark the customer's in-app thread fully read. Called by the
+ * AccountMessagesSection when the customer opens the messages
+ * panel; idempotent + safe to fire on every render.
+ */
+export const markShopMessagesRead = () =>
+  meFetch<{ ok: true; threadUpdated: boolean }>("/shop/me/messages/mark-read", {
+    method: "POST",
+  });
 
 export interface ShopMessagePostResponse {
   threadId: string;

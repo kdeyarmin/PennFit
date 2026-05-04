@@ -16,10 +16,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+import {
+  makeRequireSignedInMock,
+  type MockSignedInProfile,
+} from "../../test-helpers/auth-mocks";
 
 const { mockSignedIn } = vi.hoisted(() => ({
-  mockSignedIn: { current: null as string | null },
+  mockSignedIn: {
+    current: null as null | string | MockSignedInProfile,
+  },
 }));
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
@@ -55,7 +60,14 @@ const fetchInAppThreadMock = vi.hoisted(() =>
       createdAt: string;
       deliveryStatus: string | null;
     }>,
+    unreadFromCsr: 0,
   })),
+);
+const fetchInAppUnreadCountMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<number>>(async () => 0),
+);
+const markInAppThreadReadMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<boolean>>(async () => true),
 );
 const appendCustomerMessageMock = vi.hoisted(() =>
   vi.fn(async () => ({
@@ -71,6 +83,8 @@ vi.mock("../../lib/messaging/in-app-conversation", async () => {
   return {
     ...actual,
     fetchInAppThread: fetchInAppThreadMock,
+    fetchInAppUnreadCount: fetchInAppUnreadCountMock,
+    markInAppThreadRead: markInAppThreadReadMock,
     appendCustomerMessage: appendCustomerMessageMock,
   };
 });
@@ -80,6 +94,24 @@ vi.mock("@workspace/resupply-db", async () => {
     "@workspace/resupply-db",
   );
   return { ...actual, getDbPool: () => ({}) as never };
+});
+
+// SendGrid notification — Phase 6. The test toggles
+// SHOP_CSR_INBOX_EMAIL in beforeEach; the mocked client lets us
+// assert the subject + recipient without real env vars.
+const sendEmailMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<{ messageId: string }>>(async () => ({
+    messageId: "sg_csr_1",
+  })),
+);
+vi.mock("@workspace/resupply-email", async () => {
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-email")
+  >("@workspace/resupply-email");
+  return {
+    ...actual,
+    createSendgridClient: () => ({ sendEmail: sendEmailMock }),
+  };
 });
 
 import meMessagesRouter from "./me-messages";
@@ -96,13 +128,26 @@ beforeEach(() => {
   logAuditMock.mockClear();
   ensureShopCustomerRowMock.mockClear();
   fetchInAppThreadMock.mockClear();
-  fetchInAppThreadMock.mockResolvedValue({ thread: null, messages: [] });
+  fetchInAppThreadMock.mockResolvedValue({
+    thread: null,
+    messages: [],
+    unreadFromCsr: 0,
+  });
+  fetchInAppUnreadCountMock.mockClear();
+  fetchInAppUnreadCountMock.mockResolvedValue(0);
+  markInAppThreadReadMock.mockClear();
+  markInAppThreadReadMock.mockResolvedValue(true);
   appendCustomerMessageMock.mockClear();
   appendCustomerMessageMock.mockResolvedValue({
     threadId: "conv_1",
     messageId: "msg_1",
     threadCreated: true,
   });
+  sendEmailMock.mockClear();
+  sendEmailMock.mockResolvedValue({ messageId: "sg_csr_1" });
+  // Default: notification disabled. Individual tests opt in.
+  delete process.env["SHOP_CSR_INBOX_EMAIL"];
+  delete process.env["SHOP_PUBLIC_BASE_URL"];
 });
 
 describe("GET /shop/me/messages", () => {
@@ -115,7 +160,11 @@ describe("GET /shop/me/messages", () => {
     mockSignedIn.current = "cust_1";
     const res = await request(makeApp()).get("/shop/me/messages");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ thread: null, messages: [] });
+    expect(res.body).toEqual({
+      thread: null,
+      messages: [],
+      unreadFromCsr: 0,
+    });
     expect(fetchInAppThreadMock).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "cust_1" }),
     );
@@ -140,6 +189,7 @@ describe("GET /shop/me/messages", () => {
           deliveryStatus: null,
         },
       ],
+      unreadFromCsr: 0,
     });
     const res = await request(makeApp()).get("/shop/me/messages");
     expect(res.status).toBe(200);
@@ -220,5 +270,162 @@ describe("POST /shop/me/messages", () => {
     expect(appendCustomerMessageMock).toHaveBeenCalledWith(
       expect.objectContaining({ body: "hello there" }),
     );
+  });
+});
+
+describe("POST /shop/me/messages — CSR-inbox notification (Phase 6)", () => {
+  it("does NOT send when SHOP_CSR_INBOX_EMAIL is unset", async () => {
+    mockSignedIn.current = "cust_1";
+    // No env var set — notification disabled.
+    const res = await request(makeApp())
+      .post("/shop/me/messages")
+      .send({ body: "hi" });
+    expect(res.status).toBe(201);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("sends a subject-only notification when SHOP_CSR_INBOX_EMAIL is set", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    process.env["SHOP_PUBLIC_BASE_URL"] = "https://pennpaps.com";
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: "Anna Singh",
+    };
+
+    const res = await request(makeApp())
+      .post("/shop/me/messages")
+      .send({ body: "I have a question about my mask seal." });
+
+    expect(res.status).toBe(201);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const call = sendEmailMock.mock.calls[0]?.[0] as {
+      to: string;
+      subject: string;
+      text: string;
+      html: string;
+    };
+    expect(call.to).toBe("csr-inbox@pennpaps.com");
+    // First message → "New customer message"
+    expect(call.subject).toContain("New customer message");
+    expect(call.subject).toContain("Anna Singh");
+    // Critical: NO message body in subject or body text/html.
+    expect(call.subject).not.toContain("mask seal");
+    expect(call.text).not.toContain("mask seal");
+    expect(call.html).not.toContain("mask seal");
+    // Link to the inbox thread surfaces.
+    expect(call.text).toContain(
+      "https://pennpaps.com/admin/conversations/conv_1",
+    );
+  });
+
+  it("uses 'Reply on customer message' subject for follow-ups", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    appendCustomerMessageMock.mockResolvedValueOnce({
+      threadId: "conv_1",
+      messageId: "msg_2",
+      threadCreated: false, // follow-up on existing thread
+    });
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: "Anna",
+    };
+
+    await request(makeApp()).post("/shop/me/messages").send({ body: "ping" });
+
+    const call = sendEmailMock.mock.calls[0]?.[0] as { subject: string };
+    expect(call.subject).toContain("Reply on customer message");
+  });
+
+  it("falls back to email when displayName is missing", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: null,
+    };
+
+    await request(makeApp()).post("/shop/me/messages").send({ body: "ping" });
+
+    const call = sendEmailMock.mock.calls[0]?.[0] as { subject: string };
+    expect(call.subject).toContain("shopper@example.com");
+  });
+
+  it("treats SendGrid failure as best-effort (still 201)", async () => {
+    process.env["SHOP_CSR_INBOX_EMAIL"] = "csr-inbox@pennpaps.com";
+    sendEmailMock.mockRejectedValueOnce(new Error("sendgrid down"));
+    mockSignedIn.current = {
+      customerId: "cust_1",
+      email: "shopper@example.com",
+      displayName: "Anna",
+    };
+
+    const res = await request(makeApp())
+      .post("/shop/me/messages")
+      .send({ body: "ping" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.threadId).toBe("conv_1");
+    // Audit still wrote even though notification email failed.
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("GET /shop/me/messages/unread-count (Phase 7)", () => {
+  it("401s when no session", async () => {
+    const res = await request(makeApp()).get("/shop/me/messages/unread-count");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 0 when the customer has no thread", async () => {
+    mockSignedIn.current = "cust_1";
+    fetchInAppUnreadCountMock.mockResolvedValueOnce(0);
+    const res = await request(makeApp()).get("/shop/me/messages/unread-count");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ unreadFromCsr: 0 });
+  });
+
+  it("returns the helper's count for an existing thread", async () => {
+    mockSignedIn.current = "cust_1";
+    fetchInAppUnreadCountMock.mockResolvedValueOnce(3);
+    const res = await request(makeApp()).get("/shop/me/messages/unread-count");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ unreadFromCsr: 3 });
+    expect(fetchInAppUnreadCountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "cust_1" }),
+    );
+  });
+});
+
+describe("POST /shop/me/messages/mark-read (Phase 7)", () => {
+  it("401s when no session", async () => {
+    const res = await request(makeApp())
+      .post("/shop/me/messages/mark-read")
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("returns ok + threadUpdated true when the helper updated a row", async () => {
+    mockSignedIn.current = "cust_1";
+    markInAppThreadReadMock.mockResolvedValueOnce(true);
+    const res = await request(makeApp())
+      .post("/shop/me/messages/mark-read")
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, threadUpdated: true });
+    expect(markInAppThreadReadMock).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "cust_1" }),
+    );
+  });
+
+  it("returns ok + threadUpdated false when the customer has no thread (no-op)", async () => {
+    mockSignedIn.current = "cust_1";
+    markInAppThreadReadMock.mockResolvedValueOnce(false);
+    const res = await request(makeApp())
+      .post("/shop/me/messages/mark-read")
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, threadUpdated: false });
   });
 });

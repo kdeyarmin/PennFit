@@ -253,6 +253,13 @@
       "when": 1810800000000,
       "tag": "0033_in_app_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1810886400000,
+      "tag": "0034_conversations_customer_last_read_at",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   AccountApiError,
   fetchShopMessages,
+  markShopMessagesRead,
   postShopMessage,
   type AccountMessage,
   type AccountThread,
@@ -49,6 +50,7 @@ export function AccountMessagesSection() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [unreadFromCsr, setUnreadFromCsr] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Single shared loader so the initial fetch + the polling timer +
@@ -58,11 +60,37 @@ export function AccountMessagesSection() {
       const r = await fetchShopMessages();
       setThread(r.thread);
       setMessages(r.messages);
+      setUnreadFromCsr(r.unreadFromCsr);
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
     }
   }, []);
+
+  // Mark-read effect — runs whenever the loaded thread shows
+  // unread CSR replies. Idempotent on the server side, so firing
+  // it on every change is safe. We don't await — a slow mark-read
+  // shouldn't keep the UI blocking.
+  useEffect(() => {
+    if (unreadFromCsr === 0) return;
+    void markShopMessagesRead()
+      .then(() => {
+        // Local cleanup so the badge clears immediately; the next
+        // poll will re-confirm against the server.
+        setUnreadFromCsr(0);
+        // Best-effort: tell the global header badge (if mounted) to
+        // refetch. Custom event is the cheapest cross-component
+        // signal — no shared store needed for this one signal.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("pennpaps:messages:read"));
+        }
+      })
+      .catch(() => {
+        // Silent: the badge will still clear on the next poll once
+        // the server-side mark-read eventually succeeds, OR the
+        // customer's still-unread badge persists honestly.
+      });
+  }, [unreadFromCsr]);
 
   // Initial fetch.
   useEffect(() => {
