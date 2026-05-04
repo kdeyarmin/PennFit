@@ -37,9 +37,14 @@ const CHANNEL_OPTIONS = Object.values(ListConversationsChannel).map((v) => ({
 
 type Row = {
   id: string;
-  patientId: string;
+  // Patient-flow subject — null for in_app rows post-0033.
+  patientId: string | null;
   patientFirstName: string;
   patientLastName: string;
+  // Customer subject — set for in_app rows; null for patient-flow.
+  customerId?: string | null;
+  customerDisplayName?: string | null;
+  customerEmail?: string | null;
   channel: string;
   status: string;
   lastMessageAt?: string | null;
@@ -123,13 +128,38 @@ export function ConversationsPage() {
 
   const cols: Column<Row>[] = [
     {
-      key: "patient",
-      header: "Patient",
-      render: (r) => (
-        <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
-          {fullName(r.patientFirstName, r.patientLastName)}
-        </div>
-      ),
+      key: "subject",
+      // "Patient / Customer" — the column holds either subject
+      // depending on the row's channel.
+      header: "Patient / Customer",
+      render: (r) => {
+        // In-app threads use the shop_customer subject (added in
+        // PR #53). Surface the customer's display name (or email
+        // fallback) so the inbox stays readable for both flows.
+        if (r.channel === "in_app") {
+          return (
+            <div
+              className="font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              {r.customerDisplayName ?? r.customerEmail ?? "Shop customer"}
+              {r.customerDisplayName && r.customerEmail && (
+                <div
+                  className="font-normal text-xs"
+                  style={{ color: "hsl(var(--ink-3))" }}
+                >
+                  {r.customerEmail}
+                </div>
+              )}
+            </div>
+          );
+        }
+        return (
+          <div className="font-semibold" style={{ color: "hsl(var(--ink-1))" }}>
+            {fullName(r.patientFirstName, r.patientLastName)}
+          </div>
+        );
+      },
     },
     {
       key: "channel",

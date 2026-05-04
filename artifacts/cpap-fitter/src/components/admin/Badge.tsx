@@ -137,6 +137,11 @@ export function channelVariant(channel: string): Variant {
       return "neutral";
     case "voice":
       return "success";
+    // In-app threads (PR #53) — distinctive variant so the inbox
+    // can tell at a glance whether a row is a phone-channel
+    // conversation or a customer-account chat.
+    case "in_app":
+      return "warning";
     default:
       return "muted";
   }
