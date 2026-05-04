@@ -31,6 +31,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Patient360Panel } from "@/components/admin/Patient360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
 import { useDraftAutosave } from "@/lib/admin/use-draft-autosave";
+import { setConversationStatus } from "@/lib/admin/conversation-assignment-api";
 
 // Conversation viewer. Renders the chronological message timeline as
 // channel-aware bubbles (admin/agent on the right, patient on the
@@ -148,6 +149,21 @@ export function ConversationDetailPage({ id }: { id: string }) {
                 <Badge variant={conversationStatusVariant(data.status)}>
                   {humanizeStatus(data.status)}
                 </Badge>
+                {/*
+                  Resolved / reopen toggle — Phase 8. In-app threads
+                  only (server enforces 409 otherwise; we hide the
+                  button to avoid teasing CSRs with an action that
+                  won't work). The button calls setConversationStatus
+                  and triggers a refetch so the badge updates without
+                  a full reload.
+                */}
+                {data.channel === "in_app" && (
+                  <ConversationStatusButton
+                    conversationId={data.id}
+                    currentStatus={data.status}
+                    onChanged={() => void refetch()}
+                  />
+                )}
               </div>
             </div>
             <ConversationAssignmentBar
@@ -906,5 +922,76 @@ function InAppCustomerContextPanel({
         </Link>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Phase 8 — small inline status toggle for in-app conversations.
+ *
+ * Shows "Mark resolved" when the thread is open / awaiting_*; shows
+ * "Reopen" when the thread is closed. Posts to /conversations/:id/status
+ * and surfaces a brief inline error on failure. The parent re-fetches
+ * via onChanged so the badge updates immediately.
+ *
+ * Why no server-side restriction on which transitions: the route
+ * accepts any of the four enum values so a CSR can manually correct
+ * a misclassification (e.g. "I closed too early; reopen as
+ * awaiting_admin"). The UI exposes only the two common transitions;
+ * the underlying flexibility is there if we ever add a manual-
+ * override dropdown.
+ */
+function ConversationStatusButton({
+  conversationId,
+  currentStatus,
+  onChanged,
+}: {
+  conversationId: string;
+  currentStatus: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isClosed = currentStatus === "closed";
+  const next = isClosed ? "awaiting_admin" : "closed";
+  const label = isClosed ? "Reopen" : "Mark resolved";
+
+  const onClick = (): void => {
+    setBusy(true);
+    setError(null);
+    void setConversationStatus(conversationId, next)
+      .then(() => {
+        onChanged();
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Button
+        type="button"
+        intent={isClosed ? "primary" : "secondary"}
+        size="sm"
+        onClick={onClick}
+        disabled={busy}
+        data-testid="conv-status-toggle"
+      >
+        {busy ? "Saving…" : label}
+      </Button>
+      {error && (
+        <span
+          role="alert"
+          className="text-xs"
+          style={{ color: "#991b1b" }}
+          data-testid="conv-status-error"
+        >
+          {error}
+        </span>
+      )}
+    </span>
   );
 }

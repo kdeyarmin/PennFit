@@ -20,7 +20,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { conversations, getDbPool } from "@workspace/resupply-db";
+import { logAudit } from "@workspace/resupply-audit";
 
+import { logger } from "../../lib/logger";
 import { requireAdmin, requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -304,5 +306,125 @@ router.post(
     res.json({ ok: true });
   },
 );
+
+// =====================================================================
+// POST /conversations/:id/status — flip a conversation's status.
+//
+// Restricted to in_app channel for v1: SMS / email / voice flows have
+// their own status semantics (e.g. closed by an email-click confirmation,
+// or by replyInConversation flipping awaiting_admin → awaiting_patient).
+// Mixing CSR-driven manual status changes into those flows would race
+// with the dispatcher; in-app threads have no dispatcher to race with.
+//
+// Allowed transitions:
+//   open / awaiting_* → closed              (CSR marks resolved)
+//   closed           → awaiting_admin        (CSR reopens; ball is theirs)
+//   open / awaiting_* ↔ awaiting_admin / awaiting_patient (manual override)
+//
+// The endpoint accepts any of the four enum values; the route doesn't
+// enforce specific transitions because the most common manual override
+// is "I closed this by mistake, reopen as awaiting_admin so my SLA
+// kicks back in".
+//
+// Audit: writes a `messaging.conversation.status_change` row with the
+// before + after status. No PHI in the metadata envelope.
+// =====================================================================
+
+const statusBody = z
+  .object({
+    status: z.enum(["open", "awaiting_patient", "awaiting_admin", "closed"]),
+  })
+  .strict();
+
+router.post("/conversations/:id/status", requireAdmin, async (req, res) => {
+  const id = parseId(req);
+  if (!id) {
+    res.status(400).json({ error: "missing_id" });
+    return;
+  }
+  const parsed = statusBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "invalid_body",
+      issues: parsed.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+      })),
+    });
+    return;
+  }
+  const db = drizzle(getDbPool());
+  const rows = await db
+    .select({
+      status: conversations.status,
+      channel: conversations.channel,
+    })
+    .from(conversations)
+    .where(eq(conversations.id, id))
+    .limit(1);
+  const row = rows[0];
+  if (!row) {
+    res.status(404).json({ error: "conversation_not_found" });
+    return;
+  }
+  if (row.channel !== "in_app") {
+    // Patient-flow channels manage status via the dispatcher
+    // (replyInConversation, email-click confirm, etc.). Manual
+    // CSR status writes there would race with those state machines.
+    res.status(409).json({
+      error: "wrong_channel",
+      message:
+        "Manual status changes are only supported on in_app conversations. " +
+        "SMS / email / voice flows manage their own status.",
+    });
+    return;
+  }
+
+  const nextStatus = parsed.data.status;
+  if (row.status === nextStatus) {
+    // Idempotent: no-op when already in the requested state. Don't
+    // burn an audit row.
+    res.json({ ok: true, status: nextStatus, changed: false });
+    return;
+  }
+
+  await db
+    .update(conversations)
+    .set({
+      status: nextStatus,
+      // SLA only applies to active states. Reopen → recompute; close
+      // → null out (the priority + assignment columns survive in
+      // case the thread is reopened).
+      slaDueAt:
+        nextStatus === "closed"
+          ? null
+          : computeSlaDueAt("normal", nextStatus, new Date()),
+      updatedAt: new Date(),
+    })
+    .where(eq(conversations.id, id));
+
+  // Audit envelope: structural only.
+  await logAudit({
+    action: "messaging.conversation.status_change",
+    adminEmail: req.adminEmail ?? null,
+    adminUserId: req.adminUserId ?? null,
+    targetTable: "conversations",
+    targetId: id,
+    metadata: {
+      channel: row.channel,
+      from_status: row.status,
+      to_status: nextStatus,
+    },
+    ip: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  }).catch((err) => {
+    logger.warn(
+      { err, conversation_id: id },
+      "messaging.conversation.status_change audit write failed",
+    );
+  });
+
+  res.json({ ok: true, status: nextStatus, changed: true });
+});
 
 export default router;

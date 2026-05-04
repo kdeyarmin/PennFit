@@ -50,3 +50,24 @@ export const escalateConversation = (
 
 export const deEscalateConversation = (id: string) =>
   post(`/conversations/${encodeURIComponent(id)}/de-escalate`);
+
+export type ConversationStatus =
+  | "open"
+  | "awaiting_patient"
+  | "awaiting_admin"
+  | "closed";
+
+/**
+ * Phase 8 — flip an in_app conversation's status. Restricted server-
+ * side to channel='in_app'; calling on SMS/email/voice rows returns
+ * 409 wrong_channel. Idempotent (returns `changed: false` when the
+ * row is already in the requested status).
+ */
+export const setConversationStatus = (id: string, status: ConversationStatus) =>
+  post(`/conversations/${encodeURIComponent(id)}/status`, {
+    status,
+  }) as Promise<{
+    ok: true;
+    status: ConversationStatus;
+    changed: boolean;
+  }>;
