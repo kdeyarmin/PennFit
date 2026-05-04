@@ -160,16 +160,10 @@ export const PasswordInput = forwardRef<HTMLInputElement, Props>(
           />
           <button
             type="button"
-            // tabIndex={-1} keeps the eye icon out of the keyboard
-            // tab order — most users discover the toggle by hovering;
-            // putting it in the tab order between the password input
-            // and the submit button creates an awkward extra stop.
-            // Screen readers can still reach it via the buttons rotor.
-            tabIndex={-1}
             onClick={() => setVisible((v) => !v)}
             aria-label={visible ? "Hide password" : "Show password"}
             aria-pressed={visible}
-            className="absolute right-2 top-1/2 -translate-y-1/2 mt-0.5 inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 mt-0.5 inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             data-testid="password-toggle-visibility"
           >
             {visible ? (
