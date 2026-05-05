@@ -7,6 +7,7 @@ import {
   ShoppingCart,
   CheckCircle2,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import {
   AccountApiError,
@@ -66,13 +67,15 @@ function SignedInBanner() {
 
   if (!loaded || !data) return null;
 
-  // If absolutely nothing is going on (no subs, no orders, no cart),
-  // skip rendering — a "you have no orders" banner is just noise on
-  // home. We only show the banner when there's signal worth hoisting
-  // above the marketing hero.
+  // If absolutely nothing is going on (no subs, no orders, no cart,
+  // no eligibility signal), skip rendering — a "you have no orders"
+  // banner is just noise on home. We only show the banner when
+  // there's signal worth hoisting above the marketing hero.
+  const eligibleNowCount = data.eligibility?.eligibleNow.length ?? 0;
   const hasSignal =
     data.nextShipment !== null ||
     data.latestOrder !== null ||
+    eligibleNowCount > 0 ||
     (data.abandonedCart && data.abandonedCart.itemCount > 0);
   if (!hasSignal) return null;
 
@@ -105,6 +108,10 @@ function SignedInBanner() {
               </button>
             </Link>
           </div>
+
+          {data.eligibility && (
+            <EligibilityBanner eligibility={data.eligibility} />
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data.latestOrder && <OrderTile order={data.latestOrder} />}
@@ -223,6 +230,84 @@ function ShipmentTile({
         </div>
       </div>
     </Link>
+  );
+}
+
+/**
+ * Phase A.1 — eligibility countdown / claim banner. Three states:
+ *   1. eligibleNow.length > 0  → "N items ready to reorder now"
+ *      with a CTA. This is the high-conversion S3-style nudge.
+ *   2. soonest.daysUntil === 0 → "Eligible today" (subscription
+ *      cycle rolled over today; stripe will dispatch shortly).
+ *   3. soonest.daysUntil > 0   → "Your X is eligible in N days" so
+ *      the patient gets the operational visibility without a CTA.
+ *
+ * Renders nothing when there's no eligibility signal at all.
+ */
+function EligibilityBanner({
+  eligibility,
+}: {
+  eligibility: NonNullable<ShopMeDashboardResponse["eligibility"]>;
+}) {
+  const { eligibleNow, soonest } = eligibility;
+
+  if (eligibleNow.length > 0) {
+    const sample = eligibleNow[0]?.firstItemName;
+    const headline =
+      eligibleNow.length === 1
+        ? `Your ${sample ?? "next supply"} is ready to reorder.`
+        : `${eligibleNow.length} items are ready to reorder.`;
+    return (
+      <Link href="/account#autoship">
+        <div
+          className="rounded-xl border border-[hsl(var(--penn-gold))] bg-[hsl(var(--penn-gold)/0.10)] p-4 hover:bg-[hsl(var(--penn-gold)/0.16)] transition-colors cursor-pointer"
+          data-testid="home-eligibility-banner-now"
+        >
+          <div className="flex items-start gap-3">
+            <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.30)] flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-[hsl(var(--penn-navy))]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+                {headline}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Insurance covers most patients in full. Tap to review and ship.
+              </p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-[hsl(var(--penn-navy))] mt-2 shrink-0" />
+          </div>
+        </div>
+      </Link>
+    );
+  }
+
+  if (!soonest) return null;
+
+  const itemLabel = soonest.firstItemName ?? "Your next supply";
+  const headline =
+    soonest.daysUntil === 0
+      ? `${itemLabel} is eligible today.`
+      : `${itemLabel} is eligible in ${soonest.daysUntil} day${soonest.daysUntil === 1 ? "" : "s"}.`;
+  return (
+    <div
+      className="rounded-xl border bg-background/70 p-4"
+      data-testid="home-eligibility-banner-countdown"
+    >
+      <div className="flex items-start gap-3">
+        <div className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-navy)/0.10)] flex items-center justify-center shrink-0">
+          <CalendarClock className="w-4 h-4 text-[hsl(var(--penn-navy))]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+            {headline}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            We&apos;ll send a reminder when it&apos;s time to ship.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
