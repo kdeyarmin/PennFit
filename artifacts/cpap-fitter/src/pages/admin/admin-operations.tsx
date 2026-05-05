@@ -21,6 +21,9 @@ import {
   fetchOpsStatus,
   runAbandonedCartDispatcher,
   runReviewRequestDispatcher,
+  runRxRenewalDispatcher,
+  runSmartTriggerDispatcher,
+  runSmartTriggerEvaluator,
   type DispatcherResult,
   type OpsStatus,
 } from "@/lib/admin/ops-api";
@@ -176,6 +179,36 @@ function DispatchersPanel({
           run={runReviewRequestDispatcher}
           onRefresh={onRefresh}
         />
+        <DispatcherCard
+          title="Rx renewal — email"
+          subtitle="Patients whose CPAP prescription is within 30 days of expiry get a one-time email asking them to coordinate a renewal."
+          run={() => runRxRenewalDispatcher("email")}
+          onRefresh={onRefresh}
+        />
+        <DispatcherCard
+          title="Rx renewal — SMS"
+          subtitle="Same window as the email channel; mops up patients without an email on file. Shares the same renewalRequestedAt stamp so a patient never gets nudged twice."
+          run={() => runRxRenewalDispatcher("sms")}
+          onRefresh={onRefresh}
+        />
+        <DispatcherCard
+          title="Smart-trigger evaluator"
+          subtitle="Re-scans patient_therapy_nights for newly fired triggers. Cheap + idempotent; safe to run on demand."
+          run={runSmartTriggerEvaluator}
+          onRefresh={onRefresh}
+        />
+        <DispatcherCard
+          title="Smart-trigger nudge — email"
+          subtitle="Sends one email per detected trigger that hasn't been nudged yet. PHI-safe envelope (kind + window only)."
+          run={() => runSmartTriggerDispatcher("email")}
+          onRefresh={onRefresh}
+        />
+        <DispatcherCard
+          title="Smart-trigger nudge — SMS"
+          subtitle="Same triggers, SMS channel. STOP-keyword compliant; single-segment ASCII."
+          run={() => runSmartTriggerDispatcher("sms")}
+          onRefresh={onRefresh}
+        />
       </div>
     </section>
   );
@@ -190,7 +223,10 @@ function DispatcherCard({
 }: {
   title: string;
   subtitle: string;
-  eligibleNow: number;
+  /** Optional — only the cart-abandonment + review-request dispatchers
+   *  surface a count from /admin/ops-status today. Newer dispatchers
+   *  (Rx renewal, smart-trigger) skip the badge until they grow one. */
+  eligibleNow?: number;
   run: () => Promise<DispatcherResult>;
   onRefresh: () => void;
 }) {
@@ -222,10 +258,16 @@ function DispatcherCard({
       </div>
       <div className="flex items-baseline justify-between gap-3">
         <div className="text-xs">
-          <span className="text-slate-500">Eligible now:</span>{" "}
-          <span className="font-bold tabular-nums text-slate-900">
-            {eligibleNow}
-          </span>
+          {eligibleNow !== undefined ? (
+            <>
+              <span className="text-slate-500">Eligible now:</span>{" "}
+              <span className="font-bold tabular-nums text-slate-900">
+                {eligibleNow}
+              </span>
+            </>
+          ) : (
+            <span className="text-slate-400">On-demand dispatcher</span>
+          )}
         </div>
         <button
           type="button"
@@ -254,15 +296,34 @@ function ResultPanel({
   ranAt: string | null;
 }) {
   const rows = useMemo(() => {
-    const items: Array<[string, number]> = [];
+    const items: Array<[string, number | string]> = [];
+    // Primary throughput counts
     if (result.scanned !== undefined) items.push(["Scanned", result.scanned]);
+    if (result.attempted !== undefined)
+      items.push(["Attempted", result.attempted]);
+    if (result.proposed !== undefined) items.push(["Proposed", result.proposed]);
+    // Success counts
     if (result.sent !== undefined) items.push(["Sent", result.sent]);
+    if (result.inserted !== undefined) items.push(["Inserted", result.inserted]);
+    // Failures / skips — only when non-zero to keep the panel tidy
+    if (result.failed !== undefined && result.failed > 0)
+      items.push(["Failed", result.failed]);
     if (result.skippedOptOut !== undefined && result.skippedOptOut > 0)
       items.push(["Skipped (opt-out / DND)", result.skippedOptOut]);
     if (result.skippedNoConfig !== undefined && result.skippedNoConfig > 0)
       items.push(["Skipped (vendor not configured)", result.skippedNoConfig]);
     if (result.skippedFailed !== undefined && result.skippedFailed > 0)
       items.push(["Skipped (send failed)", result.skippedFailed]);
+    if (result.skippedNoContact !== undefined && result.skippedNoContact > 0)
+      items.push(["Skipped (no contact on file)", result.skippedNoContact]);
+    if (result.skippedExisting !== undefined && result.skippedExisting > 0)
+      items.push(["Skipped (already detected)", result.skippedExisting]);
+    // Backlog / metadata
+    if (result.remaining !== undefined && result.remaining > 0)
+      items.push(["Remaining (next run)", result.remaining]);
+    if (result.windowDays !== undefined)
+      items.push(["Window (days)", result.windowDays]);
+    if (result.channel !== undefined) items.push(["Channel", result.channel]);
     return items;
   }, [result]);
 

@@ -45,6 +45,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
+import { sendPushToCustomerByEmail } from "../../lib/web-push";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -217,6 +218,34 @@ router.post(
             "prescription.renewal_requested audit write failed",
           );
         });
+
+        // Phase G.9 — additionally fan out to push when the patient
+        // also has a shop_customers row at the same email_lower.
+        // Best-effort: a push misconfig or no matching customer row
+        // can't roll back the email/SMS that already went out.
+        // Falls through silently when channel is SMS but the patient
+        // also has an email — we use whatever email is on the
+        // patients row regardless of which channel just shipped.
+        const pushEmail = row.email;
+        if (pushEmail) {
+          void sendPushToCustomerByEmail(pushEmail, {
+            title:
+              daysUntilExpiry === 0
+                ? "Your CPAP Rx has expired"
+                : `Rx expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"}`,
+            body: "Tap to coordinate a renewal with your physician.",
+            url: "/account",
+            tag: `rx_renewal:${row.prescriptionId}`,
+          }).catch((err) => {
+            logger.warn(
+              {
+                prescription_id: row.prescriptionId,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              "Rx-renewal push fan-out threw (non-fatal)",
+            );
+          });
+        }
 
         sent++;
       } catch (err) {

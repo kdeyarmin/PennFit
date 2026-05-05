@@ -32,12 +32,30 @@ export async function fetchOpsStatus(): Promise<OpsStatus> {
 }
 
 export interface DispatcherResult {
+  // Standard dispatcher fields (cart-abandonment, review-request)
   scanned?: number;
   sent?: number;
   skippedNoConfig?: number;
   skippedFailed?: number;
   skippedOptOut?: number;
   sendgridConfigured?: boolean;
+  // Channel dispatcher fields (Rx renewal, smart-trigger send-due)
+  attempted?: number;
+  failed?: number;
+  skippedNoContact?: number;
+  /** Backwards-compatible alias for skippedNoContact on the email channel.
+   *  Not displayed in ResultPanel — skippedNoContact already covers it. */
+  skippedNoEmail?: number;
+  /** Backwards-compatible alias for skippedNoContact on the SMS channel.
+   *  Not displayed in ResultPanel — skippedNoContact already covers it. */
+  skippedNoPhone?: number;
+  remaining?: number;
+  windowDays?: number;
+  channel?: string;
+  // Evaluator fields (smart-trigger evaluate)
+  proposed?: number;
+  inserted?: number;
+  skippedExisting?: number;
 }
 
 export async function runAbandonedCartDispatcher(): Promise<DispatcherResult> {
@@ -49,6 +67,39 @@ export async function runAbandonedCartDispatcher(): Promise<DispatcherResult> {
 export async function runReviewRequestDispatcher(): Promise<DispatcherResult> {
   return await postDispatcher(
     "/resupply-api/admin/shop/review-requests/send-due",
+  );
+}
+
+/**
+ * Phase G.11 — Rx-renewal concierge (Phase B.2 / SMS variant Phase G.3).
+ * Channel-parameterized: ops console renders one button per channel.
+ */
+export async function runRxRenewalDispatcher(
+  channel: "email" | "sms",
+): Promise<DispatcherResult> {
+  return await postDispatcher(
+    `/resupply-api/admin/prescriptions/send-renewal-due?channel=${channel}`,
+  );
+}
+
+/**
+ * Phase G.11 — smart-trigger nudge (Phase E.2 / SMS variant Phase G.7).
+ * Two endpoints, two channels:
+ *   * /admin/smart-triggers/evaluate scans therapy data for new triggers.
+ *   * /admin/smart-triggers/send-due dispatches the nudge for unsent ones.
+ * The ops console exposes both with separate buttons so an operator can
+ * either re-evaluate (cheap, idempotent on a partial-unique index) or
+ * send-due in isolation.
+ */
+export async function runSmartTriggerEvaluator(): Promise<DispatcherResult> {
+  return await postDispatcher("/resupply-api/admin/smart-triggers/evaluate");
+}
+
+export async function runSmartTriggerDispatcher(
+  channel: "email" | "sms",
+): Promise<DispatcherResult> {
+  return await postDispatcher(
+    `/resupply-api/admin/smart-triggers/send-due?channel=${channel}`,
   );
 }
 

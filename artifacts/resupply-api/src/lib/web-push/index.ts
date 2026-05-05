@@ -235,6 +235,11 @@ export async function sendPushToCustomer(
  *
  * Lower-casing happens here so callers can pass any-case input
  * without thinking about it.
+ *
+ * email_lower is not unique — if more than one shop_customers row
+ * shares the same email we treat the lookup as ambiguous and skip
+ * push (returns {0,0,0}) rather than risk delivering a PHI-tagged
+ * notification to the wrong device.
  */
 export async function sendPushToCustomerByEmail(
   email: string,
@@ -255,7 +260,7 @@ export async function sendPushToCustomerByEmail(
     return { delivered: 0, expired: 0, transient: 0 };
   }
   if (rows.length > 1) {
-    logger.warn({ emailLower: lower }, "web_push_customer_email_ambiguous");
+    logger.warn("web_push_customer_email_ambiguous");
     return { delivered: 0, expired: 0, transient: 0 };
   }
   return sendPushToCustomer(rows[0].customerId, payload);
