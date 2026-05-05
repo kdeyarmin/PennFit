@@ -300,15 +300,34 @@ function ResultPanel({
   ranAt: string | null;
 }) {
   const rows = useMemo(() => {
-    const items: Array<[string, number]> = [];
+    const items: Array<[string, number | string]> = [];
+    // Primary throughput counts
     if (result.scanned !== undefined) items.push(["Scanned", result.scanned]);
+    if (result.attempted !== undefined)
+      items.push(["Attempted", result.attempted]);
+    if (result.proposed !== undefined) items.push(["Proposed", result.proposed]);
+    // Success counts
     if (result.sent !== undefined) items.push(["Sent", result.sent]);
+    if (result.inserted !== undefined) items.push(["Inserted", result.inserted]);
+    // Failures / skips — only when non-zero to keep the panel tidy
+    if (result.failed !== undefined && result.failed > 0)
+      items.push(["Failed", result.failed]);
     if (result.skippedOptOut !== undefined && result.skippedOptOut > 0)
       items.push(["Skipped (opt-out / DND)", result.skippedOptOut]);
     if (result.skippedNoConfig !== undefined && result.skippedNoConfig > 0)
       items.push(["Skipped (vendor not configured)", result.skippedNoConfig]);
     if (result.skippedFailed !== undefined && result.skippedFailed > 0)
       items.push(["Skipped (send failed)", result.skippedFailed]);
+    if (result.skippedNoContact !== undefined && result.skippedNoContact > 0)
+      items.push(["Skipped (no contact on file)", result.skippedNoContact]);
+    if (result.skippedExisting !== undefined && result.skippedExisting > 0)
+      items.push(["Skipped (already detected)", result.skippedExisting]);
+    // Backlog / metadata
+    if (result.remaining !== undefined && result.remaining > 0)
+      items.push(["Remaining (next run)", result.remaining]);
+    if (result.windowDays !== undefined)
+      items.push(["Window (days)", result.windowDays]);
+    if (result.channel !== undefined) items.push(["Channel", result.channel]);
     return items;
   }, [result]);
 

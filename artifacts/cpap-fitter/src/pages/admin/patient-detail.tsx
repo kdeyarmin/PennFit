@@ -2508,7 +2508,9 @@ function FaxOutreachTab({
   prescriptions: Prescription[];
 }) {
   const [rows, setRows] = useState<PhysicianFaxOutreachRow[] | null>(null);
-  const [providerConfigured, setProviderConfigured] = useState(false);
+  const [providerConfigured, setProviderConfigured] = useState<boolean | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -2631,6 +2633,7 @@ function FaxOutreachTab({
             value={coverLetter}
             onChange={(e) => setCoverLetter(e.target.value)}
             rows={6}
+            maxLength={8000}
             className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
             placeholder="Dear Dr. Stein, our patient is due for a CPAP supply renewal…"
             data-testid="fax-outreach-cover-letter"
@@ -2654,7 +2657,8 @@ function FaxOutreachTab({
               submitting ||
               physicianName.trim().length === 0 ||
               physicianFax.trim().length === 0 ||
-              coverLetter.trim().length < 20
+              coverLetter.trim().length < 20 ||
+              coverLetter.length > 8000
             }
             onClick={() => void submit()}
             data-testid="fax-outreach-submit"
@@ -2693,6 +2697,7 @@ function FaxOutreachTab({
 
 function FaxOutreachRow({ row }: { row: PhysicianFaxOutreachRow }) {
   const created = formatDateTime(row.createdAt);
+  const sent = row.sentAt ? formatDateTime(row.sentAt) : null;
   const statusColor =
     row.status === "delivered"
       ? "#047857"
@@ -2718,7 +2723,8 @@ function FaxOutreachRow({ row }: { row: PhysicianFaxOutreachRow }) {
         </span>
       </div>
       <div className="text-xs text-muted-foreground mt-1">
-        Fax {row.physicianFaxE164} · sent {created}
+        Fax {row.physicianFaxE164} ·{" "}
+        {sent ? `sent ${sent}` : `requested ${created}`}
         {row.createdByEmail ? ` by ${row.createdByEmail}` : ""}
       </div>
       {row.failureReason && (
