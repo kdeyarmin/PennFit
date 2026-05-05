@@ -10,8 +10,8 @@
 //   * 404 / 410 mark the row expired and bump the `expired` counter.
 //   * Anything else bumps `transient` and leaves the row alone.
 //
-// Audit invariant covered: log lines emitted on the transient path
-// must NOT contain the payload or endpoint URL.
+// Note: this suite exercises delivery/result handling only. It does
+// not currently assert log redaction for transient-path logging.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
