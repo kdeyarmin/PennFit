@@ -44,6 +44,7 @@ import {
   type SavedCard,
 } from "@/lib/account-api";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
+import { CostTransparencyCallout } from "@/components/cost-transparency-callout";
 import { ShippingEta } from "@/components/shop/shipping-eta";
 import { CartCrossSell } from "@/components/shop/cart-cross-sell";
 
@@ -682,6 +683,11 @@ export function ShopCart() {
                 loading — the dates are computed locally.
               */}
               <ShippingEta className="mb-4" testIdPrefix="cart-shipping-eta" />
+              <CostTransparencyCallout
+                totalCents={totalCents}
+                className="mb-4"
+                testId="cart-cost-transparency"
+              />
               <ComfortGuarantee variant="badge" className="mb-4" />
               {error && (
                 <div
