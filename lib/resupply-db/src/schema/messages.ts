@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { conversations } from "./conversations";
 import { resupplySchema } from "./_schema";
@@ -67,6 +67,10 @@ export const messages = resupplySchema.table(
     ),
     deliveryStatusIdx: index("messages_delivery_status_idx").on(
       t.deliveryStatus,
+    ),
+    senderRoleEnum: check(
+      "messages_sender_role_enum",
+      sql`${t.senderRole} IN ('patient','customer','admin','agent','system')`,
     ),
   }),
 );

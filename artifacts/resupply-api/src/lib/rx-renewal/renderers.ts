@@ -78,9 +78,9 @@ export function rxRenewalSms(
         ? "your CPAP Rx expires tomorrow"
         : `your CPAP Rx expires in ${daysUntilExpiry} days`;
   return (
-    `${head}, ${status}. Ask your doctor for a renewal, ` +
-    `or reply with their name + practice and we'll handle it. ` +
-    `Reply STOP to opt out.`
+    `${head}, ${status}. Ask your doctor for a renewal so your next supply ships ` +
+    `on time, or reply with their name + practice and we'll request it for you. ` +
+    `Reply STOP to opt out. - Penn Home Medical Supply`
   );
 }
 
