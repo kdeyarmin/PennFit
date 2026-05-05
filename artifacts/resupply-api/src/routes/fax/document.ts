@@ -24,8 +24,16 @@ import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 
 const router: IRouter = Router();
 
+// Left/right margins and usable width for a US Letter page at 72 dpi.
+const MARGIN = 72;
+const PAGE_WIDTH = 612;
+const USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2;
+
 router.get("/fax/document/:token", async (req, res) => {
-  const token = req.params.token ?? "";
+  const rawToken = req.params.token;
+  const token = Array.isArray(rawToken)
+    ? (rawToken[0] ?? "")
+    : (rawToken ?? "");
   const verified = verifyFaxDocumentToken(token);
   if (!verified.valid) {
     res.status(403).json({ error: "invalid_token" });
@@ -47,33 +55,107 @@ router.get("/fax/document/:token", async (req, res) => {
     return;
   }
 
-  const doc = new PDFDocument({ margin: 72, size: "LETTER" });
+  const practiceName =
+    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
+  const today = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const doc = new PDFDocument({ margin: MARGIN, size: "LETTER" });
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", 'inline; filename="cover-letter.pdf"');
   doc.pipe(res);
 
-  const practiceName =
-    process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
-
+  // ── CONFIDENTIAL banner ─────────────────────────────────────────────
   doc
-    .fontSize(13)
+    .fontSize(9)
     .font("Helvetica-Bold")
-    .text(`${practiceName}`, { align: "left" });
-  doc.moveDown(0.3);
+    .fillColor("#cc0000")
+    .text("CONFIDENTIAL — HIPAA PROTECTED HEALTH INFORMATION", MARGIN, MARGIN, {
+      width: USABLE_WIDTH,
+      align: "center",
+    })
+    .fillColor("#000000");
+
+  doc.moveDown(0.5);
+  doc
+    .moveTo(MARGIN, doc.y)
+    .lineTo(PAGE_WIDTH - MARGIN, doc.y)
+    .stroke();
+  doc.moveDown(0.8);
+
+  // ── Practice letterhead ─────────────────────────────────────────────
+  doc.fontSize(16).font("Helvetica-Bold").text(practiceName, {
+    align: "left",
+    width: USABLE_WIDTH,
+  });
+  doc
+    .fontSize(10)
+    .font("Helvetica")
+    .text("Home Medical Equipment & CPAP Supply Services", {
+      align: "left",
+      width: USABLE_WIDTH,
+    });
+
+  doc.moveDown(1.2);
+
+  // ── Date & RE line ──────────────────────────────────────────────────
+  doc.fontSize(11).font("Helvetica").text(`Date: ${today}`, {
+    align: "left",
+    width: USABLE_WIDTH,
+  });
+  doc.moveDown(0.5);
   doc
     .fontSize(11)
-    .font("Helvetica")
-    .text(`RE: Prescription Renewal Request — ${row.physicianName}`, {
+    .font("Helvetica-Bold")
+    .text(`RE: Prescription Renewal Request`, {
       align: "left",
-    });
+      width: USABLE_WIDTH,
+    })
+    .font("Helvetica");
+
+  doc.moveDown(0.5);
+  doc
+    .moveTo(MARGIN, doc.y)
+    .lineTo(PAGE_WIDTH - MARGIN, doc.y)
+    .strokeColor("#aaaaaa")
+    .stroke()
+    .strokeColor("#000000");
+
   doc.moveDown(1);
-  doc.moveTo(72, doc.y).lineTo(540, doc.y).stroke();
-  doc.moveDown(1);
+
+  // ── Cover letter body ───────────────────────────────────────────────
   doc.fontSize(11).font("Helvetica").text(row.coverLetterText, {
     align: "left",
+    width: USABLE_WIDTH,
     lineGap: 4,
   });
+
+  // ── HIPAA footer ────────────────────────────────────────────────────
+  const footerY = 720; // ~1 inch from bottom of US Letter
+  doc
+    .moveTo(MARGIN, footerY)
+    .lineTo(PAGE_WIDTH - MARGIN, footerY)
+    .strokeColor("#aaaaaa")
+    .stroke()
+    .strokeColor("#000000");
+
+  doc
+    .fontSize(8)
+    .font("Helvetica")
+    .fillColor("#555555")
+    .text(
+      "This facsimile contains confidential information protected under HIPAA. " +
+        "It is intended only for the named recipient. If you received this fax in error, " +
+        "please destroy it immediately and notify the sender.",
+      MARGIN,
+      footerY + 6,
+      { width: USABLE_WIDTH, align: "center" },
+    )
+    .fillColor("#000000");
 
   doc.end();
 });

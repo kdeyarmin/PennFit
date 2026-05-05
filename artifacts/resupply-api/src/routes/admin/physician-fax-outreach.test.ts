@@ -363,6 +363,7 @@ describe("GET /admin/physician-fax-outreach", () => {
     process.env.TWILIO_ACCOUNT_SID = "ACtest";
     process.env.TWILIO_AUTH_TOKEN = "token_test";
     process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     selectQueue.push([]);

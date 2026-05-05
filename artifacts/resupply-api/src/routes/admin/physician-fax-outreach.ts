@@ -49,6 +49,7 @@ import {
 
 import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
+import { rateLimit } from "../../middlewares/rate-limit.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 
 const router: IRouter = Router();
@@ -80,29 +81,38 @@ const listQuery = z
   .strict();
 
 /**
- * Returns true when Twilio fax is configured. Requires the same
- * TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN used by SMS and voice, plus
- * a TWILIO_FAX_FROM_NUMBER identifying the fax-enabled Twilio number.
+ * Returns the public base URL used for Twilio fax callbacks and the
+ * cover-letter mediaUrl. Falls back to the Replit dev domain in dev.
+ * Returns null when neither env var is set.
  */
-export function isFaxConfigured(): boolean {
-  return Boolean(
-    process.env.TWILIO_ACCOUNT_SID?.trim() &&
-      process.env.TWILIO_AUTH_TOKEN?.trim() &&
-      process.env.TWILIO_FAX_FROM_NUMBER?.trim(),
-  );
-}
-
-/**
- * Returns the public base URL used for Twilio callbacks and the fax
- * mediaUrl. Falls back to the Replit dev domain in dev.
- */
-function getFaxPublicBaseUrl(): string | null {
+export function getFaxPublicBaseUrl(): string | null {
   const raw =
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL?.trim() ??
     (process.env.REPLIT_DEV_DOMAIN
       ? `https://${process.env.REPLIT_DEV_DOMAIN}`
       : null);
   return raw ? raw.replace(/\/+$/u, "") : null;
+}
+
+/**
+ * Returns true when all four conditions for a live fax dispatch are met:
+ *   - TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (shared with SMS/voice)
+ *   - TWILIO_FAX_FROM_NUMBER (fax-enabled Twilio number)
+ *   - RESUPPLY_VOICE_PUBLIC_BASE_URL or REPLIT_DEV_DOMAIN (needed to
+ *     build the signed mediaUrl that Twilio fetches, and the
+ *     statusCallback URL for delivery events)
+ *
+ * All four are required for a successful send; showing "configured"
+ * when the base URL is missing would mislead the ops dashboard into
+ * thinking dispatch works when it silently would not.
+ */
+export function isFaxConfigured(): boolean {
+  return Boolean(
+    process.env.TWILIO_ACCOUNT_SID?.trim() &&
+      process.env.TWILIO_AUTH_TOKEN?.trim() &&
+      process.env.TWILIO_FAX_FROM_NUMBER?.trim() &&
+      getFaxPublicBaseUrl(),
+  );
 }
 
 interface DispatchResult {
@@ -122,11 +132,8 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
     return { status: "pending", provider: "not_configured" };
   }
 
-  const baseUrl = getFaxPublicBaseUrl();
-  if (!baseUrl) {
-    return { status: "pending", provider: "twilio_no_base_url" };
-  }
-
+  // isFaxConfigured() already verified getFaxPublicBaseUrl() is non-null.
+  const baseUrl = getFaxPublicBaseUrl()!;
   const db = drizzle(getDbPool());
 
   try {
@@ -270,9 +277,19 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
 // POST /admin/physician-fax-outreach/:id/retry — re-fire a failed/pending row
 // ---------------------------------------------------------------------------
 
+// Tight limit: each retry triggers a live Twilio API call that incurs cost.
+// 5 retries / 15 min per IP is generous for legitimate manual re-dispatch
+// but blocks runaway automation or misclicks.
+const retryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  name: "physician_fax_retry",
+});
+
 router.post(
   "/admin/physician-fax-outreach/:id/retry",
   requireAdmin,
+  retryLimiter,
   async (req, res) => {
     const rawId = req.params.id;
     const outreachId = Array.isArray(rawId) ? (rawId[0] ?? "") : (rawId ?? "");
