@@ -108,8 +108,9 @@ export function AdminFollowupsPage() {
             color: "var(--text-muted, #475569)",
           }}
         >
-          What the team owes today, across all customers. Schedule new
-          follow-ups from any customer&apos;s 360 page.
+          What the team owes today, across all customers and patients. Schedule
+          new follow-ups from a customer&apos;s 360 page or a patient&apos;s
+          follow-ups tab.
         </p>
       </header>
 
