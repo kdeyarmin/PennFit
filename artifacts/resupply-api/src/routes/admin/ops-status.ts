@@ -52,6 +52,12 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       process.env.TWILIO_AUTH_TOKEN &&
       process.env.TWILIO_MESSAGING_SERVICE_SID,
     ),
+    twilioFax: Boolean(
+      process.env.TWILIO_ACCOUNT_SID &&
+      process.env.TWILIO_AUTH_TOKEN &&
+      process.env.TWILIO_FAX_FROM_NUMBER &&
+      (process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL || process.env.REPLIT_DEV_DOMAIN),
+    ),
     stripe: Boolean(process.env.STRIPE_SECRET_KEY),
     objectStorage: Boolean(process.env.PRIVATE_OBJECT_DIR),
   };
@@ -65,7 +71,7 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
     [reviewRequestEligible],
     [rxRenewalEligible],
     [smartTriggerEligible],
-    [faxOutreachPending],
+    [pendingFaxEligible],
     [adminCount],
     [agentCount],
     [pendingCount],
@@ -123,15 +129,14 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
         ),
       ),
 
-    // Phase G.16 — count fax-outreach rows in 'pending' state. Until
-    // the vendor adapter ships (Phase G.6 noted this is deferred),
-    // every CSR-submitted outreach lands here as 'pending' and a CSR
-    // has to fax via their existing workflow. Surfacing the count on
-    // /admin/operations gives ops visibility into that backlog.
+    // Physician fax outreach rows awaiting dispatch (pending or failed
+    // with Twilio configured — the retry endpoint can re-fire these).
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(physicianFaxOutreach)
-      .where(eq(physicianFaxOutreach.status, "pending")),
+      .where(
+        sql`${physicianFaxOutreach.status} IN ('pending', 'failed')`,
+      ),
 
     // Team counts.
     db
@@ -157,9 +162,7 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       reviewRequest: { eligibleNow: reviewRequestEligible?.count ?? 0 },
       rxRenewal: { eligibleNow: rxRenewalEligible?.count ?? 0 },
       smartTrigger: { eligibleNow: smartTriggerEligible?.count ?? 0 },
-    },
-    queues: {
-      faxOutreachPending: { count: faxOutreachPending?.count ?? 0 },
+      pendingFax: { eligibleNow: pendingFaxEligible?.count ?? 0 },
     },
     team: {
       activeAdmins: adminCount?.count ?? 0,

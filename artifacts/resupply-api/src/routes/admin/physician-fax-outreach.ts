@@ -1,35 +1,34 @@
-// /admin/physician-fax-outreach — record + query physician-fax
+// /admin/physician-fax-outreach — record + dispatch physician-fax
 // Rx-renewal requests (Phase G.6 — Phase B.2 follow-up).
 //
 //   POST /admin/physician-fax-outreach
 //        Body: { patientId, prescriptionId?, physicianName,
 //                physicianFaxE164, coverLetterText }
-//        Records the outreach intent and dispatches via the
-//        configured fax vendor when one is wired. Returns the
-//        outreach row id.
+//        Inserts a physician_fax_outreach row and dispatches via
+//        Twilio Programmable Fax when TWILIO_ACCOUNT_SID,
+//        TWILIO_AUTH_TOKEN, and TWILIO_FAX_FROM_NUMBER are set.
+//        Returns the outreach row id + final status.
+//
+//   POST /admin/physician-fax-outreach/:id/retry
+//        Re-fires a pending or failed outreach row. Guards against
+//        double-billing: 409 if the row is already sent/delivered.
 //
 //   GET  /admin/physician-fax-outreach?patientId=...
-//        Lists recent outreach rows for a patient. Used by the
-//        patient-detail "fax history" tab.
+//        Lists recent outreach rows for a patient.
 //
-// Why a separate endpoint from /admin/prescriptions/send-renewal-due:
-// the email/SMS dispatcher is a bulk cron job; physician-fax is a
-// CSR-initiated single action ("the patient asked us to handle this
-// directly"). Different lifecycle, different actor (always 'admin'),
-// different audit verb.
-//
-// Vendor abstraction:
-// The actual fax dispatch is gated behind isFaxConfigured() — when
-// no vendor env triple is wired (FAX_VENDOR / _API_KEY / _FROM), the
-// row is created with status='pending' and `vendor_ref` left null.
-// CSRs can see it in /admin/patients/<id>/fax-outreach as "queued
-// — provider not configured" and a deployer wires the provider when
-// ready. Mirrors the SendGrid/Twilio not-configured pattern.
+// Vendor: Twilio Programmable Fax (same credentials as SMS + voice).
+//   Required env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+//                 TWILIO_FAX_FROM_NUMBER
+//   Optional env: RESUPPLY_VOICE_PUBLIC_BASE_URL (needed for the
+//                 mediaUrl and statusCallback — if unset the row is
+//                 created but not dispatched immediately).
 //
 // PHI / log posture:
 //   * Audit envelope: outreach_id, patient_id, has_prescription,
 //     cover_letter_length. Never the fax number, never the cover
 //     letter body, never the physician name.
+//   * The mediaUrl token carries only the outreach ID + expiry; the
+//     cover letter text is fetched by Twilio from /fax/document/:token.
 
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
@@ -43,9 +42,15 @@ import {
   physicianFaxOutreach,
   prescriptions,
 } from "@workspace/resupply-db";
+import {
+  createTwilioFaxClient,
+  TwilioApiError,
+} from "@workspace/resupply-telecom";
 
-import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
+import { logger } from "../../lib/logger.js";
+import { rateLimit } from "../../middlewares/rate-limit.js";
+import { requireAdmin } from "../../middlewares/requireAdmin.js";
 
 const router: IRouter = Router();
 
@@ -76,23 +81,133 @@ const listQuery = z
   .strict();
 
 /**
- * Returns true when a fax vendor is wired. Mirrors the
- * isPushConfigured / isSmsConfigured pattern in the rest of the
- * codebase. The `FAX_VENDOR` env names a provider key (documo,
- * phaxio, srfax) that the dispatcher implementation switches on;
- * `FAX_API_KEY` and `FAX_FROM_NUMBER` are vendor-agnostic.
+ * Returns the public base URL used for Twilio fax callbacks and the
+ * cover-letter mediaUrl. Falls back to the Replit dev domain in dev.
+ * Returns null when neither env var is set.
+ */
+export function getFaxPublicBaseUrl(): string | null {
+  const raw =
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL?.trim() ??
+    (process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : null);
+  return raw ? raw.replace(/\/+$/u, "") : null;
+}
+
+/**
+ * Returns true when all four conditions for a live fax dispatch are met:
+ *   - TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN (shared with SMS/voice)
+ *   - TWILIO_FAX_FROM_NUMBER (fax-enabled Twilio number)
+ *   - RESUPPLY_VOICE_PUBLIC_BASE_URL or REPLIT_DEV_DOMAIN (needed to
+ *     build the signed mediaUrl that Twilio fetches, and the
+ *     statusCallback URL for delivery events)
  *
- * Today no vendor implementation ships — this scaffold persists
- * the outreach intent so the data path is complete; a follow-up PR
- * adds the actual provider integration.
+ * All four are required for a successful send; showing "configured"
+ * when the base URL is missing would mislead the ops dashboard into
+ * thinking dispatch works when it silently would not.
  */
 export function isFaxConfigured(): boolean {
   return Boolean(
-    process.env.FAX_VENDOR?.trim() &&
-    process.env.FAX_API_KEY?.trim() &&
-    process.env.FAX_FROM_NUMBER?.trim(),
+    process.env.TWILIO_ACCOUNT_SID?.trim() &&
+      process.env.TWILIO_AUTH_TOKEN?.trim() &&
+      process.env.TWILIO_FAX_FROM_NUMBER?.trim() &&
+      getFaxPublicBaseUrl(),
   );
 }
+
+interface DispatchResult {
+  status: "sent" | "failed" | "pending";
+  provider: string;
+  vendorRef?: string;
+  dispatchError?: string;
+}
+
+/**
+ * Attempt to dispatch a fax outreach row via Twilio. Updates the DB
+ * row in-place and returns the outcome. Shared between the POST
+ * (create + dispatch) and the POST /:id/retry (re-dispatch) handlers.
+ */
+async function dispatchFax(outreachId: string, to: string): Promise<DispatchResult> {
+  if (!isFaxConfigured()) {
+    return { status: "pending", provider: "not_configured" };
+  }
+
+  // isFaxConfigured() already verified getFaxPublicBaseUrl() is non-null.
+  const baseUrl = getFaxPublicBaseUrl()!;
+  const db = drizzle(getDbPool());
+
+  const faxClient = createTwilioFaxClient();
+  const token = signFaxDocumentToken(outreachId);
+  const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
+  const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
+  const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
+
+  // Scope try/catch to the Twilio API call only. A DB failure after a
+  // successful send must NOT fall into the catch path — that would mark
+  // the row as "failed" and allow the retry endpoint to re-fire an already-
+  // accepted fax, causing duplicate physician outreach and double billing.
+  let result: { sid: string; status: string };
+  try {
+    result = await faxClient.sendFax({
+      to,
+      from: fromNumber,
+      mediaUrl,
+      statusCallbackUrl,
+    });
+  } catch (err) {
+    const msg =
+      err instanceof TwilioApiError
+        ? `Twilio fax error: ${err.message}`
+        : `Fax dispatch error: ${String(err)}`;
+
+    await db
+      .update(physicianFaxOutreach)
+      .set({
+        status: "failed",
+        failedAt: new Date(),
+        failureReason: msg,
+        updatedAt: new Date(),
+      })
+      .where(eq(physicianFaxOutreach.id, outreachId));
+
+    logger.warn(
+      { event: "fax_dispatch_failed", outreachId },
+      "physician_fax_outreach: Twilio dispatch failed",
+    );
+
+    return { status: "failed", provider: "twilio", dispatchError: msg };
+  }
+
+  // Twilio accepted the fax. Stamp the row outside the sendFax try/catch so
+  // a DB hiccup doesn't trigger a retry. The Twilio status-callback will
+  // also update the row when delivery completes, giving a second correction path.
+  try {
+    await db
+      .update(physicianFaxOutreach)
+      .set({
+        status: "sent",
+        vendorRef: result.sid,
+        vendorName: "twilio",
+        sentAt: new Date(),
+        failedAt: null,
+        failureReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(physicianFaxOutreach.id, outreachId));
+  } catch (dbErr) {
+    // Log the vendorRef so ops can manually reconcile if needed.
+    logger.warn(
+      { event: "fax_db_stamp_failed", outreachId, vendorRef: result.sid, err: dbErr },
+      "physician_fax_outreach: fax accepted by Twilio but DB stamp failed",
+    );
+  }
+
+  return { status: "sent", provider: "twilio", vendorRef: result.sid };
+}
+
+// ---------------------------------------------------------------------------
+// POST /admin/physician-fax-outreach — create + dispatch
+// ---------------------------------------------------------------------------
 
 router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
   const parsed = createBody.safeParse(req.body);
@@ -109,8 +224,6 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
   const data = parsed.data;
   const db = drizzle(getDbPool());
 
-  // Defensive existence check on the patient — a 404 here is far
-  // friendlier than a constraint-violation 500 from the FK.
   const [patient] = await db
     .select({ id: patients.id })
     .from(patients)
@@ -140,21 +253,12 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
       physicianName: data.physicianName,
       physicianFaxE164: data.physicianFaxE164,
       coverLetterText: data.coverLetterText,
-      createdByEmail: req.adminEmail,
+      createdByEmail: req.adminEmail ?? "",
     })
     .returning({ id: physicianFaxOutreach.id });
   const id = inserted[0]!.id;
 
-  // Provider wiring deferred — when isFaxConfigured() is true the
-  // dispatcher would synchronously hit the vendor here, stamp
-  // sent_at + vendor_ref + vendor_name, and return status='sent'.
-  // Until then the row stays at 'pending' and a CSR can re-fire
-  // by changing status manually (or, post-vendor, hitting a
-  // /retry endpoint that won't double-bill).
-  const status: "pending" | "sent" = "pending";
-  const provider = isFaxConfigured()
-    ? "configured_but_no_dispatcher_yet"
-    : "not_configured";
+  const dispatch = await dispatchFax(id, data.physicianFaxE164);
 
   await logAudit({
     action: "physician_fax_outreach.created",
@@ -167,16 +271,113 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
       has_prescription:
         data.prescriptionId !== undefined && data.prescriptionId !== null,
       cover_letter_length: data.coverLetterText.length,
-      provider,
+      provider: dispatch.provider,
+      status: dispatch.status,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "physician_fax_outreach.created audit write failed");
+  }).catch((auditErr: unknown) => {
+    logger.warn({ err: auditErr }, "physician_fax_outreach.created audit write failed");
   });
 
-  res.status(201).json({ id, status, provider });
+  const response: Record<string, unknown> = {
+    id,
+    status: dispatch.status,
+    provider: dispatch.provider,
+  };
+  if (dispatch.dispatchError) response.dispatchError = dispatch.dispatchError;
+  res.status(201).json(response);
 });
+
+// ---------------------------------------------------------------------------
+// POST /admin/physician-fax-outreach/:id/retry — re-fire a failed/pending row
+// ---------------------------------------------------------------------------
+
+// Tight limit: each retry triggers a live Twilio API call that incurs cost.
+// 5 retries / 15 min per IP is generous for legitimate manual re-dispatch
+// but blocks runaway automation or misclicks.
+const retryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  name: "physician_fax_retry",
+});
+
+router.post(
+  "/admin/physician-fax-outreach/:id/retry",
+  requireAdmin,
+  retryLimiter,
+  async (req, res) => {
+    const rawId = req.params.id;
+    const outreachId = Array.isArray(rawId) ? (rawId[0] ?? "") : (rawId ?? "");
+    if (!outreachId) {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+
+    if (!isFaxConfigured()) {
+      res.status(503).json({ error: "fax_not_configured" });
+      return;
+    }
+
+    const db = drizzle(getDbPool());
+    const [row] = await db
+      .select({
+        id: physicianFaxOutreach.id,
+        status: physicianFaxOutreach.status,
+        physicianFaxE164: physicianFaxOutreach.physicianFaxE164,
+        patientId: physicianFaxOutreach.patientId,
+      })
+      .from(physicianFaxOutreach)
+      .where(eq(physicianFaxOutreach.id, outreachId))
+      .limit(1);
+
+    if (!row) {
+      res.status(404).json({ error: "outreach_not_found" });
+      return;
+    }
+
+    // Guard against double-billing: only allow retry for rows that
+    // were never successfully dispatched.
+    if (row.status === "sent" || row.status === "delivered") {
+      res.status(409).json({
+        error: "already_dispatched",
+        status: row.status,
+      });
+      return;
+    }
+
+    const dispatch = await dispatchFax(row.id, row.physicianFaxE164);
+
+    await logAudit({
+      action: "physician_fax_outreach.retried",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "physician_fax_outreach",
+      targetId: outreachId,
+      metadata: {
+        patient_id: row.patientId,
+        provider: dispatch.provider,
+        status: dispatch.status,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((auditErr: unknown) => {
+      logger.warn({ err: auditErr }, "physician_fax_outreach.retried audit write failed");
+    });
+
+    const response: Record<string, unknown> = {
+      id: outreachId,
+      status: dispatch.status,
+      provider: dispatch.provider,
+    };
+    if (dispatch.dispatchError) response.dispatchError = dispatch.dispatchError;
+    res.status(200).json(response);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /admin/physician-fax-outreach — list rows for a patient
+// ---------------------------------------------------------------------------
 
 router.get("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
