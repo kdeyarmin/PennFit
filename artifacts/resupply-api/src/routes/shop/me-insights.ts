@@ -28,6 +28,7 @@ import { Router, type IRouter } from "express";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { drizzle } from "drizzle-orm/node-postgres";
+import { z } from "zod";
 
 import {
   getDbPool,
@@ -133,6 +134,94 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
 
   res.json({ insights });
 });
+
+const insightIdParam = z.string().uuid();
+
+/**
+ * Customer-facing dismiss. Marks an insight as dismissed when the
+ * trigger row belongs to a patient whose email matches the
+ * signed-in customer's email_lower. The double-bind in the WHERE
+ * clause is the authorization gate: a customer can never dismiss
+ * a row whose patient_id maps to a different email.
+ *
+ *   * 200 with { ok: true } when the dismiss succeeded.
+ *   * 404 when no row matched (already dismissed, wrong patient,
+ *     unknown id) — we deliberately do NOT distinguish so an
+ *     attacker can't enumerate trigger IDs.
+ *   * 401 already handled by requireSignedIn.
+ *
+ * Audit: stamps `dismissed_by_email` with the customer's email so
+ * the admin audit log can tell self-dismissals apart from
+ * CSR-initiated dismissals. `dismissed_reason` stays null on the
+ * customer path (no free-text input — the customer just wants the
+ * card to go away).
+ */
+router.post(
+  "/shop/me/insights/:id/dismiss",
+  requireSignedIn,
+  async (req, res) => {
+    const customerEmail = req.shopCustomerEmail;
+    if (!customerEmail) {
+      // No email → no email-match possible → no row to dismiss.
+      res.status(404).json({ error: "insight_not_found" });
+      return;
+    }
+    const idParse = insightIdParam.safeParse(req.params.id);
+    if (!idParse.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const id = idParse.data;
+    const db = drizzle(getDbPool());
+
+    // Two-step auth guard: first resolve the patient row. We pull up
+    // to 2 rows so that a shared email (two patients, same address)
+    // is detected as ambiguous and we bail — exactly the same
+    // strategy used by the inbound-email and inbound-SMS routes.
+    // 0 rows → no match; >1 → ambiguous. Both collapse into a 404.
+    const patientRows = await db
+      .select({ id: patients.id })
+      .from(patients)
+      .where(sql`lower(${patients.email}) = ${customerEmail.toLowerCase()}`)
+      .limit(2);
+
+    if (patientRows.length !== 1) {
+      res.status(404).json({ error: "insight_not_found" });
+      return;
+    }
+
+    const patientId = patientRows[0].id;
+
+    // Only now update — scoped to the single unambiguous patient row.
+    // RETURNING the row id lets us tell hit-vs-miss without a
+    // second SELECT.
+    const updated = await db
+      .update(patientSmartTriggerEvents)
+      .set({
+        dismissedAt: new Date(),
+        dismissedByEmail: customerEmail.toLowerCase(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(patientSmartTriggerEvents.id, id),
+          isNull(patientSmartTriggerEvents.dismissedAt),
+          eq(patientSmartTriggerEvents.patientId, patientId),
+        ),
+      )
+      .returning({ id: patientSmartTriggerEvents.id });
+
+    if (updated.length === 0) {
+      res.status(404).json({ error: "insight_not_found" });
+      return;
+    }
+    logger.info(
+      { customerId: req.userCustomerId, insightId: id },
+      "shop.me.insights.dismissed",
+    );
+    res.json({ ok: true });
+  },
+);
 
 function project(
   id: string,

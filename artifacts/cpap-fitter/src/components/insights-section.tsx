@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Activity, ArrowRight, Sparkles } from "lucide-react";
-import { fetchInsights, type CustomerInsight } from "@/lib/account-api";
+import { Activity, ArrowRight, Sparkles, X } from "lucide-react";
+import {
+  dismissInsight,
+  fetchInsights,
+  type CustomerInsight,
+} from "@/lib/account-api";
 
 /**
  * "What we noticed" section on /account (Phase G.4).
@@ -45,6 +49,49 @@ export function InsightsSection() {
 
   if (loading || !items || items.length === 0) return null;
 
+  // Optimistic dismiss: drop the card from local state immediately,
+  // then fire the server call. On failure, restore only the affected
+  // card into the latest state snapshot so concurrent dismisses are
+  // not undone by a stale rollback. Treat "already gone" responses
+  // as success because the server has already applied the dismissal.
+  function isAlreadyDismissedError(error: unknown) {
+    if (!error || typeof error !== "object") return false;
+
+    const candidate = error as {
+      status?: number;
+      statusCode?: number;
+      response?: { status?: number };
+    };
+
+    return (
+      candidate.status === 404 ||
+      candidate.statusCode === 404 ||
+      candidate.response?.status === 404
+    );
+  }
+
+  async function handleDismiss(id: string) {
+    const dismissedItem = items?.find((i) => i.id === id);
+    const dismissedIndex = items?.findIndex((i) => i.id === id) ?? -1;
+
+    setItems((curr) => (curr ?? []).filter((i) => i.id !== id));
+    try {
+      await dismissInsight(id);
+    } catch (error) {
+      if (isAlreadyDismissedError(error) || !dismissedItem) return;
+
+      setItems((curr) => {
+        if (!curr || curr.some((i) => i.id === id)) return curr;
+
+        const next = [...curr];
+        const insertAt =
+          dismissedIndex >= 0 ? Math.min(dismissedIndex, next.length) : next.length;
+        next.splice(insertAt, 0, dismissedItem);
+        return next;
+      });
+    }
+  }
+
   return (
     <section
       className="glass-card rounded-2xl p-6 space-y-4"
@@ -61,14 +108,24 @@ export function InsightsSection() {
       </p>
       <ul className="space-y-3">
         {items.map((insight) => (
-          <InsightCard key={insight.id} insight={insight} />
+          <InsightCard
+            key={insight.id}
+            insight={insight}
+            onDismiss={() => void handleDismiss(insight.id)}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function InsightCard({ insight }: { insight: CustomerInsight }) {
+function InsightCard({
+  insight,
+  onDismiss,
+}: {
+  insight: CustomerInsight;
+  onDismiss: () => void;
+}) {
   const detected = new Date(insight.detectedAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -101,6 +158,16 @@ function InsightCard({ insight }: { insight: CustomerInsight }) {
             Noticed {detected}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          title="Dismiss"
+          className="text-muted-foreground hover:text-[hsl(var(--penn-navy))] -mt-1 -mr-1 p-1 rounded transition-colors"
+          data-testid={`account-insight-dismiss-${insight.kind}`}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
       <div className="flex justify-end">
         <Link
