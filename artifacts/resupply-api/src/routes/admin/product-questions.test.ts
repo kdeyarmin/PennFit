@@ -33,6 +33,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 const selectQueue: unknown[][] = [];
 const updateSets: Record<string, unknown>[] = [];
+const updateReturnQueue: unknown[][] = [];
 const dbStub = {
   select: vi.fn(() => {
     const result = selectQueue.shift() ?? [];
@@ -50,7 +51,8 @@ const dbStub = {
         updateSets.push(vals);
         return obj;
       },
-      where: () => Promise.resolve(),
+      where: () => obj,
+      returning: () => Promise.resolve(updateReturnQueue.shift() ?? []),
     };
     return obj;
   }),
@@ -79,6 +81,7 @@ beforeEach(() => {
   mockAdmin.current = null;
   selectQueue.length = 0;
   updateSets.length = 0;
+  updateReturnQueue.length = 0;
   logAuditMock.mockClear();
   dbStub.select.mockClear();
   dbStub.update.mockClear();
@@ -126,12 +129,12 @@ describe("PATCH /admin/shop/product-questions/:id", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([
+    // Atomic update returns the row when status was 'pending'.
+    updateReturnQueue.push([
       {
         id: "q_1",
         productId: "prod_1",
         questionBody: "Does this work at 10cm pressure?",
-        status: "pending",
       },
     ]);
 
@@ -168,19 +171,18 @@ describe("PATCH /admin/shop/product-questions/:id", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([
-      {
-        id: "q_1",
-        productId: "prod_1",
-        questionBody: "x",
-        status: "answered",
-      },
-    ]);
+    // Atomic update returns no rows (WHERE status='pending' excludes this row).
+    updateReturnQueue.push([]);
+    // Fallback select finds the row with a non-pending status.
+    selectQueue.push([{ status: "answered" }]);
+
     const res = await request(makeApp())
       .patch("/admin/shop/product-questions/q_1")
       .send({ action: "answer", answerBody: "another" });
     expect(res.status).toBe(409);
-    expect(updateSets).toEqual([]);
+    expect(res.body.error).toBe("already_moderated");
+    // The update was issued but affected 0 rows — no audit should fire.
+    expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("rejects with audit length-only metadata (no note text)", async () => {
@@ -189,12 +191,12 @@ describe("PATCH /admin/shop/product-questions/:id", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([
+    // Atomic update returns the row when status was 'pending'.
+    updateReturnQueue.push([
       {
         id: "q_1",
         productId: "prod_1",
         questionBody: "How do I beat traffic?",
-        status: "pending",
       },
     ]);
     const res = await request(makeApp())

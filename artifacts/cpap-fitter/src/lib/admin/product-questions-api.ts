@@ -31,6 +31,13 @@ export async function listAdminProductQuestions(
   return (await res.json()) as { questions: AdminProductQuestion[] };
 }
 
+export class AlreadyModeratedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AlreadyModeratedError";
+  }
+}
+
 export async function answerAdminProductQuestion(
   id: string,
   answerBody: string,
@@ -44,6 +51,14 @@ export async function answerAdminProductQuestion(
       body: JSON.stringify({ action: "answer", answerBody }),
     },
   );
+  if (res.status === 409) {
+    const json = await res.json().catch(() => ({}));
+    const msg =
+      typeof json.message === "string"
+        ? json.message
+        : "This question has already been moderated by another CSR.";
+    throw new AlreadyModeratedError(msg);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to answer (${res.status}): ${text}`);
@@ -63,6 +78,14 @@ export async function rejectAdminProductQuestion(
       body: JSON.stringify({ action: "reject", moderationNote }),
     },
   );
+  if (res.status === 409) {
+    const json = await res.json().catch(() => ({}));
+    const msg =
+      typeof json.message === "string"
+        ? json.message
+        : "This question has already been moderated by another CSR.";
+    throw new AlreadyModeratedError(msg);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to reject (${res.status}): ${text}`);

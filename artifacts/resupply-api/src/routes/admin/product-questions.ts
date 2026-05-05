@@ -12,7 +12,7 @@
 // envelope still logs structurally — product_id + question_length +
 // answer_length — so we can spot anomalies without parsing prose.
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -113,34 +113,14 @@ router.patch(
     }
 
     const db = drizzle(getDbPool());
-
-    const existing = await db
-      .select({
-        id: shopProductQuestions.id,
-        productId: shopProductQuestions.productId,
-        questionBody: shopProductQuestions.questionBody,
-        status: shopProductQuestions.status,
-      })
-      .from(shopProductQuestions)
-      .where(eq(shopProductQuestions.id, id))
-      .limit(1);
-    const row = existing[0];
-    if (!row) {
-      res.status(404).json({ error: "not_found" });
-      return;
-    }
-    if (row.status !== "pending") {
-      res.status(409).json({
-        error: "already_moderated",
-        message: `This question is already ${row.status}.`,
-      });
-      return;
-    }
-
     const now = new Date();
+
     if (bodyParsed.data.action === "answer") {
       const { answerBody: answer } = bodyParsed.data;
-      await db
+      // Atomic: only update when status is still 'pending'. If 0 rows are
+      // returned the question was already moderated by another CSR (race),
+      // or never existed.
+      const updated = await db
         .update(shopProductQuestions)
         .set({
           status: "answered",
@@ -150,8 +130,36 @@ router.patch(
           answeredAt: now,
           updatedAt: now,
         })
-        .where(eq(shopProductQuestions.id, id));
+        .where(
+          and(
+            eq(shopProductQuestions.id, id),
+            eq(shopProductQuestions.status, "pending"),
+          ),
+        )
+        .returning({
+          id: shopProductQuestions.id,
+          productId: shopProductQuestions.productId,
+          questionBody: shopProductQuestions.questionBody,
+        });
 
+      if (updated.length === 0) {
+        const existing = await db
+          .select({ status: shopProductQuestions.status })
+          .from(shopProductQuestions)
+          .where(eq(shopProductQuestions.id, id))
+          .limit(1);
+        if (!existing[0]) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        res.status(409).json({
+          error: "already_moderated",
+          message: `This question is already ${existing[0].status}.`,
+        });
+        return;
+      }
+
+      const row = updated[0]!;
       await logAudit({
         action: "shop_product_question.answer",
         adminEmail: req.adminEmail ?? null,
@@ -173,9 +181,9 @@ router.patch(
       return;
     }
 
-    // reject
+    // reject — same atomic guard
     const { moderationNote } = bodyParsed.data;
-    await db
+    const updated = await db
       .update(shopProductQuestions)
       .set({
         status: "rejected",
@@ -184,8 +192,36 @@ router.patch(
         moderatedBy: req.adminUserId ?? null,
         updatedAt: now,
       })
-      .where(eq(shopProductQuestions.id, id));
+      .where(
+        and(
+          eq(shopProductQuestions.id, id),
+          eq(shopProductQuestions.status, "pending"),
+        ),
+      )
+      .returning({
+        id: shopProductQuestions.id,
+        productId: shopProductQuestions.productId,
+        questionBody: shopProductQuestions.questionBody,
+      });
 
+    if (updated.length === 0) {
+      const existing = await db
+        .select({ status: shopProductQuestions.status })
+        .from(shopProductQuestions)
+        .where(eq(shopProductQuestions.id, id))
+        .limit(1);
+      if (!existing[0]) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.status(409).json({
+        error: "already_moderated",
+        message: `This question is already ${existing[0].status}.`,
+      });
+      return;
+    }
+
+    const row = updated[0]!;
     await logAudit({
       action: "shop_product_question.reject",
       adminEmail: req.adminEmail ?? null,
