@@ -53,7 +53,7 @@ const UNIVERSAL_FAQS: FaqEntry[] = [
   },
   {
     q: "What's your return policy?",
-    a: "Unopened, unused supplies can be returned within 60 days for a full refund. Mask cushions and full masks are covered by our 60-day fit guarantee — if it doesn't fit comfortably, we'll exchange it free.",
+    a: "Return and fit-guarantee eligibility varies by product category. Please refer to our published return and comfort-guarantee policy for the item-specific terms, including any exclusions for disposable supplies.",
   },
   {
     q: "Do I need a prescription?",

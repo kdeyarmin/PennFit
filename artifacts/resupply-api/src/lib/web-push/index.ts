@@ -142,6 +142,10 @@ export async function sendPushToCustomer(
 ): Promise<DeliveryCounts> {
   const config = readPushConfig();
   if (!config) {
+    logger.warn(
+      { customerId },
+      "web_push_not_configured — set WEB_PUSH_VAPID_PUBLIC_KEY / _PRIVATE_KEY / _SUBJECT to enable delivery",
+    );
     return { delivered: 0, expired: 0, transient: 0 };
   }
   const sdk = await loadSdk();

@@ -18,7 +18,7 @@
 // itself only lives in `messages.body`.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
@@ -364,9 +364,10 @@ async function tryNotifyCustomerOfReply(input: {
   conversationId: string;
   bodyLength: number;
 }): Promise<void> {
-  // Resolve the customer email from the conversation → shop_customers
-  // join. If the customer has no email on file (rare but possible if
-  // the auth provider hasn't sync'd yet) skip the send.
+  // Resolve the customer record from the conversation → shop_customers
+  // join. Push notifications fire unconditionally (gated only on the
+  // customer having an active subscription); email notifications require
+  // a non-null email address and opt-in via communicationPreferences.
   const db = drizzle(getDbPool());
   const rows = await db
     .select({
@@ -427,10 +428,22 @@ async function tryNotifyCustomerOfReply(input: {
 
   // Throttle: skip if we've sent a notification on this thread within
   // the throttle window. Phase 13. Null = never sent (or pre-13 row),
-  // which always passes the gate.
+  // which always passes the gate. Guard against future timestamps
+  // (clock skew / bad data) so we do not accidentally mute this thread
+  // until wall-clock time catches up.
   if (row.lastNotifiedAt) {
     const sinceMs = Date.now() - row.lastNotifiedAt.getTime();
-    if (sinceMs < IN_APP_NOTIFICATION_THROTTLE_MS) {
+    if (sinceMs < 0) {
+      logger.warn(
+        {
+          conversation_id: input.conversationId,
+          last_notified_at: row.lastNotifiedAt.toISOString(),
+          since_ms: sinceMs,
+          throttle_ms: IN_APP_NOTIFICATION_THROTTLE_MS,
+        },
+        "in_app_reply_notification: future lastNotifiedAt; bypassing throttle",
+      );
+    } else if (sinceMs < IN_APP_NOTIFICATION_THROTTLE_MS) {
       logger.debug(
         {
           conversation_id: input.conversationId,
@@ -485,10 +498,21 @@ async function tryNotifyCustomerOfReply(input: {
   // reply too, which is wrong — we want the next reply to retry.
   // The rare race where two replies dispatch concurrently before the
   // first stamp lands is acceptable for a notification email.
-  await db
-    .update(conversations)
-    .set({ lastInAppNotificationAt: new Date() })
-    .where(eq(conversations.id, input.conversationId));
+  //
+  // Best effort only: if the email was already accepted by SendGrid but
+  // this DB update fails, do not rethrow and let callers misclassify the
+  // outcome as an email-send failure.
+  try {
+    await db
+      .update(conversations)
+      .set({ lastInAppNotificationAt: sql`now()` })
+      .where(eq(conversations.id, input.conversationId));
+  } catch (err) {
+    logger.error(
+      { err, conversationId: input.conversationId },
+      "Failed to stamp in-app reply notification throttle timestamp after successful email send",
+    );
+  }
 }
 
 export default router;

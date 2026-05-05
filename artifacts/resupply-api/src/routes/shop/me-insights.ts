@@ -26,6 +26,7 @@
 
 import { Router, type IRouter } from "express";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
@@ -52,7 +53,7 @@ interface CustomerInsight {
   detectedAt: string;
   windowStartDate: string;
   windowEndDate: string;
-  /** True once the admin dispatcher has emailed/SMS'd the patient
+  /** True once the admin dispatcher has emailed the patient
    *  about this event. Lets the SPA badge "we already let you know"
    *  vs. "new". */
   notified: boolean;
@@ -81,12 +82,24 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
 
   const db = drizzle(getDbPool());
 
-  // Email-match: the signed-in customer's email_lower vs the patient
-  // row's email (CITEXT-style by lowering both sides). We don't index
-  // on lower(patients.email) today — the per-customer cardinality is
-  // tiny (a single patient row in the typical case) so a seq-scan in
-  // postgres on the patient batch is cheap. Future: add a functional
-  // index if the table grows.
+  // Email-match: look up at most 2 patient rows so we can detect an
+  // ambiguous match (one address shared between two accounts) and bail
+  // rather than mis-routing PHI — same pattern as inbound-parse.ts.
+  const patientRows = await db
+    .select({ patientId: patients.id })
+    .from(patients)
+    .where(sql`lower(${patients.email}) = ${customerEmail.toLowerCase()}`)
+    .limit(2);
+
+  // No match → no data to surface. >1 match → ambiguous email; return
+  // empty rather than risk exposing one patient's data to another.
+  if (patientRows.length !== 1) {
+    res.json({ insights: [] });
+    return;
+  }
+
+  const patientId = patientRows[0].patientId;
+
   const events = await db
     .select({
       id: patientSmartTriggerEvents.id,
@@ -97,10 +110,9 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
       sentAt: patientSmartTriggerEvents.sentAt,
     })
     .from(patientSmartTriggerEvents)
-    .innerJoin(patients, eq(patients.id, patientSmartTriggerEvents.patientId))
     .where(
       and(
-        sql`lower(${patients.email}) = ${customerEmail.toLowerCase()}`,
+        eq(patientSmartTriggerEvents.patientId, patientId),
         isNull(patientSmartTriggerEvents.dismissedAt),
       ),
     )
@@ -223,7 +235,7 @@ const COPY: Record<
     body:
       "Your leak rate has trended up over the last two weeks — usually a sign your cushion seal is wearing out. " +
       "A fresh cushion is a 5-minute swap and typically clears the readings overnight.",
-    cta: { label: "Shop replacement cushions", url: "/shop?cat=cushions" },
+    cta: { label: "Shop replacement cushions", url: "/shop#shop-section-cushion" },
   },
   usage_dropping: {
     headline: "We noticed a few harder nights",
@@ -237,12 +249,12 @@ const COPY: Record<
     body:
       "Both your leak rate and AHI ticked up over the last two weeks — usually the end of a cushion's working life. " +
       "Replacing it takes about 5 minutes and typically clears both readings.",
-    cta: { label: "Order a replacement", url: "/shop?cat=cushions" },
+    cta: { label: "Order a replacement", url: "/shop#shop-section-cushion" },
   },
   humidifier_drop: {
     headline: "Refresh your tubing",
     body: "With seasonal warmth your tubing may be due for a refresh — older tubing collects condensation and reduces airflow.",
-    cta: { label: "Shop tubing", url: "/shop" },
+    cta: { label: "Shop tubing", url: "/shop#shop-section-tubing" },
   },
 };
 

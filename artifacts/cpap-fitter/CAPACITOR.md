@@ -43,7 +43,7 @@ pnpm add @capacitor/core @capacitor/ios @capacitor/android
 pnpm add -D @capacitor/cli
 pnpm add @capacitor-community/biometric-auth
 
-# 2. Build the SPA so dist/ is up to date.
+# 2. Build the SPA so dist/public/ is up to date.
 pnpm build
 
 # 3. Add the iOS platform project. Generates /ios/.
@@ -52,7 +52,7 @@ pnpm cap add ios
 # 4. (Optional) Add the Android platform project. Generates /android/.
 pnpm cap add android
 
-# 5. Sync the dist/ output into both platforms.
+# 5. Sync the dist/public/ output into both platforms.
 pnpm cap sync
 
 # 6. Open Xcode (or Android Studio) and run.
