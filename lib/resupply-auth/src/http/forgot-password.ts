@@ -13,6 +13,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { normalizeEmail } from "../email";
+import { checkLoginRateLimit, type RateLimitConfig } from "../rate-limit";
 import { issueToken } from "../token";
 
 import {
@@ -26,14 +27,10 @@ const ForgotBody = z.object({
 });
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
-
-// Separate, more generous limits than sign-in. We rate-limit by IP
-// only (not per-email) so the limit itself cannot be used to enumerate
-// valid accounts — it applies uniformly to every caller from the same
-// IP regardless of which email they submit.
-const FORGOT_RATE_LIMIT = {
+const FORGOT_RATE_LIMIT: RateLimitConfig = {
+  maxPerEmail: 3,
   maxPerIp: 15,
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 60 * 60 * 1000, // 1 hour
 };
 
 interface MakeForgotPasswordHandlerOptions {
@@ -102,8 +99,25 @@ export function makeForgotPasswordHandler(
       return;
     }
 
-    // Record every request (regardless of outcome) against the
-    // rate-limit counter so repeat callers accumulate toward the cap.
+    // Rate-limit before the DB lookup so timing differences between
+    // "email exists" and "email unknown" paths can't be observed.
+    const rl = await checkLoginRateLimit(
+      deps.repo,
+      { emailLower, ip },
+      FORGOT_RATE_LIMIT,
+    );
+    if (!rl.allowed) {
+      res.setHeader("Retry-After", String(rl.retryAfterSeconds));
+      // Return 429 — the caller already knows the email (they typed it),
+      // so this doesn't enumerate account existence.
+      res.status(429).json({
+        error: "rate_limited",
+        message: "Too many password-reset requests. Please wait before trying again.",
+        retryAfterSeconds: rl.retryAfterSeconds,
+      });
+      return;
+    }
+    // Record attempt so repeated calls accumulate against the limit.
     void deps.repo.recordLoginAttempt({ emailLower, ip, success: false });
 
     const user = await deps.repo.findUserByEmail(emailLower);
@@ -139,19 +153,25 @@ export function makeForgotPasswordHandler(
         html: rendered.html,
         text: rendered.text,
       });
-    } catch {
-      // The configured EmailSender is responsible for logging
-      // delivery failures (see artifacts/*/src/lib/auth-deps.ts).
-      // Swallow here so a SendGrid blip doesn't fail the
-      // forgot-password endpoint — the user has already been
-      // told their request was accepted.
+    } catch (emailErr) {
+      // Log at warn so SendGrid misconfigurations surface in monitoring.
+      // Don't include the email address — use the user id only.
+      void deps.audit({
+        action: "auth.password_reset_email_failed",
+        adminUserId: user.id,
+        ip,
+        metadata: {
+          error:
+            emailErr instanceof Error ? emailErr.message : String(emailErr),
+        },
+      });
     }
 
     void deps.audit({
       action: "auth.password_reset_requested",
       adminEmail: user.emailLower,
       adminUserId: user.id,
-      ip: req.ip ?? null,
+      ip,
     });
 
     res.status(200).json({ ok: true });

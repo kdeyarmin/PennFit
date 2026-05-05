@@ -149,6 +149,16 @@ router.post(
     } else {
       // Validate the user owns the order they're trying to reorder.
       const db = drizzle(getDbPool());
+      // requireSignedIn is upstream but we guard explicitly here so a
+      // future weakening of that middleware can't silently pass
+      // undefined to Drizzle's eq() — which matches IS NULL rows and
+      // would expose every guest-checkout order.
+      const customerId = req.userCustomerId;
+      if (!customerId) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+
       const owned = await db
         .select({ stripeSessionId: shopOrders.stripeSessionId })
         .from(shopOrders)
@@ -188,24 +198,34 @@ router.post(
         return;
       }
       const li = oldSession.line_items?.data ?? [];
-      basket = li
-        .map((line) => ({
-          priceId:
-            typeof line.price === "string"
-              ? line.price
-              : (line.price?.id ?? null),
-          quantity: line.quantity ?? 1,
-          mode: "one_time" as const,
-        }))
-        .filter(
-          (
-            b,
-          ): b is {
-            priceId: string;
-            quantity: number;
-            mode: "one_time";
-          } => b.priceId !== null,
-        );
+      const unavailableLineItems: string[] = [];
+      const mapped = li.map((line, index) => {
+        const priceId =
+          typeof line.price === "string"
+            ? line.price
+            : (line.price?.id ?? null);
+        if (priceId === null) {
+          unavailableLineItems.push(
+            typeof line.id === "string" && line.id.length > 0
+              ? line.id
+              : `index:${index}`,
+          );
+        }
+        return { priceId, quantity: line.quantity ?? 1, mode: "one_time" as const };
+      });
+      basket = mapped.filter(
+        (b): b is { priceId: string; quantity: number; mode: "one_time" } =>
+          b.priceId !== null,
+      );
+      if (unavailableLineItems.length > 0) {
+        res.status(409).json({
+          error: "price_unavailable",
+          message:
+            "One or more items from the original order are no longer available and cannot be reordered.",
+          unavailableLineItems,
+        });
+        return;
+      }
       if (basket.length === 0) {
         res.status(409).json({ error: "reorder_basket_empty" });
         return;

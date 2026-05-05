@@ -352,4 +352,82 @@ describe("withIdempotency middleware", () => {
     expect(r.status).toBe(500);
     expect(r.body.error).toBe("idempotency_misconfigured");
   });
+
+  it("replays the stored response when handler responds via res.send() with a JSON string", async () => {
+    // Covers the patchedSend capture path: handlers that call res.send()
+    // directly (e.g. with a pre-serialised JSON string) must also be
+    // captured so a retry does not re-execute the handler.
+    // Note: res.send(str) makes Express set Content-Type: text/html, so
+    // supertest parses the original response as text. The stored body is
+    // the JSON.parsed object. The replay comes back via res.json() with
+    // Content-Type: application/json so supertest parses it correctly.
+    let counter = 0;
+    const app = makeApp((_req, res) => {
+      counter += 1;
+      res
+        .status(201)
+        .send(JSON.stringify({ id: `patient_send_${counter}`, source: "send" }));
+    });
+    const key = "abcdef-12345-send-path";
+
+    const a = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ v: 1 });
+    expect(a.status).toBe(201);
+    // Express sets text/html for res.send(str); check raw text, not parsed body.
+    expect(a.text).toContain("patient_send_1");
+
+    // Flush the finish listener so the persistence insert runs.
+    await new Promise((r) => setImmediate(r));
+    expect(store).toHaveLength(1);
+    // The middleware JSON.parses the string body before storing it.
+    expect(store[0].responseBody).toEqual({
+      id: "patient_send_1",
+      source: "send",
+    });
+
+    const b = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ v: 1 });
+    expect(b.status).toBe(201);
+    // Replay goes through res.json(), so Content-Type: application/json
+    // and the body is the stored parsed object.
+    expect(b.body).toEqual({ id: "patient_send_1", source: "send" });
+    // Handler must NOT have been invoked a second time.
+    expect(counter).toBe(1);
+  });
+
+  it("replays the stored response when handler responds via res.end() (empty body)", async () => {
+    // Covers the patchedEnd capture path: handlers that call res.end()
+    // without going through res.json() or res.send() (e.g. 204 No-Content
+    // patterns) must still be captured so retries are idempotent.
+    let counter = 0;
+    const app = makeApp((_req, res) => {
+      counter += 1;
+      res.status(200).end();
+    });
+    const key = "abcdef-12345-end-path";
+
+    const a = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({});
+    expect(a.status).toBe(200);
+
+    await new Promise((r) => setImmediate(r));
+    expect(store).toHaveLength(1);
+    // res.end() with no prior capture stores null as the body.
+    expect(store[0].responseBody).toBeNull();
+    expect(store[0].responseStatus).toBe(200);
+
+    const b = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({});
+    expect(b.status).toBe(200);
+    // Handler must NOT have been invoked a second time.
+    expect(counter).toBe(1);
+  });
 });
