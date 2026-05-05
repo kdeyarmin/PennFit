@@ -2,15 +2,23 @@
 // badges in the admin SPA (Phase 16).
 //
 // One round-trip returns:
-//   * awaitingReplyConversations — in_app threads where the customer
-//     has posted and a CSR owes them a reply (status = awaiting_admin).
+//   * awaitingReplyConversations — conversations across ALL channels
+//     (sms, voice, email, in_app) where the customer has posted and a
+//     CSR owes them a reply (status = awaiting_admin).  The
+//     /admin/conversations inbox is cross-channel, so limiting to
+//     in_app would silently under-report the queue.
 //   * pendingReturns — shop_returns in lifecycle states that block on
 //     admin action (`requested` waiting for approve/reject;
-//     `shipped_back` waiting for receive).
+//     `shipped_back` waiting for receive; `received` waiting for
+//     refund/replace resolution).
 //   * pendingReviews — customer-submitted product reviews awaiting
 //     moderation (status = pending).
 //   * overdueFollowups — open shop_customer_followups OR
 //     patient_followups whose due_at is in the past (Phase 18 + 20).
+//
+// All three counts land in a single db.execute() call (one round-trip)
+// to keep the endpoint as cheap as possible for a query that fires on
+// every admin nav render.
 //
 // Pure SQL counts. No PHI. Same boot-time-safe pattern as
 // /admin/ops-status — fast enough for the nav to call on every page
@@ -22,41 +30,40 @@
 // so we keep the surface tiny and the SQL fast.
 
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
-  conversations,
   getDbPool,
   patientFollowups,
   shopCustomerFollowups,
-  shopReturns,
-  shopReviews,
 } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
+interface CountsRow {
+  awaiting_reply_conversations: number;
+  pending_returns: number;
+  pending_reviews: number;
+}
+
 router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
   const db = drizzle(getDbPool());
 
-  const [awaitingReplyRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(conversations)
-    .where(
-      sql`${conversations.channel} = 'in_app' AND ${conversations.status} = 'awaiting_admin'`,
-    );
+  // Single round-trip: three scalar subqueries in one SELECT.
+  const result = await db.execute(sql`
+    SELECT
+      (SELECT count(*)::int FROM conversations
+        WHERE status = 'awaiting_admin') AS awaiting_reply_conversations,
+      (SELECT count(*)::int FROM shop_returns
+        WHERE status IN ('requested','approved','shipped_back','received')) AS pending_returns,
+      (SELECT count(*)::int FROM shop_reviews
+        WHERE status = 'pending') AS pending_reviews
+  `);
 
-  const [pendingReturnsRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(shopReturns)
-    .where(sql`${shopReturns.status} IN ('requested','shipped_back')`);
-
-  const [pendingReviewsRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(shopReviews)
-    .where(eq(shopReviews.status, "pending"));
+  const row = result.rows[0] as CountsRow | undefined;
 
   // Overdue followups across BOTH shop_customer and patient surfaces.
   // Each side uses its own partial index (open AND due) so the count
@@ -77,9 +84,9 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
   ]);
 
   res.json({
-    awaitingReplyConversations: awaitingReplyRow?.count ?? 0,
-    pendingReturns: pendingReturnsRow?.count ?? 0,
-    pendingReviews: pendingReviewsRow?.count ?? 0,
+    awaitingReplyConversations: row?.awaiting_reply_conversations ?? 0,
+    pendingReturns: row?.pending_returns ?? 0,
+    pendingReviews: row?.pending_reviews ?? 0,
     overdueFollowups:
       (overdueShopRow?.count ?? 0) + (overduePatientRow?.count ?? 0),
     serverTime: new Date().toISOString(),

@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
+import { SQL } from "drizzle-orm";
 
 import {
   makeRequireAdminMock,
@@ -34,7 +35,7 @@ vi.mock("../../middlewares/requireAdmin", () =>
 //   2. Email-resolution join: SELECT email, displayName, prefs,
 //      lastNotifiedAt FROM conversations JOIN shop_customers …
 //   3. Throttle stamp (post-send only): UPDATE conversations SET
-//      last_in_app_notification_at = NOW() …
+//      last_in_app_notification_at = now() …  (DB-side expression)
 // All three run through the fluent stub; the test pushes select
 // results in order and inspects updateCalls for throttle stamping.
 const selectQueue: unknown[][] = [];
@@ -353,7 +354,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(res.status).toBe(201);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0]?.lastInAppNotificationAt).toBeInstanceOf(Date);
+    expect(updateCalls[0]?.lastInAppNotificationAt).toBeInstanceOf(SQL);
   });
 
   it("treats notification email failure as best-effort (still 201)", async () => {
