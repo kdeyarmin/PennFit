@@ -52,6 +52,39 @@ export async function runReviewRequestDispatcher(): Promise<DispatcherResult> {
   );
 }
 
+/**
+ * Phase G.11 — Rx-renewal concierge (Phase B.2 / SMS variant Phase G.3).
+ * Channel-parameterized: ops console renders one button per channel.
+ */
+export async function runRxRenewalDispatcher(
+  channel: "email" | "sms",
+): Promise<DispatcherResult> {
+  return await postDispatcher(
+    `/resupply-api/admin/prescriptions/send-renewal-due?channel=${channel}`,
+  );
+}
+
+/**
+ * Phase G.11 — smart-trigger nudge (Phase E.2 / SMS variant Phase G.7).
+ * Two endpoints, two channels:
+ *   * /admin/smart-triggers/evaluate scans therapy data for new triggers.
+ *   * /admin/smart-triggers/send-due dispatches the nudge for unsent ones.
+ * The ops console exposes both with separate buttons so an operator can
+ * either re-evaluate (cheap, idempotent on a partial-unique index) or
+ * send-due in isolation.
+ */
+export async function runSmartTriggerEvaluator(): Promise<DispatcherResult> {
+  return await postDispatcher("/resupply-api/admin/smart-triggers/evaluate");
+}
+
+export async function runSmartTriggerDispatcher(
+  channel: "email" | "sms",
+): Promise<DispatcherResult> {
+  return await postDispatcher(
+    `/resupply-api/admin/smart-triggers/send-due?channel=${channel}`,
+  );
+}
+
 async function postDispatcher(url: string): Promise<DispatcherResult> {
   const res = await fetch(url, {
     method: "POST",
