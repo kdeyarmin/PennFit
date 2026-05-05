@@ -316,6 +316,13 @@
       "when": 1811577600000,
       "tag": "0042_patient_onboarding_journeys",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1811664000000,
+      "tag": "0043_prescriptions_renewal_request",
+      "breakpoints": true
     }
   ]
 }
