@@ -5,6 +5,7 @@
 //   * Empty array when no email is on the session (no patient match
 //     possible).
 //   * Empty array when the email matches no patient row.
+//   * Empty array when two patient rows share the same email (ambiguous).
 //   * Returns projected insights with kind-specific copy + CTA.
 //   * Strips dismissed events.
 //   * `notified: true` reflects sent_at presence.
@@ -107,11 +108,29 @@ describe("GET /shop/me/insights", () => {
     expect(res.body.insights).toEqual([]);
   });
 
+  it("returns empty array when two patient rows share the same email (ambiguous)", async () => {
+    mockSignedIn.current = {
+      customerId: USER_ID,
+      email: "shared@example.com",
+    };
+    // Simulate two patient rows with the same email.
+    selectQueue.push([
+      { patientId: "patient_a" },
+      { patientId: "patient_b" },
+    ]);
+    const res = await request(makeApp()).get("/shop/me/insights");
+    expect(res.status).toBe(200);
+    expect(res.body.insights).toEqual([]);
+  });
+
   it("projects active triggers with kind-specific copy + CTA", async () => {
     mockSignedIn.current = {
       customerId: USER_ID,
       email: "alice@example.com",
     };
+    // First select: patient lookup returns one row.
+    selectQueue.push([{ patientId: "patient_alice" }]);
+    // Second select: events for that patient.
     selectQueue.push([
       {
         id: "evt_leak",
@@ -139,7 +158,7 @@ describe("GET /shop/me/insights", () => {
     expect(leak.kind).toBe("leak_rising");
     expect(leak.notified).toBe(true);
     expect(leak.headline).toContain("seal");
-    expect(leak.cta.url).toBe("/shop?cat=cushions");
+    expect(leak.cta.url).toBe("/shop#shop-section-cushion");
     expect(leak.detectedAt).toBe("2026-04-30T12:00:00.000Z");
 
     const usage = res.body.insights[1];
@@ -153,6 +172,9 @@ describe("GET /shop/me/insights", () => {
       customerId: USER_ID,
       email: "alice@example.com",
     };
+    // First select: patient lookup returns one row.
+    selectQueue.push([{ patientId: "patient_alice" }]);
+    // Second select: events for that patient.
     selectQueue.push([
       {
         id: "evt_leak",
@@ -171,6 +193,7 @@ describe("GET /shop/me/insights", () => {
 });
 
 const DISMISS_ID = "11111111-2222-3333-4444-555555555555";
+const PATIENT_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
   it("401s without sign-in", async () => {
@@ -204,6 +227,8 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
       customerId: USER_ID,
       email: "alice@example.com",
     };
+    // Patient lookup resolves to exactly one row (unambiguous).
+    selectQueue.push([{ id: PATIENT_ID }]);
     // UPDATE … RETURNING [] → not-our-row OR already-dismissed; we
     // collapse both into a 404 so an attacker can't enumerate IDs.
     updateReturnQueue.push([]);
@@ -223,6 +248,8 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
       customerId: USER_ID,
       email: "Alice@Example.com",
     };
+    // Patient lookup resolves to exactly one row (unambiguous).
+    selectQueue.push([{ id: PATIENT_ID }]);
     updateReturnQueue.push([{ id: DISMISS_ID }]);
     const res = await request(makeApp()).post(
       `/shop/me/insights/${DISMISS_ID}/dismiss`,
@@ -232,5 +259,21 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
     expect(updateSets).toHaveLength(1);
     // Email is normalized to lowercase before stamping audit.
     expect(updateSets[0]?.dismissedByEmail).toBe("alice@example.com");
+  });
+
+  it("404s when the email matches more than one patient (ambiguous)", async () => {
+    mockSignedIn.current = {
+      customerId: USER_ID,
+      email: "shared@example.com",
+    };
+    // Two patients share the same email → ambiguous → bail without
+    // attempting the UPDATE.
+    selectQueue.push([{ id: "patient_1" }, { id: "patient_2" }]);
+    const res = await request(makeApp()).post(
+      `/shop/me/insights/${DISMISS_ID}/dismiss`,
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("insight_not_found");
+    expect(updateSets).toHaveLength(0);
   });
 });

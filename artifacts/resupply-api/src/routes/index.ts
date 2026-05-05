@@ -21,6 +21,7 @@ import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
 import patientOnboardingRouter from "./admin/patient-onboarding.js";
+import patientPortalInviteRouter from "./admin/patient-portal-invite.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
@@ -40,6 +41,7 @@ import patientsRouter from "./patients/index.js";
 import rulesRouter from "./rules/index.js";
 import smsRouter from "./sms/index.js";
 import shopRouter from "./shop/index.js";
+import faxRouter from "./fax/index.js";
 import voiceRouter from "./voice/index.js";
 
 const router: IRouter = Router();
@@ -51,11 +53,14 @@ router.use(meRouter);
 // the admin-gated routes so the literal /shop/* paths can never be
 // shadowed by a future param route.
 router.use(shopRouter);
-// Voice + SMS + Email routes are mounted unconditionally; each handler
-// does its own feature-flag check so a missing env var becomes a clean
-// 503 (or TwiML 503 for vendor-only paths) rather than a generic 404.
+// Voice + SMS + Fax + Email routes are mounted unconditionally; each
+// handler does its own feature-flag check so a missing env var becomes
+// a clean 503 (or TwiML 503 for vendor-only paths) rather than a 404.
 router.use(voiceRouter);
 router.use(smsRouter);
+// /fax/document/:token  — signed cover-letter PDF fetched by Twilio
+// /fax/status-callback  — Twilio fax delivery lifecycle webhook
+router.use(faxRouter);
 router.use(emailRouter);
 // Admin-console READ endpoints. Each handler is gated by
 // requireAdmin and surfaces only PHI the dashboard needs to
@@ -86,6 +91,11 @@ router.use(shopProductQuestionsAdminRouter);
 // 40-70% of patients in the first 90 days; this surface fires the
 // scheduled day-1/7/30/90 nudges that reverse that.
 router.use(patientOnboardingRouter);
+// /admin/patients/:id/portal-invite — CSR-driven patient portal
+// invitation. Lets agents send a "set up your portal" email to a
+// patient, optionally filling in required onboarding fields at the
+// same time. Resend + revoke follow the same pattern as team invites.
+router.use(patientPortalInviteRouter);
 // /admin/prescriptions/send-renewal-due — prescription concierge
 // dispatcher (Phase B.2 / feature #7). Scans active prescriptions
 // expiring within 30 days and emails the patient to coordinate
@@ -106,11 +116,10 @@ router.use(patientTherapySyncRouter);
 // runs the rule library, queues + sends nudges that convert at 3-5x
 // the rate of calendar-only reminders.
 router.use(smartTriggersRouter);
-// /admin/physician-fax-outreach — record + query physician-fax
-// Rx-renewal requests (Phase G.6). Provider-agnostic data path;
-// no fax vendor ships in the same PR — the row is created with
-// status='pending' until a vendor adapter is wired and the
-// FAX_VENDOR / FAX_API_KEY / FAX_FROM_NUMBER triple is set.
+// /admin/physician-fax-outreach — record + dispatch physician-fax
+// Rx-renewal requests (Phase G.6). Dispatches via Twilio when
+// TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FAX_FROM_NUMBER
+// are set; otherwise the row is created with status='pending'.
 router.use(physicianFaxOutreachRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is

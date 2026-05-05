@@ -121,6 +121,7 @@ describe("GET /admin/ops-status", () => {
       sendgrid: false,
       twilioVoice: false,
       twilioSms: false,
+      twilioFax: false,
       stripe: false,
       objectStorage: false,
     });
@@ -155,16 +156,15 @@ describe("GET /admin/ops-status", () => {
       reviewRequest: { eligibleNow: 5 },
       rxRenewal: { eligibleNow: 7 },
       smartTrigger: { eligibleNow: 11 },
+      pendingFax: { eligibleNow: 0 },
     });
   });
 
-  it("returns the Phase G.16 queues block with faxOutreachPending count", async () => {
+  it("returns the Phase G.16 fax-outreach pending count under dispatchers.pendingFax", async () => {
     mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
     queueCounts([0, 0, 0, 0, 4, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
-    expect(res.body.queues).toEqual({
-      faxOutreachPending: { count: 4 },
-    });
+    expect(res.body.dispatchers.pendingFax).toEqual({ eligibleNow: 4 });
   });
 
   it("returns team counts in the correct shape", async () => {

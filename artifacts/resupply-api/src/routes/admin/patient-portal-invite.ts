@@ -1,0 +1,451 @@
+// /admin/patients/:id/portal-invite — invite a patient to create their
+// self-service portal account.
+//
+// Endpoints (requireAdmin — agents/CSRs can send invites):
+//   POST   /admin/patients/:id/portal-invite          — send invite + optionally
+//                                                       update required onboarding
+//                                                       fields on the patient row
+//   POST   /admin/patients/:id/portal-invite/resend   — reissue token + resend email
+//   DELETE /admin/patients/:id/portal-invite          — revoke portal access
+//
+// Invite flow:
+//   1. CSR opens the patient Portal tab, fills in any missing required
+//      fields (email, phone, address, insurance payer, channel pref),
+//      and clicks "Send invite".
+//   2. We upsert an auth.users row (role=customer, status=invited) and
+//      issue a 7-day password_reset token.
+//   3. A patient-specific "Set up your portal" email is sent. If
+//      SendGrid isn't configured, emailSent=false and inviteLink is
+//      returned for out-of-band delivery.
+//   4. patients.portal_auth_user_id is linked; portal_invited_at /
+//      portal_invited_by are stamped.
+//
+// Portal status (returned on GET /patients/:id) is computed from the
+// linked auth.users row — no separate status column to keep in sync.
+
+import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { z } from "zod";
+
+import { logAudit } from "@workspace/resupply-audit";
+import { authUsers, getDbPool, patients } from "@workspace/resupply-db";
+import {
+  issueToken,
+  renderPatientPortalInviteEmail,
+  revokeTeamMember,
+} from "@workspace/resupply-auth";
+
+import { getAuthDeps } from "../../lib/auth-deps";
+import { logger } from "../../lib/logger";
+import { requireAdmin } from "../../middlewares/requireAdmin";
+
+const router: IRouter = Router();
+
+const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const patientIdParam = z.string().uuid();
+
+const addressSchema = z
+  .object({
+    line1: z.string().trim().min(1).max(200),
+    line2: z.string().trim().max(200).optional(),
+    city: z.string().trim().min(1).max(100),
+    state: z.string().trim().min(2).max(50),
+    postalCode: z.string().trim().min(1).max(20),
+    country: z.string().trim().min(2).max(60).default("US"),
+  })
+  .strict();
+
+// Required onboarding fields the CSR can provide or update when
+// sending the invite. email is required if the patient has none on
+// file. All other fields are optional but filled in here so the
+// patient record is complete before the patient logs in.
+const inviteBody = z
+  .object({
+    // Portal login email. Required if the patient row has no email.
+    // If omitted, the patient's existing email is used.
+    email: z.string().trim().toLowerCase().email().optional(),
+
+    // Onboarding fields the CSR can fill in / update at invite time.
+    phoneE164: z
+      .string()
+      .trim()
+      .regex(/^\+1\d{10}$/, "Must be E.164 format starting with +1, e.g. +12155551234")
+      .optional()
+      .nullable(),
+    address: addressSchema.optional().nullable(),
+    insurancePayer: z.string().trim().min(1).max(200).optional().nullable(),
+    channelPreference: z
+      .enum(["sms", "email", "voice"])
+      .optional()
+      .nullable(),
+  })
+  .strict();
+
+router.post(
+  "/admin/patients/:id/portal-invite",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = patientIdParam.safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    const patientId = idCheck.data;
+
+    const bodyParsed = inviteBody.safeParse(req.body ?? {});
+    if (!bodyParsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: bodyParsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const db = drizzle(getDbPool());
+    const patientRows = await db
+      .select({
+        id: patients.id,
+        email: patients.email,
+        legalFirstName: patients.legalFirstName,
+        portalAuthUserId: patients.portalAuthUserId,
+      })
+      .from(patients)
+      .where(eq(patients.id, patientId))
+      .limit(1);
+
+    const patient = patientRows[0];
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+
+    // Resolve the email to use for the portal account.
+    const emailLower = bodyParsed.data.email ?? patient.email?.toLowerCase();
+    if (!emailLower) {
+      res.status(422).json({
+        error: "email_required",
+        message:
+          "This patient has no email address on file. Provide one in the invite form.",
+      });
+      return;
+    }
+
+    // If there is already an active portal account (email_verified_at
+    // set) block re-invite — the CSR should use Delete+Resend flow.
+    if (patient.portalAuthUserId) {
+      const authRow = await db
+        .select({ verified: authUsers.emailVerifiedAt })
+        .from(authUsers)
+        .where(eq(authUsers.id, patient.portalAuthUserId))
+        .limit(1);
+      if (authRow[0]?.verified) {
+        res.status(409).json({
+          error: "already_active",
+          message:
+            "This patient already has an active portal account. Revoke first if you need to re-invite.",
+        });
+        return;
+      }
+    }
+
+    // Apply any onboarding field updates the CSR provided.
+    const fieldUpdates: Record<string, unknown> = { updatedAt: new Date() };
+    if (bodyParsed.data.email) fieldUpdates.email = bodyParsed.data.email;
+    if ("phoneE164" in bodyParsed.data)
+      fieldUpdates.phoneE164 = bodyParsed.data.phoneE164;
+    if ("address" in bodyParsed.data)
+      fieldUpdates.address = bodyParsed.data.address;
+    if ("insurancePayer" in bodyParsed.data)
+      fieldUpdates.insurancePayer = bodyParsed.data.insurancePayer;
+    if ("channelPreference" in bodyParsed.data)
+      fieldUpdates.channelPreference = bodyParsed.data.channelPreference;
+
+    // Upsert auth.users (role=customer). Conflict on email_lower →
+    // keep existing row (patient may have previously signed up in the
+    // shop). We never downgrade an admin/agent row to customer.
+    const pool = getDbPool();
+    const upserted = await pool.query<{ id: string }>(
+      `INSERT INTO auth.users (email_lower, role, status)
+       VALUES ($1, 'customer', 'invited')
+       ON CONFLICT (email_lower) DO UPDATE
+         SET status = CASE WHEN auth.users.status = 'revoked' THEN 'invited'
+                           ELSE auth.users.status END,
+             updated_at = NOW()
+       RETURNING id`,
+      [emailLower],
+    );
+    const authUserId = upserted.rows[0]!.id;
+
+    // Issue a 7-day password_reset token.
+    const token = issueToken();
+    const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
+    await pool.query(
+      `INSERT INTO auth.email_tokens (token_hash, user_id, purpose, expires_at)
+       VALUES ($1, $2, 'password_reset', $3)`,
+      [token.hash, authUserId, expiresAt],
+    );
+
+    const deps = getAuthDeps();
+    const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
+    const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
+
+    const rendered = renderPatientPortalInviteEmail(
+      { productName: "PennPaps", publicBaseUrl: baseUrl },
+      token.raw,
+      patient.legalFirstName,
+    );
+
+    let emailSent = false;
+    try {
+      await deps.email({
+        to: emailLower,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+      });
+      emailSent = true;
+    } catch (err) {
+      logger.warn(
+        { err, patient_id: patientId },
+        "patient portal invite email send failed",
+      );
+    }
+
+    // Link the auth row and stamp invite metadata on the patient row,
+    // plus any onboarding field updates the CSR provided.
+    const now = new Date();
+    await db
+      .update(patients)
+      .set({
+        ...fieldUpdates,
+        portalAuthUserId: authUserId,
+        portalInvitedAt: now,
+        portalInvitedBy: req.adminUserId ?? null,
+      })
+      .where(eq(patients.id, patientId));
+
+    await logAudit({
+      action: "patient.portal.invite_issued",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patients",
+      targetId: patientId,
+      metadata: {
+        auth_user_id: authUserId,
+        email_sent: emailSent,
+        expires_at: expiresAt.toISOString(),
+        fields_updated: Object.keys(fieldUpdates).filter(
+          (k) => k !== "updatedAt",
+        ),
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.portal.invite_issued audit write failed");
+    });
+
+    res.status(201).json({
+      portalAuthUserId: authUserId,
+      portalStatus: "pending",
+      emailSent,
+      inviteLink: emailSent ? null : inviteLink,
+    });
+  },
+);
+
+router.post(
+  "/admin/patients/:id/portal-invite/resend",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = patientIdParam.safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    const patientId = idCheck.data;
+
+    const db = drizzle(getDbPool());
+    const patientRows = await db
+      .select({
+        id: patients.id,
+        email: patients.email,
+        legalFirstName: patients.legalFirstName,
+        portalAuthUserId: patients.portalAuthUserId,
+      })
+      .from(patients)
+      .where(eq(patients.id, patientId))
+      .limit(1);
+
+    const patient = patientRows[0];
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    if (!patient.portalAuthUserId) {
+      res.status(409).json({
+        error: "not_invited",
+        message: "No portal invite exists for this patient. Send one first.",
+      });
+      return;
+    }
+
+    const authRow = await db
+      .select({
+        id: authUsers.id,
+        emailLower: authUsers.emailLower,
+        verified: authUsers.emailVerifiedAt,
+      })
+      .from(authUsers)
+      .where(eq(authUsers.id, patient.portalAuthUserId))
+      .limit(1);
+    const auth = authRow[0];
+    if (!auth) {
+      res.status(500).json({ error: "auth_row_missing" });
+      return;
+    }
+    if (auth.verified) {
+      res.status(409).json({
+        error: "already_active",
+        message:
+          "This patient already has an active portal account. Resend is only for pending invites.",
+      });
+      return;
+    }
+
+    const pool = getDbPool();
+    const token = issueToken();
+    const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
+    await pool.query(
+      `INSERT INTO auth.email_tokens (token_hash, user_id, purpose, expires_at)
+       VALUES ($1, $2, 'password_reset', $3)`,
+      [token.hash, auth.id, expiresAt],
+    );
+
+    const deps = getAuthDeps();
+    const baseUrl = deps.publicBaseUrl.replace(/\/$/, "");
+    const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
+
+    const rendered = renderPatientPortalInviteEmail(
+      { productName: "PennPaps", publicBaseUrl: baseUrl },
+      token.raw,
+      patient.legalFirstName,
+    );
+
+    let emailSent = false;
+    try {
+      await deps.email({
+        to: auth.emailLower,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+      });
+      emailSent = true;
+    } catch (err) {
+      logger.warn(
+        { err, patient_id: patientId },
+        "patient portal invite resend email failed",
+      );
+    }
+
+    const now = new Date();
+    await db
+      .update(patients)
+      .set({
+        portalInvitedAt: now,
+        portalInvitedBy: req.adminUserId ?? null,
+        updatedAt: now,
+      })
+      .where(eq(patients.id, patientId));
+
+    await logAudit({
+      action: "patient.portal.invite_resent",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patients",
+      targetId: patientId,
+      metadata: {
+        auth_user_id: auth.id,
+        email_sent: emailSent,
+        expires_at: expiresAt.toISOString(),
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.portal.invite_resent audit write failed");
+    });
+
+    res.json({
+      portalStatus: "pending",
+      emailSent,
+      inviteLink: emailSent ? null : inviteLink,
+    });
+  },
+);
+
+router.delete(
+  "/admin/patients/:id/portal-invite",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = patientIdParam.safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    const patientId = idCheck.data;
+
+    const db = drizzle(getDbPool());
+    const patientRows = await db
+      .select({
+        id: patients.id,
+        portalAuthUserId: patients.portalAuthUserId,
+      })
+      .from(patients)
+      .where(eq(patients.id, patientId))
+      .limit(1);
+
+    const patient = patientRows[0];
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    if (!patient.portalAuthUserId) {
+      res.status(200).json({ portalStatus: "not_invited", alreadyRevoked: true });
+      return;
+    }
+
+    await revokeTeamMember(getDbPool(), patient.portalAuthUserId);
+
+    const now = new Date();
+    await db
+      .update(patients)
+      .set({
+        portalAuthUserId: null,
+        portalInvitedAt: null,
+        portalInvitedBy: null,
+        updatedAt: now,
+      })
+      .where(eq(patients.id, patientId));
+
+    await logAudit({
+      action: "patient.portal.invite_revoked",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patients",
+      targetId: patientId,
+      metadata: { revoked_auth_user_id: patient.portalAuthUserId },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.portal.invite_revoked audit write failed");
+    });
+
+    res.json({ portalStatus: "not_invited" });
+  },
+);
+
+export default router;

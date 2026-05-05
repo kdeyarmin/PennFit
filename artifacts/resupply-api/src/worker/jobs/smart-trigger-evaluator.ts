@@ -40,7 +40,7 @@ import { runSmartTriggerEvaluator } from "../../lib/smart-triggers/evaluator";
 
 const EVALUATE_JOB = "smart-triggers.evaluate";
 /** Daily 03:23 UTC. Picked off the hour to avoid colliding with the
- *  existing reminders cron (hourly :00) and the attachment-sweep
+ *  existing reminders cron (hourly :07) and the attachment-sweep
  *  cron (Sunday 03:13). Quiet-hours window in every Penn region. */
 const EVALUATE_CRON = "23 3 * * *";
 
@@ -69,7 +69,9 @@ export async function registerSmartTriggerEvaluatorJob(
       // broken evaluator from the only surface that proves the
       // schedule fired.
       logger.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        err instanceof Error
+          ? { err }
+          : { err: new Error("Non-Error thrown"), thrownType: typeof err },
         "smart-triggers.evaluate: run failed",
       );
       throw err;
