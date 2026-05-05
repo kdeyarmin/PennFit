@@ -75,11 +75,13 @@ export function useBiometricLockPreference(): UseBiometricLockPreference {
       } else {
         window.localStorage.removeItem(STORAGE_KEY);
       }
-      // Notify all hook instances in this tab only after a successful
-      // storage write. If localStorage is blocked (private browsing),
-      // we leave the in-memory state unchanged so it stays consistent
-      // with what will be read on the next page load.
-      listeners.forEach((cb) => cb(next));
+      // Update this instance directly, then propagate to any other hook
+      // instances in this tab. The direct call ensures state is current
+      // even if this component hasn't yet mounted its listener via useEffect.
+      setEnabledState(next);
+      listeners.forEach((cb) => {
+        if (cb !== setEnabledState) cb(next);
+      });
     } catch {
       // ignore — private-browsing modes block localStorage
     }

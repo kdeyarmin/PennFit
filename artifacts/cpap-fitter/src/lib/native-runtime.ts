@@ -68,7 +68,7 @@ type BiometricPlugin = {
 };
 
 async function loadBiometricPlugin(): Promise<BiometricPlugin | null> {
-  return (import(BIOMETRIC_PLUGIN).catch(() => null)) as Promise<BiometricPlugin | null>;
+  return import(BIOMETRIC_PLUGIN).catch(() => null) as BiometricPlugin | null;
 }
 
 export async function checkBiometricAvailability(): Promise<boolean> {
