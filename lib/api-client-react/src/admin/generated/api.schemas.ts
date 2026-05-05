@@ -930,6 +930,10 @@ truncated to 80 characters. PHI.
   conversations: PatientConversationSummary[];
   /** Up to 10 most recent. */
   fulfillments: PatientFulfillmentSummary[];
+  /** Computed from portal_auth_user_id + auth.users.email_verified_at. */
+  portalStatus: "not_invited" | "pending" | "active";
+  /** ISO timestamp of the most recent portal invite. */
+  portalInvitedAt?: string | null;
 }
 
 export type ConversationListItemChannel =

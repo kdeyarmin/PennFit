@@ -21,6 +21,7 @@ import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
 import patientOnboardingRouter from "./admin/patient-onboarding.js";
+import patientPortalInviteRouter from "./admin/patient-portal-invite.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
@@ -90,6 +91,11 @@ router.use(shopProductQuestionsAdminRouter);
 // 40-70% of patients in the first 90 days; this surface fires the
 // scheduled day-1/7/30/90 nudges that reverse that.
 router.use(patientOnboardingRouter);
+// /admin/patients/:id/portal-invite — CSR-driven patient portal
+// invitation. Lets agents send a "set up your portal" email to a
+// patient, optionally filling in required onboarding fields at the
+// same time. Resend + revoke follow the same pattern as team invites.
+router.use(patientPortalInviteRouter);
 // /admin/prescriptions/send-renewal-due — prescription concierge
 // dispatcher (Phase B.2 / feature #7). Scans active prescriptions
 // expiring within 30 days and emails the patient to coordinate
