@@ -2,6 +2,7 @@ export { resupplySchema } from "./_schema";
 export * from "./patients";
 export * from "./patient-notes";
 export * from "./patient-followups";
+export * from "./patient-onboarding-journeys";
 export * from "./prescriptions";
 export * from "./episodes";
 export * from "./conversations";
