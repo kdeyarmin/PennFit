@@ -59,31 +59,20 @@ export async function promptBiometric(
     return { kind: "not-supported", reason: "web" };
   }
   try {
-    // Dynamic import via `Function` so TypeScript doesn't try to
-    // statically resolve a package that may or may not be installed
-    // at compile time. When the plugin isn't installed, the import
-    // throws and we treat that as "no-plugin" rather than a hard
-    // crash. Once a deployer runs `pnpm install` with the plugin
-    // listed in package.json, this branch becomes the happy path.
-    //
-    // Plugin: @capacitor-community/biometric-auth
-    //   https://github.com/aparajita/capacitor-biometric-auth
-    const importer = new Function("m", "return import(m)") as (
-      m: string,
-    ) => Promise<unknown>;
-    const mod: unknown = await importer(
-      "@capacitor-community/biometric-auth",
-    ).catch(() => null);
-    if (!mod) {
-      return { kind: "not-supported", reason: "no-plugin" };
-    }
+    // Read the plugin from the Capacitor runtime global so the web
+    // bundle does not need to statically import the native plugin,
+    // while native shells can still use the registered proxy.
     const BiometricAuth = (
-      mod as {
-        BiometricAuth?: {
-          authenticate?: (opts: { reason: string }) => Promise<unknown>;
+      window as unknown as {
+        Capacitor?: {
+          Plugins?: {
+            BiometricAuth?: {
+              authenticate?: (opts: { reason: string }) => Promise<unknown>;
+            };
+          };
         };
       }
-    ).BiometricAuth;
+    ).Capacitor?.Plugins?.BiometricAuth;
     if (!BiometricAuth?.authenticate) {
       return { kind: "not-supported", reason: "no-plugin" };
     }

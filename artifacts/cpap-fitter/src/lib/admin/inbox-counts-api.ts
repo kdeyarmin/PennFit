@@ -5,7 +5,7 @@ export interface AdminInboxCounts {
   awaitingReplyConversations: number;
   pendingReturns: number;
   pendingReviews: number;
-  /** Phase 18 — open shop_customer_followups whose due_at is in the past. */
+  /** Phase 18 — open overdue followups whose due_at is in the past, across both shop customers and patients. */
   overdueFollowups: number;
   serverTime: string;
 }
