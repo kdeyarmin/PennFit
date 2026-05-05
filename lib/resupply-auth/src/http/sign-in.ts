@@ -35,6 +35,7 @@ import {
   buildSessionCookie,
   appendSetCookie,
 } from "../cookies";
+import { checkCsrf } from "../csrf";
 import { normalizeEmail } from "../email";
 import {
   hashPassword,
@@ -77,6 +78,12 @@ export function makeSignInHandler(deps: AuthDeps) {
     req: Request,
     res: Response,
   ): Promise<void> {
+    const csrfCheck = checkCsrf(req);
+    if (!csrfCheck.ok) {
+      authError(res, 403, "csrf_failed", "Request failed a security check.");
+      return;
+    }
+
     const parsed = SignInBody.safeParse(req.body);
     if (!parsed.success) {
       authError(res, 400, "invalid_input", "Email and password are required.");

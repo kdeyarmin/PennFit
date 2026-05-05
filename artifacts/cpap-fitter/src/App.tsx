@@ -167,6 +167,7 @@ const RemindersManage = lazy(() =>
 );
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
+import { useShopIdentity } from "@/lib/identity";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal
@@ -248,6 +249,20 @@ function GuardedOrder() {
   return <Order />;
 }
 
+function GuardedShopOrders() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  return <ShopOrders />;
+}
+
+function GuardedAccount() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  return <AccountPage />;
+}
+
 /**
  * Order-success has its own gating: the order confirmation lives in
  * sessionStorage (so a refresh after order doesn't re-submit) rather
@@ -314,11 +329,9 @@ function PatientRouter() {
             component={ShopCheckoutSuccess}
           />
           <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
-          <Route path="/shop/orders" component={ShopOrders} />
+          <Route path="/shop/orders" component={GuardedShopOrders} />
           <Route path="/shop/wishlist" component={ShopWishlist} />
-          <Route path="/account">
-            <AccountPage />
-          </Route>
+          <Route path="/account" component={GuardedAccount} />
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />
           <Route path="/privacy" component={Privacy} />
