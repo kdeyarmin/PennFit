@@ -79,8 +79,8 @@ function Body({ data, onRefresh }: { data: OpsStatus; onRefresh: () => void }) {
 function QueuesPanel({ queues }: { queues: OpsStatus["queues"] }) {
   // Render the panel only when at least one queue field is present
   // — keeps older API responses from showing an empty section.
-  if (!queues) return null;
-  const faxPending = queues.faxOutreachPending?.count ?? 0;
+  if (!queues?.faxOutreachPending) return null;
+  const faxPending = queues.faxOutreachPending.count ?? 0;
   return (
     <section>
       <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">
