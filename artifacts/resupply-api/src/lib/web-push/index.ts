@@ -101,11 +101,10 @@ let cachedSdk: WebPushSdk | null = null;
 let sdkLoadFailed = false;
 
 /**
- * Lazily resolve the `web-push` module. We prefer a static dynamic
- * import so bundlers can tree-shake; falling back to `Function`-based
- * import is only there to keep typecheck happy in environments where
- * the package legitimately isn't installed (e.g. preview builds that
- * skip optional deps).
+ * Lazily resolve the `web-push` module via dynamic import so bundlers
+ * can tree-shake it. If the import fails (for example because the
+ * optional package is not installed), we record that failure and
+ * return null on subsequent calls rather than retrying.
  */
 async function loadSdk(): Promise<WebPushSdk | null> {
   if (cachedSdk) return cachedSdk;
