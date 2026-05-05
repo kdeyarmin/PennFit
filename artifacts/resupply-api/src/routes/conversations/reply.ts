@@ -18,7 +18,7 @@
 // itself only lives in `messages.body`.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
@@ -479,7 +479,7 @@ async function tryNotifyCustomerOfReply(input: {
   try {
     await db
       .update(conversations)
-      .set({ lastInAppNotificationAt: new Date() })
+      .set({ lastInAppNotificationAt: sql`now()` })
       .where(eq(conversations.id, input.conversationId));
   } catch (err) {
     logger.error(
