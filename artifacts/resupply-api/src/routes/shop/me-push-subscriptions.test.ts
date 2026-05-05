@@ -108,6 +108,8 @@ describe("GET /shop/me/push-subscriptions/vapid-public-key", () => {
   it("503s when WEB_PUSH_VAPID_PUBLIC_KEY is unset", async () => {
     mockSignedIn.current = USER_ID;
     delete process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+    delete process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+    delete process.env.WEB_PUSH_VAPID_SUBJECT;
     const res = await request(makeApp()).get(
       "/shop/me/push-subscriptions/vapid-public-key",
     );
@@ -115,9 +117,23 @@ describe("GET /shop/me/push-subscriptions/vapid-public-key", () => {
     expect(res.body.error).toBe("push_not_configured");
   });
 
-  it("returns the configured key", async () => {
+  it("503s when only the public key is set (Phase G.8 — full triple required)", async () => {
     mockSignedIn.current = USER_ID;
     process.env.WEB_PUSH_VAPID_PUBLIC_KEY = "BKxxFAKEvapidpubkey1234";
+    delete process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+    delete process.env.WEB_PUSH_VAPID_SUBJECT;
+    const res = await request(makeApp()).get(
+      "/shop/me/push-subscriptions/vapid-public-key",
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("push_not_configured");
+  });
+
+  it("returns the configured key when the full VAPID triple is set", async () => {
+    mockSignedIn.current = USER_ID;
+    process.env.WEB_PUSH_VAPID_PUBLIC_KEY = "BKxxFAKEvapidpubkey1234";
+    process.env.WEB_PUSH_VAPID_PRIVATE_KEY = "PrivKeyForSigning";
+    process.env.WEB_PUSH_VAPID_SUBJECT = "mailto:ops@pennpaps.com";
     const res = await request(makeApp()).get(
       "/shop/me/push-subscriptions/vapid-public-key",
     );

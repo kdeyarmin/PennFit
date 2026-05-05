@@ -34,6 +34,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import {
   getDbPool,
   shopCustomerPushSubscriptions,
+  shopCustomers,
 } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
@@ -223,6 +224,41 @@ export async function sendPushToCustomer(
   );
 
   return { delivered, expired, transient };
+}
+
+/**
+ * Convenience: resolve a customer by `email_lower` and fan out
+ * push to whatever active subscriptions they have. Returns
+ * {0,0,0} when no shop_customers row matches the email — useful
+ * for patient-side dispatchers (smart-trigger, Rx renewal) where
+ * the patient may or may not also be a shop customer.
+ *
+ * Lower-casing happens here so callers can pass any-case input
+ * without thinking about it.
+ */
+export async function sendPushToCustomerByEmail(
+  email: string,
+  payload: PushPayload,
+): Promise<DeliveryCounts> {
+  const lower = email.trim().toLowerCase();
+  if (!lower) return { delivered: 0, expired: 0, transient: 0 };
+  if (!isPushConfigured()) {
+    return { delivered: 0, expired: 0, transient: 0 };
+  }
+  const db = drizzle(getDbPool());
+  const rows = await db
+    .select({ customerId: shopCustomers.customerId })
+    .from(shopCustomers)
+    .where(eq(shopCustomers.emailLower, lower))
+    .limit(2);
+  if (rows.length === 0) {
+    return { delivered: 0, expired: 0, transient: 0 };
+  }
+  if (rows.length > 1) {
+    logger.warn({ emailLower: lower }, "web_push_customer_email_ambiguous");
+    return { delivered: 0, expired: 0, transient: 0 };
+  }
+  return sendPushToCustomer(rows[0].customerId, payload);
 }
 
 /**
