@@ -92,10 +92,7 @@ function hashCart(
   // Stable hash: sort by priceId so [{a,1},{b,2}] and [{b,2},{a,1}]
   // collapse to the same hash.
   const sorted = [...items].sort((a, b) => a.priceId.localeCompare(b.priceId));
-  return createHash("sha256")
-    .update(JSON.stringify(sorted))
-    .digest("hex")
-    .slice(0, 32);
+  return createHash("sha256").update(JSON.stringify(sorted)).digest("hex");
 }
 
 const router: IRouter = Router();
