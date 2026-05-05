@@ -4,6 +4,7 @@ export * from "./patient-notes";
 export * from "./patient-followups";
 export * from "./patient-onboarding-journeys";
 export * from "./patient-therapy-nights";
+export * from "./patient-smart-trigger-events";
 export * from "./prescriptions";
 export * from "./episodes";
 export * from "./conversations";
