@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { LearnVideoLibrary } from "@/components/learn-video-library";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   BookOpen,
@@ -539,6 +540,11 @@ export function Learn() {
           </a>
         ))}
       </nav>
+
+      {/* Phase C.2 — short-form video library. Sits above the
+          article grids because video plays better as a first-pass
+          scan ("60-90 seconds") than long-form reading does. */}
+      <LearnVideoLibrary />
 
       {/* Sectioned article grids */}
       {articlesByCategory.map(({ category, meta, items }) => (

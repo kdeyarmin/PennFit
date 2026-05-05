@@ -19,6 +19,11 @@ import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
+import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
+import patientOnboardingRouter from "./admin/patient-onboarding.js";
+import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
+import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
+import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -69,6 +74,31 @@ router.use(abandonedCartsRouter);
 // publicly visible after an admin approves them. requireAdmin gate
 // is on the router itself.
 router.use(shopReviewsAdminRouter);
+// /admin/shop/product-questions — moderation queue + answer flow
+// for customer-submitted product Q&A (Phase A.5). Pending questions
+// only become publicly visible after a CSR posts an answer.
+router.use(shopProductQuestionsAdminRouter);
+// /admin/patients/:id/onboarding + /admin/onboarding/send-due —
+// first-90-day adherence-coaching enrollment + dispatcher (Phase
+// B.1 / feature #17). The CMS adherence threshold is missed by
+// 40-70% of patients in the first 90 days; this surface fires the
+// scheduled day-1/7/30/90 nudges that reverse that.
+router.use(patientOnboardingRouter);
+// /admin/prescriptions/send-renewal-due — prescription concierge
+// dispatcher (Phase B.2 / feature #7). Scans active prescriptions
+// expiring within 30 days and emails the patient to coordinate
+// renewal. Aeroflow built its brand on this.
+router.use(prescriptionRenewalsRouter);
+// /admin/shop/products/:productId/compatibility — admin CRUD for
+// the product-to-machine compatibility map (Phase B.3 / feature
+// #11). Public reads live alongside the catalog router.
+router.use(shopProductCompatibilityAdminRouter);
+// /admin/patients/:id/therapy-nights/* — therapy-cloud sync
+// (Phase E.1 / feature #18). Adapter stubs for ResMed AirView +
+// Philips Care; the actual partner integration lands once a BAA
+// + API access is in place. Sync endpoint 503s until the chosen
+// adapter's env var is set.
+router.use(patientTherapySyncRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.

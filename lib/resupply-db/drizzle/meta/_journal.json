@@ -302,6 +302,48 @@
       "when": 1811404800000,
       "tag": "0040_patient_followups",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1811491200000,
+      "tag": "0041_shop_product_questions",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1811577600000,
+      "tag": "0042_patient_onboarding_journeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1811664000000,
+      "tag": "0043_prescriptions_renewal_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1811750400000,
+      "tag": "0044_shop_product_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1811836800000,
+      "tag": "0045_shop_customer_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1811923200000,
+      "tag": "0046_patient_therapy_nights",
+      "breakpoints": true
     }
   ]
 }

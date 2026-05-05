@@ -26,6 +26,9 @@ import productsRouter from "./products";
 import quickCheckoutRouter from "./quick-checkout";
 import resendReceiptRouter from "./resend-receipt";
 import reviewsRouter from "./reviews";
+import productQuestionsRouter from "./product-questions";
+import productCompatibilityRouter from "./product-compatibility";
+import mePushSubscriptionsRouter from "./me-push-subscriptions";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -40,6 +43,10 @@ router.use(meClinicalInfoRouter);
 router.use(meCommPrefsRouter);
 router.use(meDashboardRouter);
 router.use(meMessagesRouter);
+// /shop/me/push-subscriptions/* — W3C Web Push registration
+// (Phase C.1). Subscribe / unsubscribe / list endpoints; the
+// VAPID public-key getter sits behind the same auth gate.
+router.use(mePushSubscriptionsRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);
@@ -57,6 +64,15 @@ router.use(cartSnapshotRouter);
 // and is mounted from routes/index.ts alongside the other admin
 // surfaces.
 router.use(reviewsRouter);
+// Customer-submitted product Q&A (Phase A.5). Public list of
+// answered Q&A + auth-gated submit; admin moderation + answer
+// flow lives at routes/admin/product-questions.ts.
+router.use(productQuestionsRouter);
+// Product compatibility lookup (Phase B.3). Public reads — used by
+// the catalog filter "show only parts compatible with my machine"
+// and the product-detail "compatible with your AirSense 11" badge.
+// Admin writes live in routes/admin/product-compatibility.ts.
+router.use(productCompatibilityRouter);
 // Public lead-capture form on /insurance. Sends two SendGrid
 // emails (team notification + patient confirmation); does not
 // write to the DB — the verifications team works the inbox.

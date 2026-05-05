@@ -63,7 +63,7 @@ export function AdminShopReturnsPage() {
           Returns &amp; RMAs
         </h1>
         <p className="text-sm text-slate-600">
-          Process customer return requests under the 30-day comfort guarantee.
+          Process customer return requests under the 60-day comfort guarantee.
           Each row advances through a strict state machine; admin notes are
           appended newest-first.
         </p>

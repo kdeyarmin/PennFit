@@ -4,7 +4,7 @@ import { ShieldCheck, BadgeCheck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
- * 30-day comfort guarantee surface. Mask fit is the single largest
+ * 60-day comfort guarantee surface. Mask fit is the single largest
  * source of new-customer anxiety in CPAP — most patients have been
  * burned by an off-the-shelf mask that didn't fit. Surfacing the
  * guarantee at every decision point (recommendation, cart, checkout
@@ -48,7 +48,7 @@ export function ComfortGuarantee({
         data-testid={testId ?? "comfort-guarantee-badge"}
       >
         <BadgeCheck className="w-3.5 h-3.5 text-[hsl(var(--penn-gold))]" />
-        30-day fit guarantee
+        60-day fit guarantee
       </span>
     );
     return linkToPolicy ? (
@@ -75,11 +75,11 @@ export function ComfortGuarantee({
           </div>
           <div className="flex-1 text-sm">
             <p className="font-semibold text-[hsl(var(--penn-navy))]">
-              30-day fit guarantee
+              60-day fit guarantee
             </p>
             <p className="text-muted-foreground mt-0.5">
               If your mask doesn&apos;t fit comfortably, swap it for a different
-              size or style within 30 days — we cover the return shipping.{" "}
+              size or style within 60 days — we cover the return shipping.{" "}
               {linkToPolicy && (
                 <Link
                   href="/comfort-guarantee"
@@ -107,7 +107,7 @@ export function ComfortGuarantee({
         </div>
         <div className="flex-1">
           <h3 className="text-xl font-semibold tracking-tight">
-            30-day comfort guarantee
+            60-day comfort guarantee
           </h3>
           <p className="text-muted-foreground mt-1.5">
             Most masks feel different the first night. If yours isn&apos;t
