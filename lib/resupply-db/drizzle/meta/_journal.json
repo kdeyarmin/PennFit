@@ -323,6 +323,13 @@
       "when": 1811664000000,
       "tag": "0043_prescriptions_renewal_request",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1811750400000,
+      "tag": "0044_shop_product_compatibility",
+      "breakpoints": true
     }
   ]
 }
