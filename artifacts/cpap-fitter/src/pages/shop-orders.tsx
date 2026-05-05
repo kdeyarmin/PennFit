@@ -346,8 +346,9 @@ function OrderCard({
   );
 }
 
-// 30-day comfort-guarantee return initiation. Only renders for orders
-// paid within 30 days that don't already have an open return request.
+// 60-day comfort-guarantee return initiation (Phase A.3, was 30 days
+// pre-A.3). Only renders for orders paid within 60 days that don't
+// already have an open return request.
 // First click opens an inline form (reason picker + free-form note +
 // preferred resolution); submit POSTs to /shop/me/orders/:sessionId/returns.
 //
@@ -373,10 +374,13 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
     ? new Date(order.paidAt).getTime()
     : new Date(order.createdAt).getTime();
   const ageDays = (Date.now() - paidAtMs) / (1000 * 60 * 60 * 24);
-  // Server is the source of truth on the 30-day window — we mirror it
+  // Server is the source of truth on the 60-day window — we mirror it
   // client-side so the button doesn't render past the cutoff. Returns
-  // outside the window can still be opened via support.
-  const eligible = ageDays <= 30;
+  // outside the window can still be opened via support. Phase A.3 —
+  // extended from 30 to 60 days to match the industry benchmark.
+  const COMFORT_GUARANTEE_DAYS = 60;
+  const eligible = ageDays <= COMFORT_GUARANTEE_DAYS;
+  const daysLeft = Math.max(0, Math.ceil(COMFORT_GUARANTEE_DAYS - ageDays));
 
   if (!eligible && !result) return null;
 
@@ -448,8 +452,13 @@ function ReturnRequestControl({ order }: { order: OrderHistoryItem }) {
         >
           Need a swap or refund? Start a return
         </button>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Covered by our 30-day comfort guarantee.
+        <p
+          className="mt-1 text-[11px] text-muted-foreground"
+          data-testid={`order-${order.id}-return-window`}
+        >
+          {daysLeft > 0
+            ? `Covered by our 60-day comfort guarantee · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left to exchange.`
+            : "Covered by our 60-day comfort guarantee."}
         </p>
       </div>
     );

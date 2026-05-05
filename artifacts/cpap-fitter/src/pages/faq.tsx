@@ -147,7 +147,7 @@ const sections: FaqSection[] = [
             Mask seal and comfort improve with adjustment — most masks have
             multiple cushion sizes, and the headgear straps need a snug-but-not
             -tight fit. If you've adjusted and it still doesn't seal, contact us
-            and we'll exchange it for an alternative within the first 30 days at
+            and we'll exchange it for an alternative within the first 60 days at
             no charge.
           </>
         ),
