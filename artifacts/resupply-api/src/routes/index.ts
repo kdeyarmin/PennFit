@@ -25,6 +25,7 @@ import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
+import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -105,6 +106,12 @@ router.use(patientTherapySyncRouter);
 // runs the rule library, queues + sends nudges that convert at 3-5x
 // the rate of calendar-only reminders.
 router.use(smartTriggersRouter);
+// /admin/physician-fax-outreach — record + query physician-fax
+// Rx-renewal requests (Phase G.6). Provider-agnostic data path;
+// no fax vendor ships in the same PR — the row is created with
+// status='pending' until a vendor adapter is wired and the
+// FAX_VENDOR / FAX_API_KEY / FAX_FROM_NUMBER triple is set.
+router.use(physicianFaxOutreachRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
