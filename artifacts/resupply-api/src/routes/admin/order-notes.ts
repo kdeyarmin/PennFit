@@ -35,14 +35,12 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 // `orderId` is the shop_orders.id (text-typed UUID per migration 0001).
-// Same regex as the existing shop-orders admin routes — UUID-shaped
-// but stored as text to keep the column type uniform.
+// Validate it as a canonical UUID so this route stays consistent with
+// the existing shop-orders admin routes.
 const orderIdParam = z
   .string()
   .trim()
-  .min(1)
-  .max(200)
-  .regex(/^[A-Za-z0-9_-]+$/);
+  .uuid();
 
 const bodySchema = z
   .object({

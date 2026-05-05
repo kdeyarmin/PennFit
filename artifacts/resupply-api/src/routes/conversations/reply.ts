@@ -460,10 +460,21 @@ async function tryNotifyCustomerOfReply(input: {
   // reply too, which is wrong — we want the next reply to retry.
   // The rare race where two replies dispatch concurrently before the
   // first stamp lands is acceptable for a notification email.
-  await db
-    .update(conversations)
-    .set({ lastInAppNotificationAt: new Date() })
-    .where(eq(conversations.id, input.conversationId));
+  //
+  // Best effort only: if the email was already accepted by SendGrid but
+  // this DB update fails, do not rethrow and let callers misclassify the
+  // outcome as an email-send failure.
+  try {
+    await db
+      .update(conversations)
+      .set({ lastInAppNotificationAt: new Date() })
+      .where(eq(conversations.id, input.conversationId));
+  } catch (err) {
+    logger.error(
+      { err, conversationId: input.conversationId },
+      "Failed to stamp in-app reply notification throttle timestamp after successful email send",
+    );
+  }
 }
 
 export default router;
