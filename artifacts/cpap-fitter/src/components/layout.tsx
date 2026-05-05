@@ -5,9 +5,9 @@ import pennLogo from "@assets/IMG_2053_1777233708393.jpeg";
 import { SignedIn } from "@/lib/identity";
 import { UserMenu } from "@/components/user-menu";
 import { FitFlowStepper } from "@/components/fit-flow-stepper";
-import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
 import { MiniCart } from "@/components/shop/mini-cart";
+import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
 import { FloatingContactLauncher } from "@/components/floating-contact-launcher";
 import { useWishlist } from "@/lib/wishlist";
 import {
@@ -501,9 +501,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </footer>
-      <PwaInstallPrompt />
       <FloatingContactLauncher />
       <MobileCtaBar />
+      <KeyboardShortcutsDialog />
     </div>
   );
 }

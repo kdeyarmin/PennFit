@@ -116,7 +116,7 @@ export function ShopFilterBar({
             className="pl-9 pr-9 h-10 bg-white w-full"
             data-testid="shop-search-input"
           />
-          {isSearching && (
+          {isSearching ? (
             <button
               type="button"
               onClick={() => onQueryChange("")}
@@ -126,6 +126,14 @@ export function ShopFilterBar({
             >
               <X className="w-3.5 h-3.5" />
             </button>
+          ) : (
+            <kbd
+              aria-hidden="true"
+              className="hidden sm:inline-flex absolute right-2 top-1/2 -translate-y-1/2 items-center justify-center h-6 min-w-6 px-1.5 rounded border border-border/60 bg-secondary/40 text-[11px] font-mono font-semibold text-muted-foreground"
+              title="Press / to search"
+            >
+              /
+            </kbd>
           )}
         </div>
         <div className="flex items-center justify-between sm:justify-end gap-3">

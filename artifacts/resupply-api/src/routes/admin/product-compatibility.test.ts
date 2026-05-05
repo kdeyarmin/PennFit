@@ -146,8 +146,8 @@ describe("POST /admin/shop/products/:productId/compatibility", () => {
     expect(audit.action).toBe("shop_product_compatibility.add");
     expect(audit.metadata).toEqual({
       product_id: PRODUCT_ID,
-      manufacturer: "ResMed",
-      model: "AirSense 11",
+      machine_manufacturer: "ResMed",
+      machine_model: "AirSense 11",
     });
   });
 
