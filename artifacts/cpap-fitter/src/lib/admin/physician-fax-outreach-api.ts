@@ -1,5 +1,5 @@
 // Hand-rolled fetch wrappers for the physician-fax-outreach endpoints
-// shipped in Phase G.6. Used by the patient-detail page's "Fax history"
+// shipped in Phase G.6. Used by the patient-detail page's "Fax outreach"
 // tab to record + list outreach attempts.
 
 export type PhysicianFaxOutreachStatus =
