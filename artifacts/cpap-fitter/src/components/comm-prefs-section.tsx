@@ -6,6 +6,7 @@ import {
   updateCommPrefs,
 } from "@/lib/account-api";
 import { Button } from "@/components/ui/button";
+import { usePushSubscription } from "@/hooks/use-push-subscription";
 
 /**
  * Communication preferences section on /account. Five email
@@ -132,6 +133,8 @@ export function CommPrefsSection() {
           testId="comm-toggle-marketing"
         />
       </div>
+
+      <PushNotificationToggle />
 
       <DndEditor prefs={prefs} onSave={save} saving={saving} />
 
@@ -336,4 +339,79 @@ function formatHour(h: number | null): string {
   const period = h >= 12 ? "PM" : "AM";
   const hr = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return `${hr}:00 ${period}`;
+}
+
+/**
+ * Phase C.1 — push-notification opt-in toggle. Hidden when the
+ * browser doesn't support push (older Safari, headless), when the
+ * server hasn't published a VAPID public key yet, or when the user
+ * has previously denied permission at the browser level.
+ *
+ * Why a separate component from the email toggles: push state lives
+ * in the browser's permission/subscription layer, not in the
+ * communicationPreferences blob. Conflating them would make the
+ * toggle feel broken (a flip would lose the actual subscription
+ * row server-side).
+ */
+function PushNotificationToggle() {
+  const { state, busy, error, enable, disable } = usePushSubscription();
+
+  if (
+    state === "checking" ||
+    state === "unsupported" ||
+    state === "not-configured"
+  ) {
+    return null;
+  }
+
+  return (
+    <div
+      className="rounded-lg border border-border/40 p-3"
+      data-testid="comm-push-toggle"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+            Browser notifications
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            Get a push notification on this device when your supplies are ready,
+            an order ships, or our team replies.
+          </div>
+          {state === "denied" && (
+            <p className="text-[11px] text-amber-700 mt-1">
+              Your browser is blocking PennPaps notifications. Open site
+              settings to allow them, then come back.
+            </p>
+          )}
+          {error && (
+            <p className="text-[11px] text-rose-700 mt-1" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        {state === "off" && (
+          <Button
+            size="sm"
+            onClick={() => void enable()}
+            disabled={busy}
+            data-testid="comm-push-enable"
+          >
+            {busy ? "Enabling…" : "Enable"}
+          </Button>
+        )}
+        {state === "on" && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void disable()}
+            disabled={busy}
+            data-testid="comm-push-disable"
+          >
+            {busy ? "Saving…" : "Disable"}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }

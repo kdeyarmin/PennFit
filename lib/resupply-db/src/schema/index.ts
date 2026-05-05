@@ -23,6 +23,7 @@ export * from "./shop-abandoned-carts";
 export * from "./shop-reviews";
 export * from "./shop-product-questions";
 export * from "./shop-product-compatibility";
+export * from "./shop-customer-push-subscriptions";
 export * from "./shop-order-items";
 export * from "./shop-returns";
 export * from "./shop-return-notes";
