@@ -60,6 +60,13 @@ import {
   listPatientPhysicianFaxOutreach,
   type PhysicianFaxOutreachRow,
 } from "@/lib/admin/physician-fax-outreach-api";
+import {
+  deletePatientDocument,
+  listPatientDocuments,
+  patientDocumentDownloadUrl,
+  DOCUMENT_TYPE_LABELS,
+  type AdminPatientDocument,
+} from "@/lib/admin/patient-documents-api";
 
 type Tab =
   | "timeline"
@@ -70,7 +77,8 @@ type Tab =
   | "notes"
   | "followups"
   | "onboarding"
-  | "fax-outreach";
+  | "fax-outreach"
+  | "documents";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -272,6 +280,12 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Fax outreach
         </TabButton>
+        <TabButton
+          active={tab === "documents"}
+          onClick={() => setTab("documents")}
+        >
+          Documents
+        </TabButton>
       </div>
 
       <Card>
@@ -306,6 +320,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "fax-outreach" && (
           <FaxOutreachTab patientId={id} prescriptions={data.prescriptions} />
         )}
+        {tab === "documents" && <DocumentsTab patientId={id} />}
       </Card>
     </div>
   );
@@ -2738,5 +2753,147 @@ function FaxOutreachRow({ row }: { row: PhysicianFaxOutreachRow }) {
         </div>
       )}
     </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Documents tab — patient-uploaded insurance cards, prescriptions, etc.
+// ---------------------------------------------------------------------------
+
+function formatDocBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function DocumentsTab({ patientId }: { patientId: string }) {
+  const [docs, setDocs] = useState<AdminPatientDocument[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function load() {
+    setLoadError(null);
+    try {
+      const rows = await listPatientDocuments(patientId);
+      setDocs(rows);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Couldn't load documents.");
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, [patientId]);
+
+  async function handleDelete(doc: AdminPatientDocument) {
+    if (
+      !window.confirm(
+        `Delete "${doc.filename ?? "this document"}"? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(doc.id);
+    setDeleteError(null);
+    try {
+      await deletePatientDocument(patientId, doc.id);
+      await load();
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Couldn't delete document.",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  if (loadError) {
+    return (
+      <ErrorPanel
+        error={new Error(loadError)}
+        onRetry={() => void load()}
+        title="Couldn't load documents"
+      />
+    );
+  }
+
+  if (docs === null) {
+    return <Spinner label="Loading documents…" />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm">Patient-uploaded documents</h3>
+        <span className="text-xs text-muted-foreground">
+          {docs.length} document{docs.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+      {deleteError && (
+        <p className="text-sm" style={{ color: "#b91c1c" }} role="alert">
+          {deleteError}
+        </p>
+      )}
+      {docs.length === 0 ? (
+        <EmptyState title="No documents uploaded yet." />
+      ) : (
+        <ul className="divide-y divide-border/40">
+          {docs.map((doc) => (
+            <li
+              key={doc.id}
+              className="py-3 flex items-center justify-between gap-4"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className="text-xs font-semibold rounded-full px-2 py-0.5"
+                    style={{
+                      background: "hsl(var(--ink-1)/0.08)",
+                      color: "hsl(var(--ink-1))",
+                    }}
+                  >
+                    {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
+                  </span>
+                  <a
+                    href={patientDocumentDownloadUrl(patientId, doc.id)}
+                    target="_blank"
+                    rel="noopener"
+                    download={doc.filename ?? undefined}
+                    className="text-sm font-medium underline truncate"
+                    style={{ color: "#1d4ed8" }}
+                  >
+                    {doc.filename ?? "Document"}
+                  </a>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {formatDocBytes(doc.sizeBytes)} ·{" "}
+                  {new Date(doc.createdAt).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={deletingId === doc.id}
+                onClick={() => void handleDelete(doc)}
+                className="text-xs underline shrink-0 disabled:opacity-40"
+                style={{
+                  color: deletingId === doc.id ? "#9ca3af" : "#b91c1c",
+                  background: "none",
+                  border: "none",
+                  cursor: deletingId === doc.id ? "not-allowed" : "pointer",
+                  font: "inherit",
+                }}
+              >
+                {deletingId === doc.id ? "Deleting…" : "Delete"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
