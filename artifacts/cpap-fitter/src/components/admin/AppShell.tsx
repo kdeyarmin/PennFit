@@ -135,7 +135,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         label: "Follow-ups",
         icon: CalendarClock,
         matchPrefix: "/admin/followups",
-        hint: "Today's queue of CSR-scheduled callbacks across all customers",
+        hint: "Today's queue of CSR-scheduled callbacks across customers and patients",
         badgeKey: "overdueFollowups",
       },
       {
@@ -372,21 +372,29 @@ function isLinkActive(location: string, link: NavLink): boolean {
 function SidebarNavBody({
   location,
   onItemClick,
+  isAdminConfirmed,
 }: {
   location: string;
   onItemClick?: () => void;
+  /** True once /admin/me has confirmed the session is valid admin.
+   *  Keeps the inbox-counts query from firing with a 401 during the
+   *  initial access-check state before adminEmail is populated. */
+  isAdminConfirmed: boolean;
 }) {
   // Phase 16 — actionable-work counts powering nav badges. Cached for
   // 30s so paging through the SPA doesn't hammer the endpoint, but
   // refetched on window focus so a CSR who clears the inbox in another
   // tab sees the badge drop without reloading. Failures degrade
   // silently — badges just don't render rather than blocking the nav.
+  // Gated on `isAdminConfirmed` so we don't fire a request that will
+  // 401 before the session check completes.
   const { data: counts } = useQuery({
     queryKey: ["admin-inbox-counts"],
     queryFn: fetchAdminInboxCounts,
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     retry: false,
+    enabled: isAdminConfirmed,
   });
   return (
     <div className="flex flex-col gap-5">
@@ -576,6 +584,7 @@ export function AppShell({
                   <SidebarNavBody
                     location={location}
                     onItemClick={() => setMobileNavOpen(false)}
+                    isAdminConfirmed={!!adminEmail}
                   />
                 </nav>
               </SheetContent>
@@ -602,7 +611,7 @@ export function AppShell({
               className="flex-1 overflow-y-auto px-3 py-4 sticky top-0"
               style={{ maxHeight: "calc(100vh - 4rem)" }}
             >
-              <SidebarNavBody location={location} />
+              <SidebarNavBody location={location} isAdminConfirmed={!!adminEmail} />
             </nav>
           </aside>
           <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
