@@ -402,10 +402,22 @@ async function tryNotifyCustomerOfReply(input: {
 
   // Throttle: skip if we've sent a notification on this thread within
   // the throttle window. Phase 13. Null = never sent (or pre-13 row),
-  // which always passes the gate.
+  // which always passes the gate. Guard against future timestamps
+  // (clock skew / bad data) so we do not accidentally mute this thread
+  // until wall-clock time catches up.
   if (row.lastNotifiedAt) {
     const sinceMs = Date.now() - row.lastNotifiedAt.getTime();
-    if (sinceMs < IN_APP_NOTIFICATION_THROTTLE_MS) {
+    if (sinceMs < 0) {
+      logger.warn(
+        {
+          conversation_id: input.conversationId,
+          last_notified_at: row.lastNotifiedAt.toISOString(),
+          since_ms: sinceMs,
+          throttle_ms: IN_APP_NOTIFICATION_THROTTLE_MS,
+        },
+        "in_app_reply_notification: future lastNotifiedAt; bypassing throttle",
+      );
+    } else if (sinceMs < IN_APP_NOTIFICATION_THROTTLE_MS) {
       logger.debug(
         {
           conversation_id: input.conversationId,
