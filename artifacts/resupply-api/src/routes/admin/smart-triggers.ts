@@ -14,6 +14,9 @@
 //   POST /admin/smart-triggers/:id/dismiss
 //        — CSR manually clears a false-positive or
 //          customer-requested mute.
+//   GET  /admin/patients/:id/smart-triggers
+//        — per-patient list (most-recent-first) for the admin
+//          patient-detail "smart triggers" tab.
 //
 // Email content is intentionally short — the data-driven version
 // converts at 3-5x the rate of calendar-only nudges per the brief,
@@ -24,7 +27,7 @@
 // envelope records patient_id + kind + window dates only — never
 // the leak rate / AHI / usage values that drove detection.
 
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -205,6 +208,69 @@ router.post(
     });
 
     res.json({ id, dismissedAt: now.toISOString() });
+  },
+);
+
+/**
+ * GET /admin/patients/:id/smart-triggers — list trigger events
+ * for a single patient. Used by the admin patient-detail page's
+ * "Smart triggers" tab so CSRs can see what fired and dismiss
+ * false positives in-context (instead of needing the per-id
+ * dismiss endpoint with no list view).
+ *
+ * No pagination — a real patient should never have more than a
+ * handful of trigger events; the LIMIT of 50 is the upper bound.
+ *
+ * Returns the same row shape `/admin/smart-triggers/:id/dismiss`
+ * mutates so the SPA can do an optimistic local update.
+ *
+ * PHI posture: kind + window dates are non-PHI structural metadata
+ * (the detection inputs from patient_therapy_nights are excluded
+ * here, same as the email/SMS dispatcher envelope).
+ */
+const patientIdParam = z.string().uuid();
+
+router.get(
+  "/admin/patients/:id/smart-triggers",
+  requireAdmin,
+  async (req, res) => {
+    const idParsed = patientIdParam.safeParse(req.params.id);
+    if (!idParsed.success) {
+      res.status(400).json({ error: "invalid_id" });
+      return;
+    }
+    const db = drizzle(getDbPool());
+    const rows = await db
+      .select({
+        id: patientSmartTriggerEvents.id,
+        kind: patientSmartTriggerEvents.kind,
+        detectedAt: patientSmartTriggerEvents.detectedAt,
+        windowStartDate: patientSmartTriggerEvents.windowStartDate,
+        windowEndDate: patientSmartTriggerEvents.windowEndDate,
+        sentAt: patientSmartTriggerEvents.sentAt,
+        dismissedAt: patientSmartTriggerEvents.dismissedAt,
+        dismissedByEmail: patientSmartTriggerEvents.dismissedByEmail,
+        dismissedReason: patientSmartTriggerEvents.dismissedReason,
+        createdAt: patientSmartTriggerEvents.createdAt,
+      })
+      .from(patientSmartTriggerEvents)
+      .where(eq(patientSmartTriggerEvents.patientId, idParsed.data))
+      .orderBy(desc(patientSmartTriggerEvents.detectedAt))
+      .limit(50);
+    res.json({
+      events: rows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        detectedAt: r.detectedAt.toISOString(),
+        windowStartDate: r.windowStartDate,
+        windowEndDate: r.windowEndDate,
+        sentAt: r.sentAt ? r.sentAt.toISOString() : null,
+        dismissedAt: r.dismissedAt ? r.dismissedAt.toISOString() : null,
+        dismissedByEmail: r.dismissedByEmail,
+        dismissedReason: r.dismissedReason,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    });
   },
 );
 
