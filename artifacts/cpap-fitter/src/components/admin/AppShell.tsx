@@ -6,6 +6,11 @@ import {
   type SVGProps,
 } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import {
+  fetchAdminInboxCounts,
+  type AdminInboxCounts,
+} from "@/lib/admin/inbox-counts-api";
 import {
   LayoutDashboard,
   MessageSquareText,
@@ -64,6 +69,12 @@ type NavLink = {
   matchPrefix?: string;
   /** Optional one-line hint shown as a `title` for new reps. */
   hint?: string;
+  /**
+   * Phase 16 — actionable-work badge. When set, picks the count from
+   * the inbox-counts query and shows it as a pill next to the label.
+   * "0" suppresses rendering so we don't show empty badges everywhere.
+   */
+  badgeKey?: "awaitingReplyConversations" | "pendingReturns" | "pendingReviews";
 };
 
 type NavGroup = {
@@ -105,6 +116,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: MessageSquareText,
         matchPrefix: "/admin/conversations",
         hint: "Inbound SMS, MMS, and email threads",
+        badgeKey: "awaitingReplyConversations",
       },
       {
         href: "/admin/episodes",
@@ -157,6 +169,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Undo2,
         matchPrefix: "/admin/shop/returns",
         hint: "Return requests, restocks, refund decisions",
+        badgeKey: "pendingReturns",
       },
       {
         href: "/admin/shop/customers",
@@ -192,6 +205,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Star,
         matchPrefix: "/admin/shop/reviews",
         hint: "Customer product reviews — moderate & reply",
+        badgeKey: "pendingReviews",
       },
       {
         href: "/admin/shop/inventory",
@@ -297,12 +311,14 @@ function NavItem({
   icon: Icon,
   hint,
   isActive,
-}: NavLink & { isActive: boolean }) {
+  badgeCount,
+}: NavLink & { isActive: boolean; badgeCount?: number }) {
   // The nav-item-active / nav-item-idle utilities live in admin.css —
   // active state is navy fill + gold leading accent, idle hovers to a
   // surface-3 wash with a faint gold leading hint. We add a leading
   // icon so reps can scan the sidebar visually rather than reading
   // every label.
+  const showBadge = typeof badgeCount === "number" && badgeCount > 0;
   return (
     <Link
       href={href}
@@ -315,6 +331,15 @@ function NavItem({
     >
       <Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden="true" />
       <span className="truncate">{label}</span>
+      {showBadge && (
+        <span
+          className="ml-auto inline-flex items-center justify-center rounded-full bg-rose-600 px-2 text-[10px] font-bold leading-5 text-white min-w-[1.25rem]"
+          aria-label={`${badgeCount} pending`}
+          data-testid={`admin-nav-badge-${href.replace(/\//g, "-").replace(/^-/, "")}`}
+        >
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
     </Link>
   );
 }
@@ -334,10 +359,30 @@ function isLinkActive(location: string, link: NavLink): boolean {
 function SidebarNavBody({
   location,
   onItemClick,
+  isAdminConfirmed,
 }: {
   location: string;
   onItemClick?: () => void;
+  /** True once /admin/me has confirmed the session is valid admin.
+   *  Keeps the inbox-counts query from firing with a 401 during the
+   *  initial access-check state before adminEmail is populated. */
+  isAdminConfirmed: boolean;
 }) {
+  // Phase 16 — actionable-work counts powering nav badges. Cached for
+  // 30s so paging through the SPA doesn't hammer the endpoint, but
+  // refetched on window focus so a CSR who clears the inbox in another
+  // tab sees the badge drop without reloading. Failures degrade
+  // silently — badges just don't render rather than blocking the nav.
+  // Gated on `isAdminConfirmed` so we don't fire a request that will
+  // 401 before the session check completes.
+  const { data: counts } = useQuery({
+    queryKey: ["admin-inbox-counts"],
+    queryFn: fetchAdminInboxCounts,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+    enabled: isAdminConfirmed,
+  });
   return (
     <div className="flex flex-col gap-5">
       {NAV_GROUPS.map((group) => (
@@ -350,13 +395,25 @@ function SidebarNavBody({
           </p>
           {group.items.map((link) => (
             <div key={link.href} onClick={onItemClick}>
-              <NavItem {...link} isActive={isLinkActive(location, link)} />
+              <NavItem
+                {...link}
+                isActive={isLinkActive(location, link)}
+                badgeCount={badgeCountFor(link, counts)}
+              />
             </div>
           ))}
         </div>
       ))}
     </div>
   );
+}
+
+function badgeCountFor(
+  link: NavLink,
+  counts: AdminInboxCounts | undefined,
+): number {
+  if (!link.badgeKey || !counts) return 0;
+  return counts[link.badgeKey] ?? 0;
 }
 
 export function AdminHeaderChip({
@@ -514,6 +571,7 @@ export function AppShell({
                   <SidebarNavBody
                     location={location}
                     onItemClick={() => setMobileNavOpen(false)}
+                    isAdminConfirmed={!!adminEmail}
                   />
                 </nav>
               </SheetContent>
@@ -540,7 +598,7 @@ export function AppShell({
               className="flex-1 overflow-y-auto px-3 py-4 sticky top-0"
               style={{ maxHeight: "calc(100vh - 4rem)" }}
             >
-              <SidebarNavBody location={location} />
+              <SidebarNavBody location={location} isAdminConfirmed={!!adminEmail} />
             </nav>
           </aside>
           <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">

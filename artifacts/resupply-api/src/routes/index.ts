@@ -11,6 +11,7 @@ import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
+import inboxCountsRouter from "./admin/inbox-counts.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -115,6 +116,10 @@ router.use(teamRouter);
 // /admin/ops-status — operations center status feed: vendor flags,
 // dispatcher-eligible row counts, team counts. Read-only.
 router.use(opsStatusRouter);
+// /admin/inbox-counts — actionable-work counters for nav badges
+// (awaiting-reply convs, pending returns, pending reviews). Read-
+// only, called on every nav render with a 30s SPA cache.
+router.use(inboxCountsRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
