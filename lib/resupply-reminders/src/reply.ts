@@ -218,7 +218,7 @@ export async function replyInConversation(
       // the templated reminder. Subject reuses the practice name as
       // a "Re:"-style prefix so the patient's mail client threads
       // it with the original reminder.
-      const subject = `Re: ${input.emailCfg.practiceName} — your CPAP supplies`;
+      const subject = `Re: ${input.emailCfg.practiceName.replace(/[\r\n]/g, "")} — your CPAP supplies`;
       const r = await sg.sendEmail({
         to: patient.email,
         subject,
