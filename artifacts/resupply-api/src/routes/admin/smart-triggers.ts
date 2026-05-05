@@ -40,6 +40,10 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import {
+  createTwilioSmsClient,
+  TwilioConfigError,
+} from "@workspace/resupply-telecom";
 
 import { evaluateAll, type TriggerKind } from "../../lib/smart-triggers";
 import { logger } from "../../lib/logger";
@@ -156,10 +160,21 @@ router.post(
   },
 );
 
+const sendDueChannelQuery = z.enum(["email", "sms"]).default("email");
+
 router.post(
   "/admin/smart-triggers/send-due",
   requireAdmin,
   async (req, res) => {
+    const channelParse = sendDueChannelQuery.safeParse(
+      req.query.channel ?? "email",
+    );
+    if (!channelParse.success) {
+      res.status(400).json({ error: "invalid_channel" });
+      return;
+    }
+    const channel = channelParse.data;
+
     const db = drizzle(getDbPool());
 
     const rows = await db
@@ -171,6 +186,7 @@ router.post(
         windowEndDate: patientSmartTriggerEvents.windowEndDate,
         firstName: patients.legalFirstName,
         email: patients.email,
+        phoneE164: patients.phoneE164,
       })
       .from(patientSmartTriggerEvents)
       .innerJoin(patients, eq(patients.id, patientSmartTriggerEvents.patientId))
@@ -183,48 +199,77 @@ router.post(
       .orderBy(asc(patientSmartTriggerEvents.detectedAt))
       .limit(PER_RUN_SEND_CAP * 2);
 
-    let sg: ReturnType<typeof createSendgridClient>;
-    try {
-      sg = createSendgridClient();
-    } catch (err) {
-      if (err instanceof EmailConfigError) {
-        res.status(503).json({
-          error: "email_not_configured",
-          message: "SendGrid is not configured on this server.",
-        });
-        return;
+    // Per-channel client construction. Mirrors the pattern in
+    // /admin/prescriptions/send-renewal-due (Phase G.3): an SMS-channel
+    // run never touches SendGrid and vice-versa, so a missing-on-one-
+    // side env doesn't 503 the other.
+    let sg: ReturnType<typeof createSendgridClient> | null = null;
+    let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
+    if (channel === "email") {
+      try {
+        sg = createSendgridClient();
+      } catch (err) {
+        if (err instanceof EmailConfigError) {
+          res.status(503).json({
+            error: "email_not_configured",
+            message: "SendGrid is not configured on this server.",
+          });
+          return;
+        }
+        throw err;
       }
-      throw err;
+    } else {
+      try {
+        sms = createTwilioSmsClient();
+      } catch (err) {
+        if (err instanceof TwilioConfigError) {
+          res.status(503).json({
+            error: "sms_not_configured",
+            message: "Twilio Messaging is not configured on this server.",
+          });
+          return;
+        }
+        throw err;
+      }
     }
 
     let attempted = 0;
     let sent = 0;
     let failed = 0;
-    let skippedNoEmail = 0;
+    let skippedNoContact = 0;
     const now = new Date();
 
     for (const row of rows) {
       if (attempted >= PER_RUN_SEND_CAP) break;
       attempted++;
-      if (!row.email) {
-        skippedNoEmail++;
+      const contact = channel === "email" ? row.email : row.phoneE164;
+      if (!contact) {
+        skippedNoContact++;
         continue;
       }
-      const greeting = row.firstName
-        ? `Hi ${row.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? ""}`
-        : "Hi";
+      const firstName = row.firstName
+        ? (row.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? "")
+        : "";
+      const greeting = firstName ? `Hi ${firstName}` : "Hi";
       try {
-        await sg.sendEmail({
-          to: row.email,
-          subject: subjectForKind(row.kind as TriggerKind),
-          text: textBody(greeting, row.kind as TriggerKind),
-          html: htmlBody(greeting, row.kind as TriggerKind),
-          customArgs: {
-            kind: "smart_trigger",
-            trigger_kind: row.kind,
-            event_id: row.eventId,
-          },
-        });
+        if (channel === "email") {
+          await sg!.sendEmail({
+            to: contact,
+            subject: subjectForKind(row.kind as TriggerKind),
+            text: textBody(greeting, row.kind as TriggerKind),
+            html: htmlBody(greeting, row.kind as TriggerKind),
+            customArgs: {
+              kind: "smart_trigger",
+              trigger_kind: row.kind,
+              event_id: row.eventId,
+            },
+          });
+        } else {
+          await sms!.sendSms({
+            to: contact,
+            body: smsBody(firstName, row.kind as TriggerKind),
+          });
+        }
 
         await db
           .update(patientSmartTriggerEvents)
@@ -245,7 +290,7 @@ router.post(
           metadata: {
             patient_id: row.patientId,
             kind: row.kind,
-            channel: "email",
+            channel,
           },
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
@@ -257,7 +302,7 @@ router.post(
       } catch (err) {
         failed++;
         logger.warn(
-          { err, event_id: row.eventId },
+          { err, event_id: row.eventId, channel },
           "smart-trigger send failed",
         );
       }
@@ -267,8 +312,14 @@ router.post(
       attempted,
       sent,
       failed,
-      skippedNoEmail,
+      // Backwards-compatible: the original endpoint returned this key
+      // for the email channel.
+      ...(channel === "email"
+        ? { skippedNoEmail: skippedNoContact }
+        : { skippedNoPhone: skippedNoContact }),
+      skippedNoContact,
       remaining: rows.length > attempted ? rows.length - attempted : 0,
+      channel,
     });
   },
 );
@@ -403,6 +454,31 @@ function htmlBody(greeting: string, kind: TriggerKind): string {
     </td></tr>
   </table>
 </body></html>`;
+}
+
+/**
+ * Render the SMS body for a smart-trigger nudge. Kept under 160
+ * ASCII chars so the message ships as one Twilio segment in the
+ * typical case (firstName + status + CTA). STOP keyword is included
+ * so Twilio's opt-out compliance surface stays intact.
+ *
+ * Why short: SMS conversion drops sharply at multi-segment length;
+ * the patient is one tap from "reply YES" so the body just needs to
+ * carry the trigger reason and the CTA, not the long explanation
+ * the email body uses.
+ */
+function smsBody(firstName: string, kind: TriggerKind): string {
+  const head = firstName ? `Hi ${firstName}` : "Hi";
+  switch (kind) {
+    case "leak_rising":
+      return `${head}, your CPAP leak rate has trended up — usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. — Penn Home`;
+    case "usage_dropping":
+      return `${head}, we noticed your therapy hours dropped lately. Small adjustments help. Reply YES for a quick check-in call, or STOP to opt out. — Penn Home`;
+    case "cushion_wear":
+      return `${head}, your AHI + leak rate are both up — usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. — Penn Home`;
+    case "humidifier_drop":
+      return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. — Penn Home`;
+  }
 }
 
 export default router;
