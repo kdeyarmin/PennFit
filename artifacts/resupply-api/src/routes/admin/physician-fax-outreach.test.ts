@@ -374,3 +374,119 @@ describe("GET /admin/physician-fax-outreach", () => {
     expect(res.body.providerConfigured).toBe(true);
   });
 });
+
+describe("POST /admin/physician-fax-outreach/:id/retry", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).post(
+      "/admin/physician-fax-outreach/out_1/retry",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("503s when Twilio is not configured", async () => {
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    const res = await request(makeApp()).post(
+      "/admin/physician-fax-outreach/out_1/retry",
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("fax_not_configured");
+  });
+
+  it("404s when outreach row not found", async () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token_test";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    selectQueue.push([]); // row lookup returns nothing
+
+    const res = await request(makeApp()).post(
+      "/admin/physician-fax-outreach/no-such-id/retry",
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("outreach_not_found");
+  });
+
+  it("409s when row is already sent (double-billing guard)", async () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token_test";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    selectQueue.push([
+      {
+        id: "out_1",
+        status: "sent",
+        physicianFaxE164: "+12155551212",
+        patientId: PATIENT_ID,
+      },
+    ]);
+
+    const res = await request(makeApp()).post(
+      "/admin/physician-fax-outreach/out_1/retry",
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_dispatched");
+    expect(sendFaxMock).not.toHaveBeenCalled();
+  });
+
+  it("409s when row is already delivered", async () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token_test";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    selectQueue.push([
+      {
+        id: "out_1",
+        status: "delivered",
+        physicianFaxE164: "+12155551212",
+        patientId: PATIENT_ID,
+      },
+    ]);
+
+    const res = await request(makeApp()).post(
+      "/admin/physician-fax-outreach/out_1/retry",
+    );
+    expect(res.status).toBe(409);
+    expect(sendFaxMock).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed row and returns status=sent", async () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token_test";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    selectQueue.push([
+      {
+        id: "out_1",
+        status: "failed",
+        physicianFaxE164: "+12155551212",
+        patientId: PATIENT_ID,
+      },
+    ]);
+
+    const res = await request(makeApp()).post(
+      "/admin/physician-fax-outreach/out_1/retry",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      id: "out_1",
+      status: "sent",
+      provider: "twilio",
+    });
+
+    expect(sendFaxMock).toHaveBeenCalledOnce();
+    expect(updatedSets).toHaveLength(1);
+    expect(updatedSets[0]).toMatchObject({
+      status: "sent",
+      vendorRef: "FX_test_sid",
+      vendorName: "twilio",
+    });
+  });
+});

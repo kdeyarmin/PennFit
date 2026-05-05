@@ -9,6 +9,10 @@
 //        TWILIO_AUTH_TOKEN, and TWILIO_FAX_FROM_NUMBER are set.
 //        Returns the outreach row id + final status.
 //
+//   POST /admin/physician-fax-outreach/:id/retry
+//        Re-fires a pending or failed outreach row. Guards against
+//        double-billing: 409 if the row is already sent/delivered.
+//
 //   GET  /admin/physician-fax-outreach?patientId=...
 //        Lists recent outreach rows for a patient.
 //
@@ -38,7 +42,10 @@ import {
   physicianFaxOutreach,
   prescriptions,
 } from "@workspace/resupply-db";
-import { createTwilioFaxClient, TwilioApiError } from "@workspace/resupply-telecom";
+import {
+  createTwilioFaxClient,
+  TwilioApiError,
+} from "@workspace/resupply-telecom";
 
 import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
@@ -87,8 +94,7 @@ export function isFaxConfigured(): boolean {
 
 /**
  * Returns the public base URL used for Twilio callbacks and the fax
- * mediaUrl. Falls back to the Replit dev domain in dev. Returns null
- * when neither is set — the caller degrades gracefully.
+ * mediaUrl. Falls back to the Replit dev domain in dev.
  */
 function getFaxPublicBaseUrl(): string | null {
   const raw =
@@ -98,6 +104,87 @@ function getFaxPublicBaseUrl(): string | null {
       : null);
   return raw ? raw.replace(/\/+$/u, "") : null;
 }
+
+interface DispatchResult {
+  status: "sent" | "failed" | "pending";
+  provider: string;
+  vendorRef?: string;
+  dispatchError?: string;
+}
+
+/**
+ * Attempt to dispatch a fax outreach row via Twilio. Updates the DB
+ * row in-place and returns the outcome. Shared between the POST
+ * (create + dispatch) and the POST /:id/retry (re-dispatch) handlers.
+ */
+async function dispatchFax(outreachId: string, to: string): Promise<DispatchResult> {
+  if (!isFaxConfigured()) {
+    return { status: "pending", provider: "not_configured" };
+  }
+
+  const baseUrl = getFaxPublicBaseUrl();
+  if (!baseUrl) {
+    return { status: "pending", provider: "twilio_no_base_url" };
+  }
+
+  const db = drizzle(getDbPool());
+
+  try {
+    const faxClient = createTwilioFaxClient();
+    const token = signFaxDocumentToken(outreachId);
+    const mediaUrl = `${baseUrl}/fax/document/${token}`;
+    const statusCallbackUrl = `${baseUrl}/fax/status-callback`;
+    const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
+
+    const result = await faxClient.sendFax({
+      to,
+      from: fromNumber,
+      mediaUrl,
+      statusCallbackUrl,
+    });
+
+    await db
+      .update(physicianFaxOutreach)
+      .set({
+        status: "sent",
+        vendorRef: result.sid,
+        vendorName: "twilio",
+        sentAt: new Date(),
+        failedAt: null,
+        failureReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(physicianFaxOutreach.id, outreachId));
+
+    return { status: "sent", provider: "twilio", vendorRef: result.sid };
+  } catch (err) {
+    const msg =
+      err instanceof TwilioApiError
+        ? `Twilio fax error: ${err.message}`
+        : `Fax dispatch error: ${String(err)}`;
+
+    await db
+      .update(physicianFaxOutreach)
+      .set({
+        status: "failed",
+        failedAt: new Date(),
+        failureReason: msg,
+        updatedAt: new Date(),
+      })
+      .where(eq(physicianFaxOutreach.id, outreachId));
+
+    logger.warn(
+      { event: "fax_dispatch_failed", outreachId },
+      "physician_fax_outreach: Twilio dispatch failed",
+    );
+
+    return { status: "failed", provider: "twilio", dispatchError: msg };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /admin/physician-fax-outreach — create + dispatch
+// ---------------------------------------------------------------------------
 
 router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
   const parsed = createBody.safeParse(req.body);
@@ -143,75 +230,12 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
       physicianName: data.physicianName,
       physicianFaxE164: data.physicianFaxE164,
       coverLetterText: data.coverLetterText,
-      createdByEmail: req.adminEmail,
+      createdByEmail: req.adminEmail ?? "",
     })
     .returning({ id: physicianFaxOutreach.id });
   const id = inserted[0]!.id;
 
-  let status: "pending" | "sent" | "failed" = "pending";
-  let provider = "not_configured";
-  let dispatchError: string | null = null;
-
-  if (isFaxConfigured()) {
-    const baseUrl = getFaxPublicBaseUrl();
-    if (!baseUrl) {
-      // Twilio credentials set but no public base URL — can't build
-      // mediaUrl or statusCallback. Row stays pending.
-      provider = "twilio_no_base_url";
-    } else {
-      try {
-        const faxClient = createTwilioFaxClient();
-        const token = signFaxDocumentToken(id);
-        const mediaUrl = `${baseUrl}/fax/document/${token}`;
-        const statusCallbackUrl = `${baseUrl}/fax/status-callback`;
-        const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
-
-        const result = await faxClient.sendFax({
-          to: data.physicianFaxE164,
-          from: fromNumber,
-          mediaUrl,
-          statusCallbackUrl,
-        });
-
-        await db
-          .update(physicianFaxOutreach)
-          .set({
-            status: "sent",
-            vendorRef: result.sid,
-            vendorName: "twilio",
-            sentAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(physicianFaxOutreach.id, id));
-
-        status = "sent";
-        provider = "twilio";
-      } catch (err) {
-        const msg =
-          err instanceof TwilioApiError
-            ? `Twilio fax error: ${err.message}`
-            : `Fax dispatch error: ${String(err)}`;
-        dispatchError = msg;
-
-        await db
-          .update(physicianFaxOutreach)
-          .set({
-            status: "failed",
-            failedAt: new Date(),
-            failureReason: msg,
-            updatedAt: new Date(),
-          })
-          .where(eq(physicianFaxOutreach.id, id));
-
-        status = "failed";
-        provider = "twilio";
-        logger.warn(
-          { event: "fax_dispatch_failed", outreachId: id },
-          "physician_fax_outreach: Twilio dispatch failed",
-        );
-      }
-    }
-  }
+  const dispatch = await dispatchFax(id, data.physicianFaxE164);
 
   await logAudit({
     action: "physician_fax_outreach.created",
@@ -224,8 +248,8 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
       has_prescription:
         data.prescriptionId !== undefined && data.prescriptionId !== null,
       cover_letter_length: data.coverLetterText.length,
-      provider,
-      status,
+      provider: dispatch.provider,
+      status: dispatch.status,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -233,10 +257,94 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
     logger.warn({ err: auditErr }, "physician_fax_outreach.created audit write failed");
   });
 
-  const response: Record<string, unknown> = { id, status, provider };
-  if (dispatchError) response.dispatchError = dispatchError;
+  const response: Record<string, unknown> = {
+    id,
+    status: dispatch.status,
+    provider: dispatch.provider,
+  };
+  if (dispatch.dispatchError) response.dispatchError = dispatch.dispatchError;
   res.status(201).json(response);
 });
+
+// ---------------------------------------------------------------------------
+// POST /admin/physician-fax-outreach/:id/retry — re-fire a failed/pending row
+// ---------------------------------------------------------------------------
+
+router.post(
+  "/admin/physician-fax-outreach/:id/retry",
+  requireAdmin,
+  async (req, res) => {
+    const rawId = req.params.id;
+    const outreachId = Array.isArray(rawId) ? (rawId[0] ?? "") : (rawId ?? "");
+    if (!outreachId) {
+      res.status(400).json({ error: "missing_id" });
+      return;
+    }
+
+    if (!isFaxConfigured()) {
+      res.status(503).json({ error: "fax_not_configured" });
+      return;
+    }
+
+    const db = drizzle(getDbPool());
+    const [row] = await db
+      .select({
+        id: physicianFaxOutreach.id,
+        status: physicianFaxOutreach.status,
+        physicianFaxE164: physicianFaxOutreach.physicianFaxE164,
+        patientId: physicianFaxOutreach.patientId,
+      })
+      .from(physicianFaxOutreach)
+      .where(eq(physicianFaxOutreach.id, outreachId))
+      .limit(1);
+
+    if (!row) {
+      res.status(404).json({ error: "outreach_not_found" });
+      return;
+    }
+
+    // Guard against double-billing: only allow retry for rows that
+    // were never successfully dispatched.
+    if (row.status === "sent" || row.status === "delivered") {
+      res.status(409).json({
+        error: "already_dispatched",
+        status: row.status,
+      });
+      return;
+    }
+
+    const dispatch = await dispatchFax(row.id, row.physicianFaxE164);
+
+    await logAudit({
+      action: "physician_fax_outreach.retried",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "physician_fax_outreach",
+      targetId: outreachId,
+      metadata: {
+        patient_id: row.patientId,
+        provider: dispatch.provider,
+        status: dispatch.status,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((auditErr: unknown) => {
+      logger.warn({ err: auditErr }, "physician_fax_outreach.retried audit write failed");
+    });
+
+    const response: Record<string, unknown> = {
+      id: outreachId,
+      status: dispatch.status,
+      provider: dispatch.provider,
+    };
+    if (dispatch.dispatchError) response.dispatchError = dispatch.dispatchError;
+    res.status(200).json(response);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /admin/physician-fax-outreach — list rows for a patient
+// ---------------------------------------------------------------------------
 
 router.get("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
