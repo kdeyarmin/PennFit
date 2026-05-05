@@ -10,6 +10,7 @@ import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
+import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -30,6 +31,11 @@ export function ResetPasswordPage() {
   );
   const reset = authHooks.useResetPassword();
   const [, setLocation] = useLocation();
+
+  // Inline mismatch warning that mirrors the sign-up form: only
+  // shown after the confirm field has content, so the field doesn't
+  // flag itself as wrong on first focus.
+  const passwordsMismatch = confirm.length > 0 && confirm !== password;
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -63,30 +69,37 @@ export function ResetPasswordPage() {
 
         <label className="block text-sm">
           <span className="font-medium">New password</span>
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             minLength={12}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            showStrength
+            helperText="At least 12 characters. Longer is stronger — passphrases of 4+ random words work great."
+            inputTestId="reset-password-input"
           />
-          <span className="block text-xs mt-1 text-muted-foreground">
-            At least 12 characters.
-          </span>
         </label>
 
         <label className="block text-sm">
           <span className="font-medium">Confirm new password</span>
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             required
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            inputTestId="reset-confirm-password-input"
+            aria-invalid={passwordsMismatch || undefined}
           />
+          {passwordsMismatch && (
+            <span
+              className="block text-xs mt-1 text-rose-700"
+              role="alert"
+              data-testid="reset-confirm-mismatch"
+            >
+              Passwords don&apos;t match.
+            </span>
+          )}
         </label>
 
         {submitError && (
@@ -100,8 +113,8 @@ export function ResetPasswordPage() {
 
         <button
           type="submit"
-          disabled={reset.isPending || !token}
-          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm"
+          disabled={reset.isPending || !token || passwordsMismatch}
+          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
         >
           {reset.isPending ? "Saving…" : "Set new password"}
         </button>

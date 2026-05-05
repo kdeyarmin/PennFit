@@ -59,10 +59,11 @@ export type DispatcherOutcome =
     };
 
 /**
- * Render the email subject. Re-exported here so the route handler
- * can keep its existing renderers without circular imports — the
- * route still owns the email body templates; only this dispatcher
- * needs the subject for the push title.
+ * Shared smart-trigger renderers, passed in by the caller so this
+ * dispatcher stays decoupled from the renderer module and any route
+ * wiring. Email subject/body copy now lives with the shared
+ * renderers; this dispatcher uses `subjectForKind` for the push
+ * title and the channel-specific body helpers when sending.
  */
 export interface SmartTriggerRenderers {
   subjectForKind: (kind: TriggerKind) => string;
@@ -84,8 +85,6 @@ export async function runSmartTriggerSendDue(
       eventId: patientSmartTriggerEvents.id,
       patientId: patientSmartTriggerEvents.patientId,
       kind: patientSmartTriggerEvents.kind,
-      windowStartDate: patientSmartTriggerEvents.windowStartDate,
-      windowEndDate: patientSmartTriggerEvents.windowEndDate,
       firstName: patients.legalFirstName,
       email: patients.email,
       phoneE164: patients.phoneE164,

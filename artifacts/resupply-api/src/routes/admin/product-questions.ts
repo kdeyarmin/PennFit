@@ -12,7 +12,7 @@
 // envelope still logs structurally — product_id + question_length +
 // answer_length — so we can spot anomalies without parsing prose.
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -20,12 +20,35 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, shopProductQuestions } from "@workspace/resupply-db";
 
+import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
 const idParam = z.string().trim().min(1).max(200);
+
+const LIST_DEFAULT_LIMIT = 25;
+const LIST_MAX_LIMIT = 100;
+
+const listQuery = z
+  .object({
+    status: z
+      .enum(["pending", "answered", "rejected"])
+      .optional()
+      .default("pending"),
+    cursor: z.string().min(1).max(120).optional(),
+    limit: z
+      .union([z.number().int(), z.string()])
+      .optional()
+      .transform((v) => {
+        if (v == null) return LIST_DEFAULT_LIMIT;
+        const n = typeof v === "number" ? v : Number.parseInt(v, 10);
+        if (!Number.isFinite(n) || n <= 0) return LIST_DEFAULT_LIMIT;
+        return Math.min(Math.max(1, Math.floor(n)), LIST_MAX_LIMIT);
+      }),
+  })
+  .strict();
 
 const answerBody = z
   .object({
@@ -44,13 +67,44 @@ const rejectBody = z
 const patchBody = z.union([answerBody, rejectBody]);
 
 router.get("/admin/shop/product-questions", requireAdmin, async (req, res) => {
-  const status = (req.query.status as string | undefined) ?? "pending";
-  if (!["pending", "answered", "rejected"].includes(status)) {
-    res.status(400).json({ error: "invalid_status" });
+  const parse = listQuery.safeParse(req.query);
+  if (!parse.success) {
+    res.status(400).json({ error: "invalid_query" });
+    return;
+  }
+  const { status, cursor, limit } = parse.data;
+
+  const parsedCursor = parseCompositeCursor(cursor);
+  if (!parsedCursor.ok) {
+    res.status(400).json({ error: "invalid_cursor" });
     return;
   }
 
   const db = drizzle(getDbPool());
+
+  const cursorClause =
+    parsedCursor.date && parsedCursor.id
+      ? or(
+          lt(shopProductQuestions.createdAt, parsedCursor.date),
+          and(
+            eq(shopProductQuestions.createdAt, parsedCursor.date),
+            lt(shopProductQuestions.id, parsedCursor.id),
+          ),
+        )
+      : undefined;
+
+  const clauses = [
+    eq(shopProductQuestions.status, status),
+    cursorClause,
+  ].filter((c): c is NonNullable<typeof c> => c != null);
+  // clauses always has at least the status filter, so the array is non-empty.
+  // When there's no cursor its length is 1 (no wrapping and()); with a cursor
+  // its length is 2 and we need and() to combine both predicates.
+  const whereClause =
+    clauses.length === 1
+      ? clauses[0]!
+      : and(clauses[0]!, clauses[1]!);
+
   const rows = await db
     .select({
       id: shopProductQuestions.id,
@@ -67,12 +121,20 @@ router.get("/admin/shop/product-questions", requireAdmin, async (req, res) => {
       createdAt: shopProductQuestions.createdAt,
     })
     .from(shopProductQuestions)
-    .where(eq(shopProductQuestions.status, status))
-    .orderBy(desc(shopProductQuestions.createdAt))
-    .limit(100);
+    .where(whereClause)
+    .orderBy(desc(shopProductQuestions.createdAt), desc(shopProductQuestions.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const trimmed = hasMore ? rows.slice(0, limit) : rows;
+  const lastRow = trimmed[trimmed.length - 1];
+  const nextCursor =
+    hasMore && lastRow
+      ? encodeCompositeCursor(lastRow.createdAt, lastRow.id)
+      : null;
 
   res.json({
-    questions: rows.map((r) => ({
+    items: trimmed.map((r) => ({
       id: r.id,
       productId: r.productId,
       askerDisplayName: r.askerDisplayName,
@@ -86,6 +148,7 @@ router.get("/admin/shop/product-questions", requireAdmin, async (req, res) => {
       status: r.status,
       createdAt: r.createdAt.toISOString(),
     })),
+    nextCursor,
   });
 });
 
@@ -113,34 +176,14 @@ router.patch(
     }
 
     const db = drizzle(getDbPool());
-
-    const existing = await db
-      .select({
-        id: shopProductQuestions.id,
-        productId: shopProductQuestions.productId,
-        questionBody: shopProductQuestions.questionBody,
-        status: shopProductQuestions.status,
-      })
-      .from(shopProductQuestions)
-      .where(eq(shopProductQuestions.id, id))
-      .limit(1);
-    const row = existing[0];
-    if (!row) {
-      res.status(404).json({ error: "question_not_found" });
-      return;
-    }
-    if (row.status !== "pending") {
-      res.status(409).json({
-        error: "already_moderated",
-        message: `This question is already ${row.status}.`,
-      });
-      return;
-    }
-
     const now = new Date();
+
     if (bodyParsed.data.action === "answer") {
       const { answerBody: answer } = bodyParsed.data;
-      await db
+      // Atomic: only update when status is still 'pending'. If 0 rows are
+      // returned the question was already moderated by another CSR (race),
+      // or never existed.
+      const updated = await db
         .update(shopProductQuestions)
         .set({
           status: "answered",
@@ -150,8 +193,36 @@ router.patch(
           answeredAt: now,
           updatedAt: now,
         })
-        .where(eq(shopProductQuestions.id, id));
+        .where(
+          and(
+            eq(shopProductQuestions.id, id),
+            eq(shopProductQuestions.status, "pending"),
+          ),
+        )
+        .returning({
+          id: shopProductQuestions.id,
+          productId: shopProductQuestions.productId,
+          questionBody: shopProductQuestions.questionBody,
+        });
 
+      if (updated.length === 0) {
+        const existing = await db
+          .select({ status: shopProductQuestions.status })
+          .from(shopProductQuestions)
+          .where(eq(shopProductQuestions.id, id))
+          .limit(1);
+        if (!existing[0]) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        res.status(409).json({
+          error: "already_moderated",
+          message: `This question is already ${existing[0].status}.`,
+        });
+        return;
+      }
+
+      const row = updated[0]!;
       await logAudit({
         action: "shop_product_question.answer",
         adminEmail: req.adminEmail ?? null,
@@ -173,9 +244,9 @@ router.patch(
       return;
     }
 
-    // reject
+    // reject — same atomic guard
     const { moderationNote } = bodyParsed.data;
-    await db
+    const updated = await db
       .update(shopProductQuestions)
       .set({
         status: "rejected",
@@ -184,8 +255,36 @@ router.patch(
         moderatedBy: req.adminUserId ?? null,
         updatedAt: now,
       })
-      .where(eq(shopProductQuestions.id, id));
+      .where(
+        and(
+          eq(shopProductQuestions.id, id),
+          eq(shopProductQuestions.status, "pending"),
+        ),
+      )
+      .returning({
+        id: shopProductQuestions.id,
+        productId: shopProductQuestions.productId,
+        questionBody: shopProductQuestions.questionBody,
+      });
 
+    if (updated.length === 0) {
+      const existing = await db
+        .select({ status: shopProductQuestions.status })
+        .from(shopProductQuestions)
+        .where(eq(shopProductQuestions.id, id))
+        .limit(1);
+      if (!existing[0]) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.status(409).json({
+        error: "already_moderated",
+        message: `This question is already ${existing[0].status}.`,
+      });
+      return;
+    }
+
+    const row = updated[0]!;
     await logAudit({
       action: "shop_product_question.reject",
       adminEmail: req.adminEmail ?? null,

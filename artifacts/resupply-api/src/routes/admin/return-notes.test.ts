@@ -59,7 +59,7 @@ vi.mock("@workspace/resupply-db", async () => {
 
 import returnNotesRouter from "./return-notes";
 
-const RETURN_ID = "return_abc123";
+const RETURN_ID = "11111111-1111-4111-8111-111111111111";
 
 function makeApp(): Express {
   const app = express();

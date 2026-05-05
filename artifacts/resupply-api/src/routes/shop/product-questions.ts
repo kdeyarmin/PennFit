@@ -117,7 +117,12 @@ router.post(
     // convention. Fall back to "PennPaps customer" so the public
     // surface never shows an empty author label.
     const displayName = formatPublicDisplayName(req.shopCustomerDisplayName);
-    const askerEmail = (req.shopCustomerEmail ?? "").toLowerCase();
+    const resolvedCustomerEmail = req.shopCustomerEmail?.trim();
+    if (!resolvedCustomerEmail) {
+      res.status(400).json({ error: "customer_email_required" });
+      return;
+    }
+    const askerEmail = resolvedCustomerEmail.toLowerCase();
 
     const db = drizzle(getDbPool());
     const inserted = await db
@@ -152,7 +157,8 @@ function formatPublicDisplayName(raw: string | null | undefined): string {
   const parts = raw.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "PennPaps customer";
   const first = parts[0]!;
-  const lastInitial = parts[1]?.[0] ? `${parts[1][0]}.` : "";
+  const lastPart = parts.length > 1 ? parts[parts.length - 1] : undefined;
+  const lastInitial = lastPart?.[0] ? `${lastPart[0]}.` : "";
   return lastInitial ? `${first} ${lastInitial}` : first;
 }
 

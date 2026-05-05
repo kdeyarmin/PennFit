@@ -467,6 +467,8 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     // attempt. Zero bare UPDATEs — nothing to release.
     expect(dbStub.update).toHaveBeenCalledTimes(2);
     expect(updateBareCalls.count).toBe(0);
+    // Phase G.2 — push must NOT fire when the claim is skipped.
+    expect(sendPushToCustomerMock).not.toHaveBeenCalled();
   });
 
   it("resends shipping notification when tracking number changes — claim wins on cleared timestamp", async () => {
@@ -557,6 +559,9 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     expect(sendEmailMock.mock.calls[0]![0].to).toBe("guest@example.com");
     expect(updateBareCalls.count).toBe(0);
+    // Phase G.2 — push is gated on customerId; guest orders must NOT
+    // trigger a push notification.
+    expect(sendPushToCustomerMock).not.toHaveBeenCalled();
   });
 
   it("RELEASES the claim when the post-claim shop_customers SELECT throws transiently", async () => {
@@ -596,6 +601,8 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(sendEmailMock).not.toHaveBeenCalled();
     // Claim was won then released → exactly one bare UPDATE.
     expect(updateBareCalls.count).toBe(1);
+    // Phase G.2 — push must NOT fire when the claim was released.
+    expect(sendPushToCustomerMock).not.toHaveBeenCalled();
   });
 
   it("RELEASES the claim and 200s the route when SendGrid throws (claim available for retry)", async () => {
@@ -630,6 +637,9 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(res.status).toBe(200);
     // Claim was won then released → exactly one bare UPDATE.
     expect(updateBareCalls.count).toBe(1);
+    // Phase G.2 — push must NOT fire when the email send failed and
+    // the claim was released.
+    expect(sendPushToCustomerMock).not.toHaveBeenCalled();
   });
 });
 
