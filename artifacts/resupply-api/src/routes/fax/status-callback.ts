@@ -19,7 +19,7 @@
 //     name, no page count beyond "did it arrive?".
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -103,7 +103,12 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
     await db
       .update(physicianFaxOutreach)
       .set(updates)
-      .where(eq(physicianFaxOutreach.vendorRef, faxSid));
+      .where(
+        and(
+          eq(physicianFaxOutreach.vendorRef, faxSid),
+          eq(physicianFaxOutreach.vendorName, "twilio"),
+        ),
+      );
   } catch (err) {
     logger.warn(
       { event: "fax_status_db_failed", faxSid, err },

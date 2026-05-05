@@ -67,6 +67,7 @@ router.get("/fax/document/:token", async (req, res) => {
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", 'inline; filename="cover-letter.pdf"');
+  res.setHeader("Cache-Control", "no-store");
   doc.pipe(res);
 
   // ── CONFIDENTIAL banner ─────────────────────────────────────────────

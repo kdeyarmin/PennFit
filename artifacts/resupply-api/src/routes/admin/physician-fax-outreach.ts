@@ -136,34 +136,24 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
   const baseUrl = getFaxPublicBaseUrl()!;
   const db = drizzle(getDbPool());
 
-  try {
-    const faxClient = createTwilioFaxClient();
-    const token = signFaxDocumentToken(outreachId);
-    const mediaUrl = `${baseUrl}/fax/document/${token}`;
-    const statusCallbackUrl = `${baseUrl}/fax/status-callback`;
-    const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
+  const faxClient = createTwilioFaxClient();
+  const token = signFaxDocumentToken(outreachId);
+  const mediaUrl = `${baseUrl}/resupply-api/fax/document/${token}`;
+  const statusCallbackUrl = `${baseUrl}/resupply-api/fax/status-callback`;
+  const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
 
-    const result = await faxClient.sendFax({
+  // Scope try/catch to the Twilio API call only. A DB failure after a
+  // successful send must NOT fall into the catch path — that would mark
+  // the row as "failed" and allow the retry endpoint to re-fire an already-
+  // accepted fax, causing duplicate physician outreach and double billing.
+  let result: { sid: string; status: string };
+  try {
+    result = await faxClient.sendFax({
       to,
       from: fromNumber,
       mediaUrl,
       statusCallbackUrl,
     });
-
-    await db
-      .update(physicianFaxOutreach)
-      .set({
-        status: "sent",
-        vendorRef: result.sid,
-        vendorName: "twilio",
-        sentAt: new Date(),
-        failedAt: null,
-        failureReason: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(physicianFaxOutreach.id, outreachId));
-
-    return { status: "sent", provider: "twilio", vendorRef: result.sid };
   } catch (err) {
     const msg =
       err instanceof TwilioApiError
@@ -187,6 +177,32 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
 
     return { status: "failed", provider: "twilio", dispatchError: msg };
   }
+
+  // Twilio accepted the fax. Stamp the row outside the sendFax try/catch so
+  // a DB hiccup doesn't trigger a retry. The Twilio status-callback will
+  // also update the row when delivery completes, giving a second correction path.
+  try {
+    await db
+      .update(physicianFaxOutreach)
+      .set({
+        status: "sent",
+        vendorRef: result.sid,
+        vendorName: "twilio",
+        sentAt: new Date(),
+        failedAt: null,
+        failureReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(physicianFaxOutreach.id, outreachId));
+  } catch (dbErr) {
+    // Log the vendorRef so ops can manually reconcile if needed.
+    logger.warn(
+      { event: "fax_db_stamp_failed", outreachId, vendorRef: result.sid, err: dbErr },
+      "physician_fax_outreach: fax accepted by Twilio but DB stamp failed",
+    );
+  }
+
+  return { status: "sent", provider: "twilio", vendorRef: result.sid };
 }
 
 // ---------------------------------------------------------------------------

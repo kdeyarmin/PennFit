@@ -272,10 +272,10 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(faxCall.to).toBe("+12155551212");
     expect(faxCall.from).toBe("+12155550000");
     expect(faxCall.mediaUrl).toContain(
-      "https://api.example.test/fax/document/",
+      "https://api.example.test/resupply-api/fax/document/",
     );
     expect(faxCall.statusCallbackUrl).toBe(
-      "https://api.example.test/fax/status-callback",
+      "https://api.example.test/resupply-api/fax/status-callback",
     );
 
     // DB update stamps vendor_ref + status='sent'
