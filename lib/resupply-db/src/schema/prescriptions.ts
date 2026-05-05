@@ -86,6 +86,18 @@ export const prescriptions = resupplySchema.table(
     attachmentUploadedAt: timestamp("attachment_uploaded_at", {
       withTimezone: true,
     }),
+
+    /**
+     * Phase B.2 — timestamp of the most recent "your Rx is expiring,
+     * please contact your prescriber" email we sent. Null until the
+     * dispatcher fires the first renewal nudge. Used to skip already-
+     * nudged rows on subsequent dispatcher runs. Never cleared — when
+     * the physician issues a fresh prescription, that becomes a new
+     * row (history is preserved per the policy block above).
+     */
+    renewalRequestedAt: timestamp("renewal_requested_at", {
+      withTimezone: true,
+    }),
   },
   (t) => ({
     patientIdx: index("prescriptions_patient_idx").on(t.patientId),

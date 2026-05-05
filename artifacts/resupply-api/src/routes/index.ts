@@ -21,6 +21,7 @@ import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
 import patientOnboardingRouter from "./admin/patient-onboarding.js";
+import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -81,6 +82,11 @@ router.use(shopProductQuestionsAdminRouter);
 // 40-70% of patients in the first 90 days; this surface fires the
 // scheduled day-1/7/30/90 nudges that reverse that.
 router.use(patientOnboardingRouter);
+// /admin/prescriptions/send-renewal-due — prescription concierge
+// dispatcher (Phase B.2 / feature #7). Scans active prescriptions
+// expiring within 30 days and emails the patient to coordinate
+// renewal. Aeroflow built its brand on this.
+router.use(prescriptionRenewalsRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
