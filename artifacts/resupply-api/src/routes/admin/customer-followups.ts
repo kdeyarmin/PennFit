@@ -86,7 +86,7 @@ router.get(
       return;
     }
 
-    const rows = await db
+    const baseQuery = db
       .select({
         id: shopCustomerFollowups.id,
         body: shopCustomerFollowups.body,
@@ -111,8 +111,11 @@ router.get(
         includeCompleted
           ? desc(shopCustomerFollowups.dueAt)
           : asc(shopCustomerFollowups.dueAt),
-      )
-      .limit(100);
+      );
+    // Open queue is always small; cap it cheaply. For full history
+    // we do NOT cap — the caller explicitly requested the complete
+    // audit trail and truncating it would break that contract.
+    const rows = await (includeCompleted ? baseQuery : baseQuery.limit(100));
 
     req.log?.info(
       {
@@ -244,6 +247,7 @@ router.patch(
         customerId: shopCustomerFollowups.customerId,
         completedAt: shopCustomerFollowups.completedAt,
         body: shopCustomerFollowups.body,
+        dueAt: shopCustomerFollowups.dueAt,
       })
       .from(shopCustomerFollowups)
       .where(eq(shopCustomerFollowups.id, followupId))
@@ -277,14 +281,23 @@ router.patch(
         completedByEmail: req.adminEmail ?? "<unknown>",
         completedByUserId: req.adminUserId ?? null,
       })
-      .where(eq(shopCustomerFollowups.id, followupId))
+      .where(
+        and(
+          eq(shopCustomerFollowups.id, followupId),
+          isNull(shopCustomerFollowups.completedAt),
+        ),
+      )
       .returning({
         id: shopCustomerFollowups.id,
         completedAt: shopCustomerFollowups.completedAt,
       });
     const updatedRow = updated[0];
     if (!updatedRow) {
-      throw new Error("UPDATE returned no rows");
+      res.status(409).json({
+        error: "already_completed",
+        message: "This followup is already marked complete.",
+      });
+      return;
     }
 
     await logAudit({
@@ -296,6 +309,7 @@ router.patch(
       metadata: {
         customer_id: userId,
         body_length: row.body.length,
+        due_at: row.dueAt.toISOString(),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
