@@ -1,0 +1,259 @@
+// Route tests for /admin/patients/:id/therapy-nights[/sync]
+// (Phase E.1).
+//
+// Coverage:
+//   * 401 without admin
+//   * GET returns nights ordered DESC; numeric coercion correct
+//   * POST sync: 503 when adapter unconfigured; 502 on adapter
+//     throw; happy-path imports + audits with non-PHI envelope.
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import express, { type Express } from "express";
+import request from "supertest";
+
+import {
+  makeRequireAdminMock,
+  type MockAdminCtx,
+} from "../../test-helpers/auth-mocks";
+
+const { mockAdmin } = vi.hoisted(() => ({
+  mockAdmin: { current: null as MockAdminCtx | null },
+}));
+vi.mock("../../middlewares/requireAdmin", () =>
+  makeRequireAdminMock(mockAdmin),
+);
+
+const logAuditMock = vi.hoisted(() =>
+  vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
+);
+vi.mock("@workspace/resupply-audit", () => ({
+  logAudit: logAuditMock,
+}));
+
+const adapterState = vi.hoisted(() => ({
+  configured: true,
+  fetch: async () => ({ nights: [], hasMore: false }),
+}));
+vi.mock("../../lib/therapy-cloud", () => ({
+  adapterFor: () => ({
+    source: "resmed_airview",
+    get configured() {
+      return adapterState.configured;
+    },
+    fetchNights: (...args: unknown[]) => adapterState.fetch(...(args as [])),
+  }),
+}));
+
+const selectQueue: unknown[][] = [];
+const insertedValues: Record<string, unknown>[] = [];
+const dbStub = {
+  select: vi.fn(() => {
+    const result = selectQueue.shift() ?? [];
+    const obj: Record<string, unknown> = {
+      from: () => obj,
+      where: () => obj,
+      orderBy: () => obj,
+      limit: () => Promise.resolve(result),
+    };
+    return obj;
+  }),
+  insert: vi.fn(() => {
+    const obj: Record<string, unknown> = {
+      values: (vals: Record<string, unknown>) => {
+        insertedValues.push(vals);
+        return obj;
+      },
+      onConflictDoUpdate: () => Promise.resolve(),
+    };
+    return obj;
+  }),
+};
+vi.mock("drizzle-orm/node-postgres", () => ({
+  drizzle: () => dbStub,
+}));
+
+vi.mock("@workspace/resupply-db", async () => {
+  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
+    "@workspace/resupply-db",
+  );
+  return { ...actual, getDbPool: () => ({}) as never };
+});
+
+import patientTherapySyncRouter from "./patient-therapy-sync";
+
+const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
+
+function makeApp(): Express {
+  const app = express();
+  app.use(express.json());
+  app.use(patientTherapySyncRouter);
+  return app;
+}
+
+beforeEach(() => {
+  mockAdmin.current = null;
+  selectQueue.length = 0;
+  insertedValues.length = 0;
+  logAuditMock.mockClear();
+  adapterState.configured = true;
+  adapterState.fetch = async () => ({ nights: [], hasMore: false });
+});
+
+describe("GET /admin/patients/:id/therapy-nights", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).get(
+      `/admin/patients/${PATIENT_ID}/therapy-nights`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("coerces numerics to JS numbers and returns DESC by night_date", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([
+      {
+        id: "n_2",
+        nightDate: "2026-05-04",
+        source: "resmed_airview",
+        usageMinutes: 415,
+        ahi: "1.20",
+        leakRateLMin: "12.40",
+        pressureP95Cmh2o: "10.50",
+      },
+      {
+        id: "n_1",
+        nightDate: "2026-05-03",
+        source: "resmed_airview",
+        usageMinutes: 390,
+        ahi: null,
+        leakRateLMin: null,
+        pressureP95Cmh2o: null,
+      },
+    ]);
+    const res = await request(makeApp()).get(
+      `/admin/patients/${PATIENT_ID}/therapy-nights`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.nights).toHaveLength(2);
+    // Non-null numerics coerced through Number() — 1.20 → 1.2.
+    expect(res.body.nights[0].ahi).toBe(1.2);
+    expect(res.body.nights[0].leakRateLMin).toBe(12.4);
+    // Null numerics pass through cleanly.
+    expect(res.body.nights[1].ahi).toBeNull();
+  });
+});
+
+describe("POST /admin/patients/:id/therapy-nights/sync", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp())
+      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
+      .send({ source: "resmed_airview", partnerPatientId: "abc" });
+    expect(res.status).toBe(401);
+  });
+
+  it("503s when the adapter is unconfigured", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ id: PATIENT_ID }]);
+    adapterState.configured = false;
+    const res = await request(makeApp())
+      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
+      .send({ source: "resmed_airview", partnerPatientId: "abc" });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("therapy_cloud_not_configured");
+  });
+
+  it("502s on adapter throw, no partial writes", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ id: PATIENT_ID }]);
+    adapterState.fetch = async () => {
+      throw new Error("upstream-down");
+    };
+    const res = await request(makeApp())
+      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
+      .send({ source: "resmed_airview", partnerPatientId: "abc" });
+    expect(res.status).toBe(502);
+    expect(insertedValues).toEqual([]);
+  });
+
+  it("imports + audits with non-PHI envelope", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ id: PATIENT_ID }]);
+    adapterState.fetch = async () => ({
+      nights: [
+        {
+          nightDate: "2026-05-04",
+          sourceEventId: "evt_1",
+          usageMinutes: 415,
+          ahi: 1.2,
+          leakRateLMin: 12.4,
+          pressureP95Cmh2o: 10.5,
+        },
+        {
+          nightDate: "2026-05-03",
+          sourceEventId: "evt_2",
+          usageMinutes: 390,
+          ahi: null,
+          leakRateLMin: null,
+          pressureP95Cmh2o: null,
+        },
+      ],
+      hasMore: false,
+    });
+
+    const res = await request(makeApp())
+      .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
+      .send({
+        source: "resmed_airview",
+        partnerPatientId: "abc",
+        sinceDate: "2026-05-01",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(2);
+    expect(res.body.source).toBe("resmed_airview");
+
+    expect(insertedValues).toHaveLength(2);
+    expect(insertedValues[0]).toMatchObject({
+      patientId: PATIENT_ID,
+      nightDate: "2026-05-04",
+      source: "resmed_airview",
+      sourceEventId: "evt_1",
+      usageMinutes: 415,
+      // numeric columns serialized as strings; the adapter contract
+      // lets the route translate.
+      ahi: "1.2",
+      leakRateLMin: "12.4",
+    });
+
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      action: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.action).toBe("patient.therapy_nights.sync");
+    expect(audit.metadata).toEqual({
+      patient_id: PATIENT_ID,
+      source: "resmed_airview",
+      import_count: 2,
+      since_date: "2026-05-01",
+    });
+    // No PHI in the envelope: no usage / AHI / leak fields.
+    expect(JSON.stringify(audit.metadata)).not.toContain("415");
+    expect(JSON.stringify(audit.metadata)).not.toContain("1.2");
+  });
+});
