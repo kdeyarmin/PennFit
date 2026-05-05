@@ -70,10 +70,7 @@ export async function registerRxRenewalSendJob(boss: PgBoss): Promise<void> {
       }
     } catch (err) {
       logger.error(
-        {
-          channel: "email",
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { channel: "email", err },
         "rx-renewal.send-due: email channel threw",
       );
     }
@@ -94,10 +91,7 @@ export async function registerRxRenewalSendJob(boss: PgBoss): Promise<void> {
       }
     } catch (err) {
       logger.error(
-        {
-          channel: "sms",
-          err: err instanceof Error ? err.message : String(err),
-        },
+        { channel: "sms", err },
         "rx-renewal.send-due: SMS channel threw",
       );
     }
