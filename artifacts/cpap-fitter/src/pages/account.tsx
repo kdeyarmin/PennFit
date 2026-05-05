@@ -83,6 +83,7 @@ import { AccountMessagesSection } from "@/components/account-messages-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
+import { InsightsSection } from "@/components/insights-section";
 import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
@@ -305,6 +306,7 @@ function AccountInner() {
             from /admin/conversations.
           */}
           <AccountMessagesSection />
+          <InsightsSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection
