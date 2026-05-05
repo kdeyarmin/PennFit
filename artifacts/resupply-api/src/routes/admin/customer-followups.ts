@@ -200,9 +200,9 @@ router.post(
       targetTable: "shop_customer_followups",
       targetId: row.id,
       metadata: {
-        customer_id: userId,
-        body_length: body.length,
-        due_at: row.dueAt.toISOString(),
+        customerId: userId,
+        bodyLength: body.length,
+        dueAt: row.dueAt.toISOString(),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
