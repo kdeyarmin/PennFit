@@ -80,7 +80,7 @@ export function pushBody(kind: TriggerKind): string {
     case "usage_dropping":
       return "We noticed your therapy hours dropping. We can help.";
     case "cushion_wear":
-      return "Your AHI + leak both ticked up — tap for a fresh-cushion suggestion.";
+      return "Your AHI + leak both ticked up - tap for a fresh-cushion suggestion.";
     case "humidifier_drop":
       return "Your tubing may be due for a refresh.";
   }
@@ -99,14 +99,19 @@ export function pushBody(kind: TriggerKind): string {
  */
 export function smsBody(firstName: string, kind: TriggerKind): string {
   const head = firstName ? `Hi ${firstName}` : "Hi";
+  // Plain ASCII only — em-dashes (U+2014) force Twilio UCS-2
+  // encoding which drops the per-segment limit from 160 to 70
+  // chars. A regression to non-ASCII would silently push these
+  // sends into multi-segment territory, doubling cost and
+  // reducing carrier delivery rate.
   switch (kind) {
     case "leak_rising":
-      return `${head}, your CPAP leak rate has trended up — usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. — Penn Home`;
+      return `${head}, your CPAP leak rate has trended up - usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. - Penn Home`;
     case "usage_dropping":
-      return `${head}, we noticed your therapy hours dropped lately. Small adjustments help. Reply YES for a quick check-in call, or STOP to opt out. — Penn Home`;
+      return `${head}, we noticed your therapy hours dropped lately. Small changes help. Reply YES for a quick check-in call, or STOP to opt out. - Penn Home`;
     case "cushion_wear":
-      return `${head}, your AHI + leak rate are both up — usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. — Penn Home`;
+      return `${head}, your AHI + leak rate are both up - usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. - Penn Home`;
     case "humidifier_drop":
-      return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. — Penn Home`;
+      return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. - Penn Home`;
   }
 }

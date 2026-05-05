@@ -34,16 +34,29 @@ describe("subjectForKind", () => {
 });
 
 describe("smsBody", () => {
-  it("fits a single ASCII Twilio segment for every kind", () => {
+  it("fits a single Twilio segment for every kind (≤160 chars AND ASCII-only)", () => {
+    // Length alone isn't enough — Twilio switches to UCS-2 when ANY
+    // codepoint is ≥ 128, dropping the per-segment limit from 160
+    // to 70. A future em-dash/curly-quote regression would split
+    // these messages even at length=120, so the test asserts both
+    // properties.
     for (const kind of KINDS) {
       const body = smsBody("Anna", kind);
       expect(body.length).toBeLessThanOrEqual(160);
+      const offenders = [...body].filter((c) => (c.codePointAt(0) ?? 0) >= 128);
+      expect(
+        offenders,
+        `non-ASCII chars in ${kind}: ${offenders.join("|")}`,
+      ).toEqual([]);
     }
   });
 
   it("includes STOP keyword for opt-out compliance", () => {
     for (const kind of KINDS) {
-      expect(smsBody("Anna", kind)).toContain("STOP");
+      // Match the wording other SMS surfaces use — "STOP to opt
+      // out" is the carrier-recommended phrasing and what the
+      // codebase's other dispatchers ship.
+      expect(smsBody("Anna", kind)).toContain("STOP to opt out");
     }
   });
 

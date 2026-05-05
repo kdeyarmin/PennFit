@@ -49,14 +49,37 @@ describe("rxRenewalPushTitle", () => {
 });
 
 describe("rxRenewalSms", () => {
-  it("fits a single ASCII Twilio segment for typical inputs", () => {
-    // 160-char segment limit; we want headroom below that.
-    expect(rxRenewalSms("Anna", 7).length).toBeLessThanOrEqual(160);
-    expect(rxRenewalSms("", 30).length).toBeLessThanOrEqual(160);
+  it("fits a single Twilio segment for typical inputs (≤160 chars AND ASCII-only)", () => {
+    // Length alone isn't enough — Twilio switches to UCS-2 when ANY
+    // codepoint is ≥ 128, dropping the per-segment limit from 160
+    // to 70. A future em-dash/curly-quote regression would split
+    // this message even at length=120, so the test asserts both
+    // properties.
+    for (const fixture of [
+      ["Anna", 7],
+      ["", 30],
+      ["Anna", 0],
+      ["Anna", 1],
+      ["Maximilian", 30],
+    ] as const) {
+      const body = rxRenewalSms(fixture[0], fixture[1]);
+      expect(
+        body.length,
+        `length for ${JSON.stringify(fixture)}`,
+      ).toBeLessThanOrEqual(160);
+      const offenders = [...body].filter((c) => (c.codePointAt(0) ?? 0) >= 128);
+      expect(
+        offenders,
+        `non-ASCII chars in ${JSON.stringify(fixture)}: ${offenders.join("|")}`,
+      ).toEqual([]);
+    }
   });
 
-  it("includes STOP keyword for opt-out compliance", () => {
-    expect(rxRenewalSms("Bob", 7)).toContain("STOP");
+  it("uses carrier-recommended 'STOP to opt out' wording", () => {
+    // Other SMS surfaces in the codebase use the full phrase. A
+    // shorter "Reply STOP." weakens A2P compliance posture and
+    // diverges from the rest of the dispatcher fleet.
+    expect(rxRenewalSms("Bob", 7)).toContain("STOP to opt out");
   });
 
   it("greets without name when firstName is empty", () => {
