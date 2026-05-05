@@ -157,7 +157,8 @@ function formatPublicDisplayName(raw: string | null | undefined): string {
   const parts = raw.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "PennPaps customer";
   const first = parts[0]!;
-  const lastInitial = parts[1]?.[0] ? `${parts[1][0]}.` : "";
+  const lastPart = parts.length > 1 ? parts[parts.length - 1] : undefined;
+  const lastInitial = lastPart?.[0] ? `${lastPart[0]}.` : "";
   return lastInitial ? `${first} ${lastInitial}` : first;
 }
 
