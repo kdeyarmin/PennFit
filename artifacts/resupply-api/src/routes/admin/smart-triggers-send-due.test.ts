@@ -73,6 +73,25 @@ vi.mock("@workspace/resupply-telecom", async () => {
   };
 });
 
+const sendPushToCustomerByEmailMock = vi.hoisted(() =>
+  vi.fn<
+    (
+      email: string,
+      payload: {
+        title: string;
+        body: string;
+        url?: string;
+        tag?: string;
+      },
+    ) => Promise<{ delivered: number; expired: number; transient: number }>
+  >(async () => ({ delivered: 0, expired: 0, transient: 0 })),
+);
+vi.mock("../../lib/web-push", () => ({
+  sendPushToCustomerByEmail: sendPushToCustomerByEmailMock,
+  sendPushToCustomer: vi.fn(),
+  isPushConfigured: () => false,
+}));
+
 const selectQueue: unknown[][] = [];
 const updateSets: Record<string, unknown>[] = [];
 const dbStub = {
@@ -150,6 +169,7 @@ beforeEach(() => {
   sendSmsMock.mockClear();
   sendSmsMock.mockResolvedValue({ messageSid: "SM_1" });
   twilioConfigured.current = true;
+  sendPushToCustomerByEmailMock.mockClear();
 });
 afterEach(() => {
   selectQueue.length = 0;
@@ -200,6 +220,17 @@ describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
       metadata: Record<string, unknown>;
     };
     expect(audit.metadata.channel).toBe("email");
+
+    // Phase G.8 — push fan-out fires by email lookup. Best-effort:
+    // the helper itself returns {0,0,0} when no customer matches,
+    // and the route logs and continues either way.
+    expect(sendPushToCustomerByEmailMock).toHaveBeenCalledTimes(1);
+    const [pushEmail, pushPayload] =
+      sendPushToCustomerByEmailMock.mock.calls[0]!;
+    expect(pushEmail).toBe("anna@example.com");
+    expect(pushPayload.url).toBe("/account/insights");
+    expect(pushPayload.tag).toMatch(/^smart_trigger:/);
+    expect(pushPayload.title).toBe("Your CPAP mask seal may need attention");
   });
 });
 

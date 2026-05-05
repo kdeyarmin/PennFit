@@ -35,6 +35,7 @@ import {
   shopCustomerPushSubscriptions,
 } from "@workspace/resupply-db";
 
+import { isPushConfigured } from "../../lib/web-push";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const router: IRouter = Router();
@@ -66,11 +67,24 @@ router.get(
   "/shop/me/push-subscriptions/vapid-public-key",
   requireSignedIn,
   async (_req, res) => {
+    // Phase G.8: gate on the full VAPID triple, not just the public
+    // key. If a deployer has set the public key but the server can't
+    // actually sign+send (missing PRIVATE / SUBJECT), the SPA must
+    // hide the "Enable push" toggle — otherwise we'd accept
+    // subscriptions we can never deliver to, accumulating dead rows
+    // and silently failing for users who think they opted in.
+    if (!isPushConfigured()) {
+      res.status(503).json({
+        error: "push_not_configured",
+        message: "Push notifications are not configured on this server.",
+      });
+      return;
+    }
     const key = process.env.WEB_PUSH_VAPID_PUBLIC_KEY?.trim();
     if (!key) {
-      // Same shape as other "feature not configured" responses in
-      // the codebase. The SPA hides the "Enable push" toggle when
-      // it sees this.
+      // Defensive — isPushConfigured() above already required this,
+      // but a concurrent env mutation could in principle race. Keep
+      // the 503 path explicit so the SPA always sees a typed error.
       res.status(503).json({
         error: "push_not_configured",
         message: "Push notifications are not configured on this server.",

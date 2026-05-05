@@ -47,6 +47,7 @@ import {
 
 import { evaluateAll, type TriggerKind } from "../../lib/smart-triggers";
 import { logger } from "../../lib/logger";
+import { sendPushToCustomerByEmail } from "../../lib/web-push";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -298,6 +299,31 @@ router.post(
           logger.warn({ err }, "patient.smart_trigger.sent audit write failed");
         });
 
+        // Phase G.8 — additionally fan out to any push subscriptions
+        // belonging to a shop_customer whose email_lower matches the
+        // patient's email. Best-effort: a push misconfig or no
+        // matching customer can never roll back the email/SMS that
+        // already went out. Same PHI posture as the SPA's insights
+        // surface — title and body name no PHI, just the trigger
+        // copy. URL deep-links to /account/insights so the customer
+        // sees the same headline and CTA they'd see in the SPA.
+        if (row.email) {
+          void sendPushToCustomerByEmail(row.email, {
+            title: subjectForKind(row.kind as TriggerKind),
+            body: pushBody(row.kind as TriggerKind),
+            url: "/account/insights",
+            tag: `smart_trigger:${row.eventId}`,
+          }).catch((err) => {
+            logger.warn(
+              {
+                event_id: row.eventId,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              "smart-trigger push fan-out threw (non-fatal)",
+            );
+          });
+        }
+
         sent++;
       } catch (err) {
         failed++;
@@ -467,6 +493,27 @@ function htmlBody(greeting: string, kind: TriggerKind): string {
  * carry the trigger reason and the CTA, not the long explanation
  * the email body uses.
  */
+/**
+ * Push-notification body. Short — push notifications get
+ * truncated aggressively on iOS/Android lock screens (≈ 110
+ * chars). Different from the SMS variant (no STOP keyword;
+ * already gated by the customer's browser permission) and
+ * different from the email body (which can sustain a paragraph
+ * of context).
+ */
+function pushBody(kind: TriggerKind): string {
+  switch (kind) {
+    case "leak_rising":
+      return "Your mask leak rate has trended up. Tap to see what we noticed.";
+    case "usage_dropping":
+      return "We noticed your therapy hours dropping. We can help.";
+    case "cushion_wear":
+      return "Your AHI + leak both ticked up — tap for a fresh-cushion suggestion.";
+    case "humidifier_drop":
+      return "Your tubing may be due for a refresh.";
+  }
+}
+
 function smsBody(firstName: string, kind: TriggerKind): string {
   const head = firstName ? `Hi ${firstName}` : "Hi";
   switch (kind) {
