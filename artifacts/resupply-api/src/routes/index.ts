@@ -20,6 +20,7 @@ import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
+import patientOnboardingRouter from "./admin/patient-onboarding.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -74,6 +75,12 @@ router.use(shopReviewsAdminRouter);
 // for customer-submitted product Q&A (Phase A.5). Pending questions
 // only become publicly visible after a CSR posts an answer.
 router.use(shopProductQuestionsAdminRouter);
+// /admin/patients/:id/onboarding + /admin/onboarding/send-due —
+// first-90-day adherence-coaching enrollment + dispatcher (Phase
+// B.1 / feature #17). The CMS adherence threshold is missed by
+// 40-70% of patients in the first 90 days; this surface fires the
+// scheduled day-1/7/30/90 nudges that reverse that.
+router.use(patientOnboardingRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
