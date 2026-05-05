@@ -12,6 +12,7 @@ import detailRouter from "./detail";
 import exportCsvRouter from "./export-csv";
 import importCsvRouter from "./import-csv";
 import listRouter from "./list";
+import followupsRouter from "./followups";
 import notesCreateRouter from "./notes-create";
 import notesListRouter from "./notes-list";
 import prescriptionsAttachmentRouter from "./prescriptions-attachment";
@@ -32,6 +33,11 @@ router.use(listRouter);
 router.use(createRouter);
 router.use(notesListRouter);
 router.use(notesCreateRouter);
+// /patients/:id/followups — CSR-scheduled callback reminders (Phase 19).
+// Mounted alongside the notes routers since they share the same
+// "literal-segment-after-:id" pattern and shouldn't be swallowed by
+// the detail/timeline param routes.
+router.use(followupsRouter);
 router.use(prescriptionsCreateRouter);
 router.use(prescriptionsUpdateRouter);
 // Attachment routes — admin-only, prescription-scoped object-storage
