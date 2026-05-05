@@ -7,8 +7,11 @@
 //
 // Three buckets, computed client-side from the timestamps:
 //   * Overdue (due_at < now) — rose-tinted, listed first.
-//   * Today (due_at within next 24h) — neutral.
-//   * Upcoming (everything else) — muted.
+//   * Today (due_at >= now AND due_at <= end of today) — amber.
+//   * Upcoming (everything else, i.e. due tomorrow or later) — muted.
+//
+// "End of today" is computed from the browser's local clock so the
+// bucket aligns with calendar days rather than a rolling 24h window.
 //
 // Each row links to /admin/shop/customers/:userId for full context
 // and has a one-click "Done" that reuses the per-customer PATCH
@@ -27,8 +30,6 @@ import {
   type AdminFollowupRow,
 } from "@/lib/admin/followups-list-api";
 import { completeAdminCustomerFollowup } from "@/lib/admin/customer-followups-api";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function AdminFollowupsPage() {
   const qc = useQueryClient();
@@ -127,7 +128,7 @@ export function AdminFollowupsPage() {
       <Bucket
         title="Due today"
         rows={buckets.today}
-        emptyHint="Nothing due in the next 24 hours."
+        emptyHint="Nothing else due today."
         tone="warning"
         onComplete={(row) =>
           completeMutation.mutate({
@@ -159,15 +160,25 @@ function bucketize(rows: AdminFollowupRow[]): {
   today: AdminFollowupRow[];
   upcoming: AdminFollowupRow[];
 } {
-  const now = Date.now();
-  const cutoff = now + DAY_MS;
+  const now = new Date();
+  const endOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+  const nowMs = now.getTime();
+  const endOfTodayMs = endOfToday.getTime();
   const overdue: AdminFollowupRow[] = [];
   const today: AdminFollowupRow[] = [];
   const upcoming: AdminFollowupRow[] = [];
   for (const r of rows) {
     const due = new Date(r.dueAt).getTime();
-    if (due < now) overdue.push(r);
-    else if (due < cutoff) today.push(r);
+    if (due < nowMs) overdue.push(r);
+    else if (due <= endOfTodayMs) today.push(r);
     else upcoming.push(r);
   }
   return { overdue, today, upcoming };
