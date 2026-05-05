@@ -27,6 +27,8 @@ vi.mock("../../middlewares/requireSignedIn", () =>
 );
 
 const selectQueue: unknown[][] = [];
+const updateReturnQueue: unknown[][] = [];
+const updateSets: Record<string, unknown>[] = [];
 const dbStub = {
   select: vi.fn(() => {
     const result = selectQueue.shift() ?? [];
@@ -36,6 +38,17 @@ const dbStub = {
       where: () => obj,
       orderBy: () => obj,
       limit: () => Promise.resolve(result),
+    };
+    return obj;
+  }),
+  update: vi.fn(() => {
+    const obj: Record<string, unknown> = {
+      set: (vals: Record<string, unknown>) => {
+        updateSets.push(vals);
+        return obj;
+      },
+      where: () => obj,
+      returning: () => Promise.resolve(updateReturnQueue.shift() ?? []),
     };
     return obj;
   }),
@@ -65,6 +78,8 @@ function makeApp(): Express {
 beforeEach(() => {
   mockSignedIn.current = null;
   selectQueue.length = 0;
+  updateReturnQueue.length = 0;
+  updateSets.length = 0;
 });
 
 describe("GET /shop/me/insights", () => {
@@ -152,5 +167,70 @@ describe("GET /shop/me/insights", () => {
     const json = JSON.stringify(res.body);
     // None of the detection inputs ever leak.
     expect(json).not.toMatch(/leakRate|ahi|usageMinutes/i);
+  });
+});
+
+const DISMISS_ID = "11111111-2222-3333-4444-555555555555";
+
+describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
+  it("401s without sign-in", async () => {
+    const res = await request(makeApp()).post(
+      `/shop/me/insights/${DISMISS_ID}/dismiss`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("404s when no email is attached to the session", async () => {
+    mockSignedIn.current = USER_ID;
+    const res = await request(makeApp()).post(
+      `/shop/me/insights/${DISMISS_ID}/dismiss`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("400s on a non-UUID id", async () => {
+    mockSignedIn.current = {
+      customerId: USER_ID,
+      email: "alice@example.com",
+    };
+    const res = await request(makeApp()).post(
+      "/shop/me/insights/not-a-uuid/dismiss",
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when the trigger row doesn't belong to the customer's email", async () => {
+    mockSignedIn.current = {
+      customerId: USER_ID,
+      email: "alice@example.com",
+    };
+    // UPDATE … RETURNING [] → not-our-row OR already-dismissed; we
+    // collapse both into a 404 so an attacker can't enumerate IDs.
+    updateReturnQueue.push([]);
+    const res = await request(makeApp()).post(
+      `/shop/me/insights/${DISMISS_ID}/dismiss`,
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("insight_not_found");
+    // Set was attempted (the WHERE filtered it out, not the SET).
+    expect(updateSets).toHaveLength(1);
+    expect(updateSets[0]?.dismissedAt).toBeInstanceOf(Date);
+    expect(updateSets[0]?.dismissedByEmail).toBe("alice@example.com");
+  });
+
+  it("returns ok + audits when the row matches", async () => {
+    mockSignedIn.current = {
+      customerId: USER_ID,
+      email: "Alice@Example.com",
+    };
+    updateReturnQueue.push([{ id: DISMISS_ID }]);
+    const res = await request(makeApp()).post(
+      `/shop/me/insights/${DISMISS_ID}/dismiss`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(updateSets).toHaveLength(1);
+    // Email is normalized to lowercase before stamping audit.
+    expect(updateSets[0]?.dismissedByEmail).toBe("alice@example.com");
   });
 });

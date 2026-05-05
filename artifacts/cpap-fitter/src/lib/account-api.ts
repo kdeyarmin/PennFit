@@ -461,3 +461,8 @@ export interface CustomerInsight {
 
 export const fetchInsights = () =>
   meFetch<{ insights: CustomerInsight[] }>("/shop/me/insights");
+
+export const dismissInsight = (id: string) =>
+  meFetch<{ ok: true }>(`/shop/me/insights/${encodeURIComponent(id)}/dismiss`, {
+    method: "POST",
+  });

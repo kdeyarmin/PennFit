@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Activity, ArrowRight, Sparkles } from "lucide-react";
-import { fetchInsights, type CustomerInsight } from "@/lib/account-api";
+import { Activity, ArrowRight, Sparkles, X } from "lucide-react";
+import {
+  dismissInsight,
+  fetchInsights,
+  type CustomerInsight,
+} from "@/lib/account-api";
 
 /**
  * "What we noticed" section on /account (Phase G.4).
@@ -45,6 +49,19 @@ export function InsightsSection() {
 
   if (loading || !items || items.length === 0) return null;
 
+  // Optimistic dismiss: drop the card from local state immediately,
+  // then fire the server call. On failure, restore the card and
+  // surface a non-blocking inline error on the affected item.
+  async function handleDismiss(id: string) {
+    const before = items;
+    setItems((curr) => (curr ?? []).filter((i) => i.id !== id));
+    try {
+      await dismissInsight(id);
+    } catch {
+      setItems(before);
+    }
+  }
+
   return (
     <section
       className="glass-card rounded-2xl p-6 space-y-4"
@@ -61,14 +78,24 @@ export function InsightsSection() {
       </p>
       <ul className="space-y-3">
         {items.map((insight) => (
-          <InsightCard key={insight.id} insight={insight} />
+          <InsightCard
+            key={insight.id}
+            insight={insight}
+            onDismiss={() => void handleDismiss(insight.id)}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function InsightCard({ insight }: { insight: CustomerInsight }) {
+function InsightCard({
+  insight,
+  onDismiss,
+}: {
+  insight: CustomerInsight;
+  onDismiss: () => void;
+}) {
   const detected = new Date(insight.detectedAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -101,6 +128,16 @@ function InsightCard({ insight }: { insight: CustomerInsight }) {
             Noticed {detected}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          title="Dismiss"
+          className="text-muted-foreground hover:text-[hsl(var(--penn-navy))] -mt-1 -mr-1 p-1 rounded transition-colors"
+          data-testid={`account-insight-dismiss-${insight.kind}`}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
       <div className="flex justify-end">
         <Link
