@@ -120,6 +120,7 @@ export function AdminFollowupsPage() {
         tone="danger"
         onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
+        anyCompleting={completeMutation.isPending}
       />
       <Bucket
         title="Due today"
@@ -128,6 +129,7 @@ export function AdminFollowupsPage() {
         tone="warning"
         onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
+        anyCompleting={completeMutation.isPending}
       />
       <Bucket
         title="Upcoming"
@@ -136,6 +138,7 @@ export function AdminFollowupsPage() {
         tone="muted"
         onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
+        anyCompleting={completeMutation.isPending}
       />
     </div>
   );
@@ -177,6 +180,7 @@ function Bucket({
   tone,
   onComplete,
   completingId,
+  anyCompleting,
 }: {
   title: string;
   rows: AdminFollowupRow[];
@@ -184,6 +188,7 @@ function Bucket({
   tone: "danger" | "warning" | "muted";
   onComplete: (row: AdminFollowupRow) => void;
   completingId: string | null;
+  anyCompleting: boolean;
 }) {
   return (
     <Card>
@@ -233,6 +238,7 @@ function Bucket({
                 tone={tone}
                 onComplete={onComplete}
                 isCompleting={completingId === r.id}
+                anyCompleting={anyCompleting}
               />
             ))}
           </ul>
@@ -247,11 +253,13 @@ function Row({
   tone,
   onComplete,
   isCompleting,
+  anyCompleting,
 }: {
   row: AdminFollowupRow;
   tone: "danger" | "warning" | "muted";
   onComplete: (row: AdminFollowupRow) => void;
   isCompleting: boolean;
+  anyCompleting: boolean;
 }) {
   const accent =
     tone === "danger"
@@ -320,7 +328,7 @@ function Row({
       <Button
         size="sm"
         intent="secondary"
-        disabled={isCompleting}
+        disabled={anyCompleting}
         onClick={() => onComplete(row)}
         data-testid={`admin-followup-complete-${row.id}`}
       >
