@@ -51,6 +51,25 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+const sendPushToCustomerByEmailMock = vi.hoisted(() =>
+  vi.fn<
+    (
+      email: string,
+      payload: {
+        title: string;
+        body: string;
+        url?: string;
+        tag?: string;
+      },
+    ) => Promise<{ delivered: number; expired: number; transient: number }>
+  >(async () => ({ delivered: 0, expired: 0, transient: 0 })),
+);
+vi.mock("../../lib/web-push", () => ({
+  sendPushToCustomerByEmail: sendPushToCustomerByEmailMock,
+  sendPushToCustomer: vi.fn(),
+  isPushConfigured: () => false,
+}));
+
 const sendSmsMock = vi.hoisted(() =>
   vi.fn<
     (input: { to: string; body: string }) => Promise<{ messageSid: string }>
@@ -128,6 +147,7 @@ beforeEach(() => {
   sendSmsMock.mockClear();
   sendSmsMock.mockResolvedValue({ messageSid: "SM_1" });
   twilioConfigured.current = true;
+  sendPushToCustomerByEmailMock.mockClear();
 });
 
 describe("POST /admin/prescriptions/send-renewal-due", () => {
@@ -209,6 +229,17 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
     expect(typeof audit.metadata.days_until_expiry).toBe("number");
     expect(audit.metadata.days_until_expiry).toBeGreaterThanOrEqual(4);
     expect(audit.metadata.days_until_expiry).toBeLessThanOrEqual(5);
+
+    // Phase G.9 — push fan-out by email lookup runs alongside the
+    // email send. Best-effort: the helper itself returns {0,0,0}
+    // when no matching shop_customers row exists.
+    expect(sendPushToCustomerByEmailMock).toHaveBeenCalledTimes(1);
+    const [pushEmail, pushPayload] =
+      sendPushToCustomerByEmailMock.mock.calls[0]!;
+    expect(pushEmail).toBe("anna@example.com");
+    expect(pushPayload.url).toBe("/account");
+    expect(pushPayload.tag).toMatch(/^rx_renewal:/);
+    expect(pushPayload.title).toMatch(/Rx expires/);
   });
 
   it("skips rows without an email + does not stamp", async () => {
