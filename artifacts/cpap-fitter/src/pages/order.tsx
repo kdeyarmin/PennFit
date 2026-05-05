@@ -89,6 +89,40 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+/**
+ * Format a US phone string as the user types. Strips non-digits,
+ * truncates to 10 digits (US local), and reformats as
+ *   ""               → ""
+ *   "5"              → "(5"
+ *   "555"            → "(555)"
+ *   "5551"           → "(555) 1"
+ *   "5551234"        → "(555) 123-4"
+ *   "5551234567"     → "(555) 123-4567"
+ *
+ * The Zod schema accepts any non-empty 7-30 char string, so the
+ * formatted output is always within bounds and is the natural
+ * shape the contact-center / EHR systems expect downstream. We
+ * keep a leading "+1" or "1" un-touched (return the digit string
+ * with no parens) so international or unusual formats aren't
+ * mangled — only obvious 10-digit US phones get reformatted.
+ */
+function formatUsPhone(input: string): string {
+  if (!input) return "";
+  // Skip reformat for international-looking inputs.
+  if (input.trim().startsWith("+")) return input;
+  const digits = input.replace(/\D/g, "");
+  if (digits.length === 0) return "";
+  // Treat 11-digit numbers starting with 1 as US country-code-prefixed.
+  // Drop the leading 1 for display since the rest is local.
+  const local =
+    digits.length === 11 && digits.startsWith("1")
+      ? digits.slice(1)
+      : digits.slice(0, 10);
+  if (local.length < 4) return `(${local}`;
+  if (local.length < 7) return `(${local.slice(0, 3)}) ${local.slice(3)}`;
+  return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6, 10)}`;
+}
+
 const US_STATES = [
   "AL",
   "AK",
@@ -414,13 +448,28 @@ export function Order() {
               error={errors.patient?.phone?.message}
               required
             >
-              <Input
-                data-testid="input-phone"
-                type="tel"
-                placeholder="(555) 123-4567"
-                {...register("patient.phone")}
-                autoComplete="tel"
-              />
+              {(() => {
+                // We chain a custom onChange on top of register so the
+                // input + react-hook-form state both store the
+                // formatted value. Mutating e.target.value before
+                // forwarding to RHF's onChange keeps the form state
+                // and the visible input in sync without the overhead
+                // of switching to <Controller>.
+                const reg = register("patient.phone");
+                return (
+                  <Input
+                    data-testid="input-phone"
+                    type="tel"
+                    placeholder="(555) 123-4567"
+                    autoComplete="tel"
+                    {...reg}
+                    onChange={(e) => {
+                      e.target.value = formatUsPhone(e.target.value);
+                      void reg.onChange(e);
+                    }}
+                  />
+                );
+              })()}
             </Field>
             <Field
               label="Email"
@@ -691,11 +740,21 @@ export function Order() {
                 label="Physician phone (optional)"
                 error={errors.prescription?.physicianPhone?.message}
               >
-                <Input
-                  data-testid="input-physician-phone"
-                  type="tel"
-                  {...register("prescription.physicianPhone")}
-                />
+                {(() => {
+                  const reg = register("prescription.physicianPhone");
+                  return (
+                    <Input
+                      data-testid="input-physician-phone"
+                      type="tel"
+                      placeholder="(555) 123-4567"
+                      {...reg}
+                      onChange={(e) => {
+                        e.target.value = formatUsPhone(e.target.value);
+                        void reg.onChange(e);
+                      }}
+                    />
+                  );
+                })()}
               </Field>
             </div>
           </CardContent>
