@@ -29,6 +29,7 @@ import PgBoss from "pg-boss";
 import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
 import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-attachment-sweep.js";
+import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -71,10 +72,14 @@ export async function startWorker(): Promise<void> {
   // failures. See jobs/reminders.ts for the full rationale.
   await registerReminderJobs(boss);
   await registerPrescriptionAttachmentSweepJob(boss);
+  // Phase G.13 — daily smart-trigger evaluator scan. Idempotent
+  // re-run; the partial-unique index on
+  // patient_smart_trigger_events guarantees no double-fires.
+  await registerSmartTriggerEvaluatorJob(boss);
 
   workerReady = true;
   logger.info(
-    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep scheduled)",
+    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep + smart-trigger-evaluator scheduled)",
   );
 }
 
