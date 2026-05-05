@@ -140,7 +140,7 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
       physicianName: data.physicianName,
       physicianFaxE164: data.physicianFaxE164,
       coverLetterText: data.coverLetterText,
-      createdByEmail: req.adminEmail ?? null,
+      createdByEmail: req.adminEmail,
     })
     .returning({ id: physicianFaxOutreach.id });
   const id = inserted[0]!.id;
