@@ -56,6 +56,11 @@ export function rxRenewalHtml(
  * drop the limit to 70/segment, so we deliberately use plain ASCII
  * (regular hyphen, no em-dash).
  *
+ * The " - Penn Home" sender tag used by smart-trigger SMS bodies is
+ * intentionally omitted here: the renewal body is longer and adding
+ * the tag would push 11-char names over 160 chars. Twilio's sender
+ * number is already registered, so recipients can identify the sender.
+ *
  * Reply-mode hint matches the email's "reply to delegate to us"
  * path: patients can text back the physician's name and our
  * messaging dispatcher routes the reply into the existing
