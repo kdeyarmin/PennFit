@@ -120,6 +120,14 @@ router.post(
 
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
+    // requireSignedIn guarantees this is set, but guard defensively
+    // so a future middleware re-ordering can't silently mis-route.
+    if (!req.userCustomerId) {
+      res.status(401).json({ error: "sign_in_required" });
+      return;
+    }
+    const customerId: string = req.userCustomerId;
+
     // Resolve email + display name for Stripe Customer creation.
     // Sourced from req.shopCustomerEmail / req.shopCustomerDisplayName,
     // populated by requireSignedIn from auth.users.
@@ -180,6 +188,15 @@ router.post(
         res.status(502).json({ error: "stripe_retrieve_failed" });
         return;
       }
+      // Guard against Stripe returning a paginated line_items list
+      // (has_more: true). For CPAP reorders this is virtually impossible
+      // (max 20-item limit in the request body above), but the Stripe
+      // API can theoretically paginate. Fail loudly rather than silently
+      // presenting an incomplete basket to the customer.
+      if (oldSession.line_items?.has_more) {
+        res.status(409).json({ error: "reorder_basket_too_large" });
+        return;
+      }
       const li = oldSession.line_items?.data ?? [];
       const unavailableLineItems: string[] = [];
       const mapped = li.map((line, index) => {
@@ -213,6 +230,13 @@ router.post(
         res.status(409).json({ error: "reorder_basket_empty" });
         return;
       }
+      // If any line items were silently dropped (archived / deleted
+      // price), refuse the reorder rather than creating a basket the
+      // customer didn't expect.
+      if (basket.length < li.length) {
+        res.status(409).json({ error: "price_unavailable" });
+        return;
+      }
     }
 
     // Catalog guard: verify every price in the resolved basket belongs
@@ -238,7 +262,7 @@ router.post(
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
-      customerId: req.userCustomerId!,
+      customerId: customerId,
       email,
       displayName,
     });
@@ -270,7 +294,7 @@ router.post(
         : reorderSessionId
           ? "reorder"
           : "express",
-      customer_id: req.userCustomerId!,
+      customer_id: customerId,
       ...(reorderSessionId ? { reorder_of_session: reorderSessionId } : {}),
     };
 
@@ -313,7 +337,7 @@ router.post(
             // always needs a saved payment method.
             subscription_data: {
               metadata: {
-                customer_id: req.userCustomerId!,
+                customer_id: customerId,
                 source: "pennpaps-shop",
               },
             },
@@ -368,7 +392,7 @@ router.post(
       .values({
         stripeSessionId: session.id,
         status: "pending",
-        customerId: req.userCustomerId!,
+        customerId: customerId,
       })
       .onConflictDoUpdate({
         target: shopOrders.stripeSessionId,
