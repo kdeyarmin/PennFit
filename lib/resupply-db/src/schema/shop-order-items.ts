@@ -36,6 +36,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   text,
@@ -123,6 +124,10 @@ export const shopOrderItems = resupplySchema.table(
     orderIdIdx: index("shop_order_items_order_id_idx").on(t.orderId),
     /** Admin "buyers of product X" / popularity reports. */
     productIdx: index("shop_order_items_product_id_idx").on(t.productId),
+    quantityPositive: check(
+      "shop_order_items_quantity_positive",
+      sql`${t.quantity} >= 1`,
+    ),
   }),
 );
 

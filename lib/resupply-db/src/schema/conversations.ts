@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { episodes } from "./episodes";
 import { patients } from "./patients";
@@ -141,6 +141,10 @@ export const conversations = resupplySchema.table(
     // and the conversations_subject_xor_check CHECK constraint.
     // Drizzle can't express the WHERE clauses; the migration SQL is
     // the source of truth for those indexes / constraints.
+    priorityEnum: check(
+      "conversations_priority_enum",
+      sql`${t.priority} IN ('low','normal','high','urgent')`,
+    ),
   }),
 );
 
