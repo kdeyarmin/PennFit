@@ -75,11 +75,14 @@ export function useBiometricLockPreference(): UseBiometricLockPreference {
       } else {
         window.localStorage.removeItem(STORAGE_KEY);
       }
+      // Notify all hook instances in this tab only after a successful
+      // storage write. If localStorage is blocked (private browsing),
+      // we leave the in-memory state unchanged so it stays consistent
+      // with what will be read on the next page load.
+      listeners.forEach((cb) => cb(next));
     } catch {
       // ignore — private-browsing modes block localStorage
     }
-    // Notify all hook instances in this tab (including the caller).
-    listeners.forEach((cb) => cb(next));
   }, []);
 
   return { enabled, setEnabled, loaded };

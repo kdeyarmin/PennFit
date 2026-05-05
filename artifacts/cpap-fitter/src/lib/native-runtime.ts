@@ -52,25 +52,31 @@ export function getNativePlatform(): "ios" | "android" | "web" {
  * Used by BiometricLockToggle to avoid surfacing the preference toggle
  * on devices where the gate would always fall open.
  */
+// @capacitor-community/biometric-auth is an optional runtime dependency
+// present only in native Capacitor builds. Storing the package name in a
+// `string`-typed variable prevents TypeScript from statically resolving
+// the module declarations at compile time (which would fail when the
+// package isn't installed), and avoids the `new Function` / eval pattern
+// that static analysis tools flag as a code-injection risk.
+const BIOMETRIC_PLUGIN: string = "@capacitor-community/biometric-auth";
+
+type BiometricPlugin = {
+  BiometricAuth?: {
+    authenticate?: (opts: { reason: string }) => Promise<unknown>;
+    checkBiometry?: () => Promise<{ isAvailable: boolean }>;
+  };
+};
+
+async function loadBiometricPlugin(): Promise<BiometricPlugin | null> {
+  return (import(BIOMETRIC_PLUGIN).catch(() => null)) as Promise<BiometricPlugin | null>;
+}
+
 export async function checkBiometricAvailability(): Promise<boolean> {
   if (!(await isNativeApp())) return false;
   try {
-    const importer = new Function("m", "return import(m)") as (
-      m: string,
-    ) => Promise<unknown>;
-    const mod: unknown = await importer(
-      "@capacitor-community/biometric-auth",
-    ).catch(() => null);
-    if (!mod) return false;
-    const BiometricAuth = (
-      mod as {
-        BiometricAuth?: {
-          checkBiometry?: () => Promise<{ isAvailable: boolean }>;
-        };
-      }
-    ).BiometricAuth;
-    if (!BiometricAuth?.checkBiometry) return false;
-    const result = await BiometricAuth.checkBiometry();
+    const mod = await loadBiometricPlugin();
+    if (!mod?.BiometricAuth?.checkBiometry) return false;
+    const result = await mod.BiometricAuth.checkBiometry();
     return result.isAvailable === true;
   } catch {
     return false;
@@ -113,35 +119,19 @@ export async function promptBiometric(
     return { kind: "not-supported", reason: "web" };
   }
   try {
-    // Dynamic import via `Function` so TypeScript doesn't try to
-    // statically resolve a package that may or may not be installed
-    // at compile time. When the plugin isn't installed, the import
-    // throws and we treat that as "no-plugin" rather than a hard
-    // crash. Once a deployer runs `pnpm install` with the plugin
-    // listed in package.json, this branch becomes the happy path.
+    // loadBiometricPlugin() uses a variable-based import so TypeScript and
+    // bundler tools don't try to resolve the optional package at build time.
+    // When the plugin isn't installed the import rejects and we return
+    // "no-plugin". Once a deployer runs `pnpm install` with the plugin
+    // listed in package.json this branch becomes the happy path.
     //
     // Plugin: @capacitor-community/biometric-auth
     //   https://github.com/aparajita/capacitor-biometric-auth
-    const importer = new Function("m", "return import(m)") as (
-      m: string,
-    ) => Promise<unknown>;
-    const mod: unknown = await importer(
-      "@capacitor-community/biometric-auth",
-    ).catch(() => null);
-    if (!mod) {
+    const mod = await loadBiometricPlugin();
+    if (!mod?.BiometricAuth?.authenticate) {
       return { kind: "not-supported", reason: "no-plugin" };
     }
-    const BiometricAuth = (
-      mod as {
-        BiometricAuth?: {
-          authenticate?: (opts: { reason: string }) => Promise<unknown>;
-        };
-      }
-    ).BiometricAuth;
-    if (!BiometricAuth?.authenticate) {
-      return { kind: "not-supported", reason: "no-plugin" };
-    }
-    await BiometricAuth.authenticate({ reason });
+    await mod.BiometricAuth.authenticate({ reason });
     return { kind: "ok" };
   } catch (err) {
     const e = err as { code?: string; message?: string };
