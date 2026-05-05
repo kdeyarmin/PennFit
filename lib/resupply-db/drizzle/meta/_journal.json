@@ -267,6 +267,27 @@
       "when": 1810972800000,
       "tag": "0035_shop_customer_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1811059200000,
+      "tag": "0036_conversations_in_app_notification_throttle",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1811145600000,
+      "tag": "0037_shop_order_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1811232000000,
+      "tag": "0038_shop_return_notes",
+      "breakpoints": true
     }
   ]
 }

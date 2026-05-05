@@ -25,6 +25,7 @@
 //   clear (the requireAdmin gate has already cleared the PHI-access
 //   policy check). We do NOT log per-row PHI to the browser console.
 
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -44,6 +45,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { Badge } from "@/components/admin/Badge";
 import { CustomerNotesPanel } from "@/components/admin/CustomerNotesPanel";
+import { OrderNotesPanel } from "@/components/admin/OrderNotesPanel";
 import {
   AdminCustomerNotFoundError,
   getAdminCustomerDetail,
@@ -519,42 +521,73 @@ function RecentOrdersCard({
         </h2>
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {orders.slice(0, 8).map((o) => (
-            <li
-              key={o.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                padding: "8px 0",
-                borderBottom: "1px solid var(--border, #e2e8f0)",
-                fontSize: 13,
-              }}
-            >
-              <span>
-                <code
-                  style={{
-                    background: "#f1f5f9",
-                    padding: "1px 4px",
-                    borderRadius: 3,
-                    fontSize: 11,
-                  }}
-                >
-                  {o.id.slice(0, 8)}
-                </code>{" "}
-                · {o.status} · {o.itemCount} item
-                {o.itemCount === 1 ? "" : "s"}
-              </span>
-              <span style={{ color: "var(--text-muted, #475569)" }}>
-                {o.amountTotalCents != null
-                  ? formatCents(o.amountTotalCents)
-                  : "—"}{" "}
-                · {new Date(o.createdAt).toLocaleDateString()}
-              </span>
-            </li>
+            <OrderRow key={o.id} order={o} />
           ))}
         </ul>
       </div>
     </Card>
+  );
+}
+
+function OrderRow({
+  order,
+}: {
+  order: import("@/lib/admin/customers-api").AdminCustomerOrder;
+}) {
+  const [showNotes, setShowNotes] = useState(false);
+  return (
+    <li
+      style={{
+        padding: "8px 0",
+        borderBottom: "1px solid var(--border, #e2e8f0)",
+        fontSize: 13,
+      }}
+    >
+      <div
+        style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
+      >
+        <span>
+          <code
+            style={{
+              background: "#f1f5f9",
+              padding: "1px 4px",
+              borderRadius: 3,
+              fontSize: 11,
+            }}
+          >
+            {order.id.slice(0, 8)}
+          </code>{" "}
+          · {order.status} · {order.itemCount} item
+          {order.itemCount === 1 ? "" : "s"}
+        </span>
+        <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ color: "var(--text-muted, #475569)" }}>
+            {order.amountTotalCents != null
+              ? formatCents(order.amountTotalCents)
+              : "—"}{" "}
+            · {new Date(order.createdAt).toLocaleDateString()}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowNotes((v) => !v)}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border, #e2e8f0)",
+              borderRadius: 4,
+              padding: "2px 8px",
+              fontSize: 11,
+              cursor: "pointer",
+              color: "var(--text-muted, #475569)",
+            }}
+            data-testid={`admin-customer-order-notes-toggle-${order.id}`}
+            aria-expanded={showNotes}
+          >
+            {showNotes ? "Hide notes" : "Notes"}
+          </button>
+        </span>
+      </div>
+      {showNotes && <OrderNotesPanel orderId={order.id} />}
+    </li>
   );
 }
 

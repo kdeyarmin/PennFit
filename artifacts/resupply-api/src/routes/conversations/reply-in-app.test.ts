@@ -29,13 +29,16 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-// Drizzle stub. The route does up to two queries:
+// Drizzle stub. The route does up to two SELECTs and one UPDATE:
 //   1. Early channel check: SELECT channel FROM conversations …
-//   2. Email-resolution join: SELECT email, displayName FROM
-//      conversations JOIN shop_customers …
-// Both run through the fluent stub; the test pushes results in
-// order.
+//   2. Email-resolution join: SELECT email, displayName, prefs,
+//      lastNotifiedAt FROM conversations JOIN shop_customers …
+//   3. Throttle stamp (post-send only): UPDATE conversations SET
+//      last_in_app_notification_at = <application Date value> …
+// All three run through the fluent stub; the test pushes select
+// results in order and inspects updateCalls for throttle stamping.
 const selectQueue: unknown[][] = [];
+const updateCalls: Array<Record<string, unknown>> = [];
 const dbStub = {
   select: vi.fn(() => {
     const result = selectQueue.shift() ?? [];
@@ -44,6 +47,16 @@ const dbStub = {
       innerJoin: () => obj,
       where: () => obj,
       limit: () => Promise.resolve(result),
+    };
+    return obj;
+  }),
+  update: vi.fn(() => {
+    const obj: Record<string, unknown> = {
+      set: (vals: Record<string, unknown>) => {
+        updateCalls.push(vals);
+        return obj;
+      },
+      where: () => Promise.resolve(),
     };
     return obj;
   }),
@@ -118,6 +131,7 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   selectQueue.length = 0;
+  updateCalls.length = 0;
   logAuditMock.mockClear();
   appendAdminInAppReplyMock.mockClear();
   appendAdminInAppReplyMock.mockResolvedValue({
@@ -282,6 +296,64 @@ describe("POST /conversations/:id/reply (in_app)", () => {
 
     expect(res.status).toBe(201);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the notification email when a recent notification is within the throttle window", async () => {
+    // Phase 13: a "lastNotifiedAt" 60 seconds ago should suppress
+    // the next email (default throttle window is 15 min).
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ channel: "in_app" }]);
+    selectQueue.push([
+      {
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+        prefs: null,
+        lastNotifiedAt: new Date(Date.now() - 60_000),
+      },
+    ]);
+
+    const res = await request(makeApp())
+      .post(`/conversations/${CONV_ID}/reply`)
+      .send({ body: "follow-up to the previous reply" });
+
+    expect(res.status).toBe(201);
+    expect(appendAdminInAppReplyMock).toHaveBeenCalledTimes(1);
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    // No email, no throttle UPDATE — we never sent.
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("sends and stamps when the prior notification was outside the throttle window", async () => {
+    // 30 min ago — well past the 15 min window — so the email fires
+    // and the throttle column is stamped.
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ channel: "in_app" }]);
+    selectQueue.push([
+      {
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+        prefs: null,
+        lastNotifiedAt: new Date(Date.now() - 30 * 60_000),
+      },
+    ]);
+
+    const res = await request(makeApp())
+      .post(`/conversations/${CONV_ID}/reply`)
+      .send({ body: "ping" });
+
+    expect(res.status).toBe(201);
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.lastInAppNotificationAt).toBeInstanceOf(Date);
   });
 
   it("treats notification email failure as best-effort (still 201)", async () => {

@@ -90,6 +90,19 @@ export const conversations = resupplySchema.table(
       withTimezone: true,
     }),
 
+    /**
+     * In-app channel only (Phase 13). Timestamp of the most recent
+     * "you have a new message from PennPaps" SendGrid notification
+     * sent for this thread. tryNotifyCustomerOfReply skips the email
+     * when this is within the throttle window so a CSR sending
+     * rapid-fire replies doesn't blast the customer's inbox. Null
+     * means "no notification yet" (or pre-Phase-13 row) and the next
+     * reply still triggers an email.
+     */
+    lastInAppNotificationAt: timestamp("last_in_app_notification_at", {
+      withTimezone: true,
+    }),
+
     // Assignment + SLA columns (migration 0021). assignedAdminUserId
     // mirrors the auth user id directly (no FK) so threads handled by
     // bootstrap env-var admins still work — those admins don't have
