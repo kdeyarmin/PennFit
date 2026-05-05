@@ -543,7 +543,6 @@
     }
     header[role="banner"],
     footer,
-    [data-testid="pwa-install-prompt"],
     [data-testid="fit-flow-stepper"] {
       display: none !important;
     }
