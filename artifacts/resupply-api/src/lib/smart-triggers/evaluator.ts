@@ -11,8 +11,9 @@
 //
 // Audit posture: every newly-inserted event records a
 // `patient.smart_trigger.detected` audit row. The actor is whoever
-// invoked us — admin email when called from the route, the cron
-// job-id when called from the worker.
+// invoked us — admin email when called from the route, a fixed
+// system-actor identifier ("system:cron:smart-trigger-evaluator")
+// when called from the pg-boss worker.
 
 import { asc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -27,9 +28,12 @@ import {
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
 
-/** Per-evaluator-run cap to keep the response time bounded. The
- *  admin "Run now" button can re-fire if `remaining > 0`; the cron
- *  job runs daily, so a per-run cap of 200 covers the steady-state
+/** Per-evaluator-run cap to keep the response time bounded. This
+ *  module reports only the summary counts in `EvaluatorResult`
+ *  (`scanned`, `proposed`, `inserted`, `skippedExisting`) and does
+ *  not expose a `remaining`/pagination value. Admins may rerun the
+ *  evaluator manually to process another capped batch; the cron job
+ *  runs daily, so a per-run cap of 200 covers the steady-state
  *  detection load comfortably. */
 const PER_RUN_PATIENT_CAP = 200;
 
@@ -64,6 +68,7 @@ export async function runSmartTriggerEvaluator(
     .where(
       sql`${patientTherapyNights.nightDate}::timestamptz >= now() - interval '60 days'`,
     )
+    .orderBy(asc(patientTherapyNights.patientId))
     .limit(PER_RUN_PATIENT_CAP);
 
   let scanned = 0;

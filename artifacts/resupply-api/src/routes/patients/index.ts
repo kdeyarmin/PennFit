@@ -16,6 +16,7 @@ import followupsRouter from "./followups";
 import notesCreateRouter from "./notes-create";
 import notesListRouter from "./notes-list";
 import prescriptionsAttachmentRouter from "./prescriptions-attachment";
+import patientDocumentsRouter from "./patient-documents";
 import prescriptionsCreateRouter from "./prescriptions-create";
 import prescriptionsUpdateRouter from "./prescriptions-update";
 import timelineRouter from "./timeline";
@@ -45,6 +46,9 @@ router.use(prescriptionsUpdateRouter);
 // /attachment literal segment can never collide with a future
 // :rxId-style param route on the same prefix.
 router.use(prescriptionsAttachmentRouter);
+// /patients/:id/documents — admin-facing list/download/delete of
+// patient-uploaded documents (insurance cards, prescriptions, etc.).
+router.use(patientDocumentsRouter);
 router.use(detailRouter);
 router.use(timelineRouter);
 router.use(updateRouter);
