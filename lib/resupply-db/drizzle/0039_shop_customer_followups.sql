@@ -23,7 +23,7 @@
 --   shop_customer.followup.create   — new followup; records
 --     customer_id + due_at + body_length — never the body.
 --   shop_customer.followup.complete — mark complete; records
---     customer_id + body_length — never the body.
+--     customer_id + due_at + body_length — never the body.
 --
 -- Per ADR 003 — versioned hand-authored migration.
 

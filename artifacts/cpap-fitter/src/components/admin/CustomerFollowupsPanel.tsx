@@ -148,6 +148,7 @@ export function CustomerFollowupsPanel({ userId }: Props) {
             }}
           >
             <label
+              htmlFor="followup-due-at"
               style={{
                 fontSize: 11,
                 color: "var(--text-muted, #475569)",
@@ -156,6 +157,7 @@ export function CustomerFollowupsPanel({ userId }: Props) {
               Due
             </label>
             <input
+              id="followup-due-at"
               type="datetime-local"
               value={dueLocal}
               onChange={(e) => setDueLocal(e.target.value)}
