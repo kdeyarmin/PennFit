@@ -8,7 +8,14 @@ import { FitFlowStepper } from "@/components/fit-flow-stepper";
 import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { MobileCtaBar } from "@/components/mobile-cta-bar";
 import { MiniCart } from "@/components/shop/mini-cart";
+import { FloatingContactLauncher } from "@/components/floating-contact-launcher";
 import { useWishlist } from "@/lib/wishlist";
+import {
+  SUPPORT_EMAIL,
+  SUPPORT_HOURS,
+  SUPPORT_PHONE_DISPLAY,
+  SUPPORT_PHONE_E164,
+} from "@/lib/contact";
 
 // Wishlist nav indicator — small heart with count badge that
 // only renders once the shopper has saved at least one item, so
@@ -275,7 +282,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {/* Top: brand block + link columns */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-10">
               {/* Brand block */}
-              <div className="md:col-span-5">
+              <div className="md:col-span-4">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="relative">
                     <div
@@ -392,8 +399,41 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </ul>
               </div>
 
+              {/* Contact (Phase A.2) — phone + email + hours so a
+                  visitor never has to hunt for support. Mirrors the
+                  floating launcher in the bottom-right; both pull
+                  from lib/contact.ts so they stay in sync. */}
+              <div className="md:col-span-2">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3 font-semibold">
+                  Talk to us
+                </div>
+                <ul className="space-y-2 text-sm">
+                  <li>
+                    <a
+                      href={`tel:${SUPPORT_PHONE_E164}`}
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                      data-testid="footer-support-phone"
+                    >
+                      {SUPPORT_PHONE_DISPLAY}
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}`}
+                      className="text-muted-foreground hover:text-primary transition-colors break-all"
+                      data-testid="footer-support-email"
+                    >
+                      {SUPPORT_EMAIL}
+                    </a>
+                  </li>
+                  <li className="text-xs text-muted-foreground/80">
+                    {SUPPORT_HOURS}
+                  </li>
+                </ul>
+              </div>
+
               {/* Legal */}
-              <div className="md:col-span-4">
+              <div className="md:col-span-3">
                 <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3 font-semibold">
                   Legal & Privacy
                 </div>
@@ -462,6 +502,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </footer>
       <PwaInstallPrompt />
+      <FloatingContactLauncher />
       <MobileCtaBar />
     </div>
   );
