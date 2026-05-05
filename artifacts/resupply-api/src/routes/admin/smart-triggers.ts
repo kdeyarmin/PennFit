@@ -415,18 +415,19 @@ function htmlBody(greeting: string, kind: TriggerKind): string {
  * chars). Different from the SMS variant (no STOP keyword;
  * already gated by the customer's browser permission) and
  * different from the email body (which can sustain a paragraph
- * of context).
+ * of context). Keep copy generic to avoid exposing PHI in
+ * lock-screen banners.
  */
 function pushBody(kind: TriggerKind): string {
   switch (kind) {
     case "leak_rising":
-      return "Your mask leak rate has trended up. Tap to see what we noticed.";
+      return "We noticed a change in your therapy. Tap to review your update.";
     case "usage_dropping":
-      return "We noticed your therapy hours dropping. We can help.";
+      return "Your care team has a helpful therapy update for you.";
     case "cushion_wear":
-      return "Your AHI + leak both ticked up — tap for a fresh-cushion suggestion.";
+      return "You may be due for a supply refresh. Tap to review your options.";
     case "humidifier_drop":
-      return "Your tubing may be due for a refresh.";
+      return "You may be due for a supply refresh. Tap to review your options.";
   }
 }
 
