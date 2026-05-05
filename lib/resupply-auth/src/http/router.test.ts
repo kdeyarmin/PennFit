@@ -77,6 +77,33 @@ function getCookieValue(
   return null;
 }
 
+/** Seed a pre-login pf_csrf cookie via GET /auth/csrf. Returns the value. */
+async function seedCsrf(app: Express): Promise<string> {
+  const r = await supertest(app).get("/auth/csrf");
+  const val = getCookieValue(r.headers["set-cookie"], CSRF_COOKIE);
+  if (!val) throw new Error("GET /auth/csrf did not set a csrf cookie");
+  return val;
+}
+
+describe("GET /auth/csrf", () => {
+  it("issues a pf_csrf cookie when none is present", async () => {
+    const h = buildHarness();
+    const res = await supertest(h.app).get("/auth/csrf");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(getCookieValue(res.headers["set-cookie"], CSRF_COOKIE)).toBeTruthy();
+  });
+
+  it("does not overwrite an existing pf_csrf cookie", async () => {
+    const h = buildHarness();
+    const res = await supertest(h.app)
+      .get("/auth/csrf")
+      .set("Cookie", `${CSRF_COOKIE}=existing-value`);
+    expect(res.status).toBe(200);
+    expect(res.headers["set-cookie"]).toBeUndefined();
+  });
+});
+
 describe("POST /auth/sign-in", () => {
   let h: Harness;
 
@@ -97,13 +124,28 @@ describe("POST /auth/sign-in", () => {
     });
   }
 
-  it("returns 200 + sets session + csrf cookies on valid creds", async () => {
+  it("returns 403 csrf_failed when CSRF header is missing", async () => {
     await seedAlice();
-
     const res = await supertest(h.app).post("/auth/sign-in").send({
       email: "alice@example.com",
       password: "correct horse battery staple",
     });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("csrf_failed");
+  });
+
+  it("returns 200 + sets session + csrf cookies on valid creds", async () => {
+    await seedAlice();
+    const csrf = await seedCsrf(h.app);
+
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
@@ -121,9 +163,12 @@ describe("POST /auth/sign-in", () => {
 
   it("returns 401 + records failure on wrong password", async () => {
     await seedAlice();
+    const csrf = await seedCsrf(h.app);
 
     const res = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
       .send({ email: "alice@example.com", password: "wrong" });
 
     expect(res.status).toBe(401);
@@ -137,8 +182,12 @@ describe("POST /auth/sign-in", () => {
   });
 
   it("returns the same generic message when the user does not exist", async () => {
+    const csrf = await seedCsrf(h.app);
+
     const res = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
       .send({ email: "ghost@example.com", password: "anything" });
 
     expect(res.status).toBe(401);
@@ -148,11 +197,16 @@ describe("POST /auth/sign-in", () => {
 
   it("returns 403 email_unverified when account exists but email not verified", async () => {
     await seedAlice({ verified: false });
+    const csrf = await seedCsrf(h.app);
 
-    const res = await supertest(h.app).post("/auth/sign-in").send({
-      email: "alice@example.com",
-      password: "correct horse battery staple",
-    });
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("email_unverified");
@@ -160,19 +214,28 @@ describe("POST /auth/sign-in", () => {
 
   it("returns the generic message when account is locked", async () => {
     await seedAlice({ status: "locked" });
+    const csrf = await seedCsrf(h.app);
 
-    const res = await supertest(h.app).post("/auth/sign-in").send({
-      email: "alice@example.com",
-      password: "correct horse battery staple",
-    });
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("invalid_credentials");
   });
 
   it("returns 400 on missing fields", async () => {
+    const csrf = await seedCsrf(h.app);
+
     const res = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
       .send({ email: "alice@example.com" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_input");
@@ -181,11 +244,16 @@ describe("POST /auth/sign-in", () => {
   it("returns 429 once the per-email rate limit threshold is hit", async () => {
     await seedAlice();
     h.repo.__forceFailures("alice@example.com", DEFAULT_RATE_LIMIT.maxPerEmail);
+    const csrf = await seedCsrf(h.app);
 
-    const res = await supertest(h.app).post("/auth/sign-in").send({
-      email: "alice@example.com",
-      password: "correct horse battery staple",
-    });
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
 
     expect(res.status).toBe(429);
     expect(res.body.error).toBe("rate_limited");
@@ -219,8 +287,11 @@ describe("POST /auth/sign-out", () => {
       emailVerified: true,
       password: "p4ssword!",
     });
+    const seed = await seedCsrf(h.app);
     const signIn = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${seed}`)
+      .set(CSRF_HEADER, seed)
       .send({ email: "bob@example.com", password: "p4ssword!" });
     expect(signIn.status).toBe(200);
     const cookies = signIn.headers["set-cookie"] as unknown as string[];
@@ -252,8 +323,11 @@ describe("GET /auth/me", () => {
       emailVerified: true,
       password: "p4ssword!",
     });
+    const seed = await seedCsrf(h.app);
     const signIn = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${seed}`)
+      .set(CSRF_HEADER, seed)
       .send({ email: "alice@example.com", password: "p4ssword!" });
     const cookies = signIn.headers["set-cookie"] as unknown as string[];
 

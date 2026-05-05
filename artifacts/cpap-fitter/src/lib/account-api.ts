@@ -547,6 +547,10 @@ export async function uploadMyDocument(
     objectPath: string;
   };
 
+  if (!uploadURL.startsWith("https://storage.googleapis.com/")) {
+    throw new Error("Upload URL is not a trusted Google Cloud Storage URL.");
+  }
+
   const putRes = await fetch(uploadURL, {
     method: "PUT",
     headers: { "Content-Type": file.type || "application/octet-stream" },
