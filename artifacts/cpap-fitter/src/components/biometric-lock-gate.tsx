@@ -19,7 +19,7 @@ import { Lock, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
-import { isNativeApp, promptBiometric } from "@/lib/native-runtime";
+import { isNativeApp, promptBiometric, getNativePlatform } from "@/lib/native-runtime";
 
 const SESSION_FLAG = "pennpaps:biometric-unlocked";
 
@@ -77,6 +77,13 @@ export function BiometricLockGate({ children }: { children: ReactNode }) {
       return;
     }
     if (result.kind === "denied") {
+      const platform = getNativePlatform();
+      const settingsPath =
+        platform === "ios"
+          ? "Settings → PennPaps → Face ID & Passcode"
+          : platform === "android"
+            ? "Settings → Apps → PennPaps → Permissions"
+            : "your device's app settings";
       setState({
         kind: "denied",
         message:
@@ -84,7 +91,7 @@ export function BiometricLockGate({ children }: { children: ReactNode }) {
             ? "Cancelled — tap below to try again."
             : result.reason === "lockout"
               ? "Too many attempts. Lock your phone, then try again."
-              : "Permission denied. Open Settings → PennPaps to allow Face ID.",
+              : `Permission denied. Open ${settingsPath} to allow biometric authentication.`,
       });
       return;
     }

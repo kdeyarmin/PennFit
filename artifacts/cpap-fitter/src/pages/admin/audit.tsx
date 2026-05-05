@@ -49,6 +49,9 @@ const DISPLAY_KEY_ALLOWLIST: ReadonlyArray<string> = [
   "templateName",
   "duration",
   "count",
+  "customer_id",
+  "body_length",
+  "due_at",
 ];
 
 // Common target_table values seen in production. Free text is allowed

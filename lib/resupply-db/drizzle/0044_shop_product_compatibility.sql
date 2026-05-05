@@ -28,20 +28,41 @@ CREATE TABLE IF NOT EXISTS "resupply"."shop_product_compatibility" (
   "machine_model" text,
   "notes" text,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
-  "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
-  -- One row per (product, manufacturer, model) tuple. Postgres
-  -- treats NULL as distinct in UNIQUE constraints, which is what
-  -- we want — multiple rows with model=NULL for the same product
-  -- would be redundant but not catastrophic, and a partial unique
-  -- on null-model is overkill for this volume.
-  CONSTRAINT "shop_product_compatibility_unique"
-    UNIQUE ("product_id", "machine_manufacturer", "machine_model")
+  "updated_at" timestamp with time zone NOT NULL DEFAULT now()
 );
+
+-- Enforce semantic uniqueness the same way the read path matches:
+-- manufacturer/model are case-insensitive, and machine_model=NULL
+-- is its own compatibility identity meaning "all models from this
+-- manufacturer". We split null-model and non-null-model rows into
+-- separate partial unique indexes so duplicate "manufacturer-wide"
+-- rows are blocked without relying on sentinel values.
+CREATE UNIQUE INDEX IF NOT EXISTS
+  "shop_product_compatibility_unique_null_model_idx"
+  ON "resupply"."shop_product_compatibility" (
+    "product_id",
+    lower("machine_manufacturer")
+  )
+  WHERE "machine_model" IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+  "shop_product_compatibility_unique_model_idx"
+  ON "resupply"."shop_product_compatibility" (
+    "product_id",
+    lower("machine_manufacturer"),
+    lower("machine_model")
+  )
+  WHERE "machine_model" IS NOT NULL;
 
 -- Lookup-by-product: "what machines is this product compatible with"
 CREATE INDEX IF NOT EXISTS "shop_product_compatibility_product_idx"
   ON "resupply"."shop_product_compatibility" ("product_id");
 
--- Lookup-by-machine: "what products work with this manufacturer"
-CREATE INDEX IF NOT EXISTS "shop_product_compatibility_manufacturer_idx"
-  ON "resupply"."shop_product_compatibility" ("machine_manufacturer");
+-- Lookup-by-machine: case-insensitive manufacturer/model matching
+-- for the public compatibility lookup. Using lower(...) here keeps
+-- the index usable when the WHERE clause normalizes both fields.
+CREATE INDEX IF NOT EXISTS "shop_product_compatibility_manufacturer_model_lower_idx"
+  ON "resupply"."shop_product_compatibility" (
+    lower("machine_manufacturer"),
+    lower("machine_model")
+  );

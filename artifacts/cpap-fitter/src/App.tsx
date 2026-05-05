@@ -167,7 +167,6 @@ const RemindersManage = lazy(() =>
 );
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
-import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal

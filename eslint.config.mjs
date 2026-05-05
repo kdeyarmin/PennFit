@@ -58,6 +58,10 @@ export default [
       // documented eslint-disable comments.
       "artifacts/cpap-fitter/src/**/*.ts",
       "artifacts/cpap-fitter/src/**/*.tsx",
+      // Capacitor wrapper config — outside src/ but still owned code
+      // that should be validated. Types are shim'd via
+      // src/types/capacitor-cli.d.ts when @capacitor/cli isn't installed.
+      "artifacts/cpap-fitter/capacitor.config.ts",
     ],
     languageOptions: {
       ecmaVersion: 2024,

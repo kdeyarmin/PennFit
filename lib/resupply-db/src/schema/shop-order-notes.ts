@@ -3,8 +3,12 @@
 // migration 0037 for the policy doc.
 //
 // Append-only. No `updatedAt`. The dashboard query is always
-// "newest first by order", which the (order_id, created_at DESC)
-// composite index serves directly from disk.
+// "newest first by order", which the (order_id, created_at)
+// composite index serves directly from disk (Postgres uses a
+// backward index scan to satisfy the DESC ordering efficiently;
+// Drizzle's index builder does not support per-column DESC, so the
+// SQL migration specifies `created_at DESC` explicitly while the
+// schema omits it — both produce the same physical index).
 
 import { sql } from "drizzle-orm";
 import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";

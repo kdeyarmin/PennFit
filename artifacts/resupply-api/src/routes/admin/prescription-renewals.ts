@@ -63,7 +63,7 @@ router.post(
   "/admin/prescriptions/send-renewal-due",
   requireAdmin,
   async (req, res) => {
-    const channelParse = channelQuery.safeParse(req.query.channel ?? "email");
+    const channelParse = channelQuery.safeParse(req.query.channel);
     if (!channelParse.success) {
       res.status(400).json({ error: "invalid_channel" });
       return;
@@ -280,17 +280,19 @@ function htmlBody(greeting: string, daysUntilExpiry: number): string {
 }
 
 /**
- * Render the SMS body. Kept under 160 ASCII chars in the typical case
- * (firstName under 12 chars + double-digit days) so the message ships
- * as one segment on Twilio. UCS-2 characters would drop the limit to
- * 70/segment but we use only ASCII here.
+ * Render the SMS body. GSM-7 charset only (no Unicode/em dash) so the
+ * message ships in standard 160-char segments rather than 70-char UCS-2
+ * segments. Typical message is ~2 GSM-7 segments (firstName under 12
+ * chars + double-digit days).
  *
  * Reply-mode hint matches the email's "reply to delegate to us" path:
  * patients can text back the physician's name and our messaging
  * dispatcher routes the reply into the existing conversation thread.
  */
 function smsBody(firstName: string, daysUntilExpiry: number): string {
-  const head = firstName ? `Hi ${firstName}` : "Hi";
+  // Strip non-ASCII to keep message in GSM-7 charset (160 chars/segment).
+  const safeName = firstName.replace(/[^\x20-\x7E]/g, "");
+  const head = safeName ? `Hi ${safeName}` : "Hi";
   const status =
     daysUntilExpiry === 0
       ? "your CPAP Rx has just expired"
@@ -300,7 +302,7 @@ function smsBody(firstName: string, daysUntilExpiry: number): string {
   return (
     `${head}, ${status}. Ask your doctor for a renewal so your next supply ships ` +
     `on time, or reply with their name + practice and we'll request it for you. ` +
-    `Reply STOP to opt out. — Penn Home Medical Supply`
+    `Reply STOP to opt out. - Penn Home Medical Supply`
   );
 }
 
