@@ -67,6 +67,7 @@ export async function runSmartTriggerEvaluator(
     .where(
       sql`${patientTherapyNights.nightDate}::timestamptz >= now() - interval '60 days'`,
     )
+    .orderBy(asc(patientTherapyNights.patientId))
     .limit(PER_RUN_PATIENT_CAP);
 
   let scanned = 0;
