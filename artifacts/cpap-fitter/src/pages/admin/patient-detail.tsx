@@ -2438,7 +2438,7 @@ function OnboardingJourneyView({
               >
                 {sent
                   ? `sent ${formatDateTime(d.sentAt!)}`
-                  : `due ${formatDate(new Date(dueAt).toISOString())}`}
+                  : `${due ? "due" : "scheduled for"} ${formatDate(new Date(dueAt).toISOString())}`}
               </span>
             </li>
           );
