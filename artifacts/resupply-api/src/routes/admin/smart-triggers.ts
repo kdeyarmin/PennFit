@@ -24,7 +24,7 @@
 // envelope records patient_id + kind + window dates only — never
 // the leak rate / AHI / usage values that drove detection.
 
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -33,7 +33,6 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   getDbPool,
   patientSmartTriggerEvents,
-  patientTherapyNights,
   patients,
 } from "@workspace/resupply-db";
 import {
@@ -45,7 +44,8 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
-import { evaluateAll, type TriggerKind } from "../../lib/smart-triggers";
+import { type TriggerKind } from "../../lib/smart-triggers";
+import { runSmartTriggerEvaluator } from "../../lib/smart-triggers/evaluator";
 import { logger } from "../../lib/logger";
 import { sendPushToCustomerByEmail } from "../../lib/web-push";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -59,105 +59,21 @@ const dismissBody = z
   })
   .strict();
 
-/** Per-evaluator-run cap to keep response time bounded. */
-const PER_RUN_PATIENT_CAP = 200;
-/** Per-dispatcher-run cap on emails. */
+/** Per-dispatcher-run cap on emails. The evaluator's own per-run
+ *  cap lives in lib/smart-triggers/evaluator.ts now. */
 const PER_RUN_SEND_CAP = 50;
 
 router.post(
   "/admin/smart-triggers/evaluate",
   requireAdmin,
   async (req, res) => {
-    const db = drizzle(getDbPool());
-
-    // Fetch the recent therapy-night roster — patients with at
-    // least one night in the last 60 days are candidates. The full
-    // night history within that window comes per-patient below.
-    const candidates = await db
-      .selectDistinct({ patientId: patientTherapyNights.patientId })
-      .from(patientTherapyNights)
-      .where(
-        sql`${patientTherapyNights.nightDate}::timestamptz >= now() - interval '60 days'`,
-      )
-      .limit(PER_RUN_PATIENT_CAP);
-
-    let scanned = 0;
-    let proposed = 0;
-    let inserted = 0;
-    let skippedExisting = 0;
-
-    for (const c of candidates) {
-      scanned++;
-      const nights = await db
-        .select({
-          date: patientTherapyNights.nightDate,
-          usageMinutes: patientTherapyNights.usageMinutes,
-          ahi: patientTherapyNights.ahi,
-          leakRateLMin: patientTherapyNights.leakRateLMin,
-          pressureP95Cmh2o: patientTherapyNights.pressureP95Cmh2o,
-        })
-        .from(patientTherapyNights)
-        .where(eq(patientTherapyNights.patientId, c.patientId))
-        .orderBy(asc(patientTherapyNights.nightDate))
-        .limit(60);
-
-      const proposals = evaluateAll(
-        nights.map((n) => ({
-          date: n.date,
-          usageMinutes: n.usageMinutes,
-          ahi: n.ahi !== null ? Number(n.ahi) : null,
-          leakRateLMin: n.leakRateLMin !== null ? Number(n.leakRateLMin) : null,
-          pressureP95Cmh2o:
-            n.pressureP95Cmh2o !== null ? Number(n.pressureP95Cmh2o) : null,
-        })),
-      );
-
-      for (const p of proposals) {
-        proposed++;
-        // Insert; the partial-unique index on (patient, kind) WHERE
-        // dismissed_at IS NULL ensures we don't double-fire while a
-        // prior event is still pending. ON CONFLICT DO NOTHING is
-        // the cleanest way to skip silently.
-        const result = await db
-          .insert(patientSmartTriggerEvents)
-          .values({
-            patientId: c.patientId,
-            kind: p.kind,
-            windowStartDate: p.windowStartDate,
-            windowEndDate: p.windowEndDate,
-          })
-          .onConflictDoNothing()
-          .returning({ id: patientSmartTriggerEvents.id });
-
-        if (result.length > 0) {
-          inserted++;
-          await logAudit({
-            action: "patient.smart_trigger.detected",
-            adminEmail: req.adminEmail ?? null,
-            adminUserId: req.adminUserId ?? null,
-            targetTable: "patient_smart_trigger_events",
-            targetId: result[0]!.id,
-            metadata: {
-              patient_id: c.patientId,
-              kind: p.kind,
-              window_start: p.windowStartDate,
-              window_end: p.windowEndDate,
-            },
-            ip: req.ip ?? null,
-            userAgent: req.get("user-agent") ?? null,
-          }).catch((err) => {
-            logger.warn(
-              { err },
-              "patient.smart_trigger.detected audit write failed",
-            );
-          });
-        } else {
-          skippedExisting++;
-        }
-      }
-    }
-
-    res.json({ scanned, proposed, inserted, skippedExisting });
+    const result = await runSmartTriggerEvaluator({
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    });
+    res.json(result);
   },
 );
 
