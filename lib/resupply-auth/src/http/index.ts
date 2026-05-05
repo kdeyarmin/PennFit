@@ -72,6 +72,7 @@ export type {
 export { makeRequireSession, makeRequireRole } from "./middleware";
 export {
   renderPasswordResetEmail,
+  renderPatientPortalInviteEmail,
   renderVerifyEmail,
   type AuthEmailContext,
   type RenderedEmail,
