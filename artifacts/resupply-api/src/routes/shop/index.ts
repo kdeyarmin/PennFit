@@ -29,6 +29,7 @@ import reviewsRouter from "./reviews";
 import productQuestionsRouter from "./product-questions";
 import productCompatibilityRouter from "./product-compatibility";
 import mePushSubscriptionsRouter from "./me-push-subscriptions";
+import meInsightsRouter from "./me-insights";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -47,6 +48,10 @@ router.use(meMessagesRouter);
 // (Phase C.1). Subscribe / unsubscribe / list endpoints; the
 // VAPID public-key getter sits behind the same auth gate.
 router.use(mePushSubscriptionsRouter);
+// /shop/me/insights — customer-facing view of detected
+// smart-trigger events (Phase G.4). Email-matched lookup against
+// patient_smart_trigger_events; empty when no patient row matches.
+router.use(meInsightsRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);

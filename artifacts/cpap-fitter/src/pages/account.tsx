@@ -82,6 +82,7 @@ import { AccountMessagesSection } from "@/components/account-messages-section";
 import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
+import { InsightsSection } from "@/components/insights-section";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
 // from your order on …" banner. Stored as a JSON object so we can
@@ -300,6 +301,7 @@ function AccountInner() {
             from /admin/conversations.
           */}
           <AccountMessagesSection />
+          <InsightsSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
           <OrdersSection

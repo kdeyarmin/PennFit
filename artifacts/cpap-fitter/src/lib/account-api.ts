@@ -440,3 +440,24 @@ export const fetchReorderSuggestions = () =>
   meFetch<{ suggestions: ReorderSuggestion[]; previewMode?: boolean }>(
     "/shop/me/reorder-suggestions",
   );
+
+export type CustomerInsightKind =
+  | "leak_rising"
+  | "usage_dropping"
+  | "cushion_wear"
+  | "humidifier_drop";
+
+export interface CustomerInsight {
+  id: string;
+  kind: CustomerInsightKind;
+  detectedAt: string;
+  windowStartDate: string;
+  windowEndDate: string;
+  notified: boolean;
+  headline: string;
+  body: string;
+  cta: { label: string; url: string };
+}
+
+export const fetchInsights = () =>
+  meFetch<{ insights: CustomerInsight[] }>("/shop/me/insights");
