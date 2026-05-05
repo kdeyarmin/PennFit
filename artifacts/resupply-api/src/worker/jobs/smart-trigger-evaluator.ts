@@ -69,7 +69,9 @@ export async function registerSmartTriggerEvaluatorJob(
       // broken evaluator from the only surface that proves the
       // schedule fired.
       logger.error(
-        { err: err instanceof Error ? err.message : String(err) },
+        err instanceof Error
+          ? { err }
+          : { err: new Error("Non-Error thrown"), thrownType: typeof err },
         "smart-triggers.evaluate: run failed",
       );
       throw err;
