@@ -84,8 +84,6 @@ export async function runSmartTriggerSendDue(
       eventId: patientSmartTriggerEvents.id,
       patientId: patientSmartTriggerEvents.patientId,
       kind: patientSmartTriggerEvents.kind,
-      windowStartDate: patientSmartTriggerEvents.windowStartDate,
-      windowEndDate: patientSmartTriggerEvents.windowEndDate,
       firstName: patients.legalFirstName,
       email: patients.email,
       phoneE164: patients.phoneE164,
