@@ -117,7 +117,12 @@ router.post(
     // convention. Fall back to "PennPaps customer" so the public
     // surface never shows an empty author label.
     const displayName = formatPublicDisplayName(req.shopCustomerDisplayName);
-    const askerEmail = (req.shopCustomerEmail ?? "").toLowerCase();
+    const resolvedCustomerEmail = req.shopCustomerEmail?.trim();
+    if (!resolvedCustomerEmail) {
+      res.status(400).json({ error: "customer_email_required" });
+      return;
+    }
+    const askerEmail = resolvedCustomerEmail.toLowerCase();
 
     const db = drizzle(getDbPool());
     const inserted = await db
