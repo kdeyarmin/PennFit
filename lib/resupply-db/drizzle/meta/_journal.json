@@ -330,6 +330,13 @@
       "when": 1811750400000,
       "tag": "0044_shop_product_compatibility",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1811836800000,
+      "tag": "0045_shop_customer_push_subscriptions",
+      "breakpoints": true
     }
   ]
 }

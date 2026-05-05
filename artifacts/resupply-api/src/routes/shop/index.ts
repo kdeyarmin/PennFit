@@ -28,6 +28,7 @@ import resendReceiptRouter from "./resend-receipt";
 import reviewsRouter from "./reviews";
 import productQuestionsRouter from "./product-questions";
 import productCompatibilityRouter from "./product-compatibility";
+import mePushSubscriptionsRouter from "./me-push-subscriptions";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -42,6 +43,10 @@ router.use(meClinicalInfoRouter);
 router.use(meCommPrefsRouter);
 router.use(meDashboardRouter);
 router.use(meMessagesRouter);
+// /shop/me/push-subscriptions/* — W3C Web Push registration
+// (Phase C.1). Subscribe / unsubscribe / list endpoints; the
+// VAPID public-key getter sits behind the same auth gate.
+router.use(mePushSubscriptionsRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);
