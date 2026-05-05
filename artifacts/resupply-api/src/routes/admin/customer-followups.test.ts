@@ -44,6 +44,12 @@ const dbStub = {
       where: () => obj,
       orderBy: () => obj,
       limit: () => Promise.resolve(result),
+      // Allow awaiting the builder directly (no .limit() call) — used
+      // by the ?include=completed history path.
+      then: (
+        onfulfilled: (v: unknown[]) => unknown,
+        onrejected?: (r: unknown) => unknown,
+      ) => Promise.resolve(result).then(onfulfilled, onrejected),
     };
     return obj;
   }),
@@ -163,6 +169,48 @@ describe("GET /admin/shop/customers/:userId/followups", () => {
       body: "Call about UPS claim",
       completedAt: null,
     });
+  });
+
+  it("returns full history with ?include=completed", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    const DONE_ID = "22222222-2222-4222-8222-222222222222";
+    selectQueue.push([{ id: USER_ID }]);
+    selectQueue.push([
+      {
+        id: FOLLOWUP_ID,
+        body: "Open task",
+        dueAt: new Date("2026-05-10T16:00:00Z"),
+        completedAt: null,
+        completedByEmail: null,
+        createdByEmail: "ops@penn.example.com",
+        createdAt: new Date("2026-05-04T12:00:00Z"),
+      },
+      {
+        id: DONE_ID,
+        body: "Older completed task",
+        dueAt: new Date("2026-04-01T09:00:00Z"),
+        completedAt: new Date("2026-04-02T10:00:00Z"),
+        completedByEmail: "ops@penn.example.com",
+        createdByEmail: "ops@penn.example.com",
+        createdAt: new Date("2026-03-28T08:00:00Z"),
+      },
+    ]);
+
+    const res = await request(makeApp()).get(
+      `/admin/shop/customers/${USER_ID}/followups?include=completed`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.followups).toHaveLength(2);
+    // History includes completed rows.
+    const doneRow = res.body.followups.find(
+      (f: { id: string }) => f.id === DONE_ID,
+    );
+    expect(doneRow).toBeDefined();
+    expect(doneRow.completedAt).toBe("2026-04-02T10:00:00.000Z");
   });
 });
 
@@ -341,6 +389,7 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
         customerId: USER_ID,
         completedAt: null,
         body: "Call Anna 5/10",
+        dueAt: new Date("2026-05-10T16:00:00Z"),
       },
     ]);
     updateQueue.push([
@@ -367,6 +416,9 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
     expect(audit.metadata).toEqual({
       customer_id: USER_ID,
       body_length: "Call Anna 5/10".length,
+      due_at: "2026-05-10T16:00:00.000Z",
     });
+    // No body content in the audit envelope.
+    expect(JSON.stringify(audit.metadata)).not.toContain("Call Anna");
   });
 });

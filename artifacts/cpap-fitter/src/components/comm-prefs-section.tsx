@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
-import { isNativeApp } from "@/lib/native-runtime";
+import { checkBiometricAvailability } from "@/lib/native-runtime";
 
 /**
  * Communication preferences section on /account. Five email
@@ -433,26 +433,8 @@ function PushNotificationToggle() {
  * email toggles above which roundtrip through /api/account/comm-prefs.
  * See the hook's header comment for the rationale.
  */
-async function isBiometricAuthAvailable() {
-  if (
-    typeof window === "undefined" ||
-    typeof PublicKeyCredential === "undefined" ||
-    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !==
-      "function"
-  ) {
-    return false;
-  }
-
-  try {
-    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-  } catch {
-    return false;
-  }
-}
-
 function BiometricLockToggle() {
   const pref = useBiometricLockPreference();
-  const [native, setNative] = useState<boolean | null>(null);
   const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(
     null,
   );
@@ -460,19 +442,15 @@ function BiometricLockToggle() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const n = await isNativeApp();
-      const supported = n ? await isBiometricAuthAvailable() : false;
-      if (!cancelled) {
-        setNative(n);
-        setBiometricAvailable(supported);
-      }
+      const available = await checkBiometricAvailability();
+      if (!cancelled) setBiometricAvailable(available);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (native !== true || biometricAvailable !== true || !pref.loaded) return null;
+  if (biometricAvailable !== true || !pref.loaded) return null;
 
   return (
     <div
