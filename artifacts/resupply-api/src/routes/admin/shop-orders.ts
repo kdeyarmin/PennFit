@@ -52,6 +52,7 @@ import {
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipping-notification-email";
+import { sendPushToCustomer } from "../../lib/web-push";
 
 const router: IRouter = Router();
 
@@ -320,6 +321,38 @@ async function sendShippingNotificationIfNew(args: {
       { orderId: claimed.id, messageId: result.messageId ?? null },
       "shipping notification email delivered",
     );
+
+    // Best-effort push fan-out. Same news, separate channel — runs
+    // after the email so a push misconfig can never block delivery
+    // of the canonical notification. Logged with structural counts
+    // only; the helper itself never logs the payload or endpoint URL.
+    if (claimed.customerId) {
+      try {
+        const counts = await sendPushToCustomer(claimed.customerId, {
+          title: "Your PennPaps order shipped",
+          body: `${claimed.trackingCarrier} · ${claimed.trackingNumber}`,
+          url: `/account/orders`,
+          tag: `shop_order_shipped:${claimed.id}`,
+        });
+        if (counts.delivered + counts.expired + counts.transient > 0) {
+          log?.info?.(
+            { orderId: claimed.id, ...counts },
+            "shipping notification push fan-out complete",
+          );
+        }
+      } catch (err) {
+        // Push failures must not retro-actively change the email
+        // outcome. Log and move on.
+        log?.warn?.(
+          {
+            orderId: claimed.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "shipping notification push send threw (non-fatal)",
+        );
+      }
+    }
+
     return { skipped: false, delivered: true };
   } catch (err) {
     // Catch-all: ANY uncaught error after the claim acquisition
