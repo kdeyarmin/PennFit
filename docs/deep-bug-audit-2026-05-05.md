@@ -10,11 +10,11 @@
 
 | Severity  | Count |
 |-----------|-------|
-| CRITICAL  | 12    |
-| HIGH      | 18    |
-| MEDIUM    | 22    |
-| LOW       | 12    |
-| **Total** | **64**|
+| CRITICAL  | 15    |
+| HIGH      | 22    |
+| MEDIUM    | 27    |
+| LOW       | 15    |
+| **Total** | **79**|
 
 The codebase is architecturally sound with good general patterns (Zod validation, audit logging, argon2id passwords, structured error handling). The most serious issues are: **duplicate router registrations** that cause double-execution of middleware chains; **missing rate limiting on password-reset**; **timing-attack leak in CSRF validation**; and **missing HTML escaping for single-quotes** in auth email templates.
 
@@ -622,58 +622,181 @@ Full error objects may include stack traces or request context visible in browse
 
 ## SECTION 4 — DATABASE SCHEMA (`lib/resupply-db`)
 
-### HIGH
+### CRITICAL
 
-#### D-01 · Missing Index on `shop_orders.customer_id`
-`shop_orders` is queried by `customer_id` in the order-history and quick-checkout reorder flows. Without an index, every lookup performs a full table scan as orders accumulate.
+#### D-01 · `shop_returns.orderId` and `shop_returns.customerId` Have No FK Constraints
+**File:** `lib/resupply-db/src/schema/shop-returns.ts` (lines 34, 40)
 
-**Fix:** Add `index("shop_orders_customer_id_idx").on(shopOrders.customerId)` in the schema.
+```ts
+customerId: text("customer_id").notNull(),  // comment says "ON DELETE RESTRICT" but no FK
+orderId: text("order_id").notNull(),        // same
+```
+
+Orphaned return records if a customer or order is deleted. A deleted order with an associated return row breaks the refund audit trail.
+
+**Fix:** Add `.references(() => shopCustomers.customerId, { onDelete: "restrict" })` and `.references(() => shopOrders.id, { onDelete: "restrict" })`.
 
 ---
 
-#### D-02 · Missing Index on `messages.conversation_id` (if absent)
-The conversation detail endpoint fetches all messages for a conversation. Without an index on `conversation_id`, response time degrades linearly with message volume.
+#### D-02 · `shop_order_items.orderId` Is "FK by Convention" — Not Enforced
+**File:** `lib/resupply-db/src/schema/shop-order-items.ts` (line ~60)
 
-**Fix:** Verify this index exists; add it if not.
+```ts
+orderId: text("order_id").notNull(),  // "FK by convention" — no actual constraint
+```
+
+Child line-item rows can reference non-existent orders. Broken order history, orphaned line items, and corrupted financial records.
+
+**Fix:** Add `.references(() => shopOrders.id, { onDelete: "cascade" })`.
+
+---
+
+#### D-03 · `shop_customer_push_subscriptions.customerId` Has No FK
+**File:** `lib/resupply-db/src/schema/shop-customer-push-subscriptions.ts` (line ~19)
+
+Push subscription records survive customer deletion, leaking device endpoint data and causing dispatch errors.
+
+**Fix:** Add `.references(() => shopCustomers.customerId, { onDelete: "cascade" })`.
+
+---
+
+### HIGH
+
+#### D-04 · No Unique Constraint on `shop_returns` Per Order
+**File:** `lib/resupply-db/src/schema/shop-returns.ts`
+
+Multiple return rows for the same `orderId` are permitted at the DB level. A bug or race condition in the return-creation handler could insert two return records for the same order, leading to double refunds.
+
+**Fix:** Add a partial unique constraint: `UNIQUE (order_id) WHERE status NOT IN ('cancelled', 'closed')`.
+
+---
+
+#### D-05 · `shop_orders.amountTotalCents` Has No `>= 0` Check Constraint
+**File:** `lib/resupply-db/src/schema/shop-orders.ts` (line ~63)
+
+Negative order totals can be inserted. No DB-layer protection against application bugs that calculate negative amounts.
+
+**Fix:** Add a `CHECK (amount_total_cents >= 0)` constraint via a migration.
+
+---
+
+#### D-06 · `conversations.priority` Enum Not Enforced at DB Level
+**File:** `lib/resupply-db/src/schema/conversations.ts` (line ~112)
+
+```ts
+priority: text("priority").notNull().default("normal"),
+```
+
+The valid values (`'low' | 'normal' | 'high' | 'urgent'`) are enforced only by the application. Raw SQL inserts or ORM bugs can persist invalid priority values.
+
+**Fix:** Add `CHECK (priority IN ('low','normal','high','urgent'))`.
+
+---
+
+#### D-07 · `messages.senderRole` Enum Not Enforced at DB Level
+**File:** `lib/resupply-db/src/schema/messages.ts` (lines ~40–42)
+
+Same pattern — Drizzle TS enum declaration does not generate a DB-level CHECK constraint. Invalid sender roles can be inserted via raw SQL.
+
+**Fix:** Add `CHECK (sender_role IN ('patient','customer','admin','agent','system'))`.
+
+---
+
+#### D-08 · `fulfillments.quantity` Stored as `text`, Not `integer`
+**File:** `lib/resupply-db/src/schema/fulfillments.ts` (line ~33)
+
+```ts
+quantity: text("quantity").notNull().default("1"),
+```
+
+Sorting, aggregation (`SUM(quantity)`), and range queries require application-layer casting. Silent data corruption if the application stores a non-numeric string.
+
+**Fix:** Migrate column to `integer`: `ALTER TABLE resupply.fulfillments ALTER COLUMN quantity TYPE integer USING quantity::integer;` and update Drizzle schema to `integer("quantity").notNull().default(1)`.
+
+---
+
+#### D-09 · Possible Schema Drift: `conversations.assignedAdminUserId` Column Name
+**File:** `lib/resupply-db/src/schema/conversations.ts` (line ~110), migration `0021_conversations_assignment.sql`
+
+Migration 0021 added the column as `assigned_admin_clerk_id` (Clerk era); migration 0022 references `assigned_admin_user_id`. If the rename migration was never run against production, the Drizzle schema references a column that does not exist under that name, causing silent query failures.
+
+**Fix:** Run `SELECT column_name FROM information_schema.columns WHERE table_name = 'conversations' AND table_schema = 'resupply';` in production to verify the actual column name. If it is still `assigned_admin_clerk_id`, create a rename migration.
 
 ---
 
 ### MEDIUM
 
-#### D-03 · `shop_orders.cart_hash` Has No Unique Constraint
-The `cartHash` column is used for deduplication but has no DB-level unique constraint. Two concurrent checkout requests with identical carts could insert two identical `cart_hash` rows without conflict.
+#### D-10 · `conversations` Index Does Not Include `status` for Inbox Query
+**File:** `lib/resupply-db/src/schema/conversations.ts` (lines ~132–134)
 
-**Fix:** Add a unique constraint: `.unique()` on the `cartHash` column, or at minimum an index to catch duplicates at query time.
+The admin inbox query filters `WHERE status IN (...) ORDER BY last_message_at DESC`, but the index covers only `last_message_at`. Every inbox load scans and filters on `status` after the index, degrading linearly with conversation volume.
 
----
-
-#### D-04 · No `updated_at` Trigger on Mutable Tables
-Several mutable tables (`shop_orders`, `patients`, `shop_customers`) have no `updated_at` column or trigger. Audit logs record individual field changes, but the base tables do not expose a simple "last modified" timestamp for cache-invalidation or ETL purposes.
-
-**Fix:** Add `updatedAt: timestamp(...).defaultNow().$onUpdate(() => new Date())` via Drizzle's `.$onUpdate()` hook to key mutable tables.
+**Fix:** Replace single-column index with composite `(status, last_message_at)` or a partial index `WHERE status IN ('open','awaiting_admin','awaiting_patient')`.
 
 ---
 
-#### D-05 · `patient_therapy_nights` Has No Composite Index on `(patient_id, recorded_date)`
-The smart-trigger evaluator queries therapy nights by patient and date range. Without a composite index, full-table scans occur for every evaluation run.
+#### D-11 · `shop_order_items.quantity` Has No Positive Check Constraint
+**File:** `lib/resupply-db/src/schema/shop-order-items.ts` (line ~91)
 
-**Fix:** Add `index("ptn_patient_date_idx").on(patientTherapyNights.patientId, patientTherapyNights.recordedDate)`.
+Zero or negative quantities can be inserted. Financial records become meaningless.
+
+**Fix:** Add `CHECK (quantity >= 1)`.
 
 ---
 
-#### D-06 · `idempotency_keys` Table Has No Expiry Mechanism
-Idempotency key records accumulate indefinitely. Over time, this table grows unboundedly and index scans slow down.
+#### D-12 · `idempotency_keys` Table Has No Expiry / Cleanup Mechanism
+**File:** `lib/resupply-db/src/schema/idempotency-keys.ts`
 
-**Fix:** Add a `TTL` column and a background pg-boss job that deletes records older than 30 days (the maximum meaningful window for payment idempotency).
+Idempotency key records accumulate indefinitely. Index scans degrade as the table grows. The `expires_at` column exists but there is no background job that purges expired rows.
+
+**Fix:** Add a pg-boss job that runs daily and deletes rows where `expires_at < NOW()`.
+
+---
+
+#### D-13 · `shop_orders.cart_hash` Has No Unique Constraint
+The `cartHash` column is used for deduplication but has no DB-level unique constraint. Two concurrent checkout requests with identical carts could insert two rows without conflict, bypassing application-layer deduplication.
+
+**Fix:** Add `.unique()` on the `cartHash` column, or handle the `23505` duplicate-key error in the checkout handler.
+
+---
+
+#### D-14 · Connection Pool `max: 2` Is Undersized for Current Query Volume
+**File:** `lib/resupply-db/src/pool.ts` (line ~49)
+
+```ts
+max: 2,
+```
+
+With 12 library packages and two artifacts all sharing the same pool, concurrent requests will queue for pool slots. This was appropriate when only a readiness probe used the pool, but is too conservative now.
+
+**Fix:** Increase to `max: 10` (or derive from `DATABASE_POOL_SIZE` env var) and document the rationale.
 
 ---
 
 ### LOW
 
-#### D-07 · Missing `NOT NULL` on Nullable FK Columns That Are Logically Required
-Several junction tables have nullable FK columns that the application always populates. Relaxed constraints at the DB level allow partial inserts to persist without error.
+#### D-15 · Large Free-Text Columns Without Size Limits
+**Files:** `csr_macros.body`, `patient_notes.body`, `shop_customer_notes.body`, `messages.body`
 
-**Fix:** Audit each table's nullable columns against the application's actual usage and tighten constraints where the app always provides a value.
+Unlimited text columns can be abused to store very large payloads, bloating the table and slowing queries.
+
+**Fix:** Add application-layer length limits (already partially done via Zod) and document max expected sizes. Consider DB-level `CHECK (length(body) <= 10000)` for known-bounded fields.
+
+---
+
+#### D-16 · No `updated_at` Trigger on Key Mutable Tables
+Several mutable tables (`shop_orders`, `patients`, `shop_customers`) have an `updatedAt` column but no automatic trigger to update it. If a migration or direct DB write updates a row without going through Drizzle's `.$onUpdate()`, the column stays stale.
+
+**Fix:** Add a `BEFORE UPDATE` trigger on key tables, or document that all writes must flow through Drizzle ORM.
+
+---
+
+#### D-17 · Audit Log Has No Retention Policy
+**File:** `lib/resupply-db/src/schema/audit-log.ts`
+
+Audit records accumulate indefinitely. HIPAA requires a minimum 6-year retention — but also requires controls on unbounded growth.
+
+**Fix:** Add a pg-boss job that archives audit records older than 7 years to cold storage and deletes them from the hot table.
 
 ---
 
@@ -717,29 +840,34 @@ Several junction tables have nullable FK columns that the application always pop
 |----------|-------|-----------|
 | 21 | **B-10** Add Stripe idempotency key to customer creation | Backend |
 | 22 | **B-05** Add Zod validation on Stripe shipping address fallback | Backend |
-| 23 | **D-01** Add index on `shop_orders.customer_id` | Database |
-| 24 | **D-03** Add unique constraint on `shop_orders.cart_hash` | Database |
-| 25 | **D-05** Add composite index on `patient_therapy_nights(patient_id, recorded_date)` | Database |
-| 26 | **D-06** Add TTL + cleanup job for `idempotency_keys` | Database |
-| 27 | **B-16** Add per-patient error boundary in smart-trigger evaluator | Worker |
-| 28 | **F-07** Toast warning when cart items are silently dropped | Frontend |
-| 29 | **F-08** Add null guard on cart-resume JSON parse | Frontend |
-| 30 | **F-13** Fix `MediaStream` leak on rapid unmount in capture page | Frontend |
+| 23 | **D-01, D-02, D-03** Add missing FK constraints on `shop_returns`, `shop_order_items`, `shop_customer_push_subscriptions` | Database |
+| 24 | **D-08** Migrate `fulfillments.quantity` from `text` to `integer` | Database |
+| 25 | **D-05, D-06, D-07** Add enum CHECK constraints on `conversations.priority`, `messages.senderRole`; add `shop_order_items.quantity >= 1` | Database |
+| 26 | **D-10** Extend `conversations` index to include `status` column | Database |
+| 27 | **D-12** Add pg-boss cleanup job for expired `idempotency_keys` | Database |
+| 28 | **D-13** Add unique constraint on `shop_orders.cart_hash` | Database |
+| 29 | **D-14** Increase connection pool `max` from 2 to 10 | Database |
+| 30 | **B-16** Add per-patient error boundary in smart-trigger evaluator | Worker |
+| 31 | **F-07** Toast warning when cart items are silently dropped | Frontend |
+| 32 | **F-08** Add null guard on cart-resume JSON parse | Frontend |
+| 33 | **F-13** Fix `MediaStream` leak on rapid unmount in capture page | Frontend |
 
 ### Sprint 4 — Longer Term (Hardening & Compliance)
 
 | Priority | Issue | Owner Area |
 |----------|-------|-----------|
-| 31 | **A-10** Design session token rotation strategy | Auth lib |
-| 32 | **A-14** Implement password hash algorithm migration path | Auth lib |
-| 33 | **A-15** Implement audit log retention + archival job | Audit lib |
-| 34 | **A-12** Move token TTLs to `AuthDeps` config / env vars | Auth lib |
-| 35 | **B-07** Add per-admin rate limits on write operations | Backend |
-| 36 | **A-08** Add integration test asserting SendGrid webhook HMAC is enforced | Email lib |
-| 37 | **A-09** Rate-limit inbound SMS keyword processing per patient | Messaging lib |
-| 38 | **F-12** Prevent `VITE_ENABLE_DEMO=1` in production builds | Frontend |
-| 39 | **F-14** Validate state code against full US state list in order form | Frontend |
-| 40 | **D-04** Add `updated_at` columns to key mutable tables | Database |
+| 34 | **A-10** Design session token rotation strategy | Auth lib |
+| 35 | **A-14** Implement password hash algorithm migration path | Auth lib |
+| 36 | **A-15** / **D-17** Implement audit log retention + archival job | Audit lib / DB |
+| 37 | **A-12** Move token TTLs to `AuthDeps` config / env vars | Auth lib |
+| 38 | **B-07** Add per-admin rate limits on write operations | Backend |
+| 39 | **A-08** Add integration test asserting SendGrid webhook HMAC is enforced | Email lib |
+| 40 | **A-09** Rate-limit inbound SMS keyword processing per patient | Messaging lib |
+| 41 | **F-12** Prevent `VITE_ENABLE_DEMO=1` in production builds | Frontend |
+| 42 | **F-14** Validate state code against full US state list in order form | Frontend |
+| 43 | **D-09** Verify + fix potential schema drift on `conversations.assigned_admin_user_id` | Database |
+| 44 | **D-16** Add `BEFORE UPDATE` trigger or document Drizzle-only write policy | Database |
+| 45 | **D-15** Add length CHECK constraints on large free-text columns | Database |
 
 ---
 
