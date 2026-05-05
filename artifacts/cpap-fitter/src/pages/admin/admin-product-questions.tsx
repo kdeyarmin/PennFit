@@ -10,7 +10,7 @@
 // is in flight so a moderator can't double-submit.
 
 import { useCallback, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, XCircle, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/admin/Button";
@@ -29,6 +29,8 @@ const TABS: ReadonlyArray<{ id: AdminProductQuestionStatus; label: string }> = [
   { id: "rejected", label: "Rejected" },
 ];
 
+const PAGE_SIZE = 25;
+
 export function AdminProductQuestionsPage() {
   const [tab, setTab] = useState<AdminProductQuestionStatus>("pending");
 
@@ -46,13 +48,18 @@ export function AdminProductQuestionsPage() {
           publish on the product page; reject for spam or off-topic.
         </p>
       </header>
-      <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-slate-100">
+      <div
+        role="tablist"
+        className="inline-flex items-center gap-1 p-1 rounded-lg bg-slate-100"
+      >
         {TABS.map((t) => {
           const active = t.id === tab;
           return (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={active}
               onClick={() => setTab(t.id)}
               className={`px-3 py-1.5 rounded-md text-sm font-medium ${
                 active
@@ -73,22 +80,29 @@ export function AdminProductQuestionsPage() {
 
 function QuestionList({ status }: { status: AdminProductQuestionStatus }) {
   const queryKey = ["admin", "product-questions", status] as const;
-  const { data, isPending, isError, error, refetch } = useQuery({
+  const query = useInfiniteQuery({
     queryKey,
-    queryFn: () => listAdminProductQuestions(status),
+    queryFn: ({ pageParam }) =>
+      listAdminProductQuestions({
+        status,
+        cursor: pageParam ?? undefined,
+        limit: PAGE_SIZE,
+      }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
   });
 
-  if (isPending) {
+  if (query.isPending) {
     return <Spinner label="Loading questions…" />;
   }
-  if (isError) {
+  if (query.isError) {
     return (
       <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-        {error instanceof Error ? error.message : "Failed to load."}
+        {query.error instanceof Error ? query.error.message : "Failed to load."}
         <Button
           intent="ghost"
           size="sm"
-          onClick={() => void refetch()}
+          onClick={() => void query.refetch()}
           className="ml-2"
         >
           Retry
@@ -96,20 +110,35 @@ function QuestionList({ status }: { status: AdminProductQuestionStatus }) {
       </div>
     );
   }
-  if (data.questions.length === 0) {
+
+  const allItems = query.data.pages.flatMap((p) => p.items);
+
+  if (allItems.length === 0) {
     return (
       <p className="text-sm text-slate-600">Nothing in the {status} queue.</p>
     );
   }
   return (
-    <ul
-      className="space-y-3"
-      data-testid={`admin-product-questions-list-${status}`}
-    >
-      {data.questions.map((q) => (
-        <QuestionCard key={q.id} q={q} />
-      ))}
-    </ul>
+    <div className="space-y-3" data-testid={`admin-product-questions-list-${status}`}>
+      <ul className="space-y-3">
+        {allItems.map((q) => (
+          <QuestionCard key={q.id} q={q} />
+        ))}
+      </ul>
+      {query.hasNextPage && (
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => void query.fetchNextPage()}
+            disabled={query.isFetchingNextPage}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+            data-testid="admin-product-questions-load-more"
+          >
+            {query.isFetchingNextPage ? "Loading…" : "Show more"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

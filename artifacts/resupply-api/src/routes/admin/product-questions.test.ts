@@ -33,6 +33,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 const selectQueue: unknown[][] = [];
 const updateSets: Record<string, unknown>[] = [];
+const updateQueue: unknown[][] = [];
 const dbStub = {
   select: vi.fn(() => {
     const result = selectQueue.shift() ?? [];
@@ -50,7 +51,8 @@ const dbStub = {
         updateSets.push(vals);
         return obj;
       },
-      where: () => Promise.resolve(),
+      where: () => obj,
+      returning: () => Promise.resolve(updateQueue.shift() ?? [{ id: "q_1" }]),
     };
     return obj;
   }),
@@ -79,6 +81,7 @@ beforeEach(() => {
   mockAdmin.current = null;
   selectQueue.length = 0;
   updateSets.length = 0;
+  updateQueue.length = 0;
   logAuditMock.mockClear();
   dbStub.select.mockClear();
   dbStub.update.mockClear();
@@ -90,7 +93,7 @@ describe("GET /admin/shop/product-questions", () => {
     expect(res.status).toBe(401);
   });
 
-  it("defaults status filter to 'pending'", async () => {
+  it("defaults status filter to 'pending' and returns paginated shape", async () => {
     mockAdmin.current = {
       userId: "u_admin",
       email: "ops@penn.example.com",
@@ -114,8 +117,9 @@ describe("GET /admin/shop/product-questions", () => {
     ]);
     const res = await request(makeApp()).get("/admin/shop/product-questions");
     expect(res.status).toBe(200);
-    expect(res.body.questions).toHaveLength(1);
-    expect(res.body.questions[0].status).toBe("pending");
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].status).toBe("pending");
+    expect(res.body.nextCursor).toBeNull();
   });
 });
 
@@ -181,6 +185,32 @@ describe("PATCH /admin/shop/product-questions/:id", () => {
       .send({ action: "answer", answerBody: "another" });
     expect(res.status).toBe(409);
     expect(updateSets).toEqual([]);
+  });
+
+  it("409s when a concurrent request wins the race (empty .returning())", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    // Row reads as pending (pre-check passes), but the conditional UPDATE
+    // finds no rows to update — simulates losing a concurrent race.
+    selectQueue.push([
+      {
+        id: "q_1",
+        productId: "prod_1",
+        questionBody: "Does this fit?",
+        status: "pending",
+      },
+    ]);
+    updateQueue.push([]); // .returning() yields no rows
+    const res = await request(makeApp())
+      .patch("/admin/shop/product-questions/q_1")
+      .send({ action: "answer", answerBody: "Yes it does." });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("already_moderated");
+    // The update was attempted but returned nothing — no audit should fire.
+    expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("rejects with audit length-only metadata (no note text)", async () => {
