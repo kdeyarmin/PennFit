@@ -22,6 +22,7 @@ import shopReviewsAdminRouter from "./admin/shop-reviews.js";
 import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
 import patientOnboardingRouter from "./admin/patient-onboarding.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
+import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -87,6 +88,10 @@ router.use(patientOnboardingRouter);
 // expiring within 30 days and emails the patient to coordinate
 // renewal. Aeroflow built its brand on this.
 router.use(prescriptionRenewalsRouter);
+// /admin/shop/products/:productId/compatibility — admin CRUD for
+// the product-to-machine compatibility map (Phase B.3 / feature
+// #11). Public reads live alongside the catalog router.
+router.use(shopProductCompatibilityAdminRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.

@@ -27,6 +27,7 @@ import quickCheckoutRouter from "./quick-checkout";
 import resendReceiptRouter from "./resend-receipt";
 import reviewsRouter from "./reviews";
 import productQuestionsRouter from "./product-questions";
+import productCompatibilityRouter from "./product-compatibility";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -62,6 +63,11 @@ router.use(reviewsRouter);
 // answered Q&A + auth-gated submit; admin moderation + answer
 // flow lives at routes/admin/product-questions.ts.
 router.use(productQuestionsRouter);
+// Product compatibility lookup (Phase B.3). Public reads — used by
+// the catalog filter "show only parts compatible with my machine"
+// and the product-detail "compatible with your AirSense 11" badge.
+// Admin writes live in routes/admin/product-compatibility.ts.
+router.use(productCompatibilityRouter);
 // Public lead-capture form on /insurance. Sends two SendGrid
 // emails (team notification + patient confirmation); does not
 // write to the DB — the verifications team works the inbox.
