@@ -63,7 +63,7 @@ export function TrustSignalStrip() {
     },
     {
       Icon: RefreshCw,
-      label: "30-day comfort guarantee",
+      label: "60-day comfort guarantee",
       testid: "trust-guarantee",
     },
     {

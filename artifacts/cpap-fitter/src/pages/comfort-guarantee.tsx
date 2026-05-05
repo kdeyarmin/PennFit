@@ -14,15 +14,15 @@ import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 /**
- * Public policy page for the 30-day comfort/fit guarantee. Linked
+ * Public policy page for the 60-day comfort/fit guarantee. Linked
  * from every <ComfortGuarantee> badge across the funnel. Plain copy,
  * no marketing puffery — patients reading this are anxious and want
  * the rules.
  */
 export function ComfortGuaranteePage() {
   useDocumentTitle(
-    "30-day comfort guarantee",
-    "Penn Home Medical Supply backs every CPAP mask with a 30-day comfort guarantee — swap for a different size or style if it doesn't fit.",
+    "60-day comfort guarantee",
+    "Penn Home Medical Supply backs every CPAP mask with a 60-day comfort guarantee — swap for a different size or style if it doesn't fit.",
   );
 
   return (
@@ -35,11 +35,11 @@ export function ComfortGuaranteePage() {
           PennPaps · Customer Promise
         </p>
         <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight text-gradient-brand">
-          30-day comfort guarantee
+          60-day comfort guarantee
         </h1>
         <p className="text-muted-foreground text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
           Mask fit is personal. If the one you ordered isn&apos;t comfortable,
-          tell us within 30 days and we&apos;ll send a different size or style —
+          tell us within 60 days and we&apos;ll send a different size or style —
           and cover return shipping. No restocking fees.
         </p>
       </header>
@@ -50,7 +50,7 @@ export function ComfortGuaranteePage() {
             <CalendarClock className="w-5 h-5" />
           </div>
           <h3 className="font-semibold tracking-tight">
-            30 days from delivery
+            60 days from delivery
           </h3>
           <p className="text-sm text-muted-foreground">
             The clock starts the day your order is delivered, not the day you
@@ -95,7 +95,7 @@ export function ComfortGuaranteePage() {
           {[
             {
               n: 1,
-              title: "Email or call us within 30 days",
+              title: "Email or call us within 60 days",
               body: "Reach out from the email address you used to order, or include your order number. We respond same business day.",
             },
             {
@@ -163,7 +163,7 @@ export function ComfortGuaranteePage() {
                 Disposable supplies — filters, tubing, water chambers (hygiene).
               </li>
               <li>CPAP machines (covered by the manufacturer warranty).</li>
-              <li>Returns started after 30 days from delivery.</li>
+              <li>Returns started after 60 days from delivery.</li>
               <li>Items missing original parts (frame, clips, headgear).</li>
             </ul>
           </article>

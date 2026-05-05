@@ -53,7 +53,7 @@ const UNIVERSAL_FAQS: FaqEntry[] = [
   },
   {
     q: "What's your return policy?",
-    a: "Unopened, unused supplies can be returned within 30 days for a full refund. Mask cushions and full masks are covered by our 30-day fit guarantee — if it doesn't fit comfortably, we'll exchange it free.",
+    a: "Unopened, unused supplies can be returned within 60 days for a full refund. Mask cushions and full masks are covered by our 60-day fit guarantee — if it doesn't fit comfortably, we'll exchange it free.",
   },
   {
     q: "Do I need a prescription?",
@@ -70,7 +70,7 @@ const CATEGORY_FAQS = {
   mask: [
     {
       q: "What if the mask doesn't fit comfortably?",
-      a: "Our 30-day fit guarantee covers it — exchange it for a different size or style at no charge. Run the Virtual Mask Fitter first if you want a sizing recommendation before you order.",
+      a: "Our 60-day fit guarantee covers it — exchange it for a different size or style at no charge. Run the Virtual Mask Fitter first if you want a sizing recommendation before you order.",
     },
     {
       q: "How often should I replace a full mask?",

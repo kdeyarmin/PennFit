@@ -91,7 +91,7 @@ function renderHtml(input: {
         </a>
       </p>
       <p style="font-size:12px;color:#6b7280;line-height:1.5;margin:24px 0 0 0;">
-        Not loving it? You're inside our 30-day comfort guarantee — reply to this email and we'll send a different size or style with a free return label.
+        Not loving it? You're inside our 60-day comfort guarantee — reply to this email and we'll send a different size or style with a free return label.
       </p>
       <p style="font-size:11px;color:#9ca3af;margin:24px 0 0 0;">
         You can stop these emails anytime from your account &rsaquo; Communication preferences.
@@ -114,7 +114,7 @@ function renderText(input: {
     "",
     `Leave a review: ${input.productUrl}`,
     "",
-    `Not loving it? You're inside our 30-day comfort guarantee —`,
+    `Not loving it? You're inside our 60-day comfort guarantee —`,
     `reply to this email and we'll send a different size or style with a free return label.`,
     "",
     `You can stop these emails anytime from your account → Communication preferences.`,
