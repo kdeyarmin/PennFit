@@ -108,24 +108,23 @@ export function FloatingContactLauncher() {
               </span>
             </a>
             <SignedIn>
-              <Link href="/account#messages">
-                <a
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
-                  data-testid="floating-contact-thread"
-                >
-                  <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.20)] flex items-center justify-center">
-                    <MessageCircle className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
+              <Link
+                href="/account#messages"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/40"
+                data-testid="floating-contact-thread"
+              >
+                <span className="h-9 w-9 rounded-lg bg-[hsl(var(--penn-gold)/0.20)] flex items-center justify-center">
+                  <MessageCircle className="h-4 w-4 text-[hsl(var(--penn-navy))]" />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-medium text-foreground">
+                    Message your CSR
                   </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-foreground">
-                      Message your CSR
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      Replies show up in your account
-                    </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Replies show up in your account
                   </span>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </a>
+                </span>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </Link>
             </SignedIn>
           </div>
