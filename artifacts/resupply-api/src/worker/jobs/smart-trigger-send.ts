@@ -11,7 +11,7 @@
 // 04:13 UTC daily — 50 minutes after the evaluator (03:23 UTC) so
 // the evaluator's batch is durable before this job tries to send
 // it. Off-hours globally; far enough from the reminders cron
-// (hourly :00) and attachment-sweep (Sunday 03:13) to avoid
+// (hourly :07) and attachment-sweep (Sunday 03:13) to avoid
 // resource contention spikes.
 //
 // Channel ordering: email first (cheaper, higher delivery rate),
