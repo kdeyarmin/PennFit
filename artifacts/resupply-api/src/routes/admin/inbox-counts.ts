@@ -9,8 +9,8 @@
 //     `shipped_back` waiting for receive).
 //   * pendingReviews — customer-submitted product reviews awaiting
 //     moderation (status = pending).
-//   * overdueFollowups — open shop_customer_followups whose due_at
-//     is in the past (Phase 18).
+//   * overdueFollowups — open shop_customer_followups OR
+//     patient_followups whose due_at is in the past (Phase 18 + 20).
 //
 // Pure SQL counts. No PHI. Same boot-time-safe pattern as
 // /admin/ops-status — fast enough for the nav to call on every page
@@ -28,6 +28,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import {
   conversations,
   getDbPool,
+  patientFollowups,
   shopCustomerFollowups,
   shopReturns,
   shopReviews,
@@ -57,21 +58,28 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
     .from(shopReviews)
     .where(eq(shopReviews.status, "pending"));
 
-  // Overdue followups: open AND due in the past. Uses the partial
-  // index from migration 0039 so this scales with the open queue
-  // size, not the full followup history.
-  const [overdueFollowupsRow] = await db
+  // Overdue followups across BOTH shop_customer and patient surfaces.
+  // Each side uses its own partial index (open AND due) so the count
+  // scales with the open queue, not the full history. Sum in JS.
+  const [overdueShopRow] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(shopCustomerFollowups)
     .where(
       sql`${shopCustomerFollowups.completedAt} IS NULL AND ${shopCustomerFollowups.dueAt} < now()`,
+    );
+  const [overduePatientRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(patientFollowups)
+    .where(
+      sql`${patientFollowups.completedAt} IS NULL AND ${patientFollowups.dueAt} < now()`,
     );
 
   res.json({
     awaitingReplyConversations: awaitingReplyRow?.count ?? 0,
     pendingReturns: pendingReturnsRow?.count ?? 0,
     pendingReviews: pendingReviewsRow?.count ?? 0,
-    overdueFollowups: overdueFollowupsRow?.count ?? 0,
+    overdueFollowups:
+      (overdueShopRow?.count ?? 0) + (overduePatientRow?.count ?? 0),
     serverTime: new Date().toISOString(),
   });
 });

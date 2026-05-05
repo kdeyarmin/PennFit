@@ -27,6 +27,7 @@ import {
   type AdminFollowupRow,
 } from "@/lib/admin/followups-list-api";
 import { completeAdminCustomerFollowup } from "@/lib/admin/customer-followups-api";
+import { completeAdminPatientFollowup } from "@/lib/admin/patient-followups-api";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -39,13 +40,13 @@ export function AdminFollowupsPage() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: ({
-      customerId,
-      followupId,
-    }: {
-      customerId: string;
-      followupId: string;
-    }) => completeAdminCustomerFollowup(customerId, followupId),
+    // Phase 20: row.kind switches between the customer and patient
+    // PATCH endpoints. Both surfaces use the same id-shape contract
+    // and return the same response shape.
+    mutationFn: (row: AdminFollowupRow) =>
+      row.kind === "patient"
+        ? completeAdminPatientFollowup(row.subjectId, row.id)
+        : completeAdminCustomerFollowup(row.subjectId, row.id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey });
       // Phase 16 inbox-counts feeds the nav badge — invalidate so the
@@ -72,7 +73,7 @@ export function AdminFollowupsPage() {
 
   const buckets = bucketize(data.followups);
   const completingId = completeMutation.isPending
-    ? (completeMutation.variables?.followupId ?? null)
+    ? (completeMutation.variables?.id ?? null)
     : null;
 
   return (
@@ -116,12 +117,7 @@ export function AdminFollowupsPage() {
         rows={buckets.overdue}
         emptyHint="Nothing overdue. Nice work."
         tone="danger"
-        onComplete={(row) =>
-          completeMutation.mutate({
-            customerId: row.customerId,
-            followupId: row.id,
-          })
-        }
+        onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
       />
       <Bucket
@@ -129,12 +125,7 @@ export function AdminFollowupsPage() {
         rows={buckets.today}
         emptyHint="Nothing due in the next 24 hours."
         tone="warning"
-        onComplete={(row) =>
-          completeMutation.mutate({
-            customerId: row.customerId,
-            followupId: row.id,
-          })
-        }
+        onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
       />
       <Bucket
@@ -142,12 +133,7 @@ export function AdminFollowupsPage() {
         rows={buckets.upcoming}
         emptyHint="Nothing scheduled further out."
         tone="muted"
-        onComplete={(row) =>
-          completeMutation.mutate({
-            customerId: row.customerId,
-            followupId: row.id,
-          })
-        }
+        onComplete={(row) => completeMutation.mutate(row)}
         completingId={completingId}
       />
     </div>
@@ -284,13 +270,26 @@ function Row({
         >
           Due {new Date(row.dueAt).toLocaleString()} · scheduled by{" "}
           {row.createdByEmail}
+          {row.kind === "patient" && (
+            <span
+              style={{
+                marginLeft: 6,
+                padding: "0 4px",
+                borderRadius: 3,
+                background: "#e0f2fe",
+                color: "#075985",
+                fontSize: 10,
+                fontWeight: 600,
+              }}
+            >
+              Patient
+            </span>
+          )}
         </div>
         <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginBottom: 6 }}>
           {row.body}
         </div>
-        <Link
-          href={`/admin/shop/customers/${encodeURIComponent(row.customerId)}`}
-        >
+        <Link href={subjectHref(row)}>
           <a
             style={{
               fontSize: 12,
@@ -302,7 +301,7 @@ function Row({
             }}
             data-testid={`admin-followup-customer-link-${row.id}`}
           >
-            {row.customerDisplayName ?? row.customerEmail ?? row.customerId}
+            {row.subjectDisplayName ?? row.subjectEmail ?? row.subjectId}
             <ExternalLink size={11} />
           </a>
         </Link>
@@ -319,4 +318,14 @@ function Row({
       </Button>
     </li>
   );
+}
+
+// Phase 20: route the row's "Open subject" link to the right detail
+// page based on `kind`. Shop customers live under /admin/shop/customers,
+// patients under /admin/patients.
+function subjectHref(row: AdminFollowupRow): string {
+  if (row.kind === "patient") {
+    return `/admin/patients/${encodeURIComponent(row.subjectId)}`;
+  }
+  return `/admin/shop/customers/${encodeURIComponent(row.subjectId)}`;
 }

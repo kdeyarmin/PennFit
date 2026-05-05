@@ -21,9 +21,10 @@ vi.mock("../../middlewares/requireAdmin", () =>
 );
 
 // Each call to db.select() returns a fluent stub whose terminal
-// resolves with the next row in `selectQueue`. The route does four
+// resolves with the next row in `selectQueue`. The route does five
 // COUNT queries (awaiting-reply convs, pending returns, pending
-// reviews, overdue followups) so the test pushes four rows.
+// reviews, overdue shop followups, overdue patient followups) so
+// the test pushes five rows.
 const selectQueue: unknown[][] = [];
 const dbStub = {
   select: vi.fn(() => {
@@ -76,7 +77,8 @@ describe("GET /admin/inbox-counts", () => {
     selectQueue.push([{ count: 0 }]); // awaiting-reply
     selectQueue.push([{ count: 0 }]); // pending returns
     selectQueue.push([{ count: 0 }]); // pending reviews
-    selectQueue.push([{ count: 0 }]); // overdue followups
+    selectQueue.push([{ count: 0 }]); // overdue shop followups
+    selectQueue.push([{ count: 0 }]); // overdue patient followups
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -98,7 +100,8 @@ describe("GET /admin/inbox-counts", () => {
     selectQueue.push([{ count: 7 }]); // awaiting-reply
     selectQueue.push([{ count: 3 }]); // pending returns
     selectQueue.push([{ count: 12 }]); // pending reviews
-    selectQueue.push([{ count: 5 }]); // overdue followups
+    selectQueue.push([{ count: 5 }]); // overdue shop followups
+    selectQueue.push([{ count: 2 }]); // overdue patient followups
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -106,7 +109,8 @@ describe("GET /admin/inbox-counts", () => {
       awaitingReplyConversations: 7,
       pendingReturns: 3,
       pendingReviews: 12,
-      overdueFollowups: 5,
+      // Sums shop + patient overdue across both surfaces.
+      overdueFollowups: 7,
     });
   });
 });
