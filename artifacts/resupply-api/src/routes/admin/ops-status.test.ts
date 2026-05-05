@@ -29,7 +29,12 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const selectQueue: number[] = [];
 const dbStub = {
   select: vi.fn(() => {
-    const value = selectQueue.shift() ?? 0;
+    if (selectQueue.length === 0) {
+      throw new Error(
+        "ops-status test stub exhausted: expected another queued SELECT count() result",
+      );
+    }
+    const value = selectQueue.shift() as number;
     const obj: Record<string, unknown> = {
       from: () => obj,
       where: () => Promise.resolve([{ count: value }]),
