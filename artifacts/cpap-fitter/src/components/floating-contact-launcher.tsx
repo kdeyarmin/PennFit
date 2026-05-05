@@ -47,7 +47,7 @@ export function FloatingContactLauncher() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-40 print:hidden"
+      className="fixed bottom-4 right-4 z-50 print:hidden"
       data-testid="floating-contact"
     >
       {open && (
