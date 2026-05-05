@@ -23,12 +23,19 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-// The route uses a single db.execute(sql`...`) call (one round-trip).
-// We capture the serialised SQL so tests can assert on the predicates
-// (which channels/statuses are included). Matches the same pattern
-// used in abandoned-carts.test.ts.
+// The route uses a single db.execute(sql`...`) call for the main three
+// counts (one round-trip), plus two db.select() calls for overdue
+// followups (shop + patient). We capture the serialised SQL passed to
+// execute so tests can assert on the predicates (which channels /
+// statuses are included). Matches the pattern used in
+// abandoned-carts.test.ts.
 const executeQueue: Array<{ rows: unknown[] }> = [];
 let lastExecuteSql: string | null = null;
+
+// Each call to db.select() returns a fluent stub whose terminal
+// resolves with the next row-set in `selectQueue`. The route does two
+// COUNT selects (overdue shop followups, overdue patient followups).
+const selectQueue: unknown[][] = [];
 
 function sqlToString(query: { queryChunks?: unknown[] }): string {
   // Walk Drizzle's SQL object chunks to produce a plain string.
@@ -43,11 +50,21 @@ function sqlToString(query: { queryChunks?: unknown[] }): string {
     .join("");
 }
 
+function makeSelectStub(): unknown {
+  const rows = selectQueue.shift() ?? [];
+  const stub = {
+    from: () => stub,
+    where: () => Promise.resolve(rows),
+  };
+  return stub;
+}
+
 const dbStub = {
   execute: vi.fn((query: unknown) => {
     lastExecuteSql = sqlToString(query as { queryChunks?: unknown[] });
     return Promise.resolve(executeQueue.shift() ?? { rows: [] });
   }),
+  select: vi.fn(() => makeSelectStub()),
 };
 
 vi.mock("drizzle-orm/node-postgres", () => ({
@@ -79,8 +96,10 @@ const ADMIN: MockAdminCtx = {
 beforeEach(() => {
   mockAdmin.current = null;
   executeQueue.length = 0;
+  selectQueue.length = 0;
   lastExecuteSql = null;
   dbStub.execute.mockClear();
+  dbStub.select.mockClear();
 });
 
 describe("GET /admin/inbox-counts", () => {
@@ -100,6 +119,8 @@ describe("GET /admin/inbox-counts", () => {
         },
       ],
     });
+    selectQueue.push([{ count: 0 }]); // overdue shop followups
+    selectQueue.push([{ count: 0 }]); // overdue patient followups
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -107,6 +128,7 @@ describe("GET /admin/inbox-counts", () => {
       awaitingReplyConversations: 0,
       pendingReturns: 0,
       pendingReviews: 0,
+      overdueFollowups: 0,
     });
     expect(typeof res.body.serverTime).toBe("string");
   });
@@ -122,6 +144,8 @@ describe("GET /admin/inbox-counts", () => {
         },
       ],
     });
+    selectQueue.push([{ count: 5 }]); // overdue shop followups
+    selectQueue.push([{ count: 2 }]); // overdue patient followups
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -129,6 +153,8 @@ describe("GET /admin/inbox-counts", () => {
       awaitingReplyConversations: 7,
       pendingReturns: 3,
       pendingReviews: 12,
+      // Sums shop + patient overdue across both surfaces.
+      overdueFollowups: 7,
     });
   });
 

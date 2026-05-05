@@ -13,6 +13,8 @@
 //     refund/replace resolution).
 //   * pendingReviews — customer-submitted product reviews awaiting
 //     moderation (status = pending).
+//   * overdueFollowups — open shop_customer_followups OR
+//     patient_followups whose due_at is in the past (Phase 18 + 20).
 //
 // All three counts land in a single db.execute() call (one round-trip)
 // to keep the endpoint as cheap as possible for a query that fires on
@@ -31,7 +33,11 @@ import { Router, type IRouter } from "express";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool } from "@workspace/resupply-db";
+import {
+  getDbPool,
+  patientFollowups,
+  shopCustomerFollowups,
+} from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -59,10 +65,30 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
 
   const row = result.rows[0] as CountsRow | undefined;
 
+  // Overdue followups across BOTH shop_customer and patient surfaces.
+  // Each side uses its own partial index (open AND due) so the count
+  // scales with the open queue, not the full history. Sum in JS.
+  const [[overdueShopRow], [overduePatientRow]] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(shopCustomerFollowups)
+      .where(
+        sql`${shopCustomerFollowups.completedAt} IS NULL AND ${shopCustomerFollowups.dueAt} < now()`,
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(patientFollowups)
+      .where(
+        sql`${patientFollowups.completedAt} IS NULL AND ${patientFollowups.dueAt} < now()`,
+      ),
+  ]);
+
   res.json({
     awaitingReplyConversations: row?.awaiting_reply_conversations ?? 0,
     pendingReturns: row?.pending_returns ?? 0,
     pendingReviews: row?.pending_reviews ?? 0,
+    overdueFollowups:
+      (overdueShopRow?.count ?? 0) + (overduePatientRow?.count ?? 0),
     serverTime: new Date().toISOString(),
   });
 });

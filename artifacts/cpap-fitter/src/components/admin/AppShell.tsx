@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   MessageSquareText,
   ListChecks,
+  CalendarClock,
   Sparkles,
   Users,
   ShoppingBag,
@@ -74,7 +75,11 @@ type NavLink = {
    * the inbox-counts query and shows it as a pill next to the label.
    * "0" suppresses rendering so we don't show empty badges everywhere.
    */
-  badgeKey?: "awaitingReplyConversations" | "pendingReturns" | "pendingReviews";
+  badgeKey?:
+    | "awaitingReplyConversations"
+    | "pendingReturns"
+    | "pendingReviews"
+    | "overdueFollowups";
 };
 
 type NavGroup = {
@@ -124,6 +129,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ListChecks,
         matchPrefix: "/admin/episodes",
         hint: "Open service episodes that need follow-up",
+      },
+      {
+        href: "/admin/followups",
+        label: "Follow-ups",
+        icon: CalendarClock,
+        matchPrefix: "/admin/followups",
+        hint: "Today's queue of CSR-scheduled callbacks across all customers",
+        badgeKey: "overdueFollowups",
       },
       {
         href: "/admin/macros",

@@ -3,7 +3,13 @@
 //
 // What it returns (read-only, never errors when authenticated):
 //   * nextShipment        — soonest currentPeriodEnd from active
-//                            subscriptions (subscribe-and-ship).
+//                            subscriptions (subscribe-and-ship), with
+//                            a `daysUntil` countdown (Phase A.1).
+//   * eligibility         — Phase A.1 eligibility-claim payload:
+//                            { eligibleNow: [items past their period
+//                            end], soonest: { firstItemName,
+//                            daysUntil } } so the dashboard banner can
+//                            say "ready now" or "eligible in N days".
 //   * latestOrder         — most-recent paid order with optional
 //                            tracking + delivery state.
 //   * activeSubscriptions — count of `status='active'` subs (after
@@ -73,10 +79,43 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
     ? {
         subscriptionId: upcoming.id,
         date: upcoming.currentPeriodEnd!.toISOString(),
+        // Phase A.1 — countdown to the next eligible date. Always >= 0;
+        // computed against the same `now` used for the cycle filter
+        // above so the two fields agree on "today" within a single
+        // request.
+        daysUntil: Math.max(
+          0,
+          Math.ceil(
+            (upcoming.currentPeriodEnd!.getTime() - now.getTime()) /
+              (24 * 60 * 60 * 1000),
+          ),
+        ),
         firstItemName: upcoming.items?.[0]?.name ?? null,
         cancelAtPeriodEnd: upcoming.cancelAtPeriodEnd ?? false,
       }
     : null;
+
+  // Phase A.1 — eligibility-claim payload. "eligibleNow" surfaces
+  // items the customer can already reorder (period rolled past); the
+  // banner uses this to flip from "eligible in N days" to "ready now".
+  // We bundle item names for renderer convenience but DO NOT include
+  // PHI — names are catalog labels not patient data.
+  const eligibleNow = liveSubs
+    .filter((r) => !r.cancelAtPeriodEnd)
+    .filter((r) => r.currentPeriodEnd && r.currentPeriodEnd <= now)
+    .map((r) => ({
+      subscriptionId: r.id,
+      firstItemName: r.items?.[0]?.name ?? null,
+    }));
+  const eligibility = {
+    eligibleNow,
+    soonest: nextShipment
+      ? {
+          firstItemName: nextShipment.firstItemName,
+          daysUntil: nextShipment.daysUntil,
+        }
+      : null,
+  };
 
   // Latest paid order — gives the home banner enough to say
   // "Order shipped Apr 22 · UPS 1Z…" or "Awaiting tracking".
@@ -146,6 +185,7 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
 
   res.json({
     nextShipment,
+    eligibility,
     latestOrder,
     activeSubscriptions: liveSubs.length,
     pendingOrders: pendingRow?.count ?? 0,
