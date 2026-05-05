@@ -15,10 +15,14 @@
 //     moderation (status = pending).
 //   * overdueFollowups — open shop_customer_followups OR
 //     patient_followups whose due_at is in the past (Phase 18 + 20).
+//   * newPatientDocuments — patient_documents uploaded by patients
+//     that no admin has yet marked as reviewed (reviewed_at IS NULL).
+//     Drives the badge on the Patients nav link so CSRs know when
+//     something new needs their attention.
 //
-// All three counts land in a single db.execute() call (one round-trip)
-// to keep the endpoint as cheap as possible for a query that fires on
-// every admin nav render.
+// All five counts (four scalar subqueries + overdue-followup pair) land
+// in three db round-trips to keep the endpoint cheap for a query that
+// fires on every admin nav render.
 //
 // Pure SQL counts. No PHI. Same boot-time-safe pattern as
 // /admin/ops-status — fast enough for the nav to call on every page
@@ -47,12 +51,13 @@ interface CountsRow {
   awaiting_reply_conversations: number;
   pending_returns: number;
   pending_reviews: number;
+  new_patient_documents: number;
 }
 
 router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
   const db = drizzle(getDbPool());
 
-  // Single round-trip: three scalar subqueries in one SELECT.
+  // Single round-trip: four scalar subqueries in one SELECT.
   const result = await db.execute(sql`
     SELECT
       (SELECT count(*)::int FROM conversations
@@ -60,7 +65,9 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
       (SELECT count(*)::int FROM shop_returns
         WHERE status IN ('requested','approved','shipped_back','received')) AS pending_returns,
       (SELECT count(*)::int FROM shop_reviews
-        WHERE status = 'pending') AS pending_reviews
+        WHERE status = 'pending') AS pending_reviews,
+      (SELECT count(*)::int FROM resupply.patient_documents
+        WHERE reviewed_at IS NULL) AS new_patient_documents
   `);
 
   const row = result.rows[0] as unknown as CountsRow | undefined;
@@ -89,6 +96,7 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
     pendingReviews: row?.pending_reviews ?? 0,
     overdueFollowups:
       (overdueShopRow?.count ?? 0) + (overduePatientRow?.count ?? 0),
+    newPatientDocuments: row?.new_patient_documents ?? 0,
     serverTime: new Date().toISOString(),
   });
 });

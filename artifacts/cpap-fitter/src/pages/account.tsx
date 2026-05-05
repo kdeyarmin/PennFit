@@ -520,10 +520,30 @@ function DocumentsSection() {
               data-testid={`account-doc-${doc.id}`}
             >
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">
-                  {doc.filename ?? "Document"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <p className="text-sm font-medium truncate">
+                    {doc.filename ?? "Document"}
+                  </p>
+                  {doc.reviewedAt ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 shrink-0"
+                      style={{ background: "#d1fae5", color: "#065f46" }}
+                      title={`Reviewed ${new Date(doc.reviewedAt).toLocaleDateString()}`}
+                      data-testid={`account-doc-reviewed-${doc.id}`}
+                    >
+                      <CheckCircle2 className="h-3 w-3" /> Reviewed
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 shrink-0"
+                      style={{ background: "#fef3c7", color: "#92400e" }}
+                      data-testid={`account-doc-pending-${doc.id}`}
+                    >
+                      Pending review
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
                   {DOCUMENT_TYPE_LABELS[doc.documentType as PatientDocumentType] ??
                     doc.documentType}
                   {" · "}

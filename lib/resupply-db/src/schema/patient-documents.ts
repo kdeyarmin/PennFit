@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { index, integer, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+// Note: reviewed_by_admin_id uses text() because admin_users.id is text, not uuid.
 
+import { adminUsers } from "./admin-users";
 import { patients } from "./patients";
 import { resupplySchema } from "./_schema";
 
@@ -45,6 +47,18 @@ export const patientDocuments = resupplySchema.table(
     /** Actual byte count; mirrored from GCS metadata at finalize. */
     sizeBytes: integer("size_bytes").notNull(),
 
+    /** Set when an admin first marks this document as reviewed. Null = not yet seen. */
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+
+    /** Which admin user marked the document reviewed; null when not yet reviewed. */
+    reviewedByAdminId: text("reviewed_by_admin_id").references(
+      () => adminUsers.id,
+      { onDelete: "set null" },
+    ),
+
+    /** Optional free-text note the CSR records when marking reviewed. */
+    reviewNote: varchar("review_note", { length: 500 }),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -55,6 +69,9 @@ export const patientDocuments = resupplySchema.table(
   },
   (t) => ({
     patientIdx: index("patient_documents_patient_idx").on(t.patientId),
+    unreviewedIdx: index("patient_documents_unreviewed_idx")
+      .on(t.patientId)
+      .where(sql`${t.reviewedAt} IS NULL`),
   }),
 );
 
