@@ -239,10 +239,25 @@ export function withIdempotency(endpoint: string) {
       if (!captured) {
         captured = { status: res.statusCode, body: null };
       }
-      if (typeof encodingOrCb === "function") {
-        return originalEnd(chunk, encodingOrCb);
+
+      let resolvedChunk = chunk;
+      let resolvedEncoding: BufferEncoding | undefined;
+      let resolvedCb: (() => void) | undefined = cb;
+
+      if (typeof chunk === "function") {
+        resolvedChunk = undefined;
+        resolvedCb = chunk;
+      } else if (typeof encodingOrCb === "function") {
+        resolvedCb = encodingOrCb;
+      } else {
+        resolvedEncoding = encodingOrCb;
       }
-      return originalEnd(chunk, encodingOrCb as BufferEncoding, cb);
+
+      return originalEnd(
+        resolvedChunk as Parameters<typeof originalEnd>[0],
+        resolvedEncoding,
+        resolvedCb,
+      );
     };
 
     res.on("finish", () => {
