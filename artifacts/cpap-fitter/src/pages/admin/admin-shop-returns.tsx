@@ -33,6 +33,7 @@ import {
   type AdminReturn,
   type ReturnStatus,
 } from "@/lib/admin/shop-returns-api";
+import { ReturnNotesPanel } from "@/components/admin/ReturnNotesPanel";
 
 type Tab = ReturnStatus | "all" | "open";
 
@@ -229,6 +230,10 @@ function ReturnCard({ item }: { item: AdminReturn }) {
   const [replacePriceId, setReplacePriceId] = useState("");
   const [showNote, setShowNote] = useState(false);
   const [extraNote, setExtraNote] = useState("");
+  // Phase 15: append-only internal notes log, separate from the
+  // single-blob `adminNote` field that gets accumulated alongside
+  // status transitions.
+  const [showNotesLog, setShowNotesLog] = useState(false);
 
   const errorMessage =
     approveMut.error instanceof Error
@@ -295,13 +300,26 @@ function ReturnCard({ item }: { item: AdminReturn }) {
       {item.adminNote && (
         <details className="mt-3">
           <summary className="cursor-pointer text-xs font-semibold text-slate-600">
-            Admin notes
+            Status-change rationale
           </summary>
           <pre className="mt-2 whitespace-pre-wrap rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
             {item.adminNote}
           </pre>
         </details>
       )}
+
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setShowNotesLog((v) => !v)}
+          className="text-xs font-semibold text-slate-600 underline decoration-dotted"
+          aria-expanded={showNotesLog}
+          data-testid={`return-${item.id}-notes-toggle`}
+        >
+          {showNotesLog ? "Hide internal notes" : "Internal notes"}
+        </button>
+        {showNotesLog && <ReturnNotesPanel returnId={item.id} />}
+      </div>
 
       {errorMessage && (
         <div className="mt-3 text-xs text-rose-700" role="alert">
