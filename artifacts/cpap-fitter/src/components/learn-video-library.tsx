@@ -15,12 +15,17 @@
 // deployer drops in a real recording), we render a "video coming
 // soon" placeholder instead of a broken iframe.
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Play, Clock } from "lucide-react";
 
 import { LEARN_VIDEOS, type LearnVideo } from "@/lib/learn-videos";
 
 export function LearnVideoLibrary() {
+  // Only one video may be open at a time. Storing the id of the open card
+  // (null = none) ensures that opening a second card unmounts the first
+  // iframe and stops playback, preventing overlapping audio/CPU waste.
+  const [openId, setOpenId] = useState<string | null>(null);
+
   return (
     <section
       className="space-y-4"
@@ -43,17 +48,40 @@ export function LearnVideoLibrary() {
       </div>
       <ul className="grid gap-4 sm:grid-cols-2">
         {LEARN_VIDEOS.map((v) => (
-          <VideoCard key={v.id} video={v} />
+          <VideoCard
+            key={v.id}
+            video={v}
+            open={openId === v.id}
+            onOpen={() => setOpenId(v.id)}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function VideoCard({ video }: { video: LearnVideo }) {
-  const [open, setOpen] = useState(false);
+function VideoCard({
+  video,
+  open,
+  onOpen,
+}: {
+  video: LearnVideo;
+  open: boolean;
+  onOpen: () => void;
+}) {
   const hasEmbed = video.youtubeId.length > 0;
   const minutes = Math.round(video.durationSec / 60);
+  // Ref used to move focus into the iframe after the play button is
+  // activated, keeping keyboard and screen-reader users oriented.
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (open && hasEmbed) {
+      // Focus the iframe so that keyboard/screen-reader users don't lose
+      // their position when the play button is removed from the DOM.
+      iframeRef.current?.focus();
+    }
+  }, [open, hasEmbed]);
 
   return (
     <li
@@ -68,6 +96,7 @@ function VideoCard({ video }: { video: LearnVideo }) {
           style={{ paddingTop: "56.25%" }}
         >
           <iframe
+            ref={iframeRef}
             className="absolute inset-0 w-full h-full"
             src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(video.youtubeId)}?rel=0&modestbranding=1&autoplay=1`}
             title={video.title}
@@ -80,7 +109,7 @@ function VideoCard({ video }: { video: LearnVideo }) {
       ) : (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={onOpen}
           disabled={!hasEmbed}
           className="block w-full aspect-video bg-[hsl(var(--penn-navy)/0.08)] hover:bg-[hsl(var(--penn-navy)/0.12)] transition-colors disabled:cursor-not-allowed disabled:hover:bg-[hsl(var(--penn-navy)/0.04)]"
           aria-label={

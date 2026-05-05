@@ -2228,7 +2228,7 @@ function FollowupsList({
             <Button
               size="sm"
               intent="secondary"
-              disabled={completingId === f.id}
+              disabled={completingId !== null}
               onClick={() => onComplete(f.id)}
               data-testid={`patient-followups-complete-${f.id}`}
             >

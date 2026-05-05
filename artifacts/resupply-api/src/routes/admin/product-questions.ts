@@ -126,7 +126,7 @@ router.patch(
       .limit(1);
     const row = existing[0];
     if (!row) {
-      res.status(404).json({ error: "question_not_found" });
+      res.status(404).json({ error: "not_found" });
       return;
     }
     if (row.status !== "pending") {
