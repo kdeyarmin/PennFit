@@ -24,6 +24,60 @@ export type BiometricResult =
   | { kind: "error"; message: string };
 
 /**
+ * Returns the Capacitor native platform ("ios" or "android") when
+ * running inside a native shell, or "web" in a plain browser.
+ * Synchronous — relies on the `Capacitor` global injected before the
+ * JS bundle runs.
+ */
+export function getNativePlatform(): "ios" | "android" | "web" {
+  if (typeof window === "undefined") return "web";
+  const cap = (
+    window as unknown as { Capacitor?: { getPlatform?: () => string } }
+  ).Capacitor;
+  if (!cap?.getPlatform) return "web";
+  try {
+    const p = cap.getPlatform();
+    if (p === "ios" || p === "android") return p;
+  } catch {
+    // ignore
+  }
+  return "web";
+}
+
+/**
+ * Checks whether the device has biometric hardware that is enrolled
+ * and available. Returns false on web, when the plugin isn't
+ * installed, or when the OS reports no usable biometry.
+ *
+ * Used by BiometricLockToggle to avoid surfacing the preference toggle
+ * on devices where the gate would always fall open.
+ */
+export async function checkBiometricAvailability(): Promise<boolean> {
+  if (!(await isNativeApp())) return false;
+  try {
+    const importer = new Function("m", "return import(m)") as (
+      m: string,
+    ) => Promise<unknown>;
+    const mod: unknown = await importer(
+      "@capacitor-community/biometric-auth",
+    ).catch(() => null);
+    if (!mod) return false;
+    const BiometricAuth = (
+      mod as {
+        BiometricAuth?: {
+          checkBiometry?: () => Promise<{ isAvailable: boolean }>;
+        };
+      }
+    ).BiometricAuth;
+    if (!BiometricAuth?.checkBiometry) return false;
+    const result = await BiometricAuth.checkBiometry();
+    return result.isAvailable === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Returns true when the SPA is running inside a Capacitor-wrapped
  * native shell (iOS or Android), false on plain web.
  */

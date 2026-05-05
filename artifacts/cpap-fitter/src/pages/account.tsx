@@ -82,6 +82,7 @@ import { AccountMessagesSection } from "@/components/account-messages-section";
 import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
+import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
 // from your order on …" banner. Stored as a JSON object so we can
@@ -99,7 +100,9 @@ export function AccountPage() {
   // a jarring auto-bounce.
   return (
     <SignedIn fallback={<SignedOutAccountPrompt />}>
-      <AccountInner />
+      <BiometricLockGate>
+        <AccountInner />
+      </BiometricLockGate>
     </SignedIn>
   );
 }
