@@ -20,9 +20,9 @@
 //     Drives the badge on the Patients nav link so CSRs know when
 //     something new needs their attention.
 //
-// All three counts land in a single db.execute() call (one round-trip)
-// to keep the endpoint as cheap as possible for a query that fires on
-// every admin nav render.
+// All five counts (four scalar subqueries + overdue-followup pair) land
+// in three db round-trips to keep the endpoint cheap for a query that
+// fires on every admin nav render.
 //
 // Pure SQL counts. No PHI. Same boot-time-safe pattern as
 // /admin/ops-status — fast enough for the nav to call on every page
@@ -39,7 +39,6 @@ import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
   getDbPool,
-  patientDocuments,
   patientFollowups,
   shopCustomerFollowups,
 } from "@workspace/resupply-db";

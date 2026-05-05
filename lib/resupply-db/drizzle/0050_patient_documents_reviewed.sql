@@ -15,7 +15,7 @@
 
 ALTER TABLE "resupply"."patient_documents"
   ADD COLUMN "reviewed_at"       timestamp with time zone,
-  ADD COLUMN "reviewed_by_admin_id" uuid
+  ADD COLUMN "reviewed_by_admin_id" text
     REFERENCES "resupply"."admin_users"("id") ON DELETE SET NULL;
 
 -- Fast inbox-counts query: unreviewed docs per patient.

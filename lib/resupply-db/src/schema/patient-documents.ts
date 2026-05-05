@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+// Note: reviewed_by_admin_id uses text() because admin_users.id is text, not uuid.
 
 import { adminUsers } from "./admin-users";
 import { patients } from "./patients";
@@ -50,10 +51,13 @@ export const patientDocuments = resupplySchema.table(
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
 
     /** Which admin user marked the document reviewed; null when not yet reviewed. */
-    reviewedByAdminId: uuid("reviewed_by_admin_id").references(
+    reviewedByAdminId: text("reviewed_by_admin_id").references(
       () => adminUsers.id,
       { onDelete: "set null" },
     ),
+
+    /** Optional free-text note the CSR records when marking reviewed. */
+    reviewNote: varchar("review_note", { length: 500 }),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
