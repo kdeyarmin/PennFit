@@ -61,7 +61,7 @@ router.get("/patients/:id/followups", requireAdmin, async (req, res) => {
     .where(eq(patients.id, patientId))
     .limit(1);
   if (exists.length === 0) {
-    res.status(404).json({ error: "patient_not_found" });
+    res.status(404).json({ error: "not_found" });
     return;
   }
 
