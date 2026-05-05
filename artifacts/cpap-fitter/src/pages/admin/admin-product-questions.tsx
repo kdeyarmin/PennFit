@@ -19,6 +19,7 @@ import {
   answerAdminProductQuestion,
   listAdminProductQuestions,
   rejectAdminProductQuestion,
+  AlreadyModeratedError,
   type AdminProductQuestion,
   type AdminProductQuestionStatus,
 } from "@/lib/admin/product-questions-api";
@@ -159,7 +160,13 @@ function QuestionCard({ q }: { q: AdminProductQuestion }) {
       setAnswerDraft("");
       invalidate();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e) => {
+      if (e instanceof AlreadyModeratedError) {
+        // Another CSR beat us to it — refresh so the stale row clears.
+        invalidate();
+      }
+      setError(e instanceof Error ? e.message : String(e));
+    },
   });
 
   const rejectMut = useMutation({
@@ -170,7 +177,13 @@ function QuestionCard({ q }: { q: AdminProductQuestion }) {
       setRejectNote("");
       invalidate();
     },
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e) => {
+      if (e instanceof AlreadyModeratedError) {
+        // Another CSR beat us to it — refresh so the stale row clears.
+        invalidate();
+      }
+      setError(e instanceof Error ? e.message : String(e));
+    },
   });
 
   const trimmedAnswer = answerDraft.trim();

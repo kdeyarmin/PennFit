@@ -2,11 +2,13 @@
 //
 // Coverage:
 //   * 401 without admin
-//   * GET defaults to status=pending
+//   * GET defaults to status=pending and returns paginated shape
 //   * PATCH 'answer' transitions pending → answered + audits with
 //     question/answer length only (no body content in the envelope)
 //   * PATCH 'reject' transitions pending → rejected + audits
-//   * PATCH 409 on already-moderated row
+//   * PATCH 409 when the atomic UPDATE returns 0 rows (already moderated
+//     by another CSR or concurrent race)
+//   * PATCH 404 when the row does not exist at all
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -33,7 +35,7 @@ vi.mock("@workspace/resupply-audit", () => ({
 
 const selectQueue: unknown[][] = [];
 const updateSets: Record<string, unknown>[] = [];
-const updateQueue: unknown[][] = [];
+const updateReturnQueue: unknown[][] = [];
 const dbStub = {
   select: vi.fn(() => {
     const result = selectQueue.shift() ?? [];
@@ -52,7 +54,7 @@ const dbStub = {
         return obj;
       },
       where: () => obj,
-      returning: () => Promise.resolve(updateQueue.shift() ?? [{ id: "q_1" }]),
+      returning: () => Promise.resolve(updateReturnQueue.shift() ?? []),
     };
     return obj;
   }),
@@ -81,7 +83,7 @@ beforeEach(() => {
   mockAdmin.current = null;
   selectQueue.length = 0;
   updateSets.length = 0;
-  updateQueue.length = 0;
+  updateReturnQueue.length = 0;
   logAuditMock.mockClear();
   dbStub.select.mockClear();
   dbStub.update.mockClear();
@@ -130,12 +132,12 @@ describe("PATCH /admin/shop/product-questions/:id", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([
+    // Atomic update returns the row when status was 'pending'.
+    updateReturnQueue.push([
       {
         id: "q_1",
         productId: "prod_1",
         questionBody: "Does this work at 10cm pressure?",
-        status: "pending",
       },
     ]);
 
@@ -166,50 +168,42 @@ describe("PATCH /admin/shop/product-questions/:id", () => {
     expect(JSON.stringify(audit.metadata)).not.toContain("seals");
   });
 
-  it("409s when the question is already moderated", async () => {
+  it("409s when the atomic UPDATE returns 0 rows (already moderated)", async () => {
     mockAdmin.current = {
       userId: "u_admin",
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([
-      {
-        id: "q_1",
-        productId: "prod_1",
-        questionBody: "x",
-        status: "answered",
-      },
-    ]);
+    // Atomic update returns no rows (WHERE status='pending' excludes this row).
+    updateReturnQueue.push([]);
+    // Fallback select finds the row with a non-pending status.
+    selectQueue.push([{ status: "answered" }]);
+
     const res = await request(makeApp())
       .patch("/admin/shop/product-questions/q_1")
       .send({ action: "answer", answerBody: "another" });
     expect(res.status).toBe(409);
-    expect(updateSets).toEqual([]);
+    expect(res.body.error).toBe("already_moderated");
+    // The update was issued but affected 0 rows — no audit should fire.
+    expect(logAuditMock).not.toHaveBeenCalled();
   });
 
-  it("409s when a concurrent request wins the race (empty .returning())", async () => {
+  it("404s when the row does not exist at all", async () => {
     mockAdmin.current = {
       userId: "u_admin",
       email: "ops@penn.example.com",
       role: "admin",
     };
-    // Row reads as pending (pre-check passes), but the conditional UPDATE
-    // finds no rows to update — simulates losing a concurrent race.
-    selectQueue.push([
-      {
-        id: "q_1",
-        productId: "prod_1",
-        questionBody: "Does this fit?",
-        status: "pending",
-      },
-    ]);
-    updateQueue.push([]); // .returning() yields no rows
+    // Atomic update returns no rows.
+    updateReturnQueue.push([]);
+    // Fallback select also finds nothing.
+    selectQueue.push([]);
+
     const res = await request(makeApp())
-      .patch("/admin/shop/product-questions/q_1")
-      .send({ action: "answer", answerBody: "Yes it does." });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe("already_moderated");
-    // The update was attempted but returned nothing — no audit should fire.
+      .patch("/admin/shop/product-questions/q_missing")
+      .send({ action: "answer", answerBody: "x" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("not_found");
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
@@ -219,12 +213,12 @@ describe("PATCH /admin/shop/product-questions/:id", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([
+    // Atomic update returns the row when status was 'pending'.
+    updateReturnQueue.push([
       {
         id: "q_1",
         productId: "prod_1",
         questionBody: "How do I beat traffic?",
-        status: "pending",
       },
     ]);
     const res = await request(makeApp())

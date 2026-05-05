@@ -46,6 +46,13 @@ export async function listAdminProductQuestions(
   return (await res.json()) as AdminProductQuestionListResponse;
 }
 
+export class AlreadyModeratedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AlreadyModeratedError";
+  }
+}
+
 export async function answerAdminProductQuestion(
   id: string,
   answerBody: string,
@@ -60,9 +67,12 @@ export async function answerAdminProductQuestion(
     },
   );
   if (res.status === 409) {
-    throw new Error(
-      "This question was already answered or rejected by another moderator.",
-    );
+    const json = await res.json().catch(() => ({}));
+    const msg =
+      typeof json.message === "string"
+        ? json.message
+        : "This question has already been moderated by another CSR.";
+    throw new AlreadyModeratedError(msg);
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -84,9 +94,12 @@ export async function rejectAdminProductQuestion(
     },
   );
   if (res.status === 409) {
-    throw new Error(
-      "This question was already answered or rejected by another moderator.",
-    );
+    const json = await res.json().catch(() => ({}));
+    const msg =
+      typeof json.message === "string"
+        ? json.message
+        : "This question has already been moderated by another CSR.";
+    throw new AlreadyModeratedError(msg);
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
