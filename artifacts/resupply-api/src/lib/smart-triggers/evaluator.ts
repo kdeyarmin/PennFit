@@ -27,9 +27,12 @@ import {
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
 
-/** Per-evaluator-run cap to keep the response time bounded. The
- *  admin "Run now" button can re-fire if `remaining > 0`; the cron
- *  job runs daily, so a per-run cap of 200 covers the steady-state
+/** Per-evaluator-run cap to keep the response time bounded. This
+ *  module reports only the summary counts in `EvaluatorResult`
+ *  (`scanned`, `proposed`, `inserted`, `skippedExisting`) and does
+ *  not expose a `remaining`/pagination value. Admins may rerun the
+ *  evaluator manually to process another capped batch; the cron job
+ *  runs daily, so a per-run cap of 200 covers the steady-state
  *  detection load comfortably. */
 const PER_RUN_PATIENT_CAP = 200;
 
