@@ -174,8 +174,25 @@ router.post(
     const id = idParse.data;
     const db = drizzle(getDbPool());
 
-    // Single round-trip: UPDATE … WHERE dismissed_at IS NULL
-    // AND patient_id IN (SELECT id FROM patients WHERE lower(email)=?).
+    // Two-step auth guard: first resolve the patient row. We pull up
+    // to 2 rows so that a shared email (two patients, same address)
+    // is detected as ambiguous and we bail — exactly the same
+    // strategy used by the inbound-email and inbound-SMS routes.
+    // 0 rows → no match; >1 → ambiguous. Both collapse into a 404.
+    const patientRows = await db
+      .select({ id: patients.id })
+      .from(patients)
+      .where(sql`lower(${patients.email}) = ${customerEmail.toLowerCase()}`)
+      .limit(2);
+
+    if (patientRows.length !== 1) {
+      res.status(404).json({ error: "insight_not_found" });
+      return;
+    }
+
+    const patientId = patientRows[0].id;
+
+    // Only now update — scoped to the single unambiguous patient row.
     // RETURNING the row id lets us tell hit-vs-miss without a
     // second SELECT.
     const updated = await db
@@ -189,7 +206,7 @@ router.post(
         and(
           eq(patientSmartTriggerEvents.id, id),
           isNull(patientSmartTriggerEvents.dismissedAt),
-          sql`${patientSmartTriggerEvents.patientId} IN (SELECT id FROM resupply.patients WHERE lower(email) = ${customerEmail.toLowerCase()})`,
+          eq(patientSmartTriggerEvents.patientId, patientId),
         ),
       )
       .returning({ id: patientSmartTriggerEvents.id });
