@@ -21,6 +21,13 @@ export interface OpsStatus {
      *  sent_at on patient_smart_trigger_events). */
     smartTrigger?: { eligibleNow: number };
   };
+  /** Phase G.16 — non-dispatcher queues that ops needs visibility
+   *  into (today: physician-fax-outreach pending until the vendor
+   *  adapter ships). Optional so older API responses still
+   *  typecheck. */
+  queues?: {
+    faxOutreachPending?: { count: number };
+  };
   team: {
     activeAdmins: number;
     activeAgents: number;
