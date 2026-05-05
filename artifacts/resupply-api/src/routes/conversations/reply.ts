@@ -364,9 +364,10 @@ async function tryNotifyCustomerOfReply(input: {
   conversationId: string;
   bodyLength: number;
 }): Promise<void> {
-  // Resolve the customer email from the conversation → shop_customers
-  // join. If the customer has no email on file (rare but possible if
-  // the auth provider hasn't sync'd yet) skip the send.
+  // Resolve the customer record from the conversation → shop_customers
+  // join. Push notifications fire unconditionally (gated only on the
+  // customer having an active subscription); email notifications require
+  // a non-null email address and opt-in via communicationPreferences.
   const db = drizzle(getDbPool());
   const rows = await db
     .select({
