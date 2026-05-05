@@ -26,17 +26,15 @@ export function Measure() {
     "Initializing secure on-device processor…",
   );
   const [error, setError] = useState<string | null>(null);
-  // Guard so the effect doesn't redirect us back to /capture once we
-  // intentionally clear the captured image for privacy after extracting
-  // measurements (which would otherwise re-fire this effect with capturedImage
-  // === null, beating our setTimeout to /questionnaire).
+  // Guard so this effect's MediaPipe pipeline only kicks off once per mount.
+  // Without it, any state change that re-runs the effect (e.g. clearing the
+  // captured image for privacy) would re-trigger the WASM load + face
+  // detection from scratch.
   const startedRef = useRef(false);
-  // Ref-based mount guard. We can't use a local `let isMounted = true` because
-  // setCapturedImage(null) (run for privacy after extraction) is in the effect's
-  // dependency array path and causes React to invoke the cleanup, which would
-  // flip a local isMounted to false BEFORE the navigation setTimeout fires —
-  // stranding the user on "Measurements Ready" forever. The ref only flips on
-  // actual component unmount.
+  // Ref-based mount guard so the post-analysis navigation setTimeout can
+  // tell the difference between "page still mounted" and "user navigated
+  // away mid-processing". A local `let isMounted` would be flipped by the
+  // effect's cleanup on every dep-driven re-run, not just unmount.
   const isMountedRef = useRef(true);
   useEffect(() => {
     isMountedRef.current = true;
@@ -47,10 +45,11 @@ export function Measure() {
 
   useEffect(() => {
     if (startedRef.current) return;
-    // startedRef is checked BEFORE the !capturedImage redirect so that the
-    // intentional setCapturedImage(null) at the end of processing does not
-    // bounce the user back to /capture when this effect re-runs.
     if (!capturedImage) {
+      // Cold-load with no image (e.g. user pasted /measure into the URL).
+      // The /capture → /measure handoff goes through GuardedMeasure
+      // (App.tsx), which already keeps users without a captured image off
+      // this route, so this branch is rarely hit in practice.
       setLocation("/capture");
       return;
     }
@@ -186,12 +185,20 @@ export function Measure() {
           setMeasurements(measurements);
           track("measurements_extracted");
 
-          // Privacy: discard the captured image from memory the moment we have
-          // numeric measurements. Our UI promises this — keep it true.
-          setCapturedImage(null);
-
           setTimeout(() => {
-            if (isMountedRef.current) setLocation("/questionnaire");
+            if (!isMountedRef.current) return;
+            // Navigate FIRST, then clear the captured image. Doing it the
+            // other way around makes GuardedMeasure (App.tsx) see
+            // !capturedImage and <Redirect to="/capture" /> before our
+            // setLocation lands — bouncing the user back to retake the
+            // photo instead of advancing to the questionnaire. The
+            // startedRef guard inside this effect doesn't help because
+            // the route guard lives one level up and doesn't see it.
+            setLocation("/questionnaire");
+            // Privacy: discard the captured image from memory now that
+            // we've navigated away from /measure. Our UI promises this
+            // — keep it true.
+            setCapturedImage(null);
           }, 900);
         } else {
           throw new Error(
