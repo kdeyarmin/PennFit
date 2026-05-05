@@ -5,6 +5,8 @@ import { sql } from "drizzle-orm";
 import { index, integer, text, timestamp } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
+import { shopCustomers } from "./shop-customers";
+import { shopOrders } from "./shop-orders";
 
 export type ShopReturnStatus =
   | "requested"
@@ -31,13 +33,17 @@ export const shopReturns = resupplySchema.table(
     id: text("id")
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
-    customerId: text("customer_id").notNull(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => shopCustomers.customerId, { onDelete: "restrict" }),
     /**
      * The original paid order. ON DELETE RESTRICT — we never let an
      * order be deleted while a return references it (returns are part
      * of the audit / financial trail).
      */
-    orderId: text("order_id").notNull(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => shopOrders.id, { onDelete: "restrict" }),
     /**
      * Snapshot of the originating Stripe Checkout Session ID so the
      * customer-side detail page can render "Return for order #abc"

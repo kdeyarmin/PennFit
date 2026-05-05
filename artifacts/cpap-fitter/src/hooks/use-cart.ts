@@ -14,7 +14,9 @@
 //   tab shows the same items the first tab is editing. We do NOT
 //   broadcast on same-tab updates — those flow via React state.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { track } from "@/lib/track";
 
 const STORAGE_KEY = "pennpaps_cart_v1";
 
@@ -65,35 +67,37 @@ export interface CartItem {
   stockCount: number | null;
 }
 
-function readStorage(): CartItem[] {
-  if (typeof window === "undefined") return [];
+function readStorage(): { items: CartItem[]; droppedCount: number } {
+  if (typeof window === "undefined") return { items: [], droppedCount: 0 };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return { items: [], droppedCount: 0 };
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) return { items: [], droppedCount: 0 };
     // Defensive shape check — discard entries that don't look right
     // rather than crashing the app on a malformed legacy entry.
-    return parsed
-      .filter(
-        (
-          it,
-        ): it is Partial<CartItem> & {
-          productId: string;
-          priceId: string;
-          name: string;
-          unitAmountCents: number;
-          quantity: number;
-        } =>
-          !!it &&
-          typeof it.productId === "string" &&
-          typeof it.priceId === "string" &&
-          typeof it.name === "string" &&
-          typeof it.unitAmountCents === "number" &&
-          typeof it.quantity === "number" &&
-          it.quantity > 0,
-      )
-      .map(
+    const valid = parsed.filter(
+      (
+        it,
+      ): it is Partial<CartItem> & {
+        productId: string;
+        priceId: string;
+        name: string;
+        unitAmountCents: number;
+        quantity: number;
+      } =>
+        !!it &&
+        typeof it.productId === "string" &&
+        typeof it.priceId === "string" &&
+        typeof it.name === "string" &&
+        typeof it.unitAmountCents === "number" &&
+        typeof it.quantity === "number" &&
+        it.quantity > 0,
+    );
+    const droppedCount = parsed.length - valid.length;
+    return {
+      droppedCount,
+      items: valid.map(
         (it): CartItem => ({
           productId: it.productId,
           priceId: it.priceId,
@@ -120,9 +124,10 @@ function readStorage(): CartItem[] {
           // — addItem only blocks at literal 0.
           stockCount: typeof it.stockCount === "number" ? it.stockCount : null,
         }),
-      );
+      ),
+    };
   } catch {
-    return [];
+    return { items: [], droppedCount: 0 };
   }
 }
 
@@ -157,18 +162,47 @@ export function useCart(): {
   replaceItems: (items: CartItem[]) => void;
   clear: () => void;
 } {
-  const [items, setItems] = useState<CartItem[]>(() => readStorage());
+  const { toast } = useToast();
+
+  // Capture the initial dropped count in a ref during the lazy state
+  // initializer so we can notify after mount without calling readStorage twice.
+  const initialDroppedRef = useRef(0);
+  const [items, setItems] = useState<CartItem[]>(() => {
+    const { items: stored, droppedCount } = readStorage();
+    initialDroppedRef.current = droppedCount;
+    return stored;
+  });
+
+  // Notify the user if any items were silently filtered on load.
+  useEffect(() => {
+    if (initialDroppedRef.current > 0) {
+      toast({
+        title: "Some cart items were removed",
+        description: "Some cart items were removed because they're no longer available.",
+      });
+      track("cart_items_dropped", { count: initialDroppedRef.current });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cross-tab sync: refresh from storage when another tab writes.
   useEffect(() => {
     function onStorage(e: StorageEvent) {
       if (e.key === STORAGE_KEY) {
-        setItems(readStorage());
+        const { items: next, droppedCount } = readStorage();
+        setItems(next);
+        if (droppedCount > 0) {
+          toast({
+            title: "Some cart items were removed",
+            description: "Some cart items were removed because they're no longer available.",
+          });
+          track("cart_items_dropped", { count: droppedCount });
+        }
       }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [toast]);
 
   const persist = useCallback((next: CartItem[]) => {
     setItems(next);

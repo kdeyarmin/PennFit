@@ -52,6 +52,15 @@ const DEMO_ANSWERS: Partial<QuestionnaireAnswers> = {
 // instead of their own. For trade-show / sales-demo deployments, build with
 // VITE_ENABLE_DEMO=1 to re-enable demo mode in production.
 function isDemoMode(): boolean {
+  // Hard error at startup: VITE_ENABLE_DEMO must never be set in production.
+  // A trade-show build accidentally deployed to production would let any
+  // visitor bypass measurement/questionnaire gating via ?demo=1.
+  if (import.meta.env.VITE_ENABLE_DEMO === "1" && import.meta.env.PROD) {
+    throw new Error(
+      "VITE_ENABLE_DEMO must not be set in production builds. " +
+        "Remove it from your build environment and redeploy.",
+    );
+  }
   if (typeof window === "undefined") return false;
   const enabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO === "1";

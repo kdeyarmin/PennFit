@@ -40,6 +40,15 @@ import {
 import { useEffect } from "react";
 import { track } from "@/lib/track";
 
+const US_STATES = [
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+  "DC",
+];
+
 const formSchema = z.object({
   patient: z.object({
     firstName: z.string().min(1, "Required").max(100),
@@ -55,7 +64,8 @@ const formSchema = z.object({
     state: z
       .string()
       .length(2, "Use 2-letter state code")
-      .regex(/^[A-Za-z]{2}$/, "Letters only"),
+      .regex(/^[A-Za-z]{2}$/, "Letters only")
+      .refine((v) => US_STATES.includes(v.toUpperCase()), "Invalid state code"),
     zip: z.string().regex(/^\d{5}(-\d{4})?$/, "Use 12345 or 12345-6789"),
   }),
   insurance: z.object({
@@ -123,60 +133,6 @@ function formatUsPhone(input: string): string {
   return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6, 10)}`;
 }
 
-const US_STATES = [
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "ID",
-  "IL",
-  "IN",
-  "IA",
-  "KS",
-  "KY",
-  "LA",
-  "ME",
-  "MD",
-  "MA",
-  "MI",
-  "MN",
-  "MS",
-  "MO",
-  "MT",
-  "NE",
-  "NV",
-  "NH",
-  "NJ",
-  "NM",
-  "NY",
-  "NC",
-  "ND",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VT",
-  "VA",
-  "WA",
-  "WV",
-  "WI",
-  "WY",
-  "DC",
-];
-
 export function Order() {
   useDocumentTitle("Confirm your order");
   const [, setLocation] = useLocation();
@@ -222,7 +178,6 @@ export function Order() {
         "fitter_order_confirmation",
         JSON.stringify({
           orderReference: "PENN-FAKE",
-          deliveredAt: "queued",
           message: "Order received.",
           mask: chosenMask,
         }),
@@ -288,7 +243,6 @@ export function Order() {
             "fitter_order_confirmation",
             JSON.stringify({
               orderReference: data.orderReference,
-              deliveredAt: data.deliveredAt,
               message: data.message,
               mask: chosenMask,
             }),

@@ -19,7 +19,6 @@ import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
 
 interface OrderConfirmation {
   orderReference: string;
-  deliveredAt: string;
   message: string;
   mask: {
     name: string;

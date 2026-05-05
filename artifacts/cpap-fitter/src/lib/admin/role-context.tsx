@@ -15,20 +15,16 @@ import { createContext, useContext, type ReactNode } from "react";
  *   the value and any leaf opt in.
  *
  * Default value:
- *   The default is `"admin"` so that components rendered OUTSIDE
- *   the AppShell (e.g. a Storybook story or a unit test that
- *   forgets to wrap with the provider) behave as full-privilege
- *   admins. The trade-off: a missing-provider bug in production
- *   would silently UN-restrict an agent rather than silently
- *   over-restrict an admin. We accept this because (a) the
- *   server-side `requireAdminOnly` is the actual security
- *   boundary — UI hiding is purely a UX nicety, and (b) the
- *   single AppShell entry point makes a missing-provider bug
- *   structurally hard to introduce.
+ *   The default is `"agent"` (most restrictive) so that a component
+ *   rendered OUTSIDE the RoleProvider (e.g. a unit test or a new
+ *   route that omits the provider) silently over-restricts rather
+ *   than silently grants full admin privileges. The server-side
+ *   `requireAdminOnly` remains the real security boundary; this
+ *   default is defence-in-depth for the UI layer.
  */
 export type AdminRole = "admin" | "agent";
 
-const RoleContext = createContext<AdminRole>("admin");
+const RoleContext = createContext<AdminRole>("agent");
 
 export function RoleProvider({
   role,
