@@ -20,13 +20,15 @@ import type { AuditWriter, AuthDeps } from "./types";
 interface Harness {
   app: Express;
   repo: ReturnType<typeof makeMemoryRepo>;
-  audit: AuditWriter & { events: Array<{ action: string }> };
+  audit: AuditWriter & {
+    events: Array<{ action: string; metadata?: Record<string, unknown> }>;
+  };
   emails: Array<{ to: string; subject: string; html: string; text: string }>;
 }
 
 function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
   const repo = makeMemoryRepo();
-  const auditEvents: Array<{ action: string }> = [];
+  const auditEvents: Array<{ action: string; metadata?: Record<string, unknown> }> = [];
   const audit: AuditWriter & { events: typeof auditEvents } = Object.assign(
     (event: { action: string }) => {
       auditEvents.push(event);
@@ -176,9 +178,11 @@ describe("POST /auth/sign-in", () => {
     expect(res.body.message).toBe("Invalid email or password.");
     expect(res.headers["set-cookie"]).toBeUndefined();
     expect(h.repo.__failures("alice@example.com")).toBe(1);
-    expect(h.audit.events.map((e) => e.action)).toContain(
-      "auth.sign_in_failed",
+    const failedEvent = h.audit.events.find(
+      (e) => e.action === "auth.sign_in_failed",
     );
+    expect(failedEvent).toBeDefined();
+    expect(failedEvent!.metadata?.reason).toBe("wrong_password");
   });
 
   it("returns the same generic message when the user does not exist", async () => {
@@ -210,6 +214,11 @@ describe("POST /auth/sign-in", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("email_unverified");
+    const failedEvent = h.audit.events.find(
+      (e) => e.action === "auth.sign_in_failed",
+    );
+    expect(failedEvent).toBeDefined();
+    expect(failedEvent!.metadata?.reason).toBe("email_unverified");
   });
 
   it("returns the generic message when account is locked", async () => {
@@ -227,6 +236,32 @@ describe("POST /auth/sign-in", () => {
 
     expect(res.status).toBe(401);
     expect(res.body.error).toBe("invalid_credentials");
+    const failedEvent = h.audit.events.find(
+      (e) => e.action === "auth.sign_in_failed",
+    );
+    expect(failedEvent).toBeDefined();
+    expect(failedEvent!.metadata?.reason).toBe("locked");
+  });
+
+  it("records reason:revoked when account is revoked", async () => {
+    await seedAlice({ status: "revoked" });
+    const csrf = await seedCsrf(h.app);
+
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
+
+    expect(res.status).toBe(401);
+    const failedEvent = h.audit.events.find(
+      (e) => e.action === "auth.sign_in_failed",
+    );
+    expect(failedEvent).toBeDefined();
+    expect(failedEvent!.metadata?.reason).toBe("revoked");
   });
 
   it("returns 400 on missing fields", async () => {

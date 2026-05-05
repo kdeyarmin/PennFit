@@ -36,10 +36,13 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     res: Response,
   ): Promise<void> {
     const ip = req.ip ?? null;
+    // Per-endpoint sentinel isolates verify-email failures from sign-in and
+    // forgot-password buckets so those counters don't bleed into each other.
+    const ipSentinel = `__verify:${ip ?? "unknown"}`;
     try {
       const recentIpRequests = await deps.repo.countRecentFailures({
-        emailLower: null,
-        ip,
+        emailLower: ipSentinel,
+        ip: null,
         sinceMs: VERIFY_RATE_LIMIT.windowMs,
       });
       if (recentIpRequests >= VERIFY_RATE_LIMIT.maxPerIp) {
@@ -82,7 +85,7 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     if (!consumed || consumed.purpose !== "signup_verify") {
       // Record failed attempt so repeated probes accumulate toward cap.
       void deps.repo.recordLoginAttempt({
-        emailLower: "__verify_email__",
+        emailLower: ipSentinel,
         ip,
         success: false,
       });

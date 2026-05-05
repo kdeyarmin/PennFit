@@ -13,7 +13,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { normalizeEmail } from "../email";
-import { checkLoginRateLimit, type RateLimitConfig } from "../rate-limit";
+import type { RateLimitConfig } from "../rate-limit";
 import { issueToken } from "../token";
 
 import {
@@ -51,10 +51,14 @@ export function makeForgotPasswordHandler(
     // endpoint with random emails is stopped before it generates DB
     // load or triggers email sends.
     const ip = req.ip ?? null;
+    // Per-endpoint sentinel keeps forgot-password failures isolated from
+    // sign-in and verify-email buckets so those counters don't bleed into
+    // each other's rate limits.
+    const ipSentinel = `__forgot:${ip ?? "unknown"}`;
     try {
       const recentIpRequests = await deps.repo.countRecentFailures({
-        emailLower: null,
-        ip,
+        emailLower: ipSentinel,
+        ip: null,
         sinceMs: FORGOT_RATE_LIMIT.windowMs,
       });
       if (recentIpRequests >= FORGOT_RATE_LIMIT.maxPerIp) {
@@ -93,32 +97,17 @@ export function makeForgotPasswordHandler(
         ip,
         metadata: { invalidEmail: true },
       });
-      // Record against rate-limit counter even for malformed input.
-      void deps.repo.recordLoginAttempt({ emailLower: "", ip, success: false });
+      // Record against the per-endpoint sentinel so only forgot-password
+      // failures count toward this IP cap.
+      void deps.repo.recordLoginAttempt({ emailLower: ipSentinel, ip, success: false });
       res.status(200).json({ ok: true });
       return;
     }
 
-    // Rate-limit before the DB lookup so timing differences between
-    // "email exists" and "email unknown" paths can't be observed.
-    const rl = await checkLoginRateLimit(
-      deps.repo,
-      { emailLower, ip },
-      FORGOT_RATE_LIMIT,
-    );
-    if (!rl.allowed) {
-      res.setHeader("Retry-After", String(rl.retryAfterSeconds));
-      // Return 429 — the caller already knows the email (they typed it),
-      // so this doesn't enumerate account existence.
-      res.status(429).json({
-        error: "rate_limited",
-        message: "Too many password-reset requests. Please wait before trying again.",
-        retryAfterSeconds: rl.retryAfterSeconds,
-      });
-      return;
-    }
-    // Record attempt so repeated calls accumulate against the limit.
-    void deps.repo.recordLoginAttempt({ emailLower, ip, success: false });
+    // Record every request (regardless of outcome) against the per-endpoint
+    // sentinel so repeat callers accumulate toward the cap without bleeding
+    // into sign-in or verify-email counters.
+    void deps.repo.recordLoginAttempt({ emailLower: ipSentinel, ip, success: false });
 
     const user = await deps.repo.findUserByEmail(emailLower);
     if (!user || user.status === "revoked") {
@@ -161,8 +150,11 @@ export function makeForgotPasswordHandler(
         adminUserId: user.id,
         ip,
         metadata: {
-          error:
-            emailErr instanceof Error ? emailErr.message : String(emailErr),
+          // Avoid logging emailErr.message — it may contain the recipient
+          // address or other PII if the mail provider includes it.
+          errorName:
+            emailErr instanceof Error ? emailErr.name : "UnknownError",
+          errorType: typeof emailErr,
         },
       });
     }

@@ -198,18 +198,23 @@ router.post(
         return;
       }
       const li = oldSession.line_items?.data ?? [];
-      const unavailableLineItems: string[] = [];
+      const unavailableItems: Array<{
+        lineItemId: string;
+        description: string | null;
+      }> = [];
       const mapped = li.map((line, index) => {
         const priceId =
           typeof line.price === "string"
             ? line.price
             : (line.price?.id ?? null);
         if (priceId === null) {
-          unavailableLineItems.push(
-            typeof line.id === "string" && line.id.length > 0
-              ? line.id
-              : `index:${index}`,
-          );
+          unavailableItems.push({
+            lineItemId:
+              typeof line.id === "string" && line.id.length > 0
+                ? line.id
+                : `index:${index}`,
+            description: line.description ?? null,
+          });
         }
         return { priceId, quantity: line.quantity ?? 1, mode: "one_time" as const };
       });
@@ -217,12 +222,12 @@ router.post(
         (b): b is { priceId: string; quantity: number; mode: "one_time" } =>
           b.priceId !== null,
       );
-      if (unavailableLineItems.length > 0) {
+      if (unavailableItems.length > 0) {
         res.status(409).json({
           error: "price_unavailable",
           message:
             "One or more items from the original order are no longer available and cannot be reordered.",
-          unavailableLineItems,
+          unavailableItems,
         });
         return;
       }
