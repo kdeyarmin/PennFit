@@ -181,33 +181,31 @@ router.post(
         return;
       }
       const li = oldSession.line_items?.data ?? [];
-      const archivedPriceIds: string[] = [];
-      const mapped = li.map((line) => {
+      const unavailableLineItems: string[] = [];
+      const mapped = li.map((line, index) => {
         const priceId =
           typeof line.price === "string"
             ? line.price
             : (line.price?.id ?? null);
+        if (priceId === null) {
+          unavailableLineItems.push(
+            typeof line.id === "string" && line.id.length > 0
+              ? line.id
+              : `index:${index}`,
+          );
+        }
         return { priceId, quantity: line.quantity ?? 1, mode: "one_time" as const };
       });
-      // Collect items that lost a price so we can inform the caller.
-      for (const m of mapped) {
-        if (m.priceId === null) {
-          // line.price was absent or the price object had no id —
-          // surface it as an archived/unavailable price using the
-          // line description as a hint, or a generic sentinel.
-          archivedPriceIds.push("unknown");
-        }
-      }
       basket = mapped.filter(
         (b): b is { priceId: string; quantity: number; mode: "one_time" } =>
           b.priceId !== null,
       );
-      if (archivedPriceIds.length > 0) {
+      if (unavailableLineItems.length > 0) {
         res.status(409).json({
           error: "price_unavailable",
           message:
             "One or more items from the original order are no longer available and cannot be reordered.",
-          archivedPriceIds,
+          unavailableLineItems,
         });
         return;
       }
