@@ -68,18 +68,20 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
   // Overdue followups across BOTH shop_customer and patient surfaces.
   // Each side uses its own partial index (open AND due) so the count
   // scales with the open queue, not the full history. Sum in JS.
-  const [overdueShopRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(shopCustomerFollowups)
-    .where(
-      sql`${shopCustomerFollowups.completedAt} IS NULL AND ${shopCustomerFollowups.dueAt} < now()`,
-    );
-  const [overduePatientRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(patientFollowups)
-    .where(
-      sql`${patientFollowups.completedAt} IS NULL AND ${patientFollowups.dueAt} < now()`,
-    );
+  const [[overdueShopRow], [overduePatientRow]] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(shopCustomerFollowups)
+      .where(
+        sql`${shopCustomerFollowups.completedAt} IS NULL AND ${shopCustomerFollowups.dueAt} < now()`,
+      ),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(patientFollowups)
+      .where(
+        sql`${patientFollowups.completedAt} IS NULL AND ${patientFollowups.dueAt} < now()`,
+      ),
+  ]);
 
   res.json({
     awaitingReplyConversations: row?.awaiting_reply_conversations ?? 0,
