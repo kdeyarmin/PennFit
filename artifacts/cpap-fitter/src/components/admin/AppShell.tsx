@@ -25,6 +25,7 @@ import {
   PackageCheck,
   HeartHandshake,
   Star,
+  HelpCircle,
   Boxes,
   TruckIcon,
   Activity,
@@ -219,6 +220,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/shop/reviews",
         hint: "Customer product reviews — moderate & reply",
         badgeKey: "pendingReviews",
+      },
+      {
+        href: "/admin/shop/product-questions",
+        label: "Product Q&A",
+        icon: HelpCircle,
+        matchPrefix: "/admin/shop/product-questions",
+        hint: "Customer-submitted questions — answer or reject",
       },
       {
         href: "/admin/shop/inventory",
