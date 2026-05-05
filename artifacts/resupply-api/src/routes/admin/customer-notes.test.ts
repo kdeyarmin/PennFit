@@ -161,6 +161,22 @@ describe("GET /admin/shop/customers/:userId/notes", () => {
       authorEmail: "ops@penn.example.com",
     });
     expect(res.body.notes[0].createdAt).toBe("2026-05-03T15:00:00.000Z");
+
+    // Audit was written with structural metadata only.
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      action: string;
+      targetTable: string;
+      targetId: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.action).toBe("shop_customer.notes.list");
+    expect(audit.targetTable).toBe("shop_customer_notes");
+    expect(audit.targetId).toBe(USER_ID);
+    expect(audit.metadata).toEqual({ customer_id: USER_ID, count: 2 });
+    // Critical: no body content in the audit envelope.
+    expect(JSON.stringify(audit.metadata)).not.toContain("nasal pillows");
+    expect(JSON.stringify(audit.metadata)).not.toContain("Old note");
   });
 });
 

@@ -37,6 +37,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -178,14 +179,7 @@ function SignedInOrders() {
   }, [cursor, loadingMore]);
 
   if (state === "loading") {
-    return (
-      <div
-        className="flex items-center gap-2 text-sm text-muted-foreground py-12 justify-center"
-        data-testid="orders-loading"
-      >
-        <Loader2 className="w-4 h-4 animate-spin" /> Loading your orders…
-      </div>
-    );
+    return <OrdersSkeleton />;
   }
 
   if (state === "error") {
@@ -1077,6 +1071,42 @@ function messageForCode(code: string): string {
     default:
       return "Something went wrong. Please try again.";
   }
+}
+
+/**
+ * OrdersSkeleton — three order-card-shaped placeholders rendered
+ * while the orders list is in flight. Replaces the previous
+ * spinner-with-text loader so the layout below the header doesn't
+ * look empty above the fold during the initial fetch.
+ */
+function OrdersSkeleton() {
+  return (
+    <div
+      className="space-y-3"
+      data-testid="orders-loading"
+      role="status"
+      aria-label="Loading your orders"
+    >
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-2xl border border-border/60 bg-white p-4 md:p-5"
+        >
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+          <Skeleton className="h-3 w-3/4 mb-2" />
+          <Skeleton className="h-3 w-1/2 mb-4" />
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-8 w-28 rounded-full" />
+          </div>
+        </div>
+      ))}
+      <span className="sr-only">Loading your orders…</span>
+    </div>
+  );
 }
 
 ShopOrders.displayName = "ShopOrders";
