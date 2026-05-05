@@ -58,6 +58,10 @@ export const physicianFaxOutreach = resupplySchema.table(
     // The partial vendor_ref index (`WHERE vendor_ref IS NOT NULL`)
     // lives in the migration directly — drizzle-kit can't express
     // the WHERE.
+    //
+    // Migration 0049 also adds a partial pending-status index
+    // (`WHERE status = 'pending'`) used by the ops-status feed.
+    // Same drizzle-kit-can't-express-WHERE story.
   }),
 );
 
