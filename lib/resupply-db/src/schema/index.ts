@@ -14,6 +14,7 @@ export * from "./idempotency-keys";
 export * from "./shop-orders";
 export * from "./shop-customers";
 export * from "./shop-customer-notes";
+export * from "./shop-order-notes";
 export * from "./shop-subscriptions";
 export * from "./shop-abandoned-carts";
 export * from "./shop-reviews";
