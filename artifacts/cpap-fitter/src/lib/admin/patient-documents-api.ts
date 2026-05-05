@@ -10,6 +10,11 @@ export interface AdminPatientDocument {
   contentType: string;
   sizeBytes: number;
   createdAt: string;
+  /** ISO 8601 or null. Null means the document has not been reviewed yet. */
+  reviewedAt: string | null;
+  reviewedByAdminId: string | null;
+  /** Optional free-text note the CSR recorded when marking reviewed. */
+  reviewNote: string | null;
 }
 
 export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
@@ -52,4 +57,25 @@ export async function deletePatientDocument(
   if (!res.ok) {
     throw new Error(`Failed to delete document (HTTP ${res.status}).`);
   }
+}
+
+export async function markPatientDocumentReviewed(
+  patientId: string,
+  docId: string,
+  note?: string,
+): Promise<{ alreadyReviewed: boolean }> {
+  const res = await fetch(
+    `${API_PREFIX}/patients/${encodeURIComponent(patientId)}/documents/${encodeURIComponent(docId)}/reviewed`,
+    {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(note !== undefined ? { note } : {}),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to mark document reviewed (HTTP ${res.status}).`);
+  }
+  const body = (await res.json()) as { ok: true; alreadyReviewed: boolean };
+  return { alreadyReviewed: body.alreadyReviewed };
 }
