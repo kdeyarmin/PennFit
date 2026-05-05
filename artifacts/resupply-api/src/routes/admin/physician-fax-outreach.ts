@@ -57,7 +57,15 @@ const createBody = z
     prescriptionId: z.string().uuid().nullable().optional(),
     physicianName: z.string().trim().min(1).max(120),
     physicianFaxE164: z.string().trim().regex(E164, "Fax must be E.164"),
-    coverLetterText: z.string().trim().min(20).max(8000),
+    coverLetterText: z
+      .string()
+      .max(8000)
+      .refine((value) => value.trim().length > 0, {
+        message: "String must contain at least 1 character(s)",
+      })
+      .refine((value) => value.trim().length >= 20, {
+        message: "String must contain at least 20 character(s)",
+      }),
   })
   .strict();
 
