@@ -63,7 +63,7 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
         WHERE status = 'pending') AS pending_reviews
   `);
 
-  const row = result.rows[0] as CountsRow | undefined;
+  const row = result.rows[0] as unknown as CountsRow | undefined;
 
   // Overdue followups across BOTH shop_customer and patient surfaces.
   // Each side uses its own partial index (open AND due) so the count
