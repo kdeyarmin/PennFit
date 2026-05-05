@@ -58,9 +58,12 @@ export const physicianFaxOutreach = resupplySchema.table(
       "physician_fax_outreach_status_enum",
       sql`${t.status} IN ('pending','sent','delivered','failed')`,
     ),
-    // The partial vendor_ref index (`WHERE vendor_ref IS NOT NULL`)
-    // lives in the migration directly — drizzle-kit can't express
-    // the WHERE.
+    // The partial indexes below live in their respective migrations
+    // directly — drizzle-kit can't express the WHERE clause for
+    // partial indexes:
+    //   0048: vendor_ref partial idx (WHERE vendor_ref IS NOT NULL)
+    //   0049: status partial idx (WHERE status = 'pending') for the
+    //         ops-status pending-queue COUNT(*) (Phase G.16).
   }),
 );
 
