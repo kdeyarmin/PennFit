@@ -3,8 +3,9 @@
 // resupply patient flow); see migration 0035 for the policy doc.
 //
 // Append-only. No `updatedAt`. The dashboard query is always
-// "newest first by customer", which the (customer_id, created_at
-// DESC) composite index serves directly from disk.
+// "newest first by customer", which the (customer_id, created_at)
+// composite index serves directly from disk (Postgres uses a
+// backward index scan to satisfy the DESC ordering efficiently).
 
 import { sql } from "drizzle-orm";
 import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
