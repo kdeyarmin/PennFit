@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
-import { isNativeApp } from "@/lib/native-runtime";
+import { checkBiometricAvailability } from "@/lib/native-runtime";
 
 /**
  * Communication preferences section on /account. Five email
@@ -435,20 +435,22 @@ function PushNotificationToggle() {
  */
 function BiometricLockToggle() {
   const pref = useBiometricLockPreference();
-  const [native, setNative] = useState<boolean | null>(null);
+  const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const n = await isNativeApp();
-      if (!cancelled) setNative(n);
+      const available = await checkBiometricAvailability();
+      if (!cancelled) setBiometricAvailable(available);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (native !== true || !pref.loaded) return null;
+  if (biometricAvailable !== true || !pref.loaded) return null;
 
   return (
     <div
