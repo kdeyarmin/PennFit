@@ -98,8 +98,8 @@ router.get("/admin/shop/product-questions", requireAdmin, async (req, res) => {
     cursorClause,
   ].filter((c): c is NonNullable<typeof c> => c != null);
   // clauses always has at least the status filter, so the array is non-empty.
-  // When there's no cursor it's length 1 (no wrapping and()); with a cursor
-  // it's length 2 and we need and() to combine both predicates.
+  // When there's no cursor its length is 1 (no wrapping and()); with a cursor
+  // its length is 2 and we need and() to combine both predicates.
   const whereClause =
     clauses.length === 1
       ? clauses[0]!
