@@ -167,7 +167,6 @@ const RemindersManage = lazy(() =>
 );
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
-import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal
@@ -318,13 +317,7 @@ function PatientRouter() {
           <Route path="/shop/orders" component={ShopOrders} />
           <Route path="/shop/wishlist" component={ShopWishlist} />
           <Route path="/account">
-            {/* Phase F.4 — biometric lock gate. Renders children
-                directly on web / when the customer hasn't enabled
-                the lock; on native + enabled, prompts before
-                showing /account contents. */}
-            <BiometricLockGate>
-              <AccountPage />
-            </BiometricLockGate>
+            <AccountPage />
           </Route>
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />

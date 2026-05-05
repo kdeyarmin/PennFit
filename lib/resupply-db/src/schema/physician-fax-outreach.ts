@@ -31,7 +31,10 @@ export const physicianFaxOutreach = resupplySchema.table(
     physicianName: text("physician_name").notNull(),
     physicianFaxE164: text("physician_fax_e164").notNull(),
     coverLetterText: text("cover_letter_text").notNull(),
-    status: text("status").notNull().default("pending"),
+    status: text("status")
+      .$type<PhysicianFaxOutreachStatus>()
+      .notNull()
+      .default("pending"),
     vendorRef: text("vendor_ref"),
     vendorName: text("vendor_name"),
     sentAt: timestamp("sent_at", { withTimezone: true }),

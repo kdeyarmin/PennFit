@@ -16,6 +16,21 @@ import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "pennpaps:biometric-lock-enabled";
 
+// Module-level subscriber set so every hook instance in the same tab
+// stays in sync when any caller invokes setEnabled(). Without this,
+// BiometricLockGate and BiometricLockToggle each keep a private copy
+// of the value and diverge after the first write.
+type Listener = (next: boolean) => void;
+const listeners = new Set<Listener>();
+
+function readFromStorage(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export interface UseBiometricLockPreference {
   enabled: boolean;
   setEnabled: (next: boolean) => void;
@@ -33,24 +48,42 @@ export function useBiometricLockPreference(): UseBiometricLockPreference {
       setLoaded(true);
       return;
     }
-    try {
-      setEnabledState(window.localStorage.getItem(STORAGE_KEY) === "1");
-    } catch {
-      // Private-browsing modes block localStorage; default to off.
-    }
+    setEnabledState(readFromStorage());
     setLoaded(true);
+
+    // Keep in sync with changes from other hook instances in this tab.
+    listeners.add(setEnabledState);
+
+    // Keep in sync with changes from other browser tabs/windows.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) {
+        setEnabledState(e.newValue === "1");
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      listeners.delete(setEnabledState);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   const setEnabled = useCallback((next: boolean) => {
-    setEnabledState(next);
     try {
       if (next) {
         window.localStorage.setItem(STORAGE_KEY, "1");
       } else {
         window.localStorage.removeItem(STORAGE_KEY);
       }
+      // Update this instance directly, then propagate to any other hook
+      // instances in this tab. The direct call ensures state is current
+      // even if this component hasn't yet mounted its listener via useEffect.
+      setEnabledState(next);
+      listeners.forEach((cb) => {
+        if (cb !== setEnabledState) cb(next);
+      });
     } catch {
-      // ignore — see above
+      // ignore — private-browsing modes block localStorage
     }
   }, []);
 
