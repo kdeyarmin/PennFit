@@ -13,9 +13,8 @@ import {
   type CpapDeviceInfo,
 } from "@/lib/account-api";
 import {
+  buildCompatibilityFilter,
   fetchCompatibilityForMachine,
-  filterByCompatibility,
-  type CompatibilityForMachineResponse,
 } from "@/lib/product-compatibility-api";
 
 export interface UseMachineFilter {
@@ -35,9 +34,12 @@ export function useMachineFilter(): UseMachineFilter {
   const [device, setDevice] = useState<CpapDeviceInfo | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [compat, setCompat] = useState<CompatibilityForMachineResponse | null>(
-    null,
-  );
+  // Pre-built predicate that closes over the compatibility Sets so
+  // they aren't re-allocated on every filter call. Null until the
+  // first successful fetch.
+  const [compatPredicate, setCompatPredicate] = useState<
+    ((id: string) => boolean) | null
+  >(null);
 
   // Discover the saved device on mount. AccountApiError = signed
   // out — not an error, just "no device". Other errors silently
@@ -64,36 +66,47 @@ export function useMachineFilter(): UseMachineFilter {
   // flipped on. Cached for the session — the catalog filter
   // doesn't change often, and a re-fetch on every toggle would
   // be wasteful.
+  //
+  // An AbortController is used so that rapid on/off/on toggling
+  // cancels in-flight requests rather than issuing concurrent ones.
+  // If the fetch fails, the toggle is reverted to off so the UI
+  // doesn't show "on" while the catalog is unfiltered.
   useEffect(() => {
-    if (!enabled || !device || compat) return;
-    let cancelled = false;
+    if (!enabled || !device || compatPredicate) return;
+    const controller = new AbortController();
     setLoading(true);
     void (async () => {
       try {
-        const r = await fetchCompatibilityForMachine({
-          manufacturer: device.manufacturer,
-          model: device.model ?? null,
-        });
-        if (!cancelled) setCompat(r);
+        const r = await fetchCompatibilityForMachine(
+          { manufacturer: device.manufacturer, model: device.model ?? null },
+          controller.signal,
+        );
+        if (!controller.signal.aborted) {
+          // Wrap in an arrow so React doesn't treat the predicate as
+          // a state-updater function.
+          setCompatPredicate(() => buildCompatibilityFilter(r));
+        }
       } catch (err) {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           console.warn("compatibility fetch failed", err);
+          // Revert the toggle so the catalog isn't silently unfiltered.
+          setEnabled(false);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [enabled, device, compat]);
+  }, [enabled, device, compatPredicate]);
 
   const filter = useCallback(
     <T extends { id: string }>(products: T[]): T[] => {
-      if (!enabled || !compat) return products;
-      return filterByCompatibility(products, compat);
+      if (!enabled || !compatPredicate) return products;
+      return products.filter((p) => compatPredicate(p.id));
     },
-    [enabled, compat],
+    [enabled, compatPredicate],
   );
 
   return { device, enabled, setEnabled, loading, filter };

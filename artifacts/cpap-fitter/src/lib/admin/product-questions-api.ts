@@ -18,17 +18,39 @@ export interface AdminProductQuestion {
   createdAt: string;
 }
 
+export interface AdminProductQuestionListResponse {
+  items: AdminProductQuestion[];
+  nextCursor: string | null;
+}
+
+export interface ListProductQuestionsParams {
+  status: AdminProductQuestionStatus;
+  cursor?: string;
+  limit?: number;
+}
+
 export async function listAdminProductQuestions(
-  status: AdminProductQuestionStatus,
-): Promise<{ questions: AdminProductQuestion[] }> {
+  params: ListProductQuestionsParams,
+): Promise<AdminProductQuestionListResponse> {
+  const qs = new URLSearchParams();
+  qs.set("status", params.status);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  if (params.limit) qs.set("limit", String(params.limit));
   const res = await fetch(
-    `/resupply-api/admin/shop/product-questions?status=${encodeURIComponent(status)}`,
+    `/resupply-api/admin/shop/product-questions?${qs.toString()}`,
     { headers: { Accept: "application/json" }, credentials: "include" },
   );
   if (!res.ok) {
     throw new Error(`Failed to load questions (${res.status})`);
   }
-  return (await res.json()) as { questions: AdminProductQuestion[] };
+  return (await res.json()) as AdminProductQuestionListResponse;
+}
+
+export class AlreadyModeratedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AlreadyModeratedError";
+  }
 }
 
 export async function answerAdminProductQuestion(
@@ -44,6 +66,14 @@ export async function answerAdminProductQuestion(
       body: JSON.stringify({ action: "answer", answerBody }),
     },
   );
+  if (res.status === 409) {
+    const json = await res.json().catch(() => ({}));
+    const msg =
+      typeof json.message === "string"
+        ? json.message
+        : "This question has already been moderated by another CSR.";
+    throw new AlreadyModeratedError(msg);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to answer (${res.status}): ${text}`);
@@ -63,6 +93,14 @@ export async function rejectAdminProductQuestion(
       body: JSON.stringify({ action: "reject", moderationNote }),
     },
   );
+  if (res.status === 409) {
+    const json = await res.json().catch(() => ({}));
+    const msg =
+      typeof json.message === "string"
+        ? json.message
+        : "This question has already been moderated by another CSR.";
+    throw new AlreadyModeratedError(msg);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to reject (${res.status}): ${text}`);
