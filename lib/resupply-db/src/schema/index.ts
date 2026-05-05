@@ -6,6 +6,7 @@ export * from "./patient-onboarding-journeys";
 export * from "./patient-therapy-nights";
 export * from "./patient-smart-trigger-events";
 export * from "./prescriptions";
+export * from "./physician-fax-outreach";
 export * from "./episodes";
 export * from "./conversations";
 export * from "./messages";
