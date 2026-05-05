@@ -230,7 +230,7 @@ const COPY: Record<
     body:
       "Your therapy hours have dropped over the last couple of weeks. That's the most common point where small adjustments " +
       "(refit, ramp tweak, humidifier nudge) make the biggest difference. We'd love to help.",
-    cta: { label: "Talk to our team", url: "/account/messages" },
+    cta: { label: "Talk to our team", url: "/account" },
   },
   cushion_wear: {
     headline: "Time for a fresh cushion",
@@ -242,7 +242,7 @@ const COPY: Record<
   humidifier_drop: {
     headline: "Refresh your tubing",
     body: "With seasonal warmth your tubing may be due for a refresh — older tubing collects condensation and reduces airflow.",
-    cta: { label: "Shop tubing", url: "/shop?cat=tubing" },
+    cta: { label: "Shop tubing", url: "/shop" },
   },
 };
 

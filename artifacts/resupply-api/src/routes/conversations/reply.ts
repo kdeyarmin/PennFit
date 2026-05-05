@@ -390,8 +390,8 @@ async function tryNotifyCustomerOfReply(input: {
   // its own channel that the customer enables explicitly via the
   // browser permission prompt. We treat the in-app reply as the
   // canonical signal, route it to whichever channels they've opted
-  // into. PHI: same posture as the email — title/body name no PHI,
-  // just "you have a new message".
+  // into. PHI: same posture as the email — the push title and body
+  // contain no PHI, just "you have a new message".
   void sendPushToCustomer(row.customerId, {
     title: "New message from PennPaps",
     body: "Customer service replied. Tap to read.",
