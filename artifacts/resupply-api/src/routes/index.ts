@@ -23,6 +23,7 @@ import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
 import patientOnboardingRouter from "./admin/patient-onboarding.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
+import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -92,6 +93,12 @@ router.use(prescriptionRenewalsRouter);
 // the product-to-machine compatibility map (Phase B.3 / feature
 // #11). Public reads live alongside the catalog router.
 router.use(shopProductCompatibilityAdminRouter);
+// /admin/patients/:id/therapy-nights/* — therapy-cloud sync
+// (Phase E.1 / feature #18). Adapter stubs for ResMed AirView +
+// Philips Care; the actual partner integration lands once a BAA
+// + API access is in place. Sync endpoint 503s until the chosen
+// adapter's env var is set.
+router.use(patientTherapySyncRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
