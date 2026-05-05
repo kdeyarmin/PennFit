@@ -458,6 +458,7 @@ export function ShopCart() {
             ? err.message
             : String(err);
       setError(msg);
+    } finally {
       setExpressCheckingOut(false);
     }
   }

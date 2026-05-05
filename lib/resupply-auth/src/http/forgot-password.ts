@@ -27,6 +27,15 @@ const ForgotBody = z.object({
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+// Separate, more generous limits than sign-in. We rate-limit by IP
+// only (not per-email) so the limit itself cannot be used to enumerate
+// valid accounts — it applies uniformly to every caller from the same
+// IP regardless of which email they submit.
+const FORGOT_RATE_LIMIT = {
+  maxPerIp: 15,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+};
+
 interface MakeForgotPasswordHandlerOptions {
   productName: string;
 }
@@ -41,6 +50,29 @@ export function makeForgotPasswordHandler(
     req: Request,
     res: Response,
   ): Promise<void> {
+    // Rate-limit FIRST (before any DB look-ups) so an IP flooding the
+    // endpoint with random emails is stopped before it generates DB
+    // load or triggers email sends.
+    const ip = req.ip ?? null;
+    try {
+      const recentIpRequests = await deps.repo.countRecentFailures({
+        emailLower: null,
+        ip,
+        sinceMs: FORGOT_RATE_LIMIT.windowMs,
+      });
+      if (recentIpRequests >= FORGOT_RATE_LIMIT.maxPerIp) {
+        const retryAfter = Math.ceil(FORGOT_RATE_LIMIT.windowMs / 1000);
+        res.setHeader("Retry-After", String(retryAfter));
+        // Still return 200 to preserve non-enumeration: an attacker
+        // can't distinguish "rate limited" from "request accepted".
+        res.status(200).json({ ok: true });
+        return;
+      }
+    } catch {
+      // Fail open — a DB error on the rate-limit check shouldn't
+      // block legitimate password resets.
+    }
+
     const parsed = ForgotBody.safeParse(req.body);
     if (!parsed.success) {
       // Even input validation has to NOT enumerate. Return the
@@ -48,7 +80,7 @@ export function makeForgotPasswordHandler(
       // up in the audit log.
       void deps.audit({
         action: "auth.password_reset_requested",
-        ip: req.ip ?? null,
+        ip,
         metadata: { invalidInput: true },
       });
       res.status(200).json({ ok: true });
@@ -61,19 +93,25 @@ export function makeForgotPasswordHandler(
     } catch {
       void deps.audit({
         action: "auth.password_reset_requested",
-        ip: req.ip ?? null,
+        ip,
         metadata: { invalidEmail: true },
       });
+      // Record against rate-limit counter even for malformed input.
+      void deps.repo.recordLoginAttempt({ emailLower: "", ip, success: false });
       res.status(200).json({ ok: true });
       return;
     }
+
+    // Record every request (regardless of outcome) against the
+    // rate-limit counter so repeat callers accumulate toward the cap.
+    void deps.repo.recordLoginAttempt({ emailLower, ip, success: false });
 
     const user = await deps.repo.findUserByEmail(emailLower);
     if (!user || user.status === "revoked") {
       void deps.audit({
         action: "auth.password_reset_requested",
         adminEmail: emailLower,
-        ip: req.ip ?? null,
+        ip,
         metadata: { unknownAccount: true },
       });
       res.status(200).json({ ok: true });

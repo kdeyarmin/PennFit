@@ -101,9 +101,10 @@ export function useCartSnapshotSync(): void {
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) {
-      // On sign-out, reset the cached signature so a future sign-in
+      // On sign-out (or 401), reset state so a future sign-in
       // re-syncs from scratch.
       lastSentSig.current = null;
+      disabled.current = false;
       return;
     }
     if (disabled.current) return;
@@ -124,6 +125,7 @@ export function useCartSnapshotSync(): void {
             });
             if (res.status === 401) {
               disabled.current = true;
+              lastSentSig.current = null;
               return;
             }
             if (res.ok) lastSentSig.current = sig;
@@ -140,6 +142,7 @@ export function useCartSnapshotSync(): void {
             });
             if (res.status === 401) {
               disabled.current = true;
+              lastSentSig.current = null;
               return;
             }
             if (res.ok) lastSentSig.current = sig;
