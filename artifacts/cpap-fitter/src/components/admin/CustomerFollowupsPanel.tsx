@@ -121,6 +121,7 @@ export function CustomerFollowupsPanel({ userId }: Props) {
           style={{ display: "grid", gap: 8, marginBottom: 16 }}
         >
           <textarea
+            aria-label="Follow-up details"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="What do you need to do (e.g. 'Call about UPS claim status')?"
