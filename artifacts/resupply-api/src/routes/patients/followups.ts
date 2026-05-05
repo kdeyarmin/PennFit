@@ -61,7 +61,7 @@ router.get("/patients/:id/followups", requireAdmin, async (req, res) => {
     .where(eq(patients.id, patientId))
     .limit(1);
   if (exists.length === 0) {
-    res.status(404).json({ error: "patient_not_found" });
+    res.status(404).json({ error: "not_found" });
     return;
   }
 
@@ -143,7 +143,7 @@ router.post("/patients/:id/followups", requireAdmin, async (req, res) => {
     .where(eq(patients.id, patientId))
     .limit(1);
   if (exists.length === 0) {
-    res.status(404).json({ error: "patient_not_found" });
+    res.status(404).json({ error: "not_found" });
     return;
   }
 
@@ -244,14 +244,24 @@ router.patch(
         completedByEmail: req.adminEmail ?? "<unknown>",
         completedByUserId: req.adminUserId ?? null,
       })
-      .where(eq(patientFollowups.id, followupId))
+      .where(
+        and(
+          eq(patientFollowups.id, followupId),
+          eq(patientFollowups.patientId, patientId),
+          isNull(patientFollowups.completedAt),
+        ),
+      )
       .returning({
         id: patientFollowups.id,
         completedAt: patientFollowups.completedAt,
       });
     const updatedRow = updated[0];
     if (!updatedRow) {
-      throw new Error("UPDATE returned no rows");
+      res.status(409).json({
+        error: "already_completed",
+        message: "This followup is already marked complete.",
+      });
+      return;
     }
 
     await logAudit({
