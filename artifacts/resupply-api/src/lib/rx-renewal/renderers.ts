@@ -53,7 +53,8 @@ export function rxRenewalHtml(
  * Render the SMS body. Kept under 160 ASCII chars in the typical
  * case (firstName under 12 chars + double-digit days) so the
  * message ships as one segment on Twilio. UCS-2 characters would
- * drop the limit to 70/segment but we use only ASCII here.
+ * drop the limit to 70/segment, so we deliberately use plain ASCII
+ * (regular hyphen, no em-dash).
  *
  * Reply-mode hint matches the email's "reply to delegate to us"
  * path: patients can text back the physician's name and our
@@ -72,9 +73,9 @@ export function rxRenewalSms(
         ? "your CPAP Rx expires tomorrow"
         : `your CPAP Rx expires in ${daysUntilExpiry} days`;
   return (
-    `${head}, ${status}. Ask your doctor for a renewal so your next supply ships ` +
-    `on time, or reply with their name + practice and we'll request it for you. ` +
-    `Reply STOP to opt out. — Penn Home Medical Supply`
+    `${head}, ${status}. Ask your doctor for a renewal, ` +
+    `or reply with their name + practice and we'll handle it. ` +
+    `Reply STOP. - Penn Home`
   );
 }
 
