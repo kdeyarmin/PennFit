@@ -33,13 +33,11 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 // `returnId` is the shop_returns.id (text-typed UUID per migration
-// 0019). UUID-shaped but stored as text.
+// 0016). Canonical UUID string stored as text.
 const returnIdParam = z
   .string()
   .trim()
-  .min(1)
-  .max(200)
-  .regex(/^[A-Za-z0-9_-]+$/);
+  .uuid();
 
 const bodySchema = z
   .object({

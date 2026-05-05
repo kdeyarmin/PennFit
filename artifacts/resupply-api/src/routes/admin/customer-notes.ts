@@ -97,15 +97,19 @@ router.get(
       .orderBy(desc(shopCustomerNotes.createdAt))
       .limit(50);
 
-    // Safe log. NO note bodies; just the count + admin who looked.
-    req.log?.info(
-      {
-        userId,
-        count: rows.length,
-        adminEmail: req.adminEmail,
-      },
-      "admin.shop.customer.notes.list",
-    );
+    // Audit. Structural metadata only — body content is never emitted.
+    await logAudit({
+      action: "shop_customer.notes.list",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "shop_customer_notes",
+      targetId: userId,
+      metadata: { customer_id: userId, count: rows.length },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "shop_customer.notes.list audit write failed");
+    });
 
     res.json({
       notes: rows.map((r) => ({

@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
+import { SQL } from "drizzle-orm";
 
 import {
   makeRequireAdminMock,
@@ -34,7 +35,7 @@ vi.mock("../../middlewares/requireAdmin", () =>
 //   2. Email-resolution join: SELECT email, displayName, prefs,
 //      lastNotifiedAt FROM conversations JOIN shop_customers …
 //   3. Throttle stamp (post-send only): UPDATE conversations SET
-//      last_in_app_notification_at = NOW() …
+//      last_in_app_notification_at = now() …  (DB-side expression)
 // All three run through the fluent stub; the test pushes select
 // results in order and inspects updateCalls for throttle stamping.
 const selectQueue: unknown[][] = [];
@@ -261,6 +262,43 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(JSON.stringify(pushPayload)).not.toContain("replacement");
   });
 
+  it("still pushes and returns 201 when notification email throws", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ channel: "in_app" }]); // early channel check
+    selectQueue.push([
+      {
+        customerId: "user_anna",
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+      },
+    ]); // email-resolution join
+    sendEmailMock.mockRejectedValueOnce(new Error("SendGrid unavailable"));
+
+    const res = await request(makeApp())
+      .post(`/conversations/${CONV_ID}/reply`)
+      .send({
+        body: "Thanks for reaching out — your replacement ships today.",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.messageId).toBe("msg_admin_1");
+
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+
+    // Push fan-out is independent of best-effort email delivery.
+    expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
+    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    expect(pushCustId).toBe("user_anna");
+    expect(pushPayload.title).toBe("New message from PennPaps");
+    expect(pushPayload.url).toBe("/account/messages");
+    expect(pushPayload.tag).toMatch(/^csr_reply:/);
+    expect(JSON.stringify(pushPayload)).not.toContain("replacement");
+  });
+
   it("returns 409 on a closed in_app thread", async () => {
     mockAdmin.current = {
       userId: "u_admin",
@@ -393,7 +431,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(res.status).toBe(201);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0]?.lastInAppNotificationAt).toBeInstanceOf(Date);
+    expect(updateCalls[0]?.lastInAppNotificationAt).toBeInstanceOf(SQL);
   });
 
   it("treats notification email failure as best-effort (still 201)", async () => {

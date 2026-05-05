@@ -6,10 +6,11 @@
 //          array = universal. Drives the "Compatible with your
 //          AirSense 11" badge on the product detail page.
 //   GET /shop/products/compatibility?manufacturer=X&model=Y
-//        — list product IDs compatible with the given machine.
-//          Used by the catalog page's "show only my-machine parts"
-//          filter. Always includes universal products (those with
-//          no compatibility rows at all).
+//        — return compatibility data for the given machine for the
+//          catalog page's "show only my-machine parts" filter.
+//          The response separates explicitly compatible products
+//          from constrained products; clients treat products not in
+//          the constrained set as universal.
 //
 // Admin CRUD lives in /admin/shop/products/:productId/compatibility
 // (separate file). Public reads here have no auth gate — catalog
