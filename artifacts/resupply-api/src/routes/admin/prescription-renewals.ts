@@ -155,8 +155,6 @@ router.post(
           targetTable: "prescriptions",
           targetId: row.prescriptionId,
           metadata: {
-            patient_id: row.patientId,
-            days_until_expiry: daysUntilExpiry,
             channel: "email",
           },
           ip: req.ip ?? null,
