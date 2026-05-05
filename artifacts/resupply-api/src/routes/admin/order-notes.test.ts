@@ -65,7 +65,7 @@ vi.mock("@workspace/resupply-db", async () => {
 
 import orderNotesRouter from "./order-notes";
 
-const ORDER_ID = "order_abc123";
+const ORDER_ID = "11111111-1111-4111-8111-111111111111";
 
 function makeApp(): Express {
   const app = express();
