@@ -6,8 +6,9 @@
 //   * 404 when patient doesn't exist
 //   * 400 when prescription doesn't belong to the patient
 //   * 201 happy path: row inserted, audit envelope is non-PHI
+//   * 201 with Twilio dispatch when all three env vars are set
 //   * GET ?patientId=… returns rows scoped to that patient
-//   * `providerConfigured` reflects the env triple
+//   * `providerConfigured` reflects TWILIO_* env vars
 //
 // PHI invariant under test: the audit metadata never contains the
 // fax number, physician name, or cover-letter body.
@@ -35,9 +36,31 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
+// Mock signFaxDocumentToken so it doesn't need the HMAC key in tests.
+vi.mock("../../lib/fax-document-token", () => ({
+  signFaxDocumentToken: () => "test-fax-token",
+}));
+
+// Fax client mock — captures sendFax calls.
+const sendFaxMock = vi.fn<() => Promise<{ sid: string; status: string }>>(
+  async () => ({ sid: "FX_test_sid", status: "queued" }),
+);
+vi.mock("@workspace/resupply-telecom", async () => {
+  const actual =
+    await vi.importActual<typeof import("@workspace/resupply-telecom")>(
+      "@workspace/resupply-telecom",
+    );
+  return {
+    ...actual,
+    createTwilioFaxClient: () => ({ sendFax: sendFaxMock }),
+  };
+});
+
 const selectQueue: unknown[][] = [];
 const insertReturnQueue: unknown[][] = [];
 const insertedValues: Record<string, unknown>[] = [];
+const updatedSets: Record<string, unknown>[] = [];
+
 const dbStub = {
   select: vi.fn(() => {
     const result = selectQueue.shift() ?? [];
@@ -57,6 +80,16 @@ const dbStub = {
       },
       returning: () =>
         Promise.resolve(insertReturnQueue.shift() ?? [{ id: "out_1" }]),
+    };
+    return obj;
+  }),
+  update: vi.fn(() => {
+    const obj: Record<string, unknown> = {
+      set: (vals: Record<string, unknown>) => {
+        updatedSets.push(vals);
+        return obj;
+      },
+      where: () => Promise.resolve(),
     };
     return obj;
   }),
@@ -92,22 +125,30 @@ const VALID_BODY = {
     "Please renew the prescription for the patient below — sent on behalf of Penn Home Medical Supply.",
 };
 
-const ENV_KEYS = ["FAX_VENDOR", "FAX_API_KEY", "FAX_FROM_NUMBER"] as const;
+const TWILIO_FAX_ENV_KEYS = [
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_FAX_FROM_NUMBER",
+  "RESUPPLY_VOICE_PUBLIC_BASE_URL",
+] as const;
+
 const originalEnv: Partial<
-  Record<(typeof ENV_KEYS)[number], string | undefined>
+  Record<(typeof TWILIO_FAX_ENV_KEYS)[number], string | undefined>
 > = {};
 
 beforeEach(() => {
-  for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
-  for (const k of ENV_KEYS) delete process.env[k];
+  for (const k of TWILIO_FAX_ENV_KEYS) originalEnv[k] = process.env[k];
+  for (const k of TWILIO_FAX_ENV_KEYS) delete process.env[k];
   mockAdmin.current = null;
   selectQueue.length = 0;
   insertReturnQueue.length = 0;
   insertedValues.length = 0;
+  updatedSets.length = 0;
+  sendFaxMock.mockClear();
   logAuditMock.mockClear();
 });
 afterEach(() => {
-  for (const k of ENV_KEYS) {
+  for (const k of TWILIO_FAX_ENV_KEYS) {
     if (originalEnv[k] === undefined) delete process.env[k];
     else process.env[k] = originalEnv[k];
   }
@@ -160,7 +201,7 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(res.body.error).toBe("prescription_patient_mismatch");
   });
 
-  it("201s + inserts + audits with non-PHI envelope", async () => {
+  it("201s + inserts + audits with non-PHI envelope (no Twilio config)", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     selectQueue.push([{ id: PATIENT_ID }]); // patient lookup
     insertReturnQueue.push([{ id: "out_xyz" }]);
@@ -184,6 +225,8 @@ describe("POST /admin/physician-fax-outreach", () => {
       createdByEmail: ADMIN_EMAIL,
     });
 
+    expect(sendFaxMock).not.toHaveBeenCalled();
+
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0]?.[0] as {
       action: string;
@@ -200,10 +243,12 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(auditJson).not.toContain("renew the prescription");
   });
 
-  it("reports provider as configured_but_no_dispatcher_yet when env triple is set", async () => {
-    process.env.FAX_VENDOR = "documo";
-    process.env.FAX_API_KEY = "key_xxx";
-    process.env.FAX_FROM_NUMBER = "+12155550000";
+  it("dispatches via Twilio and returns status=sent when env vars are set", async () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token_test";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     selectQueue.push([{ id: PATIENT_ID }]);
     insertReturnQueue.push([{ id: "out_xyz" }]);
@@ -211,8 +256,62 @@ describe("POST /admin/physician-fax-outreach", () => {
     const res = await request(makeApp())
       .post("/admin/physician-fax-outreach")
       .send(VALID_BODY);
+
     expect(res.status).toBe(201);
-    expect(res.body.provider).toBe("configured_but_no_dispatcher_yet");
+    expect(res.body).toMatchObject({
+      id: "out_xyz",
+      status: "sent",
+      provider: "twilio",
+    });
+
+    expect(sendFaxMock).toHaveBeenCalledOnce();
+    const faxCallArgs = sendFaxMock.mock.calls as unknown as Array<
+      Array<{ to: string; from: string; mediaUrl: string; statusCallbackUrl: string }>
+    >;
+    const faxCall = faxCallArgs[0]![0]!;
+    expect(faxCall.to).toBe("+12155551212");
+    expect(faxCall.from).toBe("+12155550000");
+    expect(faxCall.mediaUrl).toContain(
+      "https://api.example.test/fax/document/",
+    );
+    expect(faxCall.statusCallbackUrl).toBe(
+      "https://api.example.test/fax/status-callback",
+    );
+
+    // DB update stamps vendor_ref + status='sent'
+    expect(updatedSets).toHaveLength(1);
+    expect(updatedSets[0]).toMatchObject({
+      status: "sent",
+      vendorRef: "FX_test_sid",
+      vendorName: "twilio",
+    });
+  });
+
+  it("returns status=failed and stamps DB when Twilio throws", async () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token_test";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
+
+    sendFaxMock.mockRejectedValueOnce(
+      Object.assign(new Error("Twilio 400"), { name: "TwilioApiError" }),
+    );
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    selectQueue.push([{ id: PATIENT_ID }]);
+    insertReturnQueue.push([{ id: "out_fail" }]);
+
+    const res = await request(makeApp())
+      .post("/admin/physician-fax-outreach")
+      .send(VALID_BODY);
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe("failed");
+    expect(res.body.provider).toBe("twilio");
+    expect(typeof res.body.dispatchError).toBe("string");
+
+    expect(updatedSets).toHaveLength(1);
+    expect(updatedSets[0]).toMatchObject({ status: "failed" });
   });
 });
 
@@ -230,7 +329,7 @@ describe("GET /admin/physician-fax-outreach", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns scoped rows + providerConfigured flag", async () => {
+  it("returns scoped rows + providerConfigured flag (unconfigured)", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     selectQueue.push([
       {
@@ -258,5 +357,20 @@ describe("GET /admin/physician-fax-outreach", () => {
     expect(res.body.outreach[0].id).toBe("out_1");
     expect(res.body.outreach[0].createdAt).toBe("2026-04-30T12:00:00.000Z");
     expect(res.body.providerConfigured).toBe(false);
+  });
+
+  it("returns providerConfigured=true when Twilio vars are set", async () => {
+    process.env.TWILIO_ACCOUNT_SID = "ACtest";
+    process.env.TWILIO_AUTH_TOKEN = "token_test";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+12155550000";
+
+    mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    selectQueue.push([]);
+
+    const res = await request(makeApp()).get(
+      `/admin/physician-fax-outreach?patientId=${PATIENT_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.providerConfigured).toBe(true);
   });
 });

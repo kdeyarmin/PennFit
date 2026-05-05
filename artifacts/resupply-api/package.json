@@ -30,6 +30,7 @@
     "express": "^5",
     "express-rate-limit": "^8.4.1",
     "pg": "^8.20.0",
+    "pdfkit": "^0.15.2",
     "pg-boss": "^10.4.2",
     "pino": "^9",
     "pino-http": "^10",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@types/busboy": "^1.5.4",
+    "@types/pdfkit": "^0.13.9",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",

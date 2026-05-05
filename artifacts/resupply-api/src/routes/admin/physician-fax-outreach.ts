@@ -1,35 +1,30 @@
-// /admin/physician-fax-outreach — record + query physician-fax
+// /admin/physician-fax-outreach — record + dispatch physician-fax
 // Rx-renewal requests (Phase G.6 — Phase B.2 follow-up).
 //
 //   POST /admin/physician-fax-outreach
 //        Body: { patientId, prescriptionId?, physicianName,
 //                physicianFaxE164, coverLetterText }
-//        Records the outreach intent and dispatches via the
-//        configured fax vendor when one is wired. Returns the
-//        outreach row id.
+//        Inserts a physician_fax_outreach row and dispatches via
+//        Twilio Programmable Fax when TWILIO_ACCOUNT_SID,
+//        TWILIO_AUTH_TOKEN, and TWILIO_FAX_FROM_NUMBER are set.
+//        Returns the outreach row id + final status.
 //
 //   GET  /admin/physician-fax-outreach?patientId=...
-//        Lists recent outreach rows for a patient. Used by the
-//        patient-detail "fax history" tab.
+//        Lists recent outreach rows for a patient.
 //
-// Why a separate endpoint from /admin/prescriptions/send-renewal-due:
-// the email/SMS dispatcher is a bulk cron job; physician-fax is a
-// CSR-initiated single action ("the patient asked us to handle this
-// directly"). Different lifecycle, different actor (always 'admin'),
-// different audit verb.
-//
-// Vendor abstraction:
-// The actual fax dispatch is gated behind isFaxConfigured() — when
-// no vendor env triple is wired (FAX_VENDOR / _API_KEY / _FROM), the
-// row is created with status='pending' and `vendor_ref` left null.
-// CSRs can see it in /admin/patients/<id>/fax-outreach as "queued
-// — provider not configured" and a deployer wires the provider when
-// ready. Mirrors the SendGrid/Twilio not-configured pattern.
+// Vendor: Twilio Programmable Fax (same credentials as SMS + voice).
+//   Required env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+//                 TWILIO_FAX_FROM_NUMBER
+//   Optional env: RESUPPLY_VOICE_PUBLIC_BASE_URL (needed for the
+//                 mediaUrl and statusCallback — if unset the row is
+//                 created but not dispatched immediately).
 //
 // PHI / log posture:
 //   * Audit envelope: outreach_id, patient_id, has_prescription,
 //     cover_letter_length. Never the fax number, never the cover
 //     letter body, never the physician name.
+//   * The mediaUrl token carries only the outreach ID + expiry; the
+//     cover letter text is fetched by Twilio from /fax/document/:token.
 
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
@@ -43,9 +38,11 @@ import {
   physicianFaxOutreach,
   prescriptions,
 } from "@workspace/resupply-db";
+import { createTwilioFaxClient, TwilioApiError } from "@workspace/resupply-telecom";
 
-import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
+import { logger } from "../../lib/logger.js";
+import { requireAdmin } from "../../middlewares/requireAdmin.js";
 
 const router: IRouter = Router();
 
@@ -76,22 +73,30 @@ const listQuery = z
   .strict();
 
 /**
- * Returns true when a fax vendor is wired. Mirrors the
- * isPushConfigured / isSmsConfigured pattern in the rest of the
- * codebase. The `FAX_VENDOR` env names a provider key (documo,
- * phaxio, srfax) that the dispatcher implementation switches on;
- * `FAX_API_KEY` and `FAX_FROM_NUMBER` are vendor-agnostic.
- *
- * Today no vendor implementation ships — this scaffold persists
- * the outreach intent so the data path is complete; a follow-up PR
- * adds the actual provider integration.
+ * Returns true when Twilio fax is configured. Requires the same
+ * TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN used by SMS and voice, plus
+ * a TWILIO_FAX_FROM_NUMBER identifying the fax-enabled Twilio number.
  */
 export function isFaxConfigured(): boolean {
   return Boolean(
-    process.env.FAX_VENDOR?.trim() &&
-    process.env.FAX_API_KEY?.trim() &&
-    process.env.FAX_FROM_NUMBER?.trim(),
+    process.env.TWILIO_ACCOUNT_SID?.trim() &&
+      process.env.TWILIO_AUTH_TOKEN?.trim() &&
+      process.env.TWILIO_FAX_FROM_NUMBER?.trim(),
   );
+}
+
+/**
+ * Returns the public base URL used for Twilio callbacks and the fax
+ * mediaUrl. Falls back to the Replit dev domain in dev. Returns null
+ * when neither is set — the caller degrades gracefully.
+ */
+function getFaxPublicBaseUrl(): string | null {
+  const raw =
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL?.trim() ??
+    (process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : null);
+  return raw ? raw.replace(/\/+$/u, "") : null;
 }
 
 router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
@@ -109,8 +114,6 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
   const data = parsed.data;
   const db = drizzle(getDbPool());
 
-  // Defensive existence check on the patient — a 404 here is far
-  // friendlier than a constraint-violation 500 from the FK.
   const [patient] = await db
     .select({ id: patients.id })
     .from(patients)
@@ -145,16 +148,70 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
     .returning({ id: physicianFaxOutreach.id });
   const id = inserted[0]!.id;
 
-  // Provider wiring deferred — when isFaxConfigured() is true the
-  // dispatcher would synchronously hit the vendor here, stamp
-  // sent_at + vendor_ref + vendor_name, and return status='sent'.
-  // Until then the row stays at 'pending' and a CSR can re-fire
-  // by changing status manually (or, post-vendor, hitting a
-  // /retry endpoint that won't double-bill).
-  const status: "pending" | "sent" = "pending";
-  const provider = isFaxConfigured()
-    ? "configured_but_no_dispatcher_yet"
-    : "not_configured";
+  let status: "pending" | "sent" | "failed" = "pending";
+  let provider = "not_configured";
+  let dispatchError: string | null = null;
+
+  if (isFaxConfigured()) {
+    const baseUrl = getFaxPublicBaseUrl();
+    if (!baseUrl) {
+      // Twilio credentials set but no public base URL — can't build
+      // mediaUrl or statusCallback. Row stays pending.
+      provider = "twilio_no_base_url";
+    } else {
+      try {
+        const faxClient = createTwilioFaxClient();
+        const token = signFaxDocumentToken(id);
+        const mediaUrl = `${baseUrl}/fax/document/${token}`;
+        const statusCallbackUrl = `${baseUrl}/fax/status-callback`;
+        const fromNumber = process.env.TWILIO_FAX_FROM_NUMBER!.trim();
+
+        const result = await faxClient.sendFax({
+          to: data.physicianFaxE164,
+          from: fromNumber,
+          mediaUrl,
+          statusCallbackUrl,
+        });
+
+        await db
+          .update(physicianFaxOutreach)
+          .set({
+            status: "sent",
+            vendorRef: result.sid,
+            vendorName: "twilio",
+            sentAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(physicianFaxOutreach.id, id));
+
+        status = "sent";
+        provider = "twilio";
+      } catch (err) {
+        const msg =
+          err instanceof TwilioApiError
+            ? `Twilio fax error: ${err.message}`
+            : `Fax dispatch error: ${String(err)}`;
+        dispatchError = msg;
+
+        await db
+          .update(physicianFaxOutreach)
+          .set({
+            status: "failed",
+            failedAt: new Date(),
+            failureReason: msg,
+            updatedAt: new Date(),
+          })
+          .where(eq(physicianFaxOutreach.id, id));
+
+        status = "failed";
+        provider = "twilio";
+        logger.warn(
+          { event: "fax_dispatch_failed", outreachId: id },
+          "physician_fax_outreach: Twilio dispatch failed",
+        );
+      }
+    }
+  }
 
   await logAudit({
     action: "physician_fax_outreach.created",
@@ -168,14 +225,17 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
         data.prescriptionId !== undefined && data.prescriptionId !== null,
       cover_letter_length: data.coverLetterText.length,
       provider,
+      status,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
-  }).catch((err) => {
-    logger.warn({ err }, "physician_fax_outreach.created audit write failed");
+  }).catch((auditErr: unknown) => {
+    logger.warn({ err: auditErr }, "physician_fax_outreach.created audit write failed");
   });
 
-  res.status(201).json({ id, status, provider });
+  const response: Record<string, unknown> = { id, status, provider };
+  if (dispatchError) response.dispatchError = dispatchError;
+  res.status(201).json(response);
 });
 
 router.get("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
