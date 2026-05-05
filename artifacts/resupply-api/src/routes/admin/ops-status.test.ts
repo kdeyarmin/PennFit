@@ -183,6 +183,11 @@ describe("GET /admin/ops-status", () => {
     queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
     expect(typeof res.body.serverTime).toBe("string");
-    expect(() => new Date(res.body.serverTime).toISOString()).not.toThrow();
+    expect(res.body.serverTime).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+    expect(new Date(res.body.serverTime).toISOString()).toBe(
+      res.body.serverTime,
+    );
   });
 });
