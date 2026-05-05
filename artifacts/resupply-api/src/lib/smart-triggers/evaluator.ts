@@ -11,8 +11,9 @@
 //
 // Audit posture: every newly-inserted event records a
 // `patient.smart_trigger.detected` audit row. The actor is whoever
-// invoked us — admin email when called from the route, the cron
-// job-id when called from the worker.
+// invoked us — admin email when called from the route, a fixed
+// system-actor identifier ("system:cron:smart-trigger-evaluator")
+// when called from the pg-boss worker.
 
 import { asc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
