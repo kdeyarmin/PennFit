@@ -250,12 +250,15 @@ export async function sendPushToCustomerByEmail(
     .select({ customerId: shopCustomers.customerId })
     .from(shopCustomers)
     .where(eq(shopCustomers.emailLower, lower))
-    .limit(1);
-  const customerId = rows[0]?.customerId;
-  if (!customerId) {
+    .limit(2);
+  if (rows.length === 0) {
     return { delivered: 0, expired: 0, transient: 0 };
   }
-  return sendPushToCustomer(customerId, payload);
+  if (rows.length > 1) {
+    logger.warn({ emailLower: lower }, "web_push_customer_email_ambiguous");
+    return { delivered: 0, expired: 0, transient: 0 };
+  }
+  return sendPushToCustomer(rows[0].customerId, payload);
 }
 
 /**
