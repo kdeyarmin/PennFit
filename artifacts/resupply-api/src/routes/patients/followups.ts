@@ -244,14 +244,24 @@ router.patch(
         completedByEmail: req.adminEmail ?? "<unknown>",
         completedByUserId: req.adminUserId ?? null,
       })
-      .where(eq(patientFollowups.id, followupId))
+      .where(
+        and(
+          eq(patientFollowups.id, followupId),
+          eq(patientFollowups.patientId, patientId),
+          isNull(patientFollowups.completedAt),
+        ),
+      )
       .returning({
         id: patientFollowups.id,
         completedAt: patientFollowups.completedAt,
       });
     const updatedRow = updated[0];
     if (!updatedRow) {
-      throw new Error("UPDATE returned no rows");
+      res.status(409).json({
+        error: "already_completed",
+        message: "This followup is already marked complete.",
+      });
+      return;
     }
 
     await logAudit({
