@@ -261,6 +261,43 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(JSON.stringify(pushPayload)).not.toContain("replacement");
   });
 
+  it("still pushes and returns 201 when notification email throws", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ channel: "in_app" }]); // early channel check
+    selectQueue.push([
+      {
+        customerId: "user_anna",
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+      },
+    ]); // email-resolution join
+    sendEmailMock.mockRejectedValueOnce(new Error("SendGrid unavailable"));
+
+    const res = await request(makeApp())
+      .post(`/conversations/${CONV_ID}/reply`)
+      .send({
+        body: "Thanks for reaching out — your replacement ships today.",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.messageId).toBe("msg_admin_1");
+
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+
+    // Push fan-out is independent of best-effort email delivery.
+    expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
+    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    expect(pushCustId).toBe("user_anna");
+    expect(pushPayload.title).toBe("New message from PennPaps");
+    expect(pushPayload.url).toBe("/account/messages");
+    expect(pushPayload.tag).toMatch(/^csr_reply:/);
+    expect(JSON.stringify(pushPayload)).not.toContain("replacement");
+  });
+
   it("returns 409 on a closed in_app thread", async () => {
     mockAdmin.current = {
       userId: "u_admin",
