@@ -74,7 +74,7 @@ export function rxRenewalSms(
   return (
     `${head}, ${status}. Ask your doctor for a renewal so your next supply ships ` +
     `on time, or reply with their name + practice and we'll request it for you. ` +
-    `Reply STOP to opt out. — Penn Home Medical Supply`
+    `Reply STOP to opt out. - Penn Home Medical Supply`
   );
 }
 
