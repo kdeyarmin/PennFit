@@ -1,10 +1,10 @@
 // /admin/followups — cross-flow daily queue of open CSR follow-ups
 // across both shop_customers (Phase 17) and patients (Phase 19).
 //
-// One round-trip returns followups from both surfaces, joined with
-// the corresponding identity table for display name, merged into a
-// single list ordered by due_at ASC (most overdue first), capped
-// at 200 total.
+// Two concurrent queries fetch followups from both surfaces, each
+// joined with the corresponding identity table for display name, then
+// merged into a single list ordered by due_at ASC (most overdue first),
+// capped at 200 total.
 //
 // Each row carries a `kind: "shop_customer" | "patient"` discriminator
 // so the UI can route the customer/patient link correctly. We
