@@ -21,13 +21,13 @@
 
 import { Switch, Route, Redirect } from "wouter";
 import { useGetAdminMe, ApiError } from "@workspace/api-client-react/admin";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AppShell } from "@/components/admin/AppShell";
 import { Spinner } from "@/components/admin/Spinner";
 import NotFound from "@/pages/admin/not-found";
 import { NotAuthorizedPage } from "@/pages/admin/not-authorized";
-import { ErrorBoundary } from "@/components/error-boundary";
 
 import { DashboardPage } from "@/pages/admin/dashboard";
 import { PatientsPage } from "@/pages/admin/patients";

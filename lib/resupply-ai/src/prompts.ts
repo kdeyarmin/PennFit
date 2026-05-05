@@ -66,9 +66,9 @@ const buildSystemPromptInputSchema = z.object({
    * patient names, phone numbers, addresses, or any other identifier.
    * Caller is responsible for filtering.
    *
-   * Capped at 500 characters. Backticks and common prompt-injection
-   * trigger words are stripped before the value is embedded in the
-   * system prompt.
+   * Capped at 500 characters. Control characters, newlines, backticks,
+   * and common prompt-injection trigger words are stripped before the
+   * value is embedded in the system prompt.
    */
   callContext: z
     .string()
@@ -77,10 +77,12 @@ const buildSystemPromptInputSchema = z.object({
     .max(500)
     .transform((s) =>
       s
+        .replace(/[\r\n\x00-\x1F\x7F]+/g, " ")
         .replace(/`/g, "'")
         .replace(/\bIGNORE\b/gi, "[redacted]")
         .replace(/\bOVERRIDE\b/gi, "[redacted]")
-        .replace(/SYSTEM:/gi, "[redacted]"),
+        .replace(/SYSTEM:/gi, "[redacted]")
+        .trim(),
     ),
 });
 

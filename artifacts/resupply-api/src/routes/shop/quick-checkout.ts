@@ -120,6 +120,14 @@ router.post(
 
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
+    // requireSignedIn guarantees this is set, but guard defensively
+    // so a future middleware re-ordering can't silently mis-route.
+    if (!req.userCustomerId) {
+      res.status(401).json({ error: "sign_in_required" });
+      return;
+    }
+    const customerId: string = req.userCustomerId;
+
     // Resolve email + display name for Stripe Customer creation.
     // Sourced from req.shopCustomerEmail / req.shopCustomerDisplayName,
     // populated by requireSignedIn from auth.users.
@@ -147,7 +155,7 @@ router.post(
         .where(
           and(
             eq(shopOrders.stripeSessionId, reorderSessionId!),
-            eq(shopOrders.customerId, req.userCustomerId!),
+            eq(shopOrders.customerId, customerId),
           ),
         )
         .limit(1);
@@ -193,6 +201,13 @@ router.post(
         res.status(409).json({ error: "reorder_basket_empty" });
         return;
       }
+      // If any line items were silently dropped (archived / deleted
+      // price), refuse the reorder rather than creating a basket the
+      // customer didn't expect.
+      if (basket.length < li.length) {
+        res.status(409).json({ error: "price_unavailable" });
+        return;
+      }
     }
 
     // Catalog guard: verify every price in the resolved basket belongs
@@ -218,7 +233,7 @@ router.post(
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
-      customerId: req.userCustomerId!,
+      customerId: customerId,
       email,
       displayName,
     });
@@ -250,7 +265,7 @@ router.post(
         : reorderSessionId
           ? "reorder"
           : "express",
-      customer_id: req.userCustomerId!,
+      customer_id: customerId,
       ...(reorderSessionId ? { reorder_of_session: reorderSessionId } : {}),
     };
 
@@ -293,7 +308,7 @@ router.post(
             // always needs a saved payment method.
             subscription_data: {
               metadata: {
-                customer_id: req.userCustomerId!,
+                customer_id: customerId,
                 source: "pennpaps-shop",
               },
             },
@@ -348,7 +363,7 @@ router.post(
       .values({
         stripeSessionId: session.id,
         status: "pending",
-        customerId: req.userCustomerId!,
+        customerId: customerId,
       })
       .onConflictDoUpdate({
         target: shopOrders.stripeSessionId,
