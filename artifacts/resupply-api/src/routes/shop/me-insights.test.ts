@@ -5,6 +5,7 @@
 //   * Empty array when no email is on the session (no patient match
 //     possible).
 //   * Empty array when the email matches no patient row.
+//   * Empty array when two patient rows share the same email (ambiguous).
 //   * Returns projected insights with kind-specific copy + CTA.
 //   * Strips dismissed events.
 //   * `notified: true` reflects sent_at presence.
@@ -107,11 +108,29 @@ describe("GET /shop/me/insights", () => {
     expect(res.body.insights).toEqual([]);
   });
 
+  it("returns empty array when two patient rows share the same email (ambiguous)", async () => {
+    mockSignedIn.current = {
+      customerId: USER_ID,
+      email: "shared@example.com",
+    };
+    // Simulate two patient rows with the same email.
+    selectQueue.push([
+      { patientId: "patient_a" },
+      { patientId: "patient_b" },
+    ]);
+    const res = await request(makeApp()).get("/shop/me/insights");
+    expect(res.status).toBe(200);
+    expect(res.body.insights).toEqual([]);
+  });
+
   it("projects active triggers with kind-specific copy + CTA", async () => {
     mockSignedIn.current = {
       customerId: USER_ID,
       email: "alice@example.com",
     };
+    // First select: patient lookup returns one row.
+    selectQueue.push([{ patientId: "patient_alice" }]);
+    // Second select: events for that patient.
     selectQueue.push([
       {
         id: "evt_leak",
@@ -139,7 +158,7 @@ describe("GET /shop/me/insights", () => {
     expect(leak.kind).toBe("leak_rising");
     expect(leak.notified).toBe(true);
     expect(leak.headline).toContain("seal");
-    expect(leak.cta.url).toBe("/shop?cat=cushions");
+    expect(leak.cta.url).toBe("/shop#shop-section-cushion");
     expect(leak.detectedAt).toBe("2026-04-30T12:00:00.000Z");
 
     const usage = res.body.insights[1];
@@ -153,6 +172,9 @@ describe("GET /shop/me/insights", () => {
       customerId: USER_ID,
       email: "alice@example.com",
     };
+    // First select: patient lookup returns one row.
+    selectQueue.push([{ patientId: "patient_alice" }]);
+    // Second select: events for that patient.
     selectQueue.push([
       {
         id: "evt_leak",

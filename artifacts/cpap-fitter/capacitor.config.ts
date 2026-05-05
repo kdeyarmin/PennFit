@@ -27,7 +27,7 @@ const config: CapacitorConfig = {
   appName: "PennPaps",
   // Vite build output. Make sure `pnpm build` runs before
   // `pnpm cap sync`.
-  webDir: "dist",
+  webDir: "dist/public",
   // Native splash + status-bar treatment is intentionally minimal —
   // we lean on the SPA's CSS for branding so the splash <→> SPA
   // hand-off doesn't flash a different background color.

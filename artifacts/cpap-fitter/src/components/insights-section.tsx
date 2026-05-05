@@ -50,15 +50,45 @@ export function InsightsSection() {
   if (loading || !items || items.length === 0) return null;
 
   // Optimistic dismiss: drop the card from local state immediately,
-  // then fire the server call. On failure, restore the card and
-  // surface a non-blocking inline error on the affected item.
+  // then fire the server call. On failure, restore only the affected
+  // card into the latest state snapshot so concurrent dismisses are
+  // not undone by a stale rollback. Treat "already gone" responses
+  // as success because the server has already applied the dismissal.
+  function isAlreadyDismissedError(error: unknown) {
+    if (!error || typeof error !== "object") return false;
+
+    const candidate = error as {
+      status?: number;
+      statusCode?: number;
+      response?: { status?: number };
+    };
+
+    return (
+      candidate.status === 404 ||
+      candidate.statusCode === 404 ||
+      candidate.response?.status === 404
+    );
+  }
+
   async function handleDismiss(id: string) {
-    const before = items;
+    const dismissedItem = items?.find((i) => i.id === id);
+    const dismissedIndex = items?.findIndex((i) => i.id === id) ?? -1;
+
     setItems((curr) => (curr ?? []).filter((i) => i.id !== id));
     try {
       await dismissInsight(id);
-    } catch {
-      setItems(before);
+    } catch (error) {
+      if (isAlreadyDismissedError(error) || !dismissedItem) return;
+
+      setItems((curr) => {
+        if (!curr || curr.some((i) => i.id === id)) return curr;
+
+        const next = [...curr];
+        const insertAt =
+          dismissedIndex >= 0 ? Math.min(dismissedIndex, next.length) : next.length;
+        next.splice(insertAt, 0, dismissedItem);
+        return next;
+      });
     }
   }
 
@@ -117,7 +147,7 @@ function InsightCard({
             {insight.notified && (
               <span
                 className="text-[10px] uppercase tracking-wide text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5"
-                title="We've already emailed or texted you about this"
+                title="We've already emailed you about this"
               >
                 Notified
               </span>

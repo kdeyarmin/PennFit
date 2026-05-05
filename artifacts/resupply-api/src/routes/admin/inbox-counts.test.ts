@@ -3,6 +3,9 @@
 //   * 401 without admin
 //   * Returns the three count buckets in shape, with zeros when no rows
 //   * Surfaces non-zero counts when the SQL stub returns them
+//   * SQL predicates: conversations count is cross-channel (no channel
+//     filter); returns count includes `received`; verifies each status
+//     bucket in the single-round-trip SELECT
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -20,22 +23,50 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
+// The route uses a single db.execute(sql`...`) call for the main three
+// counts (one round-trip), plus two db.select() calls for overdue
+// followups (shop + patient). We capture the serialised SQL passed to
+// execute so tests can assert on the predicates (which channels /
+// statuses are included). Matches the pattern used in
+// abandoned-carts.test.ts.
+const executeQueue: Array<{ rows: unknown[] }> = [];
+let lastExecuteSql: string | null = null;
+
 // Each call to db.select() returns a fluent stub whose terminal
-// resolves with the next row in `selectQueue`. The route does five
-// COUNT queries (awaiting-reply convs, pending returns, pending
-// reviews, overdue shop followups, overdue patient followups) so
-// the test pushes five rows.
+// resolves with the next row-set in `selectQueue`. The route does two
+// COUNT selects (overdue shop followups, overdue patient followups).
 const selectQueue: unknown[][] = [];
+
+function sqlToString(query: { queryChunks?: unknown[] }): string {
+  // Walk Drizzle's SQL object chunks to produce a plain string.
+  if (!query || !Array.isArray(query.queryChunks)) return String(query);
+  return query.queryChunks
+    .map((c) => {
+      if (typeof c === "string") return c;
+      if (c && typeof c === "object" && "value" in c)
+        return String((c as { value: unknown }).value);
+      return "";
+    })
+    .join("");
+}
+
+function makeSelectStub(): unknown {
+  const rows = selectQueue.shift() ?? [];
+  const stub = {
+    from: () => stub,
+    where: () => Promise.resolve(rows),
+  };
+  return stub;
+}
+
 const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => Promise.resolve(result),
-    };
-    return obj;
+  execute: vi.fn((query: unknown) => {
+    lastExecuteSql = sqlToString(query as { queryChunks?: unknown[] });
+    return Promise.resolve(executeQueue.shift() ?? { rows: [] });
   }),
+  select: vi.fn(() => makeSelectStub()),
 };
+
 vi.mock("drizzle-orm/node-postgres", () => ({
   drizzle: () => dbStub,
 }));
@@ -56,9 +87,18 @@ function makeApp(): Express {
   return app;
 }
 
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
+
 beforeEach(() => {
   mockAdmin.current = null;
+  executeQueue.length = 0;
   selectQueue.length = 0;
+  lastExecuteSql = null;
+  dbStub.execute.mockClear();
   dbStub.select.mockClear();
 });
 
@@ -69,14 +109,16 @@ describe("GET /admin/inbox-counts", () => {
   });
 
   it("returns zero counts when no actionable rows exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ count: 0 }]); // awaiting-reply
-    selectQueue.push([{ count: 0 }]); // pending returns
-    selectQueue.push([{ count: 0 }]); // pending reviews
+    mockAdmin.current = ADMIN;
+    executeQueue.push({
+      rows: [
+        {
+          awaiting_reply_conversations: 0,
+          pending_returns: 0,
+          pending_reviews: 0,
+        },
+      ],
+    });
     selectQueue.push([{ count: 0 }]); // overdue shop followups
     selectQueue.push([{ count: 0 }]); // overdue patient followups
 
@@ -92,14 +134,16 @@ describe("GET /admin/inbox-counts", () => {
   });
 
   it("surfaces non-zero counts in the right buckets", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ count: 7 }]); // awaiting-reply
-    selectQueue.push([{ count: 3 }]); // pending returns
-    selectQueue.push([{ count: 12 }]); // pending reviews
+    mockAdmin.current = ADMIN;
+    executeQueue.push({
+      rows: [
+        {
+          awaiting_reply_conversations: 7,
+          pending_returns: 3,
+          pending_reviews: 12,
+        },
+      ],
+    });
     selectQueue.push([{ count: 5 }]); // overdue shop followups
     selectQueue.push([{ count: 2 }]); // overdue patient followups
 
@@ -112,5 +156,48 @@ describe("GET /admin/inbox-counts", () => {
       // Sums shop + patient overdue across both surfaces.
       overdueFollowups: 7,
     });
+  });
+
+  it("issues exactly one db.execute call (one round-trip)", async () => {
+    mockAdmin.current = ADMIN;
+    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
+
+    await request(makeApp()).get("/admin/inbox-counts");
+    expect(dbStub.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("SQL does not filter by channel — counts all awaiting_admin conversations", async () => {
+    mockAdmin.current = ADMIN;
+    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
+
+    await request(makeApp()).get("/admin/inbox-counts");
+    const sqlStr = lastExecuteSql ?? "";
+    // Must filter on awaiting_admin status...
+    expect(sqlStr).toContain("awaiting_admin");
+    // ...but must NOT restrict to a single channel.
+    expect(sqlStr).not.toContain("in_app");
+    expect(sqlStr).not.toContain("channel");
+  });
+
+  it("SQL includes `received` in the returns status set", async () => {
+    mockAdmin.current = ADMIN;
+    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
+
+    await request(makeApp()).get("/admin/inbox-counts");
+    const sqlStr = lastExecuteSql ?? "";
+    expect(sqlStr).toContain("received");
+    // Also verify the other expected statuses are present.
+    expect(sqlStr).toContain("requested");
+    expect(sqlStr).toContain("shipped_back");
+  });
+
+  it("SQL filters reviews to `pending` status", async () => {
+    mockAdmin.current = ADMIN;
+    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
+
+    await request(makeApp()).get("/admin/inbox-counts");
+    const sqlStr = lastExecuteSql ?? "";
+    expect(sqlStr).toContain("pending");
+    expect(sqlStr).toContain("shop_reviews");
   });
 });
