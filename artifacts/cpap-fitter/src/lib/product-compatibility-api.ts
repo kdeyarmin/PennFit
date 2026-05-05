@@ -35,21 +35,35 @@ export async function fetchProductCompatibility(
   return (await res.json()) as ProductCompatibilityResponse;
 }
 
-export async function fetchCompatibilityForMachine(input: {
-  manufacturer: string;
-  model?: string | null;
-}): Promise<CompatibilityForMachineResponse> {
+export async function fetchCompatibilityForMachine(
+  input: { manufacturer: string; model?: string | null },
+  signal?: AbortSignal,
+): Promise<CompatibilityForMachineResponse> {
   const qs = new URLSearchParams();
   qs.set("manufacturer", input.manufacturer);
   if (input.model) qs.set("model", input.model);
   const res = await fetch(
     `/resupply-api/shop/products/compatibility?${qs.toString()}`,
-    { headers: { Accept: "application/json" } },
+    { headers: { Accept: "application/json" }, signal },
   );
   if (!res.ok) {
     throw new Error(`Failed to load compatibility filter (${res.status})`);
   }
   return (await res.json()) as CompatibilityForMachineResponse;
+}
+
+/**
+ * Precomputes the two Sets from a CompatibilityForMachineResponse and
+ * returns a stable predicate that accepts a product id. Build once per
+ * fetch; pass the returned function into the catalog filter so the Sets
+ * aren't re-allocated on every render cycle.
+ */
+export function buildCompatibilityFilter(
+  compat: CompatibilityForMachineResponse,
+): (productId: string) => boolean {
+  const explicit = new Set(compat.explicitCompatibleProductIds);
+  const constrained = new Set(compat.constrainedProductIds);
+  return (id) => explicit.has(id) || !constrained.has(id);
 }
 
 /**
@@ -61,7 +75,6 @@ export function filterByCompatibility<T extends { id: string }>(
   products: T[],
   compat: CompatibilityForMachineResponse,
 ): T[] {
-  const explicit = new Set(compat.explicitCompatibleProductIds);
-  const constrained = new Set(compat.constrainedProductIds);
-  return products.filter((p) => explicit.has(p.id) || !constrained.has(p.id));
+  const predicate = buildCompatibilityFilter(compat);
+  return products.filter((p) => predicate(p.id));
 }

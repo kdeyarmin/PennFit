@@ -27,6 +27,7 @@ export function CompatibleWithYoursBadge({ productId }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    setLabel(null);
     void (async () => {
       try {
         const [profile, compat] = await Promise.all([

@@ -207,17 +207,21 @@ export function Shop() {
   // when the toggle is off OR the customer doesn't have a device
   // on file, so applying it unconditionally is safe.
   const machineFilter = useMachineFilter();
+  // Destructure the stable filter function so useMemo deps don't
+  // capture the whole machineFilter object (which is a new reference
+  // every render).
+  const { filter: machineFilterFn } = machineFilter;
 
   const sections = useMemo(() => {
     if (!data)
       return [] as Array<{ category: Category; items: ShopProductView[] }>;
-    return SECTION_ORDER.filter(
-      (c) => (data.byCategory[c] ?? []).length > 0,
-    ).map((c) => ({
-      category: c,
-      items: machineFilter.filter(data.byCategory[c] ?? []),
-    }));
-  }, [data, machineFilter]);
+    return SECTION_ORDER.flatMap((c) => {
+      const items = machineFilterFn(data.byCategory[c] ?? []);
+      // Skip categories that become empty after the machine filter is applied
+      // so filter-bar pills and section headers aren't rendered for empty groups.
+      return items.length > 0 ? [{ category: c, items }] : [];
+    });
+  }, [data, machineFilterFn]);
 
   // Sort selection from the filter bar. Hoisted above applySort
   // so the closure resolves it without a forward-reference TDZ.
@@ -333,8 +337,8 @@ export function Shop() {
       return haystack.includes(trimmedQuery);
     });
     // Phase F.1 — apply machine filter on top of the keyword match.
-    return machineFilter.filter(matched);
-  }, [data, trimmedQuery, machineFilter]);
+    return machineFilterFn(matched);
+  }, [data, trimmedQuery, machineFilterFn]);
   const isSearching = trimmedQuery.length > 0;
 
   // After products land, fetch aggregate review stats for every visible
