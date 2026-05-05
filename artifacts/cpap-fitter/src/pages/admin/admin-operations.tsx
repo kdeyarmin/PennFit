@@ -70,8 +70,38 @@ function Body({ data, onRefresh }: { data: OpsStatus; onRefresh: () => void }) {
     <div className="space-y-6">
       <VendorStrip vendors={data.vendors} />
       <DispatchersPanel dispatchers={data.dispatchers} onRefresh={onRefresh} />
+      <QueuesPanel queues={data.queues} />
       <TeamSummary team={data.team} />
     </div>
+  );
+}
+
+function QueuesPanel({ queues }: { queues: OpsStatus["queues"] }) {
+  // Render the panel only when at least one queue field is present
+  // — keeps older API responses from showing an empty section.
+  if (!queues) return null;
+  const faxPending = queues.faxOutreachPending?.count ?? 0;
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-600 mb-2">
+        Manual queues
+      </h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-1">
+          <h3 className="text-sm font-semibold text-slate-900">
+            Physician-fax outreach — pending
+          </h3>
+          <p className="text-xs text-slate-600">
+            CSR-submitted Rx-renewal fax requests waiting for the operator to
+            send manually. Will auto-dispatch once a fax vendor adapter ships
+            (Phase G.6 noted this is deferred).
+          </p>
+          <div className="text-xl font-bold tabular-nums text-slate-900">
+            {faxPending}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
