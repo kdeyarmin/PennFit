@@ -226,10 +226,13 @@ export function ShopCart() {
           setResumeState("nothing_to_do");
           return;
         }
-        const data = (await res.json()) as {
-          items?: CartSnapshotItem[];
-        };
-        const serverItems = Array.isArray(data.items) ? data.items : [];
+        const data = (await res.json()) as unknown;
+        const serverItems =
+          data !== null &&
+          typeof data === "object" &&
+          Array.isArray((data as Record<string, unknown>).items)
+            ? ((data as { items: CartSnapshotItem[] }).items)
+            : [];
         if (serverItems.length === 0) {
           setResumeState("nothing_to_do");
           return;
@@ -458,6 +461,7 @@ export function ShopCart() {
             ? err.message
             : String(err);
       setError(msg);
+    } finally {
       setExpressCheckingOut(false);
     }
   }

@@ -24,21 +24,25 @@ export function Capture() {
   }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Tracks the active MediaStream so stopCamera works even if the component
+  // unmounts while getUserMedia() is still in flight (videoRef becomes null
+  // on unmount, so we can't rely on videoRef.current.srcObject for cleanup).
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
 
-  useEffect(() => {
-    startCamera();
-    return () => {
-      stopCamera();
-    };
-  }, []);
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
 
-  const startCamera = async () => {
+  const startCamera = async (): Promise<MediaStream | null> => {
     setError(null);
     try {
+      // Stop any existing stream before acquiring a new one (retry path).
+      stopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "user",
@@ -46,12 +50,14 @@ export function Capture() {
           height: { ideal: 720 },
         },
       });
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
       setHasPermission(true);
+      return stream;
     } catch (err) {
-      console.error("Camera error:", err);
+      console.error("Camera error:", err instanceof Error ? err.message : String(err));
       setHasPermission(false);
       const name = err instanceof Error ? err.name : "";
       const message = err instanceof Error ? err.message : String(err);
@@ -64,15 +70,27 @@ export function Capture() {
       } else {
         setError("An error occurred while accessing the camera: " + message);
       }
+      return null;
     }
   };
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-    }
-  };
+  useEffect(() => {
+    let active = true;
+    void startCamera().then((stream) => {
+      // If the component unmounted while getUserMedia was in flight, stop
+      // the stream immediately — the cleanup below already ran and couldn't
+      // see it because streamRef wasn't set yet.
+      if (!active && stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    });
+    return () => {
+      active = false;
+      stopCamera();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Capture the current frame from the video feed.
   // Returns true on success, false on failure (so the caller can reset countdown).
@@ -118,7 +136,7 @@ export function Capture() {
       setLocation("/measure");
       return true;
     } catch (err) {
-      console.error("Capture error:", err);
+      console.error("Capture error:", err instanceof Error ? err.message : String(err));
       const message = err instanceof Error ? err.message : "unknown error";
       setError("Failed to capture an image: " + message);
       return false;

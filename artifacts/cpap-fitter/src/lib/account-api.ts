@@ -92,12 +92,24 @@ export class AccountApiError extends Error {
   }
 }
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("pf_csrf="));
+  return match ? decodeURIComponent(match.split("=")[1]) : null;
+}
+
 async function meFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const isWrite = method !== "GET" && method !== "HEAD";
+  const csrfToken = isWrite ? getCsrfToken() : null;
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
     headers: {
       Accept: "application/json",
       ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
       ...(init.headers ?? {}),
     },
     ...init,
