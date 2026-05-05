@@ -32,12 +32,30 @@ export async function fetchOpsStatus(): Promise<OpsStatus> {
 }
 
 export interface DispatcherResult {
+  // Standard dispatcher fields (cart-abandonment, review-request)
   scanned?: number;
   sent?: number;
   skippedNoConfig?: number;
   skippedFailed?: number;
   skippedOptOut?: number;
   sendgridConfigured?: boolean;
+  // Channel dispatcher fields (Rx renewal, smart-trigger send-due)
+  attempted?: number;
+  failed?: number;
+  skippedNoContact?: number;
+  /** Backwards-compatible alias for skippedNoContact on the email channel.
+   *  Not displayed in ResultPanel — skippedNoContact already covers it. */
+  skippedNoEmail?: number;
+  /** Backwards-compatible alias for skippedNoContact on the SMS channel.
+   *  Not displayed in ResultPanel — skippedNoContact already covers it. */
+  skippedNoPhone?: number;
+  remaining?: number;
+  windowDays?: number;
+  channel?: string;
+  // Evaluator fields (smart-trigger evaluate)
+  proposed?: number;
+  inserted?: number;
+  skippedExisting?: number;
 }
 
 export async function runAbandonedCartDispatcher(): Promise<DispatcherResult> {
