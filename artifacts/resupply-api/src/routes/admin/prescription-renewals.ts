@@ -35,6 +35,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, patients, prescriptions } from "@workspace/resupply-db";
+import { RENEWAL_WINDOW_DAYS } from "@workspace/resupply-domain";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -50,10 +51,6 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-/** How far before expiry the renewal nudge fires. Industry default
- *  is 30 days — long enough for a physician callback, short enough
- *  that the patient feels the urgency. */
-const RENEWAL_WINDOW_DAYS = 30;
 /** Per-run cap to keep the dispatcher response time bounded. The
  *  pg-boss cron / "Run now" button can re-fire if `remaining > 0`. */
 const PER_RUN_CAP = 50;
