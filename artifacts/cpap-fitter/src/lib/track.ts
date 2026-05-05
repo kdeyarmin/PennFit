@@ -36,7 +36,8 @@ export type TrackStep =
   | "results_viewed"
   | "mask_chosen"
   | "order_started"
-  | "order_submitted_success";
+  | "order_submitted_success"
+  | "cart_items_dropped";
 
 export function track(
   step: TrackStep,
