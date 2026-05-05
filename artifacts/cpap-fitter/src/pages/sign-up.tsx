@@ -16,19 +16,34 @@ import { AuthError } from "@workspace/resupply-auth-react";
 
 import { authHooks } from "@/lib/auth-hooks";
 import { AuthLayout } from "@/components/auth-layout";
+import { PasswordInput } from "@/components/password-input";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const signUp = authHooks.useSignUp();
 
+  // Mismatch is treated as an inline form error rather than a server
+  // submission. We also gate the submit button on it so a user can't
+  // get a misleading "could not create the account" toast for what
+  // is really a typo. The mismatch warning only appears AFTER the
+  // confirm field has content — typing the password first shouldn't
+  // immediately flag the empty confirm field as wrong.
+  const passwordsMismatch =
+    confirmPassword.length > 0 && confirmPassword !== password;
+
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitError(null);
+    if (passwordsMismatch || confirmPassword !== password) {
+      setSubmitError("Passwords don't match.");
+      return;
+    }
     signUp.mutate(
       { email: email.trim(), password },
       {
@@ -96,18 +111,37 @@ export function SignUpPage() {
 
         <label className="block text-sm">
           <span className="font-medium">Password</span>
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             minLength={12}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            showStrength
+            helperText="At least 12 characters. Longer is stronger — passphrases of 4+ random words work great."
+            inputTestId="signup-password-input"
           />
-          <span className="block text-xs mt-1 text-muted-foreground">
-            At least 12 characters.
-          </span>
+        </label>
+
+        <label className="block text-sm">
+          <span className="font-medium">Confirm password</span>
+          <PasswordInput
+            autoComplete="new-password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            inputTestId="signup-confirm-password-input"
+            aria-invalid={passwordsMismatch || undefined}
+          />
+          {passwordsMismatch && (
+            <span
+              className="block text-xs mt-1 text-rose-700"
+              role="alert"
+              data-testid="signup-confirm-mismatch"
+            >
+              Passwords don&apos;t match.
+            </span>
+          )}
         </label>
 
         {submitError && (
@@ -121,8 +155,8 @@ export function SignUpPage() {
 
         <button
           type="submit"
-          disabled={signUp.isPending}
-          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm"
+          disabled={signUp.isPending || passwordsMismatch}
+          className="w-full rounded-md bg-[hsl(var(--penn-navy-deep))] text-white font-semibold py-2 text-sm disabled:opacity-60"
         >
           {signUp.isPending ? "Creating account…" : "Create account"}
         </button>

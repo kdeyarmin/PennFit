@@ -100,11 +100,11 @@ router.post(
 
     for (const row of rows) {
       if (attempted >= PER_RUN_CAP) break;
-      attempted++;
       if (!row.email) {
         skippedNoEmail++;
         continue;
       }
+      attempted++;
       const validUntil = row.validUntil ? new Date(row.validUntil) : null;
       // Days remaining; clamp to >=0 so an Rx that JUST expired still
       // gets the courtesy nudge (CSR-discoverable in the audit log).
@@ -155,8 +155,6 @@ router.post(
           targetTable: "prescriptions",
           targetId: row.prescriptionId,
           metadata: {
-            patient_id: row.patientId,
-            days_until_expiry: daysUntilExpiry,
             channel: "email",
           },
           ip: req.ip ?? null,

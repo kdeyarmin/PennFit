@@ -16,7 +16,7 @@
 // "if biometric ok, hit the silent-resume endpoint; otherwise show
 // the password form".
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   isNativeApp,
@@ -48,6 +48,15 @@ export function useBiometricSignIn(): UseBiometricSignIn {
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState<BiometricResult | null>(null);
+  // Tracks mount state so async callbacks in `prompt()` don't call
+  // setState after the component has unmounted (e.g. the user
+  // navigates away while the biometric prompt is still open).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,10 +73,14 @@ export function useBiometricSignIn(): UseBiometricSignIn {
     setBusy(true);
     try {
       const r = await promptBiometric(reason ?? DEFAULT_REASON);
-      setLastResult(r);
+      if (mountedRef.current) {
+        setLastResult(r);
+      }
       return r.kind === "ok";
     } finally {
-      setBusy(false);
+      if (mountedRef.current) {
+        setBusy(false);
+      }
     }
   }, []);
 

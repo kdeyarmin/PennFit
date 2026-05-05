@@ -49,7 +49,7 @@ The project is built as a monorepo using `pnpm workspaces`, `Node.js v24`, and `
 
 ### Application Flow and Design
 
-The user journey includes stages like Consent, Facial Scan, Questionnaire, Mask Recommendations, and Order placement. Mask recommendations are generated via a weighted scoring formula. The application features a professional design with Penn's brand colors (navy and gold), a light-mode only interface, custom CSS brand tokens, and an animated tutorial. It is optimized for mobile responsiveness, performance, SEO, and PWA capabilities.
+The user journey includes stages like Consent, Facial Scan, Questionnaire, Mask Recommendations, and Order placement. Mask recommendations are generated via a weighted scoring formula. The application features a professional design with Penn's brand colors (navy and gold), a light-mode only interface, custom CSS brand tokens, and an animated tutorial. It is optimized for mobile responsiveness, performance, and SEO.
 
 ### CPAP Resupply Automation System
 
