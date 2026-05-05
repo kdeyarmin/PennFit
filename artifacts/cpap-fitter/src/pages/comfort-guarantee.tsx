@@ -163,7 +163,7 @@ export function ComfortGuaranteePage() {
                 Disposable supplies — filters, tubing, water chambers (hygiene).
               </li>
               <li>CPAP machines (covered by the manufacturer warranty).</li>
-              <li>Returns started after 60 days from delivery.</li>
+              <li>Returns started after 60 days from payment.</li>
               <li>Items missing original parts (frame, clips, headgear).</li>
             </ul>
           </article>
