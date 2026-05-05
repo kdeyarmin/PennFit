@@ -19,6 +19,7 @@ import {
   adminUsers,
   getDbPool,
   patientSmartTriggerEvents,
+  physicianFaxOutreach,
   prescriptions,
   shopAbandonedCarts,
   shopOrders,
@@ -64,6 +65,7 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
     [reviewRequestEligible],
     [rxRenewalEligible],
     [smartTriggerEligible],
+    [faxOutreachPending],
     [adminCount],
     [agentCount],
     [pendingCount],
@@ -121,6 +123,16 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
         ),
       ),
 
+    // Phase G.16 — count fax-outreach rows in 'pending' state. Until
+    // the vendor adapter ships (Phase G.6 noted this is deferred),
+    // every CSR-submitted outreach lands here as 'pending' and a CSR
+    // has to fax via their existing workflow. Surfacing the count on
+    // /admin/operations gives ops visibility into that backlog.
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(physicianFaxOutreach)
+      .where(eq(physicianFaxOutreach.status, "pending")),
+
     // Team counts.
     db
       .select({ count: sql<number>`count(*)::int` })
@@ -145,6 +157,9 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       reviewRequest: { eligibleNow: reviewRequestEligible?.count ?? 0 },
       rxRenewal: { eligibleNow: rxRenewalEligible?.count ?? 0 },
       smartTrigger: { eligibleNow: smartTriggerEligible?.count ?? 0 },
+    },
+    queues: {
+      faxOutreachPending: { count: faxOutreachPending?.count ?? 0 },
     },
     team: {
       activeAdmins: adminCount?.count ?? 0,
