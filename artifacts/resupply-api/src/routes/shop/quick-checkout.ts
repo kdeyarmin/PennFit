@@ -178,6 +178,15 @@ router.post(
         res.status(502).json({ error: "stripe_retrieve_failed" });
         return;
       }
+      // Guard against Stripe returning a paginated line_items list
+      // (has_more: true). For CPAP reorders this is virtually impossible
+      // (max 20-item limit in the request body above), but the Stripe
+      // API can theoretically paginate. Fail loudly rather than silently
+      // presenting an incomplete basket to the customer.
+      if (oldSession.line_items?.has_more) {
+        res.status(409).json({ error: "reorder_basket_too_large" });
+        return;
+      }
       const li = oldSession.line_items?.data ?? [];
       basket = li
         .map((line) => ({

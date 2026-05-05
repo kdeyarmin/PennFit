@@ -97,22 +97,29 @@ function getCsrfToken(): string | null {
   const match = document.cookie
     .split("; ")
     .find((row) => row.startsWith("pf_csrf="));
-  return match ? decodeURIComponent(match.split("=")[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match.split("=")[1]);
+  } catch {
+    // Malformed percent-escape in cookie — return raw value rather than throwing.
+    return match.split("=")[1] ?? null;
+  }
 }
 
 async function meFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? "GET").toUpperCase();
+  const { headers: callerHeaders, ...restInit } = init;
+  const method = (restInit.method ?? "GET").toUpperCase();
   const isWrite = method !== "GET" && method !== "HEAD";
   const csrfToken = isWrite ? getCsrfToken() : null;
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
     headers: {
       Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(restInit.body ? { "Content-Type": "application/json" } : {}),
       ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
-      ...(init.headers ?? {}),
+      ...(callerHeaders ?? {}),
     },
-    ...init,
+    ...restInit,
   });
   if (!res.ok) {
     let body: { error?: string; message?: string } | null = null;
@@ -547,8 +554,18 @@ export async function uploadMyDocument(
     objectPath: string;
   };
 
-  if (!uploadURL.startsWith("https://storage.googleapis.com/")) {
-    throw new Error("Upload URL is not a trusted Google Cloud Storage URL.");
+  let parsedUpload: URL;
+  try {
+    parsedUpload = new URL(uploadURL);
+  } catch {
+    throw new Error("Upload URL received from server is not a valid URL.");
+  }
+  if (
+    parsedUpload.protocol !== "https:" ||
+    (parsedUpload.hostname !== "storage.googleapis.com" &&
+      !parsedUpload.hostname.endsWith(".storage.googleapis.com"))
+  ) {
+    throw new Error("Upload URL is not a trusted HTTPS Google Cloud Storage URL.");
   }
 
   const putRes = await fetch(uploadURL, {
