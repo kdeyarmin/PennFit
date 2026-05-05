@@ -14,6 +14,12 @@ export interface OpsStatus {
   dispatchers: {
     abandonedCart: { eligibleNow: number };
     reviewRequest: { eligibleNow: number };
+    /** Phase G.12 — channel-agnostic count (email + SMS share
+     *  the same renewal_requested_at stamp). */
+    rxRenewal?: { eligibleNow: number };
+    /** Phase G.12 — channel-agnostic count (both channels share
+     *  sent_at on patient_smart_trigger_events). */
+    smartTrigger?: { eligibleNow: number };
   };
   team: {
     activeAdmins: number;
