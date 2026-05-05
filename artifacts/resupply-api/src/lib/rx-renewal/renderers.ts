@@ -75,7 +75,7 @@ export function rxRenewalSms(
   return (
     `${head}, ${status}. Ask your doctor for a renewal, ` +
     `or reply with their name + practice and we'll handle it. ` +
-    `STOP to opt out. - Penn Home`
+    `Reply STOP to opt out.`
   );
 }
 

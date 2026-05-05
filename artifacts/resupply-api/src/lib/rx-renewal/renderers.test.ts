@@ -63,10 +63,12 @@ describe("rxRenewalSms", () => {
     // don't silently switch the SMS to UCS-2 and reduce segment capacity.
     expectSingleSegmentAsciiSms(rxRenewalSms("Anna", 7));
     expectSingleSegmentAsciiSms(rxRenewalSms("", 30));
+    // Worst-case name length (11 chars) still stays under 160.
+    expectSingleSegmentAsciiSms(rxRenewalSms("Christopher", 99));
   });
 
-  it("includes STOP keyword for opt-out compliance", () => {
-    expect(rxRenewalSms("Bob", 7)).toContain("STOP");
+  it("includes 'STOP to opt out' for opt-out compliance", () => {
+    expect(rxRenewalSms("Bob", 7)).toContain("STOP to opt out");
   });
 
   it("greets without name when firstName is empty", () => {
