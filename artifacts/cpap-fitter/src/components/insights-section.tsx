@@ -117,7 +117,7 @@ function InsightCard({
             {insight.notified && (
               <span
                 className="text-[10px] uppercase tracking-wide text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5"
-                title="We've already emailed or texted you about this"
+                title="We've already emailed you about this"
               >
                 Notified
               </span>
