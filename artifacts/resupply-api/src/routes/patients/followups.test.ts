@@ -109,7 +109,7 @@ describe("GET /patients/:id/followups", () => {
       `/patients/${PATIENT_ID}/followups`,
     );
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe("patient_not_found");
+    expect(res.body.error).toBe("not_found");
   });
 
   it("returns the open queue", async () => {
@@ -256,6 +256,7 @@ describe("PATCH /patients/:id/followups/:fid/complete", () => {
         patientId: PATIENT_ID,
         completedAt: null,
         body: "Confirm replacement",
+        dueAt: new Date("2026-05-10T16:00:00Z"),
       },
     ]);
     updateQueue.push([
@@ -281,6 +282,7 @@ describe("PATCH /patients/:id/followups/:fid/complete", () => {
     expect(audit.metadata).toEqual({
       patient_id: PATIENT_ID,
       body_length: "Confirm replacement".length,
+      due_at: "2026-05-10T16:00:00.000Z",
     });
   });
 });

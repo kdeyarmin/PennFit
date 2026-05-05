@@ -216,6 +216,7 @@ router.patch(
         patientId: patientFollowups.patientId,
         completedAt: patientFollowups.completedAt,
         body: patientFollowups.body,
+        dueAt: patientFollowups.dueAt,
       })
       .from(patientFollowups)
       .where(eq(patientFollowups.id, followupId))
@@ -273,6 +274,7 @@ router.patch(
       metadata: {
         patient_id: patientId,
         body_length: row.body.length,
+        due_at: row.dueAt.toISOString(),
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
