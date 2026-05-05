@@ -1,28 +1,37 @@
 // /admin/prescriptions/send-renewal-due — prescription concierge
-// dispatcher (Phase B.2 / feature #7).
+// dispatcher (Phase B.2 / feature #7, SMS variant Phase G.3).
 //
-//   POST /admin/prescriptions/send-renewal-due
+//   POST /admin/prescriptions/send-renewal-due[?channel=email|sms]
 //
 // Scans active prescriptions whose `valid_until` falls inside the
 // renewal window (default: next 30 days), filters out rows we've
-// already nudged, and emails the patient asking them to coordinate
+// already nudged, and contacts the patient asking them to coordinate
 // renewal with their prescribing physician. The single biggest
 // friction point in CPAP reordering is patients getting blindsided
 // by an expired Rx — Aeroflow built its entire brand on removing
 // this friction and reports a 15-20% reorder-rate lift.
 //
+// Two channels share the same `renewal_requested_at` stamp so a
+// patient never gets nudged twice across email + SMS for the same
+// renewal cycle. Operators typically run the email dispatcher first,
+// then run the SMS dispatcher to mop up patients without an email
+// on file (resupply-only customers, older patients who text but
+// don't email).
+//
 // Mirrors the abandoned-carts dispatcher: synchronous response,
 // cap=50, summary counts only. Deployer wires a daily pg-boss cron
 // that POSTs here OR a CSR clicks "Run now" from /admin/operations.
 //
-// PHI / log posture: patient name + email are required by SendGrid
-// for the actual send. The audit envelope records prescription_id +
-// patient_id + days_until_expiry only — never the prescriber's
-// notes blob, never the SKU label (some SKUs are diagnosis-revealing).
+// PHI / log posture: patient name + email/phone are required by the
+// vendor for the actual send. The audit envelope records
+// prescription_id + patient_id + days_until_expiry + channel only —
+// never the prescriber's notes blob, never the SKU label (some SKUs
+// are diagnosis-revealing), never the SMS body or phone number.
 
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, patients, prescriptions } from "@workspace/resupply-db";
@@ -30,6 +39,10 @@ import {
   createSendgridClient,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import {
+  createTwilioSmsClient,
+  TwilioConfigError,
+} from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -44,10 +57,19 @@ const RENEWAL_WINDOW_DAYS = 30;
  *  pg-boss cron / "Run now" button can re-fire if `remaining > 0`. */
 const PER_RUN_CAP = 50;
 
+const channelQuery = z.enum(["email", "sms"]).default("email");
+
 router.post(
   "/admin/prescriptions/send-renewal-due",
   requireAdmin,
   async (req, res) => {
+    const channelParse = channelQuery.safeParse(req.query.channel);
+    if (!channelParse.success) {
+      res.status(400).json({ error: "invalid_channel" });
+      return;
+    }
+    const channel = channelParse.data;
+
     const db = drizzle(getDbPool());
     const now = new Date();
     const cutoff = new Date(
@@ -65,6 +87,7 @@ router.post(
         validUntil: prescriptions.validUntil,
         firstName: patients.legalFirstName,
         email: patients.email,
+        phoneE164: patients.phoneE164,
       })
       .from(prescriptions)
       .innerJoin(patients, eq(patients.id, prescriptions.patientId))
@@ -79,32 +102,51 @@ router.post(
       .orderBy(asc(prescriptions.validUntil))
       .limit(PER_RUN_CAP * 4);
 
-    let sg: ReturnType<typeof createSendgridClient>;
-    try {
-      sg = createSendgridClient();
-    } catch (err) {
-      if (err instanceof EmailConfigError) {
-        res.status(503).json({
-          error: "email_not_configured",
-          message: "SendGrid is not configured on this server.",
-        });
-        return;
+    // Per-channel vendor client. We only construct the client we'll
+    // use so the other channel's missing config doesn't 503 us.
+    let sg: ReturnType<typeof createSendgridClient> | null = null;
+    let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
+    if (channel === "email") {
+      try {
+        sg = createSendgridClient();
+      } catch (err) {
+        if (err instanceof EmailConfigError) {
+          res.status(503).json({
+            error: "email_not_configured",
+            message: "SendGrid is not configured on this server.",
+          });
+          return;
+        }
+        throw err;
       }
-      throw err;
+    } else {
+      try {
+        sms = createTwilioSmsClient();
+      } catch (err) {
+        if (err instanceof TwilioConfigError) {
+          res.status(503).json({
+            error: "sms_not_configured",
+            message: "Twilio Messaging is not configured on this server.",
+          });
+          return;
+        }
+        throw err;
+      }
     }
 
     let attempted = 0;
     let sent = 0;
     let failed = 0;
-    let skippedNoEmail = 0;
+    let skippedNoContact = 0;
 
     for (const row of rows) {
       if (attempted >= PER_RUN_CAP) break;
-      if (!row.email) {
-        skippedNoEmail++;
+      attempted++;
+      const contact = channel === "email" ? row.email : row.phoneE164;
+      if (!contact) {
+        skippedNoContact++;
         continue;
       }
-      attempted++;
       const validUntil = row.validUntil ? new Date(row.validUntil) : null;
       // Days remaining; clamp to >=0 so an Rx that JUST expired still
       // gets the courtesy nudge (CSR-discoverable in the audit log).
@@ -117,26 +159,34 @@ router.post(
           )
         : 0;
 
-      const greeting = row.firstName
-        ? `Hi ${row.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? ""}`
-        : "Hi";
+      const firstName = row.firstName
+        ? (row.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? "")
+        : "";
+      const greeting = firstName ? `Hi ${firstName}` : "Hi";
       try {
-        await sg.sendEmail({
-          to: row.email,
-          subject:
-            daysUntilExpiry === 0
-              ? "Your CPAP prescription has expired"
-              : `Your CPAP prescription expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"}`,
-          text: textBody(greeting, daysUntilExpiry),
-          html: htmlBody(greeting, daysUntilExpiry),
-          customArgs: {
-            kind: "prescription_renewal_request",
-            prescription_id: row.prescriptionId,
-            days_until_expiry: String(daysUntilExpiry),
-          },
-        });
+        if (channel === "email") {
+          await sg!.sendEmail({
+            to: contact,
+            subject:
+              daysUntilExpiry === 0
+                ? "Your CPAP prescription has expired"
+                : `Your CPAP prescription expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"}`,
+            text: textBody(greeting, daysUntilExpiry),
+            html: htmlBody(greeting, daysUntilExpiry),
+            customArgs: {
+              kind: "prescription_renewal_request",
+              prescription_id: row.prescriptionId,
+              days_until_expiry: String(daysUntilExpiry),
+            },
+          });
+        } else {
+          await sms!.sendSms({
+            to: contact,
+            body: smsBody(firstName, daysUntilExpiry),
+          });
+        }
 
-        // Stamp on success only. SendGrid 5xx leaves the row eligible
+        // Stamp on success only. Vendor 5xx leaves the row eligible
         // for the next dispatcher run.
         await db
           .update(prescriptions)
@@ -155,7 +205,9 @@ router.post(
           targetTable: "prescriptions",
           targetId: row.prescriptionId,
           metadata: {
-            channel: "email",
+            patient_id: row.patientId,
+            days_until_expiry: daysUntilExpiry,
+            channel,
           },
           ip: req.ip ?? null,
           userAgent: req.get("user-agent") ?? null,
@@ -174,6 +226,7 @@ router.post(
             err,
             prescription_id: row.prescriptionId,
             patient_id: row.patientId,
+            channel,
           },
           "Rx renewal request send failed",
         );
@@ -184,9 +237,16 @@ router.post(
       attempted,
       sent,
       failed,
-      skippedNoEmail,
+      // Backwards-compatible: the original endpoint returned this key.
+      // We keep it on the email channel, alias to the new key on SMS,
+      // and expose the channel-neutral key on both.
+      ...(channel === "email"
+        ? { skippedNoEmail: skippedNoContact }
+        : { skippedNoPhone: skippedNoContact }),
+      skippedNoContact,
       remaining: rows.length > attempted ? rows.length - attempted : 0,
       windowDays: RENEWAL_WINDOW_DAYS,
+      channel,
     });
   },
 );
@@ -217,6 +277,33 @@ function htmlBody(greeting: string, daysUntilExpiry: number): string {
     </td></tr>
   </table>
 </body></html>`;
+}
+
+/**
+ * Render the SMS body. GSM-7 charset only (no Unicode/em dash) so the
+ * message ships in standard 160-char segments rather than 70-char UCS-2
+ * segments. Typical message is ~2 GSM-7 segments (firstName under 12
+ * chars + double-digit days).
+ *
+ * Reply-mode hint matches the email's "reply to delegate to us" path:
+ * patients can text back the physician's name and our messaging
+ * dispatcher routes the reply into the existing conversation thread.
+ */
+function smsBody(firstName: string, daysUntilExpiry: number): string {
+  // Strip non-ASCII to keep message in GSM-7 charset (160 chars/segment).
+  const safeName = firstName.replace(/[^\x20-\x7E]/g, "");
+  const head = safeName ? `Hi ${safeName}` : "Hi";
+  const status =
+    daysUntilExpiry === 0
+      ? "your CPAP Rx has just expired"
+      : daysUntilExpiry === 1
+        ? "your CPAP Rx expires tomorrow"
+        : `your CPAP Rx expires in ${daysUntilExpiry} days`;
+  return (
+    `${head}, ${status}. Ask your doctor for a renewal so your next supply ships ` +
+    `on time, or reply with their name + practice and we'll request it for you. ` +
+    `Reply STOP to opt out. - Penn Home Medical Supply`
+  );
 }
 
 export default router;

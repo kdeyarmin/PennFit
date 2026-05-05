@@ -51,6 +51,27 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+const sendSmsMock = vi.hoisted(() =>
+  vi.fn<
+    (input: { to: string; body: string }) => Promise<{ messageSid: string }>
+  >(async () => ({ messageSid: "SM_1" })),
+);
+const twilioConfigured = vi.hoisted(() => ({ current: true }));
+vi.mock("@workspace/resupply-telecom", async () => {
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-telecom")
+  >("@workspace/resupply-telecom");
+  return {
+    ...actual,
+    createTwilioSmsClient: () => {
+      if (!twilioConfigured.current) {
+        throw new actual.TwilioConfigError("not configured");
+      }
+      return { sendSms: sendSmsMock };
+    },
+  };
+});
+
 const selectQueue: unknown[][] = [];
 const updateSets: Record<string, unknown>[] = [];
 const dbStub = {
@@ -104,6 +125,9 @@ beforeEach(() => {
   sendEmailMock.mockClear();
   sendEmailMock.mockResolvedValue({ messageId: "sg_1" });
   sendgridConfigured.current = true;
+  sendSmsMock.mockClear();
+  sendSmsMock.mockResolvedValue({ messageSid: "SM_1" });
+  twilioConfigured.current = true;
 });
 
 describe("POST /admin/prescriptions/send-renewal-due", () => {
@@ -246,5 +270,121 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
     expect(updateSets).toEqual([]);
     // Audit only logs successful sends.
     expect(logAuditMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /admin/prescriptions/send-renewal-due?channel=sms (Phase G.3)", () => {
+  it("503s with sms_not_configured when Twilio is missing", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    twilioConfigured.current = false;
+    selectQueue.push([]);
+    const res = await request(makeApp()).post(
+      "/admin/prescriptions/send-renewal-due?channel=sms",
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("sms_not_configured");
+    // Email path is untouched on the SMS run.
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("400s on invalid channel value", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    const res = await request(makeApp()).post(
+      "/admin/prescriptions/send-renewal-due?channel=carrier-pigeon",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_channel");
+  });
+
+  it("sends SMS + stamps + audits with channel=sms; never logs the body", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([
+      {
+        prescriptionId: "rx_1",
+        patientId: "p_1",
+        validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+        firstName: "Anna",
+        email: null,
+        phoneE164: "+12155551212",
+      },
+    ]);
+
+    const res = await request(makeApp()).post(
+      "/admin/prescriptions/send-renewal-due?channel=sms",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      attempted: 1,
+      sent: 1,
+      failed: 0,
+      skippedNoPhone: 0,
+      skippedNoContact: 0,
+      channel: "sms",
+    });
+    expect(sendSmsMock).toHaveBeenCalledTimes(1);
+    const smsCall = sendSmsMock.mock.calls[0]?.[0] as {
+      to: string;
+      body: string;
+    };
+    expect(smsCall.to).toBe("+12155551212");
+    expect(smsCall.body).toContain("CPAP Rx");
+    expect(smsCall.body).toContain("STOP");
+
+    expect(updateSets).toHaveLength(1);
+    expect(logAuditMock).toHaveBeenCalledTimes(1);
+    const audit = logAuditMock.mock.calls[0]?.[0] as {
+      metadata: Record<string, unknown>;
+    };
+    expect(audit.metadata.channel).toBe("sms");
+    expect(audit.metadata.patient_id).toBe("p_1");
+    // Audit envelope never includes the SMS body or phone number.
+    const auditJson = JSON.stringify(audit);
+    expect(auditJson).not.toContain("+12155551212");
+    expect(auditJson).not.toContain("CPAP Rx");
+  });
+
+  it("skips rows without a phone number on the SMS channel", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([
+      {
+        prescriptionId: "rx_1",
+        patientId: "p_1",
+        validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+        firstName: "Anna",
+        email: "anna@example.com",
+        phoneE164: null,
+      },
+    ]);
+    const res = await request(makeApp()).post(
+      "/admin/prescriptions/send-renewal-due?channel=sms",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      attempted: 1,
+      sent: 0,
+      skippedNoPhone: 1,
+      skippedNoContact: 1,
+    });
+    // Email channel is intentionally untouched even though email is set.
+    expect(sendEmailMock).not.toHaveBeenCalled();
+    expect(sendSmsMock).not.toHaveBeenCalled();
+    expect(updateSets).toEqual([]);
   });
 });
