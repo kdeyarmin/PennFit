@@ -168,6 +168,7 @@ const RemindersManage = lazy(() =>
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
 import { useShopIdentity } from "@/lib/identity";
+import { canStayOnMeasure } from "@/lib/measure-flow";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal
@@ -207,8 +208,13 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * the redirect tick.
  */
 function GuardedMeasure() {
-  const { capturedImage } = useFitterStore();
-  if (!capturedImage) return <Redirect to="/capture" />;
+  const { capturedImage, measurements } = useFitterStore();
+  // See canStayOnMeasure for the invariant. The non-obvious case is the
+  // brief post-extraction window where capturedImage has been cleared
+  // for privacy but /measure hasn't navigated to /questionnaire yet —
+  // bouncing back to /capture in that window strands the user.
+  if (!canStayOnMeasure(capturedImage, measurements))
+    return <Redirect to="/capture" />;
   return <Measure />;
 }
 function GuardedQuestionnaire() {

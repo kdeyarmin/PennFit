@@ -32,6 +32,7 @@ export type TrackStep =
   | "capture_started"
   | "capture_taken"
   | "measurements_extracted"
+  | "measurement_error"
   | "questionnaire_completed"
   | "results_viewed"
   | "mask_chosen"
