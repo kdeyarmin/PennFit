@@ -26,6 +26,7 @@ import productsRouter from "./products";
 import quickCheckoutRouter from "./quick-checkout";
 import resendReceiptRouter from "./resend-receipt";
 import reviewsRouter from "./reviews";
+import productQuestionsRouter from "./product-questions";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -57,6 +58,10 @@ router.use(cartSnapshotRouter);
 // and is mounted from routes/index.ts alongside the other admin
 // surfaces.
 router.use(reviewsRouter);
+// Customer-submitted product Q&A (Phase A.5). Public list of
+// answered Q&A + auth-gated submit; admin moderation + answer
+// flow lives at routes/admin/product-questions.ts.
+router.use(productQuestionsRouter);
 // Public lead-capture form on /insurance. Sends two SendGrid
 // emails (team notification + patient confirmation); does not
 // write to the DB — the verifications team works the inbox.

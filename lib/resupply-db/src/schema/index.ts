@@ -20,6 +20,7 @@ export * from "./shop-order-notes";
 export * from "./shop-subscriptions";
 export * from "./shop-abandoned-carts";
 export * from "./shop-reviews";
+export * from "./shop-product-questions";
 export * from "./shop-order-items";
 export * from "./shop-returns";
 export * from "./shop-return-notes";

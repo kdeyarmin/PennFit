@@ -19,6 +19,7 @@ import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
 import systemInfoRouter from "./admin/system-info.js";
 import shopReviewsAdminRouter from "./admin/shop-reviews.js";
+import shopProductQuestionsAdminRouter from "./admin/product-questions.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -69,6 +70,10 @@ router.use(abandonedCartsRouter);
 // publicly visible after an admin approves them. requireAdmin gate
 // is on the router itself.
 router.use(shopReviewsAdminRouter);
+// /admin/shop/product-questions — moderation queue + answer flow
+// for customer-submitted product Q&A (Phase A.5). Pending questions
+// only become publicly visible after a CSR posts an answer.
+router.use(shopProductQuestionsAdminRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.
