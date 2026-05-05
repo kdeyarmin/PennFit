@@ -316,7 +316,9 @@ function PatientRouter() {
           <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
           <Route path="/shop/orders" component={ShopOrders} />
           <Route path="/shop/wishlist" component={ShopWishlist} />
-          <Route path="/account" component={AccountPage} />
+          <Route path="/account">
+            <AccountPage />
+          </Route>
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />
           <Route path="/privacy" component={Privacy} />

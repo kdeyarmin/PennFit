@@ -7,6 +7,8 @@ import {
 } from "@/lib/account-api";
 import { Button } from "@/components/ui/button";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
+import { useBiometricLockPreference } from "@/hooks/use-biometric-lock-preference";
+import { checkBiometricAvailability } from "@/lib/native-runtime";
 
 /**
  * Communication preferences section on /account. Five email
@@ -135,6 +137,8 @@ export function CommPrefsSection() {
       </div>
 
       <PushNotificationToggle />
+
+      <BiometricLockToggle />
 
       <DndEditor prefs={prefs} onSave={save} saving={saving} />
 
@@ -412,6 +416,78 @@ function PushNotificationToggle() {
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Phase F.4 — biometric-lock toggle. Lets a customer require Face ID
+ * / Touch ID on every cold launch of the wrapped native app before
+ * /account renders. Hidden on the web bundle: there's no Web
+ * Authentication-backed equivalent we ship today, and showing the
+ * toggle on web would be a false promise — the lock simply wouldn't
+ * fire because <BiometricLockGate> short-circuits when isNativeApp()
+ * returns false.
+ *
+ * The preference itself is device-local (localStorage), unlike the
+ * email toggles above which roundtrip through /api/account/comm-prefs.
+ * See the hook's header comment for the rationale.
+ */
+function BiometricLockToggle() {
+  const pref = useBiometricLockPreference();
+  const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const available = await checkBiometricAvailability();
+      if (!cancelled) setBiometricAvailable(available);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (biometricAvailable !== true || !pref.loaded) return null;
+
+  return (
+    <div
+      className="rounded-lg border border-border/40 p-3"
+      data-testid="comm-biometric-toggle"
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={pref.enabled}
+        onClick={() => pref.setEnabled(!pref.enabled)}
+        className="w-full flex items-start gap-3 text-left"
+        data-testid="comm-biometric-switch"
+      >
+        <div className="mt-0.5">
+          <span
+            className={`inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              pref.enabled ? "bg-[hsl(var(--penn-navy))]" : "bg-slate-300"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform ${
+                pref.enabled ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
+            Require Face ID / Touch ID
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Ask for biometric authentication every time the app opens before
+            showing your account.
+          </div>
+        </div>
+      </button>
     </div>
   );
 }

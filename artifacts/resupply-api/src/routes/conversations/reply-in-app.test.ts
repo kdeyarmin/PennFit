@@ -118,6 +118,24 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+const sendPushToCustomerMock = vi.hoisted(() =>
+  vi.fn<
+    (
+      customerId: string,
+      payload: {
+        title: string;
+        body: string;
+        url?: string;
+        tag?: string;
+      },
+    ) => Promise<{ delivered: number; expired: number; transient: number }>
+  >(async () => ({ delivered: 0, expired: 0, transient: 0 })),
+);
+vi.mock("../../lib/web-push", () => ({
+  sendPushToCustomer: sendPushToCustomerMock,
+  isPushConfigured: () => false,
+}));
+
 import replyRouter from "./reply";
 
 const CONV_ID = "11111111-1111-4111-8111-111111111111";
@@ -141,6 +159,7 @@ beforeEach(() => {
   });
   sendEmailMock.mockClear();
   sendEmailMock.mockResolvedValue({ messageId: "sg_1" });
+  sendPushToCustomerMock.mockClear();
 });
 
 describe("POST /conversations/:id/reply (in_app)", () => {
@@ -185,7 +204,11 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     };
     selectQueue.push([{ channel: "in_app" }]); // early channel check
     selectQueue.push([
-      { email: "shopper@example.com", displayName: "Anna Singh" },
+      {
+        customerId: "user_anna",
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+      },
     ]); // email-resolution join
 
     const res = await request(makeApp())
@@ -227,6 +250,53 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     // Subject + body never include the message content.
     expect(sendCall.subject).not.toContain("replacement");
     expect(sendCall.text).not.toContain("replacement");
+
+    // Phase G.2 — push fan-out runs alongside email; payload carries
+    // no PHI and links to the in-app thread.
+    expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
+    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    expect(pushCustId).toBe("user_anna");
+    expect(pushPayload.title).toBe("New message from PennPaps");
+    expect(pushPayload.url).toBe("/account/messages");
+    expect(pushPayload.tag).toMatch(/^csr_reply:/);
+    expect(JSON.stringify(pushPayload)).not.toContain("replacement");
+  });
+
+  it("still pushes and returns 201 when notification email throws", async () => {
+    mockAdmin.current = {
+      userId: "u_admin",
+      email: "ops@penn.example.com",
+      role: "admin",
+    };
+    selectQueue.push([{ channel: "in_app" }]); // early channel check
+    selectQueue.push([
+      {
+        customerId: "user_anna",
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+      },
+    ]); // email-resolution join
+    sendEmailMock.mockRejectedValueOnce(new Error("SendGrid unavailable"));
+
+    const res = await request(makeApp())
+      .post(`/conversations/${CONV_ID}/reply`)
+      .send({
+        body: "Thanks for reaching out — your replacement ships today.",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.messageId).toBe("msg_admin_1");
+
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+
+    // Push fan-out is independent of best-effort email delivery.
+    expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
+    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    expect(pushCustId).toBe("user_anna");
+    expect(pushPayload.title).toBe("New message from PennPaps");
+    expect(pushPayload.url).toBe("/account/messages");
+    expect(pushPayload.tag).toMatch(/^csr_reply:/);
+    expect(JSON.stringify(pushPayload)).not.toContain("replacement");
   });
 
   it("returns 409 on a closed in_app thread", async () => {
@@ -256,6 +326,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     selectQueue.push([{ channel: "in_app" }]); // early channel check
     selectQueue.push([
       {
+        customerId: "user_anna",
         email: "shopper@example.com",
         displayName: "Anna Singh",
         prefs: { emailInAppReplyNotifications: false },
@@ -271,6 +342,9 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(appendAdminInAppReplyMock).toHaveBeenCalledTimes(1);
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     expect(sendEmailMock).not.toHaveBeenCalled();
+    // Phase G.2 — push is its own channel governed by the browser
+    // permission, not the email opt-in. It should still fire.
+    expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
   });
 
   it("sends the notification email when prefs are missing entirely (default-on)", async () => {
@@ -285,6 +359,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     selectQueue.push([{ channel: "in_app" }]);
     selectQueue.push([
       {
+        customerId: "user_anna",
         email: "shopper@example.com",
         displayName: "Anna Singh",
         prefs: null,
@@ -310,6 +385,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     selectQueue.push([{ channel: "in_app" }]);
     selectQueue.push([
       {
+        customerId: "user_anna",
         email: "shopper@example.com",
         displayName: "Anna Singh",
         prefs: null,
@@ -340,6 +416,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     selectQueue.push([{ channel: "in_app" }]);
     selectQueue.push([
       {
+        customerId: "user_anna",
         email: "shopper@example.com",
         displayName: "Anna Singh",
         prefs: null,
@@ -365,7 +442,11 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     };
     selectQueue.push([{ channel: "in_app" }]);
     selectQueue.push([
-      { email: "shopper@example.com", displayName: "Anna Singh" },
+      {
+        customerId: "user_anna",
+        email: "shopper@example.com",
+        displayName: "Anna Singh",
+      },
     ]);
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid down"));
 

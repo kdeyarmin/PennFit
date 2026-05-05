@@ -24,6 +24,66 @@ export type BiometricResult =
   | { kind: "error"; message: string };
 
 /**
+ * Returns the Capacitor native platform ("ios" or "android") when
+ * running inside a native shell, or "web" in a plain browser.
+ * Synchronous — relies on the `Capacitor` global injected before the
+ * JS bundle runs.
+ */
+export function getNativePlatform(): "ios" | "android" | "web" {
+  if (typeof window === "undefined") return "web";
+  const cap = (
+    window as unknown as { Capacitor?: { getPlatform?: () => string } }
+  ).Capacitor;
+  if (!cap?.getPlatform) return "web";
+  try {
+    const p = cap.getPlatform();
+    if (p === "ios" || p === "android") return p;
+  } catch {
+    // ignore
+  }
+  return "web";
+}
+
+/**
+ * Checks whether the device has biometric hardware that is enrolled
+ * and available. Returns false on web, when the plugin isn't
+ * installed, or when the OS reports no usable biometry.
+ *
+ * Used by BiometricLockToggle to avoid surfacing the preference toggle
+ * on devices where the gate would always fall open.
+ */
+// @capacitor-community/biometric-auth is an optional runtime dependency
+// present only in native Capacitor builds. Storing the package name in a
+// `string`-typed variable prevents TypeScript from statically resolving
+// the module declarations at compile time (which would fail when the
+// package isn't installed), and avoids the `new Function` / eval pattern
+// that static analysis tools flag as a code-injection risk.
+const BIOMETRIC_PLUGIN: string = "@capacitor-community/biometric-auth";
+
+type BiometricPlugin = {
+  BiometricAuth?: {
+    authenticate?: (opts: { reason: string }) => Promise<unknown>;
+    checkBiometry?: () => Promise<{ isAvailable: boolean }>;
+  };
+};
+
+async function loadBiometricPlugin(): Promise<BiometricPlugin | null> {
+  return import(BIOMETRIC_PLUGIN).catch(() => null) as BiometricPlugin | null;
+}
+
+export async function checkBiometricAvailability(): Promise<boolean> {
+  if (!(await isNativeApp())) return false;
+  try {
+    const mod = await loadBiometricPlugin();
+    if (!mod?.BiometricAuth?.checkBiometry) return false;
+    const result = await mod.BiometricAuth.checkBiometry();
+    return result.isAvailable === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Returns true when the SPA is running inside a Capacitor-wrapped
  * native shell (iOS or Android), false on plain web.
  */
@@ -59,24 +119,19 @@ export async function promptBiometric(
     return { kind: "not-supported", reason: "web" };
   }
   try {
-    // Read the plugin from the Capacitor runtime global so the web
-    // bundle does not need to statically import the native plugin,
-    // while native shells can still use the registered proxy.
-    const BiometricAuth = (
-      window as unknown as {
-        Capacitor?: {
-          Plugins?: {
-            BiometricAuth?: {
-              authenticate?: (opts: { reason: string }) => Promise<unknown>;
-            };
-          };
-        };
-      }
-    ).Capacitor?.Plugins?.BiometricAuth;
-    if (!BiometricAuth?.authenticate) {
+    // loadBiometricPlugin() uses a variable-based import so TypeScript and
+    // bundler tools don't try to resolve the optional package at build time.
+    // When the plugin isn't installed the import rejects and we return
+    // "no-plugin". Once a deployer runs `pnpm install` with the plugin
+    // listed in package.json this branch becomes the happy path.
+    //
+    // Plugin: @capacitor-community/biometric-auth
+    //   https://github.com/aparajita/capacitor-biometric-auth
+    const mod = await loadBiometricPlugin();
+    if (!mod?.BiometricAuth?.authenticate) {
       return { kind: "not-supported", reason: "no-plugin" };
     }
-    await BiometricAuth.authenticate({ reason });
+    await mod.BiometricAuth.authenticate({ reason });
     return { kind: "ok" };
   } catch (err) {
     const e = err as { code?: string; message?: string };
