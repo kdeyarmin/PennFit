@@ -25,22 +25,23 @@ import { Receipt, ArrowRight } from "lucide-react";
 import { formatMoneyCents } from "@/lib/shop-api";
 
 interface Props {
-  /** Cents the customer will be charged today (pre-shipping/tax). */
-  totalCents: number;
+  /** Cart subtotal in cents — excludes shipping and tax, which are
+   *  calculated later in Stripe Checkout. */
+  subtotalCents: number;
   currency?: string;
   className?: string;
   testId?: string;
 }
 
 export function CostTransparencyCallout({
-  totalCents,
+  subtotalCents,
   currency = "usd",
   className = "",
   testId,
 }: Props) {
   // Render nothing for empty carts so the placeholder doesn't
   // appear on the marketing surface during cart hydration.
-  if (totalCents <= 0) return null;
+  if (subtotalCents <= 0) return null;
   return (
     <div
       className={`rounded-xl border border-[hsl(var(--penn-navy)/0.18)] bg-[hsl(var(--penn-navy)/0.04)] p-4 ${className}`}
@@ -53,13 +54,13 @@ export function CostTransparencyCallout({
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2 flex-wrap">
             <p className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-              Your cost today
+              Subtotal (before shipping &amp; tax)
             </p>
             <span
               className="text-sm font-semibold tabular-nums"
               data-testid="cost-transparency-cash"
             >
-              {formatMoneyCents(totalCents, currency)}
+              {formatMoneyCents(subtotalCents, currency)}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">

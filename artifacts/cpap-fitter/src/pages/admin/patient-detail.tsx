@@ -2257,7 +2257,7 @@ function FollowupsList({
             <Button
               size="sm"
               intent="secondary"
-              disabled={completingId === f.id}
+              disabled={completingId !== null}
               onClick={() => onComplete(f.id)}
               data-testid={`patient-followups-complete-${f.id}`}
             >
@@ -2453,7 +2453,7 @@ function OnboardingJourneyView({
               >
                 {sent
                   ? `sent ${formatDateTime(d.sentAt!)}`
-                  : `due ${formatDate(new Date(dueAt).toISOString())}`}
+                  : `${due ? "due" : "scheduled for"} ${formatDate(new Date(dueAt).toISOString())}`}
               </span>
             </li>
           );

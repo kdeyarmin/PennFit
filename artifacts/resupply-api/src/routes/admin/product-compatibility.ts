@@ -116,10 +116,10 @@ router.post(
       targetId: row.id,
       metadata: {
         product_id: productId,
-        manufacturer: machineManufacturer,
-        // model is part of the compatibility identity — log it too,
+        machine_manufacturer: machineManufacturer,
+        // machine_model is part of the compatibility identity — log it too,
         // it's not PHI (machine model is a public catalog fact).
-        model: machineModel ?? null,
+        machine_model: machineModel ?? null,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
