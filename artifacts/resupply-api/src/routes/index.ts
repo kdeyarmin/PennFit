@@ -24,6 +24,7 @@ import patientOnboardingRouter from "./admin/patient-onboarding.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
+import smartTriggersRouter from "./admin/smart-triggers.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
 import shopSubsMetricsRouter from "./admin/shop-subscriptions-metrics.js";
 import insuranceLeadsAdminRouter from "./admin/insurance-leads.js";
@@ -99,6 +100,11 @@ router.use(shopProductCompatibilityAdminRouter);
 // + API access is in place. Sync endpoint 503s until the chosen
 // adapter's env var is set.
 router.use(patientTherapySyncRouter);
+// /admin/smart-triggers/* — data-driven reorder-trigger evaluator +
+// dispatcher (Phase E.2 / feature #19). Reads patient_therapy_nights,
+// runs the rule library, queues + sends nudges that convert at 3-5x
+// the rate of calendar-only reminders.
+router.use(smartTriggersRouter);
 // /admin/shop/back-in-stock-queue — visibility into who's waiting
 // for which OOS SKU + manual fanout trigger. requireAdmin gate is
 // on the router itself.

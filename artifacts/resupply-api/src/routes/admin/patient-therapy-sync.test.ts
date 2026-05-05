@@ -30,10 +30,23 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
-const adapterState = vi.hoisted(() => ({
-  configured: true,
-  fetch: async () => ({ nights: [], hasMore: false }),
-}));
+type MockNight = {
+  nightDate: string;
+  sourceEventId: string;
+  usageMinutes: number | null;
+  ahi: number | null;
+  leakRateLMin: number | null;
+  pressureP95Cmh2o: number | null;
+};
+const adapterState = vi.hoisted(
+  (): {
+    configured: boolean;
+    fetch: () => Promise<{ nights: MockNight[]; hasMore: boolean }>;
+  } => ({
+    configured: true,
+    fetch: async () => ({ nights: [], hasMore: false }),
+  }),
+);
 vi.mock("../../lib/therapy-cloud", () => ({
   adapterFor: () => ({
     source: "resmed_airview",
