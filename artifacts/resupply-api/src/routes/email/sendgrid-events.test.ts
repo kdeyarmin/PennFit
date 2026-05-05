@@ -235,6 +235,46 @@ describe("POST /email/sendgrid-events", () => {
     },
   );
 
+  it("returns 400 for non-JSON Content-Type (e.g. text/plain)", async () => {
+    const { publicKeyBase64 } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+
+    const app = buildApp();
+    // express.raw({ type: "application/json" }) skips the body for non-JSON
+    // content types, so req.body is never a Buffer and the sig middleware
+    // returns 400 "raw body required" before the route handler even runs.
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "text/plain")
+      .send("some plain text");
+
+    expect(res.status).toBe(400);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when body is invalid (wrong schema) despite a valid signature", async () => {
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+
+    const ts = "1810000010";
+    // Valid JSON but wrong type — parseSendgridEventBatch expects an array,
+    // so an object body causes a Zod parse error → caught as parse_failed.
+    const wrongSchemaBody = JSON.stringify({ notAnArray: true });
+    const sig = signBody(privateKeyPem, ts, wrongSchemaBody);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(wrongSchemaBody);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: "parse_failed" });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
   it("rejects a tampered body with the original valid signature (401)", async () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);

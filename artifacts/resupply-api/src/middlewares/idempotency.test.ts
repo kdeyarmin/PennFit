@@ -338,6 +338,63 @@ describe("withIdempotency middleware", () => {
     expect(r.body.error).toBe("invalid_idempotency_key");
   });
 
+  it("replays the stored response when handler uses res.send()", async () => {
+    let counter = 0;
+    const app = makeApp((_req, res) => {
+      counter += 1;
+      res
+        .status(200)
+        .type("application/json")
+        .send(JSON.stringify({ id: `patient_${counter}`, via: "send" }));
+    });
+    const key = "abcdef-12345-send-path";
+    const a = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ name: "Ada" });
+    expect(a.status).toBe(200);
+    expect(a.body).toEqual({ id: "patient_1", via: "send" });
+
+    await new Promise((r) => setImmediate(r));
+    expect(store).toHaveLength(1);
+
+    const b = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ name: "Ada" });
+    expect(b.status).toBe(200);
+    expect(b.body).toEqual({ id: "patient_1", via: "send" });
+    // Handler ran exactly once across both calls.
+    expect(counter).toBe(1);
+  });
+
+  it("captures and replays empty responses written via res.end()", async () => {
+    let counter = 0;
+    const app = makeApp((_req, res) => {
+      counter += 1;
+      res.statusCode = 200;
+      res.end();
+    });
+    const key = "abcdef-12345-end-path";
+    const a = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ z: 9 });
+    expect(a.status).toBe(200);
+
+    await new Promise((r) => setImmediate(r));
+    expect(store).toHaveLength(1);
+    expect(store[0]!.responseBody).toBeNull();
+
+    const b = await request(app)
+      .post("/echo")
+      .set("Idempotency-Key", key)
+      .send({ z: 9 });
+    expect(b.status).toBe(200);
+    // Handler ran exactly once across both calls.
+    expect(counter).toBe(1);
+  });
+
   it("returns 500 if mounted before an admin middleware (fail-loud wiring check)", async () => {
     // Build the app WITHOUT adminInjector to simulate the misconfig.
     const app = express();
