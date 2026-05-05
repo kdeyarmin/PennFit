@@ -19,6 +19,7 @@ import {
   adminUsers,
   getDbPool,
   patientSmartTriggerEvents,
+  physicianFaxOutreach,
   prescriptions,
   shopAbandonedCarts,
   shopOrders,
@@ -51,6 +52,12 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       process.env.TWILIO_AUTH_TOKEN &&
       process.env.TWILIO_MESSAGING_SERVICE_SID,
     ),
+    twilioFax: Boolean(
+      process.env.TWILIO_ACCOUNT_SID &&
+      process.env.TWILIO_AUTH_TOKEN &&
+      process.env.TWILIO_FAX_FROM_NUMBER &&
+      (process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL || process.env.REPLIT_DEV_DOMAIN),
+    ),
     stripe: Boolean(process.env.STRIPE_SECRET_KEY),
     objectStorage: Boolean(process.env.PRIVATE_OBJECT_DIR),
   };
@@ -64,6 +71,7 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
     [reviewRequestEligible],
     [rxRenewalEligible],
     [smartTriggerEligible],
+    [pendingFaxEligible],
     [adminCount],
     [agentCount],
     [pendingCount],
@@ -121,6 +129,15 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
         ),
       ),
 
+    // Physician fax outreach rows awaiting dispatch (pending or failed
+    // with Twilio configured — the retry endpoint can re-fire these).
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(physicianFaxOutreach)
+      .where(
+        sql`${physicianFaxOutreach.status} IN ('pending', 'failed')`,
+      ),
+
     // Team counts.
     db
       .select({ count: sql<number>`count(*)::int` })
@@ -145,6 +162,7 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       reviewRequest: { eligibleNow: reviewRequestEligible?.count ?? 0 },
       rxRenewal: { eligibleNow: rxRenewalEligible?.count ?? 0 },
       smartTrigger: { eligibleNow: smartTriggerEligible?.count ?? 0 },
+      pendingFax: { eligibleNow: pendingFaxEligible?.count ?? 0 },
     },
     team: {
       activeAdmins: adminCount?.count ?? 0,

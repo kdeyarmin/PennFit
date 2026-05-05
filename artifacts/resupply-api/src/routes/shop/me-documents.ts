@@ -346,6 +346,7 @@ router.get(
         contentType: patientDocuments.contentType,
         sizeBytes: patientDocuments.sizeBytes,
         createdAt: patientDocuments.createdAt,
+        reviewedAt: patientDocuments.reviewedAt,
       })
       .from(patientDocuments)
       .where(eq(patientDocuments.patientId, patient.id))

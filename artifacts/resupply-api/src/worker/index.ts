@@ -30,6 +30,8 @@ import { logger } from "../lib/logger";
 import { registerReminderJobs } from "./jobs/reminders.js";
 import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-attachment-sweep.js";
 import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator.js";
+import { registerSmartTriggerSendJob } from "./jobs/smart-trigger-send.js";
+import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -76,10 +78,18 @@ export async function startWorker(): Promise<void> {
   // re-run; the partial-unique index on
   // patient_smart_trigger_events guarantees no double-fires.
   await registerSmartTriggerEvaluatorJob(boss);
+  // Phase G.14 — daily smart-trigger send-due dispatch (50 min
+  // after the evaluator). Email then SMS; both channels share
+  // sent_at so a patient is never nudged twice.
+  await registerSmartTriggerSendJob(boss);
+  // Phase G.15 — daily Rx-renewal dispatch (30 min after smart-
+  // trigger send so we don't double-burst the email vendor).
+  // Email then SMS; both channels share renewal_requested_at.
+  await registerRxRenewalSendJob(boss);
 
   workerReady = true;
   logger.info(
-    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep + smart-trigger-evaluator scheduled)",
+    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep + smart-trigger-evaluator + smart-trigger-send + rx-renewal-send scheduled)",
   );
 }
 

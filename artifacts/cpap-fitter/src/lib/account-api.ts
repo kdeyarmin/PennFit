@@ -493,6 +493,8 @@ export interface PatientDocumentItem {
   contentType: string;
   sizeBytes: number;
   createdAt: string;
+  /** ISO 8601 or null. Null means the document is still pending CSR review. */
+  reviewedAt: string | null;
 }
 
 export const fetchMyDocuments = () =>

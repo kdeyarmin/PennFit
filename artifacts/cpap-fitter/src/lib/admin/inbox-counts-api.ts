@@ -7,6 +7,8 @@ export interface AdminInboxCounts {
   pendingReviews: number;
   /** Phase 18 — open overdue followups whose due_at is in the past, across both shop customers and patients. */
   overdueFollowups: number;
+  /** Patient-uploaded documents that no admin has yet marked as reviewed. */
+  newPatientDocuments: number;
   serverTime: string;
 }
 
