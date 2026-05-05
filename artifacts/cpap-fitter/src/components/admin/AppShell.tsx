@@ -135,7 +135,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         label: "Follow-ups",
         icon: CalendarClock,
         matchPrefix: "/admin/followups",
-        hint: "Today's queue of CSR-scheduled callbacks across all customers",
+        hint: "Today's queue of CSR-scheduled callbacks across customers and patients",
         badgeKey: "overdueFollowups",
       },
       {
