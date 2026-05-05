@@ -182,12 +182,14 @@ function DispatchersPanel({
         <DispatcherCard
           title="Rx renewal — email"
           subtitle="Patients whose CPAP prescription is within 30 days of expiry get a one-time email asking them to coordinate a renewal."
+          eligibleNow={dispatchers.rxRenewal?.eligibleNow}
           run={() => runRxRenewalDispatcher("email")}
           onRefresh={onRefresh}
         />
         <DispatcherCard
           title="Rx renewal — SMS"
           subtitle="Same window as the email channel; mops up patients without an email on file. Shares the same renewalRequestedAt stamp so a patient never gets nudged twice."
+          eligibleNow={dispatchers.rxRenewal?.eligibleNow}
           run={() => runRxRenewalDispatcher("sms")}
           onRefresh={onRefresh}
         />
@@ -200,12 +202,14 @@ function DispatchersPanel({
         <DispatcherCard
           title="Smart-trigger nudge — email"
           subtitle="Sends one email per detected trigger that hasn't been nudged yet. PHI-safe envelope (kind + window only)."
+          eligibleNow={dispatchers.smartTrigger?.eligibleNow}
           run={() => runSmartTriggerDispatcher("email")}
           onRefresh={onRefresh}
         />
         <DispatcherCard
           title="Smart-trigger nudge — SMS"
           subtitle="Same triggers, SMS channel. STOP-keyword compliant; single-segment ASCII."
+          eligibleNow={dispatchers.smartTrigger?.eligibleNow}
           run={() => runSmartTriggerDispatcher("sms")}
           onRefresh={onRefresh}
         />

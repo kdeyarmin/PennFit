@@ -18,6 +18,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import {
   adminUsers,
   getDbPool,
+  patientSmartTriggerEvents,
+  prescriptions,
   shopAbandonedCarts,
   shopOrders,
 } from "@workspace/resupply-db";
@@ -28,6 +30,8 @@ const router: IRouter = Router();
 
 const NUDGE_WAIT_MS = 24 * 60 * 60 * 1000;
 const REVIEW_REQUEST_AGE_DAYS = 14;
+/** Mirror prescription-renewals.ts — 30-day cutoff for the renewal nudge. */
+const RX_RENEWAL_WINDOW_DAYS = 30;
 
 router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
   const db = drizzle(getDbPool());
@@ -82,6 +86,37 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       ),
     );
 
+  // Phase G.12 — count active prescriptions whose valid_until falls
+  // inside the renewal window AND haven't been nudged yet. Mirrors
+  // the WHERE in prescription-renewals.ts so "Eligible now" matches
+  // what a Run-now click would actually process. The dispatcher
+  // shares the same renewal_requested_at stamp across email + SMS,
+  // so this count covers both channels collectively.
+  const [rxRenewalEligible] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(prescriptions)
+    .where(
+      and(
+        eq(prescriptions.status, "active"),
+        isNull(prescriptions.renewalRequestedAt),
+        sql`${prescriptions.validUntil} IS NOT NULL`,
+        sql`${prescriptions.validUntil}::timestamptz <= now() + (${RX_RENEWAL_WINDOW_DAYS} || ' days')::interval`,
+      ),
+    );
+
+  // Phase G.12 — count detected-but-unsent smart-trigger events.
+  // Both channels (email + SMS) share the sent_at stamp so this
+  // count is channel-agnostic, same as Rx renewals above.
+  const [smartTriggerEligible] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(patientSmartTriggerEvents)
+    .where(
+      and(
+        isNull(patientSmartTriggerEvents.sentAt),
+        isNull(patientSmartTriggerEvents.dismissedAt),
+      ),
+    );
+
   // Team counts.
   const [adminCount] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -101,6 +136,8 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
     dispatchers: {
       abandonedCart: { eligibleNow: abandonedCartEligible?.count ?? 0 },
       reviewRequest: { eligibleNow: reviewRequestEligible?.count ?? 0 },
+      rxRenewal: { eligibleNow: rxRenewalEligible?.count ?? 0 },
+      smartTrigger: { eligibleNow: smartTriggerEligible?.count ?? 0 },
     },
     team: {
       activeAdmins: adminCount?.count ?? 0,
