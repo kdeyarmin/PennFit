@@ -138,6 +138,27 @@ vi.mock("@workspace/resupply-email", async () => {
   };
 });
 
+// Web-push mock — wired into shipping notifications (Phase G.2).
+// We only verify it gets called with a customer id; full delivery
+// semantics are covered by the helper's own unit tests.
+const sendPushToCustomerMock = vi.hoisted(() =>
+  vi.fn<
+    (
+      customerId: string,
+      payload: {
+        title: string;
+        body: string;
+        url?: string;
+        tag?: string;
+      },
+    ) => Promise<{ delivered: number; expired: number; transient: number }>
+  >(async () => ({ delivered: 0, expired: 0, transient: 0 })),
+);
+vi.mock("../../lib/web-push", () => ({
+  sendPushToCustomer: sendPushToCustomerMock,
+  isPushConfigured: () => false,
+}));
+
 import shopOrdersAdminRouter from "./shop-orders";
 
 const ALLOWED_EMAIL = "ops@penn.example.com";
@@ -211,6 +232,7 @@ beforeEach(() => {
   createSendgridClientMock.mockImplementation(() => ({
     sendEmail: sendEmailMock,
   }));
+  sendPushToCustomerMock.mockClear();
   mockAdmin.current = null;
 });
 
@@ -392,6 +414,18 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     // Zero bare UPDATEs — success path does not release.
     expect(dbStub.update).toHaveBeenCalledTimes(2);
     expect(updateBareCalls.count).toBe(0);
+    // Phase G.2 — push fan-out fires after a successful email,
+    // scoped to the linked customer.
+    expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
+    const [pushCustId, pushPayload] = sendPushToCustomerMock.mock.calls[0]!;
+    expect(pushCustId).toBe("user_alice");
+    expect(pushPayload).toMatchObject({
+      title: "Your PennPaps order shipped",
+      url: "/account/orders",
+    });
+    expect(pushPayload.body).toContain("UPS");
+    expect(pushPayload.body).toContain("1Z999");
+    expect(pushPayload.tag).toMatch(/^shop_order_shipped:/);
   });
 
   it("does NOT resend shipping notification when admin re-saves identical tracking — atomic claim returns no rows", async () => {

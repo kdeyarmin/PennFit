@@ -41,6 +41,7 @@ import {
 } from "@workspace/resupply-email";
 
 import { logger } from "../../lib/logger";
+import { sendPushToCustomer } from "../../lib/web-push";
 import {
   appendAdminInAppReply,
   IN_APP_MESSAGE_BODY_MAX,
@@ -369,6 +370,7 @@ async function tryNotifyCustomerOfReply(input: {
   const db = drizzle(getDbPool());
   const rows = await db
     .select({
+      customerId: shopCustomers.customerId,
       email: shopCustomers.emailLower,
       displayName: shopCustomers.displayName,
       prefs: shopCustomers.communicationPreferences,
@@ -382,7 +384,30 @@ async function tryNotifyCustomerOfReply(input: {
     .where(eq(conversations.id, input.conversationId))
     .limit(1);
   const row = rows[0];
-  if (!row || !row.email) {
+  if (!row) return;
+
+  // Push fan-out runs independently of the email opt-in — push is
+  // its own channel that the customer enables explicitly via the
+  // browser permission prompt. We treat the in-app reply as the
+  // canonical signal, route it to whichever channels they've opted
+  // into. PHI: same posture as the email — title/body name no PHI,
+  // just "you have a new message".
+  void sendPushToCustomer(row.customerId, {
+    title: "New message from PennPaps",
+    body: "Customer service replied. Tap to read.",
+    url: "/account/messages",
+    tag: `csr_reply:${input.conversationId}`,
+  }).catch((err) => {
+    logger.warn(
+      {
+        conversation_id: input.conversationId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "in_app_reply_notification: push send threw (non-fatal)",
+    );
+  });
+
+  if (!row.email) {
     return;
   }
 
