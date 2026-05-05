@@ -53,7 +53,6 @@ export function useBiometricSignIn(): UseBiometricSignIn {
   // navigates away while the biometric prompt is still open).
   const mountedRef = useRef(true);
   useEffect(() => {
-    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
