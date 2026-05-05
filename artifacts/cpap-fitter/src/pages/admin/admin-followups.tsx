@@ -299,7 +299,7 @@ function Row({
               gap: 4,
               alignItems: "center",
             }}
-            data-testid={`admin-followup-customer-link-${row.id}`}
+            data-testid={`admin-followup-subject-link-${row.id}`}
           >
             {row.subjectDisplayName ?? row.subjectEmail ?? row.subjectId}
             <ExternalLink size={11} />
