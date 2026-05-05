@@ -58,6 +58,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS
 CREATE INDEX IF NOT EXISTS "shop_product_compatibility_product_idx"
   ON "resupply"."shop_product_compatibility" ("product_id");
 
--- Lookup-by-machine: "what products work with this manufacturer"
-CREATE INDEX IF NOT EXISTS "shop_product_compatibility_manufacturer_idx"
-  ON "resupply"."shop_product_compatibility" ("machine_manufacturer");
+-- Lookup-by-machine: case-insensitive manufacturer/model matching
+-- for the public compatibility lookup. Using lower(...) here keeps
+-- the index usable when the WHERE clause normalizes both fields.
+CREATE INDEX IF NOT EXISTS "shop_product_compatibility_manufacturer_model_lower_idx"
+  ON "resupply"."shop_product_compatibility" (
+    lower("machine_manufacturer"),
+    lower("machine_model")
+  );
