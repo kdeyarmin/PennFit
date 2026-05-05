@@ -1,12 +1,15 @@
-// Hand-rolled fetch wrappers for the cross-customer followups
-// endpoint (Phase 18). Reuses the per-customer "complete" endpoint
-// from Phase 17 for the inline-done action.
+// Hand-rolled fetch wrapper for /admin/followups (Phase 18 + 20).
+// Cross-flow queue across shop_customers and patients.
+
+export type AdminFollowupKind = "shop_customer" | "patient";
 
 export interface AdminFollowupRow {
+  kind: AdminFollowupKind;
   id: string;
-  customerId: string;
-  customerDisplayName: string | null;
-  customerEmail: string | null;
+  subjectId: string;
+  subjectDisplayName: string | null;
+  /** Only populated for shop_customer rows; null for patient rows. */
+  subjectEmail: string | null;
   body: string;
   dueAt: string;
   createdByEmail: string;
