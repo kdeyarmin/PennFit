@@ -45,6 +45,7 @@ import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Spinner } from "@/components/admin/Spinner";
 import { Badge } from "@/components/admin/Badge";
 import { CustomerNotesPanel } from "@/components/admin/CustomerNotesPanel";
+import { CustomerFollowupsPanel } from "@/components/admin/CustomerFollowupsPanel";
 import { OrderNotesPanel } from "@/components/admin/OrderNotesPanel";
 import {
   AdminCustomerNotFoundError,
@@ -136,6 +137,7 @@ export function AdminCustomerDetailPage({ userId }: Props) {
             inApp={data.inAppConversation}
             customerName={data.customer.displayName ?? "this customer"}
           />
+          <CustomerFollowupsPanel userId={userId} />
           <CustomerNotesPanel userId={userId} />
           <RecentOrdersCard orders={data.orders} />
         </div>
