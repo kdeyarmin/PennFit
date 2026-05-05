@@ -97,47 +97,55 @@ describe("GET /shop/me/dashboard", () => {
   });
 
   it("computes daysUntil + eligibleNow from active subscriptions", async () => {
-    mockSignedIn.current = USER_ID;
-    const inFiveDays = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    selectQueue.push([
-      // Active sub eligible NOW (period rolled yesterday).
-      {
-        id: "sub_now",
-        status: "active",
-        currentPeriodEnd: yesterday,
-        cancelAtPeriodEnd: false,
-        items: [{ name: "Mask cushion" }],
-      },
-      // Active sub eligible in ~5 days — drives nextShipment.
-      {
-        id: "sub_soon",
-        status: "active",
-        currentPeriodEnd: inFiveDays,
-        cancelAtPeriodEnd: false,
-        items: [{ name: "Tubing" }],
-      },
-    ]);
-    selectQueue.push([]); // latest order
-    selectQueue.push([{ count: 0 }]); // pending count
-    selectQueue.push([]); // abandoned cart
+    vi.useFakeTimers();
+    try {
+      const now = new Date("2024-01-15T12:00:00.000Z");
+      vi.setSystemTime(now);
 
-    const res = await request(makeApp()).get("/shop/me/dashboard");
-    expect(res.status).toBe(200);
-    // Soonest future shipment is the 5-day-out tubing.
-    expect(res.body.nextShipment).toMatchObject({
-      subscriptionId: "sub_soon",
-      firstItemName: "Tubing",
-    });
-    expect(res.body.nextShipment.daysUntil).toBeGreaterThanOrEqual(4);
-    expect(res.body.nextShipment.daysUntil).toBeLessThanOrEqual(5);
-    // Eligibility-now picks up the rolled-past mask cushion.
-    expect(res.body.eligibility.eligibleNow).toEqual([
-      { subscriptionId: "sub_now", firstItemName: "Mask cushion" },
-    ]);
-    expect(res.body.eligibility.soonest).toMatchObject({
-      firstItemName: "Tubing",
-    });
+      mockSignedIn.current = USER_ID;
+      const inFiveDays = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      selectQueue.push([
+        // Active sub eligible NOW (period rolled yesterday).
+        {
+          id: "sub_now",
+          status: "active",
+          currentPeriodEnd: yesterday,
+          cancelAtPeriodEnd: false,
+          items: [{ name: "Mask cushion" }],
+        },
+        // Active sub eligible in ~5 days — drives nextShipment.
+        {
+          id: "sub_soon",
+          status: "active",
+          currentPeriodEnd: inFiveDays,
+          cancelAtPeriodEnd: false,
+          items: [{ name: "Tubing" }],
+        },
+      ]);
+      selectQueue.push([]); // latest order
+      selectQueue.push([{ count: 0 }]); // pending count
+      selectQueue.push([]); // abandoned cart
+
+      const res = await request(makeApp()).get("/shop/me/dashboard");
+      expect(res.status).toBe(200);
+      // Soonest future shipment is the 5-day-out tubing.
+      expect(res.body.nextShipment).toMatchObject({
+        subscriptionId: "sub_soon",
+        firstItemName: "Tubing",
+      });
+      expect(res.body.nextShipment.daysUntil).toBeGreaterThanOrEqual(4);
+      expect(res.body.nextShipment.daysUntil).toBeLessThanOrEqual(5);
+      // Eligibility-now picks up the rolled-past mask cushion.
+      expect(res.body.eligibility.eligibleNow).toEqual([
+        { subscriptionId: "sub_now", firstItemName: "Mask cushion" },
+      ]);
+      expect(res.body.eligibility.soonest).toMatchObject({
+        firstItemName: "Tubing",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("excludes cancelAtPeriodEnd subs from eligibleNow", async () => {
