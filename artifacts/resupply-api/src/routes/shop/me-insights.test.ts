@@ -193,6 +193,7 @@ describe("GET /shop/me/insights", () => {
 });
 
 const DISMISS_ID = "11111111-2222-3333-4444-555555555555";
+const PATIENT_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
   it("401s without sign-in", async () => {
@@ -226,6 +227,8 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
       customerId: USER_ID,
       email: "alice@example.com",
     };
+    // Patient lookup resolves to exactly one row (unambiguous).
+    selectQueue.push([{ id: PATIENT_ID }]);
     // UPDATE … RETURNING [] → not-our-row OR already-dismissed; we
     // collapse both into a 404 so an attacker can't enumerate IDs.
     updateReturnQueue.push([]);
@@ -245,6 +248,8 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
       customerId: USER_ID,
       email: "Alice@Example.com",
     };
+    // Patient lookup resolves to exactly one row (unambiguous).
+    selectQueue.push([{ id: PATIENT_ID }]);
     updateReturnQueue.push([{ id: DISMISS_ID }]);
     const res = await request(makeApp()).post(
       `/shop/me/insights/${DISMISS_ID}/dismiss`,
@@ -254,5 +259,21 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
     expect(updateSets).toHaveLength(1);
     // Email is normalized to lowercase before stamping audit.
     expect(updateSets[0]?.dismissedByEmail).toBe("alice@example.com");
+  });
+
+  it("404s when the email matches more than one patient (ambiguous)", async () => {
+    mockSignedIn.current = {
+      customerId: USER_ID,
+      email: "shared@example.com",
+    };
+    // Two patients share the same email → ambiguous → bail without
+    // attempting the UPDATE.
+    selectQueue.push([{ id: "patient_1" }, { id: "patient_2" }]);
+    const res = await request(makeApp()).post(
+      `/shop/me/insights/${DISMISS_ID}/dismiss`,
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("insight_not_found");
+    expect(updateSets).toHaveLength(0);
   });
 });
