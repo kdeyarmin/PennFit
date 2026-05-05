@@ -54,6 +54,7 @@ import { useCart } from "@/hooks/use-cart";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { StarRating } from "@/components/star-rating";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
+import { CompatibleWithYoursBadge } from "@/components/shop/compatible-with-yours-badge";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import { YouMayAlsoLikeStrip } from "@/components/shop/you-may-also-like-strip";
 import { ShippingEta } from "@/components/shop/shipping-eta";
@@ -746,8 +747,9 @@ function Hero({
           <ShieldCheck className="w-3.5 h-3.5" /> Or use insurance — $0 with
           prescription
         </Link>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap gap-2">
           <ComfortGuarantee variant="badge" />
+          <CompatibleWithYoursBadge productId={product.id} />
         </div>
       </div>
     </div>

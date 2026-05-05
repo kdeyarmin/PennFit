@@ -48,6 +48,8 @@ import {
   type ShopProductsResponse,
 } from "@/lib/shop-api";
 import { useCart } from "@/hooks/use-cart";
+import { useMachineFilter } from "@/hooks/use-machine-filter";
+import { MachineFilterToggle } from "@/components/shop/machine-filter-toggle";
 import { StarRating } from "@/components/star-rating";
 import { RecentlyViewedStrip } from "@/components/shop/recently-viewed-strip";
 import {
@@ -200,13 +202,21 @@ export function Shop() {
     };
   }, [attempt]);
 
+  // Phase F.1 — parts-finder filter. The hook returns a noop filter
+  // when the toggle is off OR the customer doesn't have a device
+  // on file, so applying it unconditionally is safe.
+  const machineFilter = useMachineFilter();
+
   const sections = useMemo(() => {
     if (!data)
       return [] as Array<{ category: Category; items: ShopProductView[] }>;
     return SECTION_ORDER.filter(
       (c) => (data.byCategory[c] ?? []).length > 0,
-    ).map((c) => ({ category: c, items: data.byCategory[c] ?? [] }));
-  }, [data]);
+    ).map((c) => ({
+      category: c,
+      items: machineFilter.filter(data.byCategory[c] ?? []),
+    }));
+  }, [data, machineFilter]);
 
   // Sort selection from the filter bar. Hoisted above applySort
   // so the closure resolves it without a forward-reference TDZ.
@@ -266,7 +276,7 @@ export function Shop() {
   const trimmedQuery = query.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
     if (!data || trimmedQuery.length === 0) return [];
-    return data.products.filter((p) => {
+    const matched = data.products.filter((p) => {
       const haystack = [
         p.name,
         p.tagline ?? "",
@@ -279,7 +289,9 @@ export function Shop() {
         .toLowerCase();
       return haystack.includes(trimmedQuery);
     });
-  }, [data, trimmedQuery]);
+    // Phase F.1 — apply machine filter on top of the keyword match.
+    return machineFilter.filter(matched);
+  }, [data, trimmedQuery, machineFilter]);
   const isSearching = trimmedQuery.length > 0;
 
   // After products land, fetch aggregate review stats for every visible
@@ -344,6 +356,18 @@ export function Shop() {
             sort={sort}
             onSortChange={setSort}
           />
+          {/* Phase F.1 — parts-finder toggle. Hidden when the user
+              isn't signed in or has no device on file. Filter is
+              applied below in both the search and category render
+              paths via machineFilter.filter(...). */}
+          <div className="mt-3">
+            <MachineFilterToggle
+              device={machineFilter.device}
+              enabled={machineFilter.enabled}
+              loading={machineFilter.loading}
+              onChange={machineFilter.setEnabled}
+            />
+          </div>
           <div className="mt-12">
             <RecentlyViewedStrip products={data?.products ?? []} />
           </div>
