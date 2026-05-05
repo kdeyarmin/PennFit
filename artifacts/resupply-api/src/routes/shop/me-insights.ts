@@ -170,7 +170,7 @@ const COPY: Record<
   humidifier_drop: {
     headline: "Refresh your tubing",
     body: "With seasonal warmth your tubing may be due for a refresh — older tubing collects condensation and reduces airflow.",
-    cta: { label: "Shop tubing", url: "/shop?cat=tubing" },
+    cta: { label: "Shop tubing", url: "/shop" },
   },
 };
 
