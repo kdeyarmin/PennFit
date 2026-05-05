@@ -9,6 +9,7 @@
 //     send call.
 //   * 404 / 410 mark the row expired and bump the `expired` counter.
 //   * Anything else bumps `transient` and leaves the row alone.
+//   * sendPushToCustomerByEmail: ambiguous email_lower → {0,0,0}
 //
 // Note: this suite exercises delivery/result handling only. It does
 // not currently assert log redaction for transient-path logging.
@@ -22,13 +23,22 @@ const selectRows: {
   authB64: string;
   p256dhB64: string;
 }[] = [];
+// selectQueue allows tests that need ordered multi-query behavior
+// (e.g. sendPushToCustomerByEmail makes two selects: one for
+// shopCustomers, one for shopCustomerPushSubscriptions). When
+// non-empty the queue items are shifted off in call order; once
+// exhausted, calls fall through to the shared selectRows array.
+const selectQueue: unknown[][] = [];
 
 const dbStub = {
   select: vi.fn(() => {
     const obj: Record<string, unknown> = {
       from: () => obj,
       where: () => obj,
-      limit: () => Promise.resolve(selectRows),
+      limit: () => {
+        if (selectQueue.length > 0) return Promise.resolve(selectQueue.shift());
+        return Promise.resolve(selectRows);
+      },
     };
     return obj;
   }),
@@ -70,6 +80,7 @@ import {
   isPushConfigured,
   readPushConfig,
   sendPushToCustomer,
+  sendPushToCustomerByEmail,
   type WebPushSdk,
 } from "./index";
 
@@ -83,7 +94,10 @@ function setVapidEnv() {
 
 beforeEach(() => {
   selectRows.length = 0;
+  selectQueue.length = 0;
   updateCalls.length = 0;
+  dbStub.select.mockClear();
+  dbStub.update.mockClear();
 });
 
 afterEach(() => {
@@ -264,6 +278,91 @@ describe("sendPushToCustomer", () => {
     });
     expect(result).toEqual({ delivered: 1, expired: 1, transient: 1 });
     expect(updateCalls.length).toBe(1);
+  });
+});
+
+describe("sendPushToCustomerByEmail", () => {
+  it("returns {0,0,0} when VAPID is not configured", async () => {
+    delete process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+    const result = await sendPushToCustomerByEmail("user@example.com", {
+      title: "Test",
+      body: "Body",
+    });
+    expect(result).toEqual({ delivered: 0, expired: 0, transient: 0 });
+    // DB should never be queried when push is disabled.
+    expect(dbStub.select).not.toHaveBeenCalled();
+  });
+
+  it("returns {0,0,0} and skips delivery when email_lower is ambiguous", async () => {
+    setVapidEnv();
+    const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
+    __setSdkForTesting(sdk);
+
+    // Two shop_customers rows share the same email_lower → ambiguous.
+    selectQueue.push([
+      { customerId: "cust_a" },
+      { customerId: "cust_b" },
+    ]);
+
+    const result = await sendPushToCustomerByEmail("shared@example.com", {
+      title: "Rx reminder",
+      body: "Tap to renew.",
+      tag: "rx_renewal:rx_1",
+    });
+
+    expect(result).toEqual({ delivered: 0, expired: 0, transient: 0 });
+    // Push SDK must never be called when lookup is ambiguous.
+    expect(sdk.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("returns {0,0,0} when no shop_customers row matches", async () => {
+    setVapidEnv();
+    const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
+    __setSdkForTesting(sdk);
+
+    // Empty customer lookup result.
+    selectQueue.push([]);
+
+    const result = await sendPushToCustomerByEmail("nobody@example.com", {
+      title: "Test",
+      body: "Body",
+    });
+
+    expect(result).toEqual({ delivered: 0, expired: 0, transient: 0 });
+    expect(sdk.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("fans out to the resolved customer when exactly 1 match", async () => {
+    setVapidEnv();
+    const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
+    __setSdkForTesting(sdk);
+
+    // First select: 1 shopCustomers row.
+    selectQueue.push([{ customerId: "cust_a" }]);
+    // Second select (sendPushToCustomer): 1 subscription row.
+    selectQueue.push([
+      {
+        id: "sub_1",
+        endpoint: "https://push.example.com/1",
+        authB64: "auth",
+        p256dhB64: "p256dh",
+      },
+    ]);
+
+    const result = await sendPushToCustomerByEmail("patient@example.com", {
+      title: "Rx expires in 5 days",
+      body: "Tap to coordinate a renewal.",
+      url: "/account",
+      tag: "rx_renewal:rx_1",
+    });
+
+    expect(result).toEqual({ delivered: 1, expired: 0, transient: 0 });
+    expect(sdk.sendNotification).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(
+      sdk.sendNotification.mock.calls[0]?.[1] as string,
+    );
+    expect(payload.tag).toBe("rx_renewal:rx_1");
+    expect(payload.url).toBe("/account");
   });
 });
 
