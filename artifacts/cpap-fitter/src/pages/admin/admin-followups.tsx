@@ -1,18 +1,18 @@
-// /admin/followups — cross-customer daily queue of open CSR
-// follow-ups (Phase 18).
+// /admin/followups — unified admin queue of open follow-ups across
+// customers and patients (Phase 18, expanded in Phase 20).
 //
-// Phase 17 surfaced followups inside the customer-360 page; this
-// flips the view around so a CSR opening admin can see "what does
-// the team owe today across everyone" in one screen.
+// Phase 17 surfaced follow-ups inside the customer-360 page; Phase 18
+// flipped the view around so a CSR opening admin can see "what does
+// the team owe today across everyone" in one screen, and Phase 20
+// extended that unified queue to include patient follow-ups too.
 //
 // Three buckets, computed client-side from the timestamps:
 //   * Overdue (due_at < now) — rose-tinted, listed first.
 //   * Today (due_at within next 24h) — neutral.
 //   * Upcoming (everything else) — muted.
 //
-// Each row links to /admin/shop/customers/:userId for full context
-// and has a one-click "Done" that reuses the per-customer PATCH
-// endpoint from Phase 17.
+// Each row links to the relevant admin context and has a one-click
+// "Done" that reuses the appropriate per-entity PATCH endpoint.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
