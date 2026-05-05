@@ -41,7 +41,7 @@ export const physicianFaxOutreach = resupplySchema.table(
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     failedAt: timestamp("failed_at", { withTimezone: true }),
     failureReason: text("failure_reason"),
-    createdByEmail: text("created_by_email"),
+    createdByEmail: text("created_by_email").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
