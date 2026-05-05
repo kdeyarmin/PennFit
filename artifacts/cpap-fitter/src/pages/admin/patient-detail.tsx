@@ -63,6 +63,7 @@ import {
 import {
   deletePatientDocument,
   listPatientDocuments,
+  markPatientDocumentReviewed,
   patientDocumentDownloadUrl,
   DOCUMENT_TYPE_LABELS,
   type AdminPatientDocument,
@@ -2770,6 +2771,7 @@ function DocumentsTab({ patientId }: { patientId: string }) {
   const [docs, setDocs] = useState<AdminPatientDocument[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function load() {
@@ -2785,6 +2787,29 @@ function DocumentsTab({ patientId }: { patientId: string }) {
   useEffect(() => {
     void load();
   }, [patientId]);
+
+  async function handleMarkReviewed(doc: AdminPatientDocument) {
+    if (doc.reviewedAt) return; // already reviewed — no-op
+    setReviewingId(doc.id);
+    try {
+      await markPatientDocumentReviewed(patientId, doc.id);
+      // Optimistic update: flip reviewedAt locally so the badge
+      // disappears immediately without a refetch.
+      setDocs((prev) =>
+        prev
+          ? prev.map((d) =>
+              d.id === doc.id
+                ? { ...d, reviewedAt: new Date().toISOString() }
+                : d,
+            )
+          : prev,
+      );
+    } catch {
+      // Non-fatal: badge stays, CSR can try again.
+    } finally {
+      setReviewingId(null);
+    }
+  }
 
   async function handleDelete(doc: AdminPatientDocument) {
     if (
@@ -2822,10 +2847,23 @@ function DocumentsTab({ patientId }: { patientId: string }) {
     return <Spinner label="Loading documents…" />;
   }
 
+  const unreviewedCount = docs.filter((d) => !d.reviewedAt).length;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm">Patient-uploaded documents</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-sm">Patient-uploaded documents</h3>
+          {unreviewedCount > 0 && (
+            <span
+              className="text-xs font-semibold rounded-full px-2 py-0.5"
+              style={{ background: "#fef3c7", color: "#92400e" }}
+              title={`${unreviewedCount} unreviewed`}
+            >
+              {unreviewedCount} new
+            </span>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground">
           {docs.length} document{docs.length !== 1 ? "s" : ""}
         </span>
@@ -2839,59 +2877,102 @@ function DocumentsTab({ patientId }: { patientId: string }) {
         <EmptyState title="No documents uploaded yet." />
       ) : (
         <ul className="divide-y divide-border/40">
-          {docs.map((doc) => (
-            <li
-              key={doc.id}
-              className="py-3 flex items-center justify-between gap-4"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className="text-xs font-semibold rounded-full px-2 py-0.5"
+          {docs.map((doc) => {
+            const isNew = !doc.reviewedAt;
+            const isReviewing = reviewingId === doc.id;
+            const isDeleting = deletingId === doc.id;
+            return (
+              <li
+                key={doc.id}
+                className="py-3 flex items-start justify-between gap-4"
+                style={isNew ? { background: "hsl(47 100% 97%)" } : undefined}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isNew && (
+                      <span
+                        className="text-xs font-bold rounded-full px-2 py-0.5 shrink-0"
+                        style={{ background: "#fef3c7", color: "#92400e" }}
+                      >
+                        New
+                      </span>
+                    )}
+                    <span
+                      className="text-xs font-semibold rounded-full px-2 py-0.5"
+                      style={{
+                        background: "hsl(var(--ink-1)/0.08)",
+                        color: "hsl(var(--ink-1))",
+                      }}
+                    >
+                      {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
+                    </span>
+                    <a
+                      href={patientDocumentDownloadUrl(patientId, doc.id)}
+                      target="_blank"
+                      rel="noopener"
+                      download={doc.filename ?? undefined}
+                      className="text-sm font-medium underline truncate"
+                      style={{ color: "#1d4ed8" }}
+                    >
+                      {doc.filename ?? "Document"}
+                    </a>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {formatDocBytes(doc.sizeBytes)} ·{" "}
+                    {new Date(doc.createdAt).toLocaleDateString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                    {doc.reviewedAt && (
+                      <span>
+                        {" "}
+                        · Reviewed{" "}
+                        {new Date(doc.reviewedAt).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  {isNew && (
+                    <button
+                      type="button"
+                      disabled={isReviewing || isDeleting}
+                      onClick={() => void handleMarkReviewed(doc)}
+                      className="text-xs underline disabled:opacity-40"
+                      style={{
+                        color: isReviewing ? "#9ca3af" : "#047857",
+                        background: "none",
+                        border: "none",
+                        cursor: isReviewing ? "not-allowed" : "pointer",
+                        font: "inherit",
+                      }}
+                    >
+                      {isReviewing ? "Marking…" : "Mark reviewed"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={isDeleting || isReviewing}
+                    onClick={() => void handleDelete(doc)}
+                    className="text-xs underline disabled:opacity-40"
                     style={{
-                      background: "hsl(var(--ink-1)/0.08)",
-                      color: "hsl(var(--ink-1))",
+                      color: isDeleting ? "#9ca3af" : "#b91c1c",
+                      background: "none",
+                      border: "none",
+                      cursor: isDeleting ? "not-allowed" : "pointer",
+                      font: "inherit",
                     }}
                   >
-                    {DOCUMENT_TYPE_LABELS[doc.documentType] ?? doc.documentType}
-                  </span>
-                  <a
-                    href={patientDocumentDownloadUrl(patientId, doc.id)}
-                    target="_blank"
-                    rel="noopener"
-                    download={doc.filename ?? undefined}
-                    className="text-sm font-medium underline truncate"
-                    style={{ color: "#1d4ed8" }}
-                  >
-                    {doc.filename ?? "Document"}
-                  </a>
+                    {isDeleting ? "Deleting…" : "Delete"}
+                  </button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {formatDocBytes(doc.sizeBytes)} ·{" "}
-                  {new Date(doc.createdAt).toLocaleDateString(undefined, {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={deletingId === doc.id}
-                onClick={() => void handleDelete(doc)}
-                className="text-xs underline shrink-0 disabled:opacity-40"
-                style={{
-                  color: deletingId === doc.id ? "#9ca3af" : "#b91c1c",
-                  background: "none",
-                  border: "none",
-                  cursor: deletingId === doc.id ? "not-allowed" : "pointer",
-                  font: "inherit",
-                }}
-              >
-                {deletingId === doc.id ? "Deleting…" : "Delete"}
-              </button>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

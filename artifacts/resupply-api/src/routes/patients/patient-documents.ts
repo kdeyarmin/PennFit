@@ -5,11 +5,17 @@
 // referrals, etc.).  Admins can also delete a document if needed (e.g.
 // wrong file uploaded by the patient).
 //
-// Three endpoints:
+// Four endpoints:
 //   GET    /patients/:id/documents
 //     Lists all documents the patient has uploaded, newest first.
+//     Includes reviewedAt / reviewedByAdminId so the UI can badge
+//     unreviewed docs.
 //   GET    /patients/:id/documents/:docId
 //     Streams the document bytes to the admin browser.
+//   PATCH  /patients/:id/documents/:docId/reviewed
+//     Idempotent mark-as-reviewed: sets reviewed_at + reviewed_by_admin_id
+//     when the CSR opens / acknowledges the document. Re-calling when
+//     already reviewed is a no-op (200). Audit-logged.
 //   DELETE /patients/:id/documents/:docId
 //     Best-effort deletes GCS bytes, then removes the DB row.
 
@@ -55,6 +61,8 @@ router.get("/patients/:id/documents", requireAdmin, async (req, res) => {
       contentType: patientDocuments.contentType,
       sizeBytes: patientDocuments.sizeBytes,
       createdAt: patientDocuments.createdAt,
+      reviewedAt: patientDocuments.reviewedAt,
+      reviewedByAdminId: patientDocuments.reviewedByAdminId,
     })
     .from(patientDocuments)
     .where(eq(patientDocuments.patientId, param.data.id))
@@ -149,6 +157,70 @@ router.get(
         res.end();
       }
     }
+  },
+);
+
+router.patch(
+  "/patients/:id/documents/:docId/reviewed",
+  requireAdmin,
+  async (req, res) => {
+    const ids = idsParam.safeParse(req.params);
+    if (!ids.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const db = drizzle(getDbPool());
+    const rows = await db
+      .select({
+        id: patientDocuments.id,
+        reviewedAt: patientDocuments.reviewedAt,
+      })
+      .from(patientDocuments)
+      .where(
+        and(
+          eq(patientDocuments.id, ids.data.docId),
+          eq(patientDocuments.patientId, ids.data.id),
+        ),
+      )
+      .limit(1);
+
+    const doc = rows[0];
+    if (!doc) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // Idempotent: already reviewed, nothing to do.
+    if (doc.reviewedAt !== null) {
+      res.status(200).json({ ok: true, alreadyReviewed: true });
+      return;
+    }
+
+    const now = new Date();
+    await db
+      .update(patientDocuments)
+      .set({
+        reviewedAt: now,
+        reviewedByAdminId: req.adminUserId ?? null,
+        updatedAt: now,
+      })
+      .where(eq(patientDocuments.id, doc.id));
+
+    await logAudit({
+      action: "patient.document.admin_reviewed",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_documents",
+      targetId: doc.id,
+      metadata: { patient_id: ids.data.id },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "patient.document.admin_reviewed audit write failed");
+    });
+
+    res.status(200).json({ ok: true, alreadyReviewed: false });
   },
 );
 

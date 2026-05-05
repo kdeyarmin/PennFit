@@ -80,7 +80,8 @@ type NavLink = {
     | "awaitingReplyConversations"
     | "pendingReturns"
     | "pendingReviews"
-    | "overdueFollowups";
+    | "overdueFollowups"
+    | "newPatientDocuments";
 };
 
 type NavGroup = {
@@ -157,6 +158,7 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: Users,
         matchPrefix: "/admin/patients",
         hint: "Patient roster, profiles, and 360 view",
+        badgeKey: "newPatientDocuments",
       },
     ],
   },
