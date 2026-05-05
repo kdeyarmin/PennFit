@@ -41,9 +41,9 @@ import { logger } from "../logger";
 export interface PushPayload {
   title: string;
   body: string;
-  /** Deep link the SPA's service worker opens on click. Same-origin
-   *  path; we strip an absolute origin to keep links portable across
-   *  preview / production hosts. */
+  /** Deep link the SPA's service worker opens on click. Passed
+   *  through as provided; callers should supply the exact URL/path
+   *  they want clients to open. */
   url?: string;
   /** Tag groups same-kind notifications so a re-send replaces the
    *  prior one rather than stacking. */
