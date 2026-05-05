@@ -433,22 +433,46 @@ function PushNotificationToggle() {
  * email toggles above which roundtrip through /api/account/comm-prefs.
  * See the hook's header comment for the rationale.
  */
+async function isBiometricAuthAvailable() {
+  if (
+    typeof window === "undefined" ||
+    typeof PublicKeyCredential === "undefined" ||
+    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !==
+      "function"
+  ) {
+    return false;
+  }
+
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+}
+
 function BiometricLockToggle() {
   const pref = useBiometricLockPreference();
   const [native, setNative] = useState<boolean | null>(null);
+  const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const n = await isNativeApp();
-      if (!cancelled) setNative(n);
+      const supported = n ? await isBiometricAuthAvailable() : false;
+      if (!cancelled) {
+        setNative(n);
+        setBiometricAvailable(supported);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (native !== true || !pref.loaded) return null;
+  if (native !== true || biometricAvailable !== true || !pref.loaded) return null;
 
   return (
     <div
