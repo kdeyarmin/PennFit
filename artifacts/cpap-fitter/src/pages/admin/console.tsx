@@ -37,6 +37,7 @@ import { EpisodesPage } from "@/pages/admin/episodes";
 import { RulesPage } from "@/pages/admin/rules";
 import { AuditPage } from "@/pages/admin/audit";
 import { AdminShopReviewsPage } from "@/pages/admin/admin-shop-reviews";
+import { AdminProductQuestionsPage } from "@/pages/admin/admin-product-questions";
 import { AdminShopReturnsPage } from "@/pages/admin/admin-shop-returns";
 import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
 import { AdminMacrosPage } from "@/pages/admin/admin-macros";
@@ -107,6 +108,10 @@ function AdminConsole() {
         <Route path="/admin/rules" component={RulesPage} />
         <Route path="/admin/audit" component={AuditPage} />
         <Route path="/admin/shop/reviews" component={AdminShopReviewsPage} />
+        <Route
+          path="/admin/shop/product-questions"
+          component={AdminProductQuestionsPage}
+        />
         <Route
           path="/admin/shop/inventory"
           component={AdminShopInventoryPage}
