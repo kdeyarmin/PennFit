@@ -802,7 +802,7 @@ export function ShopCart() {
               */}
               <ShippingEta className="mb-4" testIdPrefix="cart-shipping-eta" />
               <CostTransparencyCallout
-                totalCents={totalCents}
+                subtotalCents={totalCents}
                 className="mb-4"
                 testId="cart-cost-transparency"
               />
