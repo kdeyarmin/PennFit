@@ -139,19 +139,25 @@ export function makeForgotPasswordHandler(
         html: rendered.html,
         text: rendered.text,
       });
-    } catch {
-      // The configured EmailSender is responsible for logging
-      // delivery failures (see artifacts/*/src/lib/auth-deps.ts).
-      // Swallow here so a SendGrid blip doesn't fail the
-      // forgot-password endpoint — the user has already been
-      // told their request was accepted.
+    } catch (emailErr) {
+      // Log at warn so SendGrid misconfigurations surface in monitoring.
+      // Don't include the email address — use the user id only.
+      void deps.audit({
+        action: "auth.password_reset_email_failed",
+        adminUserId: user.id,
+        ip,
+        metadata: {
+          error:
+            emailErr instanceof Error ? emailErr.message : String(emailErr),
+        },
+      });
     }
 
     void deps.audit({
       action: "auth.password_reset_requested",
       adminEmail: user.emailLower,
       adminUserId: user.id,
-      ip: req.ip ?? null,
+      ip,
     });
 
     res.status(200).json({ ok: true });

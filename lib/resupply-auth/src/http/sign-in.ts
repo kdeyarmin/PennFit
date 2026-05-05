@@ -142,6 +142,12 @@ export function makeSignInHandler(deps: AuthDeps) {
         ip,
         success: false,
       });
+      void deps.audit({
+        action: "auth.sign_in_failed",
+        adminEmail: emailLower,
+        ip,
+        metadata: { reason: user.status === "locked" ? "locked" : "revoked" },
+      });
       genericFail(res);
       return;
     }
@@ -154,6 +160,12 @@ export function makeSignInHandler(deps: AuthDeps) {
         emailLower,
         ip,
         success: false,
+      });
+      void deps.audit({
+        action: "auth.sign_in_failed",
+        adminEmail: emailLower,
+        ip,
+        metadata: { reason: "no_credential" },
       });
       genericFail(res);
       return;
@@ -212,6 +224,12 @@ export function makeSignInHandler(deps: AuthDeps) {
         emailLower,
         ip,
         success: false,
+      });
+      void deps.audit({
+        action: "auth.sign_in_failed",
+        adminEmail: emailLower,
+        ip,
+        metadata: { reason: "email_unverified" },
       });
       authError(
         res,

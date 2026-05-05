@@ -78,72 +78,89 @@ export async function runSmartTriggerEvaluator(
 
   for (const c of candidates) {
     scanned++;
-    const nights = await db
-      .select({
-        date: patientTherapyNights.nightDate,
-        usageMinutes: patientTherapyNights.usageMinutes,
-        ahi: patientTherapyNights.ahi,
-        leakRateLMin: patientTherapyNights.leakRateLMin,
-        pressureP95Cmh2o: patientTherapyNights.pressureP95Cmh2o,
-      })
-      .from(patientTherapyNights)
-      .where(eq(patientTherapyNights.patientId, c.patientId))
-      .orderBy(asc(patientTherapyNights.nightDate))
-      .limit(60);
-
-    const proposals = evaluateAll(
-      nights.map((n) => ({
-        date: n.date,
-        usageMinutes: n.usageMinutes,
-        ahi: n.ahi !== null ? Number(n.ahi) : null,
-        leakRateLMin: n.leakRateLMin !== null ? Number(n.leakRateLMin) : null,
-        pressureP95Cmh2o:
-          n.pressureP95Cmh2o !== null ? Number(n.pressureP95Cmh2o) : null,
-      })),
-    );
-
-    for (const p of proposals) {
-      proposed++;
-      // The partial-unique index on (patient, kind) WHERE
-      // dismissed_at IS NULL ensures we don't double-fire while a
-      // prior event is still pending. ON CONFLICT DO NOTHING is
-      // the cleanest way to skip silently.
-      const result = await db
-        .insert(patientSmartTriggerEvents)
-        .values({
-          patientId: c.patientId,
-          kind: p.kind,
-          windowStartDate: p.windowStartDate,
-          windowEndDate: p.windowEndDate,
+    try {
+      const nights = await db
+        .select({
+          date: patientTherapyNights.nightDate,
+          usageMinutes: patientTherapyNights.usageMinutes,
+          ahi: patientTherapyNights.ahi,
+          leakRateLMin: patientTherapyNights.leakRateLMin,
+          pressureP95Cmh2o: patientTherapyNights.pressureP95Cmh2o,
         })
-        .onConflictDoNothing()
-        .returning({ id: patientSmartTriggerEvents.id });
+        .from(patientTherapyNights)
+        .where(eq(patientTherapyNights.patientId, c.patientId))
+        .orderBy(asc(patientTherapyNights.nightDate))
+        .limit(60);
 
-      if (result.length > 0) {
-        inserted++;
-        await logAudit({
-          action: "patient.smart_trigger.detected",
-          adminEmail: actor.adminEmail,
-          adminUserId: actor.adminUserId,
-          targetTable: "patient_smart_trigger_events",
-          targetId: result[0]!.id,
-          metadata: {
-            patient_id: c.patientId,
+      const proposals = evaluateAll(
+        nights.map((n) => ({
+          date: n.date,
+          usageMinutes: n.usageMinutes,
+          ahi: n.ahi !== null ? Number(n.ahi) : null,
+          leakRateLMin: n.leakRateLMin !== null ? Number(n.leakRateLMin) : null,
+          pressureP95Cmh2o:
+            n.pressureP95Cmh2o !== null ? Number(n.pressureP95Cmh2o) : null,
+        })),
+      );
+
+      for (const p of proposals) {
+        proposed++;
+        // The partial-unique index on (patient, kind) WHERE
+        // dismissed_at IS NULL ensures we don't double-fire while a
+        // prior event is still pending. ON CONFLICT DO NOTHING is
+        // the cleanest way to skip silently.
+        const result = await db
+          .insert(patientSmartTriggerEvents)
+          .values({
+            patientId: c.patientId,
             kind: p.kind,
-            window_start: p.windowStartDate,
-            window_end: p.windowEndDate,
-          },
-          ip: actor.ip,
-          userAgent: actor.userAgent,
-        }).catch((err) => {
-          logger.warn(
-            { err },
-            "patient.smart_trigger.detected audit write failed",
-          );
-        });
-      } else {
-        skippedExisting++;
+            windowStartDate: p.windowStartDate,
+            windowEndDate: p.windowEndDate,
+          })
+          .onConflictDoNothing()
+          .returning({ id: patientSmartTriggerEvents.id });
+
+        if (result.length > 0) {
+          inserted++;
+          await logAudit({
+            action: "patient.smart_trigger.detected",
+            adminEmail: actor.adminEmail,
+            adminUserId: actor.adminUserId,
+            targetTable: "patient_smart_trigger_events",
+            targetId: result[0]!.id,
+            metadata: {
+              patient_id: c.patientId,
+              kind: p.kind,
+              window_start: p.windowStartDate,
+              window_end: p.windowEndDate,
+            },
+            ip: actor.ip,
+            userAgent: actor.userAgent,
+          }).catch((err) => {
+            logger.warn(
+              { err },
+              "patient.smart_trigger.detected audit write failed",
+            );
+          });
+        } else {
+          skippedExisting++;
+        }
       }
+    } catch (err) {
+      // Per-patient error boundary: a single patient failure must not
+      // abort the entire batch. pg-boss marks the job failed only when
+      // this function throws; swallowing per-patient errors lets the
+      // remaining candidates in this run be processed.
+      logger.error(
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+          patient_id: c.patientId,
+        },
+        "smart-trigger-evaluator: per-patient error — skipping patient",
+      );
     }
   }
 

@@ -189,13 +189,60 @@ export function withIdempotency(endpoint: string) {
     }
 
     // Capture the response so we can persist it on `finish`.
+    // We patch res.json (primary path for all wired endpoints),
+    // res.send (fallback for routes that return non-JSON), and
+    // res.end (fallback for streaming / empty responses). This
+    // ensures a retry never re-executes the handler regardless of
+    // how the route calls back to the client. Replay always uses
+    // res.json with the persisted body, so res.send/res.end paths
+    // on replay will receive a JSON-serialised approximation.
     const originalJson = res.json.bind(res);
+    const originalSend = res.send.bind(res);
+    const originalEnd = res.end.bind(res);
     let captured: { status: number; body: unknown } | null = null;
+
     res.json = function patchedJson(body: unknown) {
       // res.statusCode is set by res.status() before .json() is called.
       // For .json() called without a prior .status(), it defaults to 200.
       captured = { status: res.statusCode, body };
       return originalJson(body);
+    };
+
+    res.send = function patchedSend(body?: unknown) {
+      if (!captured) {
+        let parsedBody: unknown = null;
+        if (typeof body === "string") {
+          try {
+            parsedBody = JSON.parse(body);
+          } catch {
+            parsedBody = body;
+          }
+        } else if (Buffer.isBuffer(body)) {
+          try {
+            parsedBody = JSON.parse(body.toString("utf8"));
+          } catch {
+            parsedBody = null;
+          }
+        } else {
+          parsedBody = body ?? null;
+        }
+        captured = { status: res.statusCode, body: parsedBody };
+      }
+      return originalSend(body);
+    };
+
+    res.end = function patchedEnd(
+      chunk?: unknown,
+      encodingOrCb?: BufferEncoding | (() => void),
+      cb?: () => void,
+    ) {
+      if (!captured) {
+        captured = { status: res.statusCode, body: null };
+      }
+      if (typeof encodingOrCb === "function") {
+        return originalEnd(chunk, encodingOrCb);
+      }
+      return originalEnd(chunk, encodingOrCb as BufferEncoding, cb);
     };
 
     res.on("finish", () => {

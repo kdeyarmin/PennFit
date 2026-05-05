@@ -141,13 +141,23 @@ router.post(
     } else {
       // Validate the user owns the order they're trying to reorder.
       const db = drizzle(getDbPool());
+      // requireSignedIn is upstream but we guard explicitly here so a
+      // future weakening of that middleware can't silently pass
+      // undefined to Drizzle's eq() — which matches IS NULL rows and
+      // would expose every guest-checkout order.
+      const customerId = req.userCustomerId;
+      if (!customerId) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+
       const owned = await db
         .select({ stripeSessionId: shopOrders.stripeSessionId })
         .from(shopOrders)
         .where(
           and(
             eq(shopOrders.stripeSessionId, reorderSessionId!),
-            eq(shopOrders.customerId, req.userCustomerId!),
+            eq(shopOrders.customerId, customerId),
           ),
         )
         .limit(1);
@@ -171,24 +181,36 @@ router.post(
         return;
       }
       const li = oldSession.line_items?.data ?? [];
-      basket = li
-        .map((line) => ({
-          priceId:
-            typeof line.price === "string"
-              ? line.price
-              : (line.price?.id ?? null),
-          quantity: line.quantity ?? 1,
-          mode: "one_time" as const,
-        }))
-        .filter(
-          (
-            b,
-          ): b is {
-            priceId: string;
-            quantity: number;
-            mode: "one_time";
-          } => b.priceId !== null,
-        );
+      const archivedPriceIds: string[] = [];
+      const mapped = li.map((line) => {
+        const priceId =
+          typeof line.price === "string"
+            ? line.price
+            : (line.price?.id ?? null);
+        return { priceId, quantity: line.quantity ?? 1, mode: "one_time" as const };
+      });
+      // Collect items that lost a price so we can inform the caller.
+      for (const m of mapped) {
+        if (m.priceId === null) {
+          // line.price was absent or the price object had no id —
+          // surface it as an archived/unavailable price using the
+          // line description as a hint, or a generic sentinel.
+          archivedPriceIds.push("unknown");
+        }
+      }
+      basket = mapped.filter(
+        (b): b is { priceId: string; quantity: number; mode: "one_time" } =>
+          b.priceId !== null,
+      );
+      if (archivedPriceIds.length > 0) {
+        res.status(409).json({
+          error: "price_unavailable",
+          message:
+            "One or more items from the original order are no longer available and cannot be reordered.",
+          archivedPriceIds,
+        });
+        return;
+      }
       if (basket.length === 0) {
         res.status(409).json({ error: "reorder_basket_empty" });
         return;
