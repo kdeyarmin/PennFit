@@ -1,4 +1,4 @@
-import type { FastifyBaseLogger } from "fastify";
+import type { Logger } from "pino";
 
 export interface AdminOperationMetric {
   event: "admin_operation";
@@ -11,7 +11,7 @@ export interface AdminOperationMetric {
 }
 
 export function logAdminOperation(
-  logger: FastifyBaseLogger,
+  logger: Logger,
   metric: AdminOperationMetric,
 ): void {
   logger.info(metric, "admin operation metric");
