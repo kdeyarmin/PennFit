@@ -8,9 +8,11 @@ import {
   Mail,
   Phone,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { openPennBot } from "@/lib/chat-events";
 
 export function ReturnsPage() {
   useDocumentTitle(
@@ -169,6 +171,19 @@ export function ReturnsPage() {
             <Link href="/comfort-guarantee">
               Comfort guarantee details
             </Link>
+          </Button>
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() =>
+              openPennBot({
+                prefill: "What is your return policy and what's covered?",
+              })
+            }
+            data-testid="returns-ask-pennbot"
+          >
+            <Sparkles className="w-4 h-4 mr-1.5" />
+            Ask PennBot
           </Button>
         </div>
       </section>

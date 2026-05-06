@@ -25,6 +25,12 @@ const KNOWN_STEPS = [
   "mask_chosen",
   "order_started",
   "order_submitted_success",
+  // PennBot chat surface (anonymous, no PHI). Helps the team see if
+  // the chatbot is being used and which response paths fire.
+  "chat_opened",
+  "chat_sent",
+  "chat_replied",
+  "chat_feedback",
 ] as const;
 
 const usageEventSchema = z.object({
