@@ -8,7 +8,7 @@
 // backward index scan to satisfy the DESC ordering efficiently).
 
 import { sql } from "drizzle-orm";
-import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { shopCustomers } from "./shop-customers";
 import { resupplySchema } from "./_schema";
@@ -41,6 +41,10 @@ export const shopCustomerNotes = resupplySchema.table(
     customerCreatedIdx: index("shop_customer_notes_customer_created_idx").on(
       t.customerId,
       t.createdAt,
+    ),
+    bodyLength: check(
+      "shop_customer_notes_body_max_length",
+      sql`length(${t.body}) <= 10000`,
     ),
   }),
 );

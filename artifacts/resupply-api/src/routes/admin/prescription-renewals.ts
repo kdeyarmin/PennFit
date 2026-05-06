@@ -28,14 +28,26 @@ import { z } from "zod";
 
 import { runRxRenewalSendDue } from "../../lib/rx-renewal/dispatcher";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
 
 const channelQuery = z.enum(["email", "sms"]).default("email");
 
+// B-07: 10 bulk-dispatch calls per hour per admin. One call can contact
+// many patients; 10/hour is enough for legitimate "re-run after a send
+// failure" workflows while capping a compromised-account blast radius.
+const renewalSendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  name: "admin_renewal_send_due",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+
 router.post(
   "/admin/prescriptions/send-renewal-due",
   requireAdmin,
+  renewalSendLimiter,
   async (req, res) => {
     const channelParse = channelQuery.safeParse(req.query.channel);
     if (!channelParse.success) {
