@@ -235,7 +235,14 @@ function MemberRow({
           {member.status === "active" && member.role === "agent" && (
             <button
               type="button"
-              onClick={() => promote.mutate()}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Grant admin privileges to ${member.displayName ?? member.email}? They will be able to manage team members and access all admin features.`,
+                  )
+                )
+                  promote.mutate();
+              }}
               disabled={promote.isPending}
               className="rounded border border-blue-300 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
             >
@@ -245,7 +252,14 @@ function MemberRow({
           {member.status === "active" && member.role === "admin" && (
             <button
               type="button"
-              onClick={() => demote.mutate()}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Demote ${member.displayName ?? member.email} to CSR (agent) role? They will lose admin privileges.`,
+                  )
+                )
+                  demote.mutate();
+              }}
               disabled={demote.isPending}
               className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
@@ -255,7 +269,14 @@ function MemberRow({
           {(member.status === "active" || member.status === "pending") && (
             <button
               type="button"
-              onClick={() => revoke.mutate()}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Revoke access for ${member.displayName ?? member.email}? This will immediately end their session and prevent future sign-in.`,
+                  )
+                )
+                  revoke.mutate();
+              }}
               disabled={revoke.isPending}
               className="rounded border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
               data-testid={`team-member-${member.id}-revoke`}
