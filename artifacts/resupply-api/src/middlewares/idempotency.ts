@@ -210,7 +210,7 @@ export function withIdempotency(endpoint: string) {
 
     res.send = function patchedSend(body?: unknown) {
       if (!captured) {
-        let parsedBody: unknown = null;
+        let parsedBody: unknown;
         if (typeof body === "string") {
           try {
             parsedBody = JSON.parse(body);
@@ -240,24 +240,21 @@ export function withIdempotency(endpoint: string) {
         captured = { status: res.statusCode, body: null };
       }
 
-      let resolvedChunk = chunk;
-      let resolvedEncoding: BufferEncoding | undefined;
-      let resolvedCb: (() => void) | undefined = cb;
-
+      // Express's res.end has three overloads — call the matching one
+      // rather than always passing three args, since the no-encoding
+      // overload would otherwise receive `undefined` where a
+      // BufferEncoding is required.
+      type EndChunk = Parameters<typeof originalEnd>[0];
       if (typeof chunk === "function") {
-        resolvedChunk = undefined;
-        resolvedCb = chunk;
-      } else if (typeof encodingOrCb === "function") {
-        resolvedCb = encodingOrCb;
-      } else {
-        resolvedEncoding = encodingOrCb;
+        return originalEnd(chunk as () => void);
       }
-
-      return originalEnd(
-        resolvedChunk as Parameters<typeof originalEnd>[0],
-        resolvedEncoding,
-        resolvedCb,
-      );
+      if (typeof encodingOrCb === "function") {
+        return originalEnd(chunk as EndChunk, encodingOrCb);
+      }
+      if (encodingOrCb !== undefined) {
+        return originalEnd(chunk as EndChunk, encodingOrCb, cb);
+      }
+      return originalEnd(chunk as EndChunk, cb);
     };
 
     res.on("finish", () => {

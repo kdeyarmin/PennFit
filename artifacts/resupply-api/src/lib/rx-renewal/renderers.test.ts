@@ -54,6 +54,7 @@ const expectSingleSegmentAsciiSms = (body: string) => {
   // UCS-2 encoding and split the message into multiple segments even when
   // the JavaScript string length still looks safe.
   expect(body.length).toBeLessThanOrEqual(160);
+  // eslint-disable-next-line no-control-regex -- intentionally asserts ASCII-only (no UCS-2 promotion)
   expect(body).toMatch(/^[\x00-\x7F]*$/);
 };
 

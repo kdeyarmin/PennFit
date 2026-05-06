@@ -16,8 +16,8 @@ import express, { type Express } from "express";
 import request from "supertest";
 
 // Mock pdfkit so tests don't generate real PDFs and stay fast.
-vi.mock("pdfkit", () => {
-  const EventEmitter = require("node:events");
+vi.mock("pdfkit", async () => {
+  const { EventEmitter } = await import("node:events");
   class FakePDF extends EventEmitter {
     fontSize() { return this; }
     font() { return this; }

@@ -13,7 +13,9 @@
 //   * Empty outreach id returns { valid: false }
 //   * Token with trailing dot / leading dot returns { valid: false }
 
-import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
+import { createHmac } from "node:crypto";
+
+import { describe, it, expect, vi } from "vitest";
 
 // Stub getLinkHmacKey so tests don't need RESUPPLY_LINK_HMAC_KEY in env.
 vi.mock("@workspace/resupply-secrets", () => ({
@@ -136,7 +138,6 @@ describe("verifyFaxDocumentToken — payload structure", () => {
     // by using a sub-module-level approach — easier: test the effect
     // by checking that non-string id fails. Use fake payload + real signing:
     // Since getLinkHmacKey is mocked, we can import createHmac ourselves.
-    const { createHmac } = require("node:crypto");
     const key = Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8");
     const payload = Buffer.from(JSON.stringify({ e: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
     const sig = createHmac("sha256", key).update(payload, "utf8").digest("base64url");
@@ -144,7 +145,6 @@ describe("verifyFaxDocumentToken — payload structure", () => {
   });
 
   it("rejects a payload where expiry is not a number", () => {
-    const { createHmac } = require("node:crypto");
     const key = Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8");
     const payload = Buffer.from(JSON.stringify({ id: "out-1", e: "not-a-number" })).toString("base64url");
     const sig = createHmac("sha256", key).update(payload, "utf8").digest("base64url");
@@ -152,7 +152,6 @@ describe("verifyFaxDocumentToken — payload structure", () => {
   });
 
   it("rejects a payload where id is an empty string", () => {
-    const { createHmac } = require("node:crypto");
     const key = Buffer.from("test-hmac-key-32bytes-padded-xxxx", "utf8");
     const payload = Buffer.from(JSON.stringify({ id: "", e: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
     const sig = createHmac("sha256", key).update(payload, "utf8").digest("base64url");
