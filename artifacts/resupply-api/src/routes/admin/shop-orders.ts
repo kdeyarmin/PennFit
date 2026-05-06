@@ -700,20 +700,30 @@ router.post(
     }
     const stripe = getStripeClient(config);
 
+    // Idempotency key scoped to order + amount so:
+    //   * double-clicks on the same partial refund return the same
+    //     Stripe Refund object without creating a duplicate charge.
+    //   * Two different partial refund amounts for the same order
+    //     each create a separate Stripe Refund (intentional).
+    const idempotencyKey = `refund-${orderId}-${amountCents ?? "full"}`;
+
     let refund;
     try {
-      refund = await stripe.refunds.create({
-        payment_intent: existing.stripePaymentIntentId,
-        ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
-        ...(reason ? { reason } : {}),
-        metadata: {
-          // Records WHO issued the refund directly on the Stripe
-          // Refund object; survives even if our local audit log
-          // is later purged or queried out of band.
-          admin_email: req.adminEmail ?? "unknown",
-          shop_order_id: orderId,
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: existing.stripePaymentIntentId,
+          ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
+          ...(reason ? { reason } : {}),
+          metadata: {
+            // Records WHO issued the refund directly on the Stripe
+            // Refund object; survives even if our local audit log
+            // is later purged or queried out of band.
+            admin_email: req.adminEmail ?? "unknown",
+            shop_order_id: orderId,
+          },
         },
-      });
+        { idempotencyKey },
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
