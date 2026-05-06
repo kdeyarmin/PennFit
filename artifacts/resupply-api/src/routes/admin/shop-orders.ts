@@ -459,13 +459,13 @@ router.post(
         updatedAt: sql`now()`,
         shippingEmailSentAt: sql`CASE WHEN ${shopOrders.trackingCarrier} IS DISTINCT FROM ${carrier} OR ${shopOrders.trackingNumber} IS DISTINCT FROM ${number} THEN NULL ELSE ${shopOrders.shippingEmailSentAt} END`,
       })
-      .where(eq(shopOrders.id, orderId))
+      .where(and(eq(shopOrders.id, orderId), eq(shopOrders.status, "paid")))
       .returning();
     const row = updated[0];
     if (!row) {
-      // Race: another admin deleted the row between SELECT + UPDATE.
-      // Treat the same as not-found.
-      res.status(404).json({ error: "order_not_found" });
+      // Race: order was deleted or its status changed between the
+      // pre-check and this UPDATE (e.g. a concurrent refund webhook).
+      res.status(409).json({ error: "order_not_paid" });
       return;
     }
 
@@ -540,11 +540,22 @@ router.post(
         deliveredAt: sql`now()`,
         updatedAt: sql`now()`,
       })
-      .where(eq(shopOrders.id, orderId))
+      // Guard idempotency at DB level: if two admins race, the second
+      // UPDATE matches 0 rows (deliveredAt already set) and we re-read
+      // the committed row below instead of double-stamping.
+      .where(and(eq(shopOrders.id, orderId), isNull(shopOrders.deliveredAt)))
       .returning();
     const row = updated[0];
     if (!row) {
-      res.status(404).json({ error: "order_not_found" });
+      // Either deleted or already delivered by a concurrent request.
+      // Re-load to distinguish and return the current state.
+      const current = await loadOrder(orderId);
+      if (!current) {
+        res.status(404).json({ error: "order_not_found" });
+        return;
+      }
+      // Idempotent: already delivered — return current state.
+      res.json({ order: projectOrder(current) });
       return;
     }
     req.log?.info?.(
@@ -703,18 +714,25 @@ router.post(
 
     let refund;
     try {
-      refund = await stripe.refunds.create({
-        payment_intent: existing.stripePaymentIntentId,
-        ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
-        ...(reason ? { reason } : {}),
-        metadata: {
-          // Records WHO issued the refund directly on the Stripe
-          // Refund object; survives even if our local audit log
-          // is later purged or queried out of band.
-          admin_email: req.adminEmail ?? "unknown",
-          shop_order_id: orderId,
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: existing.stripePaymentIntentId,
+          ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
+          ...(reason ? { reason } : {}),
+          metadata: {
+            // Records WHO issued the refund directly on the Stripe
+            // Refund object; survives even if our local audit log
+            // is later purged or queried out of band.
+            admin_email: req.adminEmail ?? "unknown",
+            shop_order_id: orderId,
+          },
         },
-      });
+        // Per-order idempotency key: if two admins click "Refund" before
+        // the charge.refunded webhook flips status to 'refunded', Stripe
+        // deduplicates and returns the same Refund object for both calls
+        // rather than issuing a second refund.
+        { idempotencyKey: `refund:${orderId}` },
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"
