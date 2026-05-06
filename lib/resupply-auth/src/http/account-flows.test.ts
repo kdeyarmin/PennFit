@@ -87,15 +87,28 @@ function getCookieValue(setCookie: unknown, name: string): string | null {
   return null;
 }
 
+/** Seed a pre-login pf_csrf cookie via GET /auth/csrf. Returns the value. */
+async function seedCsrf(app: Express): Promise<string> {
+  const r = await supertest(app).get("/auth/csrf");
+  const val = getCookieValue(r.headers["set-cookie"], CSRF_COOKIE);
+  if (!val) throw new Error("GET /auth/csrf did not set a csrf cookie");
+  return val;
+}
+
 // ---- sign-up ------------------------------------------------------------
 
 describe("POST /auth/sign-up", () => {
   it("creates an invited user, sends a verification email, returns 200", async () => {
     const h = buildHarness();
-    const res = await supertest(h.app).post("/auth/sign-up").send({
-      email: "newbie@example.com",
-      password: "correct horse battery staple",
-    });
+    const csrf = await seedCsrf(h.app);
+    const res = await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "newbie@example.com",
+        password: "correct horse battery staple",
+      });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
 
@@ -118,10 +131,15 @@ describe("POST /auth/sign-up", () => {
 
   it("returns 400 when password is too short", async () => {
     const h = buildHarness();
-    const res = await supertest(h.app).post("/auth/sign-up").send({
-      email: "x@example.com",
-      password: "short",
-    });
+    const csrf = await seedCsrf(h.app);
+    const res = await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "x@example.com",
+        password: "short",
+      });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_input");
   });
@@ -134,10 +152,15 @@ describe("POST /auth/sign-up", () => {
       password: "the existing password",
     });
 
-    const res = await supertest(h.app).post("/auth/sign-up").send({
-      email: "existing@example.com",
-      password: "another correct horse battery staple",
-    });
+    const csrf = await seedCsrf(h.app);
+    const res = await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "existing@example.com",
+        password: "another correct horse battery staple",
+      });
     expect(res.status).toBe(200);
     expect(h.emails).toHaveLength(0);
     expect(h.audit.actions).toContain("auth.sign_up_existing");
@@ -145,16 +168,26 @@ describe("POST /auth/sign-up", () => {
 
   it("re-attaches an unverified existing account (updates password + re-issues token)", async () => {
     const h = buildHarness();
-    await supertest(h.app).post("/auth/sign-up").send({
-      email: "newbie@example.com",
-      password: "first attempt password",
-    });
+    const csrf1 = await seedCsrf(h.app);
+    await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf1}`)
+      .set(CSRF_HEADER, csrf1)
+      .send({
+        email: "newbie@example.com",
+        password: "first attempt password",
+      });
     expect(h.repo.__emailTokens()).toHaveLength(1);
 
-    const res = await supertest(h.app).post("/auth/sign-up").send({
-      email: "newbie@example.com",
-      password: "second attempt password",
-    });
+    const csrf2 = await seedCsrf(h.app);
+    const res = await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf2}`)
+      .set(CSRF_HEADER, csrf2)
+      .send({
+        email: "newbie@example.com",
+        password: "second attempt password",
+      });
     expect(res.status).toBe(200);
     expect(h.repo.__users()).toHaveLength(1);
     expect(h.repo.__emailTokens()).toHaveLength(2);
@@ -175,10 +208,15 @@ describe("POST /auth/sign-up", () => {
 describe("POST /auth/verify-email", () => {
   it("consumes a valid token, marks email_verified_at, flips invited→active", async () => {
     const h = buildHarness();
-    await supertest(h.app).post("/auth/sign-up").send({
-      email: "v@example.com",
-      password: "correct horse battery staple",
-    });
+    const csrf = await seedCsrf(h.app);
+    await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "v@example.com",
+        password: "correct horse battery staple",
+      });
     const token = extractEmailToken(h.emails[0]!.text);
 
     const res = await supertest(h.app)
@@ -196,10 +234,15 @@ describe("POST /auth/verify-email", () => {
 
   it("410s a token that's already been consumed", async () => {
     const h = buildHarness();
-    await supertest(h.app).post("/auth/sign-up").send({
-      email: "v@example.com",
-      password: "correct horse battery staple",
-    });
+    const csrf = await seedCsrf(h.app);
+    await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "v@example.com",
+        password: "correct horse battery staple",
+      });
     const token = extractEmailToken(h.emails[0]!.text);
 
     await supertest(h.app).post("/auth/verify-email").send({ token });
@@ -268,8 +311,11 @@ describe("POST /auth/reset-password", () => {
       password: "old password",
     });
     // Pre-existing live session that should be killed by the reset.
+    const signinCsrf = await seedCsrf(h.app);
     const signIn = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${signinCsrf}`)
+      .set(CSRF_HEADER, signinCsrf)
       .send({ email: "alice@example.com", password: "old password" });
     expect(signIn.status).toBe(200);
     expect(h.repo.__sessions()).toHaveLength(1);
@@ -287,16 +333,24 @@ describe("POST /auth/reset-password", () => {
     expect(h.repo.__sessions().every((s) => s.revokedAt !== null)).toBe(true);
 
     // Old password no longer works.
+    const csrf1 = await seedCsrf(h.app);
     const oldFail = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf1}`)
+      .set(CSRF_HEADER, csrf1)
       .send({ email: "alice@example.com", password: "old password" });
     expect(oldFail.status).toBe(401);
 
     // New one does.
-    const newOk = await supertest(h.app).post("/auth/sign-in").send({
-      email: "alice@example.com",
-      password: "brand new long password",
-    });
+    const csrf2 = await seedCsrf(h.app);
+    const newOk = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf2}`)
+      .set(CSRF_HEADER, csrf2)
+      .send({
+        email: "alice@example.com",
+        password: "brand new long password",
+      });
     expect(newOk.status).toBe(200);
 
     expect(h.audit.actions).toContain("auth.password_reset_completed");
@@ -349,10 +403,15 @@ describe("POST /auth/reset-password", () => {
 
   it("rejects when the token's purpose is wrong (e.g. signup token in reset endpoint)", async () => {
     const h = buildHarness();
-    await supertest(h.app).post("/auth/sign-up").send({
-      email: "newbie@example.com",
-      password: "correct horse battery staple",
-    });
+    const csrf = await seedCsrf(h.app);
+    await supertest(h.app)
+      .post("/auth/sign-up")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "newbie@example.com",
+        password: "correct horse battery staple",
+      });
     const signUpToken = extractEmailToken(h.emails[0]!.text);
 
     const res = await supertest(h.app)
@@ -369,8 +428,11 @@ describe("POST /auth/reset-password", () => {
 
 describe("POST /auth/change-password", () => {
   async function signInAs(h: Harness, email: string, password: string) {
+    const seed = await seedCsrf(h.app);
     const res = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${seed}`)
+      .set(CSRF_HEADER, seed)
       .send({ email, password });
     expect(res.status).toBe(200);
     const cookies = res.headers["set-cookie"] as unknown as string[];
@@ -472,8 +534,11 @@ describe("POST /auth/change-password", () => {
     expect(me.status).toBe(200);
 
     // New password works for fresh sign-ins.
+    const csrf3 = await seedCsrf(h.app);
     const fresh = await supertest(h.app)
       .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf3}`)
+      .set(CSRF_HEADER, csrf3)
       .send({ email: "alice@example.com", password: "next long password" });
     expect(fresh.status).toBe(200);
 

@@ -82,6 +82,14 @@ export const patients = resupplySchema.table(
       enum: ["sms", "email", "voice"],
     }),
 
+    // Patient portal invite. One auth.users row per patient (soft FK,
+    // matching admin_users.auth_user_id pattern). Portal status is
+    // computed at query time from portalAuthUserId +
+    // auth.users.email_verified_at rather than stored here.
+    portalAuthUserId: text("portal_auth_user_id"),
+    portalInvitedAt: timestamp("portal_invited_at", { withTimezone: true }),
+    portalInvitedBy: text("portal_invited_by"),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -93,6 +101,9 @@ export const patients = resupplySchema.table(
     pacwareIdUnique: uniqueIndex("patients_pacware_id_unique").on(t.pacwareId),
     statusIdx: index("patients_status_idx").on(t.status),
     phoneE164Idx: index("patients_phone_e164_idx").on(t.phoneE164),
+    portalAuthUserIdx: index("patients_portal_auth_user_idx").on(
+      t.portalAuthUserId,
+    ),
   }),
 );
 

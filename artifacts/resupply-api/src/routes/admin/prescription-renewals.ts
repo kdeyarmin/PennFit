@@ -37,7 +37,7 @@ router.post(
   "/admin/prescriptions/send-renewal-due",
   requireAdmin,
   async (req, res) => {
-    const channelParse = channelQuery.safeParse(req.query.channel ?? "email");
+    const channelParse = channelQuery.safeParse(req.query.channel);
     if (!channelParse.success) {
       res.status(400).json({ error: "invalid_channel" });
       return;
@@ -82,5 +82,6 @@ router.post(
     });
   },
 );
+
 
 export default router;

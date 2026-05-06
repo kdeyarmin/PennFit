@@ -46,7 +46,7 @@
 // same Session ID, so the upsert is safe.
 
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 import type { SavedShippingAddress } from "./shop-customers";
@@ -174,6 +174,10 @@ export const shopOrders = resupplySchema.table(
     // clause; the migration SQL is the source of truth for that
     // index, and query code never names it directly (Postgres
     // chooses it via the planner).
+    amountNonNegative: check(
+      "shop_orders_amount_total_cents_non_negative",
+      sql`amount_total_cents IS NULL OR amount_total_cents >= 0`,
+    ),
   }),
 );
 

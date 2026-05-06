@@ -14,6 +14,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 
+import { checkCsrf } from "../csrf";
 import { normalizeEmail } from "../email";
 import { hashPassword } from "../password";
 import { validatePassword } from "../password-policy";
@@ -46,6 +47,12 @@ export function makeSignUpHandler(
     req: Request,
     res: Response,
   ): Promise<void> {
+    const csrfCheck = checkCsrf(req);
+    if (!csrfCheck.ok) {
+      authError(res, 403, "csrf_failed", "Request failed a security check.");
+      return;
+    }
+
     const parsed = SignUpBody.safeParse(req.body);
     if (!parsed.success) {
       authError(res, 400, "invalid_input", "Email and password are required.");

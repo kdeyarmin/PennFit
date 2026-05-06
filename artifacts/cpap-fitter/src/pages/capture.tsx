@@ -14,31 +14,49 @@ import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import {
+  getCaptureBlockers,
+  isCaptureReady,
+  type PrepChecks,
+} from "@/lib/capture-readiness";
+import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
 
 export function Capture() {
   useDocumentTitle("Take a photo");
   const [, setLocation] = useLocation();
   const { setCapturedImage } = useFitterStore();
+  const visionHealth = useVisionRuntimeHealth();
   useEffect(() => {
     track("capture_started");
   }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Tracks the active MediaStream so stopCamera works even if the component
+  // unmounts while getUserMedia() is still in flight (videoRef becomes null
+  // on unmount, so we can't rely on videoRef.current.srcObject for cleanup).
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [prepChecks, setPrepChecks] = useState<PrepChecks>({
+    noGlasses: false,
+    evenLight: false,
+    facingCamera: false,
+  });
 
-  useEffect(() => {
-    startCamera();
-    return () => {
-      stopCamera();
-    };
-  }, []);
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
 
-  const startCamera = async () => {
+  const startCamera = async (): Promise<MediaStream | null> => {
     setError(null);
+    setVideoReady(false);
     try {
+      // Stop any existing stream before acquiring a new one (retry path).
+      stopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "user",
@@ -46,13 +64,17 @@ export function Capture() {
           height: { ideal: 720 },
         },
       });
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.onloadeddata = () => setVideoReady(true);
       }
       setHasPermission(true);
+      return stream;
     } catch (err) {
-      console.error("Camera error:", err);
+      console.error("Camera error:", err instanceof Error ? err.message : String(err));
       setHasPermission(false);
+      setVideoReady(false);
       const name = err instanceof Error ? err.name : "";
       const message = err instanceof Error ? err.message : String(err);
       if (name === "NotAllowedError") {
@@ -64,15 +86,27 @@ export function Capture() {
       } else {
         setError("An error occurred while accessing the camera: " + message);
       }
+      return null;
     }
   };
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-    }
-  };
+  useEffect(() => {
+    let active = true;
+    void startCamera().then((stream) => {
+      // If the component unmounted while getUserMedia was in flight, stop
+      // the stream immediately — the cleanup below already ran and couldn't
+      // see it because streamRef wasn't set yet.
+      if (!active && stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    });
+    return () => {
+      active = false;
+      stopCamera();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Capture the current frame from the video feed.
   // Returns true on success, false on failure (so the caller can reset countdown).
@@ -118,7 +152,7 @@ export function Capture() {
       setLocation("/measure");
       return true;
     } catch (err) {
-      console.error("Capture error:", err);
+      console.error("Capture error:", err instanceof Error ? err.message : String(err));
       const message = err instanceof Error ? err.message : "unknown error";
       setError("Failed to capture an image: " + message);
       return false;
@@ -126,8 +160,17 @@ export function Capture() {
   };
 
   // 3-2-1 countdown so the user can steady the device before the shutter fires
+  const blockers = getCaptureBlockers(hasPermission, videoReady, prepChecks);
+  const captureReady = isCaptureReady(blockers) && visionHealth === "ready";
   const startCountdown = () => {
     if (countdown !== null) return;
+    if (!captureReady) {
+      track("capture_blocked", {
+        ...blockers,
+        runtimeReady: visionHealth === "ready",
+      });
+      return;
+    }
     setCountdown(3);
   };
 
@@ -244,6 +287,26 @@ export function Capture() {
             Step 1 of 3 · Capture
           </span>
         </div>
+        <div className="mt-2 text-xs text-muted-foreground">
+          Camera status:{" "}
+          <span className={videoReady ? "text-emerald-700 font-medium" : "text-amber-700 font-medium"}>
+            {videoReady ? "ready" : "warming up"}
+          </span>
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          Vision runtime:{" "}
+          <span
+            className={
+              visionHealth === "ready"
+                ? "text-emerald-700 font-medium"
+                : visionHealth === "checking"
+                  ? "text-amber-700 font-medium"
+                  : "text-rose-700 font-medium"
+            }
+          >
+            {visionHealth}
+          </span>
+        </div>
         <div className="inline-flex items-center justify-center gap-3 mb-3">
           <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
           <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
@@ -330,29 +393,68 @@ export function Capture() {
         </div>
       </div>
 
-      {/* Quick reminders */}
-      <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground mb-6">
-        <span className="inline-flex items-center gap-1.5">
-          <Eye className="w-3.5 h-3.5" /> Remove glasses
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Sun className="w-3.5 h-3.5" /> Even lighting on your face
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <ScanFace className="w-3.5 h-3.5" /> Look directly at the camera
-        </span>
+      {/* Pre-capture checklist */}
+      <div className="w-full max-w-lg glass-card rounded-2xl p-4 mb-6 border border-border/50">
+        <p className="text-sm font-medium mb-3">Before capture, confirm:</p>
+        <div className="space-y-2.5 text-sm">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={prepChecks.noGlasses}
+              onChange={(e) =>
+                setPrepChecks((prev) => ({ ...prev, noGlasses: e.target.checked }))
+              }
+            />
+            <Eye className="w-3.5 h-3.5 text-muted-foreground" /> Remove glasses
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={prepChecks.evenLight}
+              onChange={(e) =>
+                setPrepChecks((prev) => ({ ...prev, evenLight: e.target.checked }))
+              }
+            />
+            <Sun className="w-3.5 h-3.5 text-muted-foreground" /> Even lighting on your face
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={prepChecks.facingCamera}
+              onChange={(e) =>
+                setPrepChecks((prev) => ({
+                  ...prev,
+                  facingCamera: e.target.checked,
+                }))
+              }
+            />
+            <ScanFace className="w-3.5 h-3.5 text-muted-foreground" /> Look directly at the camera
+          </label>
+        </div>
+        {!captureReady && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            {visionHealth !== "ready"
+              ? "Vision runtime is not ready yet. Please wait a moment and try again."
+              : "Check all items to enable capture."}
+          </p>
+        )}
       </div>
 
       <Button
         size="lg"
         className="h-16 px-12 rounded-full text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"
         onClick={startCountdown}
-        disabled={countdown !== null || hasPermission === null}
+        disabled={countdown !== null}
         data-testid="button-capture"
       >
         <Camera className="mr-2 h-6 w-6" />
         {countdown === null ? "Capture Measurement Frame" : "Hold still…"}
       </Button>
+      <p className="mt-3 text-xs text-muted-foreground">
+        {captureReady
+          ? "Camera ready — you can capture now."
+          : "Complete the checklist above to improve scan quality before capture."}
+      </p>
     </div>
   );
 }

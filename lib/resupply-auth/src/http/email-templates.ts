@@ -30,11 +30,18 @@ function escapeHtml(s: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function makeLink(base: string, path: string, token: string): string {
   return `${base}${path}?token=${encodeURIComponent(token)}`;
+}
+
+// Strip CR/LF from any value used in an email subject line to prevent
+// header injection (e.g. "PennFit\r\nBcc: attacker@evil.com").
+function safeSubjectValue(s: string): string {
+  return s.replace(/[\r\n]/g, "");
 }
 
 export function renderVerifyEmail(
@@ -45,7 +52,7 @@ export function renderVerifyEmail(
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
   return {
-    subject: `Verify your email — ${ctx.productName}`,
+    subject: `Verify your email — ${safeSubjectValue(ctx.productName)}`,
     html: `<p>Welcome to ${safeName}.</p>
 <p>Click the link below to verify your email address:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>
@@ -59,6 +66,35 @@ This link expires in 24 hours. If you didn't create this account, you can ignore
   };
 }
 
+export function renderPatientPortalInviteEmail(
+  ctx: AuthEmailContext,
+  rawToken: string,
+  patientFirstName: string | null,
+): RenderedEmail {
+  const link = makeLink(ctx.publicBaseUrl, "/reset-password", rawToken);
+  const safeLink = escapeHtml(link);
+  const safeName = escapeHtml(ctx.productName);
+  const greeting = patientFirstName
+    ? `Hi ${escapeHtml(patientFirstName.split(/\s+/)[0] ?? patientFirstName)},`
+    : "Hello,";
+  return {
+    subject: `Set up your ${safeSubjectValue(ctx.productName)} patient portal`,
+    html: `<p>${greeting}</p>
+<p>Your care team has invited you to set up your <strong>${safeName}</strong> patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.</p>
+<p>Click the link below to create your password and get started:</p>
+<p><a href="${safeLink}">${safeLink}</a></p>
+<p>This link expires in 7 days. If you weren't expecting this invitation, you can safely ignore this email.</p>`,
+    text: `${greeting}
+
+Your care team has invited you to set up your ${ctx.productName} patient portal, where you can manage your CPAP supplies, view your orders, and upload insurance documents.
+
+Create your password and get started by visiting:
+${link}
+
+This link expires in 7 days. If you weren't expecting this invitation, you can safely ignore this email.`,
+  };
+}
+
 export function renderPasswordResetEmail(
   ctx: AuthEmailContext,
   rawToken: string,
@@ -67,7 +103,7 @@ export function renderPasswordResetEmail(
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
   return {
-    subject: `Reset your ${ctx.productName} password`,
+    subject: `Reset your ${safeSubjectValue(ctx.productName)} password`,
     html: `<p>We received a request to reset your ${safeName} password.</p>
 <p>Click the link below to choose a new one:</p>
 <p><a href="${safeLink}">${safeLink}</a></p>

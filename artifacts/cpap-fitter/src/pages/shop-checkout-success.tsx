@@ -28,6 +28,7 @@ import {
   formatMoneyCents,
   type OrderSummaryResponse,
 } from "@/lib/shop-api";
+import { track } from "@/lib/track";
 
 function getSessionIdFromQuery(): string | null {
   if (typeof window === "undefined") return null;
@@ -61,6 +62,11 @@ export function ShopCheckoutSuccess() {
         // refresh too early doesn't lose their items if payment
         // ultimately fails.
         if (o.paymentStatus === "paid") {
+          track("checkout_completed", {
+            lineItems: o.lineItems.length,
+            amountTotalCents: o.amountTotalCents,
+            currency: o.currency,
+          });
           clear();
         }
       })

@@ -17,6 +17,7 @@
 import { Router, type IRouter } from "express";
 
 import { makeChangePasswordHandler } from "./change-password";
+import { makeCsrfSeedHandler } from "./csrf-seed";
 import { makeForgotPasswordHandler } from "./forgot-password";
 import { handleMe } from "./me";
 import { makeRequireSession } from "./middleware";
@@ -43,6 +44,8 @@ export function makeAuthRouter(
   const router: IRouter = Router();
 
   const requireSession = makeRequireSession(deps);
+
+  router.get("/csrf", makeCsrfSeedHandler(deps));
 
   if (deps.allowSignUp) {
     router.post("/sign-up", makeSignUpHandler(deps, options));
@@ -72,6 +75,7 @@ export type {
 export { makeRequireSession, makeRequireRole } from "./middleware";
 export {
   renderPasswordResetEmail,
+  renderPatientPortalInviteEmail,
   renderVerifyEmail,
   type AuthEmailContext,
   type RenderedEmail,

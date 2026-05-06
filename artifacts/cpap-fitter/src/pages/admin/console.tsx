@@ -21,6 +21,7 @@
 
 import { Switch, Route, Redirect } from "wouter";
 import { useGetAdminMe, ApiError } from "@workspace/api-client-react/admin";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 import { authHooks } from "@/lib/admin/auth-hooks";
 import { AppShell } from "@/components/admin/AppShell";
@@ -91,86 +92,88 @@ function AdminConsole() {
 
   return (
     <AppShell adminEmail={data?.email} adminRole={data?.role}>
-      <Switch>
-        <Route path="/admin" component={DashboardPage} />
-        <Route path="/admin/dashboard">
-          <Redirect to="/admin" replace />
-        </Route>
-        <Route path="/admin/patients" component={PatientsPage} />
-        <Route path="/admin/patients/:id">
-          {(params) => <PatientDetailPage id={params.id} />}
-        </Route>
-        <Route path="/admin/conversations" component={ConversationsPage} />
-        <Route path="/admin/conversations/:id">
-          {(params) => <ConversationDetailPage id={params.id} />}
-        </Route>
-        <Route path="/admin/episodes" component={EpisodesPage} />
-        <Route path="/admin/rules" component={RulesPage} />
-        <Route path="/admin/audit" component={AuditPage} />
-        <Route path="/admin/shop/reviews" component={AdminShopReviewsPage} />
-        <Route
-          path="/admin/shop/product-questions"
-          component={AdminProductQuestionsPage}
-        />
-        <Route
-          path="/admin/shop/inventory"
-          component={AdminShopInventoryPage}
-        />
-        <Route
-          path="/admin/shop/inventory/new"
-          component={AdminShopProductNewPage}
-        />
-        <Route
-          path="/admin/shop/abandoned-carts"
-          component={AdminShopAbandonedCartsPage}
-        />
-        <Route
-          path="/admin/shop/back-in-stock"
-          component={AdminShopBackInStockPage}
-        />
-        <Route
-          path="/admin/shop/insurance-leads"
-          component={AdminInsuranceLeadsPage}
-        />
-        <Route
-          path="/admin/shop/customers"
-          component={AdminShopCustomersPage}
-        />
-        <Route path="/admin/shop/customers/:userId">
-          {(params) => <AdminCustomerDetailPage userId={params.userId} />}
-        </Route>
-        <Route path="/admin/shop/returns" component={AdminShopReturnsPage} />
-        <Route path="/admin/followups" component={AdminFollowupsPage} />
-        <Route path="/admin/macros" component={AdminMacrosPage} />
-        <Route
-          path="/admin/shop/subscriptions"
-          component={AdminShopSubscriptionsPage}
-        />
-        <Route path="/admin/team" component={AdminTeamPage} />
-        <Route path="/admin/operations" component={AdminOperationsPage} />
-        <Route path="/admin/reports" component={AdminReportsPage} />
-        <Route
-          path="/admin/delivery-failures"
-          component={AdminDeliveryFailuresPage}
-        />
-        <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
-        <Route path="/admin/settings" component={AdminSettingsPage} />
-        <Route path="/admin/pennpaps/orders" component={PennpapsOrdersPage} />
-        <Route
-          path="/admin/pennpaps/orders/:id"
-          component={PennpapsOrderDetailPage}
-        />
-        <Route path="/admin/pennpaps/audit" component={PennpapsAuditPage} />
-        <Route
-          path="/admin/pennpaps/reminders"
-          component={PennpapsRemindersPage}
-        />
-        <Route
-          path="/admin/pennpaps/analytics"
-          component={PennpapsAnalyticsPage}
-        />
-        <Route component={NotFound} />
-      </Switch>
+      <ErrorBoundary>
+        <Switch>
+          <Route path="/admin" component={DashboardPage} />
+          <Route path="/admin/dashboard">
+            <Redirect to="/admin" replace />
+          </Route>
+          <Route path="/admin/patients" component={PatientsPage} />
+          <Route path="/admin/patients/:id">
+            {(params) => <PatientDetailPage id={params.id} />}
+          </Route>
+          <Route path="/admin/conversations" component={ConversationsPage} />
+          <Route path="/admin/conversations/:id">
+            {(params) => <ConversationDetailPage id={params.id} />}
+          </Route>
+          <Route path="/admin/episodes" component={EpisodesPage} />
+          <Route path="/admin/rules" component={RulesPage} />
+          <Route path="/admin/audit" component={AuditPage} />
+          <Route path="/admin/shop/reviews" component={AdminShopReviewsPage} />
+          <Route
+            path="/admin/shop/product-questions"
+            component={AdminProductQuestionsPage}
+          />
+          <Route
+            path="/admin/shop/inventory"
+            component={AdminShopInventoryPage}
+          />
+          <Route
+            path="/admin/shop/inventory/new"
+            component={AdminShopProductNewPage}
+          />
+          <Route
+            path="/admin/shop/abandoned-carts"
+            component={AdminShopAbandonedCartsPage}
+          />
+          <Route
+            path="/admin/shop/back-in-stock"
+            component={AdminShopBackInStockPage}
+          />
+          <Route
+            path="/admin/shop/insurance-leads"
+            component={AdminInsuranceLeadsPage}
+          />
+          <Route
+            path="/admin/shop/customers"
+            component={AdminShopCustomersPage}
+          />
+          <Route path="/admin/shop/customers/:userId">
+            {(params) => <AdminCustomerDetailPage userId={params.userId} />}
+          </Route>
+          <Route path="/admin/shop/returns" component={AdminShopReturnsPage} />
+          <Route path="/admin/followups" component={AdminFollowupsPage} />
+          <Route path="/admin/macros" component={AdminMacrosPage} />
+          <Route
+            path="/admin/shop/subscriptions"
+            component={AdminShopSubscriptionsPage}
+          />
+          <Route path="/admin/team" component={AdminTeamPage} />
+          <Route path="/admin/operations" component={AdminOperationsPage} />
+          <Route path="/admin/reports" component={AdminReportsPage} />
+          <Route
+            path="/admin/delivery-failures"
+            component={AdminDeliveryFailuresPage}
+          />
+          <Route path="/admin/rule-tester" component={AdminRuleTesterPage} />
+          <Route path="/admin/settings" component={AdminSettingsPage} />
+          <Route path="/admin/pennpaps/orders" component={PennpapsOrdersPage} />
+          <Route
+            path="/admin/pennpaps/orders/:id"
+            component={PennpapsOrderDetailPage}
+          />
+          <Route path="/admin/pennpaps/audit" component={PennpapsAuditPage} />
+          <Route
+            path="/admin/pennpaps/reminders"
+            component={PennpapsRemindersPage}
+          />
+          <Route
+            path="/admin/pennpaps/analytics"
+            component={PennpapsAnalyticsPage}
+          />
+          <Route component={NotFound} />
+        </Switch>
+      </ErrorBoundary>
     </AppShell>
   );
 }

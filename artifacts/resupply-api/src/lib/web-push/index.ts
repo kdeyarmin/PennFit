@@ -42,9 +42,9 @@ import { logger } from "../logger";
 export interface PushPayload {
   title: string;
   body: string;
-  /** Deep link the SPA's service worker opens on click. Same-origin
-   *  path; we strip an absolute origin to keep links portable across
-   *  preview / production hosts. */
+  /** Deep link the SPA's service worker opens on click. Passed
+   *  through as provided; callers should supply the exact URL/path
+   *  they want clients to open. */
   url?: string;
   /** Tag groups same-kind notifications so a re-send replaces the
    *  prior one rather than stacking. */
@@ -102,11 +102,10 @@ let cachedSdk: WebPushSdk | null = null;
 let sdkLoadFailed = false;
 
 /**
- * Lazily resolve the `web-push` module. We prefer a static dynamic
- * import so bundlers can tree-shake; falling back to `Function`-based
- * import is only there to keep typecheck happy in environments where
- * the package legitimately isn't installed (e.g. preview builds that
- * skip optional deps).
+ * Lazily resolve the `web-push` module via dynamic import so bundlers
+ * can tree-shake it. If the import fails (for example because the
+ * optional package is not installed), we record that failure and
+ * return null on subsequent calls rather than retrying.
  */
 async function loadSdk(): Promise<WebPushSdk | null> {
   if (cachedSdk) return cachedSdk;
@@ -144,6 +143,10 @@ export async function sendPushToCustomer(
 ): Promise<DeliveryCounts> {
   const config = readPushConfig();
   if (!config) {
+    logger.warn(
+      { customerId },
+      "web_push_not_configured — set WEB_PUSH_VAPID_PUBLIC_KEY / _PRIVATE_KEY / _SUBJECT to enable delivery",
+    );
     return { delivered: 0, expired: 0, transient: 0 };
   }
   const sdk = await loadSdk();
@@ -232,6 +235,11 @@ export async function sendPushToCustomer(
  *
  * Lower-casing happens here so callers can pass any-case input
  * without thinking about it.
+ *
+ * email_lower is not unique — if more than one shop_customers row
+ * shares the same email we treat the lookup as ambiguous and skip
+ * push (returns {0,0,0}) rather than risk delivering a PHI-tagged
+ * notification to the wrong device.
  */
 export async function sendPushToCustomerByEmail(
   email: string,
@@ -247,12 +255,15 @@ export async function sendPushToCustomerByEmail(
     .select({ customerId: shopCustomers.customerId })
     .from(shopCustomers)
     .where(eq(shopCustomers.emailLower, lower))
-    .limit(1);
-  const customerId = rows[0]?.customerId;
-  if (!customerId) {
+    .limit(2);
+  if (rows.length === 0) {
     return { delivered: 0, expired: 0, transient: 0 };
   }
-  return sendPushToCustomer(customerId, payload);
+  if (rows.length > 1) {
+    logger.warn("web_push_customer_email_ambiguous");
+    return { delivered: 0, expired: 0, transient: 0 };
+  }
+  return sendPushToCustomer(rows[0].customerId, payload);
 }
 
 /**

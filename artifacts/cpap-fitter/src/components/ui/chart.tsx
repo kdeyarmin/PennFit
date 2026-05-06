@@ -65,6 +65,22 @@ const ChartContainer = React.forwardRef<
 });
 ChartContainer.displayName = "Chart";
 
+// Validate a CSS color value against a strict allowlist so user-supplied
+// config can't inject arbitrary CSS through ChartStyle.
+function sanitizeCssColor(value: string | undefined): string | null {
+  if (!value) return null;
+  // Allow: hex (#RGB, #RGBA, #RRGGBB, #RRGGBBAA), rgb/rgba, hsl/hsla,
+  // named keywords (letters only), and CSS custom property references.
+  if (
+    /^(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-zA-Z]+|var\(--[a-zA-Z0-9-]+\))$/.test(
+      value,
+    )
+  ) {
+    return value;
+  }
+  return null;
+}
+
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([, config]) => config.theme || config.color,
@@ -74,28 +90,29 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
+  const css = Object.entries(THEMES)
+    .map(
+      ([theme, prefix]) => `
 ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
+    const raw =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color;
+    const color = sanitizeCssColor(raw);
     return color ? `  --color-${key}: ${color};` : null;
   })
+  .filter(Boolean)
   .join("\n")}
 }
 `,
-          )
-          .join("\n"),
-      }}
-    />
-  );
+    )
+    .join("\n");
+
+  // Use textContent assignment (via ref) instead of dangerouslySetInnerHTML
+  // so the browser's CSS parser receives the string directly without going
+  // through React's HTML serialisation path.
+  return <style ref={(el) => { if (el) el.textContent = css; }} />;
 };
 
 const ChartTooltip = RechartsPrimitive.Tooltip;

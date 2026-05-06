@@ -2,7 +2,7 @@ modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
 router = "application"
-deploymentTarget = "autoscale"
+deploymentTarget = "gce"
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
@@ -66,3 +66,41 @@ PENN_ADMIN_EMAILS = "info@pennpaps.com"
 
 [objectStorage]
 defaultBucketID = "replit-objstore-a89f4666-9708-424b-b390-3f9949919d52"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "build-fitter"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "build-api"
+
+[[workflows.workflow]]
+name = "build-fitter"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/cpap-fitter run build"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "build-api"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/resupply-api run build"
+
+[workflows.workflow.metadata]
+isValidation = true

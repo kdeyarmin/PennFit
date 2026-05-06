@@ -115,6 +115,13 @@ export function createAuthClient(config: AuthClientConfig): AuthClient {
   const fetchImpl = config.fetch ?? globalThis.fetch.bind(globalThis);
   const base = config.basePath.replace(/\/$/, "");
 
+  async function seedCsrf(): Promise<void> {
+    await fetchImpl(`${base}/csrf`, {
+      method: "GET",
+      credentials: "include",
+    }).catch(() => undefined);
+  }
+
   async function call(
     path: string,
     init: {
@@ -182,11 +189,21 @@ export function createAuthClient(config: AuthClientConfig): AuthClient {
 
   return {
     async signIn(input) {
-      const res = await call("/sign-in", { method: "POST", body: input });
+      await seedCsrf();
+      const res = await call("/sign-in", {
+        method: "POST",
+        body: input,
+        requireCsrf: true,
+      });
       await expectOk(res);
     },
     async signUp(input) {
-      const res = await call("/sign-up", { method: "POST", body: input });
+      await seedCsrf();
+      const res = await call("/sign-up", {
+        method: "POST",
+        body: input,
+        requireCsrf: true,
+      });
       await expectOk(res);
     },
     async signOut() {
