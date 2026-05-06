@@ -75,13 +75,6 @@ import {
   type PortalStatus,
   type Address,
 } from "@/lib/admin/patient-portal-invite-api";
-import {
-  dismissSmartTrigger,
-  AlreadyDismissedError,
-  listPatientSmartTriggers,
-  type SmartTriggerEventRow,
-  type SmartTriggerKind,
-} from "@/lib/admin/smart-triggers-api";
 
 type Tab =
   | "timeline"
@@ -94,8 +87,7 @@ type Tab =
   | "onboarding"
   | "fax-outreach"
   | "documents"
-  | "portal"
-  | "smart-triggers";
+  | "portal";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -309,12 +301,6 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Portal
         </TabButton>
-        <TabButton
-          active={tab === "smart-triggers"}
-          onClick={() => setTab("smart-triggers")}
-        >
-          Smart triggers
-        </TabButton>
       </div>
 
       <Card>
@@ -353,7 +339,6 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "portal" && (
           <PortalTab patient={data} onChanged={() => void refetch()} />
         )}
-        {tab === "smart-triggers" && <SmartTriggersTab patientId={id} />}
       </Card>
     </div>
   );
@@ -3550,212 +3535,5 @@ function PortalTab({
         </form>
       )}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------
-// Smart-triggers tab (Phase G.19).
-//
-// Lists trigger events for the patient with status pills (sent /
-// pending / dismissed) and a one-click dismiss action for false
-// positives. Backed by GET /admin/patients/:id/smart-triggers and
-// POST /admin/smart-triggers/:id/dismiss.
-//
-// PHI posture: kind + window dates only — the detection inputs
-// (leak rate, AHI, usage minutes) live in patient_therapy_nights
-// and are deliberately excluded from this projection.
-// ---------------------------------------------------------------------
-
-const SMART_TRIGGER_LABELS: Record<SmartTriggerKind, string> = {
-  leak_rising: "Leak rate trending up",
-  usage_dropping: "Usage hours dropping",
-  cushion_wear: "Cushion wear (AHI + leak)",
-  humidifier_drop: "Humidifier / tubing drop",
-};
-
-function SmartTriggersTab({ patientId }: { patientId: string }) {
-  const [events, setEvents] = useState<SmartTriggerEventRow[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  async function refresh() {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await listPatientSmartTriggers(patientId);
-      setEvents(r.events);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void (async () => {
-      try {
-        const r = await listPatientSmartTriggers(patientId);
-        if (!cancelled) setEvents(r.events);
-      } catch (err) {
-        if (!cancelled)
-          setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [patientId]);
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-[hsl(var(--penn-navy))]">
-          Detected smart triggers
-        </h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Auto-detected from this patient&apos;s nightly therapy data.
-          Dismissing a trigger marks it as a false positive and prevents the
-          email/SMS dispatcher from sending it.
-        </p>
-      </div>
-      {loading && <Spinner label="Loading smart triggers…" />}
-      {!loading && error && <ErrorPanel error={error} onRetry={refresh} />}
-      {!loading && !error && (events?.length ?? 0) === 0 && (
-        <EmptyState
-          title="No smart triggers detected"
-          hint="The evaluator will fire automatically once the rules detect a pattern."
-        />
-      )}
-      {!loading && !error && events && events.length > 0 && (
-        <ul className="space-y-2" data-testid="smart-triggers-list">
-          {events.map((e) => (
-            <SmartTriggerRow key={e.id} event={e} onChanged={refresh} />
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function SmartTriggerRow({
-  event,
-  onChanged,
-}: {
-  event: SmartTriggerEventRow;
-  onChanged: () => Promise<void>;
-}) {
-  const [dismissing, setDismissing] = useState(false);
-  const [reason, setReason] = useState("");
-  const [showReason, setShowReason] = useState(false);
-  const [dismissError, setDismissError] = useState<string | null>(null);
-
-  const status: "dismissed" | "sent" | "pending" = event.dismissedAt
-    ? "dismissed"
-    : event.sentAt
-      ? "sent"
-      : "pending";
-  const statusColor =
-    status === "dismissed"
-      ? "#6b7280"
-      : status === "sent"
-        ? "#047857"
-        : "#b45309";
-  const detected = formatDateTime(event.detectedAt);
-
-  async function handleDismiss() {
-    setDismissError(null);
-    setDismissing(true);
-    try {
-      await dismissSmartTrigger(event.id, reason.trim() || null);
-      await onChanged();
-    } catch (err) {
-      if (err instanceof AlreadyDismissedError) {
-        // Another CSR already dismissed this — refresh to show current state.
-        await onChanged();
-        return;
-      }
-      setDismissError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDismissing(false);
-    }
-  }
-
-  return (
-    <li
-      className="rounded border border-border/40 p-3 text-sm"
-      data-testid={`smart-trigger-row-${event.id}`}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="font-medium text-[hsl(var(--penn-navy))]">
-          {SMART_TRIGGER_LABELS[event.kind] ?? event.kind}
-        </div>
-        <span
-          className="text-[11px] uppercase tracking-wide font-semibold"
-          style={{ color: statusColor }}
-        >
-          {status}
-        </span>
-      </div>
-      <div className="text-xs text-muted-foreground mt-1">
-        Window {event.windowStartDate} → {event.windowEndDate} · detected{" "}
-        {detected}
-      </div>
-      {event.dismissedAt && (
-        <div className="text-xs text-muted-foreground mt-1">
-          Dismissed by {event.dismissedByEmail ?? "?"}
-          {event.dismissedReason ? ` — ${event.dismissedReason}` : ""}
-        </div>
-      )}
-      {!event.dismissedAt && !event.sentAt && (
-        <div className="mt-2 flex items-end gap-2">
-          {showReason ? (
-            <>
-              <Input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Optional dismiss reason"
-                aria-label="Optional dismiss reason"
-                data-testid={`smart-trigger-dismiss-reason-${event.id}`}
-              />
-              <Button
-                onClick={() => void handleDismiss()}
-                disabled={dismissing}
-                data-testid={`smart-trigger-dismiss-confirm-${event.id}`}
-              >
-                {dismissing ? "Dismissing…" : "Dismiss"}
-              </Button>
-              <Button
-                intent="secondary"
-                onClick={() => {
-                  setShowReason(false);
-                  setReason("");
-                }}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button
-              intent="secondary"
-              size="sm"
-              onClick={() => setShowReason(true)}
-              data-testid={`smart-trigger-dismiss-${event.id}`}
-            >
-              Dismiss as false positive
-            </Button>
-          )}
-        </div>
-      )}
-      {dismissError && (
-        <div className="text-xs text-rose-700 mt-1" role="alert">
-          {dismissError}
-        </div>
-      )}
-    </li>
   );
 }

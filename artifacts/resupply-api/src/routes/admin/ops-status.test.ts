@@ -37,12 +37,10 @@ const dbStub = {
   select: vi.fn(() => {
     if (selectQueue.length === 0) {
       throw new Error(
-        "ops-status test: selectQueue exhausted — the route made " +
-          "more SELECT count() calls than the test scripted answers " +
-          "for. Add a queueCounts() entry for the new query.",
+        "ops-status test stub exhausted: expected another queued SELECT count() result",
       );
     }
-    const value = selectQueue.shift()!;
+    const value = selectQueue.shift() as number;
     const obj: Record<string, unknown> = {
       from: () => obj,
       where: () => Promise.resolve([{ count: value }]),
@@ -221,14 +219,11 @@ describe("GET /admin/ops-status", () => {
     queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
     expect(typeof res.body.serverTime).toBe("string");
-    // Roundtrip through Date must equal the input — catches a
-    // regression to toString() / RFC2822 (which Date can parse but
-    // produces a different canonical form).
-    const parsed = new Date(res.body.serverTime);
-    expect(parsed.toISOString()).toBe(res.body.serverTime);
-    // Defence-in-depth: explicit ISO 8601 shape match.
     expect(res.body.serverTime).toMatch(
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+    expect(new Date(res.body.serverTime).toISOString()).toBe(
+      res.body.serverTime,
     );
   });
 });

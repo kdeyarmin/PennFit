@@ -26,12 +26,6 @@ export function Home() {
       <HomeStatusBanner />
       {/* Hero */}
       <div className="text-center max-w-4xl mb-12 md:mb-16 animate-shimmer-in">
-        <div className="flex justify-center mb-5">
-          <span className="status-pill" data-testid="home-tech-pill">
-            On-device computer vision · HIPAA-aligned · Penn Home Medical Supply
-          </span>
-        </div>
-
         <h1 className="text-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-5 md:mb-6 leading-[1.08] sm:leading-[1.05]">
           <span className="text-gradient-tech">Your CPAP, made simple.</span>
           <br />
