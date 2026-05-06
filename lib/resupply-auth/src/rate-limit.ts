@@ -84,7 +84,13 @@ export async function checkLoginRateLimit(
       };
     }
     return { allowed: true, retryAfterSeconds: 0 };
-  } catch {
+  } catch (err) {
+    // Fail open so a DB hiccup does not lock all users out. Log so
+    // operators can detect a pattern (sustained degradation = real risk).
+    console.error(
+      "[resupply-auth] rate-limit check failed (fail-open):",
+      err instanceof Error ? err.message : String(err),
+    );
     return { allowed: true, retryAfterSeconds: 0 };
   }
 }
