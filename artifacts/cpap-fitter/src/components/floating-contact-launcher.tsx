@@ -59,6 +59,8 @@ import {
 } from "@/lib/chat-api";
 import {
   PENNBOT_OPEN_EVENT,
+  clearAskFromUrl,
+  readAskFromUrl,
   type PennBotOpenDetail,
 } from "@/lib/chat-events";
 import { track } from "@/lib/track";
@@ -211,6 +213,8 @@ export function FloatingContactLauncher() {
   const inFlightRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const suggestions = useMemo(() => {
     for (const bucket of SUGGESTION_BUCKETS) {
@@ -281,6 +285,51 @@ export function FloatingContactLauncher() {
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  }, [open]);
+
+  // Return focus to the trigger when the dialog closes — without this,
+  // closing the panel via Esc / X / route change leaves keyboard
+  // focus on `<body>`, which is disorienting for screen-reader and
+  // keyboard-only users.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (wasOpenRef.current && !open) {
+      triggerRef.current?.focus();
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
+  // Lightweight focus trap. While the dialog is open, Tab and
+  // Shift+Tab cycle through focusable descendants. We don't use a
+  // full library — the dialog is small and the simple-cycle behavior
+  // is the only thing we need.
+  useEffect(() => {
+    if (!open) return undefined;
+    const container = dialogRef.current;
+    if (!container) return undefined;
+
+    function handler(e: KeyboardEvent) {
+      if (e.key !== "Tab" || !container) return;
+      const focusables = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute("hidden"));
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    container.addEventListener("keydown", handler);
+    return () => container.removeEventListener("keydown", handler);
   }, [open]);
 
   const stop = useCallback(() => {
@@ -429,6 +478,32 @@ export function FloatingContactLauncher() {
     }
   }, []);
 
+  // One-shot URL deep-link: if the page was loaded with ?ask=...
+  // (or #ask=... in the hash), open PennBot with that as the user's
+  // first message and strip the param from the URL so a refresh
+  // doesn't re-fire it. Lets marketing emails and shareable links
+  // open the chat with a question pre-loaded.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const ask = readAskFromUrl();
+    if (ask) {
+      clearAskFromUrl();
+      // Defer one tick so the launcher subscribes to its open event
+      // before we dispatch.
+      const t = setTimeout(() => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent(PENNBOT_OPEN_EVENT, {
+              detail: { prefill: ask, autoSend: true },
+            }),
+          );
+        }
+      }, 0);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, []);
+
   // Subscribe to the global "open PennBot" event so any in-page CTA
   // (an "Ask PennBot" button on the Insurance page, a help icon next
   // to a FAQ entry, etc.) can pop the launcher with a contextual
@@ -476,17 +551,22 @@ export function FloatingContactLauncher() {
   const isFreshConversation = messages.length <= 1;
 
   return (
-    <div
-      className="fixed bottom-20 right-4 z-50 md:bottom-4 print:hidden"
-      data-testid="floating-contact"
-    >
+    <div data-testid="floating-contact" className="print:hidden">
       {open && (
         <div
-          className="mb-3 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-background shadow-xl overflow-hidden flex flex-col"
+          ref={dialogRef}
+          className={cn(
+            "border border-border bg-background shadow-xl overflow-hidden flex flex-col z-50",
+            // Mobile: cover the viewport so older eyes don't have to
+            // squint into a 22rem panel on a phone.
+            "fixed inset-0",
+            // Desktop: original floating card pinned bottom-right.
+            "md:inset-auto md:fixed md:bottom-4 md:right-4 md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:rounded-xl md:h-[min(32rem,calc(100vh-8rem))]",
+          )}
           role="dialog"
+          aria-modal="true"
           aria-label="PennPaps support"
           data-testid="floating-contact-popover"
-          style={{ height: "min(32rem, calc(100vh - 8rem))" }}
         >
           <div className="px-4 py-3 bg-[hsl(var(--penn-navy))] text-white flex items-center justify-between shrink-0">
             <div>
@@ -548,6 +628,8 @@ export function FloatingContactLauncher() {
                 ref={scrollRef}
                 className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-secondary/20"
                 data-testid="floating-contact-messages"
+                aria-live="polite"
+                aria-busy={sending}
               >
                 {messages.map((m) => (
                   <ChatBubble
@@ -555,6 +637,11 @@ export function FloatingContactLauncher() {
                     message={m}
                     onRetry={
                       m.id === messages.at(-1)?.id ? retryLastTurn : undefined
+                    }
+                    onSwitchToContact={
+                      m.id === messages.at(-1)?.id
+                        ? () => setTab("contact")
+                        : undefined
                     }
                   />
                 ))}
@@ -692,8 +779,17 @@ export function FloatingContactLauncher() {
 
       <button
         type="button"
+        ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
-        className="h-14 w-14 rounded-full shadow-lg bg-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-navy-deep))] text-white flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-gold))] focus-visible:ring-offset-2"
+        className={cn(
+          "fixed bottom-20 right-4 z-50 md:bottom-4",
+          "h-14 w-14 rounded-full shadow-lg bg-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-navy-deep))] text-white flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--penn-gold))] focus-visible:ring-offset-2",
+          // On mobile, the panel covers the screen and includes its
+          // own X button — hide the bubble so it doesn't float over.
+          // Keep it visible on desktop so the user can drag focus
+          // back to it (and it doubles as the toggle).
+          open && "max-md:hidden",
+        )}
         aria-label={open ? "Close support menu" : "Open support menu"}
         aria-expanded={open}
         data-testid="floating-contact-toggle"
@@ -877,9 +973,11 @@ function renderAssistantBody(text: string): ReactNode[] {
 function ChatBubble({
   message,
   onRetry,
+  onSwitchToContact,
 }: {
   message: UiMessage;
   onRetry?: () => void;
+  onSwitchToContact?: () => void;
 }) {
   const isUser = message.role === "user";
   const showTypingIndicator =
@@ -952,15 +1050,28 @@ function ChatBubble({
             </span>
           )}
           {showRetry && (
-            <button
-              type="button"
-              onClick={onRetry}
-              data-testid="floating-contact-retry"
-              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-[hsl(var(--penn-navy))] hover:underline"
-            >
-              <RotateCcw className="h-3 w-3" />
-              Try again
-            </button>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button
+                type="button"
+                onClick={onRetry}
+                data-testid="floating-contact-retry"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-[hsl(var(--penn-navy))] hover:underline"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Try again
+              </button>
+              {onSwitchToContact && (
+                <button
+                  type="button"
+                  onClick={onSwitchToContact}
+                  data-testid="floating-contact-switch-contact"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-[hsl(var(--penn-navy))] hover:underline"
+                >
+                  <Phone className="h-3 w-3" />
+                  Talk to a person
+                </button>
+              )}
+            </div>
           )}
         </div>
         {!isUser && !showTypingIndicator && message.content.length > 0 && (
