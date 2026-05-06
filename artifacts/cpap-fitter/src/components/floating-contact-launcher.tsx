@@ -473,18 +473,27 @@ export function FloatingContactLauncher() {
           });
           return;
         }
+        // Visible to anyone debugging in the browser console; the
+        // user-facing canned message intentionally stays opaque so we
+        // don't leak server detail.
+        console.warn("[pennbot] chat request failed", err);
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === placeholder.id
-              ? {
-                  ...m,
-                  pending: false,
-                  meta: "degraded",
-                  content:
-                    "Something went wrong reaching the chat service. You can try again, or call (814) 471-0627 (Mon-Fri 9-5 ET).",
-                }
-              : m,
-          ),
+          prev.map((m) => {
+            if (m.id !== placeholder.id) return m;
+            // If chunks arrived before the failure, keep the partial
+            // reply and just mark it degraded so the user doesn't lose
+            // a half-typed answer to a connection blip.
+            if (m.content.length > 0) {
+              return { ...m, pending: false, meta: "degraded" };
+            }
+            return {
+              ...m,
+              pending: false,
+              meta: "degraded",
+              content:
+                "Something went wrong reaching the chat service. You can try again, or call (814) 471-0627 (Mon-Fri 9-5 ET).",
+            };
+          }),
         );
         track("chat_replied", {
           path: location,
