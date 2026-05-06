@@ -24,8 +24,14 @@ vi.mock("../../middlewares/requireAdmin", () =>
 );
 
 // We script the SELECT count() answers in order. Each helper returns
-// a chainable { from, where }-shaped object whose terminal call (or
-// the absence of one) resolves the queued result.
+// a chainable { from, where }-shaped object whose terminal call
+// resolves the queued result.
+//
+// The shift() THROWS on an empty queue rather than silently
+// returning 0 — without this, adding a SELECT to the route or
+// forgetting to script a count would still keep the tests green
+// with a bogus zero, defeating the safety net these helpers
+// provide.
 const selectQueue: number[] = [];
 const dbStub = {
   select: vi.fn(() => {
@@ -69,6 +75,8 @@ const ALL_VENDOR_KEYS = [
   "TWILIO_ACCOUNT_SID",
   "TWILIO_AUTH_TOKEN",
   "TWILIO_MESSAGING_SERVICE_SID",
+  "TWILIO_FAX_FROM_NUMBER",
+  "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "STRIPE_SECRET_KEY",
   "PRIVATE_OBJECT_DIR",
 ] as const;
@@ -147,6 +155,34 @@ describe("GET /admin/ops-status", () => {
     expect(res.body.vendors.twilioSms).toBe(false);
   });
 
+  // True-branch coverage: with every vendor's env triple set, every
+  // flag flips on. Catches typos in the env-name string literals
+  // (e.g. SENDGRID_API_KEY → SENDGIRD_API_KEY) that the all-false +
+  // partial-config tests above would miss because they only exercise
+  // the falsy branch.
+  it("flags every vendor when its full env triple is set", async () => {
+    mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
+    process.env.SENDGRID_API_KEY = "SG.xxx";
+    process.env.SENDGRID_FROM_EMAIL = "info@pennpaps.com";
+    process.env.TWILIO_ACCOUNT_SID = "ACxxx";
+    process.env.TWILIO_AUTH_TOKEN = "auth";
+    process.env.TWILIO_MESSAGING_SERVICE_SID = "MGxxx";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+15005550006";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://example.com";
+    process.env.STRIPE_SECRET_KEY = "sk_test_xxx";
+    process.env.PRIVATE_OBJECT_DIR = "/objects";
+    queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
+    const res = await request(makeApp()).get("/admin/ops-status");
+    expect(res.body.vendors).toEqual({
+      sendgrid: true,
+      twilioVoice: true,
+      twilioSms: true,
+      twilioFax: true,
+      stripe: true,
+      objectStorage: true,
+    });
+  });
+
   it("returns dispatcher counts in the correct shape", async () => {
     mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
     queueCounts([3, 5, 7, 11, 0, 0, 0, 0]);
@@ -178,7 +214,7 @@ describe("GET /admin/ops-status", () => {
     });
   });
 
-  it("includes serverTime as ISO timestamp", async () => {
+  it("includes serverTime as ISO 8601 timestamp", async () => {
     mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
     queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
