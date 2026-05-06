@@ -69,6 +69,11 @@ export const shopOrders = resupplySchema.table(
      * (sha256 of stable-json line items). Lets us short-circuit
      * "is this a re-click of the same cart?" without storing
      * line items themselves.
+     *
+     * A partial unique index (WHERE cart_hash IS NOT NULL) is
+     * enforced at the DB level by migration 0062 — Drizzle-kit
+     * cannot express partial unique indexes so the migration is
+     * the source of truth for that constraint.
      */
     cartHash: text("cart_hash"),
     /**
