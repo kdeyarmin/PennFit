@@ -199,4 +199,123 @@ describe("POST /chat", () => {
       content: "And the cushion material?",
     });
   });
+
+  describe("SSE streaming (Accept: text/event-stream)", () => {
+    function makeStreamBody(chunks: string[]): ReadableStream<Uint8Array> {
+      const encoder = new TextEncoder();
+      let i = 0;
+      return new ReadableStream({
+        pull(controller) {
+          if (i < chunks.length) {
+            controller.enqueue(encoder.encode(chunks[i]!));
+            i += 1;
+          } else {
+            controller.close();
+          }
+        },
+      });
+    }
+
+    function parseSseFrames(raw: string): Array<Record<string, unknown>> {
+      return raw
+        .split("\n\n")
+        .map((f) => f.trim())
+        .filter((f) => f.startsWith("data:"))
+        .map((f) => JSON.parse(f.slice(5).trim()) as Record<string, unknown>);
+    }
+
+    it("streams chunk events and a terminal done event on success", async () => {
+      const sseBody = [
+        'data: {"choices":[{"delta":{"content":"We carry "}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"nasal pillow masks."}}]}\n\n',
+        "data: [DONE]\n\n",
+      ];
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: makeStreamBody(sseBody),
+        text: async () => "",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({
+          messages: [{ role: "user", content: "What styles?" }],
+        });
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/text\/event-stream/);
+
+      const frames = parseSseFrames(res.text);
+      expect(frames).toEqual([
+        { type: "chunk", text: "We carry " },
+        { type: "chunk", text: "nasal pillow masks." },
+        { type: "done" },
+      ]);
+
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      const payload = JSON.parse(init.body as string);
+      expect(payload.stream).toBe(true);
+    });
+
+    it("emits a degraded fallback chunk when the upstream stream fails to open", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        body: null,
+        text: async () => "boom",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({
+          messages: [{ role: "user", content: "Hi" }],
+        });
+      expect(res.status).toBe(200);
+      const frames = parseSseFrames(res.text);
+      expect(frames[0]).toMatchObject({ type: "chunk" });
+      expect((frames[0] as { text: string }).text).toMatch(/\(814\) 471-0627/);
+      expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
+    });
+
+    it("emits the offline fallback over SSE when OPENAI_API_KEY is unset", async () => {
+      delete process.env.OPENAI_API_KEY;
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({
+          messages: [{ role: "user", content: "Hi" }],
+        });
+      expect(res.status).toBe(200);
+      const frames = parseSseFrames(res.text);
+      expect(frames[0]).toMatchObject({ type: "chunk" });
+      expect((frames[0] as { text: string }).text).toMatch(/\(814\) 471-0627/);
+      expect(frames.at(-1)).toEqual({ type: "done", offline: true });
+    });
+
+    it("treats an empty stream as degraded", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: makeStreamBody(["data: [DONE]\n\n"]),
+        text: async () => "",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({
+          messages: [{ role: "user", content: "Hi" }],
+        });
+      const frames = parseSseFrames(res.text);
+      expect(frames[0]).toMatchObject({ type: "chunk" });
+      expect((frames[0] as { text: string }).text).toMatch(/\(814\) 471-0627/);
+      expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
+    });
+  });
 });

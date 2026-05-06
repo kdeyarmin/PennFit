@@ -171,20 +171,74 @@ const RETURNS_GUARANTEE_SECTION = `
 
 60-day comfort guarantee on every mask: if the mask isn't comfortable,
 PennPaps swaps it for a different size or style and pays return
-shipping. No restocking fees. One swap per order, free.
+shipping. No restocking fees. One swap per order, free. The 60-day
+clock starts the day your order is delivered, not the day you placed
+it - so there is plenty of time to actually sleep with the mask.
   - Covered: complete mask systems, mask cushions, headgear, frames.
   - Not covered: disposable supplies (filters, tubing, water chambers -
     hygiene), CPAP machines (manufacturer warranty), items missing
     original parts, returns started after 60 days.
 
-30-day general return window on unopened supplies for a full refund.
+30-day general return window on unopened supplies for a full refund
+(see /returns).
 
-How to start a swap or return:
-  1. Email or call within the window.
-  2. Pick a replacement (we'll suggest one based on the issue:
-     bridge leak, lip pressure, claustrophobia, etc.).
-  3. PennPaps emails a prepaid USPS or UPS label.
-  4. Replacement ships right away when the account is in good standing.
+How to start a swap or return (see /comfort-guarantee):
+  1. Email support@pennpaps.com or call (814) 471-0627 within the
+     window. Include your order number.
+  2. Pick a replacement - we'll suggest one based on the issue:
+     bridge leak, lip pressure, claustrophobia, mouth breathing, etc.
+  3. PennPaps emails a prepaid USPS or UPS label. Drop the original
+     at any USPS/UPS location - no printer needed if you have a QR.
+  4. Replacement ships right away when the account is in good
+     standing - your therapy doesn't stop while the return is in
+     transit.
+`;
+
+const HOW_IT_WORKS_SECTION = `
+# How the PennPaps virtual mask fitter works (see /how-it-works)
+
+The fitter is the simplest path to a recommended mask and takes about
+three minutes. Four steps:
+  1. Consent (/consent) - one screen explaining what the camera will
+     measure and that no images leave the browser.
+  2. Capture (/capture) - one front-facing photo. Processing happens
+     entirely in-browser via MediaPipe Face Mesh; the picture itself
+     never reaches PennPaps's servers.
+  3. Questionnaire (/questionnaire) - mouth breathing? prescribed
+     pressure? sleep position? facial hair? claustrophobia? skin
+     sensitivities?
+  4. Results (/results) - a ranked shortlist of masks from the
+     catalog, with weighted scores and a fit rationale per mask.
+     From there, /order kicks off the insurance order flow.
+
+The fitter is for patients who already have a CPAP prescription /
+sleep-study diagnosis. PennPaps does NOT diagnose sleep apnea.
+
+If you are unsure whether you have sleep apnea, the
+/learn/sleep-apnea-quiz page has an Epworth-style screener and tells
+you whether to ask your primary care provider for a sleep study.
+`;
+
+const ACCOUNT_AND_REMINDERS_SECTION = `
+# Accounts, reminders, and the customer dashboard
+
+You do NOT need an account to place an order - guest checkout works.
+A free PennPaps account (see /account, sign up at /sign-up) saves:
+  - Shipping address and order history.
+  - A one-tap "Reorder" button on past purchases.
+  - The /shop/orders, /shop/wishlist, and /account pages.
+  - The "Message your CSR" surface at /account#messages where
+    customer-service replies to threads.
+
+Replacement reminders (free, no account needed):
+  - Sign up at /reminders. PennPaps emails when each item is due
+    on the standard schedule.
+  - Manage / unsubscribe at /reminders/manage.
+
+Education: the /learn library has long-form video and written guides
+on getting started, troubleshooting, cleaning, and travel. /faq is
+the searchable Q&A; /learn/replacement-schedule is the deep-dive on
+when to replace each part; /learn/device-setup is a starter checklist.
 `;
 
 const FAQ_SECTION = `
@@ -352,6 +406,8 @@ export function buildChatSystemPrompt(): string {
     REPLACEMENT_SCHEDULE_SECTION,
     INSURANCE_SECTION,
     RETURNS_GUARANTEE_SECTION,
+    HOW_IT_WORKS_SECTION,
+    ACCOUNT_AND_REMINDERS_SECTION,
     FAQ_SECTION,
     PRACTICE_SECTION,
     SAFETY_AND_SCOPE,

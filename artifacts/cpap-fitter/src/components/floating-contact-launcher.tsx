@@ -4,9 +4,11 @@
 // popover with TWO tabs:
 //   * Chat — PennBot, the LLM-backed support assistant. Answers
 //     questions about masks, supplies, insurance, the replacement
-//     schedule, returns, and how PennPaps works. Stateless — the
-//     conversation lives in component state and is discarded on close.
-//     The bot is grounded in the static knowledge base baked into the
+//     schedule, returns, and how PennPaps works. Conversation is
+//     persisted to sessionStorage so a route change or refresh
+//     keeps the thread; closing the tab clears it. Replies stream
+//     token-by-token via SSE for a live-typing feel. The bot is
+//     grounded in the static knowledge base baked into the
 //     server-side system prompt; it does NOT have access to any
 //     patient record.
 //   * Contact — phone, email, and the auth-gated "Message your CSR"
@@ -20,7 +22,14 @@
 // Hidden on the admin SPA — admin shell has its own chrome and
 // doesn't need a customer-facing support bubble.
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link, useLocation } from "wouter";
 import {
   ArrowRight,
@@ -41,25 +50,14 @@ import {
   SUPPORT_PHONE_E164,
 } from "@/lib/contact";
 import {
-  postChatMessage,
+  streamChatMessage,
   type ChatMessage,
-  type ChatResponse,
 } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
 
 type Tab = "chat" | "contact";
 
-/**
- * Suggested prompts shown above the input on first open. Tapping one
- * sends it as the user's message — saves typing for the most-common
- * questions and showcases what the bot knows.
- */
-const SUGGESTED_PROMPTS = [
-  "Which mask is best for side sleepers?",
-  "How often do I replace my cushion?",
-  "What does insurance typically cover?",
-  "What is your return policy?",
-];
+const STORAGE_KEY = "pennbot.session.v1";
 
 const GREETING: ChatMessage = {
   role: "assistant",
@@ -67,11 +65,86 @@ const GREETING: ChatMessage = {
     "Hi! I'm PennBot. Ask me about CPAP masks, supplies, insurance coverage, replacement schedules, returns, or how to order from PennPaps. For account-specific questions, I'll point you to our team.",
 };
 
+/**
+ * Page-aware suggested prompts. The widget picks the bucket whose
+ * `match` function returns true for the current Wouter location;
+ * `default` is the fallback for everything else (home, etc.).
+ */
+const SUGGESTION_BUCKETS: Array<{
+  match: (loc: string) => boolean;
+  prompts: string[];
+}> = [
+  {
+    match: (l) => l === "/masks" || l.startsWith("/masks/"),
+    prompts: [
+      "Which mask is best for side sleepers?",
+      "What's the difference between nasal and pillow masks?",
+      "Which masks work for mouth breathers?",
+      "Which mask is quietest for a bed partner?",
+    ],
+  },
+  {
+    match: (l) => l === "/insurance",
+    prompts: [
+      "Which insurance plans do you accept?",
+      "What does Medicare typically cover?",
+      "What if I haven't met my deductible?",
+      "How long does insurance verification take?",
+    ],
+  },
+  {
+    match: (l) => l === "/shop" || l.startsWith("/shop"),
+    prompts: [
+      "Do I need a prescription for filters or tubing?",
+      "How fast does cash-pay shipping arrive?",
+      "What does Subscribe & Save cover?",
+      "What's your return policy?",
+    ],
+  },
+  {
+    match: (l) =>
+      l === "/learn/replacement-schedule" || l.includes("replacement"),
+    prompts: [
+      "How often do I replace cushions?",
+      "Why does my mask leak more lately?",
+      "How often should I clean the tubing?",
+      "Can I rinse reusable filters instead of replacing?",
+    ],
+  },
+  {
+    match: (l) => l === "/faq" || l.startsWith("/faq"),
+    prompts: [
+      "How do I switch to a different mask style?",
+      "Why do I wake up with a dry mouth?",
+      "What if I can't exhale against the pressure?",
+      "How quickly does an order ship?",
+    ],
+  },
+  {
+    match: (l) => l.startsWith("/how-it-works") || l === "/consent",
+    prompts: [
+      "How does the virtual fitter work?",
+      "Do you store my photo?",
+      "What if my recommended mask doesn't fit?",
+      "Do I need a prescription to order?",
+    ],
+  },
+];
+
+const DEFAULT_PROMPTS = [
+  "Which mask is best for side sleepers?",
+  "How often do I replace my cushion?",
+  "What does insurance typically cover?",
+  "What is your return policy?",
+];
+
 interface UiMessage extends ChatMessage {
   /** Local-only id for React keying. */
   id: number;
   /** Server set this flag (offline / degraded / rate-limited). */
   meta?: "offline" | "degraded" | "rate-limited";
+  /** True while the assistant bubble is still being streamed. */
+  pending?: boolean;
 }
 
 let nextMessageId = 1;
@@ -79,8 +152,40 @@ function makeMessage(
   role: ChatMessage["role"],
   content: string,
   meta?: UiMessage["meta"],
+  pending?: boolean,
 ): UiMessage {
-  return { id: nextMessageId++, role, content, meta };
+  return { id: nextMessageId++, role, content, meta, pending };
+}
+
+function loadStoredMessages(): UiMessage[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as UiMessage[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    let max = 0;
+    for (const m of parsed) max = Math.max(max, m.id);
+    nextMessageId = max + 1;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistMessages(messages: UiMessage[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (messages.length <= 1) {
+      window.sessionStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    const sanitized = messages.map(({ pending: _pending, ...m }) => m);
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+  } catch {
+    // Quota / private mode — drop silently. Persistence is
+    // a UX nice-to-have, not a correctness requirement.
+  }
 }
 
 export function FloatingContactLauncher() {
@@ -88,14 +193,22 @@ export function FloatingContactLauncher() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
 
-  const [messages, setMessages] = useState<UiMessage[]>([
-    { ...GREETING, id: 0 },
-  ]);
+  const [messages, setMessages] = useState<UiMessage[]>(() => {
+    const stored = loadStoredMessages();
+    return stored ?? [{ ...GREETING, id: 0 }];
+  });
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const inFlightRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const suggestions = useMemo(() => {
+    for (const bucket of SUGGESTION_BUCKETS) {
+      if (bucket.match(location)) return bucket.prompts;
+    }
+    return DEFAULT_PROMPTS;
+  }, [location]);
 
   useEffect(() => {
     setOpen(false);
@@ -106,6 +219,10 @@ export function FloatingContactLauncher() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [open, messages]);
+
+  useEffect(() => {
+    persistMessages(messages);
+  }, [messages]);
 
   useEffect(() => {
     if (!open || tab !== "chat") return undefined;
@@ -119,60 +236,93 @@ export function FloatingContactLauncher() {
     };
   }, []);
 
-  if (location.startsWith("/admin")) return null;
+  const send = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (trimmed.length === 0 || sending) return;
 
-  async function send(text: string) {
-    const trimmed = text.trim();
-    if (trimmed.length === 0 || sending) return;
+      const userMsg = makeMessage("user", trimmed);
+      const placeholder = makeMessage("assistant", "", undefined, true);
+      const nextMessages = [...messages, userMsg, placeholder];
+      setMessages(nextMessages);
+      setInput("");
+      setSending(true);
 
-    const userMsg = makeMessage("user", trimmed);
-    const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
-    setInput("");
-    setSending(true);
+      inFlightRef.current?.abort();
+      const ctrl = new AbortController();
+      inFlightRef.current = ctrl;
 
-    inFlightRef.current?.abort();
-    const ctrl = new AbortController();
-    inFlightRef.current = ctrl;
+      const history: ChatMessage[] = nextMessages
+        .filter((m) => m.id !== 0 && !m.pending)
+        .slice(-11)
+        .map(({ role, content }) => ({ role, content }));
 
-    const history: ChatMessage[] = nextMessages
-      .filter((m) => m.id !== 0)
-      .slice(-11)
-      .map(({ role, content }) => ({ role, content }));
+      const onChunk = (chunk: string) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === placeholder.id
+              ? { ...m, content: m.content + chunk }
+              : m,
+          ),
+        );
+      };
 
-    let result: ChatResponse;
-    try {
-      result = await postChatMessage(history, ctrl.signal);
-    } catch (err) {
-      if ((err as { name?: string })?.name === "AbortError") {
+      try {
+        const result = await streamChatMessage(history, onChunk, ctrl.signal);
+        const meta = result.rateLimited
+          ? "rate-limited"
+          : result.offline
+            ? "offline"
+            : result.degraded
+              ? "degraded"
+              : undefined;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === placeholder.id ? { ...m, pending: false, meta } : m,
+          ),
+        );
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") {
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== placeholder.id),
+          );
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === placeholder.id
+              ? {
+                  ...m,
+                  pending: false,
+                  meta: "degraded",
+                  content:
+                    "Something went wrong reaching the chat service. You can try again, or call (814) 471-0627 (Mon-Fri 9-5 ET).",
+                }
+              : m,
+          ),
+        );
+      } finally {
         setSending(false);
-        return;
       }
-      setMessages((prev) => [
-        ...prev,
-        makeMessage(
-          "assistant",
-          "Something went wrong reaching the chat service. You can try again, or call (814) 471-0627 (Mon-Fri 9-5 ET).",
-          "degraded",
-        ),
-      ]);
-      setSending(false);
-      return;
-    }
+    },
+    [messages, sending],
+  );
 
-    const meta = result.rateLimited
-      ? "rate-limited"
-      : result.offline
-        ? "offline"
-        : result.degraded
-          ? "degraded"
-          : undefined;
-    setMessages((prev) => [
-      ...prev,
-      makeMessage("assistant", result.reply, meta),
-    ]);
+  const resetConversation = useCallback(() => {
+    inFlightRef.current?.abort();
+    setMessages([{ ...GREETING, id: 0 }]);
+    setInput("");
     setSending(false);
-  }
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // ignore — best-effort cleanup
+      }
+    }
+  }, []);
+
+  if (location.startsWith("/admin")) return null;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -185,6 +335,8 @@ export function FloatingContactLauncher() {
       void send(input);
     }
   }
+
+  const isFreshConversation = messages.length <= 1;
 
   return (
     <div
@@ -204,15 +356,28 @@ export function FloatingContactLauncher() {
               <div className="text-sm font-semibold">PennPaps support</div>
               <div className="text-[11px] opacity-80">{SUPPORT_HOURS}</div>
             </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-md hover:bg-white/10 p-1"
-              aria-label="Close"
-              data-testid="floating-contact-close"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              {tab === "chat" && !isFreshConversation && (
+                <button
+                  type="button"
+                  onClick={resetConversation}
+                  className="rounded-md hover:bg-white/10 px-2 py-1 text-[11px] uppercase tracking-wide opacity-80 hover:opacity-100"
+                  aria-label="Start a new conversation"
+                  data-testid="floating-contact-reset"
+                >
+                  New chat
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md hover:bg-white/10 p-1"
+                aria-label="Close"
+                data-testid="floating-contact-close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <div
@@ -250,23 +415,14 @@ export function FloatingContactLauncher() {
                 {messages.map((m) => (
                   <ChatBubble key={m.id} message={m} />
                 ))}
-                {sending && (
-                  <div
-                    className="flex items-center gap-2 text-xs text-muted-foreground px-1"
-                    aria-live="polite"
-                  >
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    PennBot is typing…
-                  </div>
-                )}
               </div>
 
-              {messages.length <= 1 && !sending && (
+              {isFreshConversation && !sending && (
                 <div
                   className="px-3 py-2 border-t border-border/60 flex flex-wrap gap-1.5 shrink-0"
                   data-testid="floating-contact-suggestions"
                 >
-                  {SUGGESTED_PROMPTS.map((p) => (
+                  {suggestions.map((p) => (
                     <button
                       key={p}
                       type="button"
@@ -428,8 +584,47 @@ function TabButton({ active, onClick, testId, children }: TabButtonProps) {
   );
 }
 
+/**
+ * Renders an assistant message body, turning bare path mentions
+ * (e.g. "see /insurance" or "/learn/replacement-schedule") into
+ * Wouter <Link> components. Keeps everything else as plain text.
+ * Conservative regex: only matches /<word>(/<word>)* at word
+ * boundaries, so file extensions and URLs are not mangled.
+ */
+function renderAssistantBody(text: string): ReactNode[] {
+  const pathPattern = /(\s|^)(\/[a-z][a-z0-9-]*(?:\/[a-z0-9-]+)*)(?=$|[\s.,;:!?)])/gi;
+  const out: ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  for (const match of text.matchAll(pathPattern)) {
+    const matchStart = match.index ?? 0;
+    const leading = match[1] ?? "";
+    const path = match[2] ?? "";
+    const linkStart = matchStart + leading.length;
+    if (linkStart > lastIndex) {
+      out.push(text.slice(lastIndex, linkStart));
+    }
+    out.push(
+      <Link
+        key={`link-${key++}`}
+        href={path}
+        className="underline underline-offset-2 hover:text-[hsl(var(--penn-navy))]"
+      >
+        {path}
+      </Link>,
+    );
+    lastIndex = linkStart + path.length;
+  }
+  if (lastIndex < text.length) {
+    out.push(text.slice(lastIndex));
+  }
+  return out;
+}
+
 function ChatBubble({ message }: { message: UiMessage }) {
   const isUser = message.role === "user";
+  const showTypingIndicator =
+    message.pending && message.content.length === 0;
   return (
     <div
       className={cn("flex", isUser ? "justify-end" : "justify-start")}
@@ -443,7 +638,19 @@ function ChatBubble({ message }: { message: UiMessage }) {
             : "bg-background border border-border text-foreground rounded-bl-sm",
         )}
       >
-        {message.content}
+        {showTypingIndicator ? (
+          <span
+            className="inline-flex items-center gap-1 text-muted-foreground"
+            aria-live="polite"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>PennBot is typing…</span>
+          </span>
+        ) : isUser ? (
+          message.content
+        ) : (
+          renderAssistantBody(message.content)
+        )}
         {message.meta === "offline" && (
           <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
             chat offline

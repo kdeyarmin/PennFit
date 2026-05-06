@@ -626,17 +626,19 @@ export function Faq() {
         >
           {matches.length === 0 ? (
             <div
-              className="glass-card rounded-2xl p-6 text-center"
+              className="glass-card rounded-2xl p-6 text-center space-y-3"
               data-testid="faq-search-empty"
             >
-              <div className="mx-auto h-10 w-10 rounded-xl icon-halo-navy flex items-center justify-center text-[hsl(var(--penn-navy))] mb-3">
+              <div className="mx-auto h-10 w-10 rounded-xl icon-halo-navy flex items-center justify-center text-[hsl(var(--penn-navy))]">
                 <Search className="w-4 h-4" />
               </div>
-              <h2 className="text-base font-semibold mb-1">
-                No matching answers
-              </h2>
+              <h2 className="text-base font-semibold">No matching answers</h2>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Try a different keyword, or{" "}
+                Try a different keyword, ask{" "}
+                <strong className="text-[hsl(var(--penn-navy))]">
+                  PennBot
+                </strong>{" "}
+                in the chat bubble (bottom-right), or{" "}
                 <Link
                   href="/learn"
                   className="text-primary underline underline-offset-2"
