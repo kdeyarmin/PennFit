@@ -148,7 +148,8 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
         .from(messages)
         .innerJoin(conversations, eq(conversations.id, messages.conversationId))
         .where(eq(conversations.patientId, id))
-        .orderBy(desc(messages.createdAt)),
+        .orderBy(desc(messages.createdAt))
+        .limit(500),
       db
         .select({
           id: fulfillments.id,
