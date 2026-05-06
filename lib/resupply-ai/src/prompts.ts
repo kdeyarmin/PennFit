@@ -77,6 +77,7 @@ const buildSystemPromptInputSchema = z.object({
     .max(500)
     .transform((s) =>
       s
+        // eslint-disable-next-line no-control-regex -- intentionally strips control chars from user text before embedding in the system prompt
         .replace(/[\r\n\x00-\x1F\x7F]+/g, " ")
         .replace(/`/g, "'")
         .replace(/\bIGNORE\b/gi, "[redacted]")

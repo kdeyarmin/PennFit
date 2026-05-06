@@ -47,6 +47,7 @@
     "@types/node": "catalog:",
     "@types/pg": "^8.18.0",
     "@types/supertest": "^6.0.3",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.5.13",
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",

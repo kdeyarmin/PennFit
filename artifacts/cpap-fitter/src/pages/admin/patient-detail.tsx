@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -2796,7 +2796,7 @@ function DocumentsTab({ patientId }: { patientId: string }) {
   // markingAllReviewed: bulk action in flight
   const [markingAll, setMarkingAll] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoadError(null);
     try {
       const rows = await listPatientDocuments(patientId);
@@ -2804,11 +2804,11 @@ function DocumentsTab({ patientId }: { patientId: string }) {
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Couldn't load documents.");
     }
-  }
+  }, [patientId]);
 
   useEffect(() => {
     void load();
-  }, [patientId]);
+  }, [load]);
 
   function openNoteField(docId: string) {
     setNoteOpenId(docId);
