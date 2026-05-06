@@ -19,6 +19,25 @@ describe("renderVerifyEmail", () => {
     );
   });
 
+  it("prepends uiPathPrefix when supplied (admin mount)", () => {
+    const r = renderVerifyEmail(
+      { ...ctx, uiPathPrefix: "/admin" },
+      "abc-token",
+    );
+    expect(r.html).toContain(
+      "https://shop.example.com/admin/verify-email?token=abc-token",
+    );
+    expect(r.text).toContain(
+      "https://shop.example.com/admin/verify-email?token=abc-token",
+    );
+    expect(r.html).not.toContain("https://shop.example.com/verify-email");
+  });
+
+  it("strips trailing slashes from uiPathPrefix", () => {
+    const r = renderVerifyEmail({ ...ctx, uiPathPrefix: "/admin/" }, "tok");
+    expect(r.html).toContain("https://shop.example.com/admin/verify-email");
+  });
+
   it("escapes HTML in the product name", () => {
     const r = renderVerifyEmail(
       { productName: "<script>", publicBaseUrl: "https://x.test" },
@@ -43,6 +62,19 @@ describe("renderPasswordResetEmail", () => {
     );
     expect(r.text).toContain(
       "https://shop.example.com/reset-password?token=tok123",
+    );
+  });
+
+  it("uses uiPathPrefix for admin mount", () => {
+    const r = renderPasswordResetEmail(
+      { ...ctx, uiPathPrefix: "/admin" },
+      "tok123",
+    );
+    expect(r.html).toContain(
+      "https://shop.example.com/admin/reset-password?token=tok123",
+    );
+    expect(r.text).toContain(
+      "https://shop.example.com/admin/reset-password?token=tok123",
     );
   });
 });
