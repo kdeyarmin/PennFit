@@ -42,6 +42,7 @@ export function makeSignUpHandler(
 ) {
   const role = deps.signUpRole ?? "customer";
   const now = deps.now ?? (() => new Date());
+  const tokenTtlMs = deps.env.emailTokenTtlHours * 60 * 60 * 1000;
 
   return async function handleSignUp(
     req: Request,
@@ -138,7 +139,7 @@ export function makeSignUpHandler(
       tokenHash: token.hash,
       userId,
       purpose: "signup_verify",
-      expiresAt: new Date(t.getTime() + TOKEN_TTL_MS),
+      expiresAt: new Date(t.getTime() + tokenTtlMs),
     });
 
     const rendered = renderVerifyEmail(ctx, token.raw);
