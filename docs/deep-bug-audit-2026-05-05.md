@@ -892,4 +892,45 @@ The codebase demonstrates strong engineering discipline in many areas:
 
 ---
 
-*Audit conducted 2026-05-05. All file references use paths relative to the repo root.*
+## Sprint 5 Fixes — 2026-05-06 (PR #147)
+
+All items below were fixed on branch `claude/sprint5-bug-fixes`.
+
+| Fix | File(s) | Commit |
+|-----|---------|--------|
+| **B-08** Key subscription-mutation rate limits by customer ID (not IP) | `routes/shop/my-subscriptions.ts` | 8ef96a1 |
+| **B-09** Cap `/shop/me/documents` to 100 rows | `routes/shop/me-documents.ts` | 8ef96a1 |
+| **B-10** HTML-escape URLs in reminder email templates | `lib/resupply-messaging/src/email-templates.ts` | ec77c50 |
+| **B-11** Cap CSR macros list to 500 rows | `routes/admin/csr-macros.ts` | ec77c50 |
+| **B-12** Replace N+1 correlated subquery in customer inbox query | `routes/admin/customers.ts` | ec77c50 |
+| **B-13** Guard shop-returns refund against concurrent state change | `routes/admin/shop-returns.ts` | 8ece132 |
+| **B-14** Wrap reminders.scan job handler in try/catch | `worker/jobs/reminders.ts` | 8ece132 |
+| **B-15** Enforce pending-only guard on review approve/reject | `routes/admin/shop-reviews.ts` | 741a84e |
+| **B-16** Cap message fetches in conversation detail and patient timeline | `routes/conversations/detail.ts`, `routes/patients/timeline.ts` | 0642e69 |
+| **B-16b** Cap in-app message fetch; replace JavaScript count loop with SQL COUNT | `lib/messaging/in-app-conversation.ts` | 8b4361f |
+| **B-17** Detect concurrent duplicate sends in rx-renewal dispatcher | `lib/rx-renewal/dispatcher.ts` | f2b50af |
+| **B-18** Add Stripe idempotency key to admin refund endpoint | `routes/admin/shop-orders.ts` | e98a0bf |
+| **B-19** Rethrow channel failures in rx-renewal-send and smart-trigger-send cron jobs | `worker/jobs/rx-renewal-send.ts`, `worker/jobs/smart-trigger-send.ts` | 10ab75c |
+| **B-20** Add `auth.password_reset_failed` audit event on invalid reset token | `lib/resupply-auth/src/http/reset-password.ts` | 10ab75c |
+| **B-21** Prune stale keys from back-in-stock in-memory rate bucket | `routes/shop/back-in-stock.ts` | 26caacb |
+| **D-08** Migrate `fulfillments.quantity` from `text` to `integer` (migration 0061) | `schema/fulfillments.ts`, `api.schemas.ts`, `patient-detail.tsx` | e6060ce |
+| **D-10** Add composite `(status, last_message_at)` index on conversations (migration 0063) | `schema/conversations.ts` | e6060ce |
+| **D-13** Add partial unique index on `shop_orders.cart_hash` (migration 0062) | `schema/shop-orders.ts` | e6060ce |
+| **D-16** Complete `updatedAt` `.$onUpdateFn` + BEFORE UPDATE triggers for all remaining tables (migrations 0054–0060) | Multiple schema files | d44c52d, 04c8073, bd27feb |
+| **D-18** Add Drizzle enum + DB CHECK constraints for `shop_returns`, `shop_orders`, `shop_reviews` status | `schema/shop-returns.ts`, `schema/shop-orders.ts`, `schema/shop-reviews.ts` | 747ed1d |
+| **D-19** Add Drizzle enum + DB CHECK constraints for `admin_users`, `auth.users`, `patient-onboarding-journeys`, `shop-product-questions` status/role | Multiple schema files | 0d08437 |
+| **D-20** Replace `.$type<>()` casts with proper Drizzle enum on `insurance_leads` and `physician_fax_outreach` status | `schema/insurance-leads.ts`, `schema/physician-fax-outreach.ts` | 0499e0d |
+| **D-21** Add `.$onUpdateFn` to `auth.password_credentials` and `reminder_subscriptions` (migration 0060) | `schema/auth/password-credentials.ts`, `schema/storefront/reminder-subscriptions.ts` | bd27feb |
+| **D-22** Add Drizzle enum to `patient_smart_trigger_events.kind` | `schema/patient-smart-trigger-events.ts` | 56d9721 |
+
+### Remaining Deferred Items (require architectural decisions)
+
+| ID | Description |
+|----|-------------|
+| **A-10** | Session token rotation on sign-in (multi-device UX trade-off) |
+| **A-14** | Password hash algorithm migration path (re-hash on successful sign-in) |
+| **A-15/D-17** | Audit log retention + cold storage archival (HIPAA 6-year minimum) |
+
+---
+
+*Audit conducted 2026-05-05. Sprint 5 fixes applied 2026-05-06. All file references use paths relative to the repo root.*
