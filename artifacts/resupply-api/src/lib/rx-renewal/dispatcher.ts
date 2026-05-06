@@ -140,6 +140,31 @@ export async function runRxRenewalSendDue(
       ? (row.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? "")
       : "";
     const greeting = firstName ? `Hi ${firstName}` : "Hi";
+
+    // Claim the row atomically BEFORE calling the vendor. Two concurrent
+    // workers selecting the same batch would both see renewalRequestedAt IS
+    // NULL; without this guard, both would send and only one would win the
+    // post-send mark — the comment that was here acknowledged "a duplicate
+    // send". Claiming first eliminates that window. On vendor failure we
+    // attempt to undo the claim so the next cron tick can retry.
+    const claimed = await db
+      .update(prescriptions)
+      .set({ renewalRequestedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(prescriptions.id, row.prescriptionId),
+          isNull(prescriptions.renewalRequestedAt),
+        ),
+      )
+      .returning({ id: prescriptions.id });
+    if (!claimed[0]) {
+      logger.info(
+        { prescription_id: row.prescriptionId, channel },
+        "rx-renewal: row already claimed by concurrent worker — skipping",
+      );
+      continue;
+    }
+
     try {
       if (channel === "email") {
         await sg!.sendEmail({
@@ -158,23 +183,6 @@ export async function runRxRenewalSendDue(
           to: contact,
           body: rxRenewalSms(firstName, daysUntilExpiry),
         });
-      }
-
-      const markResult = await db
-        .update(prescriptions)
-        .set({ renewalRequestedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(prescriptions.id, row.prescriptionId),
-            isNull(prescriptions.renewalRequestedAt),
-          ),
-        )
-        .returning({ id: prescriptions.id });
-      if (!markResult[0]) {
-        logger.warn(
-          { prescription_id: row.prescriptionId, channel },
-          "rx-renewal: send succeeded but DB mark affected 0 rows — concurrent worker likely caused a duplicate send",
-        );
       }
 
       await logAudit({
@@ -218,13 +226,28 @@ export async function runRxRenewalSendDue(
 
       sent++;
     } catch (err) {
+      // Undo the pre-send claim so the next cron tick can retry this row.
+      // Best-effort: if the undo itself fails the row stays marked and won't
+      // be retried, which ops can see in the audit log.
+      await db
+        .update(prescriptions)
+        .set({ renewalRequestedAt: null, updatedAt: now })
+        .where(eq(prescriptions.id, row.prescriptionId))
+        .catch((dbErr) => {
+          logger.warn(
+            {
+              prescription_id: row.prescriptionId,
+              err: dbErr instanceof Error ? dbErr.message : String(dbErr),
+            },
+            "rx-renewal: failed to undo claim after send error — row will not be retried automatically",
+          );
+        });
       failed++;
       logger.warn(
         {
-          err,
           prescription_id: row.prescriptionId,
-          patient_id: row.patientId,
           channel,
+          err: err instanceof Error ? err.message : String(err),
         },
         "Rx renewal request send failed",
       );
