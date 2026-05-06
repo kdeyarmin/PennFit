@@ -330,7 +330,13 @@ export async function scanForDueReminders(
         )`,
       ),
     )
-    .orderBy(desc(episodes.dueAt));
+    .orderBy(desc(episodes.dueAt))
+    // Safety cap: each row is one patient-prescription-episode triple.
+    // A real scan visits far fewer (the comment above says "low thousands
+    // of patients"); this bound prevents a misconfigured data state from
+    // loading an unbounded result set into memory. Mirrors the 200-patient
+    // cap in smart-trigger evaluator.
+    .limit(1000);
 
   // Step 3: per-row eligibility + channel resolution.
   const seenPatient = new Set<string>();
