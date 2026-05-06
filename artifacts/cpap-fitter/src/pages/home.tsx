@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
+import { AmbientBackground } from "@/components/ambient-background";
 
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
@@ -22,7 +23,9 @@ export function Home() {
   // gets stamped at https://pennpaps.com/.
   useDocumentTitle("");
   return (
-    <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-24">
+    <>
+      <AmbientBackground />
+      <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-24">
         <HomeStatusBanner />
 
       {/* Hero */}
@@ -302,6 +305,6 @@ export function Home() {
           </div>
         </div>
       </div>
-      </div>
+    </>
   );
 }

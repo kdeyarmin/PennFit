@@ -1,0 +1,211 @@
+/*
+ * AmbientBackground — classy navy+gold layer for the landing page.
+ *
+ * Layers (lowest first):
+ *   .ambient-bg__wash          — warm cream base with corner-anchored
+ *                                navy & gold radials
+ *   .ambient-bg__bloom--*      — three slow-drifting brand-color blooms
+ *                                (navy top-left, navy bottom-right,
+ *                                 gold top-right)
+ *   .ambient-bg__rule          — a single horizontal gold hairline
+ *                                ornament near the top edge that fades
+ *                                in and out (letterhead feel)
+ *   .ambient-bg__sheen         — slow diagonal lacquer pass with a
+ *                                gold-cream-gold glint
+ *
+ * Mounting page must wrap content in `position: relative; z-index: 10`
+ * so it stacks above this layer.
+ */
+
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.ambient-bg__wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 75% 55% at 12% 8%,
+      hsl(var(--penn-navy) / 0.14),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 70% 55% at 88% 92%,
+      hsl(var(--penn-navy) / 0.11),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse 90% 50% at 50% -8%,
+      hsl(var(--penn-gold) / 0.10),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 90% 55% at 50% 112%,
+      hsl(var(--penn-mist) / 0.55),
+      transparent 70%
+    );
+}
+
+.ambient-bg__bloom {
+  position: absolute;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  filter: blur(120px);
+  mix-blend-mode: multiply;
+  will-change: transform;
+}
+
+.ambient-bg__bloom--navy-tl {
+  top: -22vmax;
+  left: -18vmax;
+  background: radial-gradient(
+    circle,
+    hsl(var(--penn-navy) / 0.55),
+    transparent 70%
+  );
+  opacity: 0.32;
+  animation: ambient-bloom-tl 52s ease-in-out infinite alternate;
+}
+
+.ambient-bg__bloom--navy-br {
+  bottom: -26vmax;
+  right: -20vmax;
+  width: 65vmax;
+  height: 65vmax;
+  background: radial-gradient(
+    circle,
+    hsl(var(--penn-navy-soft) / 0.5),
+    transparent 70%
+  );
+  opacity: 0.28;
+  animation: ambient-bloom-br 64s ease-in-out infinite alternate;
+}
+
+.ambient-bg__bloom--gold-tr {
+  top: -8vmax;
+  right: -16vmax;
+  width: 50vmax;
+  height: 50vmax;
+  background: radial-gradient(
+    circle,
+    hsl(var(--penn-gold) / 0.55),
+    transparent 70%
+  );
+  opacity: 0.26;
+  animation: ambient-bloom-gold 58s ease-in-out infinite alternate;
+}
+
+@keyframes ambient-bloom-tl {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(10vw, 8vh, 0) scale(1.12);
+  }
+}
+
+@keyframes ambient-bloom-br {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  100% {
+    transform: translate3d(-9vw, -7vh, 0) scale(0.95);
+  }
+}
+
+@keyframes ambient-bloom-gold {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.95);
+  }
+  100% {
+    transform: translate3d(-7vw, 6vh, 0) scale(1.1);
+  }
+}
+
+/*
+ * Single horizontal gold ornament — a hairline that fades in and out
+ * very slowly, anchored just above the fold. Reads as a letterhead
+ * rule rather than a UI divider. Subtle enough to never compete with
+ * page content, but enough to anchor the gold accent throughout the
+ * scroll.
+ */
+.ambient-bg__rule {
+  position: absolute;
+  top: 14vh;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    hsl(var(--penn-gold) / 0.35) 20%,
+    hsl(var(--penn-gold) / 0.55) 50%,
+    hsl(var(--penn-gold) / 0.35) 80%,
+    transparent 100%
+  );
+  animation: ambient-rule-fade 18s ease-in-out infinite alternate;
+}
+
+@keyframes ambient-rule-fade {
+  0% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0.7;
+  }
+}
+
+/*
+ * Lacquer sheen — a slow polished pass with a gold-cream-gold glint.
+ * The cream center reads as polished paper, the gold edges as the
+ * brand accent. No cyan, no white-hot center.
+ */
+.ambient-bg__sheen {
+  position: absolute;
+  top: -25vh;
+  left: -30vw;
+  width: 160vw;
+  height: 70vh;
+  background: linear-gradient(
+    115deg,
+    transparent 32%,
+    hsl(var(--penn-gold) / 0.10) 47%,
+    hsl(var(--penn-gold-soft) / 0.32) 50%,
+    hsl(var(--penn-gold) / 0.10) 53%,
+    transparent 68%
+  );
+  filter: blur(18px);
+  animation: ambient-sheen 32s linear infinite;
+}
+
+@keyframes ambient-sheen {
+  0% {
+    transform: translate3d(-30%, 0, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(25%, 0, 0);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-bg__bloom,
+  .ambient-bg__rule,
+  .ambient-bg__sheen {
+    animation: none !important;
+  }
+}
