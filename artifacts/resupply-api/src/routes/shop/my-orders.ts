@@ -70,6 +70,11 @@ const querySchema = z.object({
 });
 
 interface ProductCacheEntry {
+  // First 8 chars of the Stripe secret key in use when the cache was
+  // populated. Including it invalidates the cache on key rotation
+  // (test→live, credential rotation), matching the behaviour of the
+  // sibling cache in routes/shop/products.ts.
+  keyPrefix: string;
   fetchedAt: number;
   names: Map<string, string>;
 }
@@ -411,17 +416,6 @@ async function fetchProductNames(
 ): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
 
-  // Cache hit: every requested id was already resolved within the
-  // TTL. Reusing the cache eliminates a round-trip on the common
-  // "user pages through a long order history" path.
-  if (
-    productNameCache &&
-    Date.now() - productNameCache.fetchedAt < PRODUCT_NAME_CACHE_TTL_MS &&
-    ids.every((id) => productNameCache!.names.has(id))
-  ) {
-    return productNameCache.names;
-  }
-
   const config = readStripeConfigOrNull();
   if (!config) {
     // Preview / dev path: Stripe isn't configured so we can't look
@@ -430,6 +424,21 @@ async function fetchProductNames(
     // which is what we want.
     return new Map();
   }
+  const keyPrefix = config.secretKey.slice(0, 8);
+
+  // Cache hit: every requested id was already resolved within the
+  // TTL under the same Stripe key. Reusing the cache eliminates a
+  // round-trip on the common "user pages through a long order
+  // history" path.
+  if (
+    productNameCache &&
+    productNameCache.keyPrefix === keyPrefix &&
+    Date.now() - productNameCache.fetchedAt < PRODUCT_NAME_CACHE_TTL_MS &&
+    ids.every((id) => productNameCache!.names.has(id))
+  ) {
+    return productNameCache.names;
+  }
+
   const stripe = getStripeClient(config);
   const out = new Map<string, string>();
   try {
@@ -451,7 +460,7 @@ async function fetchProductNames(
     return out; // Whatever we managed to collect; rest fall back.
   }
 
-  productNameCache = { fetchedAt: Date.now(), names: out };
+  productNameCache = { keyPrefix, fetchedAt: Date.now(), names: out };
   return out;
 }
 
