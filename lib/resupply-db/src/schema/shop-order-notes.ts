@@ -11,7 +11,7 @@
 // schema omits it — both produce the same physical index).
 
 import { sql } from "drizzle-orm";
-import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { shopOrders } from "./shop-orders";
 import { resupplySchema } from "./_schema";
@@ -44,6 +44,10 @@ export const shopOrderNotes = resupplySchema.table(
     orderCreatedIdx: index("shop_order_notes_order_created_idx").on(
       t.orderId,
       t.createdAt,
+    ),
+    bodyLength: check(
+      "shop_order_notes_body_max_length",
+      sql`length(${t.body}) <= 10000`,
     ),
   }),
 );

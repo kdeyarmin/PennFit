@@ -102,6 +102,11 @@ export function pushBody(kind: TriggerKind): string {
  */
 export function smsBody(firstName: string, kind: TriggerKind): string {
   const head = firstName ? `Hi ${firstName}` : "Hi";
+  // Plain ASCII only — em-dashes (U+2014) force Twilio UCS-2
+  // encoding which drops the per-segment limit from 160 to 70
+  // chars. A regression to non-ASCII would silently push these
+  // sends into multi-segment territory, doubling cost and
+  // reducing carrier delivery rate.
   switch (kind) {
     case "leak_rising":
       return `${head}, your CPAP leak rate has trended up - usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. - Penn Home`;

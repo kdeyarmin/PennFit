@@ -30,13 +30,19 @@ interface Bucket {
 export interface RateLimitOptions {
   /** Window length in milliseconds. */
   windowMs: number;
-  /** Max requests allowed per IP per window. */
+  /** Max requests allowed per key per window. */
   max: number;
   /**
    * Stable name for logs and the response body. Helps ops grep
    * across many limiters in the same process.
    */
   name: string;
+  /**
+   * Custom key extractor. Defaults to `req.ip` (IP-based limiting).
+   * Override to key by phone number, user ID, or any other dimension.
+   * Return a stable string; an empty string falls back to "unknown".
+   */
+  keyFn?: (req: import("express").Request) => string;
 }
 
 export function rateLimit(opts: RateLimitOptions): RequestHandler {
@@ -44,10 +50,9 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
 
   return (req, res, next) => {
     const now = Date.now();
-    // Express's `req.ip` honors `trust proxy`; if the app hasn't
-    // opted in, fall back to the socket address. We never want to
-    // throw here (a logging hiccup mustn't 500 a production call).
-    const key = req.ip ?? req.socket.remoteAddress ?? "unknown";
+    const key = opts.keyFn
+      ? (opts.keyFn(req) || "unknown")
+      : (req.ip ?? req.socket.remoteAddress ?? "unknown");
 
     let bucket = buckets.get(key);
     if (!bucket || bucket.resetAt <= now) {

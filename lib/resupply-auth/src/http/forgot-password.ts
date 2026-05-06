@@ -26,7 +26,6 @@ const ForgotBody = z.object({
   email: z.string().min(3).max(254),
 });
 
-const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const FORGOT_RATE_LIMIT: RateLimitConfig = {
   maxPerEmail: 3,
   maxPerIp: 15,
@@ -42,6 +41,7 @@ export function makeForgotPasswordHandler(
   options: MakeForgotPasswordHandlerOptions,
 ) {
   const now = deps.now ?? (() => new Date());
+  const resetTokenTtlMs = deps.env.emailTokenTtlHours * 60 * 60 * 1000;
 
   return async function handleForgot(
     req: Request,
@@ -127,7 +127,7 @@ export function makeForgotPasswordHandler(
       tokenHash: token.hash,
       userId: user.id,
       purpose: "password_reset",
-      expiresAt: new Date(t.getTime() + RESET_TOKEN_TTL_MS),
+      expiresAt: new Date(t.getTime() + resetTokenTtlMs),
     });
 
     const ctx: AuthEmailContext = {
@@ -171,4 +171,6 @@ export function makeForgotPasswordHandler(
 }
 
 /** Re-export so callers can read the TTL when surfacing UX copy. */
-export const PASSWORD_RESET_TTL_MS = RESET_TOKEN_TTL_MS;
+/** Default TTL for password-reset tokens (AUTH_EMAIL_TOKEN_TTL_HOURS env var, default 24h). */
+export const PASSWORD_RESET_TTL_MS =
+  parseInt(process.env.AUTH_EMAIL_TOKEN_TTL_HOURS ?? "24", 10) * 60 * 60 * 1000;

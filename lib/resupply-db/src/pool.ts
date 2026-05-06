@@ -12,9 +12,10 @@ const { Pool: PgPool } = pg;
 //   - There is exactly one place to tune timeouts, TLS settings, and
 //     `max` size. ADR 003 calls this out explicitly.
 //
-// Sizing: this pool started life inside the API just for the readiness
-// probe (every ~5-10s, max=2). As real query handlers move into
-// `@workspace/resupply-db`, bump `max` here — that is the only knob.
+// Sizing: controlled by the DB_POOL_MAX env var (default 10). The pool
+// started life as max=2 for readiness-probe-only use; now that all route
+// handlers share it the default needs to cover concurrent requests.
+// Override in production via DB_POOL_MAX to match available connections.
 //
 // pg-boss intentionally keeps its own pool inside the worker process
 // (see ADR 002) and is NOT consolidated here.
@@ -44,9 +45,10 @@ export function getDbPool(): Pool {
     );
   }
 
+  const poolMax = parseInt(process.env.DB_POOL_MAX ?? "10", 10);
   const config: PoolConfig = {
     connectionString: databaseUrl,
-    max: 2,
+    max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 10,
     idleTimeoutMillis: 30_000,
     // Hard ceiling on a fresh connection attempt. Without this, a
     // stalled DB will hang any caller (including the readiness probe)

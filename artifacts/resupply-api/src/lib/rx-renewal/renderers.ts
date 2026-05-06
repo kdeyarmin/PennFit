@@ -65,6 +65,10 @@ export function rxRenewalHtml(
  * path: patients can text back the physician's name and our
  * messaging dispatcher routes the reply into the existing
  * conversation thread.
+ *
+ * Carrier-recommended opt-out wording is `STOP to opt out` (vs the
+ * shorter `STOP.`); other SMS surfaces in this codebase use the
+ * full phrase, so we match for compliance consistency.
  */
 export function rxRenewalSms(
   firstName: string,
@@ -78,8 +82,8 @@ export function rxRenewalSms(
         ? "your CPAP Rx expires tomorrow"
         : `your CPAP Rx expires in ${daysUntilExpiry} days`;
   return (
-    `${head}, ${status}. Ask your doctor for a renewal, ` +
-    `or reply with their name and we'll request it. Reply STOP to opt out.`
+    `${head}, ${status}. Ask your doctor to renew or text us ` +
+    `their name + practice. Reply STOP to opt out. - Penn Home`
   );
 }
 

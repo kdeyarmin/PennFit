@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
+import { AmbientBackground } from "@/components/ambient-background";
 
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
@@ -22,8 +23,10 @@ export function Home() {
   // gets stamped at https://pennpaps.com/.
   useDocumentTitle("");
   return (
-    <div className="flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-24">
-      <HomeStatusBanner />
+    <>
+      <AmbientBackground />
+      <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-24">
+        <HomeStatusBanner />
 
       {/* Hero */}
       <div className="text-center max-w-4xl mb-12 md:mb-16 animate-shimmer-in">
@@ -109,8 +112,8 @@ export function Home() {
 
           <div className="flex items-center justify-between mb-6 relative z-10">
             <div className="inline-flex items-center gap-3">
-              <div className="h-px w-6 bg-gradient-to-r from-transparent to-[hsl(var(--penn-cyan))]" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-cyan-deep))]">
+              <div className="h-px w-6 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-gold-deep))]">
                 The Mask Fitter
               </span>
             </div>
@@ -142,10 +145,10 @@ export function Home() {
             ].map(({ Icon, t }, i) => (
               <li key={t} className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-[hsl(var(--penn-cyan-deep))] tracking-[0.22em]">
+                  <span className="text-[10px] font-mono text-[hsl(var(--penn-gold-deep))] tracking-[0.22em]">
                     0{i + 1}
                   </span>
-                  <span className="h-px flex-1 bg-gradient-to-r from-[hsl(var(--penn-cyan))]/45 to-transparent" />
+                  <span className="h-px flex-1 bg-gradient-to-r from-[hsl(var(--penn-gold))]/45 to-transparent" />
                 </div>
                 <div className="flex items-center gap-2">
                   <Icon
@@ -302,6 +305,6 @@ export function Home() {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
