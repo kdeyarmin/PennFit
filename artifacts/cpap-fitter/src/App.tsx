@@ -123,6 +123,9 @@ const VerifyEmailPage = lazy(() =>
     default: m.VerifyEmailPage,
   })),
 );
+const ReturnsPage = lazy(() =>
+  import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
+);
 
 // Admin auth pages — separate sign-in flow because admins post to
 // /resupply-api/auth/* (allowlist-gated) while customers post to
@@ -342,6 +345,7 @@ function PatientRouter() {
           <Route path="/reminders/manage" component={RemindersManage} />
           <Route path="/privacy" component={Privacy} />
           <Route path="/terms" component={Terms} />
+          <Route path="/returns" component={ReturnsPage} />
 
           {/* Guarded routes — see GuardedXxx components above. */}
           <Route path="/measure" component={GuardedMeasure} />
