@@ -506,23 +506,28 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
   await boss.createQueue(SEND_EMAIL_JOB);
 
   await boss.work<ScanJobData>(SCAN_JOB, async (jobs) => {
-    const data = jobs[0]?.data ?? {};
-    const asOf = data.asOfIso ? new Date(data.asOfIso) : new Date();
-    const rows = await scanForDueReminders(asOf);
-    logger.info(
-      { count: rows.length },
-      "reminders.scan: enqueueing per-patient send jobs",
-    );
-    for (const row of rows) {
-      const send: SendJobData = {
-        patientId: row.patientId,
-        episodeId: row.episodeId,
-      };
-      if (row.channel === "sms") {
-        await boss.send(SEND_SMS_JOB, send);
-      } else {
-        await boss.send(SEND_EMAIL_JOB, send);
+    try {
+      const data = jobs[0]?.data ?? {};
+      const asOf = data.asOfIso ? new Date(data.asOfIso) : new Date();
+      const rows = await scanForDueReminders(asOf);
+      logger.info(
+        { count: rows.length },
+        "reminders.scan: enqueueing per-patient send jobs",
+      );
+      for (const row of rows) {
+        const send: SendJobData = {
+          patientId: row.patientId,
+          episodeId: row.episodeId,
+        };
+        if (row.channel === "sms") {
+          await boss.send(SEND_SMS_JOB, send);
+        } else {
+          await boss.send(SEND_EMAIL_JOB, send);
+        }
       }
+    } catch (err) {
+      logger.error({ err }, "reminders.scan: job failed");
+      throw err;
     }
   });
 

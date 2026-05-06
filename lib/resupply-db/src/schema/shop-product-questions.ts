@@ -35,7 +35,7 @@ export const shopProductQuestions = resupplySchema.table(
     questionBody: text("question_body").notNull(),
 
     /** See ShopProductQuestionStatus jsdoc above. */
-    status: text("status").notNull().default("pending"),
+    status: text("status", { enum: ["pending", "answered", "rejected"] }).notNull().default("pending"),
 
     /** CSR-authored answer. Required to transition to status='answered'. */
     answerBody: text("answer_body"),
@@ -53,7 +53,8 @@ export const shopProductQuestions = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     productStatusIdx: index("shop_product_questions_product_status_idx").on(

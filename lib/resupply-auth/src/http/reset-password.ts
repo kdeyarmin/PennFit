@@ -69,6 +69,12 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
       at: t,
     });
     if (!consumed || consumed.purpose !== "password_reset") {
+      void deps.audit({
+        action: "auth.password_reset_failed",
+        adminUserId: null,
+        ip: req.ip ?? null,
+        metadata: { reason: "invalid_or_expired_token" },
+      });
       authError(
         res,
         410,

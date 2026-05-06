@@ -32,7 +32,8 @@ export const shopCustomerPushSubscriptions = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     customerActiveIdx: index("shop_customer_push_subscriptions_active_idx").on(

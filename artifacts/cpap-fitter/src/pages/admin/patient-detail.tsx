@@ -490,7 +490,7 @@ type Fulfillment = {
   id: string;
   episodeId: string;
   itemSku: string;
-  quantity: string;
+  quantity: number;
   status: string;
   pacwareOrderRef?: string | null;
   shippedAt?: string | null;
