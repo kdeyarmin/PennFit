@@ -24,7 +24,7 @@
 // linked auth.users row — no separate status column to keep in sync.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
@@ -192,6 +192,24 @@ router.post(
       [emailLower],
     );
     const authUserId = upserted.rows[0]!.id;
+
+    // Guard against a CSR inadvertently (or maliciously) supplying an email
+    // that already belongs to a DIFFERENT patient's portal account. If we
+    // proceeded, that other patient's auth identity would be stitched to
+    // this patient's record — an IDOR vector. Reject with a clear 409.
+    const claimedByOther = await db
+      .select({ id: patients.id })
+      .from(patients)
+      .where(and(eq(patients.portalAuthUserId, authUserId), ne(patients.id, patientId)))
+      .limit(1);
+    if (claimedByOther[0]) {
+      res.status(409).json({
+        error: "email_already_linked",
+        message:
+          "This email address is already linked to a different patient's portal account. Use a different email or contact support.",
+      });
+      return;
+    }
 
     // Issue a 7-day password_reset token.
     const token = issueToken();

@@ -255,6 +255,24 @@ router.post("/email/click", async (req, res) => {
               ip: req.ip ?? null,
               userAgent: req.get("user-agent") ?? null,
             });
+          } else {
+            // already_confirmed: order placed on an earlier click/request.
+            // Closing the conversation is still correct; audit the duplicate
+            // so admins can see the full lifecycle in the audit log.
+            await safeAudit({
+              action: "messaging.order.already_confirmed",
+              adminEmail: null,
+              adminUserId: null,
+              targetTable: "conversations",
+              targetId: conversationId,
+              metadata: {
+                channel: "email",
+                conversation_id: conversationId,
+                via: "email_link",
+              },
+              ip: req.ip ?? null,
+              userAgent: req.get("user-agent") ?? null,
+            });
           }
           res
             .status(200)

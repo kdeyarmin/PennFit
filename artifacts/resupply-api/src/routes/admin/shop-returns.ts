@@ -191,7 +191,7 @@ router.post(
         approvedAt: now,
         updatedAt: now,
         adminUserId: adminId,
-        adminNote: appendNote(req.body?.note, adminId, "Approved"),
+        adminNote: appendNote(parsed.data.note, adminId, "Approved"),
         returnLabelUrl: parsed.data.returnLabelUrl ?? null,
         returnCarrier: parsed.data.returnCarrier ?? null,
         returnTrackingNumber: parsed.data.returnTrackingNumber ?? null,
@@ -443,11 +443,11 @@ router.post(
       })
       .where(and(eq(shopReturns.id, ret.id), eq(shopReturns.status, "received")))
       .returning();
-    if (!updated[0]) {
+    if (updated.length === 0) {
       res.status(409).json({ error: "not_in_received_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated[0]) });
+    res.json({ return: serializeReturnRow(updated[0]!) });
   },
 );
 

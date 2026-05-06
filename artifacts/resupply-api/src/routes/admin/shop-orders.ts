@@ -46,6 +46,7 @@ import { z } from "zod";
 import { getDbPool, shopCustomers, shopOrders } from "@workspace/resupply-db";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
+import { logAudit } from "@workspace/resupply-audit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import {
   getStripeClient,
@@ -458,13 +459,13 @@ router.post(
         updatedAt: sql`now()`,
         shippingEmailSentAt: sql`CASE WHEN ${shopOrders.trackingCarrier} IS DISTINCT FROM ${carrier} OR ${shopOrders.trackingNumber} IS DISTINCT FROM ${number} THEN NULL ELSE ${shopOrders.shippingEmailSentAt} END`,
       })
-      .where(eq(shopOrders.id, orderId))
+      .where(and(eq(shopOrders.id, orderId), eq(shopOrders.status, "paid")))
       .returning();
     const row = updated[0];
     if (!row) {
-      // Race: another admin deleted the row between SELECT + UPDATE.
-      // Treat the same as not-found.
-      res.status(404).json({ error: "order_not_found" });
+      // Race: order was deleted or its status changed between the
+      // pre-check and this UPDATE (e.g. a concurrent refund webhook).
+      res.status(409).json({ error: "order_not_paid" });
       return;
     }
 
@@ -539,11 +540,22 @@ router.post(
         deliveredAt: sql`now()`,
         updatedAt: sql`now()`,
       })
-      .where(eq(shopOrders.id, orderId))
+      // Guard idempotency at DB level: if two admins race, the second
+      // UPDATE matches 0 rows (deliveredAt already set) and we re-read
+      // the committed row below instead of double-stamping.
+      .where(and(eq(shopOrders.id, orderId), isNull(shopOrders.deliveredAt)))
       .returning();
     const row = updated[0];
     if (!row) {
-      res.status(404).json({ error: "order_not_found" });
+      // Either deleted or already delivered by a concurrent request.
+      // Re-load to distinguish and return the current state.
+      const current = await loadOrder(orderId);
+      if (!current) {
+        res.status(404).json({ error: "order_not_found" });
+        return;
+      }
+      // Idempotent: already delivered — return current state.
+      res.json({ order: projectOrder(current) });
       return;
     }
     req.log?.info?.(
@@ -722,6 +734,12 @@ router.post(
             shop_order_id: orderId,
           },
         },
+        // Per-order + per-amount idempotency key: if two admins click
+        // "Refund" before the charge.refunded webhook flips status, Stripe
+        // deduplicates and returns the same Refund object rather than
+        // issuing a second refund.  Amount is included so different partial
+        // refund amounts on the same order each create a separate Stripe
+        // Refund (intentional).
         { idempotencyKey },
       );
     } catch (err) {
@@ -751,6 +769,26 @@ router.post(
       },
       "admin/shop/orders: refund issued",
     );
+
+    void logAudit({
+      action: "shop_order.refund.issued",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "shop_orders",
+      targetId: orderId,
+      metadata: {
+        order_id: orderId,
+        refund_id: refund.id,
+        refund_amount_cents: refund.amount,
+        refund_status: refund.status,
+        is_partial: typeof amountCents === "number",
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      req.log?.warn?.({ err }, "shop_order.refund.issued audit write failed");
+    });
+
     res.json({
       refund: {
         id: refund.id,
