@@ -11,11 +11,13 @@ import {
   HelpCircle,
   Compass,
   ShoppingBag,
+  Sparkles,
   UserCircle2,
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
 import { AmbientBackground } from "@/components/ambient-background";
+import { openPennBot } from "@/lib/chat-events";
 
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
@@ -82,6 +84,15 @@ export function Home() {
             </Button>
           </Link>
         </div>
+        <button
+          type="button"
+          onClick={() => openPennBot()}
+          className="mt-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
+          data-testid="home-ask-pennbot"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Or ask PennBot anything</span>
+        </button>
       </div>
 
       {/* Trust-signal strip — live aggregate review rating + static brand promises */}

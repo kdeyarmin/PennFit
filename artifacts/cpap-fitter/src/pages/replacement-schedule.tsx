@@ -16,6 +16,7 @@ import {
   Info,
   Stethoscope,
 } from "lucide-react";
+import { openPennBot } from "@/lib/chat-events";
 
 type ScheduleRow = {
   item: string;
@@ -321,6 +322,24 @@ export function ReplacementSchedule() {
                 </li>
               ))}
             </ul>
+            <div className="pt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  openPennBot({
+                    prefill:
+                      "How often should I replace my CPAP cushion, and what does insurance cover?",
+                  })
+                }
+                className="rounded-full gap-2"
+                data-testid="schedule-ask-pennbot"
+              >
+                <Sparkles className="w-4 h-4" />
+                Ask PennBot about timing
+              </Button>
+            </div>
           </div>
         </div>
       </section>

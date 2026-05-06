@@ -45,7 +45,11 @@ export type TrackStep =
   | "checkout_completed"
   | "reorder_prefill_applied"
   | "capture_blocked"
-  | "results_retake_requested";
+  | "results_retake_requested"
+  | "chat_opened"
+  | "chat_sent"
+  | "chat_replied"
+  | "chat_feedback";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
   ? {
@@ -57,7 +61,19 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
     }
   : T extends "results_retake_requested"
     ? { topConfidencePct: number }
-    : Record<string, unknown>;
+    : T extends "chat_opened"
+      ? { path: string }
+      : T extends "chat_sent"
+        ? { path: string; chars: number; suggested?: boolean }
+        : T extends "chat_replied"
+          ? {
+              path: string;
+              meta?: "offline" | "degraded" | "rate-limited";
+              durationMs: number;
+            }
+          : T extends "chat_feedback"
+            ? { path: string; kind: "up" | "down" }
+            : Record<string, unknown>;
 
 export function track<T extends TrackStep>(
   step: T,
