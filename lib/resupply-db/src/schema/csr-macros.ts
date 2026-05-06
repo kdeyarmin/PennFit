@@ -4,6 +4,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -45,6 +46,10 @@ export const csrMacros = resupplySchema.table(
       t.isActive,
       t.sortOrder,
       t.label,
+    ),
+    bodyLength: check(
+      "csr_macros_body_max_length",
+      sql`length(${t.body}) <= 10000`,
     ),
   }),
 );

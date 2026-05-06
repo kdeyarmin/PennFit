@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { patients } from "./patients";
 import { resupplySchema } from "./_schema";
@@ -47,6 +47,10 @@ export const patientNotes = resupplySchema.table(
     patientCreatedIdx: index("patient_notes_patient_created_idx").on(
       t.patientId,
       t.createdAt,
+    ),
+    bodyLength: check(
+      "patient_notes_body_max_length",
+      sql`length(${t.body}) <= 10000`,
     ),
   }),
 );
