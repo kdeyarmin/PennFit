@@ -350,7 +350,8 @@ router.get(
       })
       .from(patientDocuments)
       .where(eq(patientDocuments.patientId, patient.id))
-      .orderBy(desc(patientDocuments.createdAt));
+      .orderBy(desc(patientDocuments.createdAt))
+      .limit(100);
 
     res.json({ documents: rows });
   },

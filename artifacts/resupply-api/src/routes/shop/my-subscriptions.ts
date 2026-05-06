@@ -146,7 +146,7 @@ router.get("/me/subscriptions", requireSignedIn, async (req, res) => {
 router.post(
   "/me/subscriptions/:id/cancel",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:cancel-sub" }),
+  rateLimit({ windowMs: 60_000, max: 5, name: "shop:cancel-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   async (req, res) => {
     const customerId = req.userCustomerId;
     if (!customerId) {
@@ -428,7 +428,7 @@ async function handlePauseOrResume(
 router.post(
   "/me/subscriptions/:id/pause",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:pause-sub" }),
+  rateLimit({ windowMs: 60_000, max: 5, name: "shop:pause-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   (req, res) => {
     void handlePauseOrResume("pause", req, res);
   },
@@ -437,7 +437,7 @@ router.post(
 router.post(
   "/me/subscriptions/:id/resume",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:resume-sub" }),
+  rateLimit({ windowMs: 60_000, max: 5, name: "shop:resume-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   (req, res) => {
     void handlePauseOrResume("resume", req, res);
   },
@@ -456,7 +456,7 @@ const cadenceBody = z.object({
 router.post(
   "/me/subscriptions/:id/cadence",
   requireSignedIn,
-  rateLimit({ windowMs: 60_000, max: 5, name: "shop:cadence-sub" }),
+  rateLimit({ windowMs: 60_000, max: 5, name: "shop:cadence-sub", keyFn: (req) => req.userCustomerId ?? "unknown" }),
   async (req, res) => {
     const customerId = req.userCustomerId;
     if (!customerId) {
