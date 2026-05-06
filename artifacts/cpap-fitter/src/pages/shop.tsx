@@ -16,6 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { openPennBot } from "@/lib/chat-events";
 import {
   ArrowRight,
   CheckCircle2,
@@ -1108,12 +1109,27 @@ function ShopComingSoon({ message }: { message: string }) {
         The PennPaps shop is opening soon.
       </h2>
       <p className="text-muted-foreground leading-relaxed mb-6">{message}</p>
-      <Link href="/consent">
-        <Button data-testid="shop-coming-soon-insurance-cta">
-          Use insurance now — $0 with prescription{" "}
-          <ArrowRight className="w-4 h-4 ml-2" />
+      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <Link href="/consent">
+          <Button data-testid="shop-coming-soon-insurance-cta">
+            Use insurance now — $0 with prescription{" "}
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        </Link>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() =>
+            openPennBot({
+              prefill:
+                "What CPAP supplies should I order — and which ones need a prescription?",
+            })
+          }
+          data-testid="shop-coming-soon-ask-pennbot"
+        >
+          <Sparkles className="w-4 h-4 mr-2" /> Ask PennBot
         </Button>
-      </Link>
+      </div>
     </div>
   );
 }

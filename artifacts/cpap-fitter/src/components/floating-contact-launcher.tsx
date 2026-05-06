@@ -39,6 +39,7 @@ import {
   Mail,
   MessageCircle,
   Phone,
+  RotateCcw,
   Send,
   Sparkles,
   Square,
@@ -60,6 +61,7 @@ import {
   PENNBOT_OPEN_EVENT,
   type PennBotOpenDetail,
 } from "@/lib/chat-events";
+import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
 
 type Tab = "chat" | "contact";
@@ -243,21 +245,83 @@ export function FloatingContactLauncher() {
     };
   }, []);
 
+  // Anonymous funnel telemetry — fire once each time the panel opens.
+  // No PHI, no message content; we only record that PennBot was opened
+  // and the route the user was on. This lets the team see whether the
+  // chatbot is being used and which pages drive engagement.
+  useEffect(() => {
+    if (open) track("chat_opened", { path: location });
+  }, [open, location]);
+
+  // Site-wide keyboard shortcuts:
+  //   `?` (Shift + /) opens the chat from anywhere.
+  //   `Esc` closes the panel.
+  // Both ignore keypresses fired while the user is typing in another
+  // input — we don't want to swallow typed `?` or steal Esc from
+  // dialogs.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function handler(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      if (e.key === "Escape" && open) {
+        e.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (e.key === "?" && !open && !isInput) {
+        e.preventDefault();
+        setOpen(true);
+        setTab("chat");
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open]);
+
   const stop = useCallback(() => {
     inFlightRef.current?.abort();
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (
+      text: string,
+      opts: { suggested?: boolean; replaceSinceLastUser?: boolean } = {},
+    ) => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || sending) return;
 
+      // For a retry, drop the failed assistant turn (and the preceding
+      // user message we're about to re-send) before appending the new
+      // user/placeholder pair, so the conversation history we forward
+      // to the model doesn't include the canned fallback text.
+      let baseMessages = messages;
+      if (opts.replaceSinceLastUser) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i]!.role === "user") {
+            baseMessages = messages.slice(0, i);
+            break;
+          }
+        }
+      }
+
       const userMsg = makeMessage("user", trimmed);
       const placeholder = makeMessage("assistant", "", undefined, true);
-      const nextMessages = [...messages, userMsg, placeholder];
+      const nextMessages = [...baseMessages, userMsg, placeholder];
       setMessages(nextMessages);
       setInput("");
       setSending(true);
+
+      track("chat_sent", {
+        path: location,
+        chars: trimmed.length,
+        suggested: opts.suggested,
+      });
+      const startedAt = Date.now();
 
       inFlightRef.current?.abort();
       const ctrl = new AbortController();
@@ -292,6 +356,11 @@ export function FloatingContactLauncher() {
             m.id === placeholder.id ? { ...m, pending: false, meta } : m,
           ),
         );
+        track("chat_replied", {
+          path: location,
+          meta,
+          durationMs: Date.now() - startedAt,
+        });
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") {
           // The user clicked Stop. Keep whatever fragments arrived so
@@ -322,12 +391,29 @@ export function FloatingContactLauncher() {
               : m,
           ),
         );
+        track("chat_replied", {
+          path: location,
+          meta: "degraded",
+          durationMs: Date.now() - startedAt,
+        });
       } finally {
         setSending(false);
       }
     },
-    [messages, sending],
+    [messages, sending, location],
   );
+
+  const retryLastTurn = useCallback(() => {
+    let lastUserText: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]!.role === "user") {
+        lastUserText = messages[i]!.content;
+        break;
+      }
+    }
+    if (lastUserText === null) return;
+    void send(lastUserText, { replaceSinceLastUser: true });
+  }, [messages, send]);
 
   const resetConversation = useCallback(() => {
     inFlightRef.current?.abort();
@@ -464,7 +550,13 @@ export function FloatingContactLauncher() {
                 data-testid="floating-contact-messages"
               >
                 {messages.map((m) => (
-                  <ChatBubble key={m.id} message={m} />
+                  <ChatBubble
+                    key={m.id}
+                    message={m}
+                    onRetry={
+                      m.id === messages.at(-1)?.id ? retryLastTurn : undefined
+                    }
+                  />
                 ))}
               </div>
 
@@ -477,7 +569,7 @@ export function FloatingContactLauncher() {
                     <button
                       key={p}
                       type="button"
-                      onClick={() => void send(p)}
+                      onClick={() => void send(p, { suggested: true })}
                       className="text-[11px] leading-tight px-2 py-1 rounded-full border border-border bg-background hover:border-[hsl(var(--penn-navy))]/60 hover:text-[hsl(var(--penn-navy))] transition-colors"
                     >
                       {p}
@@ -644,38 +736,53 @@ function TabButton({ active, onClick, testId, children }: TabButtonProps) {
 }
 
 /**
- * Renders a single line of an assistant reply with two enhancements:
- *   1. `**bold**` → <strong>bold</strong>
- *   2. Bare `/path` mentions become Wouter <Link>s. Conservative
- *      regex: only matches /<word>(/<word>)* at word boundaries, so
- *      file extensions and URLs are not mangled.
+ * Renders a single line of an assistant reply with markdown-lite:
+ *   - `[label](/path)` → <Link href="/path">label</Link>
+ *   - `**bold**`        → <strong>
+ *   - `*italic*`        → <em> (asterisks must hug non-whitespace, so
+ *                         "5 * 3" doesn't accidentally render as italic)
+ *   - bare `/path`      → <Link>, via linkifyPaths on plain segments.
  *
- * Everything else passes through unchanged.
+ * One pass with a single alternation regex; bold is tried before italic
+ * so `**foo**` doesn't get partial-matched by the italic rule.
  */
+const INLINE_TOKEN_PATTERN =
+  /\[([^\]\n]+?)\]\((\/[a-z][a-z0-9-/]*)\)|(\*\*([^*\n]+?)\*\*)|\*([^\s*][^*\n]*?[^\s*]|[^\s*])\*/g;
+
 function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
-  // First split on bold; then within each plain-text segment, link paths.
   const out: ReactNode[] = [];
-  const boldPattern = /\*\*([^*]+?)\*\*/g;
   let lastIndex = 0;
-  let segmentKey = 0;
-  for (const match of text.matchAll(boldPattern)) {
+  let key = 0;
+  for (const match of text.matchAll(INLINE_TOKEN_PATTERN)) {
     const start = match.index ?? 0;
     if (start > lastIndex) {
       out.push(
         ...linkifyPaths(
           text.slice(lastIndex, start),
-          `${keyPrefix}-pre-${segmentKey++}`,
+          `${keyPrefix}-pre-${key++}`,
         ),
       );
     }
-    out.push(
-      <strong key={`${keyPrefix}-b-${segmentKey++}`}>{match[1]}</strong>,
-    );
+    if (match[1] !== undefined && match[2] !== undefined) {
+      out.push(
+        <Link
+          key={`${keyPrefix}-md-${key++}`}
+          href={match[2]}
+          className="underline underline-offset-2 hover:text-[hsl(var(--penn-navy))]"
+        >
+          {match[1]}
+        </Link>,
+      );
+    } else if (match[4] !== undefined) {
+      out.push(<strong key={`${keyPrefix}-md-${key++}`}>{match[4]}</strong>);
+    } else if (match[5] !== undefined) {
+      out.push(<em key={`${keyPrefix}-md-${key++}`}>{match[5]}</em>);
+    }
     lastIndex = start + match[0].length;
   }
   if (lastIndex < text.length) {
     out.push(
-      ...linkifyPaths(text.slice(lastIndex), `${keyPrefix}-tail-${segmentKey}`),
+      ...linkifyPaths(text.slice(lastIndex), `${keyPrefix}-tail-${key}`),
     );
   }
   return out;
@@ -767,7 +874,13 @@ function renderAssistantBody(text: string): ReactNode[] {
   return out;
 }
 
-function ChatBubble({ message }: { message: UiMessage }) {
+function ChatBubble({
+  message,
+  onRetry,
+}: {
+  message: UiMessage;
+  onRetry?: () => void;
+}) {
   const isUser = message.role === "user";
   const showTypingIndicator =
     message.pending && message.content.length === 0;
@@ -784,6 +897,14 @@ function ChatBubble({ message }: { message: UiMessage }) {
       // in non-secure contexts; the user always has Cmd+C as fallback.
     }
   }
+
+  const showRetry =
+    !isUser &&
+    onRetry &&
+    !message.pending &&
+    (message.meta === "degraded" ||
+      message.meta === "offline" ||
+      message.meta === "rate-limited");
 
   return (
     <div
@@ -829,6 +950,17 @@ function ChatBubble({ message }: { message: UiMessage }) {
             <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
               slow down
             </span>
+          )}
+          {showRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              data-testid="floating-contact-retry"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-[hsl(var(--penn-navy))] hover:underline"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Try again
+            </button>
           )}
         </div>
         {!isUser && !showTypingIndicator && message.content.length > 0 && (

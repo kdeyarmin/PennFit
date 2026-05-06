@@ -23,6 +23,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { openPennBot } from "@/lib/chat-events";
 
 type FaqEntry = { q: string; a: React.ReactNode };
 type FaqSection = {
@@ -585,6 +586,25 @@ export function Faq() {
                   } for “${trimmed}”.`}
             </p>
           )}
+          <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <span>Or</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                openPennBot({
+                  prefill: trimmed.length > 0 ? trimmed : undefined,
+                })
+              }
+              className="rounded-full gap-1.5 h-7 px-2.5"
+              data-testid="faq-ask-pennbot"
+            >
+              <Sparkles className="w-3 h-3" />
+              Ask PennBot
+            </Button>
+            <span className="hidden sm:inline">— typed answers in seconds</span>
+          </div>
         </div>
       </header>
 
