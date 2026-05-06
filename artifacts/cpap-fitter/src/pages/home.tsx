@@ -31,7 +31,6 @@ export function Home() {
             the old stat strip; reads as live tech credentials rather
             than a passive metrics row. */}
         <div className="flex flex-wrap items-center justify-center gap-2 mb-6 md:mb-8">
-          <span className="status-pill">On-device computer vision</span>
           <span className="status-pill status-pill-gold">
             Local Penn DME team
           </span>
