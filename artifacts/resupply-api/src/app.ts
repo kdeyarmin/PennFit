@@ -143,7 +143,12 @@ app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",
-  makeAuthRouter(authDeps, { productName: "Resupply" }),
+  makeAuthRouter(authDeps, {
+    productName: "Resupply",
+    // Admin SPA pages live under /admin/{reset-password,verify-email}
+    // — emit links that land there instead of on the customer pages.
+    uiPathPrefix: "/admin",
+  }),
 );
 logger.info(
   { event: "auth_in_house_mounted" },

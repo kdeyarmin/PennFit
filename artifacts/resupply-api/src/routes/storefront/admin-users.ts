@@ -202,6 +202,7 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
     displayName: null,
     productName: "PennFit",
     publicBaseUrl: buildInviteRedirectUrl(req),
+    uiPathPrefix: "/admin",
   });
 
   await writeAudit(req, `team.invite role=${role} email=${email}`);

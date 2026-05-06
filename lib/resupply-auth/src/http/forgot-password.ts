@@ -34,6 +34,7 @@ const FORGOT_RATE_LIMIT = {
 
 interface MakeForgotPasswordHandlerOptions {
   productName: string;
+  uiPathPrefix?: string;
 }
 
 export function makeForgotPasswordHandler(
@@ -129,6 +130,7 @@ export function makeForgotPasswordHandler(
     const ctx: AuthEmailContext = {
       productName: options.productName,
       publicBaseUrl: deps.publicBaseUrl,
+      uiPathPrefix: options.uiPathPrefix,
     };
     const rendered = renderPasswordResetEmail(ctx, token.raw);
     try {

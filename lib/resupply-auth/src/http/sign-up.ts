@@ -32,6 +32,7 @@ const SignUpBody = z.object({
 
 interface MakeSignUpHandlerOptions {
   productName: string;
+  uiPathPrefix?: string;
 }
 
 export function makeSignUpHandler(
@@ -79,6 +80,7 @@ export function makeSignUpHandler(
     const ctx: AuthEmailContext = {
       productName: options.productName,
       publicBaseUrl: deps.publicBaseUrl,
+      uiPathPrefix: options.uiPathPrefix,
     };
 
     const existing = await deps.repo.findUserByEmail(emailLower);

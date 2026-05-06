@@ -167,6 +167,7 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
     role,
     displayName: displayName ?? prior?.displayName ?? null,
     productName: "Resupply",
+    uiPathPrefix: "/admin",
   });
 
   const now = new Date();
@@ -248,6 +249,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
     role: row.role as AdminRole,
     displayName: row.displayName,
     productName: "Resupply",
+    uiPathPrefix: "/admin",
   });
 
   const updated = await db
