@@ -57,6 +57,7 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { logger } from "../../lib/logger.js";
+import { rateLimit } from "../../middlewares/rate-limit.js";
 import {
   buildChatSystemPrompt,
   MAX_CHAT_TURNS,
@@ -72,6 +73,14 @@ import {
 import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
 
 const router = Router();
+
+// Public endpoint — no auth. Rate-limit per IP to prevent API cost exhaustion.
+// 20 turns/min is generous for a genuine user; a scraper would hit it immediately.
+const chatRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  name: "storefront_chat",
+});
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-4o-mini";
@@ -234,7 +243,7 @@ function applyToolCalls(
   return next;
 }
 
-router.post("/chat", async (req, res) => {
+router.post("/chat", chatRateLimit, async (req, res) => {
   const parseResult = chatBodySchema.safeParse(req.body);
   if (!parseResult.success) {
     res.status(400).json({
