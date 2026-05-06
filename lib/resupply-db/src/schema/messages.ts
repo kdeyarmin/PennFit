@@ -72,6 +72,10 @@ export const messages = resupplySchema.table(
       "messages_sender_role_enum",
       sql`${t.senderRole} IN ('patient','customer','admin','agent','system')`,
     ),
+    bodyLength: check(
+      "messages_body_max_length",
+      sql`length(${t.body}) <= 10000`,
+    ),
   }),
 );
 
