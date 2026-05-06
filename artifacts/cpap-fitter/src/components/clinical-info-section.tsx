@@ -13,12 +13,22 @@
 // "Edit" → fill → "Save" cycle is a deliberate gesture and the
 // audit-log trail matches it.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { HeartPulse, Loader2, Pencil, Stethoscope, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AccountApiError,
@@ -27,6 +37,12 @@ import {
   fetchShopClinicalInfo,
   updateShopClinicalInfo,
 } from "@/lib/account-api";
+import {
+  CPAP_DEVICE_CATALOG,
+  CPAP_DEVICE_OTHER_ID,
+  findCpapDeviceByManufacturerModel,
+  getCpapDeviceById,
+} from "@/lib/cpap-devices";
 
 export function ClinicalInfoSection() {
   const [device, setDevice] = useState<CpapDeviceInfo | null>(null);
@@ -187,6 +203,22 @@ function DeviceForm({
   onSubmit: (next: CpapDeviceInfo | null) => void | Promise<void>;
   onCancel: () => void;
 }) {
+  // Decide the initial dropdown selection: match the saved device
+  // against the catalog so returning customers see "their" machine
+  // pre-selected. When no match is found (older free-text entry),
+  // start in "Other" mode with the saved values pre-filled.
+  const initialMatch = useMemo(
+    () => findCpapDeviceByManufacturerModel(initial?.manufacturer, initial?.model),
+    [initial?.manufacturer, initial?.model],
+  );
+  const hadInitialDevice = Boolean(initial?.manufacturer && initial?.model);
+  const [selectedId, setSelectedId] = useState<string>(
+    initialMatch
+      ? initialMatch.id
+      : hadInitialDevice
+        ? CPAP_DEVICE_OTHER_ID
+        : "",
+  );
   const [manufacturer, setManufacturer] = useState(initial?.manufacturer ?? "");
   const [model, setModel] = useState(initial?.model ?? "");
   const [serialNumber, setSerialNumber] = useState(initial?.serialNumber ?? "");
@@ -198,13 +230,44 @@ function DeviceForm({
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
+  // Group catalog entries by manufacturer for the SelectGroup labels.
+  const grouped = useMemo(() => {
+    const map = new Map<string, typeof CPAP_DEVICE_CATALOG>();
+    for (const d of CPAP_DEVICE_CATALOG) {
+      const list = map.get(d.manufacturer) ?? [];
+      list.push(d);
+      map.set(d.manufacturer, list);
+    }
+    return Array.from(map.entries());
+  }, []);
+
+  const isOther = selectedId === CPAP_DEVICE_OTHER_ID;
+  const catalogPick = isOther ? null : getCpapDeviceById(selectedId);
+  const effectiveManufacturer = isOther
+    ? manufacturer
+    : (catalogPick?.manufacturer ?? "");
+  const effectiveModel = isOther ? model : (catalogPick?.model ?? "");
+  const canSave =
+    effectiveManufacturer.trim().length > 0 && effectiveModel.trim().length > 0;
+
+  function handleSelect(next: string) {
+    setSelectedId(next);
+    if (next !== CPAP_DEVICE_OTHER_ID) {
+      // Picking a catalog entry blanks any leftover "Other" free-text
+      // so a half-typed manual model can't sneak through if the user
+      // toggles back later.
+      setManufacturer("");
+      setModel("");
+    }
+  }
+
   return (
     <form
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
-        const trimmedManufacturer = manufacturer.trim();
-        const trimmedModel = model.trim();
+        const trimmedManufacturer = effectiveManufacturer.trim();
+        const trimmedModel = effectiveModel.trim();
         if (!trimmedManufacturer || !trimmedModel) return;
         void onSubmit({
           manufacturer: trimmedManufacturer,
@@ -216,28 +279,67 @@ function DeviceForm({
         });
       }}
     >
-      <FieldPair>
-        <FieldShell label="Manufacturer" required htmlFor="device-manufacturer">
-          <Input
-            id="device-manufacturer"
+      <FieldShell label="Machine" required htmlFor="device-picker">
+        {/* Select renders its own trigger button — htmlFor binding to a
+            button doesn't help, but the Label still serves as a visible
+            caption above the trigger. */}
+        <Select value={selectedId} onValueChange={handleSelect}>
+          <SelectTrigger id="device-picker" data-testid="device-picker">
+            <SelectValue placeholder="Select your CPAP machine" />
+          </SelectTrigger>
+          <SelectContent>
+            {grouped.map(([mfr, items]) => (
+              <SelectGroup key={mfr}>
+                <SelectLabel>{mfr}</SelectLabel>
+                {items.map((d) => (
+                  <SelectItem
+                    key={d.id}
+                    value={d.id}
+                    data-testid={`device-option-${d.id}`}
+                  >
+                    {d.model}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+            <SelectSeparator />
+            <SelectItem
+              value={CPAP_DEVICE_OTHER_ID}
+              data-testid="device-option-other"
+            >
+              Other / not listed
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </FieldShell>
+      {isOther && (
+        <FieldPair>
+          <FieldShell
+            label="Manufacturer"
             required
-            value={manufacturer}
-            onChange={(e) => setManufacturer(e.target.value)}
-            placeholder="ResMed"
-            data-testid="device-manufacturer"
-          />
-        </FieldShell>
-        <FieldShell label="Model" required htmlFor="device-model">
-          <Input
-            id="device-model"
-            required
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="AirSense 11 AutoSet"
-            data-testid="device-model"
-          />
-        </FieldShell>
-      </FieldPair>
+            htmlFor="device-manufacturer"
+          >
+            <Input
+              id="device-manufacturer"
+              required
+              value={manufacturer}
+              onChange={(e) => setManufacturer(e.target.value)}
+              placeholder="ResMed"
+              data-testid="device-manufacturer"
+            />
+          </FieldShell>
+          <FieldShell label="Model" required htmlFor="device-model">
+            <Input
+              id="device-model"
+              required
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="AirSense 11 AutoSet"
+              data-testid="device-model"
+            />
+          </FieldShell>
+        </FieldPair>
+      )}
       <FieldPair>
         <FieldShell label="Serial number (optional)" htmlFor="device-serial">
           <Input
@@ -282,7 +384,7 @@ function DeviceForm({
         <Button
           type="submit"
           size="sm"
-          disabled={saving || !manufacturer.trim() || !model.trim()}
+          disabled={saving || !canSave}
           data-testid="device-save"
         >
           {saving ? (
