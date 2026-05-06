@@ -66,7 +66,8 @@ export const fulfillments = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     patientIdx: index("fulfillments_patient_idx").on(t.patientId),

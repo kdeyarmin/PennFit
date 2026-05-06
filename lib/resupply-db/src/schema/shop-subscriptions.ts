@@ -128,7 +128,8 @@ export const shopSubscriptions = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     customerIdx: index("shop_subscriptions_customer_id_idx").on(t.customerId),
