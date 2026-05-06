@@ -48,7 +48,8 @@ export type TrackStep =
   | "results_retake_requested"
   | "chat_opened"
   | "chat_sent"
-  | "chat_replied";
+  | "chat_replied"
+  | "chat_feedback";
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
   ? {
@@ -70,7 +71,9 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
               meta?: "offline" | "degraded" | "rate-limited";
               durationMs: number;
             }
-          : Record<string, unknown>;
+          : T extends "chat_feedback"
+            ? { path: string; kind: "up" | "down" }
+            : Record<string, unknown>;
 
 export function track<T extends TrackStep>(
   step: T,

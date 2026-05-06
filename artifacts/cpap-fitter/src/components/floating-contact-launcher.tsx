@@ -43,6 +43,8 @@ import {
   Send,
   Sparkles,
   Square,
+  ThumbsDown,
+  ThumbsUp,
   X,
 } from "lucide-react";
 
@@ -69,6 +71,14 @@ import { cn } from "@/lib/utils";
 type Tab = "chat" | "contact";
 
 const STORAGE_KEY = "pennbot.session.v1";
+/**
+ * Cap the number of turns we persist to sessionStorage so a long
+ * session doesn't bloat browser storage on slow devices. The model
+ * already only sees the last 11 turns of history (see `send` below);
+ * keeping a few more on the client lets the user scroll back to
+ * read older context without burning quota.
+ */
+const PERSIST_TURN_CAP = 30;
 
 const GREETING: ChatMessage = {
   role: "assistant",
@@ -156,6 +166,9 @@ interface UiMessage extends ChatMessage {
   meta?: "offline" | "degraded" | "rate-limited";
   /** True while the assistant bubble is still being streamed. */
   pending?: boolean;
+  /** User has voted on this assistant turn — drives the
+      thumbs UI and prevents double-counting in telemetry. */
+  feedbackKind?: "up" | "down";
 }
 
 let nextMessageId = 1;
@@ -191,7 +204,16 @@ function persistMessages(messages: UiMessage[]): void {
       window.sessionStorage.removeItem(STORAGE_KEY);
       return;
     }
-    const sanitized = messages.map(({ pending: _pending, ...m }) => m);
+    // Keep the original greeting (id 0) + the most recent
+    // PERSIST_TURN_CAP turns. Older turns are dropped so storage
+    // doesn't grow unbounded across a long session.
+    const greeting = messages.find((m) => m.id === 0);
+    const rest = messages.filter((m) => m.id !== 0);
+    const trimmed = [
+      ...(greeting ? [greeting] : []),
+      ...rest.slice(-PERSIST_TURN_CAP),
+    ];
+    const sanitized = trimmed.map(({ pending: _pending, ...m }) => m);
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
   } catch {
     // Quota / private mode — drop silently. Persistence is
@@ -227,11 +249,35 @@ export function FloatingContactLauncher() {
     setOpen(false);
   }, [location]);
 
+  // Auto-scroll only follows new content when the user is anchored
+  // to the bottom. If the user has scrolled up to read history, we
+  // leave their position alone so streaming chunks don't yank them
+  // back to the bottom mid-read. We always snap to the bottom on
+  // initial open, regardless of last position.
+  const userAnchoredToBottomRef = useRef(true);
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 64 px slop so a near-bottom position still counts as anchored
+    // (e.g. between paragraph paint and next chunk).
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    userAnchoredToBottomRef.current = distanceFromBottom < 64;
+  }
   useEffect(() => {
     if (!open) return;
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (userAnchoredToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [open, messages]);
+  useEffect(() => {
+    if (open) {
+      // Reset to anchored on each open so the panel starts at bottom
+      // and follows the conversation by default.
+      userAnchoredToBottomRef.current = true;
+    }
+  }, [open]);
 
   useEffect(() => {
     persistMessages(messages);
@@ -464,6 +510,31 @@ export function FloatingContactLauncher() {
     void send(lastUserText, { replaceSinceLastUser: true });
   }, [messages, send]);
 
+  /**
+   * Record a thumbs-up / thumbs-down vote on an assistant message.
+   * Stamps the message in local state so the UI can reflect the
+   * choice, and fires a `chat_feedback` telemetry event so the team
+   * can spot bad answers. No content leaves the page — only the
+   * route + the kind. Voting on the same message again is a no-op.
+   */
+  const voteOnMessage = useCallback(
+    (messageId: number, kind: "up" | "down") => {
+      let logged = false;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId) return m;
+          if (m.feedbackKind) return m;
+          logged = true;
+          return { ...m, feedbackKind: kind };
+        }),
+      );
+      if (logged) {
+        track("chat_feedback", { path: location, kind });
+      }
+    },
+    [location],
+  );
+
   const resetConversation = useCallback(() => {
     inFlightRef.current?.abort();
     setMessages([{ ...GREETING, id: 0 }]);
@@ -626,6 +697,7 @@ export function FloatingContactLauncher() {
             >
               <div
                 ref={scrollRef}
+                onScroll={handleScroll}
                 className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-secondary/20"
                 data-testid="floating-contact-messages"
                 aria-live="polite"
@@ -643,6 +715,7 @@ export function FloatingContactLauncher() {
                         ? () => setTab("contact")
                         : undefined
                     }
+                    onVote={voteOnMessage}
                   />
                 ))}
               </div>
@@ -974,10 +1047,12 @@ function ChatBubble({
   message,
   onRetry,
   onSwitchToContact,
+  onVote,
 }: {
   message: UiMessage;
   onRetry?: () => void;
   onSwitchToContact?: () => void;
+  onVote?: (id: number, kind: "up" | "down") => void;
 }) {
   const isUser = message.role === "user";
   const showTypingIndicator =
@@ -1075,19 +1150,66 @@ function ChatBubble({
           )}
         </div>
         {!isUser && !showTypingIndicator && message.content.length > 0 && (
-          <button
-            type="button"
-            onClick={copyContent}
-            aria-label={copied ? "Copied" : "Copy reply"}
-            data-testid="floating-contact-copy"
-            className="absolute -bottom-2 right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity h-6 w-6 rounded-md bg-background border border-border text-muted-foreground hover:text-[hsl(var(--penn-navy))] flex items-center justify-center"
-          >
-            {copied ? (
-              <Check className="h-3 w-3 text-emerald-600" />
-            ) : (
-              <Copy className="h-3 w-3" />
+          <div
+            className={cn(
+              "absolute -bottom-3 right-1 flex items-center gap-1 transition-opacity",
+              // Once a vote is recorded we keep the chosen icon
+              // visible so the user knows their feedback registered.
+              message.feedbackKind
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
             )}
-          </button>
+          >
+            {onVote && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onVote(message.id, "up")}
+                  disabled={!!message.feedbackKind}
+                  aria-pressed={message.feedbackKind === "up"}
+                  aria-label="Helpful answer"
+                  data-testid="floating-contact-thumb-up"
+                  className={cn(
+                    "h-6 w-6 rounded-md bg-background border border-border flex items-center justify-center transition-colors",
+                    message.feedbackKind === "up"
+                      ? "text-[hsl(var(--penn-navy))] border-[hsl(var(--penn-navy))]/40"
+                      : "text-muted-foreground hover:text-[hsl(var(--penn-navy))] disabled:opacity-40",
+                  )}
+                >
+                  <ThumbsUp className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onVote(message.id, "down")}
+                  disabled={!!message.feedbackKind}
+                  aria-pressed={message.feedbackKind === "down"}
+                  aria-label="Not helpful"
+                  data-testid="floating-contact-thumb-down"
+                  className={cn(
+                    "h-6 w-6 rounded-md bg-background border border-border flex items-center justify-center transition-colors",
+                    message.feedbackKind === "down"
+                      ? "text-rose-600 border-rose-300"
+                      : "text-muted-foreground hover:text-rose-600 disabled:opacity-40",
+                  )}
+                >
+                  <ThumbsDown className="h-3 w-3" />
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={copyContent}
+              aria-label={copied ? "Copied" : "Copy reply"}
+              data-testid="floating-contact-copy"
+              className="h-6 w-6 rounded-md bg-background border border-border text-muted-foreground hover:text-[hsl(var(--penn-navy))] flex items-center justify-center"
+            >
+              {copied ? (
+                <Check className="h-3 w-3 text-emerald-600" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+            </button>
+          </div>
         )}
       </div>
     </div>

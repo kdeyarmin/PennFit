@@ -30,6 +30,7 @@ const KNOWN_STEPS = [
   "chat_opened",
   "chat_sent",
   "chat_replied",
+  "chat_feedback",
 ] as const;
 
 const usageEventSchema = z.object({

@@ -6,9 +6,9 @@ import {
 } from "./chatbotTools";
 
 describe("CHAT_TOOLS descriptors", () => {
-  it("exposes recommend_masks and find_masks with strict schemas", () => {
+  it("exposes recommend_masks, find_masks, and compare_masks with strict schemas", () => {
     const names = CHAT_TOOLS.map((t) => t.function.name);
-    expect(names).toEqual(["recommend_masks", "find_masks"]);
+    expect(names).toEqual(["recommend_masks", "find_masks", "compare_masks"]);
     for (const tool of CHAT_TOOLS) {
       expect(tool.function.parameters.additionalProperties).toBe(false);
     }
@@ -126,6 +126,84 @@ describe("executeChatTool", () => {
 
     it("rejects unknown extra fields", () => {
       const result = executeChatTool("find_masks", { invalid_field: true });
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  describe("compare_masks", () => {
+    it("compares two masks looked up by catalog id", () => {
+      const result = executeChatTool("compare_masks", {
+        mask_a: "resmed-airfit-p10",
+        mask_b: "fisher-paykel-brevida",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      const data = result.data as {
+        a: { name: string; type: string };
+        b: { name: string; type: string };
+        differences: string[];
+      };
+      expect(data.a.name).toBe("AirFit P10");
+      expect(data.b.name).toBe("Brevida Nasal Pillow");
+      // Both are nasal pillows — the type difference shouldn't appear.
+      const typeDiff = data.differences.find((d) =>
+        d.startsWith("AirFit P10 is a"),
+      );
+      expect(typeDiff).toBeUndefined();
+      // But weight delta and manufacturer should differ.
+      expect(data.differences.length).toBeGreaterThan(0);
+      expect(data.differences.join(" ")).toMatch(/ResMed|Fisher & Paykel/);
+    });
+
+    it("resolves masks by case-insensitive name substring", () => {
+      const result = executeChatTool("compare_masks", {
+        mask_a: "p10",
+        mask_b: "F20",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      const data = result.data as {
+        a: { name: string };
+        b: { name: string };
+      };
+      expect(data.a.name).toContain("P10");
+      expect(data.b.name).toContain("F20");
+    });
+
+    it("highlights cross-style differences", () => {
+      const result = executeChatTool("compare_masks", {
+        mask_a: "AirFit F20",
+        mask_b: "AirFit P10",
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      const data = result.data as { differences: string[] };
+      const text = data.differences.join(" ");
+      expect(text).toMatch(/fullFace|nasalPillow/);
+    });
+
+    it("returns an error when one mask cannot be resolved", () => {
+      const result = executeChatTool("compare_masks", {
+        mask_a: "AirFit P10",
+        mask_b: "ImaginaryMask 9000",
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("expected error");
+      expect(result.error).toMatch(/ImaginaryMask 9000/);
+    });
+
+    it("returns an error when both args resolve to the same mask", () => {
+      const result = executeChatTool("compare_masks", {
+        mask_a: "AirFit P10",
+        mask_b: "p10",
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("expected error");
+      expect(result.error).toMatch(/same mask/);
+    });
+
+    it("rejects missing required arguments (zod strict)", () => {
+      const result = executeChatTool("compare_masks", { mask_a: "P10" });
       expect(result.ok).toBe(false);
     });
   });

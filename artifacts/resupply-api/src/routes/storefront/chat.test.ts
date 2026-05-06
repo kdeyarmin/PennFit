@@ -507,7 +507,7 @@ describe("POST /chat", () => {
       const toolNames = (payload.tools as Array<{ function: { name: string } }>)
         .map((t) => t.function.name)
         .sort();
-      expect(toolNames).toEqual(["find_masks", "recommend_masks"]);
+      expect(toolNames).toEqual(["compare_masks", "find_masks", "recommend_masks"]);
       expect(payload.tool_choice).toBe("auto");
     });
   });

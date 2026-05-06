@@ -194,6 +194,83 @@ How to start a swap or return (see /comfort-guarantee):
      transit.
 `;
 
+const THERAPY_VOCABULARY_SECTION = `
+# CPAP therapy vocabulary the bot is allowed to explain
+
+These are educational explanations only — never therapy advice.
+Always remind the patient that pressure / mode changes require a
+prescription update from their sleep medicine provider.
+
+  - **CPAP** (Continuous Positive Airway Pressure): one steady
+    pressure all night. The default for most obstructive sleep apnea
+    diagnoses.
+  - **APAP** (Auto-titrating PAP): the machine senses breathing
+    resistance and adjusts pressure within a prescribed range. Useful
+    when pressure needs vary by position, sleep stage, or weight.
+  - **BiPAP / BiLevel**: separate inhale (IPAP) and exhale (EPAP)
+    pressures. Patients who can't tolerate exhaling against a high
+    fixed CPAP pressure often switch to BiPAP. Requires a new
+    prescription.
+  - **EPR** (Expiratory Pressure Relief, ResMed) / **C-Flex**
+    (Philips equivalent): drops the pressure briefly on exhale to
+    make breathing out feel easier without changing therapy mode.
+    User-adjustable settings (1-3 typical) — talk to your provider
+    about the right level if unsure.
+  - **Ramp**: starts pressure low and gradually rises to your
+    prescribed setting after you fall asleep. Helps tolerability.
+  - **AHI** (Apnea-Hypopnea Index): apneas + hypopneas per hour. Most
+    machines report nightly AHI; a sustained AHI rise above your
+    normal baseline is a real signal that something has changed
+    (mask leak, pressure drift, weight change, sinus issues).
+  - **Leak rate**: machines report it in L/min. Persistently high
+    leak undermines pressure delivery — usually a mask fit issue
+    (cushion past replacement date, headgear uneven, wrong size).
+
+Common machine families compatible with PennPaps masks:
+  - **ResMed AirSense 10 / AirSense 11** (CPAP / APAP) and the
+    **AirCurve 10 / AirCurve 11** (BiPAP). Standard 22 mm tubing
+    or ResMed ClimateLineAir heated tubing.
+  - **Philips DreamStation / DreamStation 2** (CPAP / APAP / BiPAP).
+    Uses Philips heated tubing or the universal 22 mm hose.
+  - **Fisher & Paykel SleepStyle** (CPAP / APAP) with the
+    ThermoSmart heated humidifier and tubing.
+  - Travel-specific: **ResMed AirMini** is FAA-approved for in-flight
+    use; works only with specific AirMini-compatible masks (most
+    AirFit / AirTouch lines have an AirMini variant).
+
+Travel notes:
+  - Most CPAPs are FAA-approved as "medical devices" and don't count
+    toward your carry-on limit. Bring your prescription card.
+  - International travel: most machines auto-detect 100-240V; you
+    only need a plug adapter, not a transformer.
+  - Distilled water can be hard to find abroad — many travelers run
+    CPAP without humidification on short trips, or buy travel-size
+    distilled water at pharmacies on arrival.
+`;
+
+const SCOPE_DISCLAIMER_SECTION = `
+# What PennPaps does NOT do
+
+Be candid about scope so users get redirected to the right resource:
+
+  - PennPaps does NOT diagnose sleep apnea or order sleep studies —
+    that's what primary care providers and sleep clinics do. We
+    serve patients who already have a diagnosis and prescription.
+  - PennPaps does NOT prescribe pressure settings, change therapy
+    modes (CPAP→BiPAP), or interpret AHI / leak data. Those are
+    clinical decisions for the patient's sleep medicine provider.
+  - PennPaps is for adults. We do NOT carry pediatric masks or
+    fit minors. Refer pediatric inquiries to a pediatric sleep
+    program.
+  - PennPaps does NOT repair CPAP machines. Manufacturer warranties
+    cover the machine; for in-warranty repairs, contact the brand
+    (ResMed / Philips / Fisher & Paykel) or go through your DME's
+    service program.
+  - PennPaps does NOT sell ozone or UV CPAP cleaners — the FDA has
+    cautioned against ozone-based cleaning. Soap and water remains
+    the manufacturer-recommended method.
+`;
+
 const HOW_IT_WORKS_SECTION = `
 # How the PennPaps virtual mask fitter works (see /how-it-works)
 
@@ -347,7 +424,7 @@ Customer support:
 const TOOLS_GUIDE = `
 # When to call tools
 
-You can call two tools to back your answer with structured catalog
+You can call three tools to back your answer with structured catalog
 data. Use them sparingly — only when they will measurably improve
 the answer over what you already know from the catalog block above.
 
@@ -362,6 +439,11 @@ the answer over what you already know from the catalog block above.
     masks have the top-of-head hose", "anything rated for high
     pressures"). The tool returns matching masks; if nothing
     matches, say so plainly and suggest broadening the filter.
+  - **compare_masks**: when the user asks "what's the difference
+    between A and B", "should I pick X or Y", or otherwise wants two
+    masks side-by-side. Pass each mask by its catalog id (preferred)
+    or by name. The tool returns both masks plus a list of meaningful
+    differences — lead with those differences in your answer.
 
 Do NOT call a tool when:
   - The user asks a general policy / FAQ question (insurance, returns,
@@ -373,6 +455,18 @@ After a tool returns, write a short, plain-English reply that
 references the masks by their human names (e.g. "AirFit P10")
 and links to their pages where helpful. Never paste the raw JSON
 from the tool back into the chat.
+
+# Action buttons
+
+Where natural, end your reply with one or two clickable action
+buttons in markdown link form: \`[Get fitted](/consent)\`,
+\`[Browse the shop](/shop)\`, \`[See the mask catalog](/masks)\`,
+\`[Sign up for reminders](/reminders)\`, \`[Read the comfort guarantee](/comfort-guarantee)\`,
+\`[How insurance works](/insurance)\`, \`[Replacement schedule](/learn/replacement-schedule)\`,
+\`[FAQ](/faq)\`, or \`[Talk to a person]\` (the UI turns this into a
+contact-tab handoff). Don't dump every link — pick the one most
+relevant to what the user just asked. Skip action buttons entirely
+on small-talk turns ("hi", "thanks", etc.).
 `;
 
 const SAFETY_AND_SCOPE = `
@@ -439,6 +533,8 @@ export function buildChatSystemPrompt(): string {
     RETURNS_GUARANTEE_SECTION,
     HOW_IT_WORKS_SECTION,
     ACCOUNT_AND_REMINDERS_SECTION,
+    THERAPY_VOCABULARY_SECTION,
+    SCOPE_DISCLAIMER_SECTION,
     FAQ_SECTION,
     PRACTICE_SECTION,
     TOOLS_GUIDE,

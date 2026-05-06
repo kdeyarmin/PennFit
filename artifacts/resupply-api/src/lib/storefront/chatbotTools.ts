@@ -3,7 +3,7 @@
  *
  * PennBot can call these tools via OpenAI function calling so it can
  * actually run the recommendation engine and filter the catalog
- * instead of just narrating from its system-prompt knowledge. Two
+ * instead of just narrating from its system-prompt knowledge. Three
  * tools today:
  *
  *   - `recommend_masks(preferences)` runs the same scoring engine
@@ -18,10 +18,14 @@
  *     tier, manufacturer, hose connection, or pressure rating.
  *     Answers questions like "show me three budget nasal masks
  *     compatible with high-pressure therapy".
+ *   - `compare_masks(idA, idB)` returns a side-by-side payload for
+ *     two named masks. Lets the bot answer "what's the difference
+ *     between the AirFit P10 and the Brevida" with structured
+ *     fields instead of model-generated guesses.
  *
- * PHI posture: tool args are non-PHI booleans + enums. Tool results
- * are public catalog data. No DB writes, no audit, no patient
- * identity ever flows through this module.
+ * PHI posture: tool args are non-PHI booleans + enums + catalog ids.
+ * Tool results are public catalog data. No DB writes, no audit, no
+ * patient identity ever flows through this module.
  */
 
 import { z } from "zod";
@@ -79,6 +83,19 @@ const findArgsSchema = z
     hose_connection: z.enum(["front", "top"]).optional(),
     min_pressure_rating: z.number().int().min(4).max(40).optional(),
     limit: z.number().int().min(1).max(10).optional(),
+  })
+  .strict();
+
+/**
+ * `compare_masks` accepts either catalog ids (recommended — exact
+ * match, no fuzziness) or human names. The dispatcher tries id
+ * first, then case-insensitive substring match against names. Two
+ * masks must resolve or we return an error.
+ */
+const compareArgsSchema = z
+  .object({
+    mask_a: z.string().min(1).max(64),
+    mask_b: z.string().min(1).max(64),
   })
   .strict();
 
@@ -206,6 +223,29 @@ export const CHAT_TOOLS: OpenAiToolDescriptor[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "compare_masks",
+      description:
+        "Compare two specific PennPaps masks side by side. Use this when the user asks 'what's the difference between X and Y' or 'should I pick A or B?'. Pass each mask by its catalog id (preferred — e.g. 'resmed-airfit-p10') or by name (case-insensitive substring match — e.g. 'P10', 'AirFit F20'). Returns the structured fields for both masks plus a list of meaningful differences.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["mask_a", "mask_b"],
+        properties: {
+          mask_a: {
+            type: "string",
+            description: "First mask, by catalog id or name.",
+          },
+          mask_b: {
+            type: "string",
+            description: "Second mask, by catalog id or name.",
+          },
+        },
+      },
+    },
+  },
 ];
 
 /**
@@ -266,6 +306,22 @@ interface FindToolResultEntry {
   pressureRangeMax: number;
 }
 
+interface CompareToolResultMask {
+  maskId: string;
+  name: string;
+  manufacturer: string;
+  type: MaskEntry["type"];
+  priceTier: MaskEntry["priceTier"];
+  hoseConnection: MaskEntry["hoseConnection"];
+  weightGrams: number;
+  sizesAvailable: string[];
+  cushionMaterial: string;
+  pressureRangeMin: number;
+  pressureRangeMax: number;
+  bestFor: string[];
+  contraindications: string[];
+}
+
 /**
  * Discriminated tool result. `ok: true` carries a JSON-serializable
  * payload we forward back to the model verbatim; `ok: false` carries
@@ -274,7 +330,96 @@ interface FindToolResultEntry {
 export type ChatToolResult =
   | { ok: true; data: { recommendations: RecommendToolResultEntry[] } }
   | { ok: true; data: { masks: FindToolResultEntry[] } }
+  | {
+      ok: true;
+      data: {
+        a: CompareToolResultMask;
+        b: CompareToolResultMask;
+        differences: string[];
+      };
+    }
   | { ok: false; error: string };
+
+/** Resolve a user-supplied mask reference (id or substring of name) to a catalog entry. */
+function resolveMask(reference: string): MaskEntry | null {
+  const trimmed = reference.trim();
+  if (trimmed.length === 0) return null;
+  const exactById = maskCatalog.find((m) => m.id === trimmed);
+  if (exactById) return exactById;
+  const lower = trimmed.toLowerCase();
+  // Prefer exact-name match before substring to avoid "F20" matching "F20 Pro".
+  const exactByName = maskCatalog.find(
+    (m) => m.name.toLowerCase() === lower,
+  );
+  if (exactByName) return exactByName;
+  const substring = maskCatalog.find((m) =>
+    m.name.toLowerCase().includes(lower),
+  );
+  return substring ?? null;
+}
+
+function summarizeMaskForCompare(m: MaskEntry): CompareToolResultMask {
+  return {
+    maskId: m.id,
+    name: m.name,
+    manufacturer: m.manufacturer,
+    type: m.type,
+    priceTier: m.priceTier,
+    hoseConnection: m.hoseConnection,
+    weightGrams: m.weightGrams,
+    sizesAvailable: m.sizesAvailable,
+    cushionMaterial: m.cushionMaterial,
+    pressureRangeMin: m.pressureRangeMin,
+    pressureRangeMax: m.pressureRangeMax,
+    bestFor: m.bestFor,
+    contraindications: m.contraindications,
+  };
+}
+
+/**
+ * Walk the comparable fields and produce a short list of meaningful
+ * differences as plain-English fragments. We don't enumerate every
+ * field — only the ones a patient would care about. Identical fields
+ * are dropped so the model gets a concise diff.
+ */
+function buildDifferences(a: MaskEntry, b: MaskEntry): string[] {
+  const diffs: string[] = [];
+  if (a.type !== b.type) {
+    diffs.push(`${a.name} is a ${a.type} mask; ${b.name} is a ${b.type} mask.`);
+  }
+  if (a.manufacturer !== b.manufacturer) {
+    diffs.push(
+      `Made by different brands — ${a.manufacturer} vs. ${b.manufacturer}.`,
+    );
+  }
+  if (a.priceTier !== b.priceTier) {
+    diffs.push(`${a.name} is ${a.priceTier} tier; ${b.name} is ${b.priceTier}.`);
+  }
+  if (a.hoseConnection !== b.hoseConnection) {
+    diffs.push(
+      `${a.name} uses a ${a.hoseConnection} hose connection; ${b.name} uses ${b.hoseConnection}.`,
+    );
+  }
+  const weightDelta = Math.abs(a.weightGrams - b.weightGrams);
+  if (weightDelta >= 10) {
+    const lighter = a.weightGrams < b.weightGrams ? a : b;
+    const heavier = lighter === a ? b : a;
+    diffs.push(
+      `${lighter.name} is ${weightDelta} g lighter than ${heavier.name} (${lighter.weightGrams} g vs ${heavier.weightGrams} g).`,
+    );
+  }
+  if (a.pressureRangeMax !== b.pressureRangeMax) {
+    diffs.push(
+      `Pressure ratings differ: ${a.name} is rated to ${a.pressureRangeMax} cmH2O, ${b.name} to ${b.pressureRangeMax} cmH2O.`,
+    );
+  }
+  if (a.cushionMaterial !== b.cushionMaterial) {
+    diffs.push(
+      `Cushion materials differ — ${a.name}: ${a.cushionMaterial}; ${b.name}: ${b.cushionMaterial}.`,
+    );
+  }
+  return diffs;
+}
 
 /**
  * Execute one tool call from the model. Always returns — never throws —
@@ -357,6 +502,46 @@ export function executeChatTool(
       pressureRangeMax: m.pressureRangeMax,
     }));
     return { ok: true, data: { masks } };
+  }
+
+  if (name === "compare_masks") {
+    const parsed = compareArgsSchema.safeParse(rawArgs ?? {});
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: `compare_masks: invalid arguments — ${parsed.error.issues
+          .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+          .join("; ")}`,
+      };
+    }
+    const a = resolveMask(parsed.data.mask_a);
+    const b = resolveMask(parsed.data.mask_b);
+    if (!a) {
+      return {
+        ok: false,
+        error: `compare_masks: could not find a mask matching "${parsed.data.mask_a}".`,
+      };
+    }
+    if (!b) {
+      return {
+        ok: false,
+        error: `compare_masks: could not find a mask matching "${parsed.data.mask_b}".`,
+      };
+    }
+    if (a.id === b.id) {
+      return {
+        ok: false,
+        error: "compare_masks: both arguments resolved to the same mask.",
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        a: summarizeMaskForCompare(a),
+        b: summarizeMaskForCompare(b),
+        differences: buildDifferences(a, b),
+      },
+    };
   }
 
   return { ok: false, error: `unknown tool: ${name}` };
