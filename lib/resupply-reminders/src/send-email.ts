@@ -191,22 +191,33 @@ export async function sendReminderEmail(
   }
 
   const sentAt = new Date();
-  await db.insert(messages).values({
-    conversationId,
-    direction: "outbound",
-    senderRole: "agent",
-    body: rendered.text,
-    deliveryStatus: "queued",
-    vendorMetadata: {
-      sendgrid_message_id: messageId,
-      subject: rendered.subject,
-    },
-    sentAt,
-  });
-  await db
-    .update(conversations)
-    .set({ externalRef: messageId, updatedAt: new Date() })
-    .where(eq(conversations.id, conversationId));
+  // SendGrid accepted the email. Wrap subsequent DB writes so a transient
+  // DB error does NOT propagate — a propagated error causes the worker to
+  // retry, which would re-call this function and send a duplicate email.
+  // The vendorRef in the log is sufficient for ops to manually reconcile.
+  try {
+    await db.insert(messages).values({
+      conversationId,
+      direction: "outbound",
+      senderRole: "agent",
+      body: rendered.text,
+      deliveryStatus: "queued",
+      vendorMetadata: {
+        sendgrid_message_id: messageId,
+        subject: rendered.subject,
+      },
+      sentAt,
+    });
+    await db
+      .update(conversations)
+      .set({ externalRef: messageId, updatedAt: new Date() })
+      .where(eq(conversations.id, conversationId));
+  } catch (dbErr) {
+    console.error(
+      "[send-email] DB write failed after SendGrid accept — email sent but unrecorded. Manual reconciliation required.",
+      { conversationId, messageId, err: dbErr instanceof Error ? dbErr.message : String(dbErr) },
+    );
+  }
 
   // Refresh latest-message projection (best-effort).
   await tryUpsertPatientLatestMessage(db, {
