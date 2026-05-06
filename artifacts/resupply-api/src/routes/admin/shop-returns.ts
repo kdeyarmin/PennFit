@@ -441,9 +441,13 @@ router.post(
             : `Refund of ${formatCents(refundCents)} recorded; issue manually in Stripe (no SDK key configured).`,
         ),
       })
-      .where(eq(shopReturns.id, ret.id))
+      .where(and(eq(shopReturns.id, ret.id), eq(shopReturns.status, "received")))
       .returning();
-    res.json({ return: serializeReturnRow(updated[0]!) });
+    if (!updated[0]) {
+      res.status(409).json({ error: "not_in_received_state" });
+      return;
+    }
+    res.json({ return: serializeReturnRow(updated[0]) });
   },
 );
 
