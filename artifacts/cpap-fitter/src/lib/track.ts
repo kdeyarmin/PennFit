@@ -38,11 +38,30 @@ export type TrackStep =
   | "mask_chosen"
   | "order_started"
   | "order_submitted_success"
-  | "cart_items_dropped";
+  | "cart_items_dropped"
+  | "checkout_started"
+  | "checkout_step_viewed"
+  | "checkout_error"
+  | "checkout_completed"
+  | "reorder_prefill_applied"
+  | "capture_blocked"
+  | "results_retake_requested";
 
-export function track(
-  step: TrackStep,
-  metadata?: Record<string, unknown>,
+type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
+  ? {
+      cameraReady: boolean;
+      runtimeReady?: boolean;
+      noGlasses: boolean;
+      evenLight: boolean;
+      facingCamera: boolean;
+    }
+  : T extends "results_retake_requested"
+    ? { topConfidencePct: number }
+    : Record<string, unknown>;
+
+export function track<T extends TrackStep>(
+  step: T,
+  metadata?: MetadataForStep<T>,
 ): void {
   // Fire-and-forget. Use the BASE_URL so this works behind path-based routing.
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");

@@ -15,7 +15,7 @@
  * No need to commit large binaries.
  */
 import { mkdir, copyFile, readdir, writeFile, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -139,6 +139,21 @@ if (
 ) {
   main().catch((e) => {
     console.warn("[setup-mediapipe] WARN:", e.message);
+    const hasCachedModel = (() => {
+      try {
+        return statSync(MODEL_DEST).size > MIN_MODEL_BYTES;
+      } catch {
+        return false;
+      }
+    })();
+    const strictMode =
+      process.env.CI === "true" || process.env.NODE_ENV === "production";
+    if (strictMode && !hasCachedModel) {
+      console.error(
+        "[setup-mediapipe] ERROR: No usable face_landmarker.task available in strict mode.",
+      );
+      process.exit(1);
+    }
     // Non-fatal: dev server still starts, face-capture feature will be
     // unavailable but all other pages (home, masks, questionnaire, results,
     // shop) work without WASM assets.

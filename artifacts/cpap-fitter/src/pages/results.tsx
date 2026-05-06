@@ -137,6 +137,14 @@ export function Results() {
     );
   }
 
+  const topConfidencePct = Math.round(
+    (data.topRecommendations[0]?.confidence ?? 0) * 100,
+  );
+  const topMaskTypeLabel = (data.topRecommendations[0]?.type ?? "recommended")
+    .replace("_", " ");
+  const confidenceBand =
+    topConfidencePct >= 85 ? "strong" : topConfidencePct >= 70 ? "moderate" : "low";
+
   return (
     <div className="container max-w-4xl mx-auto px-4 py-12 animate-shimmer-in">
       <div className="text-center mb-10 space-y-4">
@@ -161,6 +169,34 @@ export function Results() {
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Based on your precise facial measurements and clinical preferences,
           here are the best fits for you.
+        </p>
+        <div className="text-sm text-muted-foreground">
+          Recommendation confidence:{" "}
+          <span className="font-semibold text-foreground">
+            {confidenceBand} ({topConfidencePct}%)
+          </span>
+        </div>
+        {confidenceBand === "low" && (
+          <div className="pt-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                track("results_retake_requested", { topConfidencePct });
+                setLocation("/capture");
+              }}
+              data-testid="results-retake-photo"
+            >
+              Retake photo for a stronger match
+            </Button>
+          </div>
+        )}
+        <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
+          Why this match: your top recommendation is a{" "}
+          <span className="font-medium text-foreground">
+            {topMaskTypeLabel}
+          </span>{" "}
+          mask style with the best combined score from your facial measurements and sleep preferences.
         </p>
         <div className="flex justify-center pt-2">
           <ComfortGuarantee variant="badge" />
