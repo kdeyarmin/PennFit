@@ -30,7 +30,8 @@ export const authPasswordCredentials = authSchema.table(
     mustChange: boolean("must_change").notNull().default(false),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
 );
 
