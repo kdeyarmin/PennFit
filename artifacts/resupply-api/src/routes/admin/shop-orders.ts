@@ -46,6 +46,7 @@ import { z } from "zod";
 import { getDbPool, shopCustomers, shopOrders } from "@workspace/resupply-db";
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
+import { logAudit } from "@workspace/resupply-audit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import {
   getStripeClient,
@@ -741,6 +742,26 @@ router.post(
       },
       "admin/shop/orders: refund issued",
     );
+
+    void logAudit({
+      action: "shop_order.refund.issued",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "shop_orders",
+      targetId: orderId,
+      metadata: {
+        order_id: orderId,
+        refund_id: refund.id,
+        refund_amount_cents: refund.amount,
+        refund_status: refund.status,
+        is_partial: typeof amountCents === "number",
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      req.log?.warn?.({ err }, "shop_order.refund.issued audit write failed");
+    });
+
     res.json({
       refund: {
         id: refund.id,
