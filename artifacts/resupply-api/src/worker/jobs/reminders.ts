@@ -555,6 +555,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         },
         "reminders.send-sms: non-ok outcome",
       );
+      // Transient failures should be retried by pg-boss. Non-retryable
+      // outcomes (patient inactive, missing phone, etc.) are warnings only.
+      if (
+        outcome.status === "vendor_api_error" ||
+        outcome.status === "conversation_create_failed"
+      ) {
+        throw new Error(`reminders.send-sms: retryable failure: ${outcome.status}`);
+      }
     }
   });
 
@@ -587,6 +595,13 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         },
         "reminders.send-email: non-ok outcome",
       );
+      // Transient failures should be retried by pg-boss.
+      if (
+        outcome.status === "vendor_api_error" ||
+        outcome.status === "conversation_create_failed"
+      ) {
+        throw new Error(`reminders.send-email: retryable failure: ${outcome.status}`);
+      }
     }
   });
 

@@ -44,10 +44,23 @@ import {
 } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
 
-router.get("/shop/me/export", requireSignedIn, async (req, res) => {
+// 3 exports per 15 minutes per customer. The endpoint runs 7 parallel
+// DB queries; without a cap an authenticated attacker could use it as
+// a DB DoS vector (or an accidental tight loop in the SPA would hammer
+// it). Compliance-driven "right to access" requests are almost never
+// automated, so 3/15min is ample for legitimate use.
+const exportRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  name: "shop_me_export",
+  keyFn: (req) => req.userCustomerId ?? req.ip ?? "unknown",
+});
+
+router.get("/shop/me/export", requireSignedIn, exportRateLimit, async (req, res) => {
   const customerId = req.userCustomerId!;
   const db = drizzle(getDbPool());
 

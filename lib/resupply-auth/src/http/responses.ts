@@ -13,6 +13,7 @@ export type AuthErrorCode =
   | "invalid_credentials"
   | "session_required"
   | "csrf_failed"
+  | "forbidden"
   | "rate_limited"
   | "account_locked"
   | "email_unverified"

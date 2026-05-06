@@ -378,7 +378,10 @@ function ReturnCard({ item }: { item: AdminReturn }) {
         {(item.status === "approved" || item.status === "shipped_back") && (
           <button
             type="button"
-            onClick={() => receivedMut.mutate()}
+            onClick={() => {
+              if (window.confirm("Mark this return as received? This advances the return to the refund/replace stage."))
+                receivedMut.mutate();
+            }}
             disabled={receivedMut.isPending}
             className="rounded bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
           >
@@ -389,7 +392,10 @@ function ReturnCard({ item }: { item: AdminReturn }) {
           <>
             <button
               type="button"
-              onClick={() => refundMut.mutate(undefined)}
+              onClick={() => {
+                if (window.confirm("Issue a full refund for this return? This action cannot be undone."))
+                  refundMut.mutate(undefined);
+              }}
               disabled={refundMut.isPending}
               className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               data-testid={`return-${item.id}-refund`}
@@ -422,12 +428,13 @@ function ReturnCard({ item }: { item: AdminReturn }) {
                 />
                 <button
                   type="button"
-                  onClick={() =>
-                    replaceMut.mutate({
-                      exchangeProductId: replaceProductId,
-                      exchangePriceId: replacePriceId,
-                    })
-                  }
+                  onClick={() => {
+                    if (window.confirm(`Send replacement product ${replaceProductId} at price ${replacePriceId}? This creates a new order for the customer.`))
+                      replaceMut.mutate({
+                        exchangeProductId: replaceProductId,
+                        exchangePriceId: replacePriceId,
+                      });
+                  }}
                   disabled={
                     replaceMut.isPending || !replaceProductId || !replacePriceId
                   }

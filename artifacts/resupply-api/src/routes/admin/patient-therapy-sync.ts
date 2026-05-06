@@ -49,6 +49,10 @@ const syncBody = z
     sinceDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD")
+      .refine((s) => {
+        const d = new Date(s);
+        return !isNaN(d.getTime()) && d.toISOString().startsWith(s);
+      }, "must be a valid calendar date")
       .optional(),
   })
   .strict();
