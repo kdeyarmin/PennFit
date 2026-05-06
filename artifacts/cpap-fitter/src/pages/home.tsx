@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { HomeStatusBanner } from "@/components/home-status-banner";
 import { TrustSignalStrip } from "@/components/trust-signal-strip";
-import { TechAnimatedBackground } from "@/components/tech-animated-background";
+import { AmbientBackground } from "@/components/ambient-background";
 
 export function Home() {
   // Empty title keeps the static index.html title (already optimal
@@ -24,7 +24,7 @@ export function Home() {
   useDocumentTitle("");
   return (
     <>
-      <TechAnimatedBackground />
+      <AmbientBackground />
       <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-24">
         <HomeStatusBanner />
 
