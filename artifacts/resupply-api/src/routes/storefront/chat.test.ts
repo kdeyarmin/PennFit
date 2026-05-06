@@ -317,5 +317,198 @@ describe("POST /chat", () => {
       expect((frames[0] as { text: string }).text).toMatch(/\(814\) 471-0627/);
       expect(frames.at(-1)).toEqual({ type: "done", degraded: true });
     });
+
+    it("executes a tool call across two streaming rounds", async () => {
+      // Round 1: model emits a tool_call delta and finishes with
+      // finish_reason="tool_calls" — no content goes to the client.
+      const round1 = makeStreamBody([
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_42","type":"function","function":{"name":"find_masks","arguments":""}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"type\\":\\"nasalPillow\\",\\"limit\\":2}"}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+        "data: [DONE]\n\n",
+      ]);
+      // Round 2: model has the tool result and emits a normal text
+      // reply.
+      const round2 = makeStreamBody([
+        'data: {"choices":[{"delta":{"content":"Two nasal-pillow options: "}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"AirFit P10 and Brevida."}}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+        "data: [DONE]\n\n",
+      ]);
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: round1,
+          text: async () => "",
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: round2,
+          text: async () => "",
+        });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({
+          messages: [{ role: "user", content: "Show me 2 nasal-pillow masks" }],
+        });
+      expect(res.status).toBe(200);
+      const frames = parseSseFrames(res.text);
+      // Only the round-2 chunks should reach the client; the
+      // round-1 tool_call deltas are NOT re-emitted.
+      const chunks = frames
+        .filter((f) => f.type === "chunk")
+        .map((f) => (f as { text: string }).text);
+      expect(chunks.join("")).toBe(
+        "Two nasal-pillow options: AirFit P10 and Brevida.",
+      );
+      expect(frames.at(-1)).toEqual({ type: "done" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      // The second upstream call's payload should include the
+      // assistant tool_calls message AND a tool result for call_42.
+      const round2Init = fetchMock.mock.calls[1]?.[1] as RequestInit;
+      const round2Payload = JSON.parse(round2Init.body as string);
+      const toolMsg = round2Payload.messages.find(
+        (m: { role: string }) => m.role === "tool",
+      );
+      expect(toolMsg).toBeDefined();
+      expect(toolMsg.tool_call_id).toBe("call_42");
+      // The tool result should be the find_masks JSON envelope.
+      const toolPayload = JSON.parse(toolMsg.content);
+      expect(toolPayload.masks).toBeDefined();
+      expect(Array.isArray(toolPayload.masks)).toBe(true);
+    });
+
+    it("returns degraded if the model never produces content within the round cap", async () => {
+      // Every round emits another tool call — should bail at MAX_TOOL_ROUNDS.
+      // We give each call a fresh stream because a ReadableStream is one-shot.
+      const toolFrames = [
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_x","type":"function","function":{"name":"find_masks","arguments":"{}"}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+        "data: [DONE]\n\n",
+      ];
+      const fetchMock = vi.fn().mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        body: makeStreamBody(toolFrames),
+        text: async () => "",
+      }));
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .set("Accept", "text/event-stream")
+        .send({
+          messages: [{ role: "user", content: "Loop me" }],
+        });
+      const frames = parseSseFrames(res.text);
+      expect((frames.at(-1) as { degraded?: boolean }).degraded).toBe(true);
+    });
+  });
+
+  describe("tool calling (JSON path)", () => {
+    it("executes a tool call across two non-streaming rounds", async () => {
+      const fetchMock = vi
+        .fn()
+        // Round 1: tool_calls
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "call_xy",
+                      type: "function",
+                      function: {
+                        name: "recommend_masks",
+                        arguments: JSON.stringify({
+                          mouth_breather: true,
+                          side_or_stomach_sleeper: true,
+                          limit: 2,
+                        }),
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          }),
+          text: async () => "",
+        })
+        // Round 2: final content
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: "Two top picks for a side-sleeping mouth-breather.",
+                },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+          text: async () => "",
+        });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .send({
+          messages: [{ role: "user", content: "What mask should I get?" }],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.reply).toMatch(/Two top picks/);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      const round2Init = fetchMock.mock.calls[1]?.[1] as RequestInit;
+      const payload = JSON.parse(round2Init.body as string);
+      const toolMsg = payload.messages.find(
+        (m: { role: string }) => m.role === "tool",
+      );
+      expect(toolMsg.tool_call_id).toBe("call_xy");
+      const toolPayload = JSON.parse(toolMsg.content);
+      expect(toolPayload.recommendations).toBeDefined();
+      expect(toolPayload.recommendations.length).toBeLessThanOrEqual(2);
+    });
+
+    it("forwards tool descriptors to the upstream API", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        }),
+        text: async () => "",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      await request(makeApp())
+        .post("/chat")
+        .send({
+          messages: [{ role: "user", content: "hi" }],
+        });
+
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      const payload = JSON.parse(init.body as string);
+      expect(Array.isArray(payload.tools)).toBe(true);
+      const toolNames = (payload.tools as Array<{ function: { name: string } }>)
+        .map((t) => t.function.name)
+        .sort();
+      expect(toolNames).toEqual(["find_masks", "recommend_masks"]);
+      expect(payload.tool_choice).toBe("auto");
+    });
   });
 });

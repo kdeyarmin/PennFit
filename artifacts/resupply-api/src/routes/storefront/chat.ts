@@ -4,7 +4,10 @@
  * The bot answers product / insurance / replacement-schedule / FAQ
  * questions for prospective and current PennPaps patients. It is
  * grounded in the static knowledge base (`./chatbotKnowledge.ts`),
- * which embeds a generated summary of the live mask catalog.
+ * which embeds a generated summary of the live mask catalog, plus a
+ * pair of tools (`recommend_masks`, `find_masks` — see
+ * `./chatbotTools.ts`) so it can run the same scoring engine the
+ * fitter uses and filter the catalog by structured criteria.
  *
  * Response modes (content negotiated):
  *   - Default JSON mode: returns `{ reply, offline?, degraded? }`.
@@ -15,6 +18,16 @@
  *     Used by the storefront chat widget for live token-by-token
  *     replies. Falls back to a single chunk + done for offline /
  *     degraded responses so the client only handles one event flow.
+ *
+ * Tool-call flow:
+ *   When the model decides to call a tool, the upstream response /
+ *   stream finishes with `tool_calls` instead of (or before) any
+ *   content. The route executes the tool(s) locally via the
+ *   dispatcher, appends the assistant tool-call message + a tool
+ *   message per call, and issues a follow-up upstream request.
+ *   Capped at MAX_TOOL_ROUNDS rounds per user turn so a runaway
+ *   model can't recurse forever. Tool *arguments* and *results*
+ *   never reach the client — only the model's final text.
  *
  * Hand-rolled OpenAI Chat Completions call (mirrors
  * `lib/messaging/ai-fallback-impl.ts`):
@@ -50,6 +63,12 @@ import {
   MAX_USER_MESSAGE_CHARS,
   OFFLINE_FALLBACK_REPLY,
 } from "../../lib/storefront/chatbotKnowledge.js";
+import {
+  CHAT_TOOLS,
+  MAX_TOOL_ROUNDS,
+  executeChatTool,
+  serializeToolResult,
+} from "../../lib/storefront/chatbotTools.js";
 
 const router = Router();
 
@@ -79,16 +98,40 @@ function getSystemPrompt(): string {
   return cachedSystemPrompt;
 }
 
+/** OpenAI message shape, including tool roles. */
+type OpenAiMessage =
+  | { role: "system"; content: string }
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls?: OpenAiToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+interface OpenAiToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
 interface OpenAiChatResponse {
   choices?: Array<{
-    message?: { content?: string };
+    message?: {
+      content?: string | null;
+      tool_calls?: OpenAiToolCall[];
+    };
     finish_reason?: string;
   }>;
 }
 
 interface OpenAiStreamDelta {
   choices?: Array<{
-    delta?: { content?: string };
+    delta?: {
+      content?: string;
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
     finish_reason?: string | null;
   }>;
 }
@@ -113,6 +156,67 @@ function startSseHeaders(res: Response): void {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
+}
+
+/**
+ * Build the messages array we send to OpenAI: system prompt first,
+ * then the validated user/assistant turns. We map the wire-typed
+ * messages onto the OpenAi message union so tool roles can be
+ * appended in later rounds.
+ */
+function buildInitialMessages(
+  userTurns: z.infer<typeof chatBodySchema>["messages"],
+): OpenAiMessage[] {
+  return [
+    { role: "system", content: getSystemPrompt() },
+    ...userTurns.map((m): OpenAiMessage =>
+      m.role === "user"
+        ? { role: "user", content: m.content }
+        : { role: "assistant", content: m.content },
+    ),
+  ];
+}
+
+/**
+ * Run all tool calls from one round and append the resulting messages
+ * to the conversation. Returns the new messages array. We log per-call
+ * timings so a slow tool surfaces in the audit trail.
+ */
+function applyToolCalls(
+  messages: OpenAiMessage[],
+  toolCalls: OpenAiToolCall[],
+): OpenAiMessage[] {
+  const next: OpenAiMessage[] = [
+    ...messages,
+    { role: "assistant", content: null, tool_calls: toolCalls },
+  ];
+  for (const call of toolCalls) {
+    let parsedArgs: unknown;
+    try {
+      parsedArgs = call.function.arguments
+        ? JSON.parse(call.function.arguments)
+        : {};
+    } catch {
+      parsedArgs = {};
+    }
+    const startedAt = Date.now();
+    const result = executeChatTool(call.function.name, parsedArgs);
+    logger.info(
+      {
+        event: "chat_tool_invoked",
+        tool: call.function.name,
+        ok: result.ok,
+        durationMs: Date.now() - startedAt,
+      },
+      "chat: tool executed",
+    );
+    next.push({
+      role: "tool",
+      tool_call_id: call.id,
+      content: serializeToolResult(result),
+    });
+  }
+  return next;
 }
 
 router.post("/chat", async (req, res) => {
@@ -166,72 +270,90 @@ router.post("/chat", async (req, res) => {
     return;
   }
 
+  const initial = buildInitialMessages(messages);
   return streaming
-    ? handleStreaming(res, messages, apiKey)
-    : handleJson(res, messages, apiKey);
+    ? handleStreaming(res, initial, apiKey, messages.length)
+    : handleJson(res, initial, apiKey, messages.length);
 });
 
 async function handleJson(
   res: Response,
-  messages: z.infer<typeof chatBodySchema>["messages"],
+  initialMessages: OpenAiMessage[],
   apiKey: string,
+  turns: number,
 ): Promise<void> {
   const fetchImpl = fetchImplOverride ?? fetch;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
+  let messages = initialMessages;
   try {
-    const upstream = await fetchImpl(OPENAI_API_URL, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        temperature: 0.2,
-        max_tokens: 500,
-        messages: [
-          { role: "system", content: getSystemPrompt() },
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-      }),
-    });
-
-    if (!upstream.ok) {
-      const detail = await upstream.text().catch(() => "");
-      logger.warn(
-        {
-          event: "chat_openai_http_error",
-          status: upstream.status,
-          detail: detail.slice(0, 200),
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const upstream = await fetchImpl(OPENAI_API_URL, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
-        "chat: openai HTTP error",
+        body: JSON.stringify({
+          model: DEFAULT_MODEL,
+          temperature: 0.2,
+          max_tokens: 500,
+          tools: CHAT_TOOLS,
+          tool_choice: "auto",
+          messages,
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => "");
+        logger.warn(
+          {
+            event: "chat_openai_http_error",
+            status: upstream.status,
+            detail: detail.slice(0, 200),
+          },
+          "chat: openai HTTP error",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+
+      const json = (await upstream.json()) as OpenAiChatResponse;
+      const message = json.choices?.[0]?.message;
+      const toolCalls = message?.tool_calls;
+      if (toolCalls && toolCalls.length > 0 && round < MAX_TOOL_ROUNDS) {
+        messages = applyToolCalls(messages, toolCalls);
+        continue;
+      }
+
+      const reply = (message?.content ?? "").trim();
+      if (reply.length === 0) {
+        logger.warn(
+          { event: "chat_empty_reply", round },
+          "chat: openai returned empty content",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+
+      logger.info(
+        {
+          event: "chat_ok",
+          turns,
+          replyChars: reply.length,
+          rounds: round,
+        },
+        "chat: replied",
       );
-      res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+      res.json({ reply });
       return;
     }
-
-    const json = (await upstream.json()) as OpenAiChatResponse;
-    const reply = json.choices?.[0]?.message?.content?.trim() ?? "";
-    if (reply.length === 0) {
-      logger.warn(
-        { event: "chat_empty_reply" },
-        "chat: openai returned empty content",
-      );
-      res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
-      return;
-    }
-
-    logger.info(
-      {
-        event: "chat_ok",
-        turns: messages.length,
-        replyChars: reply.length,
-      },
-      "chat: replied",
+    // Hit the round cap without finalizing — return degraded.
+    logger.warn(
+      { event: "chat_tool_cap_hit" },
+      "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
-    res.json({ reply });
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
   } catch (err) {
     logger.warn(
       {
@@ -246,6 +368,144 @@ async function handleJson(
   }
 }
 
+interface StreamRoundResult {
+  /** Plain text the model emitted during this round (already streamed to client). */
+  content: string;
+  /** Tool calls the model finished the round with, if any. */
+  toolCalls: OpenAiToolCall[];
+  finishReason: string | null;
+  /** True if the upstream HTTP fetch failed before / during streaming. */
+  degraded: boolean;
+}
+
+/**
+ * Run one streaming round against OpenAI. Re-emits content deltas to
+ * the SSE response as they arrive (`writeChunk`) and accumulates any
+ * tool-call deltas so the caller can decide whether to invoke them
+ * and run another round.
+ */
+async function runStreamingRound(
+  messages: OpenAiMessage[],
+  apiKey: string,
+  signal: AbortSignal,
+  writeChunk: (text: string) => void,
+): Promise<StreamRoundResult> {
+  const fetchImpl = fetchImplOverride ?? fetch;
+  const upstream = await fetchImpl(OPENAI_API_URL, {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      temperature: 0.2,
+      max_tokens: 500,
+      stream: true,
+      tools: CHAT_TOOLS,
+      tool_choice: "auto",
+      messages,
+    }),
+  });
+
+  if (!upstream.ok || !upstream.body) {
+    const detail = upstream.body
+      ? await upstream.text().catch(() => "")
+      : "";
+    logger.warn(
+      {
+        event: "chat_openai_http_error",
+        streaming: true,
+        status: upstream.status,
+        detail: detail.slice(0, 200),
+      },
+      "chat: openai HTTP error during stream open",
+    );
+    return { content: "", toolCalls: [], finishReason: null, degraded: true };
+  }
+
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let finishReason: string | null = null;
+  // Tool calls arrive across multiple deltas keyed by index. We
+  // accumulate the id, name, and arguments-string fragments.
+  const toolAccumulator = new Map<
+    number,
+    { id: string; name: string; argumentsJson: string }
+  >();
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+
+      for (const line of rawEvent.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (payload === "" || payload === "[DONE]") continue;
+        let parsed: OpenAiStreamDelta;
+        try {
+          parsed = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        const choice = parsed.choices?.[0];
+        if (!choice) continue;
+        if (typeof choice.finish_reason === "string") {
+          finishReason = choice.finish_reason;
+        }
+        const delta = choice.delta;
+        if (!delta) continue;
+        if (typeof delta.content === "string" && delta.content.length > 0) {
+          content += delta.content;
+          writeChunk(delta.content);
+        }
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index;
+            const existing = toolAccumulator.get(idx);
+            if (existing) {
+              if (tc.id) existing.id = tc.id;
+              if (tc.function?.name) existing.name = tc.function.name;
+              if (typeof tc.function?.arguments === "string") {
+                existing.argumentsJson += tc.function.arguments;
+              }
+            } else {
+              toolAccumulator.set(idx, {
+                id: tc.id ?? "",
+                name: tc.function?.name ?? "",
+                argumentsJson: tc.function?.arguments ?? "",
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const toolCalls: OpenAiToolCall[] = [];
+  for (const acc of toolAccumulator.values()) {
+    if (!acc.name) continue;
+    toolCalls.push({
+      id: acc.id || `call_${toolCalls.length}`,
+      type: "function",
+      function: { name: acc.name, arguments: acc.argumentsJson },
+    });
+  }
+
+  return { content, toolCalls, finishReason, degraded: false };
+}
+
 /**
  * Stream the model's reply token-by-token to an SSE client. The
  * client receives `chunk` events as text fragments and a single
@@ -253,115 +513,93 @@ async function handleJson(
  * with the degraded-fallback text and a `done` with `degraded: true`
  * so the client never has to special-case "stream ended without a
  * done event" — every successful response shape is identical.
+ *
+ * Tool-call rounds: when an upstream stream finishes with tool
+ * calls, we DO NOT re-emit them to the client (no point — JSON
+ * noise). We execute the tools, append result messages, and start
+ * a follow-up streaming round whose content deltas pipe through
+ * to the client.
  */
 async function handleStreaming(
   res: Response,
-  messages: z.infer<typeof chatBodySchema>["messages"],
+  initialMessages: OpenAiMessage[],
   apiKey: string,
+  turns: number,
 ): Promise<void> {
   startSseHeaders(res);
 
-  const fetchImpl = fetchImplOverride ?? fetch;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
 
+  let messages = initialMessages;
   let totalChars = 0;
   let degraded = false;
 
-  try {
-    const upstream = await fetchImpl(OPENAI_API_URL, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "text/event-stream",
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        temperature: 0.2,
-        max_tokens: 500,
-        stream: true,
-        messages: [
-          { role: "system", content: getSystemPrompt() },
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-      }),
-    });
+  const writeChunk = (text: string) => {
+    totalChars += text.length;
+    writeSseEvent(res, { type: "chunk", text });
+  };
 
-    if (!upstream.ok || !upstream.body) {
-      const detail = upstream.body
-        ? await upstream.text().catch(() => "")
-        : "";
-      logger.warn(
-        {
-          event: "chat_openai_http_error",
-          streaming: true,
-          status: upstream.status,
-          detail: detail.slice(0, 200),
-        },
-        "chat: openai HTTP error during stream open",
+  try {
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const result = await runStreamingRound(
+        messages,
+        apiKey,
+        ctrl.signal,
+        writeChunk,
       );
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
-      writeSseEvent(res, { type: "done", degraded: true });
+      if (result.degraded) {
+        if (totalChars === 0) {
+          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        }
+        writeSseEvent(res, { type: "done", degraded: true });
+        res.end();
+        return;
+      }
+      if (
+        result.toolCalls.length > 0 &&
+        round < MAX_TOOL_ROUNDS &&
+        result.finishReason === "tool_calls"
+      ) {
+        messages = applyToolCalls(messages, result.toolCalls);
+        continue;
+      }
+      // No more tool calls — round produced the final content.
+      if (totalChars === 0) {
+        logger.warn(
+          { event: "chat_empty_reply", streaming: true, round },
+          "chat: openai stream returned no content",
+        );
+        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        degraded = true;
+      }
+      logger.info(
+        {
+          event: "chat_ok",
+          streaming: true,
+          turns,
+          replyChars: totalChars,
+          rounds: round + 1,
+          degraded,
+        },
+        "chat: streamed reply",
+      );
+      writeSseEvent(
+        res,
+        degraded ? { type: "done", degraded: true } : { type: "done" },
+      );
       res.end();
       return;
     }
-
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary !== -1) {
-        const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf("\n\n");
-
-        for (const line of rawEvent.split("\n")) {
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          if (payload === "" || payload === "[DONE]") continue;
-          try {
-            const json = JSON.parse(payload) as OpenAiStreamDelta;
-            const text = json.choices?.[0]?.delta?.content;
-            if (typeof text === "string" && text.length > 0) {
-              totalChars += text.length;
-              writeSseEvent(res, { type: "chunk", text });
-            }
-          } catch {
-            // Skip unparseable frames — OpenAI occasionally emits
-            // server-side keepalives or fields we don't care about.
-          }
-        }
-      }
-    }
-
-    if (totalChars === 0) {
-      logger.warn(
-        { event: "chat_empty_reply", streaming: true },
-        "chat: openai stream returned no content",
-      );
-      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
-      degraded = true;
-    }
-
-    logger.info(
-      {
-        event: "chat_ok",
-        streaming: true,
-        turns: messages.length,
-        replyChars: totalChars,
-        degraded,
-      },
-      "chat: streamed reply",
+    // Hit the round cap.
+    logger.warn(
+      { event: "chat_tool_cap_hit", streaming: true },
+      "chat: hit MAX_TOOL_ROUNDS without a final reply",
     );
-    writeSseEvent(res, degraded ? { type: "done", degraded: true } : { type: "done" });
+    if (totalChars === 0) {
+      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+    }
+    writeSseEvent(res, { type: "done", degraded: true });
     res.end();
   } catch (err) {
     logger.warn(

@@ -344,6 +344,37 @@ Customer support:
   - Logged-in customers can also message their CSR from /account#messages.
 `;
 
+const TOOLS_GUIDE = `
+# When to call tools
+
+You can call two tools to back your answer with structured catalog
+data. Use them sparingly — only when they will measurably improve
+the answer over what you already know from the catalog block above.
+
+  - **recommend_masks**: when the user asks "help me pick a mask",
+    "which mask should I get", or describes their sleep profile and
+    wants a tailored recommendation. Pass ONLY the preferences the
+    user has actually stated; do NOT invent values. The tool returns
+    a ranked shortlist with a per-mask reasoning array — paraphrase
+    those reasons in your reply rather than reading the JSON aloud.
+  - **find_masks**: when the user wants to BROWSE with a structured
+    filter (e.g. "show me three budget nasal masks", "which Philips
+    masks have the top-of-head hose", "anything rated for high
+    pressures"). The tool returns matching masks; if nothing
+    matches, say so plainly and suggest broadening the filter.
+
+Do NOT call a tool when:
+  - The user asks a general policy / FAQ question (insurance, returns,
+    cleaning, shipping). Answer from the knowledge base directly.
+  - The user asks about a SPECIFIC mask by name. The catalog block
+    above has every mask's details — read it from there.
+
+After a tool returns, write a short, plain-English reply that
+references the masks by their human names (e.g. "AirFit P10")
+and links to their pages where helpful. Never paste the raw JSON
+from the tool back into the chat.
+`;
+
 const SAFETY_AND_SCOPE = `
 # How to answer
 
@@ -410,6 +441,7 @@ export function buildChatSystemPrompt(): string {
     ACCOUNT_AND_REMINDERS_SECTION,
     FAQ_SECTION,
     PRACTICE_SECTION,
+    TOOLS_GUIDE,
     SAFETY_AND_SCOPE,
   ]
     .map((s) => s.trim())
