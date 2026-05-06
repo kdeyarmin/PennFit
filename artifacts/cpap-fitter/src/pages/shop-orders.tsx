@@ -214,7 +214,7 @@ function SignedInOrders() {
           <Link href="/shop">
             <Button data-testid="orders-empty-shop-cta">Browse the shop</Button>
           </Link>
-          <Link href="/">
+          <Link href="/consent">
             <Button variant="outline" data-testid="orders-empty-fitter-cta">
               Get a mask recommendation first
             </Button>
