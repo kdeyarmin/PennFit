@@ -123,6 +123,9 @@ const VerifyEmailPage = lazy(() =>
     default: m.VerifyEmailPage,
   })),
 );
+const ReturnsPage = lazy(() =>
+  import("@/pages/returns").then((m) => ({ default: m.ReturnsPage })),
+);
 
 // Admin auth pages — separate sign-in flow because admins post to
 // /resupply-api/auth/* (allowlist-gated) while customers post to
@@ -167,7 +170,8 @@ const RemindersManage = lazy(() =>
 );
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
-import { BiometricLockGate } from "@/components/biometric-lock-gate";
+import { useShopIdentity } from "@/lib/identity";
+import { canStayOnMeasure } from "@/lib/measure-flow";
 
 /**
  * Suspense fallback for lazy-loaded routes. Intentionally minimal
@@ -207,8 +211,13 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * the redirect tick.
  */
 function GuardedMeasure() {
-  const { capturedImage } = useFitterStore();
-  if (!capturedImage) return <Redirect to="/capture" />;
+  const { capturedImage, measurements } = useFitterStore();
+  // See canStayOnMeasure for the invariant. The non-obvious case is the
+  // brief post-extraction window where capturedImage has been cleared
+  // for privacy but /measure hasn't navigated to /questionnaire yet —
+  // bouncing back to /capture in that window strands the user.
+  if (!canStayOnMeasure(capturedImage, measurements))
+    return <Redirect to="/capture" />;
   return <Measure />;
 }
 function GuardedQuestionnaire() {
@@ -247,6 +256,20 @@ function GuardedOrder() {
   const { chosenMask } = useFitterStore();
   if (!chosenMask) return <Redirect to="/results" />;
   return <Order />;
+}
+
+function GuardedShopOrders() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  return <ShopOrders />;
+}
+
+function GuardedAccount() {
+  const { isSignedIn, isLoaded } = useShopIdentity();
+  if (!isLoaded) return <RouteFallback />;
+  if (!isSignedIn) return <Redirect to={`${basePath}/sign-in`} />;
+  return <AccountPage />;
 }
 
 /**
@@ -315,21 +338,14 @@ function PatientRouter() {
             component={ShopCheckoutSuccess}
           />
           <Route path="/shop/checkout-cancel" component={ShopCheckoutCancel} />
-          <Route path="/shop/orders" component={ShopOrders} />
+          <Route path="/shop/orders" component={GuardedShopOrders} />
           <Route path="/shop/wishlist" component={ShopWishlist} />
-          <Route path="/account">
-            {/* Phase F.4 — biometric lock gate. Renders children
-                directly on web / when the customer hasn't enabled
-                the lock; on native + enabled, prompts before
-                showing /account contents. */}
-            <BiometricLockGate>
-              <AccountPage />
-            </BiometricLockGate>
-          </Route>
+          <Route path="/account" component={GuardedAccount} />
           <Route path="/reminders" component={Reminders} />
           <Route path="/reminders/manage" component={RemindersManage} />
           <Route path="/privacy" component={Privacy} />
           <Route path="/terms" component={Terms} />
+          <Route path="/returns" component={ReturnsPage} />
 
           {/* Guarded routes — see GuardedXxx components above. */}
           <Route path="/measure" component={GuardedMeasure} />

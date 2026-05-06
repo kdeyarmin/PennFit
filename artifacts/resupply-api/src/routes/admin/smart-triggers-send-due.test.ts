@@ -93,18 +93,29 @@ vi.mock("../../lib/web-push", () => ({
 }));
 
 const selectQueue: unknown[][] = [];
+const executeQueue: Array<{ rows: unknown[] }> = [];
 const updateSets: Record<string, unknown>[] = [];
 const dbStub = {
   select: vi.fn(() => {
     const result = selectQueue.shift() ?? [];
+    // Make the builder both chainable (for .from().where().limit()) and
+    // thenable (for `await db.select().from().where()` without .limit()).
     const obj: Record<string, unknown> = {
       from: () => obj,
       innerJoin: () => obj,
       where: () => obj,
       orderBy: () => obj,
       limit: () => Promise.resolve(result),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject?: (e: unknown) => unknown,
+      ) => Promise.resolve(result).then(resolve, reject),
     };
     return obj;
+  }),
+  execute: vi.fn(async () => {
+    // First call is the atomic claim CTE; subsequent calls are unclaims.
+    return executeQueue.shift() ?? { rows: [] };
   }),
   update: vi.fn(() => {
     const obj: Record<string, unknown> = {
@@ -161,6 +172,7 @@ function makeApp(): Express {
 beforeEach(() => {
   mockAdmin.current = null;
   selectQueue.length = 0;
+  executeQueue.length = 0;
   updateSets.length = 0;
   logAuditMock.mockClear();
   sendEmailMock.mockClear();
@@ -173,6 +185,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   selectQueue.length = 0;
+  executeQueue.length = 0;
 });
 
 describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
@@ -192,13 +205,14 @@ describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
 
   it("sends + stamps + audits with channel='email'", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    // Atomic claim returns the event row (id + patientId + kind only).
+    executeQueue.push({
+      rows: [{ eventId: "evt_1", patientId: "p_1", kind: "leak_rising" }],
+    });
+    // Batch patient fetch returns the contact data.
     selectQueue.push([
       {
-        eventId: "evt_1",
-        patientId: "p_1",
-        kind: "leak_rising",
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-29",
+        id: "p_1",
         firstName: "Anna",
         email: "anna@example.com",
         phoneE164: "+12155551212",
@@ -257,13 +271,14 @@ describe("POST /admin/smart-triggers/send-due?channel=sms (Phase G.7)", () => {
 
   it("sends SMS + stamps + audits with channel='sms'; never logs body", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
+    // Atomic claim — only event rows returned.
+    executeQueue.push({
+      rows: [{ eventId: "evt_1", patientId: "p_1", kind: "cushion_wear" }],
+    });
+    // Batch patient fetch — patient has phone but no email.
     selectQueue.push([
       {
-        eventId: "evt_1",
-        patientId: "p_1",
-        kind: "cushion_wear",
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-29",
+        id: "p_1",
         firstName: "Anna",
         email: null,
         phoneE164: "+12155551212",
@@ -305,29 +320,20 @@ describe("POST /admin/smart-triggers/send-due?channel=sms (Phase G.7)", () => {
     expect(auditJson).not.toContain("Penn Home");
   });
 
-  it("skips rows without a phone on the SMS channel", async () => {
+  it("claims zero rows when no patient has a phone (SMS channel)", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([
-      {
-        eventId: "evt_1",
-        patientId: "p_1",
-        kind: "leak_rising",
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-29",
-        firstName: "Anna",
-        email: "anna@example.com",
-        phoneE164: null,
-      },
-    ]);
+    // The atomic claim CTE filters phone_e164 IS NOT NULL, so a patient
+    // without a phone number is never claimed — execute returns empty.
+    executeQueue.push({ rows: [] });
     const res = await request(makeApp()).post(
       "/admin/smart-triggers/send-due?channel=sms",
     );
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      attempted: 1,
+      attempted: 0,
       sent: 0,
-      skippedNoPhone: 1,
-      skippedNoContact: 1,
+      skippedNoPhone: 0,
+      skippedNoContact: 0,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(sendSmsMock).not.toHaveBeenCalled();

@@ -65,6 +65,25 @@ export function CustomerFollowupsPanel({ userId }: Props) {
     mutationFn: (followupId: string) =>
       completeAdminCustomerFollowup(userId, followupId),
     onSuccess: () => {
+      setSubmitError(null);
+    },
+    onError: (err) => {
+      if (
+        err instanceof AdminCustomerFollowupsNotFoundError ||
+        (err instanceof Error &&
+          (err.message.includes("404") || err.message.includes("409")))
+      ) {
+        setSubmitError(
+          "This followup was already completed or no longer exists. Refreshing the list.",
+        );
+        return;
+      }
+
+      setSubmitError(
+        err instanceof Error ? err.message : "Failed to complete followup.",
+      );
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey });
     },
   });
@@ -102,6 +121,7 @@ export function CustomerFollowupsPanel({ userId }: Props) {
           style={{ display: "grid", gap: 8, marginBottom: 16 }}
         >
           <textarea
+            aria-label="Follow-up details"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="What do you need to do (e.g. 'Call about UPS claim status')?"
@@ -128,6 +148,7 @@ export function CustomerFollowupsPanel({ userId }: Props) {
             }}
           >
             <label
+              htmlFor="followup-due-at"
               style={{
                 fontSize: 11,
                 color: "var(--text-muted, #475569)",
@@ -136,6 +157,7 @@ export function CustomerFollowupsPanel({ userId }: Props) {
               Due
             </label>
             <input
+              id="followup-due-at"
               type="datetime-local"
               value={dueLocal}
               onChange={(e) => setDueLocal(e.target.value)}

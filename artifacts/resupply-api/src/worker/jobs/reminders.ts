@@ -360,11 +360,32 @@ export async function scanForDueReminders(
     // Eligibility: due iff (lastFulfilledAt ?? prescription.createdAt)
     // is at least `plan.cadenceDays` old.
     const baselineRaw = row.lastFulfilledAt ?? row.prescriptionCreatedAt;
+    if (!baselineRaw) {
+      // Both dates missing — schema guarantees prescriptionCreatedAt is
+      // NOT NULL, but guard defensively so a NULL doesn't silently
+      // produce NaN math and flag the patient as immediately due.
+      logger.warn(
+        { patient_id: row.patientId, episode_id: row.episodeId },
+        "reminders.scan: missing baseline date — skipping",
+      );
+      continue;
+    }
     // Defensive Date coercion — `lastFulfilledAt` comes from a raw
     // SQL subquery and may surface as a string in some pg type
     // configurations.
     const baseline =
       baselineRaw instanceof Date ? baselineRaw : new Date(baselineRaw);
+    if (isNaN(baseline.getTime())) {
+      logger.warn(
+        {
+          patient_id: row.patientId,
+          episode_id: row.episodeId,
+          baseline_raw: String(baselineRaw),
+        },
+        "reminders.scan: unparseable baseline date — skipping",
+      );
+      continue;
+    }
     if (daysBetween(baseline, asOf) < plan.cadenceDays) {
       // Not due yet — skip silently. Common case for the bulk of
       // active patients on every scan.

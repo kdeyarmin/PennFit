@@ -21,7 +21,7 @@
 // Auth gating: rendered behind <SignedIn>. Wouter-level redirect to
 // /sign-in?redirect=/account when not signed in.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { SignedIn, useShopIdentity } from "@/lib/identity";
@@ -30,6 +30,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CreditCard,
+  FileText,
   Loader2,
   MapPin,
   Package,
@@ -39,6 +40,8 @@ import {
   Repeat,
   Settings2,
   ShoppingBag,
+  Trash2,
+  Upload,
   User as UserIcon,
   UserCircle2,
   XCircle,
@@ -59,12 +62,18 @@ import {
   AccountApiError,
   cancelShopSubscription,
   changeShopSubscriptionCadence,
+  deleteMyDocument,
+  fetchMyDocuments,
   fetchShopCadenceOptions,
   fetchShopMe,
   fetchShopMySubscriptions,
   pauseShopSubscription,
   resumeShopSubscription,
   updateShopMe,
+  uploadMyDocument,
+  DOCUMENT_TYPE_LABELS,
+  type PatientDocumentItem,
+  type PatientDocumentType,
   type SavedShippingAddress,
   type ShopCadenceOption,
   type ShopMeResponse,
@@ -78,11 +87,13 @@ import {
   formatMoneyCents,
 } from "@/lib/shop-api";
 import { useCart, type CartItem } from "@/hooks/use-cart";
-import { AccountMessagesSection } from "@/components/account-messages-section";
 import { ClinicalInfoSection } from "@/components/clinical-info-section";
+import { AccountMessagesSection } from "@/components/account-messages-section";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 import { InsightsSection } from "@/components/insights-section";
+import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
 // from your order on …" banner. Stored as a JSON object so we can
@@ -100,7 +111,9 @@ export function AccountPage() {
   // a jarring auto-bounce.
   return (
     <SignedIn fallback={<SignedOutAccountPrompt />}>
-      <AccountInner />
+      <BiometricLockGate>
+        <AccountInner />
+      </BiometricLockGate>
     </SignedIn>
   );
 }
@@ -288,10 +301,11 @@ function AccountInner() {
             onSaved={() => void reload()}
           />
           {/*
-            Device + physician info — Phase 1 (PR #52). Stored on
-            shop_customers as JSONB and persisted via
-            PUT /shop/me/clinical-info, which audit-logs every change
-            with a non-PHI metadata envelope.
+            Device + physician info — added in the
+            customer-clinical-info-and-messaging-foundation branch.
+            Both fields are stored on shop_customers as JSONB and
+            persist via PUT /shop/me/clinical-info, which audit-logs
+            every change with a non-PHI metadata envelope.
           */}
           <ClinicalInfoSection />
           {/*
@@ -301,6 +315,7 @@ function AccountInner() {
             from /admin/conversations.
           */}
           <AccountMessagesSection />
+          <DocumentsSection />
           <InsightsSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
@@ -337,6 +352,229 @@ function PreviewBanner() {
         </p>
       </div>
     </div>
+  );
+}
+
+const DOCUMENT_ACCEPT = "application/pdf,image/png,image/jpeg,image/heic,image/heif,image/webp";
+const MAX_DOC_BYTES = 10 * 1024 * 1024;
+
+function formatBytes(bytes: number | null): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function DocumentsSection() {
+  const [docs, setDocs] = useState<PatientDocumentItem[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<PatientDocumentType>("insurance_card");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function load() {
+    try {
+      const r = await fetchMyDocuments();
+      setDocs(r.documents);
+      setLoadError(null);
+    } catch {
+      setLoadError("Couldn't load your documents.");
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > MAX_DOC_BYTES) {
+      setUploadError("File is too large. Maximum size is 10 MB.");
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await uploadMyDocument(selectedType, file);
+      await load();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    try {
+      await deleteMyDocument(id);
+      await load();
+    } catch {
+      // Non-fatal: reload to reconcile.
+      await load();
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <section
+      className="glass-card rounded-2xl p-6 space-y-4"
+      data-testid="account-documents-section"
+    >
+      <div className="flex items-center gap-2">
+        <FileText className="h-5 w-5 text-muted-foreground" />
+        <h2 className="font-semibold">My documents</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Upload insurance cards, prescriptions, referrals, or other documents
+        for Penn Home Medical Supply. Our team will be able to view these
+        directly.
+      </p>
+
+      {/* Upload controls */}
+      <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-end">
+        <label className="block">
+          <span className="text-xs font-medium text-muted-foreground mb-1 block">
+            Document type
+          </span>
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value as PatientDocumentType)}
+            disabled={uploading}
+            className="rounded-md border border-border/60 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-navy)/0.3)]"
+            data-testid="account-doc-type-select"
+          >
+            {(Object.keys(DOCUMENT_TYPE_LABELS) as PatientDocumentType[]).map(
+              (t) => (
+                <option key={t} value={t}>
+                  {DOCUMENT_TYPE_LABELS[t]}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={DOCUMENT_ACCEPT}
+            className="hidden"
+            disabled={uploading}
+            onChange={handleFileChange}
+            data-testid="account-doc-file-input"
+          />
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--penn-navy))] text-white text-sm font-semibold px-4 py-2 hover:bg-[hsl(var(--penn-navy))]/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            data-testid="account-doc-upload-btn"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Uploading…
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4" /> Upload document
+              </>
+            )}
+          </button>
+          <p className="text-xs text-muted-foreground mt-1">
+            PDF or image · max 10 MB
+          </p>
+        </div>
+      </div>
+
+      {uploadError && (
+        <p className="text-sm text-destructive" data-testid="account-doc-upload-error">
+          {uploadError}
+        </p>
+      )}
+
+      {/* Document list */}
+      {loadError && (
+        <p className="text-sm text-muted-foreground">{loadError}</p>
+      )}
+      {docs === null && !loadError && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      )}
+      {docs !== null && docs.length === 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="account-doc-empty">
+          No documents uploaded yet.
+        </p>
+      )}
+      {docs !== null && docs.length > 0 && (
+        <ul className="divide-y divide-border/40" data-testid="account-doc-list">
+          {docs.map((doc) => (
+            <li
+              key={doc.id}
+              className="py-3 flex items-center justify-between gap-3"
+              data-testid={`account-doc-${doc.id}`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <p className="text-sm font-medium truncate">
+                    {doc.filename ?? "Document"}
+                  </p>
+                  {doc.reviewedAt ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 shrink-0"
+                      style={{ background: "#d1fae5", color: "#065f46" }}
+                      title={`Reviewed ${new Date(doc.reviewedAt).toLocaleDateString()}`}
+                      data-testid={`account-doc-reviewed-${doc.id}`}
+                    >
+                      <CheckCircle2 className="h-3 w-3" /> Reviewed
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 shrink-0"
+                      style={{ background: "#fef3c7", color: "#92400e" }}
+                      data-testid={`account-doc-pending-${doc.id}`}
+                    >
+                      Pending review
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {DOCUMENT_TYPE_LABELS[doc.documentType as PatientDocumentType] ??
+                    doc.documentType}
+                  {" · "}
+                  {formatBytes(doc.sizeBytes)}
+                  {" · "}
+                  {new Date(doc.createdAt).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={deletingId === doc.id}
+                onClick={() => void handleDelete(doc.id)}
+                className="text-muted-foreground hover:text-destructive disabled:opacity-40 shrink-0"
+                aria-label="Delete document"
+                data-testid={`account-doc-delete-${doc.id}`}
+              >
+                {deletingId === doc.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -399,6 +637,26 @@ function ProfileSection({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Field-by-field comparison against the original profile snapshot
+  // tells us whether the form has unsaved changes. We use trimmed
+  // values to mirror what would actually be persisted (so adding
+  // trailing whitespace to your name doesn't trigger the warning).
+  // `addr.line2` falls back to "" because the original profile
+  // stores nullable line2 as null and the input always returns "".
+  const initialAddr = profile.shippingAddress ?? null;
+  const dirty =
+    (displayName.trim() || null) !== (profile.displayName ?? null) ||
+    (addr.line1?.trim() ?? "") !== (initialAddr?.line1 ?? "") ||
+    (addr.line2?.trim() ?? "") !== (initialAddr?.line2 ?? "") ||
+    (addr.city?.trim() ?? "") !== (initialAddr?.city ?? "") ||
+    (addr.state?.trim().toUpperCase() ?? "") !== (initialAddr?.state ?? "") ||
+    (addr.postalCode?.trim() ?? "") !== (initialAddr?.postalCode ?? "");
+
+  // Surface the browser's native "unsaved changes" prompt when the
+  // user tries to close / reload the tab with edits in flight.
+  // Cleared automatically once `dirty` flips false (after save).
+  useUnsavedChangesWarning(dirty);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -565,6 +823,20 @@ function ProfileSection({
               data-testid="account-save-success"
             >
               <CheckCircle2 className="h-4 w-4" /> Saved
+            </span>
+          )}
+          {/* Visible cue when there are unsaved changes. Pairs with
+              the beforeunload prompt — the prompt only fires on tab
+              close, this hint reassures the user (or warns them)
+              while they're still on the page. Hidden during the
+              brief post-save flash so we don't show "Unsaved" right
+              next to "Saved". */}
+          {dirty && !(savedAt && Date.now() - savedAt < 4000) && (
+            <span
+              className="text-xs text-amber-700"
+              data-testid="account-profile-dirty"
+            >
+              Unsaved changes
             </span>
           )}
         </div>

@@ -22,13 +22,20 @@ export function Home() {
   // gets stamped at https://pennpaps.com/.
   useDocumentTitle("");
   return (
-    <div className="flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-28">
-      <HomeStatusBanner />
+    <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto w-full px-4 py-10 md:py-24">
+        <HomeStatusBanner />
+
       {/* Hero */}
       <div className="text-center max-w-4xl mb-12 md:mb-16 animate-shimmer-in">
-        <div className="flex justify-center mb-5">
-          <span className="status-pill" data-testid="home-tech-pill">
-            On-device computer vision · HIPAA-aligned · Penn Home Medical Supply
+        {/* Telemetry pill row — pulsing-dot status pills stand in for
+            the old stat strip; reads as live tech credentials rather
+            than a passive metrics row. */}
+        <div className="flex flex-wrap items-center justify-center gap-2 mb-6 md:mb-8">
+          <span className="status-pill status-pill-gold">
+            Local Penn DME team
+          </span>
+          <span className="status-pill status-pill-success">
+            HIPAA-aligned by design
           </span>
         </div>
 
@@ -71,172 +78,159 @@ export function Home() {
               Shop CPAP supplies
             </Button>
           </Link>
-          {/* "Watch the tutorial" button removed in the Task #37
-              consolidation along with the standalone pennpaps-tutorial
-              artifact. Patients now see the inline how-it-works copy
-              and animated step rail on /how-it-works instead. */}
         </div>
       </div>
 
       {/* Trust-signal strip — live aggregate review rating + static brand promises */}
       <TrustSignalStrip />
 
-      {/* Three ways to use PennPaps — surfaces shop + accounts alongside the fitter */}
+      {/* Animated aurora hairline — visual rhythm break before the
+          asymmetric featured section. */}
       <div
-        className="w-full mb-20 animate-shimmer-in"
+        className="w-full max-w-4xl aurora-divider-live"
+        aria-hidden="true"
+      />
+
+      {/* Featured fitter showcase — the old "three ways" grid + feature
+          grid + stat strip are consolidated into a single asymmetric
+          layout. The featured card carries the tech language (cyan rim,
+          scan-line, mono numerals, gradient title) while the side stack
+          gives shop + account parity without competing for attention. */}
+      <div
+        className="w-full mt-12 md:mt-16 mb-20 md:mb-24 grid grid-cols-1 lg:grid-cols-5 gap-5 animate-shimmer-in"
         style={{ animationDelay: "60ms" }}
       >
-        <div className="text-center mb-8">
-          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-foreground/90">
-            Three ways to start
-          </h2>
-        </div>
-        <div className="grid sm:grid-cols-3 gap-5">
-          {[
-            {
-              href: "/consent",
-              Icon: ScanFace,
-              title: "Get fitted",
-              body: "New mask? Use your camera to measure your face on-device, then we match you with the right style and size.",
-              cta: "Start the fitter",
-              testid: "home-path-fit",
-              halo: "icon-halo-navy",
-            },
-            {
-              href: "/shop",
-              Icon: ShoppingBag,
-              title: "Shop direct",
-              body: "Already know what you need? Order cushions, filters, tubing, headgear, and bundles — cash-pay, ships fast.",
-              cta: "Browse the shop",
-              testid: "home-path-shop",
-              halo: "icon-halo-gold",
-            },
-            {
-              href: "/account",
-              Icon: UserCircle2,
-              title: "Your account",
-              body: "Sign in to save your shipping address and card, see past orders, and reorder in one tap.",
-              cta: "Open my account",
-              testid: "home-path-account",
-              halo: "icon-halo-navy",
-            },
-          ].map(({ href, Icon, title, body, cta, testid, halo }) => (
-            <Link
-              key={href}
-              href={href}
-              className="glass-card lift-on-hover rounded-2xl p-6 flex flex-col items-start text-left group"
-              data-testid={testid}
-            >
-              <div
-                className={`relative h-12 w-12 rounded-2xl flex items-center justify-center mb-4 ${halo}`}
-              >
-                <Icon className="w-5 h-5" strokeWidth={2} />
-              </div>
-              <h3 className="text-lg font-semibold tracking-tight mb-2">
-                {title}
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4 flex-1">
-                {body}
-              </p>
-              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all">
-                {cta}
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            </Link>
-          ))}
-        </div>
-      </div>
+        <Link
+          href="/consent"
+          className="lg:col-span-3 glass-card-tech lift-on-hover rounded-2xl p-7 md:p-9 relative overflow-hidden flex flex-col text-left group"
+          data-testid="home-path-fit"
+        >
+          <span className="scan-line" aria-hidden="true" />
 
-      {/* Section heading scopes the feature grid to the fitter specifically */}
-      <div
-        className="w-full text-center mb-8 animate-shimmer-in"
-        style={{ animationDelay: "100ms" }}
-      >
-        <div className="flex justify-center mb-3">
-          <div className="inline-flex items-center gap-3">
-            <div className="h-px w-8 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-navy))]/75">
-              The Mask Fitter
+          <div className="flex items-center justify-between mb-6 relative z-10">
+            <div className="inline-flex items-center gap-3">
+              <div className="h-px w-6 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-gold-deep))]">
+                The Mask Fitter
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-muted-foreground tracking-[0.18em] uppercase">
+              ~3 min · live
             </span>
-            <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
           </div>
-        </div>
-        <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-foreground/90">
-          A clinical-grade fitting, in about three minutes.
-        </h2>
-        <p className="text-muted-foreground leading-relaxed max-w-2xl mx-auto mt-3">
-          If you're new or your current mask isn't sealing right, our fitter is
-          the fastest way to a mask that actually works.
-        </p>
-      </div>
 
-      {/* Feature grid */}
-      <div
-        className="grid md:grid-cols-3 gap-6 w-full animate-shimmer-in"
-        style={{ animationDelay: "120ms" }}
-      >
-        {[
-          {
-            Icon: ScanFace,
-            title: "Secure Scan",
-            body: "We measure your face using your camera. The image never leaves your device, ensuring total privacy.",
-          },
-          {
-            Icon: ClipboardList,
-            title: "Quick Assessment",
-            body: "Answer a few simple questions about your sleep habits and preferences to refine the match.",
-          },
-          {
-            Icon: Zap,
-            title: "Instant Match",
-            body: "Get personalized mask recommendations backed by clinical reasoning and precise measurements.",
-          },
-        ].map(({ Icon, title, body }, i) => (
-          <div
-            key={title}
-            className="glass-card lift-on-hover rounded-2xl p-7 flex flex-col items-start text-left group"
+          <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight mb-3 relative z-10">
+            <span className="text-gradient-tech">Clinical-grade fitting,</span>
+            <br />
+            <span className="text-foreground/90">in about three minutes.</span>
+          </h2>
+
+          <p className="text-muted-foreground leading-relaxed mb-7 max-w-md relative z-10">
+            Computer-vision face capture runs entirely in your browser. We turn
+            millimeter measurements into a clinically-reasoned mask match — no
+            images ever leave your device.
+          </p>
+
+          {/* Inline numbered process rail — replaces the old uniform
+              3-card "feature grid" with a denser, more diagrammatic
+              sequence. Cyan connector lines echo the scan-line. */}
+          <ol className="grid grid-cols-3 gap-3 mb-7 relative z-10">
+            {[
+              { Icon: ScanFace, t: "Secure scan" },
+              { Icon: ClipboardList, t: "Quick assessment" },
+              { Icon: Zap, t: "Instant match" },
+            ].map(({ Icon, t }, i) => (
+              <li key={t} className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-[hsl(var(--penn-gold-deep))] tracking-[0.22em]">
+                    0{i + 1}
+                  </span>
+                  <span className="h-px flex-1 bg-gradient-to-r from-[hsl(var(--penn-gold))]/45 to-transparent" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Icon
+                    className="w-3.5 h-3.5 text-[hsl(var(--penn-navy))]/80 shrink-0"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  />
+                  <span className="text-xs font-semibold text-foreground/85 leading-tight">
+                    {t}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all relative z-10 mt-auto">
+            Start the fitter
+            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </Link>
+
+        {/* Side stack — compact, list-style cards for the secondary
+            paths. Different visual language from the featured card. */}
+        <div className="lg:col-span-2 flex flex-col gap-5">
+          <Link
+            href="/shop"
+            className="glass-card lift-on-hover rounded-2xl p-6 flex-1 flex flex-col text-left group"
+            data-testid="home-path-shop"
           >
-            <div className="relative h-14 w-14 rounded-2xl flex items-center justify-center mb-5 icon-halo-navy">
-              <Icon className="w-6 h-6" strokeWidth={2} />
+            <div className="flex items-start gap-4 mb-3">
+              <div className="relative h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 icon-halo-gold">
+                <ShoppingBag className="w-5 h-5" strokeWidth={2} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold tracking-tight mb-1">
+                  Shop direct
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Cushions, filters, tubing, headgear, and bundles —
+                  cash-pay, ships in 1–3 business days.
+                </p>
+              </div>
             </div>
-            <div className="flex items-baseline gap-2 mb-2">
-              <span className="text-xs font-mono text-[hsl(var(--penn-gold))]/80 tracking-widest">
-                0{i + 1}
-              </span>
-              <h3 className="text-xl font-semibold tracking-tight">{title}</h3>
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all mt-auto">
+              Browse the shop
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </Link>
+
+          <Link
+            href="/account"
+            className="glass-card lift-on-hover rounded-2xl p-6 flex-1 flex flex-col text-left group"
+            data-testid="home-path-account"
+          >
+            <div className="flex items-start gap-4 mb-3">
+              <div className="relative h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 icon-halo-navy">
+                <UserCircle2 className="w-5 h-5" strokeWidth={2} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold tracking-tight mb-1">
+                  Your account
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Save shipping and cards, see past orders, and reorder in
+                  one tap.
+                </p>
+              </div>
             </div>
-            <p className="text-muted-foreground leading-relaxed">{body}</p>
-          </div>
-        ))}
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all mt-auto">
+              Open my account
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </Link>
+        </div>
       </div>
 
-      {/* Subtle stat strip — mixes fitter-specific stats with shop signal */}
+      {/* Resources — compacted from three large uniform cards into a
+          single 3-tile glass panel. Lower visual weight than before so
+          it reads as a footer-adjacent navigation aid rather than a
+          fourth feature section. */}
       <div
-        className="mt-20 w-full grid grid-cols-1 sm:grid-cols-3 gap-4 animate-shimmer-in"
-        style={{ animationDelay: "240ms" }}
+        className="w-full animate-shimmer-in"
+        style={{ animationDelay: "180ms" }}
       >
-        {[
-          { v: "~3 min", l: "Average fitting time" },
-          { v: "100%", l: "On-device face capture" },
-          { v: "Direct", l: "From your local DME" },
-        ].map(({ v, l }) => (
-          <div key={l} className="glass-card-tech rounded-xl px-5 py-4">
-            <div className="text-2xl md:text-3xl font-bold tracking-tight text-gradient-tech font-mono">
-              {v}
-            </div>
-            <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-[0.22em]">
-              {l}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* More resources — directs customers to FAQ + Learn + How It Works */}
-      <div
-        className="mt-24 w-full animate-shimmer-in"
-        style={{ animationDelay: "360ms" }}
-      >
-        <div className="text-center max-w-2xl mx-auto mb-10 space-y-3">
+        <div className="text-center max-w-2xl mx-auto mb-8 space-y-3">
           <div className="flex justify-center">
             <div className="inline-flex items-center gap-3">
               <div className="h-px w-10 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
@@ -246,71 +240,68 @@ export function Home() {
               <div className="h-px w-10 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
             </div>
           </div>
-          <h2 className="text-display text-3xl md:text-4xl font-bold tracking-tight text-foreground/90">
+          <h2 className="text-display text-2xl md:text-3xl font-bold tracking-tight text-foreground/90">
             New to CPAP, or just have questions?
           </h2>
           <p className="text-muted-foreground leading-relaxed">
-            Browse plain-language guides on sleep apnea and CPAP therapy, or
-            jump straight to specific answers about ordering, insurance, mask
-            care, and troubleshooting.
+            Browse plain-language guides, jump straight to ordering and
+            insurance answers, or take a walkthrough of how PennPaps works.
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-3 gap-5">
-          {[
-            {
-              href: "/learn",
-              Icon: BookOpen,
-              title: "Patient education",
-              body: "Short, jargon-free articles on what CPAP does, why it matters, and how to live comfortably with therapy.",
-              cta: "Browse Learn",
-              testid: "home-resource-learn",
-              halo: "icon-halo-navy",
-            },
-            {
-              href: "/faq",
-              Icon: HelpCircle,
-              title: "Frequently asked questions",
-              body: "Direct answers to the questions our patients ask most — from prescriptions to mask leaks.",
-              cta: "Open the FAQ",
-              testid: "home-resource-faq",
-              halo: "icon-halo-gold",
-            },
-            {
-              href: "/how-it-works",
-              Icon: Compass,
-              title: "How PennPaps works",
-              body: "A walkthrough of every part of PennPaps — the fitter, the shop, customer accounts, and how resupply works.",
-              cta: "See the walkthrough",
-              testid: "home-resource-how-it-works",
-              halo: "icon-halo-navy",
-            },
-          ].map(({ href, Icon, title, body, cta, testid, halo }) => (
-            <Link
-              key={href}
-              href={href}
-              className="glass-card lift-on-hover rounded-2xl p-6 flex flex-col items-start text-left group"
-              data-testid={testid}
-            >
-              <div
-                className={`relative h-12 w-12 rounded-2xl flex items-center justify-center mb-4 ${halo}`}
+        <div className="glass-panel rounded-2xl p-2 sm:p-3">
+          <div className="grid sm:grid-cols-3 gap-1 sm:gap-2">
+            {[
+              {
+                href: "/learn",
+                Icon: BookOpen,
+                title: "Patient education",
+                cta: "Browse Learn",
+                testid: "home-resource-learn",
+                halo: "icon-halo-navy",
+              },
+              {
+                href: "/faq",
+                Icon: HelpCircle,
+                title: "Frequently asked questions",
+                cta: "Open the FAQ",
+                testid: "home-resource-faq",
+                halo: "icon-halo-gold",
+              },
+              {
+                href: "/how-it-works",
+                Icon: Compass,
+                title: "How PennPaps works",
+                cta: "See the walkthrough",
+                testid: "home-resource-how-it-works",
+                halo: "icon-halo-navy",
+              },
+            ].map(({ href, Icon, title, cta, testid, halo }) => (
+              <Link
+                key={href}
+                href={href}
+                className="rounded-xl p-4 flex items-center gap-3 hover:bg-white/55 transition group"
+                data-testid={testid}
               >
-                <Icon className="w-5 h-5" strokeWidth={2} />
-              </div>
-              <h3 className="text-lg font-semibold tracking-tight mb-2">
-                {title}
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4 flex-1">
-                {body}
-              </p>
-              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary group-hover:gap-2 transition-all">
-                {cta}
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            </Link>
-          ))}
+                <div
+                  className={`relative h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${halo}`}
+                >
+                  <Icon className="w-4 h-4" strokeWidth={2} />
+                </div>
+                <div className="flex flex-col flex-1 min-w-0">
+                  <span className="text-sm font-semibold tracking-tight truncate">
+                    {title}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs text-primary group-hover:gap-1.5 transition-all">
+                    {cta}
+                    <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+      </div>
   );
 }

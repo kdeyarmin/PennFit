@@ -13,6 +13,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { normalizeEmail } from "../email";
+import type { RateLimitConfig } from "../rate-limit";
 import { issueToken } from "../token";
 
 import {
@@ -26,6 +27,11 @@ const ForgotBody = z.object({
 });
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const FORGOT_RATE_LIMIT: RateLimitConfig = {
+  maxPerEmail: 3,
+  maxPerIp: 15,
+  windowMs: 60 * 60 * 1000, // 1 hour
+};
 
 interface MakeForgotPasswordHandlerOptions {
   productName: string;
@@ -41,6 +47,33 @@ export function makeForgotPasswordHandler(
     req: Request,
     res: Response,
   ): Promise<void> {
+    // Rate-limit FIRST (before any DB look-ups) so an IP flooding the
+    // endpoint with random emails is stopped before it generates DB
+    // load or triggers email sends.
+    const ip = req.ip ?? null;
+    // Per-endpoint sentinel keeps forgot-password failures isolated from
+    // sign-in and verify-email buckets so those counters don't bleed into
+    // each other's rate limits.
+    const ipSentinel = `__forgot:${ip ?? "unknown"}`;
+    try {
+      const recentIpRequests = await deps.repo.countRecentFailures({
+        emailLower: ipSentinel,
+        ip: null,
+        sinceMs: FORGOT_RATE_LIMIT.windowMs,
+      });
+      if (recentIpRequests >= FORGOT_RATE_LIMIT.maxPerIp) {
+        const retryAfter = Math.ceil(FORGOT_RATE_LIMIT.windowMs / 1000);
+        res.setHeader("Retry-After", String(retryAfter));
+        // Still return 200 to preserve non-enumeration: an attacker
+        // can't distinguish "rate limited" from "request accepted".
+        res.status(200).json({ ok: true });
+        return;
+      }
+    } catch {
+      // Fail open — a DB error on the rate-limit check shouldn't
+      // block legitimate password resets.
+    }
+
     const parsed = ForgotBody.safeParse(req.body);
     if (!parsed.success) {
       // Even input validation has to NOT enumerate. Return the
@@ -48,7 +81,7 @@ export function makeForgotPasswordHandler(
       // up in the audit log.
       void deps.audit({
         action: "auth.password_reset_requested",
-        ip: req.ip ?? null,
+        ip,
         metadata: { invalidInput: true },
       });
       res.status(200).json({ ok: true });
@@ -61,19 +94,27 @@ export function makeForgotPasswordHandler(
     } catch {
       void deps.audit({
         action: "auth.password_reset_requested",
-        ip: req.ip ?? null,
+        ip,
         metadata: { invalidEmail: true },
       });
+      // Record against the per-endpoint sentinel so only forgot-password
+      // failures count toward this IP cap.
+      void deps.repo.recordLoginAttempt({ emailLower: ipSentinel, ip, success: false });
       res.status(200).json({ ok: true });
       return;
     }
+
+    // Record every request (regardless of outcome) against the per-endpoint
+    // sentinel so repeat callers accumulate toward the cap without bleeding
+    // into sign-in or verify-email counters.
+    void deps.repo.recordLoginAttempt({ emailLower: ipSentinel, ip, success: false });
 
     const user = await deps.repo.findUserByEmail(emailLower);
     if (!user || user.status === "revoked") {
       void deps.audit({
         action: "auth.password_reset_requested",
         adminEmail: emailLower,
-        ip: req.ip ?? null,
+        ip,
         metadata: { unknownAccount: true },
       });
       res.status(200).json({ ok: true });
@@ -101,19 +142,28 @@ export function makeForgotPasswordHandler(
         html: rendered.html,
         text: rendered.text,
       });
-    } catch {
-      // The configured EmailSender is responsible for logging
-      // delivery failures (see artifacts/*/src/lib/auth-deps.ts).
-      // Swallow here so a SendGrid blip doesn't fail the
-      // forgot-password endpoint — the user has already been
-      // told their request was accepted.
+    } catch (emailErr) {
+      // Log at warn so SendGrid misconfigurations surface in monitoring.
+      // Don't include the email address — use the user id only.
+      void deps.audit({
+        action: "auth.password_reset_email_failed",
+        adminUserId: user.id,
+        ip,
+        metadata: {
+          // Avoid logging emailErr.message — it may contain the recipient
+          // address or other PII if the mail provider includes it.
+          errorName:
+            emailErr instanceof Error ? emailErr.name : "UnknownError",
+          errorType: typeof emailErr,
+        },
+      });
     }
 
     void deps.audit({
       action: "auth.password_reset_requested",
       adminEmail: user.emailLower,
       adminUserId: user.id,
-      ip: req.ip ?? null,
+      ip,
     });
 
     res.status(200).json({ ok: true });

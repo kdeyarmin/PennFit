@@ -235,6 +235,46 @@ describe("POST /email/sendgrid-events", () => {
     },
   );
 
+  it("returns 400 for non-JSON Content-Type (e.g. text/plain)", async () => {
+    const { publicKeyBase64 } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+
+    const app = buildApp();
+    // express.raw({ type: "application/json" }) skips the body for non-JSON
+    // content types, so req.body is never a Buffer and the sig middleware
+    // returns 400 "raw body required" before the route handler even runs.
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "text/plain")
+      .send("some plain text");
+
+    expect(res.status).toBe(400);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when body is invalid (wrong schema) despite a valid signature", async () => {
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+
+    const ts = "1810000010";
+    // Valid JSON but wrong type — parseSendgridEventBatch expects an array,
+    // so an object body causes a Zod parse error → caught as parse_failed.
+    const wrongSchemaBody = JSON.stringify({ notAnArray: true });
+    const sig = signBody(privateKeyPem, ts, wrongSchemaBody);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(wrongSchemaBody);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: "parse_failed" });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
   it("rejects a tampered body with the original valid signature (401)", async () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
@@ -255,6 +295,59 @@ describe("POST /email/sendgrid-events", () => {
       .send(tamperedBody);
 
     expect(res.status).toBe(401);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a validly-signed request with non-JSON Content-Type (text/plain)", async () => {
+    // When Content-Type is not application/json, express.raw() does not
+    // populate req.body as a Buffer, so the signature middleware has no
+    // raw bytes to verify against and rejects the request with 400.
+    // This ensures that a non-JSON SendGrid request is never silently
+    // accepted (which would suppress retries and lose the event batch).
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+
+    const ts = "1810000003";
+    const body = JSON.stringify([
+      { event: "delivered", sg_message_id: "sg.msg.plain.1" },
+    ]);
+    const sig = signBody(privateKeyPem, ts, body);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "text/plain")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 (not 200) for a validly-signed request with invalid JSON body", async () => {
+    // B-12: parse failures must return 400 so SendGrid retries the
+    // event batch instead of treating a 200 as successful delivery.
+    const { publicKeyBase64, privateKeyPem } = freshKeyPair();
+    setBaseEnv(publicKeyBase64);
+
+    const ts = "1810000004";
+    // Content-Type is application/json so express.raw() captures the
+    // body as a Buffer; the signature is valid over these exact bytes.
+    const invalidJsonBody = "{ this is not valid JSON !!!";
+    const sig = signBody(privateKeyPem, ts, invalidJsonBody);
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/email/sendgrid-events")
+      .set("content-type", "application/json")
+      .set(SENDGRID_SIGNATURE_HEADER, sig)
+      .set(SENDGRID_TIMESTAMP_HEADER, ts)
+      .send(invalidJsonBody);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: "parse_failed" });
+    // No DB updates must occur when the body is unparseable.
     expect(executeMock).not.toHaveBeenCalled();
   });
 });

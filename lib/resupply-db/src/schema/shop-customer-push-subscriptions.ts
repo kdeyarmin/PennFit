@@ -11,12 +11,15 @@ import { sql } from "drizzle-orm";
 import { index, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
+import { shopCustomers } from "./shop-customers";
 
 export const shopCustomerPushSubscriptions = resupplySchema.table(
   "shop_customer_push_subscriptions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    customerId: text("customer_id").notNull(),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => shopCustomers.customerId, { onDelete: "cascade" }),
     endpoint: text("endpoint").notNull(),
     authB64: text("auth_b64").notNull(),
     p256dhB64: text("p256dh_b64").notNull(),

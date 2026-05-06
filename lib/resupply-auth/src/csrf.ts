@@ -37,12 +37,18 @@ export function checkCsrf(req: Request): CsrfCheckResult {
   const header = Array.isArray(headerRaw) ? headerRaw[0] : headerRaw;
   if (!header) return { ok: false, reason: "missing_header" };
 
-  const a = Buffer.from(cookie, "utf8");
-  const b = Buffer.from(header, "utf8");
-  if (a.length !== b.length) {
-    return { ok: false, reason: "mismatch" };
-  }
-  return timingSafeEqual(a, b)
+  // Pad both sides to a fixed width so the comparison always takes
+  // the same time regardless of actual length. The length check is
+  // done with a boolean flag after the constant-time comparison so
+  // timing does not leak whether the two values had equal lengths.
+  const PAD = 128;
+  const aPad = Buffer.alloc(PAD);
+  const bPad = Buffer.alloc(PAD);
+  Buffer.from(cookie, "utf8").copy(aPad);
+  Buffer.from(header, "utf8").copy(bPad);
+  const bytesMatch = timingSafeEqual(aPad, bPad);
+  const lengthMatch = cookie.length === header.length;
+  return bytesMatch && lengthMatch
     ? { ok: true }
     : { ok: false, reason: "mismatch" };
 }

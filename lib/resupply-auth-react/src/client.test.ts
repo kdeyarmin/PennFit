@@ -56,26 +56,57 @@ function makeFetch(responses: Array<{ status: number; body?: unknown }>): {
 }
 
 describe("createAuthClient", () => {
-  it("sends sign-in to <base>/sign-in with credentials and JSON body", async () => {
-    const { fetch, calls } = makeFetch([{ status: 200, body: { ok: true } }]);
+  it("fetches csrf seed before sign-in, then posts sign-in", async () => {
+    const { fetch, calls } = makeFetch([
+      { status: 200, body: { ok: true } }, // GET /auth/csrf
+      { status: 200, body: { ok: true } }, // POST /sign-in
+    ]);
     const client = createAuthClient({ basePath: "/api/auth", fetch });
     await client.signIn({ email: "a@b.co", password: "hunter22" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe("/api/auth/sign-in");
-    expect(calls[0]!.method).toBe("POST");
-    expect(calls[0]!.credentials).toBe("include");
-    expect(calls[0]!.headers["content-type"]).toBe("application/json");
-    expect(JSON.parse(calls[0]!.body!)).toEqual({
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.url).toBe("/api/auth/csrf");
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[1]!.url).toBe("/api/auth/sign-in");
+    expect(calls[1]!.method).toBe("POST");
+  });
+
+  it("sends sign-in to <base>/sign-in with credentials and JSON body", async () => {
+    const { fetch, calls } = makeFetch([
+      { status: 200, body: { ok: true } }, // GET /auth/csrf
+      { status: 200, body: { ok: true } }, // POST /sign-in
+    ]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    await client.signIn({ email: "a@b.co", password: "hunter22" });
+    const signInCall = calls[1]!;
+    expect(signInCall.url).toBe("/api/auth/sign-in");
+    expect(signInCall.method).toBe("POST");
+    expect(signInCall.credentials).toBe("include");
+    expect(signInCall.headers["content-type"]).toBe("application/json");
+    expect(JSON.parse(signInCall.body!)).toEqual({
       email: "a@b.co",
       password: "hunter22",
     });
   });
 
+  it("sign-in injects X-PF-CSRF header when cookie is present", async () => {
+    setCsrfCookie("test-csrf-value");
+    const { fetch, calls } = makeFetch([
+      { status: 200 }, // GET /auth/csrf (cookie already present, no-op on server)
+      { status: 200 }, // POST /sign-in
+    ]);
+    const client = createAuthClient({ basePath: "/api/auth", fetch });
+    await client.signIn({ email: "a@b.co", password: "x" });
+    expect(calls[1]!.headers["x-pf-csrf"]).toBe("test-csrf-value");
+  });
+
   it("strips trailing slash from basePath", async () => {
-    const { fetch, calls } = makeFetch([{ status: 200 }]);
+    const { fetch, calls } = makeFetch([
+      { status: 200 }, // GET /auth/csrf
+      { status: 200 }, // POST /sign-in
+    ]);
     const client = createAuthClient({ basePath: "/api/auth/", fetch });
     await client.signIn({ email: "a@b.co", password: "x" });
-    expect(calls[0]!.url).toBe("/api/auth/sign-in");
+    expect(calls[1]!.url).toBe("/api/auth/sign-in");
   });
 
   it("sign-out injects X-PF-CSRF from the pf_csrf cookie", async () => {
@@ -133,6 +164,7 @@ describe("createAuthClient", () => {
 
   it("non-2xx throws AuthError with code, message, status, extra", async () => {
     const { fetch } = makeFetch([
+      { status: 200, body: { ok: true } }, // GET /auth/csrf
       {
         status: 429,
         body: {

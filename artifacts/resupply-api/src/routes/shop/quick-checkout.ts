@@ -120,6 +120,14 @@ router.post(
 
     const { items, reorderSessionId, successPath, cancelPath } = parsed.data;
 
+    // requireSignedIn guarantees this is set, but guard defensively
+    // so a future middleware re-ordering can't silently mis-route.
+    if (!req.userCustomerId) {
+      res.status(401).json({ error: "sign_in_required" });
+      return;
+    }
+    const customerId: string = req.userCustomerId;
+
     // Resolve email + display name for Stripe Customer creation.
     // Sourced from req.shopCustomerEmail / req.shopCustomerDisplayName,
     // populated by requireSignedIn from auth.users.
@@ -141,13 +149,23 @@ router.post(
     } else {
       // Validate the user owns the order they're trying to reorder.
       const db = drizzle(getDbPool());
+      // requireSignedIn is upstream but we guard explicitly here so a
+      // future weakening of that middleware can't silently pass
+      // undefined to Drizzle's eq() — which matches IS NULL rows and
+      // would expose every guest-checkout order.
+      const customerId = req.userCustomerId;
+      if (!customerId) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+
       const owned = await db
         .select({ stripeSessionId: shopOrders.stripeSessionId })
         .from(shopOrders)
         .where(
           and(
             eq(shopOrders.stripeSessionId, reorderSessionId!),
-            eq(shopOrders.customerId, req.userCustomerId!),
+            eq(shopOrders.customerId, customerId),
           ),
         )
         .limit(1);
@@ -170,27 +188,58 @@ router.post(
         res.status(502).json({ error: "stripe_retrieve_failed" });
         return;
       }
+      // Guard against Stripe returning a paginated line_items list
+      // (has_more: true). For CPAP reorders this is virtually impossible
+      // (max 20-item limit in the request body above), but the Stripe
+      // API can theoretically paginate. Fail loudly rather than silently
+      // presenting an incomplete basket to the customer.
+      if (oldSession.line_items?.has_more) {
+        res.status(409).json({ error: "reorder_basket_too_large" });
+        return;
+      }
       const li = oldSession.line_items?.data ?? [];
-      basket = li
-        .map((line) => ({
-          priceId:
-            typeof line.price === "string"
-              ? line.price
-              : (line.price?.id ?? null),
-          quantity: line.quantity ?? 1,
-          mode: "one_time" as const,
-        }))
-        .filter(
-          (
-            b,
-          ): b is {
-            priceId: string;
-            quantity: number;
-            mode: "one_time";
-          } => b.priceId !== null,
-        );
+      const unavailableItems: Array<{
+        lineItemId: string;
+        description: string | null;
+      }> = [];
+      const mapped = li.map((line, index) => {
+        const priceId =
+          typeof line.price === "string"
+            ? line.price
+            : (line.price?.id ?? null);
+        if (priceId === null) {
+          unavailableItems.push({
+            lineItemId:
+              typeof line.id === "string" && line.id.length > 0
+                ? line.id
+                : `index:${index}`,
+            description: line.description ?? null,
+          });
+        }
+        return { priceId, quantity: line.quantity ?? 1, mode: "one_time" as const };
+      });
+      basket = mapped.filter(
+        (b): b is { priceId: string; quantity: number; mode: "one_time" } =>
+          b.priceId !== null,
+      );
+      if (unavailableItems.length > 0) {
+        res.status(409).json({
+          error: "price_unavailable",
+          message:
+            "One or more items from the original order are no longer available and cannot be reordered.",
+          unavailableItems,
+        });
+        return;
+      }
       if (basket.length === 0) {
         res.status(409).json({ error: "reorder_basket_empty" });
+        return;
+      }
+      // If any line items were silently dropped (archived / deleted
+      // price), refuse the reorder rather than creating a basket the
+      // customer didn't expect.
+      if (basket.length < li.length) {
+        res.status(409).json({ error: "price_unavailable" });
         return;
       }
     }
@@ -218,7 +267,7 @@ router.post(
     }
 
     const { stripeCustomerId } = await getOrCreateStripeCustomer(config, {
-      customerId: req.userCustomerId!,
+      customerId: customerId,
       email,
       displayName,
     });
@@ -250,7 +299,7 @@ router.post(
         : reorderSessionId
           ? "reorder"
           : "express",
-      customer_id: req.userCustomerId!,
+      customer_id: customerId,
       ...(reorderSessionId ? { reorder_of_session: reorderSessionId } : {}),
     };
 
@@ -293,7 +342,7 @@ router.post(
             // always needs a saved payment method.
             subscription_data: {
               metadata: {
-                customer_id: req.userCustomerId!,
+                customer_id: customerId,
                 source: "pennpaps-shop",
               },
             },
@@ -348,7 +397,7 @@ router.post(
       .values({
         stripeSessionId: session.id,
         status: "pending",
-        customerId: req.userCustomerId!,
+        customerId: customerId,
       })
       .onConflictDoUpdate({
         target: shopOrders.stripeSessionId,

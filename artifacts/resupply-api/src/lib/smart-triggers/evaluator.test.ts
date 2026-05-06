@@ -43,6 +43,7 @@ const dbStub = {
     const obj: Record<string, unknown> = {
       from: () => obj,
       where: () => obj,
+      orderBy: () => obj,
       limit: () => Promise.resolve(result),
     };
     return obj;

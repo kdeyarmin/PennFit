@@ -35,6 +35,7 @@ import {
   buildSessionCookie,
   appendSetCookie,
 } from "../cookies";
+import { checkCsrf } from "../csrf";
 import { normalizeEmail } from "../email";
 import {
   hashPassword,
@@ -77,6 +78,12 @@ export function makeSignInHandler(deps: AuthDeps) {
     req: Request,
     res: Response,
   ): Promise<void> {
+    const csrfCheck = checkCsrf(req);
+    if (!csrfCheck.ok) {
+      authError(res, 403, "csrf_failed", "Request failed a security check.");
+      return;
+    }
+
     const parsed = SignInBody.safeParse(req.body);
     if (!parsed.success) {
       authError(res, 400, "invalid_input", "Email and password are required.");
@@ -142,6 +149,12 @@ export function makeSignInHandler(deps: AuthDeps) {
         ip,
         success: false,
       });
+      void deps.audit({
+        action: "auth.sign_in_failed",
+        adminEmail: emailLower,
+        ip,
+        metadata: { reason: user.status === "locked" ? "locked" : "revoked" },
+      });
       genericFail(res);
       return;
     }
@@ -154,6 +167,12 @@ export function makeSignInHandler(deps: AuthDeps) {
         emailLower,
         ip,
         success: false,
+      });
+      void deps.audit({
+        action: "auth.sign_in_failed",
+        adminEmail: emailLower,
+        ip,
+        metadata: { reason: "no_credential" },
       });
       genericFail(res);
       return;
@@ -212,6 +231,12 @@ export function makeSignInHandler(deps: AuthDeps) {
         emailLower,
         ip,
         success: false,
+      });
+      void deps.audit({
+        action: "auth.sign_in_failed",
+        adminEmail: emailLower,
+        ip,
+        metadata: { reason: "email_unverified" },
       });
       authError(
         res,

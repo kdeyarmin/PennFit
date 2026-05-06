@@ -22,7 +22,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { CheckCircle2, ShieldOff, BellOff } from "lucide-react";
-import { TechBackdrop } from "@/components/tech-backdrop";
 import {
   REMINDER_ITEMS,
   todayIso,
@@ -103,8 +102,6 @@ export function RemindersManage() {
 
   if (!token) {
     return (
-      <>
-        <TechBackdrop />
         <main
           id="main-content"
           tabIndex={-1}
@@ -129,14 +126,11 @@ export function RemindersManage() {
             </CardContent>
           </Card>
         </main>
-      </>
     );
   }
 
   if (isLoading) {
     return (
-      <>
-        <TechBackdrop />
         <main
           id="main-content"
           tabIndex={-1}
@@ -146,7 +140,6 @@ export function RemindersManage() {
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-32 w-full" />
         </main>
-      </>
     );
   }
 
@@ -154,8 +147,6 @@ export function RemindersManage() {
     const apiError = error as ApiError | null;
     const status = apiError?.status ?? 0;
     return (
-      <>
-        <TechBackdrop />
         <main
           id="main-content"
           tabIndex={-1}
@@ -184,14 +175,11 @@ export function RemindersManage() {
             </CardContent>
           </Card>
         </main>
-      </>
     );
   }
 
   if (unsubscribed) {
     return (
-      <>
-        <TechBackdrop />
         <main
           id="main-content"
           tabIndex={-1}
@@ -215,7 +203,6 @@ export function RemindersManage() {
             </CardContent>
           </Card>
         </main>
-      </>
     );
   }
 
@@ -275,8 +262,6 @@ export function RemindersManage() {
   }
 
   return (
-    <>
-      <TechBackdrop />
       <main
         id="main-content"
         tabIndex={-1}
@@ -431,6 +416,5 @@ export function RemindersManage() {
           </CardContent>
         </Card>
       </main>
-    </>
   );
 }

@@ -24,6 +24,7 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
+  authUsers,
   conversations,
   episodes,
   fulfillments,
@@ -74,12 +75,17 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
       lastMessageAt: patientLatestMessage.lastMessageAt,
       lastMessageDirection: patientLatestMessage.lastMessageDirection,
       lastMessagePreview: patientLatestMessage.lastMessagePreview,
+      // Portal invite fields
+      portalAuthUserId: patients.portalAuthUserId,
+      portalInvitedAt: patients.portalInvitedAt,
+      portalAuthVerifiedAt: authUsers.emailVerifiedAt,
     })
     .from(patients)
     .leftJoin(
       patientLatestMessage,
       eq(patientLatestMessage.patientId, patients.id),
     )
+    .leftJoin(authUsers, eq(authUsers.id, patients.portalAuthUserId))
     .where(eq(patients.id, id))
     .limit(1);
 
@@ -190,6 +196,13 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
     );
   }
 
+  // Compute portal status from linked auth row (no stored status column).
+  const portalStatus = !patient.portalAuthUserId
+    ? "not_invited"
+    : patient.portalAuthVerifiedAt
+      ? "active"
+      : "pending";
+
   res.status(200).json({
     id: patient.id,
     pacwareId: patient.pacwareId,
@@ -206,6 +219,8 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
     lastMessageAt: toIso(patient.lastMessageAt),
     lastMessageDirection: patient.lastMessageDirection ?? null,
     lastMessagePreview: patient.lastMessagePreview ?? null,
+    portalStatus,
+    portalInvitedAt: toIso(patient.portalInvitedAt),
     prescriptions: prescriptionRows.map((p) => ({
       id: p.id,
       itemSku: p.itemSku,

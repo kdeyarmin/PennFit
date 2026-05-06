@@ -61,3 +61,12 @@ export {
   type InboundSmsParams,
   type SmsStatusCallbackParams,
 } from "./sms";
+
+export {
+  createTwilioFaxClient,
+  type SendFaxInput,
+  type SendFaxResult,
+  type TwilioFaxClient,
+  type CreateTwilioFaxClientOptions,
+  type FaxHttpSend,
+} from "./fax";

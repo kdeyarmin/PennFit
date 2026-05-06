@@ -72,17 +72,20 @@ export function htmlBody(greeting: string, kind: TriggerKind): string {
  * from the SMS variant (no STOP keyword; already gated by the
  * customer's browser permission) and different from the email body
  * (which can sustain a paragraph of context).
+ *
+ * Keep push copy generic so lock-screen banners do not reveal therapy
+ * details. Specific trigger context belongs in authenticated surfaces.
  */
 export function pushBody(kind: TriggerKind): string {
   switch (kind) {
     case "leak_rising":
-      return "Your mask leak rate has trended up. Tap to see what we noticed.";
+      return "We noticed something about your CPAP therapy. Tap to view your insight.";
     case "usage_dropping":
-      return "We noticed your therapy hours dropping. We can help.";
+      return "There’s a new update about your CPAP therapy. Tap to learn more.";
     case "cushion_wear":
-      return "Your AHI + leak both ticked up - tap for a fresh-cushion suggestion.";
+      return "We have a new CPAP insight for you. Tap to see the details.";
     case "humidifier_drop":
-      return "Your tubing may be due for a refresh.";
+      return "Your CPAP care may need attention. Tap to view your insight.";
   }
 }
 
@@ -108,7 +111,7 @@ export function smsBody(firstName: string, kind: TriggerKind): string {
     case "leak_rising":
       return `${head}, your CPAP leak rate has trended up - usually means a worn cushion. Reply YES to ship a replacement, or STOP to opt out. - Penn Home`;
     case "usage_dropping":
-      return `${head}, we noticed your therapy hours dropped lately. Small changes help. Reply YES for a quick check-in call, or STOP to opt out. - Penn Home`;
+      return `${head}, we noticed your therapy hours dropped lately. Small adjustments help. Reply YES for a quick check-in call, or STOP to opt out. - Penn Home`;
     case "cushion_wear":
       return `${head}, your AHI + leak rate are both up - usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. - Penn Home`;
     case "humidifier_drop":

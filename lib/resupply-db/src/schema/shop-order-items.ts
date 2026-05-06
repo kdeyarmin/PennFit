@@ -36,6 +36,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   text,
@@ -44,6 +45,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
+import { shopOrders } from "./shop-orders";
 
 export const shopOrderItems = resupplySchema.table(
   "shop_order_items",
@@ -51,13 +53,9 @@ export const shopOrderItems = resupplySchema.table(
     id: text("id")
       .primaryKey()
       .default(sql`gen_random_uuid()::text`),
-    /**
-     * FK by convention to shop_orders.id (text uuid). Not enforced as
-     * a hard FK because the webhook may insert the order row + the
-     * items in separate statements and we want neither to depend on
-     * the other's commit ordering.
-     */
-    orderId: text("order_id").notNull(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => shopOrders.id, { onDelete: "cascade" }),
     /**
      * Denormalized Stripe Checkout Session id from the parent order.
      * Direct lookup target for "rebuild line items for session X" +
@@ -126,6 +124,10 @@ export const shopOrderItems = resupplySchema.table(
     orderIdIdx: index("shop_order_items_order_id_idx").on(t.orderId),
     /** Admin "buyers of product X" / popularity reports. */
     productIdx: index("shop_order_items_product_id_idx").on(t.productId),
+    quantityPositive: check(
+      "shop_order_items_quantity_positive",
+      sql`${t.quantity} >= 1`,
+    ),
   }),
 );
 

@@ -29,8 +29,14 @@ import {
 
 import { Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useCart } from "@/hooks/use-cart";
-import { addToWishlist, isInWishlist } from "@/lib/wishlist";
+import { ToastAction } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast";
+import { useCart, type CartItem } from "@/hooks/use-cart";
+import {
+  addToWishlist,
+  isInWishlist,
+  removeFromWishlist,
+} from "@/lib/wishlist";
 import {
   fetchShopProducts,
   formatMoneyCents,
@@ -47,6 +53,8 @@ import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { CostTransparencyCallout } from "@/components/cost-transparency-callout";
 import { ShippingEta } from "@/components/shop/shipping-eta";
 import { CartCrossSell } from "@/components/shop/cart-cross-sell";
+import { HsaFsaBadge } from "@/components/shop/hsa-fsa-badge";
+import { track } from "@/lib/track";
 
 // sessionStorage key written by /account when the user clicks
 // "Buy this again". Reading + clearing it here is the only handshake
@@ -89,6 +97,19 @@ interface ReorderSource {
  */
 type ResumeState = "rehydrated" | "needs_signin" | "nothing_to_do" | null;
 
+function classifyCheckoutError(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("expired")) return "session_expired";
+  if (normalized.includes("preview")) return "preview_mode";
+  if (normalized.includes("unauthorized") || normalized.includes("sign in")) {
+    return "auth_required";
+  }
+  if (normalized.includes("network") || normalized.includes("fetch")) {
+    return "network";
+  }
+  return "unknown";
+}
+
 export function ShopCart() {
   useDocumentTitle("Your cart");
   const {
@@ -96,9 +117,70 @@ export function ShopCart() {
     totalCents,
     setQuantity,
     removeItem,
+    addItem,
     setItemMode,
     replaceItems,
   } = useCart();
+  const { toast } = useToast();
+  // Per-item draft quantity string. Lets the user clear the field
+  // mid-edit without the controlled input snapping back to the
+  // previous value. Cleared on blur so the display re-syncs with
+  // committed cart state.
+  const [draftQty, setDraftQty] = useState<Record<string, string>>({});
+
+  /**
+   * Remove a cart line and surface an Undo toast. The snapshot
+   * captures the full CartItem at click time so Undo can replay the
+   * exact quantity / mode / subscription cadence — not just the SKU.
+   * If the shopper undoes, we also re-stamp the wishlist (when the
+   * removal had previously been a "Save for later" click); see
+   * `handleSaveForLater` below for how the two flows compose.
+   */
+  function handleRemove(
+    it: CartItem,
+    opts?: { savedForLater?: boolean; addedToWishlist?: boolean },
+  ) {
+    const snapshot: CartItem = { ...it };
+    removeItem(it.priceId);
+    toast({
+      title: opts?.savedForLater ? "Saved for later" : "Removed from cart",
+      description: opts?.savedForLater
+        ? `“${it.name}” moved to your saved items.`
+        : `“${it.name}” removed.`,
+      action: (
+        <ToastAction
+          altText={`Undo removing ${it.name}`}
+          onClick={() => {
+            // Re-add at the original quantity. addItem caps at 20
+            // and skips out-of-stock; both are correct fallbacks
+            // for an Undo a few seconds after the original click.
+            addItem(snapshot, snapshot.quantity);
+            if (opts?.addedToWishlist) {
+              // Symmetrical undo: pull it back out of the wishlist
+              // only when Save-for-later actually added it. If the
+              // item was already wishlisted before this click we
+              // leave it there — Undo shouldn't clobber a separate
+              // saved-item the shopper created independently.
+              removeFromWishlist(snapshot.productId);
+            }
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    });
+  }
+
+  /** Wishlist-bound counterpart to handleRemove. */
+  function handleSaveForLater(it: CartItem) {
+    // Track whether *this* click is responsible for the wishlist entry
+    // so the Undo handler knows whether to reverse the write.
+    const addedToWishlist = !isInWishlist(it.productId);
+    if (addedToWishlist) {
+      addToWishlist(it.productId);
+    }
+    handleRemove(it, { savedForLater: true, addedToWishlist });
+  }
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Reorder breadcrumb — populated from sessionStorage on mount if the
@@ -158,10 +240,13 @@ export function ShopCart() {
           setResumeState("nothing_to_do");
           return;
         }
-        const data = (await res.json()) as {
-          items?: CartSnapshotItem[];
-        };
-        const serverItems = Array.isArray(data.items) ? data.items : [];
+        const data = (await res.json()) as unknown;
+        const serverItems =
+          data !== null &&
+          typeof data === "object" &&
+          Array.isArray((data as Record<string, unknown>).items)
+            ? ((data as { items: CartSnapshotItem[] }).items)
+            : [];
         if (serverItems.length === 0) {
           setResumeState("nothing_to_do");
           return;
@@ -230,6 +315,10 @@ export function ShopCart() {
         typeof parsed.sessionId === "string" &&
         typeof parsed.createdAt === "string"
       ) {
+        track("reorder_prefill_applied", {
+          droppedCount:
+            typeof parsed.droppedCount === "number" ? parsed.droppedCount : 0,
+        });
         setReorderSource({
           sessionId: parsed.sessionId,
           createdAt: parsed.createdAt,
@@ -262,6 +351,18 @@ export function ShopCart() {
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [expressCheckingOut, setExpressCheckingOut] = useState(false);
+  const checkoutViewedTrackedRef = useRef(false);
+
+  useEffect(() => {
+    if (checkoutViewedTrackedRef.current) return;
+    if (items.length === 0) return;
+    checkoutViewedTrackedRef.current = true;
+    track("checkout_step_viewed", {
+      step: "cart_review",
+      lineItems: items.length,
+      totalCents,
+    });
+  }, [items.length, totalCents]);
 
   useEffect(() => {
     // Only probe /shop/me if there are items in the cart — there's
@@ -331,6 +432,11 @@ export function ShopCart() {
     if (items.length === 0) return;
     if (previewMode !== false) return;
     setError(null);
+    track("checkout_started", {
+      lineItems: items.length,
+      totalCents,
+      flow: "standard",
+    });
     setCheckingOut(true);
     try {
       const { url } = await startCheckout(
@@ -352,7 +458,12 @@ export function ShopCart() {
       );
       window.location.assign(url);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      track("checkout_error", {
+        flow: "standard",
+        category: classifyCheckoutError(message),
+      });
       setCheckingOut(false);
     }
   }
@@ -366,6 +477,11 @@ export function ShopCart() {
     if (items.length === 0) return;
     if (previewMode !== false) return;
     setError(null);
+    track("checkout_started", {
+      lineItems: items.length,
+      totalCents,
+      flow: "express",
+    });
     setExpressCheckingOut(true);
     try {
       const { url } = await startQuickCheckout({
@@ -390,6 +506,11 @@ export function ShopCart() {
             ? err.message
             : String(err);
       setError(msg);
+      track("checkout_error", {
+        flow: "express",
+        category: classifyCheckoutError(msg),
+      });
+    } finally {
       setExpressCheckingOut(false);
     }
   }
@@ -543,12 +664,56 @@ export function ShopCart() {
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span
-                        className="px-3 text-sm tabular-nums min-w-[2ch] text-center"
+                      {/*
+                        Editable quantity input. The previous version
+                        was a silent <span>, which forced shoppers to
+                        click the +/− buttons N times to reach a
+                        non-trivial quantity (qty 12 = 11 clicks).
+                        Now the value is a typed input bracketed by
+                        the same +/− buttons. setQuantity already
+                        clamps to [0, 20] and integerizes mid-stroke
+                        fractional inputs, so the only thing this
+                        handler needs to do is parse the string.
+                        Empty input is treated as 1 on blur (the
+                        cart-line-removed semantic for qty 0 already
+                        belongs to the explicit Remove button).
+                      */}
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={draftQty[it.priceId] ?? String(it.quantity)}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          // Hold the raw string in draft state so the
+                          // user can clear the field mid-edit. The
+                          // controlled value is the draft when set,
+                          // falling back to committed cart quantity.
+                          setDraftQty((prev) => ({ ...prev, [it.priceId]: raw }));
+                          if (raw === "") return;
+                          const n = parseInt(raw, 10);
+                          if (Number.isFinite(n)) {
+                            setQuantity(it.priceId, n);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const raw = e.target.value;
+                          if (raw === "") {
+                            setQuantity(it.priceId, 1);
+                          }
+                          // Clear draft so display re-syncs with committed
+                          // cart quantity after the user finishes editing.
+                          setDraftQty((prev) => {
+                            const next = { ...prev };
+                            delete next[it.priceId];
+                            return next;
+                          });
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        className="w-10 h-7 text-sm tabular-nums text-center bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-gold))]/40 rounded"
+                        aria-label={`Quantity of ${it.name}`}
                         data-testid={`cart-qty-${it.priceId}`}
-                      >
-                        {it.quantity}
-                      </span>
+                      />
                       <button
                         type="button"
                         onClick={() => setQuantity(it.priceId, it.quantity + 1)}
@@ -570,12 +735,7 @@ export function ShopCart() {
                     */}
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!isInWishlist(it.productId)) {
-                          addToWishlist(it.productId);
-                        }
-                        removeItem(it.priceId);
-                      }}
+                      onClick={() => handleSaveForLater(it)}
                       className="text-xs text-muted-foreground hover:text-[hsl(var(--penn-navy))] flex items-center gap-1.5 transition-colors"
                       data-testid={`cart-save-for-later-${it.priceId}`}
                     >
@@ -583,7 +743,7 @@ export function ShopCart() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => removeItem(it.priceId)}
+                      onClick={() => handleRemove(it)}
                       className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1.5 transition-colors"
                       data-testid={`cart-remove-${it.priceId}`}
                     >
@@ -675,6 +835,17 @@ export function ShopCart() {
                 </span>
               </div>
               {/*
+                HSA/FSA reminder near the total — every CPAP supply
+                in this storefront is IRS-classified as a qualified
+                medical expense. Surfacing the badge here (instead of
+                only on per-product cards) reassures shoppers right
+                before checkout that the HSA/FSA card they're about
+                to use is the correct payment method.
+              */}
+              <div className="mb-4">
+                <HsaFsaBadge size="pdp" label="Pay with HSA / FSA card" />
+              </div>
+              {/*
                 Same shipping promise the customer saw on the PDP,
                 rendered here so they don't lose confidence between
                 product page and checkout. Self-hides if there are no
@@ -684,7 +855,7 @@ export function ShopCart() {
               */}
               <ShippingEta className="mb-4" testIdPrefix="cart-shipping-eta" />
               <CostTransparencyCallout
-                totalCents={totalCents}
+                subtotalCents={totalCents}
                 className="mb-4"
                 testId="cart-cost-transparency"
               />

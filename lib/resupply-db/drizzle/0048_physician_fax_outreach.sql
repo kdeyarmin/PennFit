@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS "resupply"."physician_fax_outreach" (
   "delivered_at" timestamp with time zone,
   "failed_at" timestamp with time zone,
   "failure_reason" text,
-  "created_by_email" text,
+  "created_by_email" text NOT NULL,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "physician_fax_outreach_status_enum"

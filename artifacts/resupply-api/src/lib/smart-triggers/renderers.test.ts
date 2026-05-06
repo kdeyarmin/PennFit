@@ -51,11 +51,17 @@ describe("smsBody", () => {
     }
   });
 
-  it("includes STOP keyword for opt-out compliance", () => {
+  it("is ASCII-only so Twilio uses GSM-7 encoding (not UCS-2)", () => {
+    // UCS-2 drops the segment limit to 70 chars — any non-ASCII char
+    // (em dash, curly quote, etc.) would silently cause multi-segment sends.
     for (const kind of KINDS) {
-      // Match the wording other SMS surfaces use — "STOP to opt
-      // out" is the carrier-recommended phrasing and what the
-      // codebase's other dispatchers ship.
+      const body = smsBody("Anna", kind);
+      expect([...body].every((c) => (c.codePointAt(0) ?? 0) < 128)).toBe(true);
+    }
+  });
+
+  it("includes 'STOP to opt out' for opt-out compliance", () => {
+    for (const kind of KINDS) {
       expect(smsBody("Anna", kind)).toContain("STOP to opt out");
     }
   });
