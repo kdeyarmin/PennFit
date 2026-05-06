@@ -41,7 +41,7 @@ export const patientOnboardingJourneys = resupplySchema.table(
     day7SentAt: timestamp("day7_sent_at", { withTimezone: true }),
     day30SentAt: timestamp("day30_sent_at", { withTimezone: true }),
     day90SentAt: timestamp("day90_sent_at", { withTimezone: true }),
-    status: text("status").notNull().default("active"),
+    status: text("status", { enum: ["active", "completed", "paused"] }).notNull().default("active"),
     enrolledByEmail: text("enrolled_by_email").notNull(),
     enrolledByUserId: text("enrolled_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
