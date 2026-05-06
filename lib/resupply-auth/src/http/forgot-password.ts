@@ -13,7 +13,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { normalizeEmail } from "../email";
-import { checkEndpointRateLimit } from "../rate-limit";
+import { checkLoginRateLimit } from "../rate-limit";
 import { issueToken } from "../token";
 
 import {
@@ -27,7 +27,8 @@ const ForgotBody = z.object({
 });
 
 const FORGOT_RATE_LIMIT = {
-  maxPerIp: 15,
+  maxPerEmail: 15, // keyed to the IP sentinel; email bucket == IP bucket for this endpoint
+  maxPerIp: Infinity, // not used — sentinel encodes the IP
   windowMs: 60 * 60 * 1000, // 1 hour
 };
 
@@ -54,7 +55,13 @@ export function makeForgotPasswordHandler(
     // sign-in and verify-email buckets so those counters don't bleed into
     // each other's rate limits.
     const ipSentinel = `__forgot:${ip ?? "unknown"}`;
-    const rl = await checkEndpointRateLimit(deps.repo, ipSentinel, FORGOT_RATE_LIMIT);
+    // checkLoginRateLimit with a sentinel key isolates this endpoint's
+    // counter from sign-in and verify-email buckets.
+    const rl = await checkLoginRateLimit(
+      deps.repo,
+      { emailLower: ipSentinel, ip: null },
+      FORGOT_RATE_LIMIT,
+    );
     if (!rl.allowed) {
       res.setHeader("Retry-After", String(rl.retryAfterSeconds));
       // Still return 200 to preserve non-enumeration: an attacker
