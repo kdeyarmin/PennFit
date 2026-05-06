@@ -30,7 +30,6 @@ import {
   todayIso,
   type ReminderSku,
 } from "@/lib/reminder-defaults";
-import { TechBackdrop } from "@/components/tech-backdrop";
 
 const PAGE_TITLE = "Supply replacement reminders";
 
@@ -126,8 +125,6 @@ export function Reminders() {
 
   if (success) {
     return (
-      <>
-        <TechBackdrop />
         <main
           id="main-content"
           tabIndex={-1}
@@ -164,7 +161,6 @@ export function Reminders() {
             </CardContent>
           </Card>
         </main>
-      </>
     );
   }
 
@@ -181,8 +177,6 @@ export function Reminders() {
     : null;
 
   return (
-    <>
-      <TechBackdrop />
       <main
         id="main-content"
         tabIndex={-1}
@@ -192,10 +186,10 @@ export function Reminders() {
           <div className="mx-auto w-14 h-14 rounded-2xl icon-halo-gold flex items-center justify-center">
             <Truck className="w-6 h-6" />
           </div>
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight tech-backdrop-heading">
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-[hsl(var(--penn-navy-deep))]">
             Never run out of CPAP supplies
           </h1>
-          <p className="tech-backdrop-subtle max-w-xl mx-auto">
+          <p className="text-muted-foreground max-w-xl mx-auto">
             Subscribe and we'll auto-ship the right replacements on your
             schedule. Same price as one-time. Pause or cancel anytime — no phone
             calls, no insurance hoops.
@@ -434,6 +428,5 @@ export function Reminders() {
           </CardContent>
         </Card>
       </main>
-    </>
   );
 }

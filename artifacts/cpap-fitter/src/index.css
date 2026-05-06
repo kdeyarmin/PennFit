@@ -242,11 +242,11 @@
   --penn-steel: 210 38% 38%;
 
   /*
-   * Tech accent — an electric cyan that signals "computer vision /
-   * algorithmic" without breaking the navy/gold corporate identity.
-   * Used sparingly: hairline rims on glass cards, halos on focus
-   * rings, the scanning sweep on the hero, the perimeter ring on
-   * the tech-backdrop. NEVER as a primary fill.
+   * Cyan tokens — retained for niche on-device computer-vision UI
+   * (capture overlays, measurement HUDs) where the electric blue
+   * genuinely signals "live instrument". The storefront otherwise
+   * runs on navy + aurum; do NOT introduce new cyan in marketing
+   * surfaces.
    *
    *   --penn-cyan        electric process-blue (#22b8ff-ish)
    *   --penn-cyan-soft   pale cyan tint for ambient washes
@@ -365,10 +365,9 @@
     animation: body-bloom-drift 140s ease-in-out infinite alternate;
   }
 
-  /* Slow ambient drift on the body mesh blooms — same character as the
-     <TechBackdrop> blob animation, just much gentler. 60s alternate
-     means a one-minute breath in each direction; you don't notice it
-     when reading, you only notice that the page feels alive. */
+  /* Slow ambient drift on the body mesh blooms — 140s alternate is one
+     long breath in each direction; you don't notice it while reading,
+     you only notice that the page feels alive. */
   @keyframes body-bloom-drift {
     0% {
       background-position: 0% 0%;
@@ -378,17 +377,15 @@
     }
   }
 
-  /* Tech lattice overlay — three composited layers that read as a
-     designed HUD surface rather than a printed dot grid:
-       1. A 32px navy dot grid (the original whisper-quiet texture).
-       2. A 128px crisp navy line grid that suggests CAD / blueprint.
-       3. A 128px cyan line grid offset to the same cadence — at very
-          low alpha it makes the lines glow at intersections instead
-          of reading as a flat blueprint.
-     All three drift together at 72s linear so motion stays unified
-     with the <TechBackdrop>'s perspective grid. The radial mask
-     feathers everything to nothing behind content, so you sense the
-     texture without ever fighting copy. */
+  /* Aurum hairline — a single oversized gold curve traced behind the
+     hero region, echoing the swoop under the wordmark in the logo.
+     Replaces the prior CAD-grid lattice; gives the page a quiet,
+     editorial flourish instead of a designed HUD surface. The arc is
+     duplicated above and mirrored below to hint at a wide horizontal
+     ribbon without ever drawing a literal one. The gold hue is
+     hsl(34 46% 50%) — same as `--penn-gold`; data: URIs can't read
+     CSS vars so the value is duplicated. If you change `--penn-gold`,
+     update this stroke too. */
 
   body::before {
     content: "";
@@ -396,75 +393,11 @@
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image:
-      radial-gradient(
-        circle at 1px 1px,
-        hsl(var(--penn-navy) / 0.08) 1px,
-        transparent 0
-      ),
-      linear-gradient(
-        to right,
-        hsl(var(--penn-navy) / 0.04) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        hsl(var(--penn-navy) / 0.04) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to right,
-        hsl(var(--penn-cyan-deep) / 0.05) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        hsl(var(--penn-cyan-deep) / 0.05) 1px,
-        transparent 1px
-      );
-    background-size:
-      32px 32px,
-      128px 128px,
-      128px 128px,
-      128px 128px,
-      128px 128px;
-    background-position:
-      0 0,
-      0 0,
-      0 0,
-      64px 64px,
-      64px 64px;
-    mask-image: radial-gradient(
-      ellipse 85% 75% at 50% 45%,
-      black 10%,
-      transparent 78%
-    );
-    -webkit-mask-image: radial-gradient(
-      ellipse 85% 75% at 50% 45%,
-      black 10%,
-      transparent 78%
-    );
-    opacity: 0.6;
-    animation: body-grid-drift 72s linear infinite;
-  }
-
-  @keyframes body-grid-drift {
-    0% {
-      background-position:
-        0 0,
-        0 0,
-        0 0,
-        64px 64px,
-        64px 64px;
-    }
-    100% {
-      background-position:
-        32px 32px,
-        128px 128px,
-        128px 128px,
-        192px 192px,
-        192px 192px;
-    }
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' preserveAspectRatio='xMidYMid slice' fill='none'><path d='M-40 280 Q800 420 1640 280' stroke='hsl(34 46%25 50%25)' stroke-opacity='0.18' stroke-width='2' stroke-linecap='round'/><path d='M-40 620 Q800 480 1640 620' stroke='hsl(222 60%25 10%25)' stroke-opacity='0.07' stroke-width='1.5' stroke-linecap='round'/></svg>");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.9;
   }
 
   /* Whisper grain — keep just enough to break up flat digital
@@ -612,28 +545,28 @@
       0 1px 2px hsl(var(--penn-navy-deep) / 0.05);
   }
 
-  /* Tech glass — same chassis as .glass-card but with a luminous
-     cyan rim and a brighter inner highlight. Reserve for "this is
-     the technology" surfaces: the on-device measurement card on
-     /capture, the algorithmic match card on /results, the privacy
-     ledger badge. Used too widely and the cyan loses its meaning. */
+  /* Aurum glass — same chassis as .glass-card but with a refined gold
+     hairline and a warmer ambient halo. Reserve for "this is the
+     headliner" surfaces: the featured fitter card on /, the algorithmic
+     match card on /results, hero credentials. Used too widely and the
+     gold loses its meaning. */
   .glass-card-tech {
     position: relative;
     background: linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.94) 0%,
-      rgba(248, 252, 255, 0.82) 55%,
-      rgba(242, 248, 254, 0.76) 100%
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(252, 250, 246, 0.84) 55%,
+      rgba(250, 247, 240, 0.78) 100%
     );
-    backdrop-filter: blur(18px) saturate(195%);
-    -webkit-backdrop-filter: blur(18px) saturate(195%);
-    border: 1px solid hsl(var(--penn-cyan) / 0.3);
+    backdrop-filter: blur(18px) saturate(190%);
+    -webkit-backdrop-filter: blur(18px) saturate(190%);
+    border: 1px solid hsl(var(--penn-gold) / 0.32);
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.98) inset,
-      0 0 0 1px hsl(var(--penn-cyan) / 0.1),
+      0 0 0 1px hsl(var(--penn-gold) / 0.10),
       0 1px 2px hsl(var(--penn-navy-deep) / 0.05),
       0 12px 30px hsl(var(--penn-navy-deep) / 0.08),
-      0 0 80px hsl(var(--penn-cyan) / 0.08);
+      0 0 70px hsl(var(--penn-gold) / 0.10);
   }
 
   @media print {
@@ -924,19 +857,19 @@
     transform: translateY(0);
   }
 
-  /* Aurora highlight strip — for header / dividers. The cyan kiss
-     in the middle is the tech tell; the gold ride-up keeps the
-     brand identity. Animated variant `aurora-divider-live` slowly
-     pans the highlight left-to-right so the chrome feels alive. */
+  /* Aurum highlight strip — navy ramp into a warm gold catch in the
+     middle, mirrored back into navy. Reads as polished metal rather
+     than a cyan-laced HUD pass. Animated variant `aurora-divider-live`
+     slowly pans the highlight left-to-right so the chrome feels alive. */
   .aurora-divider {
     height: 1px;
     background: linear-gradient(
       90deg,
       transparent 0%,
       hsl(var(--penn-navy) / 0.18) 22%,
-      hsl(var(--penn-cyan) / 0.45) 42%,
-      hsl(var(--penn-gold) / 0.55) 50%,
-      hsl(var(--penn-cyan) / 0.45) 58%,
+      hsl(var(--penn-gold-deep) / 0.4) 42%,
+      hsl(var(--penn-gold) / 0.7) 50%,
+      hsl(var(--penn-gold-deep) / 0.4) 58%,
       hsl(var(--penn-navy) / 0.18) 78%,
       transparent 100%
     );
@@ -948,9 +881,9 @@
       90deg,
       transparent 0%,
       hsl(var(--penn-navy) / 0.1) 20%,
-      hsl(var(--penn-cyan) / 0.5) 40%,
-      hsl(var(--penn-gold) / 0.65) 50%,
-      hsl(var(--penn-cyan) / 0.5) 60%,
+      hsl(var(--penn-gold-deep) / 0.45) 40%,
+      hsl(var(--penn-gold) / 0.75) 50%,
+      hsl(var(--penn-gold-deep) / 0.45) 60%,
       hsl(var(--penn-navy) / 0.1) 80%,
       transparent 100%
     );
@@ -967,16 +900,16 @@
     }
   }
 
-  /* Cyan/navy gradient text — for "Powered by computer vision" sub-
-     heads, stat numerals, and any "this is the technology" callout.
-     Companion to .text-gradient-brand (which is pure navy). */
+  /* Navy → aurum gradient text — editorial register that echoes the
+     logo's wordmark gradient finished with the gold accent below it.
+     Companion to .text-gradient-brand (pure navy). */
   .text-gradient-tech {
     background: linear-gradient(
       135deg,
       hsl(var(--penn-navy-deep)) 0%,
-      hsl(var(--penn-navy)) 35%,
-      hsl(var(--penn-cyan-deep)) 80%,
-      hsl(var(--penn-cyan)) 100%
+      hsl(var(--penn-navy)) 40%,
+      hsl(var(--penn-gold-deep)) 82%,
+      hsl(var(--penn-gold)) 100%
     );
     -webkit-background-clip: text;
     background-clip: text;
@@ -1026,9 +959,10 @@
     }
   }
 
-  /* Faint scan line — for "we are processing" / capture surfaces.
-     Sits absolutely inside a relative container; a 2px cyan band
-     glides top-to-bottom on a 3.2s loop. */
+  /* Faint aurum sheen — a 2px gold band gliding top-to-bottom on a
+     3.2s loop. Same diagrammatic rhythm as the prior cyan scan line,
+     but reads as warm light passing across leather-bound stationery
+     rather than a sci-fi laser pass. */
   .scan-line {
     position: absolute;
     inset: 0;
@@ -1045,10 +979,10 @@
     background: linear-gradient(
       90deg,
       transparent,
-      hsl(var(--penn-cyan) / 0.65) 50%,
+      hsl(var(--penn-gold) / 0.55) 50%,
       transparent
     );
-    box-shadow: 0 0 16px hsl(var(--penn-cyan) / 0.55);
+    box-shadow: 0 0 14px hsl(var(--penn-gold) / 0.4);
     animation: scan-sweep 3.2s ease-in-out infinite;
   }
   @keyframes scan-sweep {
