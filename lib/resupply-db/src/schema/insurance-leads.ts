@@ -9,7 +9,7 @@
 // without touching email.
 
 import { sql } from "drizzle-orm";
-import { boolean, index, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, check, index, text, timestamp } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 
@@ -62,8 +62,7 @@ export const insuranceLeads = resupplySchema.table(
     prescribingPhysician: text("prescribing_physician"),
     notes: text("notes"),
     /** See InsuranceLeadStatus jsdoc above. */
-    status: text("status")
-      .$type<InsuranceLeadStatus>()
+    status: text("status", { enum: ["new", "contacted", "verified", "closed"] })
       .notNull()
       .default("new"),
     /** Free-text CSR note attached to the row. ≤2000 chars at the
@@ -99,6 +98,10 @@ export const insuranceLeads = resupplySchema.table(
       t.createdAt,
     ),
     emailIdx: index("insurance_leads_email_idx").on(t.email),
+    statusEnum: check(
+      "insurance_leads_status_enum",
+      sql`${t.status} IN ('new','contacted','verified','closed')`,
+    ),
   }),
 );
 

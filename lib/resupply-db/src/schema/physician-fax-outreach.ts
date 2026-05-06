@@ -31,8 +31,7 @@ export const physicianFaxOutreach = resupplySchema.table(
     physicianName: text("physician_name").notNull(),
     physicianFaxE164: text("physician_fax_e164").notNull(),
     coverLetterText: text("cover_letter_text").notNull(),
-    status: text("status")
-      .$type<PhysicianFaxOutreachStatus>()
+    status: text("status", { enum: ["pending", "sent", "delivered", "failed"] })
       .notNull()
       .default("pending"),
     vendorRef: text("vendor_ref"),
