@@ -27,6 +27,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -78,7 +79,9 @@ export const shopSubscriptions = resupplySchema.table(
      * Mirrors Stripe's subscription `status` field verbatim. See
      * https://stripe.com/docs/api/subscriptions/object#subscription_object-status
      */
-    status: text("status").notNull(),
+    status: text("status", {
+      enum: ["active", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "trialing", "paused"],
+    }).notNull(),
     /**
      * JSONB snapshot of the subscription's line items at the last
      * webhook event. Used for the /account UI; Stripe stays the source
@@ -134,6 +137,10 @@ export const shopSubscriptions = resupplySchema.table(
   (t) => ({
     customerIdx: index("shop_subscriptions_customer_id_idx").on(t.customerId),
     statusIdx: index("shop_subscriptions_status_idx").on(t.status),
+    statusEnum: check(
+      "shop_subscriptions_status_enum",
+      sql`${t.status} IN ('active','past_due','unpaid','canceled','incomplete','incomplete_expired','trialing','paused')`,
+    ),
   }),
 );
 
