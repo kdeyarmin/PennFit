@@ -34,7 +34,6 @@ export function Home() {
             the old stat strip; reads as live tech credentials rather
             than a passive metrics row. */}
         <div className="flex flex-wrap items-center justify-center gap-2 mb-6 md:mb-8">
-          <span className="status-pill">On-device computer vision</span>
           <span className="status-pill status-pill-gold">
             Local Penn DME team
           </span>
@@ -113,8 +112,8 @@ export function Home() {
 
           <div className="flex items-center justify-between mb-6 relative z-10">
             <div className="inline-flex items-center gap-3">
-              <div className="h-px w-6 bg-gradient-to-r from-transparent to-[hsl(var(--penn-cyan))]" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-cyan-deep))]">
+              <div className="h-px w-6 bg-gradient-to-r from-transparent to-[hsl(var(--penn-gold))]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.32em] text-[hsl(var(--penn-gold-deep))]">
                 The Mask Fitter
               </span>
             </div>
@@ -146,10 +145,10 @@ export function Home() {
             ].map(({ Icon, t }, i) => (
               <li key={t} className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-[hsl(var(--penn-cyan-deep))] tracking-[0.22em]">
+                  <span className="text-[10px] font-mono text-[hsl(var(--penn-gold-deep))] tracking-[0.22em]">
                     0{i + 1}
                   </span>
-                  <span className="h-px flex-1 bg-gradient-to-r from-[hsl(var(--penn-cyan))]/45 to-transparent" />
+                  <span className="h-px flex-1 bg-gradient-to-r from-[hsl(var(--penn-gold))]/45 to-transparent" />
                 </div>
                 <div className="flex items-center gap-2">
                   <Icon
@@ -305,7 +304,6 @@ export function Home() {
             ))}
           </div>
         </div>
-      </div>
       </div>
     </>
   );
