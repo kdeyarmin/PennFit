@@ -104,6 +104,7 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       action: "auth.email_verified",
       adminUserId: consumed.userId,
       ip,
+      metadata: { token_purpose: consumed.purpose },
     });
 
     res.status(200).json({ ok: true });
