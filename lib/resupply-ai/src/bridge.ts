@@ -166,7 +166,19 @@ export class VoiceBridge extends EventEmitter {
     });
 
     this.client.on("tool.call", (call) => {
-      void this.handleToolCall(call.callId, call.name, call.argumentsJson);
+      this.handleToolCall(call.callId, call.name, call.argumentsJson).catch(
+        (err) => {
+          // Outer try-catch in handleToolCall covers the dispatch path.
+          // This catches any unexpected throw from the pre-dispatch validation
+          // path (e.g. summarizeToolArgsForAudit), preventing an unhandled
+          // rejection that would crash the process in Node ≥ 15.
+          this.emit("session.error", {
+            source: "tool",
+            code: "handle_tool_call_error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        },
+      );
     });
 
     this.client.on("error", (err) => {
