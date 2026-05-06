@@ -54,6 +54,7 @@ import { CostTransparencyCallout } from "@/components/cost-transparency-callout"
 import { ShippingEta } from "@/components/shop/shipping-eta";
 import { CartCrossSell } from "@/components/shop/cart-cross-sell";
 import { HsaFsaBadge } from "@/components/shop/hsa-fsa-badge";
+import { track } from "@/lib/track";
 
 // sessionStorage key written by /account when the user clicks
 // "Buy this again". Reading + clearing it here is the only handshake
@@ -95,6 +96,19 @@ interface ReorderSource {
  *   null              — no ?resume=1 in URL, or probe still in flight
  */
 type ResumeState = "rehydrated" | "needs_signin" | "nothing_to_do" | null;
+
+function classifyCheckoutError(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("expired")) return "session_expired";
+  if (normalized.includes("preview")) return "preview_mode";
+  if (normalized.includes("unauthorized") || normalized.includes("sign in")) {
+    return "auth_required";
+  }
+  if (normalized.includes("network") || normalized.includes("fetch")) {
+    return "network";
+  }
+  return "unknown";
+}
 
 export function ShopCart() {
   useDocumentTitle("Your cart");
@@ -301,6 +315,10 @@ export function ShopCart() {
         typeof parsed.sessionId === "string" &&
         typeof parsed.createdAt === "string"
       ) {
+        track("reorder_prefill_applied", {
+          droppedCount:
+            typeof parsed.droppedCount === "number" ? parsed.droppedCount : 0,
+        });
         setReorderSource({
           sessionId: parsed.sessionId,
           createdAt: parsed.createdAt,
@@ -333,6 +351,18 @@ export function ShopCart() {
   const [savedCard, setSavedCard] = useState<SavedCard | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [expressCheckingOut, setExpressCheckingOut] = useState(false);
+  const checkoutViewedTrackedRef = useRef(false);
+
+  useEffect(() => {
+    if (checkoutViewedTrackedRef.current) return;
+    if (items.length === 0) return;
+    checkoutViewedTrackedRef.current = true;
+    track("checkout_step_viewed", {
+      step: "cart_review",
+      lineItems: items.length,
+      totalCents,
+    });
+  }, [items.length, totalCents]);
 
   useEffect(() => {
     // Only probe /shop/me if there are items in the cart — there's
@@ -402,6 +432,11 @@ export function ShopCart() {
     if (items.length === 0) return;
     if (previewMode !== false) return;
     setError(null);
+    track("checkout_started", {
+      lineItems: items.length,
+      totalCents,
+      flow: "standard",
+    });
     setCheckingOut(true);
     try {
       const { url } = await startCheckout(
@@ -423,7 +458,12 @@ export function ShopCart() {
       );
       window.location.assign(url);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      track("checkout_error", {
+        flow: "standard",
+        category: classifyCheckoutError(message),
+      });
       setCheckingOut(false);
     }
   }
@@ -437,6 +477,11 @@ export function ShopCart() {
     if (items.length === 0) return;
     if (previewMode !== false) return;
     setError(null);
+    track("checkout_started", {
+      lineItems: items.length,
+      totalCents,
+      flow: "express",
+    });
     setExpressCheckingOut(true);
     try {
       const { url } = await startQuickCheckout({
@@ -461,6 +506,10 @@ export function ShopCart() {
             ? err.message
             : String(err);
       setError(msg);
+      track("checkout_error", {
+        flow: "express",
+        category: classifyCheckoutError(msg),
+      });
     } finally {
       setExpressCheckingOut(false);
     }
