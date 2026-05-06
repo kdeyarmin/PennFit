@@ -37,7 +37,8 @@ export const csrMacros = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
     createdBy: text("created_by"),
     updatedBy: text("updated_by"),
   },

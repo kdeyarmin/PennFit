@@ -205,7 +205,8 @@ export const shopCustomers = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     emailIdx: index("shop_customers_email_lower_idx").on(t.emailLower),

@@ -85,7 +85,8 @@ export const shopOrders = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     /**
      * Snapshot of the shipping address used for THIS order. Same
