@@ -59,7 +59,9 @@ export const shopOrders = resupplySchema.table(
       .default(sql`gen_random_uuid()::text`),
     stripeSessionId: text("stripe_session_id").notNull().unique(),
     stripePaymentIntentId: text("stripe_payment_intent_id"),
-    status: text("status").notNull().default("pending"),
+    status: text("status", {
+      enum: ["pending", "paid", "refunded"],
+    }).notNull().default("pending"),
     amountTotalCents: integer("amount_total_cents"),
     currency: text("currency"),
     /**
@@ -178,6 +180,10 @@ export const shopOrders = resupplySchema.table(
     amountNonNegative: check(
       "shop_orders_amount_total_cents_non_negative",
       sql`amount_total_cents IS NULL OR amount_total_cents >= 0`,
+    ),
+    statusEnum: check(
+      "shop_orders_status_enum",
+      sql`${t.status} IN ('pending','paid','refunded')`,
     ),
   }),
 );
