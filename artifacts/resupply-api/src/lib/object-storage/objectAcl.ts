@@ -67,6 +67,13 @@ function createObjectAccessGroup(
   }
 }
 
+export class ObjectAlreadyOwnedError extends Error {
+  constructor() {
+    super("Object is already claimed by another owner");
+    this.name = "ObjectAlreadyOwnedError";
+  }
+}
+
 export async function setObjectAclPolicy(
   objectFile: File,
   aclPolicy: ObjectAclPolicy,
@@ -74,6 +81,23 @@ export async function setObjectAclPolicy(
   const [exists] = await objectFile.exists();
   if (!exists) {
     throw new Error(`Object not found: ${objectFile.name}`);
+  }
+
+  // Reject if an owner is already set and it differs from the incoming owner.
+  // This prevents a customer from supplying a previously-issued objectPath
+  // that belongs to another customer and hijacking its ownership.
+  const [existingMeta] = await objectFile.getMetadata();
+  const rawExisting = existingMeta?.metadata?.[ACL_POLICY_METADATA_KEY];
+  if (rawExisting) {
+    let existing: ObjectAclPolicy | null = null;
+    try {
+      existing = JSON.parse(rawExisting as string) as ObjectAclPolicy;
+    } catch {
+      // Malformed existing metadata — treat as unclaimed.
+    }
+    if (existing?.owner && existing.owner !== aclPolicy.owner) {
+      throw new ObjectAlreadyOwnedError();
+    }
   }
 
   await objectFile.setMetadata({
