@@ -35,12 +35,14 @@ export const MAX_CHAT_TURNS = 12;
 export const MAX_USER_MESSAGE_CHARS = 1_500;
 
 /**
- * Cap on the total system prompt length. Empirically the full prompt
- * built below is ~12 KB; this guard exists to surface a regression if
- * a future maskCatalog edit accidentally bloats the prompt past the
- * model's preferred context budget.
+ * Cap on the total system prompt length. The full prompt currently
+ * sits in the low-40k char range (≈ 10k tokens) — comfortably inside
+ * gpt-4o-mini's 128k-token context window but large enough that a
+ * runaway maskCatalog or knowledge-section edit would noticeably
+ * raise per-call latency and cost. The cap is a tripwire against
+ * accidental bloat, not a model-imposed hard limit.
  */
-const MAX_SYSTEM_PROMPT_CHARS = 32_000;
+const MAX_SYSTEM_PROMPT_CHARS = 60_000;
 
 const MASK_TYPE_LABELS: Record<MaskType, string> = {
   fullFace: "Full face",
@@ -160,7 +162,14 @@ Process (4 steps):
 If a patient lacks insurance or wants something not covered, the
 PennPaps cash-pay shop sells the same supplies on a card (no
 prescription needed for most consumables: filters, tubing, water
-chambers).
+chambers). Many cash-pay items are HSA / FSA eligible — the shop
+shows an "HSA/FSA eligible" badge on each qualifying product card
+and product detail page.
+
+Surprise-bill guarantee: PennPaps does not knowingly ship supplies
+that are NOT eligible under the patient's plan without contacting
+them first. If we discover something would cost out-of-pocket, we
+call or email before shipping.
 
 Insurance changed? Tell PennPaps as soon as it does and they re-verify
 before the next order.
@@ -192,6 +201,241 @@ How to start a swap or return (see /comfort-guarantee):
   4. Replacement ships right away when the account is in good
      standing - your therapy doesn't stop while the return is in
      transit.
+`;
+
+const PRIVACY_AND_DATA_SECTION = `
+# Privacy, data handling, and the SMS program
+
+PennPaps is privacy-first by design. Plain-English version of what
+the /privacy page says:
+
+What stays on the device:
+  - The camera image. Facial landmark detection runs entirely in the
+    browser via Google MediaPipe Face Mesh. We never upload, record,
+    or store the photo or video.
+  - Camera frames are cleared the moment the page closes or the user
+    clicks "Start Over".
+
+What is transmitted:
+  - The numeric facial measurements (e.g. nose width in mm).
+  - Questionnaire answers (boolean / enum values).
+  - Anonymous funnel events tagged with a per-tab random session id
+    that contains no name, IP, contact info, or device fingerprint.
+  - When an order is submitted: contact, shipping, insurance,
+    prescription, and order notes — stored in a secure
+    order-fulfillment database.
+
+Who can see stored order data:
+  - PennPaps staff with authorized accounts. Every access is
+    audit-logged.
+  - We never sell, rent, or share contact info or SMS opt-in consent
+    with third parties for marketing. Phone numbers reach Twilio
+    only because Twilio is the carrier delivering the message.
+
+Data retention and rights:
+  - To request a copy, correction, or deletion of your stored order
+    data, email **info@pennpaps.com**. Some records must be kept for
+    regulatory and audit reasons.
+
+SMS program (PennPaps CPAP Resupply Notifications):
+  - Transactional only — order confirmations, shipping updates,
+    insurance / prescription follow-ups, resupply reminders, and
+    replies to your messages. No marketing texts.
+  - Frequency: roughly 1–2 messages per resupply cycle (every 30–90
+    days based on plan), plus order/shipping confirmations.
+  - Carrier message and data rates may apply; carriers are not
+    liable for delays or undelivered messages.
+  - Opt-out: reply STOP, END, CANCEL, UNSUBSCRIBE, QUIT, or OPTOUT
+    to any text. You'll get one final confirmation, then no more
+    texts. Reply START to resume. Reply HELP for program info and
+    a support contact.
+
+If a user asks "how do I stop texts" or "is my photo stored",
+answer from this section directly — those are PennPaps's most-asked
+privacy questions.
+`;
+
+const DEVICE_SETUP_DEEP_SECTION = `
+# Setting up a CPAP machine (see /learn/device-setup)
+
+The 7-step initial setup takes about ten minutes. PennBot can walk
+patients through it without referencing brand-specific manuals.
+
+  1. Unpack and inventory: device, heated humidifier chamber, hose
+     (heated or standard), mask + headgear, power brick, spare
+     disposable filter, quick-start card.
+  2. Pick a stable spot LOWER than the mattress (most nightstands
+     work). Leave at least 4 inches of clearance behind the air
+     intake. Away from heat vents, fans, curtains, and pets.
+  3. Fill the humidifier with **distilled water only** — tap,
+     filtered, and spring water all leave mineral scale that
+     shortens chamber life. Refill daily; never leave standing
+     water.
+  4. Connect the hose: snug onto the air outlet, then to the mask
+     elbow. Heated tubing has an electrical pin — don't force the
+     wrong orientation.
+  5. Power brick to the machine first, then the wall. The
+     prescribed pressure is pre-loaded; the patient does NOT need
+     to enter the clinical menu.
+  6. Set ramp (start low, climb to prescribed pressure over ~20
+     minutes — much easier to fall asleep with) and humidity (start
+     in the middle of the dial — bump up if dry mouth, bump down if
+     water beads in the hose; a hose cover also helps).
+  7. Sit upright, slip the mask on, adjust top straps before bottom
+     straps, slide a finger under each strap (snug, not tight),
+     then lie down and breathe normally. The machine senses the
+     first breath and starts.
+
+Daily, weekly, monthly care:
+  - Daily: empty the humidifier chamber; wipe the mask cushion with
+    a CPAP wipe or damp microfiber; drape the hose over a towel rod
+    to air-dry.
+  - Weekly: hand-wash cushion + frame + headgear in warm water with
+    mild dish soap (no scented or antibacterial soaps — they
+    degrade silicone). Air-dry out of direct sunlight. Wipe the
+    machine exterior with a damp cloth.
+  - Monthly: hand-wash the hose end-to-end with warm soapy water,
+    rinse well, hang to dry. Replace the disposable filter (or
+    rinse the reusable one). Inspect the cushion + headgear for
+    stretching, tears, or discoloration; if you see any, order a
+    replacement.
+
+First-week reality check:
+  - Power on early so the humidifier preheats.
+  - Use ramp when lying down.
+  - Don't force breathing with the machine.
+  - Five to ten nights to settle in is normal. Hitting four hours a
+    night that first week means the patient is on track.
+`;
+
+const TROUBLESHOOTING_DEEP_SECTION = `
+# CPAP troubleshooting playbook
+
+Six issues drive the vast majority of "I'm struggling" calls. Walk
+patients through these self-fixes BEFORE escalating to the sleep
+provider.
+
+  1. Mask leaks: don't over-tighten — that breaks the seal more
+     often than it fixes it. Pull the mask away an inch and re-seat
+     the cushion. Leaks at the **bridge of the nose** usually mean
+     a smaller cushion size; leaks at the **chin** usually mean a
+     larger one. PennPaps will swap within the 60-day window at no
+     cost.
+  2. Dry mouth: almost always the patient mouth-breathes at night.
+     A chinstrap is the cheapest fix. If that's not enough, switch
+     from a nasal mask to a full-face mask. Bumping humidity up one
+     step also helps.
+  3. Stuffy or congested nose: increase humidity, add heated tubing
+     if not already in use, or use a saline nasal rinse 30 minutes
+     before bed. Persistent congestion past two weeks is a clinical
+     question for the prescriber — could be allergies or sinusitis.
+  4. Pressure feels too strong: turn on **ramp** so the machine
+     starts lower and climbs while the patient falls asleep. Most
+     ResMed devices have an **EPR** (Expiratory Pressure Relief)
+     setting and Philips devices have a **C-Flex** equivalent that
+     drops pressure briefly on exhale; the prescriber may have
+     pre-set them. Don't change clinical settings yourself; if it
+     still feels wrong after a week, call the sleep provider.
+  5. Aerophagia (stomach bloating from swallowing air): try
+     side-sleeping instead of back-sleeping. If it persists, the
+     prescribed pressure may be too high — call the prescriber.
+  6. Claustrophobia: practice during the day. Wear the mask alone,
+     no machine, for 10–15 minutes while watching TV for a few
+     days. Then add the hose with the machine running while sitting
+     up. Build to a full night. Daytime desensitization is the
+     single biggest predictor of long-term success.
+
+Other common issues:
+  - Mask marks on the face: headgear is too tight, or cushion is
+    past replacement.
+  - Loud machine: clogged filter (replace) or the mask is whistling
+    from a leak.
+  - Repeated mask-rip-off in sleep: comfort issue; retake the
+    /how-it-works fitter and contact PennPaps for a swap.
+`;
+
+const SLEEP_STUDY_AND_SCREENER_SECTION = `
+# Sleep study basics + the STOP-BANG screener (see /learn/sleep-apnea-quiz)
+
+PennPaps does NOT diagnose sleep apnea. The diagnosis comes from a
+sleep study ordered and interpreted by a sleep medicine provider.
+Two types:
+  - **Home sleep test (HST)**: small recorder strapped to the
+    chest, finger pulse oximeter. Usually one or two nights at home.
+    Most insurance plans (and Medicare) cover an HST as the first
+    line for adults with classic obstructive symptoms.
+  - **In-lab polysomnography (PSG)**: full overnight in a sleep lab
+    with EEG / EOG / EMG / ECG / SpO2 / leg leads. Used when an HST
+    is inconclusive, when central apnea is suspected, when titration
+    is needed, or for pediatric studies.
+
+The STOP-BANG screener at /learn/sleep-apnea-quiz is the most
+validated bedside risk-stratifier for obstructive sleep apnea. It
+asks 8 yes/no questions across:
+  S — Snore loud enough to be heard through a closed door
+  T — Tired or sleepy during the day
+  O — Observed to stop breathing or gasp during sleep
+  P — high blood Pressure (or on antihypertensives)
+  B — BMI over 35
+  A — Age over 50
+  N — Neck circumference over 16 inches / 40 cm
+  G — male Gender at birth (apnea is 2–3× more common; under-
+       diagnosed in females)
+
+Bands and what to suggest:
+  - 0–2: low risk. Worth a mention at the next physician visit if
+    a bed partner has voiced concern.
+  - 3–4: intermediate. Often undiagnosed OSA. Bring the score to
+    the PCP or a sleep medicine provider; ask about a home sleep
+    test.
+  - 5–8: high. Untreated OSA is linked to high blood pressure,
+    cardiovascular events, type-2 diabetes complications, and
+    motor-vehicle-accident risk. Recommend contacting the
+    physician promptly.
+
+What to bring to the visit: the STOP-BANG score, a list of "yes"
+symptoms, anything a bed partner has noticed (snoring, gasping,
+pauses, restless sleep), and a history of high blood pressure,
+type-2 diabetes, atrial fibrillation, or unexplained recent weight
+gain.
+
+Reminder: the screener is a screener, not a diagnosis. Only a
+qualified physician can diagnose OSA, and only a sleep study can
+confirm it.
+`;
+
+const SUBSCRIBE_AND_SAVE_SECTION = `
+# Subscribe & Save (auto-ship)
+
+Patients who don't want to track replacement dates themselves can
+subscribe to auto-ship. The /reminders page is the entry point;
+auto-ship items also surface on the /shop with a "Subscribe & Save"
+toggle on each product card.
+
+Mechanics (Stripe Subscriptions under the hood):
+  - Same price as a one-time purchase. No membership fee. Cancel
+    anytime.
+  - Each subscription has its own cadence (e.g. cushion monthly,
+    headgear every 6 months). The cadence is set when the patient
+    subscribes and can be changed later from /account.
+  - Subscription stock is separate from one-time stock — an item
+    can be out of one-time but available for new subscriptions.
+  - The patient can pause, resume, or cancel any subscription from
+    /account → Subscriptions. Pause / resume is idempotent; cancel
+    is final after the current period ends.
+
+Email-only reminder flow (no account needed):
+  - At /reminders, enter an email address and pick which items to
+    be reminded about. PennPaps emails when each is due.
+  - Manage or unsubscribe with one click from the email link
+    (/reminders/manage). Unsubscribe is one-click; the patient can
+    also adjust dates and intervals item by item.
+  - PennPaps never sells the email address; it's used solely for
+    reminders.
+
+When a patient asks "how do I stop the reminders" or "how do I
+change the cadence", point them at /reminders/manage (email link)
+or /account (signed-in subscriptions).
 `;
 
 const THERAPY_VOCABULARY_SECTION = `
@@ -299,23 +543,37 @@ you whether to ask your primary care provider for a sleep study.
 const ACCOUNT_AND_REMINDERS_SECTION = `
 # Accounts, reminders, and the customer dashboard
 
-You do NOT need an account to place an order - guest checkout works.
-A free PennPaps account (see /account, sign up at /sign-up) saves:
-  - Shipping address and order history.
-  - A one-tap "Reorder" button on past purchases.
-  - The /shop/orders, /shop/wishlist, and /account pages.
-  - The "Message your CSR" surface at /account#messages where
-    customer-service replies to threads.
+You do NOT need an account to place an order — guest checkout works.
+A free PennPaps account (see /account, sign up at /sign-up) gives you:
+  - Saved shipping address, saved card (last 4 digits + expiry only),
+    and order history with a one-tap "Reorder" button on past
+    purchases.
+  - **CPAP device** stored on file (manufacturer, model, optional
+    serial / pressure / humidifier setting). PennPaps uses it to
+    surface compatibility hints on the shop and to speed up
+    customer-service follow-ups.
+  - **Prescriber on file** (name, practice, phone, fax, NPI). PHI;
+    every write is audit-logged. Lets PennPaps fax a refill request
+    on your behalf when it's time.
+  - **Subscriptions**: pause, resume, change cadence, or cancel any
+    Subscribe & Save line from /account → Subscriptions.
+  - **In-app messages** with customer service at /account#messages.
+    Threaded, append-only history with unread badges.
+  - **Communication preferences**: turn email or SMS marketing /
+    resupply / abandoned-cart / review-request notifications on or
+    off; pick a preferred channel; set do-not-disturb hours.
+  - **Document upload** for your insurance card or prescription;
+    PennPaps's CSR team reviews and confirms.
+  - **Insights**: anonymized signals like "your cushion looks due"
+    or "leak rate trending up" — generated from your own usage
+    history when available, dismissible at any time.
 
-Replacement reminders (free, no account needed):
-  - Sign up at /reminders. PennPaps emails when each item is due
-    on the standard schedule.
-  - Manage / unsubscribe at /reminders/manage.
-
-Education: the /learn library has long-form video and written guides
-on getting started, troubleshooting, cleaning, and travel. /faq is
-the searchable Q&A; /learn/replacement-schedule is the deep-dive on
-when to replace each part; /learn/device-setup is a starter checklist.
+Education hub: the /learn library has long-form guides on getting
+started, troubleshooting, cleaning, and travel. /faq is the
+searchable Q&A; /learn/replacement-schedule is the deep-dive on
+when to replace each part; /learn/device-setup is a starter
+checklist. /learn/sleep-apnea-quiz is the STOP-BANG screener for
+patients who haven't been formally diagnosed yet.
 `;
 
 const FAQ_SECTION = `
@@ -531,7 +789,12 @@ export function buildChatSystemPrompt(): string {
     REPLACEMENT_SCHEDULE_SECTION,
     INSURANCE_SECTION,
     RETURNS_GUARANTEE_SECTION,
+    PRIVACY_AND_DATA_SECTION,
     HOW_IT_WORKS_SECTION,
+    DEVICE_SETUP_DEEP_SECTION,
+    TROUBLESHOOTING_DEEP_SECTION,
+    SLEEP_STUDY_AND_SCREENER_SECTION,
+    SUBSCRIBE_AND_SAVE_SECTION,
     ACCOUNT_AND_REMINDERS_SECTION,
     THERAPY_VOCABULARY_SECTION,
     SCOPE_DISCLAIMER_SECTION,
