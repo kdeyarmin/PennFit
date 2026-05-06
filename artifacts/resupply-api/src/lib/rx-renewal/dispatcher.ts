@@ -160,7 +160,7 @@ export async function runRxRenewalSendDue(
         });
       }
 
-      await db
+      const markResult = await db
         .update(prescriptions)
         .set({ renewalRequestedAt: now, updatedAt: now })
         .where(
@@ -168,7 +168,14 @@ export async function runRxRenewalSendDue(
             eq(prescriptions.id, row.prescriptionId),
             isNull(prescriptions.renewalRequestedAt),
           ),
+        )
+        .returning({ id: prescriptions.id });
+      if (!markResult[0]) {
+        logger.warn(
+          { prescription_id: row.prescriptionId, channel },
+          "rx-renewal: send succeeded but DB mark affected 0 rows — concurrent worker likely caused a duplicate send",
         );
+      }
 
       await logAudit({
         action: "prescription.renewal_requested",
