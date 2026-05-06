@@ -236,7 +236,7 @@ router.get(
   async (req, res) => {
     const idParsed = patientIdParam.safeParse(req.params.id);
     if (!idParsed.success) {
-      res.status(400).json({ error: "invalid_id" });
+      res.status(404).json({ error: "patient_not_found" });
       return;
     }
     const db = drizzle(getDbPool());
