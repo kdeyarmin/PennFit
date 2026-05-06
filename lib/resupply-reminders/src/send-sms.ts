@@ -113,7 +113,8 @@ export async function sendReminderSms(
   const otherOwners = await db
     .select({ id: patients.id })
     .from(patients)
-    .where(eq(patients.phoneE164, normalizedPhone));
+    .where(eq(patients.phoneE164, normalizedPhone))
+    .limit(2); // need at most 2 rows to detect the conflict
   const otherIds = otherOwners
     .map((r) => r.id)
     .filter((id) => id !== patientId);
