@@ -48,7 +48,7 @@ describe("rxRenewalPushTitle", () => {
   });
 });
 
-const expectSingleSegmentAsciiSms = (body: string) => {
+const _expectSingleSegmentAsciiSms = (body: string) => {
   // Twilio uses a 160-character limit for single-segment GSM-7/ASCII SMS.
   // Non-ASCII copy edits (for example curly quotes or em dashes) can force
   // UCS-2 encoding and split the message into multiple segments even when

@@ -94,3 +94,23 @@ export async function checkLoginRateLimit(
     return { allowed: true, retryAfterSeconds: 0 };
   }
 }
+
+/**
+ * Per-endpoint IP rate limit using a sentinel key so each endpoint's
+ * counter is isolated from sign-in and other auth counters. The sentinel
+ * is keyed `__<endpoint>:<ip>` so a flood of verify-email attempts does
+ * not drain the sign-in budget and vice-versa.
+ *
+ * Fails OPEN on DB error (same as checkLoginRateLimit).
+ */
+export async function checkEndpointRateLimit(
+  repo: AuthRepository,
+  sentinel: string,
+  config: Pick<RateLimitConfig, "maxPerIp" | "windowMs">,
+): Promise<RateLimitDecision> {
+  return checkLoginRateLimit(
+    repo,
+    { emailLower: sentinel, ip: null },
+    { maxPerEmail: config.maxPerIp, maxPerIp: Infinity, windowMs: config.windowMs },
+  );
+}
