@@ -38,6 +38,23 @@ import {
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
+
+// Per-admin write rate limits (B-07). All three limiters key by
+// adminUserId so a compromised account's blast radius is capped
+// without affecting other staff.
+const adminEnrollLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  name: "admin_onboarding_enroll",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+const adminSendDueLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  name: "admin_onboarding_send_due",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const router: IRouter = Router();
 
@@ -105,6 +122,7 @@ router.get("/admin/patients/:id/onboarding", requireAdmin, async (req, res) => {
 router.post(
   "/admin/patients/:id/onboarding/enroll",
   requireAdmin,
+  adminEnrollLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -268,7 +286,7 @@ router.patch(
   },
 );
 
-router.post("/admin/onboarding/send-due", requireAdmin, async (req, res) => {
+router.post("/admin/onboarding/send-due", requireAdmin, adminSendDueLimiter, async (req, res) => {
   const db = drizzle(getDbPool());
   const now = new Date();
   const cap = 50;

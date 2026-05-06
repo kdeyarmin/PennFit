@@ -39,8 +39,19 @@ import {
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// B-07: 30 invite sends per hour per admin. Each call triggers one
+// email or SMS; 30/hour covers legitimate CSR workflows while capping
+// a compromised-account email-spam scenario.
+const adminInviteLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  name: "admin_portal_invite",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -86,6 +97,7 @@ const inviteBody = z
 router.post(
   "/admin/patients/:id/portal-invite",
   requireAdmin,
+  adminInviteLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -261,6 +273,7 @@ router.post(
 router.post(
   "/admin/patients/:id/portal-invite/resend",
   requireAdmin,
+  adminInviteLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
