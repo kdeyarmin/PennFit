@@ -2895,6 +2895,7 @@ function SmartTriggerRow({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Optional dismiss reason"
+                aria-label="Optional dismiss reason"
                 data-testid={`smart-trigger-dismiss-reason-${event.id}`}
               />
               <Button
