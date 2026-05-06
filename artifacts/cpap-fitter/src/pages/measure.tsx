@@ -8,6 +8,8 @@ import {
   ScanFace,
   CheckCircle2,
   AlertCircle,
+  ArrowRight,
+  RefreshCw,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -16,27 +18,92 @@ import { FilesetResolver, FaceLandmarker } from "@mediapipe/tasks-vision";
 import type { FacialMeasurements } from "@workspace/api-client-react/storefront";
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { findImplausibleMeasurement } from "@/lib/measure-flow";
+
+// How long the success state ("Measurements Ready" + readout) stays
+// visible before auto-advancing to /questionnaire. Long enough for the
+// user to register the extracted dimensions, short enough that an
+// engaged user doesn't feel stalled. Users can also click "Continue"
+// to skip the wait.
+const AUTO_ADVANCE_MS = 2600;
+
+// Reason codes attached to extraction failures. Drives the help-text
+// card on the error screen and is what we send to analytics so we can
+// see, in aggregate, why patients can't get past /measure (vs the old
+// world where every failure was just "measurement_error").
+type ExtractionFailReason =
+  | "no_face"
+  | "iris_too_small"
+  | "implausible_measurements"
+  | "image_decode"
+  | "image_decode_timeout"
+  | "unknown";
+
+class ExtractionError extends Error {
+  reason: ExtractionFailReason;
+  constructor(reason: ExtractionFailReason, message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+const FAIL_HINTS: Record<ExtractionFailReason, string[]> = {
+  no_face: [
+    "Center your face inside the oval guide.",
+    "Look directly at the camera — not up, down, or to the side.",
+    "Make sure your forehead, eyes, nose, and chin are all in frame.",
+  ],
+  iris_too_small: [
+    "Hold the camera closer — about an arm's length from your face.",
+    "Use the front (selfie) camera, not the rear camera.",
+    "Take off glasses, sunglasses, or anything covering your eyes.",
+  ],
+  implausible_measurements: [
+    "Make sure it's a real face in the frame, not a photo or screen.",
+    "Take off glasses and remove anything covering parts of your face.",
+    "Even, front-on lighting works best — avoid strong side or back light.",
+  ],
+  image_decode: [
+    "Try retaking the photo — the captured frame couldn't be decoded.",
+  ],
+  image_decode_timeout: [
+    "The captured photo took too long to load. Try again, ideally on Wi-Fi or after closing other camera-using apps.",
+  ],
+  unknown: [
+    "Try retaking the photo with even lighting and your face centered.",
+  ],
+};
 
 export function Measure() {
   useDocumentTitle("Analyzing your measurements");
   const [, setLocation] = useLocation();
-  const { capturedImage, setMeasurements, setCapturedImage } = useFitterStore();
+  const {
+    capturedImage,
+    measurements,
+    setMeasurements,
+    setCapturedImage,
+  } = useFitterStore();
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState(
     "Initializing secure on-device processor…",
   );
-  const [error, setError] = useState<string | null>(null);
-  // Guard so the effect doesn't redirect us back to /capture once we
-  // intentionally clear the captured image for privacy after extracting
-  // measurements (which would otherwise re-fire this effect with capturedImage
-  // === null, beating our setTimeout to /questionnaire).
+  const [error, setError] = useState<{
+    message: string;
+    reason: ExtractionFailReason;
+  } | null>(null);
+  // Flips once we've kicked off (manual click or auto-advance) the
+  // navigation to /questionnaire so subsequent presses / timer fires are
+  // no-ops. Plain ref because callers don't need to re-render on flip.
+  const navigatedRef = useRef(false);
+  // Guard so this effect's MediaPipe pipeline only kicks off once per mount.
+  // Without it, any state change that re-runs the effect (e.g. clearing the
+  // captured image for privacy) would re-trigger the WASM load + face
+  // detection from scratch.
   const startedRef = useRef(false);
-  // Ref-based mount guard. We can't use a local `let isMounted = true` because
-  // setCapturedImage(null) (run for privacy after extraction) is in the effect's
-  // dependency array path and causes React to invoke the cleanup, which would
-  // flip a local isMounted to false BEFORE the navigation setTimeout fires —
-  // stranding the user on "Measurements Ready" forever. The ref only flips on
-  // actual component unmount.
+  // Ref-based mount guard so the post-analysis navigation setTimeout can
+  // tell the difference between "page still mounted" and "user navigated
+  // away mid-processing". A local `let isMounted` would be flipped by the
+  // effect's cleanup on every dep-driven re-run, not just unmount.
   const isMountedRef = useRef(true);
   useEffect(() => {
     isMountedRef.current = true;
@@ -45,12 +112,32 @@ export function Measure() {
     };
   }, []);
 
+  // Single advancement path used by both the auto-advance timer and the
+  // manual "Continue" button. Idempotent so a user clicking the button
+  // just before the timer fires (or vice versa) doesn't double-navigate.
+  const goToQuestionnaire = () => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    if (!isMountedRef.current) return;
+    // Navigate FIRST, then clear the captured image. Doing it the other
+    // way around makes GuardedMeasure (App.tsx) see !capturedImage and
+    // <Redirect to="/capture" /> before our setLocation lands —
+    // bouncing the user back to retake the photo. The startedRef guard
+    // inside this effect doesn't help because the route guard lives
+    // one level up and doesn't see it.
+    setLocation("/questionnaire");
+    // Privacy: discard the captured image from memory now that we've
+    // navigated away from /measure. Our UI promises this — keep it true.
+    setCapturedImage(null);
+  };
+
   useEffect(() => {
     if (startedRef.current) return;
-    // startedRef is checked BEFORE the !capturedImage redirect so that the
-    // intentional setCapturedImage(null) at the end of processing does not
-    // bounce the user back to /capture when this effect re-runs.
     if (!capturedImage) {
+      // Cold-load with no image (e.g. user pasted /measure into the URL).
+      // The /capture → /measure handoff goes through GuardedMeasure
+      // (App.tsx), which already keeps users without a captured image off
+      // this route, so this branch is rarely hit in practice.
       setLocation("/capture");
       return;
     }
@@ -101,7 +188,10 @@ export function Measure() {
           const timer = setTimeout(
             () =>
               reject(
-                new Error("Image decode timed out. Please retake the photo."),
+                new ExtractionError(
+                  "image_decode_timeout",
+                  "Image decode timed out. Please retake the photo.",
+                ),
               ),
             8000,
           );
@@ -112,7 +202,10 @@ export function Measure() {
           img.onerror = () => {
             clearTimeout(timer);
             reject(
-              new Error("Could not load the captured photo. Please retake it."),
+              new ExtractionError(
+                "image_decode",
+                "Could not load the captured photo. Please retake it.",
+              ),
             );
           };
         });
@@ -156,9 +249,15 @@ export function Measure() {
           const irisLeftPix = dist(landmarks[469], landmarks[471]);
           const pxPerMm = irisLeftPix / 11.7;
 
-          if (pxPerMm < 0.1) {
-            throw new Error(
-              "Could not detect features clearly for calibration. Please ensure good lighting and try again.",
+          // pxPerMm < 1 means the iris was less than ~12 pixels across,
+          // which is too small for the millimeter math to be trustworthy.
+          // Bumped from the prior 0.1 threshold (~1 px) which only caught
+          // total no-detect garbage and still let through hopeless
+          // "subject is 4 feet from the camera" cases.
+          if (pxPerMm < 1) {
+            throw new ExtractionError(
+              "iris_too_small",
+              "Your face is too far from the camera for accurate measurement. Please move closer and try again.",
             );
           }
 
@@ -180,29 +279,41 @@ export function Measure() {
             calibrationMethod: "iris",
           };
 
+          const implausibleField = findImplausibleMeasurement(measurements);
+          if (implausibleField) {
+            throw new ExtractionError(
+              "implausible_measurements",
+              "We couldn't get a confident reading from this photo. Please retake it.",
+            );
+          }
+
           if (!isMountedRef.current) return;
           setProgress(100);
           setStatus("Analysis complete.");
           setMeasurements(measurements);
           track("measurements_extracted");
 
-          // Privacy: discard the captured image from memory the moment we have
-          // numeric measurements. Our UI promises this — keep it true.
-          setCapturedImage(null);
-
-          setTimeout(() => {
-            if (isMountedRef.current) setLocation("/questionnaire");
-          }, 900);
+          // Auto-advance after a short delay so users can register the
+          // extracted measurements; the manual "Continue" button below
+          // calls the same goToQuestionnaire() handler for users who
+          // want to skip the wait.
+          setTimeout(goToQuestionnaire, AUTO_ADVANCE_MS);
         } else {
-          throw new Error(
+          throw new ExtractionError(
+            "no_face",
             "No face detected in the image. Please try the capture again.",
           );
         }
       } catch (err: unknown) {
         console.error("Measurement error:", err);
-        const msg = err instanceof Error ? err.message : String(err);
-        if (isMountedRef.current)
-          setError(msg || "An error occurred during measurement extraction.");
+        const reason: ExtractionFailReason =
+          err instanceof ExtractionError ? err.reason : "unknown";
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "An error occurred during measurement extraction.";
+        track("measurement_error", { reason });
+        if (isMountedRef.current) setError({ message: msg, reason });
       } finally {
         // Release the WASM-backed landmarker eagerly — both on success
         // (we've already extracted what we need) and on error (so a retry
@@ -229,19 +340,33 @@ export function Measure() {
 
   if (error) {
     return (
-      <div className="container max-w-md mx-auto px-4 py-24 text-center animate-shimmer-in">
+      <div className="container max-w-md mx-auto px-4 py-24 text-center animate-shimmer-in space-y-6">
         <Alert
           variant="destructive"
-          className="mb-6 text-left glass-card border-destructive/30"
+          className="text-left glass-card border-destructive/30"
+          data-testid="measure-error"
+          data-reason={error.reason}
         >
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{error.message}</AlertDescription>
         </Alert>
+        <div className="text-left callout-navy px-4 py-3 rounded-xl space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[hsl(var(--penn-navy))]/80">
+            Tips for the next try
+          </p>
+          <ul className="text-sm text-foreground/85 space-y-1.5 list-disc pl-5">
+            {FAIL_HINTS[error.reason].map((hint) => (
+              <li key={hint}>{hint}</li>
+            ))}
+          </ul>
+        </div>
         <Button
           onClick={() => setLocation("/capture")}
-          className="rounded-full btn-primary-glow px-6"
+          className="rounded-full btn-primary-glow px-6 gap-2"
+          data-testid="measure-retake"
         >
-          Return to Camera
+          <RefreshCw className="h-4 w-4" />
+          Retake photo
         </Button>
       </div>
     );
@@ -332,14 +457,29 @@ export function Measure() {
               aria-valuemin={0}
               aria-valuemax={100}
             />
-            <div className="flex items-start gap-2.5 text-xs text-foreground/80 callout-navy px-4 py-3 rounded-xl">
-              <BrainCircuit className="h-4 w-4 shrink-0 text-primary mt-0.5" />
-              <span className="leading-relaxed">
-                Your photo is being processed entirely on this device by
-                Google's MediaPipe library. The image is discarded the moment
-                your measurements are extracted.
-              </span>
-            </div>
+            {progress === 100 && measurements ? (
+              <MeasurementsReadout measurements={measurements} />
+            ) : (
+              <div className="flex items-start gap-2.5 text-xs text-foreground/80 callout-navy px-4 py-3 rounded-xl">
+                <BrainCircuit className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                <span className="leading-relaxed">
+                  Your photo is being processed entirely on this device by
+                  Google's MediaPipe library. The image is discarded the moment
+                  your measurements are extracted.
+                </span>
+              </div>
+            )}
+            {progress === 100 && measurements && (
+              <Button
+                onClick={goToQuestionnaire}
+                className="w-full h-12 rounded-full btn-primary-glow text-base"
+                data-testid="measure-continue"
+                aria-label="Continue to questionnaire"
+              >
+                Continue
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -367,6 +507,43 @@ export function Measure() {
         }
       `}</style>
     </div>
+  );
+}
+
+/**
+ * Compact post-extraction readout. Surfacing the actual numbers (rather
+ * than just a green check) lets users sanity-check the result before
+ * advancing — if the iris-calibrated dimensions are wildly off, the
+ * questionnaire+results flow downstream of here will silently produce a
+ * bad mask recommendation.
+ */
+function MeasurementsReadout({
+  measurements,
+}: {
+  measurements: FacialMeasurements;
+}) {
+  const rows: { label: string; value: number }[] = [
+    { label: "Nose width", value: measurements.noseWidth },
+    { label: "Nose height", value: measurements.noseHeight },
+    { label: "Nose to chin", value: measurements.noseToChin },
+    { label: "Mouth width", value: measurements.mouthWidth },
+    { label: "Face width", value: measurements.faceWidthAtCheekbones },
+  ];
+  return (
+    <dl
+      className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs callout-navy px-4 py-3 rounded-xl"
+      data-testid="measure-readout"
+      aria-label="Extracted facial measurements"
+    >
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-baseline justify-between">
+          <dt className="text-foreground/70">{row.label}</dt>
+          <dd className="font-mono font-semibold text-foreground tabular-nums">
+            {row.value.toFixed(1)} mm
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

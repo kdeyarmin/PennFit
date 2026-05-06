@@ -31,14 +31,17 @@ export const physicianFaxOutreach = resupplySchema.table(
     physicianName: text("physician_name").notNull(),
     physicianFaxE164: text("physician_fax_e164").notNull(),
     coverLetterText: text("cover_letter_text").notNull(),
-    status: text("status").notNull().default("pending"),
+    status: text("status")
+      .$type<PhysicianFaxOutreachStatus>()
+      .notNull()
+      .default("pending"),
     vendorRef: text("vendor_ref"),
     vendorName: text("vendor_name"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     failedAt: timestamp("failed_at", { withTimezone: true }),
     failureReason: text("failure_reason"),
-    createdByEmail: text("created_by_email"),
+    createdByEmail: text("created_by_email").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -55,9 +58,12 @@ export const physicianFaxOutreach = resupplySchema.table(
       "physician_fax_outreach_status_enum",
       sql`${t.status} IN ('pending','sent','delivered','failed')`,
     ),
-    // The partial vendor_ref index (`WHERE vendor_ref IS NOT NULL`)
-    // lives in the migration directly — drizzle-kit can't express
-    // the WHERE.
+    // The partial indexes below live in their respective migrations
+    // directly — drizzle-kit can't express the WHERE clause for
+    // partial indexes:
+    //   0048: vendor_ref partial idx (WHERE vendor_ref IS NOT NULL)
+    //   0049: status partial idx (WHERE status = 'pending') for the
+    //         ops-status pending-queue COUNT(*) (Phase G.16).
   }),
 );
 

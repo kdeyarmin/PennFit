@@ -32,11 +32,13 @@ export type TrackStep =
   | "capture_started"
   | "capture_taken"
   | "measurements_extracted"
+  | "measurement_error"
   | "questionnaire_completed"
   | "results_viewed"
   | "mask_chosen"
   | "order_started"
-  | "order_submitted_success";
+  | "order_submitted_success"
+  | "cart_items_dropped";
 
 export function track(
   step: TrackStep,

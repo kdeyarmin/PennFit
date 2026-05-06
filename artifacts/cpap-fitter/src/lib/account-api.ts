@@ -92,15 +92,34 @@ export class AccountApiError extends Error {
   }
 }
 
+function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith("pf_csrf="));
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match.split("=")[1]);
+  } catch {
+    // Malformed percent-escape in cookie — return raw value rather than throwing.
+    return match.split("=")[1] ?? null;
+  }
+}
+
 async function meFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { headers: callerHeaders, ...restInit } = init;
+  const method = (restInit.method ?? "GET").toUpperCase();
+  const isWrite = method !== "GET" && method !== "HEAD";
+  const csrfToken = isWrite ? getCsrfToken() : null;
   const res = await fetch(`/resupply-api${path}`, {
     credentials: "include",
     headers: {
       Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...(init.headers ?? {}),
+      ...(restInit.body ? { "Content-Type": "application/json" } : {}),
+      ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
+      ...(callerHeaders ?? {}),
     },
-    ...init,
+    ...restInit,
   });
   if (!res.ok) {
     let body: { error?: string; message?: string } | null = null;
@@ -466,3 +485,106 @@ export const dismissInsight = (id: string) =>
   meFetch<{ ok: true }>(`/shop/me/insights/${encodeURIComponent(id)}/dismiss`, {
     method: "POST",
   });
+
+// ---------------------------------------------------------------------------
+// Patient document upload — insurance cards, prescriptions, referrals, etc.
+// ---------------------------------------------------------------------------
+
+export type PatientDocumentType =
+  | "insurance_card"
+  | "prescription"
+  | "referral"
+  | "eob"
+  | "other";
+
+export const DOCUMENT_TYPE_LABELS: Record<PatientDocumentType, string> = {
+  insurance_card: "Insurance card",
+  prescription: "Prescription",
+  referral: "Referral",
+  eob: "Explanation of Benefits",
+  other: "Other",
+};
+
+export interface PatientDocumentItem {
+  id: string;
+  documentType: PatientDocumentType;
+  filename: string | null;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+  /** ISO 8601 or null. Null means the document is still pending CSR review. */
+  reviewedAt: string | null;
+}
+
+export const fetchMyDocuments = () =>
+  meFetch<{ documents: PatientDocumentItem[] }>("/shop/me/documents");
+
+export const deleteMyDocument = (id: string) =>
+  meFetch<{ ok: true }>(`/shop/me/documents/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+/**
+ * Three-step upload:
+ *   1. POST /shop/me/documents/upload-url  → { uploadURL, objectPath }
+ *   2. PUT  uploadURL  (direct-to-GCS, no auth)
+ *   3. POST /shop/me/documents  (finalize)
+ */
+export async function uploadMyDocument(
+  documentType: PatientDocumentType,
+  file: File,
+): Promise<{ id: string }> {
+  const urlRes = await fetch("/resupply-api/shop/me/documents/upload-url", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      documentType,
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+    }),
+  });
+  if (!urlRes.ok) {
+    const body = await urlRes.json().catch(() => ({})) as { error?: string };
+    throw new AccountApiError(urlRes.status, body);
+  }
+  const { uploadURL, objectPath } = (await urlRes.json()) as {
+    uploadURL: string;
+    objectPath: string;
+  };
+
+  let parsedUpload: URL;
+  try {
+    parsedUpload = new URL(uploadURL);
+  } catch {
+    throw new Error("Upload URL received from server is not a valid URL.");
+  }
+  if (
+    parsedUpload.protocol !== "https:" ||
+    (parsedUpload.hostname !== "storage.googleapis.com" &&
+      !parsedUpload.hostname.endsWith(".storage.googleapis.com"))
+  ) {
+    throw new Error("Upload URL is not a trusted HTTPS Google Cloud Storage URL.");
+  }
+
+  const putRes = await fetch(uploadURL, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!putRes.ok) {
+    throw new Error(`Upload failed (${putRes.status} ${putRes.statusText}).`);
+  }
+
+  return meFetch<{ ok: true; id: string }>("/shop/me/documents", {
+    method: "POST",
+    body: JSON.stringify({
+      documentType,
+      objectPath,
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+    }),
+  });
+}

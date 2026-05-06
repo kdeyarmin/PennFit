@@ -45,6 +45,19 @@ router.post(
   raw({ type: "application/json", limit: "1mb" }),
   sigMiddleware,
   async (req, res) => {
+    // Reject non-JSON Content-Type before attempting to parse. A
+    // gzip-encoded or non-UTF-8 body would cause JSON.parse to fail
+    // silently (returning 200), permanently losing the event batch.
+    const contentType = req.headers["content-type"] ?? "";
+    if (!contentType.startsWith("application/json")) {
+      logger.warn(
+        { event: "sendgrid_events_bad_content_type", contentType },
+        "sendgrid-events: unexpected Content-Type, rejecting",
+      );
+      res.status(400).json({ error: "unsupported_content_type" });
+      return;
+    }
+
     if (!readEmailConfigOrNull()) {
       // Should be unreachable — sigMiddleware would have 403'd.
       res.status(503).json({ error: "messaging_not_configured" });
@@ -61,8 +74,10 @@ router.post(
         { event: "sendgrid_events_parse_failed", err: serializeErr(err) },
         "sendgrid-events: parse failed",
       );
-      // 200 — SendGrid retries 5xx. Don't amplify.
-      res.status(200).json({ ok: true });
+      // 400 — the body was malformed despite a valid Content-Type. A
+      // 200 here would tell SendGrid "delivery succeeded" and suppress
+      // retries, permanently losing the event.
+      res.status(400).json({ error: "parse_failed" });
       return;
     }
 

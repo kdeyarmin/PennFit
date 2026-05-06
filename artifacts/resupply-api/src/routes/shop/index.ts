@@ -30,6 +30,7 @@ import productQuestionsRouter from "./product-questions";
 import productCompatibilityRouter from "./product-compatibility";
 import mePushSubscriptionsRouter from "./me-push-subscriptions";
 import meInsightsRouter from "./me-insights";
+import meDocumentsRouter from "./me-documents";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -52,6 +53,9 @@ router.use(mePushSubscriptionsRouter);
 // smart-trigger events (Phase G.4). Email-matched lookup against
 // patient_smart_trigger_events; empty when no patient row matches.
 router.use(meInsightsRouter);
+// /shop/me/documents/* — patient self-service document upload.
+// Patients upload insurance cards, prescriptions, etc. for CSR review.
+router.use(meDocumentsRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);

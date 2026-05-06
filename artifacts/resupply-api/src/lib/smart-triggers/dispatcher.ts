@@ -9,12 +9,23 @@
 // gate the other. Returns a tagged-union outcome so the route can
 // 503 on "not_configured" while the cron logs+skips.
 //
+// Concurrency / double-send prevention
+// -------------------------------------
+// Uses an atomic claim pattern (identical to the abandoned-carts and
+// review-requests dispatchers). A single CTE UPDATE stamps sent_at =
+// now() for up to PER_RUN_SEND_CAP eligible rows in one statement and
+// RETURNS the claimed rows. Two concurrent dispatchers observe
+// non-overlapping sets because FOR UPDATE SKIP LOCKED skips rows held
+// by another connection. A row whose send subsequently fails is
+// unclaimed (sent_at → NULL) so the next cron tick can retry it;
+// the only way sent_at stays stamped is when delivery succeeded.
+//
 // Audit posture matches the route: every successful send writes
 // `patient.smart_trigger.sent` with channel + patient_id + kind in
 // metadata. Push fan-out runs after the audit on a best-effort
 // basis (Phase G.8) and never rolls back the canonical email/SMS.
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -59,10 +70,11 @@ export type DispatcherOutcome =
     };
 
 /**
- * Render the email subject. Re-exported here so the route handler
- * can keep its existing renderers without circular imports — the
- * route still owns the email body templates; only this dispatcher
- * needs the subject for the push title.
+ * Shared smart-trigger renderers, passed in by the caller so this
+ * dispatcher stays decoupled from the renderer module and any route
+ * wiring. Copy lives in `lib/smart-triggers/renderers.ts`; this
+ * dispatcher uses `subjectForKind` for the push title and the
+ * channel-specific body helpers when sending.
  */
 export interface SmartTriggerRenderers {
   subjectForKind: (kind: TriggerKind) => string;
@@ -78,28 +90,6 @@ export async function runSmartTriggerSendDue(
   renderers: SmartTriggerRenderers,
 ): Promise<DispatcherOutcome> {
   const db = drizzle(getDbPool());
-
-  const rows = await db
-    .select({
-      eventId: patientSmartTriggerEvents.id,
-      patientId: patientSmartTriggerEvents.patientId,
-      kind: patientSmartTriggerEvents.kind,
-      windowStartDate: patientSmartTriggerEvents.windowStartDate,
-      windowEndDate: patientSmartTriggerEvents.windowEndDate,
-      firstName: patients.legalFirstName,
-      email: patients.email,
-      phoneE164: patients.phoneE164,
-    })
-    .from(patientSmartTriggerEvents)
-    .innerJoin(patients, eq(patients.id, patientSmartTriggerEvents.patientId))
-    .where(
-      and(
-        isNull(patientSmartTriggerEvents.sentAt),
-        isNull(patientSmartTriggerEvents.dismissedAt),
-      ),
-    )
-    .orderBy(asc(patientSmartTriggerEvents.detectedAt))
-    .limit(PER_RUN_SEND_CAP * 2);
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
@@ -123,24 +113,111 @@ export async function runSmartTriggerSendDue(
     }
   }
 
+  // ──────────────────────────────────────────────────────────────────
+  // Atomic claim. One CTE UPDATE stamps sent_at = now() for up to
+  // PER_RUN_SEND_CAP eligible rows and RETURNs their ids. Two
+  // concurrent dispatchers (cron + admin "Run now") observe
+  // non-overlapping sets because FOR UPDATE OF <events-table>
+  // SKIP LOCKED skips rows already held by another connection.
+  //
+  // The channel-specific contact filter (email / phone_e164 IS NOT
+  // NULL) and the patients.status = 'active' guard are applied inside
+  // the CTE so we never claim a row we cannot actually dispatch.
+  //
+  // On send failure the row is unclaimed (sent_at → NULL) so the next
+  // cron tick can retry. The only way a row stays stamped is when the
+  // delivery actually succeeded.
+  // ──────────────────────────────────────────────────────────────────
+  const contactFilter =
+    channel === "email"
+      ? sql`${patients.email} IS NOT NULL`
+      : sql`${patients.phoneE164} IS NOT NULL`;
+
+  const claimedRaw = await db.execute(sql`
+    WITH eligible AS (
+      SELECT ${patientSmartTriggerEvents.id}
+      FROM   ${patientSmartTriggerEvents}
+      INNER JOIN ${patients}
+             ON ${patients.id} = ${patientSmartTriggerEvents.patientId}
+      WHERE  ${patientSmartTriggerEvents.sentAt} IS NULL
+        AND  ${patientSmartTriggerEvents.dismissedAt} IS NULL
+        AND  ${patients.status} = 'active'
+        AND  ${contactFilter}
+      ORDER BY ${patientSmartTriggerEvents.detectedAt} ASC
+      LIMIT    ${PER_RUN_SEND_CAP}
+      FOR UPDATE OF ${patientSmartTriggerEvents} SKIP LOCKED
+    )
+    UPDATE ${patientSmartTriggerEvents}
+       SET sent_at    = now(),
+           updated_at = now()
+     WHERE id IN (SELECT ${patientSmartTriggerEvents.id} FROM eligible)
+    RETURNING id         AS "eventId",
+              patient_id AS "patientId",
+              kind
+  `);
+  const claimed = (claimedRaw.rows ?? []) as Array<{
+    eventId: string;
+    patientId: string;
+    kind: string;
+  }>;
+
+  if (claimed.length === 0) {
+    return {
+      status: "ok",
+      channel,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      remaining: 0,
+    };
+  }
+
+  // Batch-fetch patient contact info for all claimed events.
+  // Single query — never N+1.
+  const patientIds = [...new Set(claimed.map((r) => r.patientId))];
+  const patientRows = await db
+    .select({
+      id: patients.id,
+      firstName: patients.legalFirstName,
+      email: patients.email,
+      phoneE164: patients.phoneE164,
+    })
+    .from(patients)
+    .where(sql`${patients.id} = ANY(${patientIds})`);
+  const patientMap = new Map(patientRows.map((p) => [p.id, p]));
+
   let attempted = 0;
   let sent = 0;
   let failed = 0;
-  let skippedNoContact = 0;
-  const now = new Date();
 
-  for (const row of rows) {
-    if (attempted >= PER_RUN_SEND_CAP) break;
+  for (const row of claimed) {
     attempted++;
-    const contact = channel === "email" ? row.email : row.phoneE164;
+    const patient = patientMap.get(row.patientId);
+    const contact = channel === "email" ? patient?.email : patient?.phoneE164;
+
     if (!contact) {
-      skippedNoContact++;
+      // Defensive: contact removed between claim and dispatch. Unclaim
+      // so the next run re-evaluates (patient may add contact later).
+      await db.execute(sql`
+        UPDATE ${patientSmartTriggerEvents}
+           SET sent_at    = NULL,
+               updated_at = now()
+         WHERE id = ${row.eventId}
+      `);
+      failed++;
+      logger.warn(
+        { event_id: row.eventId, channel },
+        "smart-trigger claimed row has no contact after batch fetch — unclaimed",
+      );
       continue;
     }
-    const firstName = row.firstName
-      ? (row.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? "")
+
+    const firstName = patient?.firstName
+      ? (patient.firstName.split(/\s+/)[0]?.replace(/[<>&]/g, "") ?? "")
       : "";
     const greeting = firstName ? `Hi ${firstName}` : "Hi";
+
     try {
       if (channel === "email") {
         await sg!.sendEmail({
@@ -161,15 +238,7 @@ export async function runSmartTriggerSendDue(
         });
       }
 
-      await db
-        .update(patientSmartTriggerEvents)
-        .set({ sentAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(patientSmartTriggerEvents.id, row.eventId),
-            isNull(patientSmartTriggerEvents.sentAt),
-          ),
-        );
+      // sent_at was already stamped by the atomic claim — no UPDATE here.
 
       await logAudit({
         action: "patient.smart_trigger.sent",
@@ -190,8 +259,8 @@ export async function runSmartTriggerSendDue(
 
       // Phase G.8 — best-effort push fan-out by email lookup. Never
       // rolls back the canonical email/SMS that already went out.
-      if (row.email) {
-        void sendPushToCustomerByEmail(row.email, {
+      if (patient?.email) {
+        void sendPushToCustomerByEmail(patient.email, {
           title: renderers.subjectForKind(row.kind as TriggerKind),
           body: renderers.pushBody(row.kind as TriggerKind),
           url: "/account/insights",
@@ -209,10 +278,17 @@ export async function runSmartTriggerSendDue(
 
       sent++;
     } catch (err) {
+      // Unclaim so the next cron tick can retry.
+      await db.execute(sql`
+        UPDATE ${patientSmartTriggerEvents}
+           SET sent_at    = NULL,
+               updated_at = now()
+         WHERE id = ${row.eventId}
+      `);
       failed++;
       logger.warn(
         { err, event_id: row.eventId, channel },
-        "smart-trigger send failed",
+        "smart-trigger send failed — unclaimed for retry",
       );
     }
   }
@@ -223,7 +299,7 @@ export async function runSmartTriggerSendDue(
     attempted,
     sent,
     failed,
-    skippedNoContact,
-    remaining: rows.length > attempted ? rows.length - attempted : 0,
+    skippedNoContact: 0, // contact filter is applied inside the claim CTE
+    remaining: claimed.length >= PER_RUN_SEND_CAP ? 1 : 0,
   };
 }

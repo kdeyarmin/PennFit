@@ -242,7 +242,7 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
       )
       AND (${awaitingReplyFilterSql} = false OR n.customer_id IS NOT NULL)
     ORDER BY ${orderClauseExpr} ${orderDirSql}, c.customer_id ASC
-    LIMIT ${pageSize} OFFSET ${offset}
+    LIMIT ${Math.min(pageSize, 200)} OFFSET ${offset}
   `)) as unknown as { rows: ListRow[] };
 
   // Total count (same WHERE) — separate query because the LIMIT/OFFSET

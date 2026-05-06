@@ -15,10 +15,10 @@ import {
   BookOpen,
 } from "lucide-react";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
+import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
 
 interface OrderConfirmation {
   orderReference: string;
-  deliveredAt: string;
   message: string;
   mask: {
     name: string;
@@ -179,6 +179,16 @@ export function OrderSuccess() {
       </div>
 
       <ComfortGuarantee variant="feature" className="mb-8" />
+
+      {/* Resupply-reminder cross-sell. The patient just placed a mask
+          order through insurance — now is the moment to enroll them
+          in the cushion / filter / tubing reminder cadence so the
+          rest of the supply chain stays on schedule. The shop's
+          checkout-success page already does this; mirroring it here
+          keeps both order-completion paths consistent. */}
+      <div className="mb-6">
+        <SubscribeRemindersCta variant="compact" />
+      </div>
 
       <Link
         href="/learn/device-setup"

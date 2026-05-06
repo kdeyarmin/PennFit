@@ -30,6 +30,7 @@
 
 import type { Request, RequestHandler, Response } from "express";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
@@ -75,6 +76,33 @@ function readCustomerIdFromMetadata(
 }
 
 /**
+ * Zod schema for the legacy `session.shipping_details` field shape.
+ * This fallback exists for older/backlogged Stripe webhook events
+ * that predate `collected_information.shipping_details`. The schema
+ * replaces the prior `as unknown as {...}` cast so a structural
+ * change on Stripe's side surfaces as a parse failure (null address)
+ * rather than silently propagating undefined field access.
+ */
+const LegacyShippingDetailsSchema = z
+  .object({
+    shipping_details: z
+      .object({
+        address: z
+          .object({
+            line1: z.string().nullable().optional(),
+            line2: z.string().nullable().optional(),
+            city: z.string().nullable().optional(),
+            state: z.string().nullable().optional(),
+            postal_code: z.string().nullable().optional(),
+            country: z.string().nullable().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
+
+/**
  * Extract a shipping address from a Checkout Session into our
  * canonical SavedShippingAddress shape, or return null if the
  * session didn't collect one (or collected an obviously incomplete
@@ -85,8 +113,9 @@ function readCustomerIdFromMetadata(
  *     `session.collected_information.shipping_details`.
  *   - Older / legacy events delivered it directly at
  *     `session.shipping_details`.
- *   Stripe's TS types only surface the former; we cast for the
- *   latter so a re-delivery from a webhook backlog still parses.
+ *   Stripe's TS types only surface the former; we validate the
+ *   latter through Zod so a Stripe-side rename surfaces as null
+ *   (graceful degradation) instead of a runtime crash.
  *
  * Why we always write country: "US":
  *   The shop is US-only by current product policy. Stripe will only
@@ -97,23 +126,12 @@ function readCustomerIdFromMetadata(
 export function extractShippingAddressFromSession(
   session: Stripe.Checkout.Session,
 ): SavedShippingAddress | null {
-  const shipping =
-    session.collected_information?.shipping_details ??
-    (
-      session as unknown as {
-        shipping_details?: {
-          address?: {
-            line1?: string | null;
-            line2?: string | null;
-            city?: string | null;
-            state?: string | null;
-            postal_code?: string | null;
-            country?: string | null;
-          };
-        };
-      }
-    ).shipping_details ??
-    null;
+  const primary = session.collected_information?.shipping_details;
+  const legacyParsed = LegacyShippingDetailsSchema.safeParse(session);
+  const legacy = legacyParsed.success
+    ? legacyParsed.data.shipping_details
+    : undefined;
+  const shipping = primary ?? legacy ?? null;
   const addr = shipping?.address;
   // Required-field gate — a half-filled address (e.g. only line1) is
   // worse than none, because the customer-facing UI would render the

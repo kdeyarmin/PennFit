@@ -26,13 +26,12 @@ import {
 } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { RENEWAL_WINDOW_DAYS } from "@workspace/resupply-domain";
 
 const router: IRouter = Router();
 
 const NUDGE_WAIT_MS = 24 * 60 * 60 * 1000;
 const REVIEW_REQUEST_AGE_DAYS = 14;
-/** Mirror prescription-renewals.ts — 30-day cutoff for the renewal nudge. */
-const RX_RENEWAL_WINDOW_DAYS = 30;
 
 router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
   const db = drizzle(getDbPool());
@@ -53,94 +52,108 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       process.env.TWILIO_AUTH_TOKEN &&
       process.env.TWILIO_MESSAGING_SERVICE_SID,
     ),
+    twilioFax: Boolean(
+      process.env.TWILIO_ACCOUNT_SID &&
+      process.env.TWILIO_AUTH_TOKEN &&
+      process.env.TWILIO_FAX_FROM_NUMBER &&
+      (process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL || process.env.REPLIT_DEV_DOMAIN),
+    ),
     stripe: Boolean(process.env.STRIPE_SECRET_KEY),
     objectStorage: Boolean(process.env.PRIVATE_OBJECT_DIR),
   };
 
   const cutoff24h = new Date(Date.now() - NUDGE_WAIT_MS);
 
-  // Dispatcher-eligible counts. Mirrors the dispatcher WHERE clauses
-  // exactly so "Run now" buttons can be honest about what they'll
-  // process.
-  const [abandonedCartEligible] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(shopAbandonedCarts)
-    .where(
-      and(
-        lte(shopAbandonedCarts.updatedAt, cutoff24h),
-        isNull(shopAbandonedCarts.remindedAt),
-        isNull(shopAbandonedCarts.recoveredAt),
-        isNull(shopAbandonedCarts.clearedAt),
-        sql`jsonb_array_length(${shopAbandonedCarts.items}) > 0`,
+  // All counts run concurrently — independent queries with no ordering
+  // dependency between them.
+  const [
+    [abandonedCartEligible],
+    [reviewRequestEligible],
+    [rxRenewalEligible],
+    [smartTriggerEligible],
+    [pendingFaxEligible],
+    [adminCount],
+    [agentCount],
+    [pendingCount],
+  ] = await Promise.all([
+    // Dispatcher-eligible counts. Mirror each dispatcher's WHERE clause
+    // exactly so "Run now" buttons are honest about what they'll process.
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(shopAbandonedCarts)
+      .where(
+        and(
+          lte(shopAbandonedCarts.updatedAt, cutoff24h),
+          isNull(shopAbandonedCarts.remindedAt),
+          isNull(shopAbandonedCarts.recoveredAt),
+          isNull(shopAbandonedCarts.clearedAt),
+          sql`jsonb_array_length(${shopAbandonedCarts.items}) > 0`,
+        ),
       ),
-    );
 
-  const [reviewRequestEligible] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(shopOrders)
-    .where(
-      and(
-        eq(shopOrders.status, "paid"),
-        sql`${shopOrders.paidAt} <= now() - (${REVIEW_REQUEST_AGE_DAYS} || ' days')::interval`,
-        isNull(shopOrders.reviewRequestSentAt),
-        sql`${shopOrders.customerId} IS NOT NULL`,
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(shopOrders)
+      .where(
+        and(
+          eq(shopOrders.status, "paid"),
+          sql`${shopOrders.paidAt} <= now() - (${REVIEW_REQUEST_AGE_DAYS} || ' days')::interval`,
+          isNull(shopOrders.reviewRequestSentAt),
+          sql`${shopOrders.customerId} IS NOT NULL`,
+        ),
       ),
-    );
 
-  // Phase G.12 — count active prescriptions whose valid_until falls
-  // inside the renewal window AND haven't been nudged yet. Mirrors
-  // the WHERE in prescription-renewals.ts so "Eligible now" matches
-  // what a Run-now click would actually process. The dispatcher
-  // shares the same renewal_requested_at stamp across email + SMS,
-  // so this count covers both channels collectively.
-  const [rxRenewalEligible] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(prescriptions)
-    .where(
-      and(
-        eq(prescriptions.status, "active"),
-        isNull(prescriptions.renewalRequestedAt),
-        sql`${prescriptions.validUntil} IS NOT NULL`,
-        sql`${prescriptions.validUntil}::timestamptz <= now() + (${RX_RENEWAL_WINDOW_DAYS} || ' days')::interval`,
+    // Phase G.12 — active Rx within the renewal window, not yet nudged.
+    // RENEWAL_WINDOW_DAYS is shared with prescription-renewals.ts so the
+    // count stays in sync when the window is tuned.
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(prescriptions)
+      .where(
+        and(
+          eq(prescriptions.status, "active"),
+          isNull(prescriptions.renewalRequestedAt),
+          sql`${prescriptions.validUntil} IS NOT NULL`,
+          sql`${prescriptions.validUntil}::timestamptz <= now() + (${RENEWAL_WINDOW_DAYS} || ' days')::interval`,
+        ),
       ),
-    );
 
-  // Phase G.12 — count detected-but-unsent smart-trigger events.
-  // Both channels (email + SMS) share the sent_at stamp so this
-  // count is channel-agnostic, same as Rx renewals above.
-  const [smartTriggerEligible] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(patientSmartTriggerEvents)
-    .where(
-      and(
-        isNull(patientSmartTriggerEvents.sentAt),
-        isNull(patientSmartTriggerEvents.dismissedAt),
+    // Phase G.12 — detected-but-unsent smart-trigger events.
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(patientSmartTriggerEvents)
+      .where(
+        and(
+          isNull(patientSmartTriggerEvents.sentAt),
+          isNull(patientSmartTriggerEvents.dismissedAt),
+        ),
       ),
-    );
 
-  // Phase G.16 — count fax-outreach rows in 'pending' state. Until
-  // the vendor adapter ships (Phase G.6 noted this is deferred),
-  // every CSR-submitted outreach lands here as 'pending' and a CSR
-  // has to fax via their existing workflow. Surfacing the count on
-  // /admin/operations gives ops visibility into that backlog.
-  const [faxOutreachPending] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(physicianFaxOutreach)
-    .where(eq(physicianFaxOutreach.status, "pending"));
+    // Physician fax outreach rows awaiting dispatch (pending or failed
+    // with Twilio configured — the retry endpoint can re-fire these).
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(physicianFaxOutreach)
+      .where(
+        sql`${physicianFaxOutreach.status} IN ('pending', 'failed')`,
+      ),
 
-  // Team counts.
-  const [adminCount] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(adminUsers)
-    .where(and(eq(adminUsers.status, "active"), eq(adminUsers.role, "admin")));
-  const [agentCount] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(adminUsers)
-    .where(and(eq(adminUsers.status, "active"), eq(adminUsers.role, "agent")));
-  const [pendingCount] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(adminUsers)
-    .where(eq(adminUsers.status, "pending"));
+    // Team counts.
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(adminUsers)
+      .where(and(eq(adminUsers.status, "active"), eq(adminUsers.role, "admin"))),
+
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(adminUsers)
+      .where(and(eq(adminUsers.status, "active"), eq(adminUsers.role, "agent"))),
+
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(adminUsers)
+      .where(eq(adminUsers.status, "pending")),
+  ]);
 
   res.json({
     vendors,
@@ -149,9 +162,7 @@ router.get("/admin/ops-status", requireAdmin, async (_req, res) => {
       reviewRequest: { eligibleNow: reviewRequestEligible?.count ?? 0 },
       rxRenewal: { eligibleNow: rxRenewalEligible?.count ?? 0 },
       smartTrigger: { eligibleNow: smartTriggerEligible?.count ?? 0 },
-    },
-    queues: {
-      faxOutreachPending: { count: faxOutreachPending?.count ?? 0 },
+      pendingFax: { eligibleNow: pendingFaxEligible?.count ?? 0 },
     },
     team: {
       activeAdmins: adminCount?.count ?? 0,

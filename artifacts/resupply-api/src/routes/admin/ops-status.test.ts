@@ -77,6 +77,8 @@ const ALL_VENDOR_KEYS = [
   "TWILIO_ACCOUNT_SID",
   "TWILIO_AUTH_TOKEN",
   "TWILIO_MESSAGING_SERVICE_SID",
+  "TWILIO_FAX_FROM_NUMBER",
+  "RESUPPLY_VOICE_PUBLIC_BASE_URL",
   "STRIPE_SECRET_KEY",
   "PRIVATE_OBJECT_DIR",
 ] as const;
@@ -129,6 +131,7 @@ describe("GET /admin/ops-status", () => {
       sendgrid: false,
       twilioVoice: false,
       twilioSms: false,
+      twilioFax: false,
       stripe: false,
       objectStorage: false,
     });
@@ -166,6 +169,8 @@ describe("GET /admin/ops-status", () => {
     process.env.TWILIO_ACCOUNT_SID = "ACxxx";
     process.env.TWILIO_AUTH_TOKEN = "auth";
     process.env.TWILIO_MESSAGING_SERVICE_SID = "MGxxx";
+    process.env.TWILIO_FAX_FROM_NUMBER = "+15005550006";
+    process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://example.com";
     process.env.STRIPE_SECRET_KEY = "sk_test_xxx";
     process.env.PRIVATE_OBJECT_DIR = "/objects";
     queueCounts([0, 0, 0, 0, 0, 0, 0, 0]);
@@ -174,6 +179,7 @@ describe("GET /admin/ops-status", () => {
       sendgrid: true,
       twilioVoice: true,
       twilioSms: true,
+      twilioFax: true,
       stripe: true,
       objectStorage: true,
     });
@@ -188,16 +194,15 @@ describe("GET /admin/ops-status", () => {
       reviewRequest: { eligibleNow: 5 },
       rxRenewal: { eligibleNow: 7 },
       smartTrigger: { eligibleNow: 11 },
+      pendingFax: { eligibleNow: 0 },
     });
   });
 
-  it("returns the Phase G.16 queues block with faxOutreachPending count", async () => {
+  it("returns the Phase G.16 fax-outreach pending count under dispatchers.pendingFax", async () => {
     mockAdmin.current = { userId: "u", email: "ops@x", role: "admin" };
     queueCounts([0, 0, 0, 0, 4, 0, 0, 0]);
     const res = await request(makeApp()).get("/admin/ops-status");
-    expect(res.body.queues).toEqual({
-      faxOutreachPending: { count: 4 },
-    });
+    expect(res.body.dispatchers.pendingFax).toEqual({ eligibleNow: 4 });
   });
 
   it("returns team counts in the correct shape", async () => {

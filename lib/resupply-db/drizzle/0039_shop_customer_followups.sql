@@ -22,7 +22,7 @@
 -- Audit verbs:
 --   shop_customer.followup.create   — new followup
 --   shop_customer.followup.complete — mark complete
--- Both record customer_id + body_length only — never the body.
+-- Both record customer_id + due_at + body_length — never the body.
 --
 -- Per ADR 003 — versioned hand-authored migration.
 

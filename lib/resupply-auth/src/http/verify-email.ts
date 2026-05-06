@@ -20,6 +20,14 @@ const VerifyBody = z.object({
   token: z.string().min(1).max(512),
 });
 
+// IP-only limit: 10 token-verification attempts per 15-minute window.
+// Brute-forcing a 256-bit token is computationally infeasible, but we
+// still rate-limit to prevent DB abuse and repeated failed attempts.
+const VERIFY_RATE_LIMIT = {
+  maxPerIp: 10,
+  windowMs: 15 * 60 * 1000,
+};
+
 export function makeVerifyEmailHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
 
@@ -27,6 +35,32 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     req: Request,
     res: Response,
   ): Promise<void> {
+    const ip = req.ip ?? null;
+    // Per-endpoint sentinel isolates verify-email failures from sign-in and
+    // forgot-password buckets so those counters don't bleed into each other.
+    const ipSentinel = `__verify:${ip ?? "unknown"}`;
+    try {
+      const recentIpRequests = await deps.repo.countRecentFailures({
+        emailLower: ipSentinel,
+        ip: null,
+        sinceMs: VERIFY_RATE_LIMIT.windowMs,
+      });
+      if (recentIpRequests >= VERIFY_RATE_LIMIT.maxPerIp) {
+        const retryAfter = Math.ceil(VERIFY_RATE_LIMIT.windowMs / 1000);
+        res.setHeader("Retry-After", String(retryAfter));
+        authError(
+          res,
+          429,
+          "rate_limited",
+          "Too many verification attempts. Please wait a few minutes and try again.",
+          { retryAfterSeconds: retryAfter },
+        );
+        return;
+      }
+    } catch {
+      // Fail open on DB error — don't block legitimate verifications.
+    }
+
     const parsed = VerifyBody.safeParse(req.body);
     if (!parsed.success) {
       authError(res, 400, "invalid_input", "Verification token is required.");
@@ -49,6 +83,12 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       at: t,
     });
     if (!consumed || consumed.purpose !== "signup_verify") {
+      // Record failed attempt so repeated probes accumulate toward cap.
+      void deps.repo.recordLoginAttempt({
+        emailLower: ipSentinel,
+        ip,
+        success: false,
+      });
       authError(
         res,
         410,
@@ -63,7 +103,7 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     void deps.audit({
       action: "auth.email_verified",
       adminUserId: consumed.userId,
-      ip: req.ip ?? null,
+      ip,
     });
 
     res.status(200).json({ ok: true });
