@@ -69,6 +69,7 @@ import {
   executeChatTool,
   serializeToolResult,
 } from "../../lib/storefront/chatbotTools.js";
+import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
 
 const router = Router();
 
@@ -166,15 +167,29 @@ function startSseHeaders(res: Response): void {
  */
 function buildInitialMessages(
   userTurns: z.infer<typeof chatBodySchema>["messages"],
-): OpenAiMessage[] {
-  return [
+): { messages: OpenAiMessage[]; redactionCounts: Record<string, number> } {
+  const aggregateCounts: Record<string, number> = {};
+  const messages: OpenAiMessage[] = [
     { role: "system", content: getSystemPrompt() },
-    ...userTurns.map((m): OpenAiMessage =>
-      m.role === "user"
-        ? { role: "user", content: m.content }
-        : { role: "assistant", content: m.content },
-    ),
+    ...userTurns.map((m): OpenAiMessage => {
+      // Defense-in-depth: scrub user-supplied messages of obvious
+      // PII (phone, email, SSN, DOB, long member-id digit runs)
+      // before forwarding to OpenAI. The system prompt also
+      // forbids the model from echoing PHI; this layer reduces
+      // the raw identifiers that ever leave PennPaps. Assistant
+      // turns originate from us and have already passed through
+      // the model's no-PHI rules, so we don't re-redact them.
+      if (m.role === "user") {
+        const { text, counts } = redactPiiForOutbound(m.content);
+        for (const [k, n] of Object.entries(counts)) {
+          aggregateCounts[k] = (aggregateCounts[k] ?? 0) + n;
+        }
+        return { role: "user", content: text };
+      }
+      return { role: "assistant", content: m.content };
+    }),
   ];
+  return { messages, redactionCounts: aggregateCounts };
 }
 
 /**
@@ -270,7 +285,17 @@ router.post("/chat", async (req, res) => {
     return;
   }
 
-  const initial = buildInitialMessages(messages);
+  const { messages: initial, redactionCounts } =
+    buildInitialMessages(messages);
+  if (Object.keys(redactionCounts).length > 0) {
+    logger.info(
+      {
+        event: "chat_pii_redacted",
+        counts: redactionCounts,
+      },
+      "chat: scrubbed PII patterns from outbound user message(s)",
+    );
+  }
   return streaming
     ? handleStreaming(res, initial, apiKey, messages.length)
     : handleJson(res, initial, apiKey, messages.length);

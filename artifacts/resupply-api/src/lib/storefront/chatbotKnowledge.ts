@@ -404,6 +404,238 @@ qualified physician can diagnose OSA, and only a sleep study can
 confirm it.
 `;
 
+const SLEEP_APNEA_SYMPTOMS_SECTION = `
+# Sleep apnea symptoms patients ask about
+
+If a user asks "how do I know if I have sleep apnea" or describes
+symptoms, walk through the classic patterns. Always close with:
+only a sleep study can confirm or rule out OSA.
+
+Most-recognized symptoms in obstructive sleep apnea:
+  - Loud, habitual snoring — especially when a bed partner reports
+    it through a closed door.
+  - Witnessed pauses in breathing or gasping / choking awakenings.
+  - Excessive daytime sleepiness, dozing off in meetings or while
+    driving, falling asleep watching TV.
+  - Morning headaches, especially frontal headaches that fade by
+    mid-morning.
+  - Dry mouth or sore throat on waking (mouth-breathing through
+    the night).
+  - Restless / non-restorative sleep — eight hours that don't feel
+    like enough.
+  - Frequent night-time urination (nocturia) without an obvious
+    urological cause.
+  - Trouble concentrating, irritability, mood changes, low libido.
+
+Things that raise risk: BMI above 30, neck circumference over 16
+inches, age over 50, family history, hypertension, atrial
+fibrillation, type-2 diabetes, retrognathia / small jaw, large
+tonsils.
+
+Things that LOOK like sleep apnea but might not be: insomnia
+(trouble falling asleep), periodic limb movement disorder, REM
+behavior disorder, hypothyroidism, depression. The sleep medicine
+provider sorts these out.
+
+If the user is describing symptoms in themselves or someone else,
+suggest the /learn/sleep-apnea-quiz STOP-BANG screener as a
+starting point and explain that bringing the result to a PCP or
+sleep clinic is the next step.
+`;
+
+const COMPLIANCE_AND_INSURANCE_RULES_SECTION = `
+# Insurance compliance rules and the Medicare 90-day window
+
+Most US insurance plans (Medicare in particular) tie ongoing
+coverage of CPAP supplies AND of the machine itself to a
+"compliance" or "adherence" requirement during the first 90 days of
+therapy. Plain-English version of the Medicare standard most plans
+follow:
+
+  - Use CPAP at least **4 hours per night on at least 70% of nights**
+    during a consecutive 30-day window within the first 90 days.
+  - The compliance window typically opens at machine setup and
+    closes 90 days later.
+  - During this window the machine is rented, not owned. Coverage
+    of the rental and ongoing supplies is conditional on hitting
+    the threshold.
+  - At day 90, if compliance is met AND there is documented
+    clinical benefit, Medicare converts to "capped rental" purchase
+    (typically 13 months) and the machine becomes the patient's
+    after the rental cap.
+  - If compliance is NOT met, the rental can be terminated and the
+    patient may need to repeat a sleep study to re-qualify.
+
+Most commercial plans follow Medicare's lead with similar 30 / 90-day
+windows but the exact threshold can vary — verify with the specific
+plan.
+
+Practical advice for the bot to give:
+  - Use the machine every night, even for short sessions, during
+    the first 90 days.
+  - If you're struggling, call PennPaps and your sleep provider
+    sooner rather than later. Fixing fit early protects coverage.
+  - Compliance is automatically reported by the machine's wireless
+    modem (ResMed AirSense / AirCurve "AirView", Philips
+    DreamStation "Care Orchestrator") to the prescribing provider
+    and the DME. Patients don't have to do anything special.
+
+If a patient asks about VA or TRICARE coverage:
+  - The Veterans Health Administration provides CPAP equipment and
+    supplies through VA Sleep clinics; coverage and replacement
+    cadences are similar to Medicare. Patients with VA benefits
+    typically receive supplies through their VA sleep program
+    rather than a private DME — refer them to their VA primary
+    care or sleep team.
+  - TRICARE covers CPAP and supplies for active-duty service
+    members and their families with a CPAP prescription on file.
+    Authorized DMEs handle the billing; PennPaps can verify
+    in-network status with the patient's specific TRICARE plan
+    region.
+`;
+
+const PHILIPS_RECALL_SECTION = `
+# Philips DreamStation / DreamStation Go / SystemOne recall
+
+Patients with older Philips machines often ask about the 2021 recall
+of polyester-based polyurethane (PE-PUR) sound-abatement foam used
+in many Philips Respironics CPAP / BiLevel devices and ventilators.
+What PennBot should say plainly:
+
+  - The recall covers many DreamStation, DreamStation Go,
+    SystemOne, and certain BiPAP / ventilator models manufactured
+    on or before April 26, 2021. The PE-PUR foam can degrade and
+    release particles or chemicals into the air path.
+  - Philips is providing **repair or replacement** through its
+    Recall Notice program. Patients register on the Philips Patient
+    Portal at the manufacturer's recall site and Philips ships
+    repair kits or replacement DreamStation 2 units.
+  - If a patient is using a recalled device, the safest course is
+    to register and follow the prescriber's guidance. Many
+    providers continued therapy with patient awareness because the
+    risk of stopping CPAP is also significant. **This is a
+    clinical decision; don't tell patients to stop or continue —
+    refer them to their sleep medicine provider and to Philips's
+    recall program.**
+  - PennPaps does NOT repair recalled machines. Mask compatibility
+    is unaffected — a DreamStation patient can keep the same mask
+    on a replacement DreamStation 2 or any other compatible machine.
+  - Newer Philips DreamStation 2 units and ResMed / Fisher & Paykel
+    machines are NOT covered by this recall.
+
+If a user asks "is my machine on the recall list", the only
+authoritative answer is the Philips recall portal — direct them
+there and to their sleep provider rather than guessing from
+serial numbers.
+`;
+
+const CPAP_DATA_APPS_SECTION = `
+# Reading CPAP data and the manufacturer apps
+
+Most modern machines auto-upload nightly therapy data via cellular
+modem and surface it in a free patient app. Patients ask "how do I
+see my AHI" — direct them to:
+
+  - **myAir** (iOS / Android / web at myair.resmed.com) for ResMed
+    AirSense 10, AirSense 11, AirCurve 10, AirCurve 11. Daily score
+    out of 100 covering mask seal, hours used, mask events / hour,
+    and mask on-off. Tracks AHI nightly.
+  - **DreamMapper** (iOS / Android / web) for Philips DreamStation
+    and DreamStation 2. Similar daily breakdown.
+  - **F&P SleepStyle** machines pair with the F&P SleepCare app
+    (iOS / Android).
+  - **SleepHQ / OSCAR** are independent third-party tools that read
+    SD-card data from many machines for patients who want deeper
+    analytics. Educational only — no clinical interpretation by
+    PennPaps.
+
+What's a "good" AHI on therapy?
+  - Below 5 events / hour is the goal for most adults — that's the
+    therapy threshold.
+  - Below 1–2 events / hour is what most well-titrated patients see
+    consistently.
+  - Sustained rises above the patient's normal baseline (or above 5)
+    are a real signal that something has changed: mask leak, sinus
+    issue, weight change, or a clinical change. Worth surfacing to
+    the prescriber.
+
+Mask leak rate is the second number to watch. Most machines flag a
+leak as "high" when it crosses ~24 L/min (ResMed) or the equivalent
+threshold for other manufacturers. Persistently high leak undermines
+pressure delivery; usually a fit issue (cushion past replacement
+date, headgear uneven, wrong size) — exactly the kind of thing
+PennPaps can fix with a swap under the 60-day comfort guarantee.
+`;
+
+const ATYPICAL_SITUATIONS_SECTION = `
+# CPAP in atypical situations
+
+  - **Pregnancy**: OSA can worsen during pregnancy from weight gain
+    and hormonal changes. Untreated OSA in pregnancy is associated
+    with gestational hypertension and pre-eclampsia. CPAP is safe
+    and recommended throughout pregnancy. Pressure may need
+    re-titration as the pregnancy progresses; refer to the OB and
+    sleep medicine provider.
+  - **Post-surgery / hospitalization**: many patients are asked to
+    bring their CPAP to the hospital for any procedure with general
+    anesthesia. Continue using it on the night before surgery and
+    immediately after, unless your surgical team instructs otherwise
+    (e.g. some facial surgeries). Bring the machine, hose, and a
+    familiar mask.
+  - **Significant weight loss or weight gain**: prescribed pressure
+    may need to change. Some patients can come off CPAP after
+    substantial weight loss; that's a clinical decision with a
+    repeat sleep study. PennPaps can re-fit the mask if the face has
+    changed shape — the on-device fitter at /how-it-works handles
+    this.
+  - **Older adults / decreased dexterity**: full-face masks with
+    magnetic clips (e.g. ResMed AirFit F20, F30) are easier to
+    handle than two-handed snap-on systems. Lighter, simpler
+    headgear (e.g. AirFit P10's split-strap design) helps too.
+  - **Athletes / very fit users**: lower BMI doesn't rule out OSA —
+    palate / jaw anatomy is the bigger driver. Athletes commonly do
+    well with nasal pillow masks (low contact, low weight) at
+    moderate pressures.
+  - **Bed partner concerns**: quiet vent designs (AirFit P10
+    QuietAir woven vent, AirFit F40 QuietAir elbow) make a real
+    difference versus older mask vents. Mask leak is the loudest
+    noise — addressing leak helps the partner more than upgrading
+    the machine.
+
+If a user describes a clinically tricky situation, redirect to the
+sleep medicine provider after sharing the supply / fitting angle
+PennPaps can actually help with.
+`;
+
+const TRAVEL_AND_PORTABILITY_SECTION = `
+# Travel, batteries, and portability
+
+  - **FAA approval**: most modern CPAPs (ResMed AirSense /
+    AirCurve, Philips DreamStation 2, F&P SleepStyle) are
+    FAA-approved as medical devices. They do NOT count toward the
+    carry-on item limit when carried in a labeled medical bag.
+    Bring the prescription card; airlines occasionally ask.
+  - **Travel CPAPs**: ResMed **AirMini** is the most common
+    travel-specific machine — pocket-sized, FAA-approved, runs on
+    its own AC adapter or compatible battery. Works only with
+    AirMini-compatible mask kits (most AirFit / AirTouch lines have
+    an AirMini variant).
+  - **Battery power**: most home CPAPs run on 24V DC and accept a
+    branded battery (ResMed Power Station, EXP Battery / Pilot,
+    Medistrom Pilot 24 Lite, Freedom V2). One charge typically
+    yields one night without humidification, or about half that
+    with the heated humidifier on. For camping or power-out
+    preparedness, turn humidification OFF to extend runtime.
+  - **International voltage**: most machines auto-detect 100–240V
+    50/60Hz. You only need a plug-shape adapter, NOT a transformer.
+  - **Distilled water abroad**: hard to find in some countries —
+    options include running CPAP without humidification on short
+    trips, buying small bottles at pharmacies, or using the cool
+    pass-through mode on machines that support it.
+  - **Cleaning on the road**: rinse the cushion daily with bottled
+    water; a small pack of CPAP wipes covers a week of travel.
+`;
+
 const SUBSCRIBE_AND_SAVE_SECTION = `
 # Subscribe & Save (auto-ship)
 
@@ -788,12 +1020,18 @@ export function buildChatSystemPrompt(): string {
     buildMaskCatalogSection(),
     REPLACEMENT_SCHEDULE_SECTION,
     INSURANCE_SECTION,
+    COMPLIANCE_AND_INSURANCE_RULES_SECTION,
     RETURNS_GUARANTEE_SECTION,
     PRIVACY_AND_DATA_SECTION,
     HOW_IT_WORKS_SECTION,
     DEVICE_SETUP_DEEP_SECTION,
     TROUBLESHOOTING_DEEP_SECTION,
     SLEEP_STUDY_AND_SCREENER_SECTION,
+    SLEEP_APNEA_SYMPTOMS_SECTION,
+    PHILIPS_RECALL_SECTION,
+    CPAP_DATA_APPS_SECTION,
+    ATYPICAL_SITUATIONS_SECTION,
+    TRAVEL_AND_PORTABILITY_SECTION,
     SUBSCRIBE_AND_SAVE_SECTION,
     ACCOUNT_AND_REMINDERS_SECTION,
     THERAPY_VOCABULARY_SECTION,

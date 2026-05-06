@@ -511,4 +511,67 @@ describe("POST /chat", () => {
       expect(payload.tool_choice).toBe("auto");
     });
   });
+
+  describe("PII redaction (defense in depth)", () => {
+    it("strips phone numbers and emails from outbound user content", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        }),
+        text: async () => "",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const res = await request(makeApp())
+        .post("/chat")
+        .send({
+          messages: [
+            {
+              role: "user",
+              content:
+                "Please call me at (814) 471-0627 or email me at me@x.com.",
+            },
+          ],
+        });
+      expect(res.status).toBe(200);
+
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      const payload = JSON.parse(init.body as string);
+      const userMsg = payload.messages.find(
+        (m: { role: string }) => m.role === "user",
+      );
+      expect(userMsg.content).not.toContain("471-0627");
+      expect(userMsg.content).not.toContain("me@x.com");
+      expect(userMsg.content).toContain("[redacted-phone]");
+      expect(userMsg.content).toContain("[redacted-email]");
+    });
+
+    it("leaves clean messages unchanged", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        }),
+        text: async () => "",
+      });
+      __setChatFetchForTests(fetchMock as unknown as typeof fetch);
+
+      const userText = "Which mask is best for side sleepers?";
+      await request(makeApp())
+        .post("/chat")
+        .send({
+          messages: [{ role: "user", content: userText }],
+        });
+
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      const payload = JSON.parse(init.body as string);
+      const userMsg = payload.messages.find(
+        (m: { role: string }) => m.role === "user",
+      );
+      expect(userMsg.content).toBe(userText);
+    });
+  });
 });
