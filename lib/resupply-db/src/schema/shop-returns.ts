@@ -51,7 +51,7 @@ export const shopReturns = resupplySchema.table(
      */
     stripeSessionId: text("stripe_session_id").notNull(),
     status: text("status", {
-      enum: ["requested", "approved", "rejected", "received", "refunded", "replaced"],
+      enum: ["requested", "approved", "rejected", "shipped_back", "received", "refunded", "replaced", "closed"],
     }).notNull().default("requested"),
     reason: text("reason").notNull(),
     reasonNote: text("reason_note"),
@@ -91,7 +91,7 @@ export const shopReturns = resupplySchema.table(
     byStatusIdx: index("shop_returns_status_idx").on(t.status, t.createdAt),
     statusEnum: check(
       "shop_returns_status_enum",
-      sql`${t.status} IN ('requested','approved','rejected','received','refunded','replaced')`,
+      sql`${t.status} IN ('requested','approved','rejected','shipped_back','received','refunded','replaced','closed')`,
     ),
     // NOTE: migration 0016 also creates a PARTIAL index
     //   "shop_returns_open_per_order_idx" ON (order_id)

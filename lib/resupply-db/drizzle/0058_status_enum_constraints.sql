@@ -9,9 +9,11 @@ ALTER TABLE resupply.shop_returns
     'requested',
     'approved',
     'rejected',
+    'shipped_back',
     'received',
     'refunded',
-    'replaced'
+    'replaced',
+    'closed'
   ));
 
 ALTER TABLE resupply.shop_orders
@@ -19,5 +21,7 @@ ALTER TABLE resupply.shop_orders
   CHECK (status IN (
     'pending',
     'paid',
-    'refunded'
+    'refunded',
+    'expired',
+    'failed'
   ));

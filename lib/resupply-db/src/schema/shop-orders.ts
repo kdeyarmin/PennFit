@@ -60,7 +60,7 @@ export const shopOrders = resupplySchema.table(
     stripeSessionId: text("stripe_session_id").notNull().unique(),
     stripePaymentIntentId: text("stripe_payment_intent_id"),
     status: text("status", {
-      enum: ["pending", "paid", "refunded"],
+      enum: ["pending", "paid", "refunded", "expired", "failed"],
     }).notNull().default("pending"),
     amountTotalCents: integer("amount_total_cents"),
     currency: text("currency"),
@@ -188,7 +188,7 @@ export const shopOrders = resupplySchema.table(
     ),
     statusEnum: check(
       "shop_orders_status_enum",
-      sql`${t.status} IN ('pending','paid','refunded')`,
+      sql`${t.status} IN ('pending','paid','refunded','expired','failed')`,
     ),
   }),
 );
