@@ -2,7 +2,7 @@
 //
 // Coverage:
 //   * 401 without admin
-//   * 400 on non-UUID id
+//   * 404 on non-UUID id (consistent with sibling /admin/patients/:id/* routes)
 //   * empty events array when patient has no triggers
 //   * projection shape: ISO timestamps, lifecycle fields preserved
 //   * PHI invariant: therapy values never leak into the response
@@ -26,7 +26,14 @@ vi.mock("../../middlewares/requireAdmin", () =>
 const selectQueue: unknown[][] = [];
 const dbStub = {
   select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
+    if (selectQueue.length === 0) {
+      throw new Error(
+        "smart-triggers-list test: selectQueue exhausted — the route made " +
+          "more SELECT calls than the test scripted answers for. " +
+          "Add a selectQueue.push() entry for the new query.",
+      );
+    }
+    const result = selectQueue.shift()!;
     const obj: Record<string, unknown> = {
       from: () => obj,
       where: () => obj,
@@ -96,13 +103,13 @@ describe("GET /admin/patients/:id/smart-triggers", () => {
     expect(res.status).toBe(401);
   });
 
-  it("400s on non-UUID patient id", async () => {
+  it("404s on non-UUID patient id", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     const res = await request(makeApp()).get(
       "/admin/patients/not-a-uuid/smart-triggers",
     );
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_id");
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("patient_not_found");
   });
 
   it("returns empty array when patient has no triggers", async () => {

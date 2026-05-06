@@ -24,6 +24,18 @@ export interface SmartTriggerEventRow {
   createdAt: string;
 }
 
+/**
+ * Thrown when the server returns 409 `already_dismissed`.
+ * The UI should treat this as a stale-state signal and refresh,
+ * not as a hard error.
+ */
+export class AlreadyDismissedError extends Error {
+  constructor() {
+    super("already_dismissed");
+    this.name = "AlreadyDismissedError";
+  }
+}
+
 export async function listPatientSmartTriggers(
   patientId: string,
 ): Promise<{ events: SmartTriggerEventRow[] }> {
@@ -51,6 +63,12 @@ export async function dismissSmartTrigger(
     },
   );
   if (!res.ok) {
+    if (res.status === 409) {
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      if (body.error === "already_dismissed") {
+        throw new AlreadyDismissedError();
+      }
+    }
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to dismiss trigger (${res.status}): ${text}`);
   }

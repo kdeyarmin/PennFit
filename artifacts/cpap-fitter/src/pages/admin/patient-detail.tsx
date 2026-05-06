@@ -77,6 +77,7 @@ import {
 } from "@/lib/admin/patient-portal-invite-api";
 import {
   dismissSmartTrigger,
+  AlreadyDismissedError,
   listPatientSmartTriggers,
   type SmartTriggerEventRow,
   type SmartTriggerKind,
@@ -3591,8 +3592,23 @@ function SmartTriggersTab({ patientId }: { patientId: string }) {
   }
 
   useEffect(() => {
-    void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const r = await listPatientSmartTriggers(patientId);
+        if (!cancelled) setEvents(r.events);
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [patientId]);
 
   return (
@@ -3658,6 +3674,11 @@ function SmartTriggerRow({
       await dismissSmartTrigger(event.id, reason.trim() || null);
       await onChanged();
     } catch (err) {
+      if (err instanceof AlreadyDismissedError) {
+        // Another CSR already dismissed this — refresh to show current state.
+        await onChanged();
+        return;
+      }
       setDismissError(err instanceof Error ? err.message : String(err));
     } finally {
       setDismissing(false);
