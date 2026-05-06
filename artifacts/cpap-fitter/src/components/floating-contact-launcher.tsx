@@ -33,12 +33,15 @@ import {
 import { Link, useLocation } from "wouter";
 import {
   ArrowRight,
+  Check,
+  Copy,
   Loader2,
   Mail,
   MessageCircle,
   Phone,
   Send,
   Sparkles,
+  Square,
   X,
 } from "lucide-react";
 
@@ -53,6 +56,10 @@ import {
   streamChatMessage,
   type ChatMessage,
 } from "@/lib/chat-api";
+import {
+  PENNBOT_OPEN_EVENT,
+  type PennBotOpenDetail,
+} from "@/lib/chat-events";
 import { cn } from "@/lib/utils";
 
 type Tab = "chat" | "contact";
@@ -236,6 +243,10 @@ export function FloatingContactLauncher() {
     };
   }, []);
 
+  const stop = useCallback(() => {
+    inFlightRef.current?.abort();
+  }, []);
+
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -283,9 +294,19 @@ export function FloatingContactLauncher() {
         );
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") {
-          setMessages((prev) =>
-            prev.filter((m) => m.id !== placeholder.id),
-          );
+          // The user clicked Stop. Keep whatever fragments arrived so
+          // they can read them, drop the placeholder if no chunks
+          // came in, and mark the bubble as no longer pending so the
+          // typing indicator hides.
+          setMessages((prev) => {
+            const placeholderRow = prev.find((m) => m.id === placeholder.id);
+            if (!placeholderRow || placeholderRow.content.length === 0) {
+              return prev.filter((m) => m.id !== placeholder.id);
+            }
+            return prev.map((m) =>
+              m.id === placeholder.id ? { ...m, pending: false } : m,
+            );
+          });
           return;
         }
         setMessages((prev) =>
@@ -321,6 +342,36 @@ export function FloatingContactLauncher() {
       }
     }
   }, []);
+
+  // Subscribe to the global "open PennBot" event so any in-page CTA
+  // (an "Ask PennBot" button on the Insurance page, a help icon next
+  // to a FAQ entry, etc.) can pop the launcher with a contextual
+  // prefill. Re-bound when `send` changes so the autoSend path uses
+  // the latest closure.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    function handler(e: Event) {
+      const detail =
+        (e as CustomEvent<PennBotOpenDetail>).detail ?? ({} as PennBotOpenDetail);
+      setOpen(true);
+      setTab(detail.contactTab ? "contact" : "chat");
+      if (detail.prefill) {
+        if (detail.autoSend) {
+          void send(detail.prefill);
+        } else {
+          setInput(detail.prefill);
+          setTimeout(() => {
+            const el = inputRef.current;
+            if (!el) return;
+            el.focus();
+            el.setSelectionRange(detail.prefill!.length, detail.prefill!.length);
+          }, 50);
+        }
+      }
+    }
+    window.addEventListener(PENNBOT_OPEN_EVENT, handler);
+    return () => window.removeEventListener(PENNBOT_OPEN_EVENT, handler);
+  }, [send]);
 
   if (location.startsWith("/admin")) return null;
 
@@ -455,19 +506,27 @@ export function FloatingContactLauncher() {
                   data-testid="floating-contact-input"
                   className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-navy))]/30 disabled:opacity-60 max-h-24"
                 />
-                <button
-                  type="submit"
-                  disabled={sending || input.trim().length === 0}
-                  aria-label="Send"
-                  data-testid="floating-contact-send"
-                  className="h-9 w-9 rounded-md bg-[hsl(var(--penn-navy))] text-white flex items-center justify-center hover:bg-[hsl(var(--penn-navy-deep))] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {sending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
+                {sending ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    aria-label="Stop generating"
+                    data-testid="floating-contact-stop"
+                    className="h-9 w-9 rounded-md bg-[hsl(var(--penn-navy))] text-white flex items-center justify-center hover:bg-[hsl(var(--penn-navy-deep))] transition-colors"
+                  >
+                    <Square className="h-3.5 w-3.5" fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={input.trim().length === 0}
+                    aria-label="Send"
+                    data-testid="floating-contact-send"
+                    className="h-9 w-9 rounded-md bg-[hsl(var(--penn-navy))] text-white flex items-center justify-center hover:bg-[hsl(var(--penn-navy-deep))] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
                     <Send className="h-4 w-4" />
-                  )}
-                </button>
+                  </button>
+                )}
               </form>
               <p className="text-[10px] text-muted-foreground px-3 pb-2 leading-tight shrink-0">
                 PennBot is an AI assistant. For clinical or account-specific
@@ -585,13 +644,44 @@ function TabButton({ active, onClick, testId, children }: TabButtonProps) {
 }
 
 /**
- * Renders an assistant message body, turning bare path mentions
- * (e.g. "see /insurance" or "/learn/replacement-schedule") into
- * Wouter <Link> components. Keeps everything else as plain text.
- * Conservative regex: only matches /<word>(/<word>)* at word
- * boundaries, so file extensions and URLs are not mangled.
+ * Renders a single line of an assistant reply with two enhancements:
+ *   1. `**bold**` → <strong>bold</strong>
+ *   2. Bare `/path` mentions become Wouter <Link>s. Conservative
+ *      regex: only matches /<word>(/<word>)* at word boundaries, so
+ *      file extensions and URLs are not mangled.
+ *
+ * Everything else passes through unchanged.
  */
-function renderAssistantBody(text: string): ReactNode[] {
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  // First split on bold; then within each plain-text segment, link paths.
+  const out: ReactNode[] = [];
+  const boldPattern = /\*\*([^*]+?)\*\*/g;
+  let lastIndex = 0;
+  let segmentKey = 0;
+  for (const match of text.matchAll(boldPattern)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      out.push(
+        ...linkifyPaths(
+          text.slice(lastIndex, start),
+          `${keyPrefix}-pre-${segmentKey++}`,
+        ),
+      );
+    }
+    out.push(
+      <strong key={`${keyPrefix}-b-${segmentKey++}`}>{match[1]}</strong>,
+    );
+    lastIndex = start + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    out.push(
+      ...linkifyPaths(text.slice(lastIndex), `${keyPrefix}-tail-${segmentKey}`),
+    );
+  }
+  return out;
+}
+
+function linkifyPaths(text: string, keyPrefix: string): ReactNode[] {
   const pathPattern = /(\s|^)(\/[a-z][a-z0-9-]*(?:\/[a-z0-9-]+)*)(?=$|[\s.,;:!?)])/gi;
   const out: ReactNode[] = [];
   let lastIndex = 0;
@@ -606,7 +696,7 @@ function renderAssistantBody(text: string): ReactNode[] {
     }
     out.push(
       <Link
-        key={`link-${key++}`}
+        key={`${keyPrefix}-link-${key++}`}
         href={path}
         className="underline underline-offset-2 hover:text-[hsl(var(--penn-navy))]"
       >
@@ -621,50 +711,140 @@ function renderAssistantBody(text: string): ReactNode[] {
   return out;
 }
 
+/**
+ * Splits an assistant reply into a structured block tree with one
+ * lightweight feature beyond inline formatting: lines starting with
+ * "- " or "* " are gathered into <ul><li>… items so PennBot's
+ * occasional bullet lists scan cleanly. Everything else is rendered
+ * as paragraph text.
+ */
+function renderAssistantBody(text: string): ReactNode[] {
+  const lines = text.split("\n");
+  const out: ReactNode[] = [];
+  let listBuffer: string[] = [];
+  let paragraphBuffer: string[] = [];
+  let blockKey = 0;
+
+  function flushParagraph() {
+    if (paragraphBuffer.length === 0) return;
+    const joined = paragraphBuffer.join("\n");
+    out.push(
+      <p key={`p-${blockKey++}`} className="whitespace-pre-wrap">
+        {renderInlineMarkdown(joined, `p${blockKey}`)}
+      </p>,
+    );
+    paragraphBuffer = [];
+  }
+
+  function flushList() {
+    if (listBuffer.length === 0) return;
+    const items = listBuffer;
+    out.push(
+      <ul
+        key={`ul-${blockKey++}`}
+        className="list-disc list-inside space-y-0.5 my-1"
+      >
+        {items.map((item, i) => (
+          <li key={i}>{renderInlineMarkdown(item, `li${blockKey}-${i}`)}</li>
+        ))}
+      </ul>,
+    );
+    listBuffer = [];
+  }
+
+  for (const rawLine of lines) {
+    const bulletMatch = /^\s*[-*]\s+(.+)$/.exec(rawLine);
+    if (bulletMatch) {
+      flushParagraph();
+      listBuffer.push(bulletMatch[1]!);
+      continue;
+    }
+    flushList();
+    paragraphBuffer.push(rawLine);
+  }
+  flushList();
+  flushParagraph();
+  return out;
+}
+
 function ChatBubble({ message }: { message: UiMessage }) {
   const isUser = message.role === "user";
   const showTypingIndicator =
     message.pending && message.content.length === 0;
+  const [copied, setCopied] = useState(false);
+
+  async function copyContent() {
+    if (typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore — clipboard can be blocked by permissions or
+      // in non-secure contexts; the user always has Cmd+C as fallback.
+    }
+  }
+
   return (
     <div
-      className={cn("flex", isUser ? "justify-end" : "justify-start")}
+      className={cn(
+        "group flex",
+        isUser ? "justify-end" : "justify-start",
+      )}
       data-testid={isUser ? "chat-bubble-user" : "chat-bubble-assistant"}
     >
-      <div
-        className={cn(
-          "rounded-2xl px-3 py-2 text-sm leading-relaxed max-w-[88%] whitespace-pre-wrap break-words",
-          isUser
-            ? "bg-[hsl(var(--penn-navy))] text-white rounded-br-sm"
-            : "bg-background border border-border text-foreground rounded-bl-sm",
-        )}
-      >
-        {showTypingIndicator ? (
-          <span
-            className="inline-flex items-center gap-1 text-muted-foreground"
-            aria-live="polite"
+      <div className="relative max-w-[88%]">
+        <div
+          className={cn(
+            "rounded-2xl px-3 py-2 text-sm leading-relaxed break-words",
+            isUser
+              ? "bg-[hsl(var(--penn-navy))] text-white rounded-br-sm whitespace-pre-wrap"
+              : "bg-background border border-border text-foreground rounded-bl-sm space-y-1",
+          )}
+        >
+          {showTypingIndicator ? (
+            <span
+              className="inline-flex items-center gap-1 text-muted-foreground"
+              aria-live="polite"
+            >
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>PennBot is typing…</span>
+            </span>
+          ) : isUser ? (
+            message.content
+          ) : (
+            renderAssistantBody(message.content)
+          )}
+          {message.meta === "offline" && (
+            <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
+              chat offline
+            </span>
+          )}
+          {message.meta === "degraded" && (
+            <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
+              connection issue
+            </span>
+          )}
+          {message.meta === "rate-limited" && (
+            <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
+              slow down
+            </span>
+          )}
+        </div>
+        {!isUser && !showTypingIndicator && message.content.length > 0 && (
+          <button
+            type="button"
+            onClick={copyContent}
+            aria-label={copied ? "Copied" : "Copy reply"}
+            data-testid="floating-contact-copy"
+            className="absolute -bottom-2 right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity h-6 w-6 rounded-md bg-background border border-border text-muted-foreground hover:text-[hsl(var(--penn-navy))] flex items-center justify-center"
           >
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>PennBot is typing…</span>
-          </span>
-        ) : isUser ? (
-          message.content
-        ) : (
-          renderAssistantBody(message.content)
-        )}
-        {message.meta === "offline" && (
-          <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
-            chat offline
-          </span>
-        )}
-        {message.meta === "degraded" && (
-          <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
-            connection issue
-          </span>
-        )}
-        {message.meta === "rate-limited" && (
-          <span className="block mt-1 text-[10px] uppercase tracking-wide opacity-70">
-            slow down
-          </span>
+            {copied ? (
+              <Check className="h-3 w-3 text-emerald-600" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+          </button>
         )}
       </div>
     </div>

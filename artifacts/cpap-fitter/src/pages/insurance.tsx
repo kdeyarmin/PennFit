@@ -30,6 +30,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { InsuranceLeadForm } from "@/components/insurance-lead-form";
+import { openPennBot } from "@/lib/chat-events";
 
 type Step = {
   Icon: React.ComponentType<{ className?: string }>;
@@ -436,7 +437,7 @@ export function Insurance() {
           <div className="shrink-0 h-12 w-12 rounded-xl icon-halo-navy flex items-center justify-center">
             <HelpCircle className="w-5 h-5" />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 flex-1">
             <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">
               Common insurance questions
             </h2>
@@ -444,6 +445,22 @@ export function Insurance() {
               The things patients ask us most before placing an order.
             </p>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              openPennBot({
+                prefill:
+                  "Will my insurance cover a new mask and supplies?",
+              })
+            }
+            className="rounded-full glass-panel border-border/60 gap-2 hidden sm:inline-flex"
+            data-testid="insurance-ask-pennbot"
+          >
+            <Sparkles className="w-4 h-4" />
+            Ask PennBot
+          </Button>
         </div>
         <div className="glass-card rounded-2xl p-2 sm:p-4">
           <Accordion type="single" collapsible className="w-full">
