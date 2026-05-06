@@ -2887,7 +2887,7 @@ function SmartTriggerRow({
           {event.dismissedReason ? ` — ${event.dismissedReason}` : ""}
         </div>
       )}
-      {!event.dismissedAt && (
+      {!event.dismissedAt && !event.sentAt && (
         <div className="mt-2 flex items-end gap-2">
           {showReason ? (
             <>
