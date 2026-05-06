@@ -43,7 +43,8 @@ export const patientSmartTriggerEvents = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     patientIdx: index("patient_smart_trigger_events_patient_idx").on(

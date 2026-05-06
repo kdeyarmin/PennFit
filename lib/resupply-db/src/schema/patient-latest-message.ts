@@ -45,7 +45,8 @@ export const patientLatestMessage = resupplySchema.table(
     ),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     recentIdx: index("patient_latest_message_recent_idx").on(

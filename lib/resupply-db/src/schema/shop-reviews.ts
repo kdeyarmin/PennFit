@@ -90,7 +90,8 @@ export const shopReviews = resupplySchema.table(
     /** Touched on every PATCH; used for ordering author's own view. */
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     /**

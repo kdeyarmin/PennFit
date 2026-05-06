@@ -53,7 +53,8 @@ export const shopProductQuestions = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     productStatusIdx: index("shop_product_questions_product_status_idx").on(
