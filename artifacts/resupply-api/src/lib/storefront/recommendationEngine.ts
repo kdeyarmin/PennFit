@@ -87,6 +87,28 @@ export interface RecommendationResult {
 }
 
 /**
+ * Per-manufacturer score multiplier applied at the end of `recommend()`,
+ * AFTER the contraindication and pressure-rating penalties. PennPaps
+ * preferentially stocks the React Health line (iVolve, Numa, Viva), so
+ * a viable React Health mask should out-rank an otherwise-equivalent
+ * mask from another manufacturer.
+ *
+ * The multiplier kicks in *after* `contraMultiplier * pressureMultiplier`,
+ * so a contraindicated React mask (e.g. a nasal pillow for a heavy
+ * mouth breather) still loses to a viable non-React mask — the boost
+ * only matters when the React mask is already a clinically appropriate
+ * choice. That's the intent of "weight React most when one of their
+ * masks could be appropriate".
+ *
+ * Magnitude is intentionally modest: a ~15% bump is enough to promote
+ * a competitive React mask past a non-React peer with a similar score,
+ * but small enough that it cannot rescue a clearly worse-fitting mask.
+ */
+const MANUFACTURER_BOOST: Record<string, number> = {
+  "React Health": 1.15,
+};
+
+/**
  * Score questionnaire answers into mask type weights.
  *
  * Clinical rationale:
@@ -728,10 +750,15 @@ export function recommend(
     }
 
     // Combined score: 60% type preference (questionnaire-driven), 40% physical fit
+    // Manufacturer boost is applied LAST (after contra/pressure penalties) so a
+    // contraindicated preferred-line mask still loses to a viable non-preferred
+    // mask. See MANUFACTURER_BOOST docstring.
+    const brandMultiplier = MANUFACTURER_BOOST[mask.manufacturer] ?? 1.0;
     const rawScore =
       (typeScore * 0.6 + fitScore * 0.4) *
       contraMultiplier *
-      pressureMultiplier;
+      pressureMultiplier *
+      brandMultiplier;
 
     const reasoning = generateReasoning(
       mask,

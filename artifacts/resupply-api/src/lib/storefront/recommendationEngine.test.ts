@@ -15,8 +15,10 @@
 import { describe, it, expect } from "vitest";
 import type { MaskEntry } from "../../data/maskCatalog";
 import {
+  recommend,
   recommendSize,
   type FacialMeasurements,
+  type QuestionnaireAnswers,
 } from "./recommendationEngine";
 
 function maskFixture(overrides: Partial<MaskEntry>): MaskEntry {
@@ -140,5 +142,93 @@ describe("recommendSize", () => {
     // 4 sizes → middle idx = 2 → "M"
     expect(r.size).toBe("M");
     expect(r.rationale).toMatch(/too narrow|middle/i);
+  });
+});
+
+// ── Manufacturer boost ──────────────────────────────────────────────
+//
+// PennPaps preferentially stocks the React Health line, so a viable
+// React Health mask should out-rank an otherwise-equivalent mask from
+// another manufacturer. The boost is applied AFTER contra/pressure
+// penalties so a contraindicated React mask still loses to a viable
+// non-React one. These tests pin that behavior.
+
+const PROFILE_MEASUREMENTS: FacialMeasurements = {
+  noseWidth: 28,
+  noseHeight: 25,
+  noseToChin: 50,
+  mouthWidth: 40,
+  faceWidthAtCheekbones: 130,
+  calibrationMethod: "creditCard",
+};
+
+function answers(
+  overrides: Partial<QuestionnaireAnswers> = {},
+): QuestionnaireAnswers {
+  return {
+    mouthBreather: false,
+    claustrophobic: false,
+    sideOrStomachSleeper: false,
+    heavyFacialHair: false,
+    wearsGlasses: false,
+    frequentCongestion: false,
+    priorMaskExperience: "none",
+    mobilityLimitations: false,
+    sensitiveSkin: false,
+    siliconeSensitivity: false,
+    cpapPressureSetting: "medium",
+    ...overrides,
+  };
+}
+
+describe("recommend — React Health manufacturer boost", () => {
+  it("ranks the React Health iVolve P2 above the ResMed AirFit P10 for a claustrophobic side-sleeper on low pressure", () => {
+    // Both masks are nasal pillow, both rated to 20+ cmH2O, both viable
+    // for this profile. Without the boost they score very close. With
+    // the 1.15× boost on the React Health entry, iVolve P2 should win.
+    const result = recommend(
+      PROFILE_MEASUREMENTS,
+      answers({
+        claustrophobic: true,
+        sideOrStomachSleeper: true,
+        cpapPressureSetting: "low",
+      }),
+    );
+    const all = [...result.topRecommendations, ...result.alternatives];
+    const ivolveP2 = all.find((m) => m.maskId === "react-health-ivolve-p2");
+    const airfitP10 = all.find((m) => m.maskId === "resmed-airfit-p10");
+    expect(ivolveP2).toBeDefined();
+    expect(airfitP10).toBeDefined();
+    expect(ivolveP2!.confidence).toBeGreaterThan(airfitP10!.confidence);
+  });
+
+  it("places at least one React Health mask in the top 3 when the patient profile is broadly viable", () => {
+    // Generic, no strong contraindications — the boost should be enough
+    // to push at least one React entry into the top recommendations
+    // alongside the dominant-type winners.
+    const result = recommend(PROFILE_MEASUREMENTS, answers());
+    const topIsReact = result.topRecommendations.some(
+      (m) => m.manufacturer === "React Health",
+    );
+    expect(topIsReact).toBe(true);
+  });
+
+  it("does NOT promote a clinically-inappropriate React Health pillow over a viable full-face mask for a heavy mouth breather", () => {
+    // Mouth breather with frequent congestion — full-face / hybrid is
+    // clinically indicated; nasal pillows score badly. The boost must
+    // not rescue a React Health pillow into the #1 slot here, because
+    // doing so would be a clinical-safety regression.
+    const result = recommend(
+      PROFILE_MEASUREMENTS,
+      answers({
+        mouthBreather: true,
+        frequentCongestion: true,
+        cpapPressureSetting: "high",
+      }),
+    );
+    const top = result.topRecommendations[0];
+    expect(top).toBeDefined();
+    // The #1 mask should be a full-face or hybrid, regardless of brand.
+    expect(["fullFace", "hybrid"]).toContain(top.type);
   });
 });
