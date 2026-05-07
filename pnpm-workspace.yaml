@@ -137,6 +137,15 @@ overrides:
   postcss: ^8.5.10
   yaml: ^2.8.3
   http-proxy-agent: ^7.0.2
+  # NOTE: GHSA-vpq2-c234-7xj6 (LOW) on @tootallnate/once <3.0.1 is reachable
+  # only via @google-cloud/storage > teeny-request > http-proxy-agent (the
+  # legacy v5 line that teeny-request still pins). Forcing http-proxy-agent
+  # v7 inside that subtree breaks teeny-request's API contract; jumping
+  # @tootallnate/once to v3 breaks the v2 consumer that imports it.
+  # The advisory requires an attacker-controlled proxy URL, which the GCS
+  # client never accepts from user input — we only call it for our own
+  # bucket. Tracking upstream; accepted risk until @google-cloud/storage
+  # bumps teeny-request.
   vitest>vite: ^6.4.2
   vite-node>vite: ^6.4.2
   "@vitest/mocker>vite": ^6.4.2
