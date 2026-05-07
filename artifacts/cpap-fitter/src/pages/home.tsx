@@ -39,9 +39,6 @@ export function Home() {
           <span className="status-pill status-pill-gold">
             Local Penn DME team
           </span>
-          <span className="status-pill status-pill-success">
-            HIPAA-aligned by design
-          </span>
         </div>
 
         <h1 className="text-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-5 md:mb-6 leading-[1.08] sm:leading-[1.05]">
