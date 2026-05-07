@@ -45,6 +45,14 @@ export interface InviteArgs {
    * Falls back to `deps.publicBaseUrl` when omitted.
    */
   publicBaseUrl?: string;
+  /**
+   * UI path prefix prepended to `/reset-password` in the invite
+   * link. Use `"/admin"` for staff/admin invites so the link
+   * lands on the admin SPA's reset page; leave undefined for
+   * customer-facing invites. Must start with `/` and have no
+   * trailing slash.
+   */
+  uiPathPrefix?: string;
 }
 
 /**
@@ -98,11 +106,13 @@ export async function inviteTeamMember(
     [token.hash, authUserId, expiresAt],
   );
 
-  const inviteLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
+  const safePrefix = (args.uiPathPrefix ?? "").replace(/\/+$/, "");
+  const inviteLink = `${baseUrl}${safePrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
   const rendered = renderPasswordResetEmail(
     {
       productName: args.productName,
       publicBaseUrl: baseUrl,
+      uiPathPrefix: args.uiPathPrefix,
     },
     token.raw,
   );

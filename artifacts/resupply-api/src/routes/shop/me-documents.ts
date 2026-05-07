@@ -43,6 +43,7 @@ import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
+import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -243,6 +244,10 @@ router.post(
         res.status(400).json({ error: "object_missing" });
         return;
       }
+      if (err instanceof ObjectAlreadyOwnedError) {
+        res.status(403).json({ error: "object_already_claimed" });
+        return;
+      }
       req.log.warn({ err }, "patient_document_finalize_acl_failed");
       res.status(500).json({ error: "finalize_failed" });
       return;
@@ -350,7 +355,8 @@ router.get(
       })
       .from(patientDocuments)
       .where(eq(patientDocuments.patientId, patient.id))
-      .orderBy(desc(patientDocuments.createdAt));
+      .orderBy(desc(patientDocuments.createdAt))
+      .limit(100);
 
     res.json({ documents: rows });
   },

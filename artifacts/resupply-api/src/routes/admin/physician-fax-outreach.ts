@@ -326,6 +326,7 @@ router.post(
         status: physicianFaxOutreach.status,
         physicianFaxE164: physicianFaxOutreach.physicianFaxE164,
         patientId: physicianFaxOutreach.patientId,
+        updatedAt: physicianFaxOutreach.updatedAt,
       })
       .from(physicianFaxOutreach)
       .where(eq(physicianFaxOutreach.id, outreachId))
@@ -343,6 +344,25 @@ router.post(
         error: "already_dispatched",
         status: row.status,
       });
+      return;
+    }
+
+    // Optimistic-concurrency claim: two concurrent retry requests both
+    // pass the status check above. Only one UPDATE matches (Postgres
+    // serialises row writes); the loser gets 0 rows and returns 409
+    // before either touches Twilio — preventing duplicate physician faxes.
+    const claimed = await db
+      .update(physicianFaxOutreach)
+      .set({ updatedAt: new Date() })
+      .where(
+        and(
+          eq(physicianFaxOutreach.id, outreachId),
+          eq(physicianFaxOutreach.updatedAt, row.updatedAt),
+        ),
+      )
+      .returning({ id: physicianFaxOutreach.id });
+    if (claimed.length === 0) {
+      res.status(409).json({ error: "concurrent_retry" });
       return;
     }
 

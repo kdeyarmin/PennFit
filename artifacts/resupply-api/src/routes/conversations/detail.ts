@@ -93,7 +93,8 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
     })
     .from(messages)
     .where(eq(messages.conversationId, id))
-    .orderBy(asc(messages.createdAt), asc(messages.id));
+    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .limit(500);
 
   // Pull attachments for the loaded messages in a single follow-up
   // query, then group in memory. Two-step rather than a join because

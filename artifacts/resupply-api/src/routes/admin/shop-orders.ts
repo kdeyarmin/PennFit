@@ -712,6 +712,13 @@ router.post(
     }
     const stripe = getStripeClient(config);
 
+    // Idempotency key scoped to order + amount so:
+    //   * double-clicks on the same partial refund return the same
+    //     Stripe Refund object without creating a duplicate charge.
+    //   * Two different partial refund amounts for the same order
+    //     each create a separate Stripe Refund (intentional).
+    const idempotencyKey = `refund-${orderId}-${amountCents ?? "full"}`;
+
     let refund;
     try {
       refund = await stripe.refunds.create(
@@ -727,11 +734,13 @@ router.post(
             shop_order_id: orderId,
           },
         },
-        // Per-order idempotency key: if two admins click "Refund" before
-        // the charge.refunded webhook flips status to 'refunded', Stripe
-        // deduplicates and returns the same Refund object for both calls
-        // rather than issuing a second refund.
-        { idempotencyKey: `refund:${orderId}` },
+        // Per-order + per-amount idempotency key: if two admins click
+        // "Refund" before the charge.refunded webhook flips status, Stripe
+        // deduplicates and returns the same Refund object rather than
+        // issuing a second refund.  Amount is included so different partial
+        // refund amounts on the same order each create a separate Stripe
+        // Refund (intentional).
+        { idempotencyKey },
       );
     } catch (err) {
       const status =

@@ -275,15 +275,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <footer className="relative mt-16">
+      <footer className="relative mt-10">
         <div className="aurora-divider-live" aria-hidden="true" />
         <div className="glass-panel border-x-0 border-b-0">
-          <div className="container mx-auto px-4 md:px-6 py-10 md:py-12">
+          <div className="container mx-auto px-4 md:px-6 py-6 md:py-7">
             {/* Top: brand block + link columns */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-10">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8">
               {/* Brand block */}
               <div className="md:col-span-4">
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center gap-3 mb-2">
                   <div className="relative">
                     <div
                       className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-navy)/0.10)] to-[hsl(var(--penn-gold)/0.20)] blur-md"
@@ -292,19 +292,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <img
                       src={pennLogo}
                       alt="Penn Home Medical Supply"
-                      className="relative h-11 w-auto rounded-md"
+                      className="relative h-9 w-auto rounded-md"
                     />
                   </div>
                   <div className="leading-tight">
-                    <div className="font-semibold tracking-tight text-foreground">
+                    <div className="font-semibold tracking-tight text-foreground text-sm">
                       Penn Home Medical Supply
                     </div>
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                       PennPaps.com — Mask Fitting · Shop · Resupply
                     </div>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
+                <p className="text-xs text-muted-foreground leading-relaxed max-w-md">
                   <span className="font-semibold text-foreground">
                     PennPaps.com
                   </span>{" "}
@@ -315,7 +315,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   — fit a new mask, order supplies direct, and stay on a
                   resupply schedule with your local DME team.
                 </p>
-                <div className="mt-4 inline-flex items-center gap-2">
+                <div className="mt-2 inline-flex items-center gap-2">
                   <span className="status-pill">
                     <ShieldCheck
                       className="h-3.5 w-3.5 text-primary"
@@ -328,10 +328,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Patient services */}
               <div className="md:col-span-3">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3 font-semibold">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Patient Services
                 </div>
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-1 text-sm">
                   <li>
                     <Link
                       href="/how-it-works"
@@ -412,10 +412,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   floating launcher in the bottom-right; both pull
                   from lib/contact.ts so they stay in sync. */}
               <div className="md:col-span-2">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3 font-semibold">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Talk to us
                 </div>
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-1 text-sm">
                   <li>
                     <a
                       href={`tel:${SUPPORT_PHONE_E164}`}
@@ -442,10 +442,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Legal */}
               <div className="md:col-span-3">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3 font-semibold">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Legal & Privacy
                 </div>
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-1 text-sm">
                   <li>
                     <Link
                       href="/privacy"
@@ -479,7 +479,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Bottom bar: copyright + parent-company callout + staff link */}
-            <div className="mt-10 pt-6 border-t border-border/40 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="mt-5 pt-4 border-t border-border/40 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
               <div>
                 © {new Date().getFullYear()} Penn Home Medical Supply. All
                 rights reserved.
@@ -496,7 +496,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               accidentally land on the admin console. The link routes
               to the same admin sign-in page the console already uses.
             */}
-            <div className="mt-4 pt-4 border-t border-border/30 flex justify-center md:justify-end">
+            <div className="mt-2 pt-2 border-t border-border/30 flex justify-center md:justify-end">
               <Link
                 href="/admin/sign-in"
                 className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80 hover:text-[hsl(var(--penn-navy))] transition-colors"

@@ -58,6 +58,7 @@ vi.mock("@workspace/resupply-telecom", async () => {
 
 const selectQueue: unknown[][] = [];
 const insertReturnQueue: unknown[][] = [];
+const updateReturnQueue: unknown[][] = [];
 const insertedValues: Record<string, unknown>[] = [];
 const updatedSets: Record<string, unknown>[] = [];
 
@@ -89,7 +90,16 @@ const dbStub = {
         updatedSets.push(vals);
         return obj;
       },
-      where: () => Promise.resolve(),
+      where: () => ({
+        returning: () =>
+          Promise.resolve(updateReturnQueue.shift() ?? [{ id: "out_1" }]),
+        then: (
+          onfulfilled: (v: undefined) => unknown,
+          onrejected?: (r: unknown) => unknown,
+        ) => Promise.resolve(undefined as undefined).then(onfulfilled, onrejected),
+        catch: (onrejected?: (r: unknown) => unknown) =>
+          Promise.resolve(undefined as undefined).catch(onrejected),
+      }),
     };
     return obj;
   }),
@@ -142,6 +152,7 @@ beforeEach(() => {
   mockAdmin.current = null;
   selectQueue.length = 0;
   insertReturnQueue.length = 0;
+  updateReturnQueue.length = 0;
   insertedValues.length = 0;
   updatedSets.length = 0;
   sendFaxMock.mockClear();
@@ -483,8 +494,10 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     });
 
     expect(sendFaxMock).toHaveBeenCalledOnce();
-    expect(updatedSets).toHaveLength(1);
-    expect(updatedSets[0]).toMatchObject({
+    // updatedSets[0] is the optimistic-concurrency claim (updatedAt touch);
+    // updatedSets[1] is the post-send status stamp.
+    expect(updatedSets).toHaveLength(2);
+    expect(updatedSets[1]).toMatchObject({
       status: "sent",
       vendorRef: "FX_test_sid",
       vendorName: "twilio",

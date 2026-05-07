@@ -50,6 +50,18 @@ const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX = 10;
 const rateBucket = new Map<string, number[]>();
 
+// Prune stale keys every 30 minutes so the bucket doesn't accumulate
+// one entry per unique IP indefinitely.
+setInterval(
+  () => {
+    const cutoff = Date.now() - RATE_WINDOW_MS;
+    for (const [key, ts] of rateBucket) {
+      if (ts.every((t) => t < cutoff)) rateBucket.delete(key);
+    }
+  },
+  30 * 60 * 1000,
+).unref();
+
 function rateLimited(key: string): boolean {
   const now = Date.now();
   const arr = (rateBucket.get(key) ?? []).filter(

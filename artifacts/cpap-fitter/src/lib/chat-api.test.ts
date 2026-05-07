@@ -160,13 +160,75 @@ describe("streamChatMessage", () => {
     expect(chunks).toEqual(["Too many messages, slow down."]);
   });
 
-  test("throws ChatApiError on non-429 non-OK responses", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 500,
-      body: null,
-      json: async () => ({ error: "server down" }),
-    });
+  test("falls back to the JSON endpoint when streaming returns non-OK", async () => {
+    // Streaming attempt: 500. JSON fallback: 200 with a real reply.
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        body: null,
+        json: async () => ({ error: "server down" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          reply: "Side sleepers do well with nasal pillow masks.",
+        }),
+      });
+
+    const chunks: string[] = [];
+    const result = await streamChatMessage(baseMessages, (c) => chunks.push(c));
+    expect(chunks).toEqual(["Side sleepers do well with nasal pillow masks."]);
+    expect(result.degraded).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Second call must be the JSON path — no Accept: text/event-stream.
+    const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect((secondInit.headers as Record<string, string>).Accept).toBeUndefined();
+  });
+
+  test("falls back to the JSON endpoint when the streaming fetch throws", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ reply: "Recovered via JSON.", degraded: true }),
+      });
+
+    const chunks: string[] = [];
+    const result = await streamChatMessage(baseMessages, (c) => chunks.push(c));
+    expect(chunks).toEqual(["Recovered via JSON."]);
+    expect(result.degraded).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("propagates AbortError without falling back", async () => {
+    const abort = new Error("aborted");
+    abort.name = "AbortError";
+    fetchMock.mockRejectedValueOnce(abort);
+
+    await expect(
+      streamChatMessage(baseMessages, () => {
+        /* noop */
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("throws ChatApiError when both streaming and JSON fallback fail", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        body: null,
+        json: async () => null,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: async () => null,
+      });
 
     await expect(
       streamChatMessage(baseMessages, () => {
@@ -189,5 +251,33 @@ describe("streamChatMessage", () => {
     const chunks: string[] = [];
     await streamChatMessage(baseMessages, (c) => chunks.push(c));
     expect(chunks).toEqual(["recovered"]);
+  });
+
+  test("preserves partial chunks when the stream interrupts mid-way", async () => {
+    // Stream emits one chunk then errors (the underlying ReadableStream's
+    // pull() throws). With chunks already received we should NOT fall
+    // back to JSON — we keep the partial reply and surface degraded.
+    const encoder = new TextEncoder();
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(
+            encoder.encode('data: {"type":"chunk","text":"partial "}\n\n'),
+          );
+          return;
+        }
+        controller.error(new Error("connection reset"));
+      },
+    });
+    fetchMock.mockResolvedValue({ ok: true, status: 200, body });
+
+    const chunks: string[] = [];
+    const result = await streamChatMessage(baseMessages, (c) => chunks.push(c));
+    expect(chunks).toEqual(["partial "]);
+    expect(result.degraded).toBe(true);
+    // No JSON fallback issued — only the streaming attempt was made.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

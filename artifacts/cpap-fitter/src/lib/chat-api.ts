@@ -75,6 +75,16 @@ export async function postChatMessage(
  * `degraded: true` so the caller never has to handle a never-resolved
  * promise.
  *
+ * Resilience strategy — the SSE channel is the failure-prone link in
+ * the chain (long-lived connection, proxy buffering, intermediary
+ * timeouts). When SSE fails before any chunks have arrived, we
+ * transparently fall back to the non-streaming JSON endpoint. The
+ * server-side route is the same code; the JSON path returns a
+ * complete response in one shot and is more compatible with proxies
+ * that mishandle SSE. If chunks have already arrived when the stream
+ * breaks, we keep them and surface `degraded: true` so the user
+ * doesn't lose a partial reply.
+ *
  * Handles the rate-limit case (HTTP 429 returns JSON, not SSE) by
  * decoding it as a single-shot reply and surfacing `rateLimited`.
  */
@@ -83,15 +93,22 @@ export async function streamChatMessage(
   onChunk: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<{ offline?: boolean; degraded?: boolean; rateLimited?: boolean }> {
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    },
-    body: JSON.stringify({ messages }),
-    signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ messages }),
+      signal,
+    });
+  } catch (err) {
+    if ((err as { name?: string })?.name === "AbortError") throw err;
+    console.warn("[pennbot] stream fetch failed, trying JSON fallback", err);
+    return fallbackToJson(messages, onChunk, signal);
+  }
 
   if (res.status === 429) {
     const body = (await res.json().catch(() => null)) as ChatResponse | null;
@@ -103,18 +120,16 @@ export async function streamChatMessage(
   }
 
   if (!res.ok || !res.body) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: string }
-      | null;
-    throw new ChatApiError(
-      res.status,
-      body?.error ?? `Chat request failed (${res.status})`,
+    console.warn(
+      `[pennbot] stream endpoint returned ${res.status}, trying JSON fallback`,
     );
+    return fallbackToJson(messages, onChunk, signal);
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let chunksReceived = 0;
   let result: { offline?: boolean; degraded?: boolean; rateLimited?: boolean } =
     { degraded: true };
 
@@ -146,6 +161,7 @@ export async function streamChatMessage(
             continue;
           }
           if (parsed.type === "chunk" && typeof parsed.text === "string") {
+            chunksReceived += 1;
             onChunk(parsed.text);
           } else if (parsed.type === "done") {
             result = {
@@ -156,9 +172,36 @@ export async function streamChatMessage(
         }
       }
     }
+  } catch (err) {
+    if ((err as { name?: string })?.name === "AbortError") throw err;
+    console.warn("[pennbot] stream interrupted", { chunksReceived, err });
+    if (chunksReceived === 0) {
+      return fallbackToJson(messages, onChunk, signal);
+    }
+    return { degraded: true };
   } finally {
     reader.releaseLock();
   }
 
   return result;
+}
+
+/**
+ * Send the same conversation to the non-streaming JSON endpoint and
+ * emit the reply as a single chunk. Used when the SSE path fails so a
+ * proxy quirk or transient 5xx doesn't show the user "connection
+ * issue" when a perfectly good answer is one HTTP request away.
+ */
+async function fallbackToJson(
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<{ offline?: boolean; degraded?: boolean; rateLimited?: boolean }> {
+  const reply = await postChatMessage(messages, signal);
+  if (reply.reply) onChunk(reply.reply);
+  return {
+    offline: reply.offline,
+    degraded: reply.degraded,
+    rateLimited: reply.rateLimited,
+  };
 }

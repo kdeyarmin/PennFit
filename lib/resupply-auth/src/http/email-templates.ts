@@ -17,6 +17,15 @@ export interface AuthEmailContext {
   productName: string;
   /** Where /verify-email and /reset-password live, no trailing slash. */
   publicBaseUrl: string;
+  /**
+   * Optional UI path prefix prepended to the verification + reset
+   * URL paths. Use `"/admin"` when the link should land on the
+   * admin SPA pages (`/admin/reset-password`, `/admin/verify-email`);
+   * leave undefined for the customer-facing storefront pages
+   * (`/reset-password`, `/verify-email`). Must start with `/` and
+   * have no trailing slash.
+   */
+  uiPathPrefix?: string;
 }
 
 export interface RenderedEmail {
@@ -34,8 +43,14 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function makeLink(base: string, path: string, token: string): string {
-  return `${base}${path}?token=${encodeURIComponent(token)}`;
+function makeLink(
+  base: string,
+  prefix: string | undefined,
+  path: string,
+  token: string,
+): string {
+  const safePrefix = (prefix ?? "").replace(/\/+$/, "");
+  return `${base}${safePrefix}${path}?token=${encodeURIComponent(token)}`;
 }
 
 // Strip CR/LF from any value used in an email subject line to prevent
@@ -48,7 +63,12 @@ export function renderVerifyEmail(
   ctx: AuthEmailContext,
   rawToken: string,
 ): RenderedEmail {
-  const link = makeLink(ctx.publicBaseUrl, "/verify-email", rawToken);
+  const link = makeLink(
+    ctx.publicBaseUrl,
+    ctx.uiPathPrefix,
+    "/verify-email",
+    rawToken,
+  );
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
   return {
@@ -71,7 +91,12 @@ export function renderPatientPortalInviteEmail(
   rawToken: string,
   patientFirstName: string | null,
 ): RenderedEmail {
-  const link = makeLink(ctx.publicBaseUrl, "/reset-password", rawToken);
+  const link = makeLink(
+    ctx.publicBaseUrl,
+    ctx.uiPathPrefix,
+    "/reset-password",
+    rawToken,
+  );
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
   const greeting = patientFirstName
@@ -99,7 +124,12 @@ export function renderPasswordResetEmail(
   ctx: AuthEmailContext,
   rawToken: string,
 ): RenderedEmail {
-  const link = makeLink(ctx.publicBaseUrl, "/reset-password", rawToken);
+  const link = makeLink(
+    ctx.publicBaseUrl,
+    ctx.uiPathPrefix,
+    "/reset-password",
+    rawToken,
+  );
   const safeLink = escapeHtml(link);
   const safeName = escapeHtml(ctx.productName);
   return {

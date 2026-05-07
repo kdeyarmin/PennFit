@@ -103,7 +103,8 @@ export const shopAbandonedCarts = resupplySchema.table(
      */
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
     /**
      * Set when the dispatcher successfully delivered the one nudge
      * for this cart-event. Reset to null by PUT when items change

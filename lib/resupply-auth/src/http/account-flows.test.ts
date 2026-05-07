@@ -25,7 +25,10 @@ interface Harness {
   emails: Array<{ to: string; subject: string; html: string; text: string }>;
 }
 
-function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
+function buildHarness(
+  overrides: Partial<AuthDeps> = {},
+  routerOverrides: { uiPathPrefix?: string } = {},
+): Harness {
   const repo = makeMemoryRepo();
   const actions: string[] = [];
   const audit: AuditWriter & { actions: string[] } = Object.assign(
@@ -58,7 +61,13 @@ function buildHarness(overrides: Partial<AuthDeps> = {}): Harness {
   };
   const app = express();
   app.use(express.json());
-  app.use("/auth", makeAuthRouter(deps, { productName: "TestProduct" }));
+  app.use(
+    "/auth",
+    makeAuthRouter(deps, {
+      productName: "TestProduct",
+      uiPathPrefix: routerOverrides.uiPathPrefix,
+    }),
+  );
   return { app, repo, audit, emails };
 }
 
@@ -296,6 +305,41 @@ describe("POST /auth/forgot-password", () => {
       .send({ email: "not an email" });
     expect(res.status).toBe(200);
     expect(h.emails).toHaveLength(0);
+  });
+
+  it("emits an admin-prefixed reset link when uiPathPrefix=/admin", async () => {
+    const h = buildHarness({}, { uiPathPrefix: "/admin" });
+    await seedUserWithPassword(h.repo, {
+      id: "u_alice",
+      emailLower: "alice@example.com",
+      password: "current password",
+    });
+    await supertest(h.app)
+      .post("/auth/forgot-password")
+      .send({ email: "alice@example.com" });
+    expect(h.emails).toHaveLength(1);
+    expect(h.emails[0]!.html).toContain(
+      "https://example.test/admin/reset-password?token=",
+    );
+    expect(h.emails[0]!.html).not.toMatch(
+      /https:\/\/example\.test\/reset-password\?/u,
+    );
+  });
+
+  it("emits an unprefixed reset link by default (storefront mount)", async () => {
+    const h = buildHarness();
+    await seedUserWithPassword(h.repo, {
+      id: "u_bob",
+      emailLower: "bob@example.com",
+      password: "current password",
+    });
+    await supertest(h.app)
+      .post("/auth/forgot-password")
+      .send({ email: "bob@example.com" });
+    expect(h.emails[0]!.html).toContain(
+      "https://example.test/reset-password?token=",
+    );
+    expect(h.emails[0]!.html).not.toContain("/admin/reset-password");
   });
 });
 
