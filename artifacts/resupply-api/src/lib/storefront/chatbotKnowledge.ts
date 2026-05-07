@@ -36,13 +36,14 @@ export const MAX_USER_MESSAGE_CHARS = 1_500;
 
 /**
  * Cap on the total system prompt length. The full prompt currently
- * sits in the low-40k char range (≈ 10k tokens) — comfortably inside
- * gpt-4o-mini's 128k-token context window but large enough that a
- * runaway maskCatalog or knowledge-section edit would noticeably
- * raise per-call latency and cost. The cap is a tripwire against
- * accidental bloat, not a model-imposed hard limit.
+ * sits in the 50–70k char range (≈ 15–18k tokens) — comfortably
+ * inside gpt-4o-mini's 128k-token context window but large enough
+ * that a runaway maskCatalog or knowledge-section edit would
+ * noticeably raise per-call latency and cost. The cap is a
+ * tripwire against accidental bloat, not a model-imposed hard
+ * limit.
  */
-const MAX_SYSTEM_PROMPT_CHARS = 60_000;
+const MAX_SYSTEM_PROMPT_CHARS = 80_000;
 
 const MASK_TYPE_LABELS: Record<MaskType, string> = {
   fullFace: "Full face",
@@ -887,6 +888,290 @@ A: At /reminders - PennPaps will email you when each item is due on
 the standard schedule.
 `;
 
+const TOP_PATIENT_QUESTIONS_SECTION = `
+# 100 most-asked patient questions (compact reference)
+
+When a user asks something on this list, paraphrase the answer in
+plain English — don't read the headers aloud. Always close
+clinical questions with "ask your sleep medicine provider" rather
+than implying medical advice.
+
+## Adapting to therapy
+
+Q1. Will I stop snoring on night one? Usually yes — pressure
+splints the airway open. Residual snoring suggests a leak or
+under-set pressure; flag to your provider.
+Q2. How long until I feel rested? A few days for some, 4–12 weeks
+for many. Use it every night, all night.
+Q3. Why am I MORE tired the first weeks? REM and slow-wave
+"rebound" as the brain catches up on lost sleep. Usually settles
+in a few weeks.
+Q4. Can I drink alcohol on CPAP? CPAP still works, but alcohol
+relaxes airway muscles and worsens leaks; moderate, especially
+near bedtime.
+Q5. Does CPAP cause weight gain? Mixed evidence; some users gain
+a few pounds in year one, possibly from reduced resting
+expenditure. Benefits usually outweigh.
+Q6. Can CPAP help me lose weight? Indirectly — better sleep
+improves leptin/ghrelin and daytime energy. CPAP itself isn't a
+weight-loss device.
+Q7. Will I dream more? Yes, vivid dreams are common as REM
+rebounds. Tapers within weeks.
+Q8. Will it cure insomnia? No — CPAP treats apnea, not insomnia.
+Persistent insomnia may need CBT-I.
+Q9. How many hours per night? 7+ if you can. Medicare's 4-hour /
+70%-of-nights threshold is a floor, not a goal.
+Q10. Is it normal to rip the mask off in sleep? Yes, especially
+early. Usually a leak, pressure feeling too high, or
+claustrophobia. Try a different style or use ramp.
+Q11. Will I become dependent on CPAP? No — it isn't habit-forming.
+Apnea returns when you stop because the anatomy hasn't changed.
+Q12. Why do I feel claustrophobic? Common at first. Wear the mask
+during the day to desensitize, try nasal pillows, and use ramp.
+
+## Sleep position, habits, bedroom
+
+Q13. Can I sleep on my stomach? Yes — nasal pillows + a CPAP
+pillow with cutouts help. Hardest position for seal.
+Q14. Back vs side? Either is fine. Apnea is often worse on the
+back, so many prefer side.
+Q15. Do I need a CPAP pillow? Optional but helpful for side and
+stomach sleepers; cutouts reduce mask pressure and hose tug.
+Q16. Fan or AC on? Yes — keep direct airflow off the mask seal.
+Cooler rooms help sleep.
+Q17. Earplugs OK? Yes.
+Q18. Mouthguard OK? Most fit fine with nasal or full-face masks.
+Mention CPAP to your dentist.
+Q19. Read or watch TV with the mask on? Yes — recommended
+desensitization.
+Q20. Floor vs nightstand? Nightstand at or slightly below
+mattress. Floor invites dust and rainout.
+Q21. Room temperature? No requirement; cooler reduces rainout.
+65–72°F suits most.
+Q22. Weighted blanket? Fine — route the hose so it isn't trapped.
+
+## Pets, partners, family
+
+Q23. Cat or dog chews the hose? Replace any cracked hose
+immediately. Use a hose lift or route through a bedrail.
+Q24. Will the noise bother my partner? Modern machines are
+~26–30 dB (whisper). Quieter than the snoring you replaced.
+Q25. Can my partner feel mask exhaust? Possibly with full-face.
+Adjust orientation or pick a mask with a diffused vent.
+Q26. Will my kids be scared? Usually fine if they see the kit
+during the day; "sleep helper" framing works.
+Q27. Can I share a mask with my spouse? No — masks are personal
+and fit is individual. Hygiene matters too.
+Q28. Two CPAPs in one bedroom? Fine. Each person needs their own
+machine, mask, and prescription.
+Q29. Overnight guests? Use CPAP normally — most don't notice.
+Q30. Intimacy with CPAP nearby? Of course — put it on for sleep
+afterward.
+
+## Mask quirks, skin, face
+
+Q31. Why does my mask smell? New silicone has a faint odor that
+fades; persistent smells = clean or replace. Avoid scented soaps.
+Q32. Silicone allergy? Rare; reactions usually trace to oils,
+soap residue, or unwashed cushions. Foam (AirTouch) and gel
+cushions exist as alternatives.
+Q33. How do I fade red mask marks? They usually fade in
+30–60 minutes. Looser straps, a liner, or a different cushion
+size prevent them.
+Q34. Shaving with mask marks? Shave after they fade. Beard length
+matters more for seal than shaving.
+Q35. Best moisturizer? Water-based, no petroleum (it degrades
+silicone). Apply 30+ min before bed.
+Q36. Makeup to bed? Better to remove — oils and pigments degrade
+silicone and reduce seal.
+Q37. Why do my eyes feel dry in the morning? Almost always a
+small leak near the nose bridge. Refit, resize, or change style.
+Q38. Glasses fog? Most users only wear glasses briefly with the
+mask. Lower-bridge masks or anti-fog wipes help.
+Q39. Beard + good seal? Yes, with effort. Nasal pillows bypass
+the beard; beard balm fills gaps for full-face.
+Q40. Will CPAP make acne worse? Can if cushions aren't cleaned
+daily. Daily wipe + weekly deep clean usually solves it.
+Q41. Do mask liners affect insurance? Liners are usually a
+cash-pay accessory, not insurance-covered. They reduce skin
+irritation.
+Q42. Drooling with full-face mask? Common during adaptation;
+usually settles. If persistent, ask the provider to check
+pressure and fit.
+
+## Health conditions and CPAP interactions
+
+Q43. CPAP with a cold? Yes — many find it helps. A full-face
+mask, heated humidifier, and saline rinse before bed help
+through congestion.
+Q44. Use CPAP with the flu / COVID? Generally yes unless your
+provider says otherwise. After illness, deep-clean or replace
+the mask, hose, and chamber.
+Q45. Does CPAP lower blood pressure? Modest reductions in many
+users with apnea, especially with resistant hypertension. Not a
+replacement for antihypertensives.
+Q46. Asthma inhaler before CPAP? Yes — use as prescribed, then
+start CPAP. No conflict.
+Q47. Does CPAP help GERD? Often yes; untreated apnea worsens
+reflux. Elevating the head of the bed helps both.
+Q48. Will CPAP fix morning headaches? If they come from oxygen
+drops, often within weeks. Persistent headaches need a doctor.
+Q49. CPAP after dental / wisdom-tooth surgery? Ask your oral
+surgeon — pressure can dislodge clots in the first 24–48 hours.
+Q50. CPAP with a CGM or insulin pump? Yes — neither interferes,
+and improved sleep often improves glucose control.
+Q51. Heart failure + CPAP? Often beneficial; some patients need
+BiPAP or ASV instead. A sleep specialist decides.
+Q52. Long-term sinus effects? Most users do fine with daily
+humidification, nasal saline, and clean equipment.
+Q53. CPAP after eye surgery? Ask the surgeon — they often
+recommend nasal pillows for a few weeks to keep pressure off
+the eyes.
+Q54. Hearing or ear pain? Rare. Pressure / popping with a cold
+or eustachian-tube issue can occur; persistent pain warrants a
+medical check.
+
+## Hardware, power, environment
+
+Q55. Plug into a car DC outlet? Most CPAPs need a manufacturer-
+specific DC cord, not a generic inverter. Check the manual.
+Q56. Run on a generator? Yes for clean / pure-sine-wave or
+inverter generators. Avoid modified-sine-wave units.
+Q57. What is rainout and how do I stop it? Condensation in the
+hose from warm humid air cooling. Use heated tubing, lower
+humidity, insulate the hose, or warm the room.
+Q58. Substitute for distilled water? Filtered or bottled drinking
+water works for a night or two. Long-term use causes scale. Tap
+water is not recommended.
+Q59. Why is there water in my mask? Almost always rainout — see
+Q57. Empty the chamber and dry the hose if it happens overnight.
+Q60. CPAP at high altitude? Most modern machines auto-adjust to
+~8,000+ ft. Older machines may need manual adjustment.
+Q61. CPAP during a power outage? Only with a battery backup —
+manufacturer or third-party.
+Q62. How long does a CPAP battery last? Roughly 8–14 hours
+depending on pressure, humidifier use, and capacity. Turn the
+heated humidifier OFF to extend runtime.
+Q63. Use CPAP without the humidifier? Yes — many do in summer or
+for travel. Some get a dry nose without it.
+Q64. Surge protector? Standard surge protector is fine; a
+dedicated outlet is best.
+Q65. Clicking or rattling noise? Often a loose filter cover,
+dust, or aging seals. Fresh filter + wipe-down first; otherwise
+contact your equipment provider.
+
+## Cleaning specifics
+
+Q66. Vinegar safe? Yes — 1 part white vinegar to 3 parts
+distilled water, weekly soak for the chamber. Rinse with
+distilled afterward.
+Q67. Dishwasher? Usually no — heat warps plastic and detergent
+leaves residue. Hand-wash with mild dish soap.
+Q68. Ozone / UV cleaners? FDA has cautioned against ozone-based
+cleaners; can leave residual ozone and damage equipment.
+Soap + water + replacement remain standard.
+Q69. Baby shampoo or Dawn? Yes — fragrance-free baby shampoo or
+plain Dawn are common. Avoid antibacterial / scented soaps.
+Q70. Wash headgear how often? Hand-wash weekly in warm soapy
+water; air dry. Don't wring (breaks elastic).
+Q71. Disinfecting wipes on the mask? Only CPAP-specific wipes or
+unscented baby wipes. Alcohol degrades silicone.
+Q72. Clean the machine itself? Wipe the exterior weekly with a
+damp cloth. Keep vents clear of dust. Don't open the housing.
+
+## Therapy data and numbers
+
+Q73. Apnea vs hypopnea? Apnea = complete stop in airflow ≥10s.
+Hypopnea = partial reduction (≥30%) with O2 drop or arousal.
+Both count toward AHI.
+Q74. Why does AHI vary night to night? Alcohol, allergies,
+position, REM amount, illness all change AHI. Watch weekly
+averages, not single nights.
+Q75. What is "95th percentile pressure"? Pressure your machine
+reached or exceeded only 5% of the night — a useful summary of
+how much pressure you actually needed.
+Q76. Central vs obstructive apnea? Obstructive = airway collapse.
+Central = brain briefly fails to signal a breath. Persistent
+centrals need provider review; CPAP doesn't always fix them.
+Q77. Treatment-emergent central sleep apnea? Centrals that appear
+after starting CPAP. Often resolves; if not, BiPAP or ASV may be
+needed.
+Q78. RERA in the report? Respiratory Effort-Related Arousal — a
+breathing event disrupting sleep without meeting apnea/hypopnea
+criteria. Suggests pressure may be slightly low.
+Q79. Flow limitation graph? Subtle airway narrowing that doesn't
+fully obstruct. High flow limitation can mean pressure is
+slightly low — share with the provider.
+Q80. Is leak rate of 24 L/min bad? ResMed users typically aim for
+under 24 L/min unintentional leak. Occasional spikes are fine;
+chronic high leaks reduce therapy effectiveness.
+
+## Insurance, compliance, cost
+
+Q81. ABN form? Advance Beneficiary Notice — Medicare's heads-up
+that you may owe out-of-pocket if a service isn't covered.
+Standard, not a bill.
+Q82. Pre-authorization for CPAP supplies? Insurer-dependent.
+Initial machine often needs pre-auth; routine resupply usually
+doesn't. PennPaps verifies before shipping.
+Q83. Switch DMEs mid-rental? Yes, but timing matters. During
+Medicare's 13-month rental, a switch can reset the clock. Call
+PennPaps before switching.
+Q84. Lose insurance mid-rental? Options: continue cash-pay,
+switch suppliers to a plan-accepting DME, or return the machine.
+Don't stop using CPAP — call us.
+Q85. Veteran or military discount? PennPaps works directly with
+VA / TRICARE benefits. Cash-pay veteran discounts vary; contact
+the team.
+Q86. Generic / off-brand masks? Generic cushions exist for some
+popular masks at lower cost. Quality varies; insurance usually
+covers OEM only.
+Q87. Cash-pay mask price? Roughly $80–150 nasal or pillow,
+$120–200 full-face. Check current pricing on /shop.
+Q88. HSA / FSA for CPAP? Yes — machines, masks, hoses, filters,
+and cleaning supplies are HSA/FSA eligible.
+Q89. Itemized HSA receipt? In your /account order history, or
+ask the team to email one.
+
+## Account and order operations
+
+Q90. Update shipping address? Sign in → Account Settings → edit.
+Update before the next subscription ships.
+Q91. Where is my tracking number? Emailed at ship time, also in
+order history. After 2 business days from ship confirmation,
+contact us.
+Q92. Package never arrived / marked delivered but missing?
+Contact us within 7 days of expected delivery — we open a carrier
+claim and arrange a replacement.
+Q93. Pause Subscribe & Save without canceling? Yes — skip a
+shipment or pause entirely from /account, then resume.
+Q94. Change credit card? Account Settings → Payment Methods →
+add or update. New card applies to the next charge.
+Q95. Return policy if I just don't like a mask? Within the
+60-day comfort guarantee, masks can usually be exchanged. See
+/comfort-guarantee or contact us.
+Q96. Order for a family member from my account? Each patient
+needs their own account (supplies tied to prescription and
+insurance). We can help set up a separate one.
+
+## Long-term therapy and special topics
+
+Q97. Will I need CPAP forever? Most adults with OSA need lifelong
+therapy because anatomy doesn't change. Significant weight loss,
+surgery, or oral appliances may reduce or eliminate the need —
+only a sleep doctor confirms via repeat testing.
+Q98. Stop CPAP after major weight loss? Possibly. Substantial
+weight loss can reduce or resolve apnea in some patients. Repeat
+sleep study required first; don't stop on your own.
+Q99. What is a re-titration? A follow-up sleep study to recheck
+optimal pressure. Often recommended after major weight change,
+new heart / lung issues, or returning symptoms.
+Q100. My child snores loudly — should they be tested? Pediatric
+OSA is real and often related to enlarged tonsils / adenoids.
+PennPaps doesn't serve pediatrics — refer to a pediatric sleep
+specialist via the child's pediatrician.
+`;
+
 const PRACTICE_SECTION = `
 # About PennPaps / Penn Home Medical Supply
 
@@ -1037,6 +1322,7 @@ export function buildChatSystemPrompt(): string {
     THERAPY_VOCABULARY_SECTION,
     SCOPE_DISCLAIMER_SECTION,
     FAQ_SECTION,
+    TOP_PATIENT_QUESTIONS_SECTION,
     PRACTICE_SECTION,
     TOOLS_GUIDE,
     SAFETY_AND_SCOPE,
