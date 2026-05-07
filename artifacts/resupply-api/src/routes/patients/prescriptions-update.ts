@@ -83,6 +83,22 @@ router.patch("/prescriptions/:rxId", requireAdmin, async (req, res) => {
     return;
   }
 
+  // Enforce documented lifecycle transitions (see module comment).
+  // Any other combination (e.g. expired→revoked) is rejected so the
+  // audit history remains meaningful.
+  const VALID_TRANSITIONS: Record<string, string[]> = {
+    active: ["expired", "revoked"],
+    expired: ["active"],
+    revoked: ["active"],
+  };
+  if (!VALID_TRANSITIONS[rx.status]?.includes(nextStatus)) {
+    res.status(400).json({
+      error: "invalid_transition",
+      message: `Cannot transition prescription from "${rx.status}" to "${nextStatus}".`,
+    });
+    return;
+  }
+
   await db
     .update(prescriptions)
     .set({ status: nextStatus, updatedAt: sql`now()` })

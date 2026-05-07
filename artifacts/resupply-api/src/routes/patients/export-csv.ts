@@ -62,14 +62,20 @@ const COLUMNS = [
 /**
  * RFC 4180 CSV cell escape. Wraps in double quotes when the value
  * contains a comma, quote, CR, or LF; doubles embedded quotes.
+ * Prefixes formula-starting values with a single apostrophe to
+ * prevent spreadsheet formula injection (Excel / LibreOffice treat
+ * a leading apostrophe as "this is literal text, not a formula").
  */
 function csvEscape(value: string | null | undefined): string {
   const s = value ?? "";
   if (s === "") return "";
-  if (/[",\r\n]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
+  // Prefix formula-starting characters before further quoting so
+  // =cmd|'/c calc'!A0, +1-2, -3, @SUM(A1) etc. are all neutralised.
+  const safe = /^[=+\-@\t]/.test(s) ? `'${s}` : s;
+  if (/[",\r\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`;
   }
-  return s;
+  return safe;
 }
 
 const router: IRouter = Router();

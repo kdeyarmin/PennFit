@@ -178,18 +178,31 @@ router.post(
       return;
     }
 
-    const inserted = await db
-      .insert(patientOnboardingJourneys)
-      .values({
-        patientId,
-        startedAt,
-        enrolledByEmail: req.adminEmail ?? "<unknown>",
-        enrolledByUserId: req.adminUserId ?? null,
-      })
-      .returning({
-        id: patientOnboardingJourneys.id,
-        startedAt: patientOnboardingJourneys.startedAt,
-      });
+    let inserted: { id: string; startedAt: Date }[];
+    try {
+      inserted = await db
+        .insert(patientOnboardingJourneys)
+        .values({
+          patientId,
+          startedAt,
+          enrolledByEmail: req.adminEmail ?? "<unknown>",
+          enrolledByUserId: req.adminUserId ?? null,
+        })
+        .returning({
+          id: patientOnboardingJourneys.id,
+          startedAt: patientOnboardingJourneys.startedAt,
+        });
+    } catch (err) {
+      // Concurrent request beat us to it — the partial unique index on
+      // (patient_id) WHERE status='active' fired. Return the same 409
+      // the pre-check above would have returned rather than bubbling
+      // the raw constraint violation as a 500.
+      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23505") {
+        res.status(409).json({ error: "already_enrolled" });
+        return;
+      }
+      throw err;
+    }
     const row = inserted[0];
     if (!row) {
       throw new Error("INSERT returned no rows");

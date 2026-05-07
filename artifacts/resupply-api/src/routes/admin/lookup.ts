@@ -226,7 +226,9 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
         status: shopOrders.status,
       })
       .from(shopOrders)
-      .where(sql`${shopOrders.stripeSessionId} LIKE ${"%" + q}`)
+      // Escape LIKE metacharacters so an underscore in `q` matches a literal
+      // underscore rather than acting as a single-character wildcard.
+      .where(sql`${shopOrders.stripeSessionId} LIKE ${"%" + q.replace(/[%_\\]/g, "\\$&")} ESCAPE '\\'`)
       .limit(5);
     for (const order of rows) {
       hits.push({

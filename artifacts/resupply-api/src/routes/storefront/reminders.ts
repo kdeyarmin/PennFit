@@ -217,17 +217,40 @@ router.post("/reminders", async (req, res) => {
   // only via email; it is never returned in the API response so that
   // unauthenticated callers cannot mint and retain tokens for arbitrary
   // email addresses without proving inbox ownership.
-  const [inserted] = await db
-    .insert(reminderSubscriptionsTable)
-    .values({
-      email,
-      manageToken: generateManageToken(),
-      items: itemsWithDue,
-      status: "active",
-      updatedAt: now,
-    })
-    .returning();
-  const row: ReminderSubscriptionRow = inserted!;
+  let row: ReminderSubscriptionRow;
+  try {
+    const [inserted] = await db
+      .insert(reminderSubscriptionsTable)
+      .values({
+        email,
+        manageToken: generateManageToken(),
+        items: itemsWithDue,
+        status: "active",
+        updatedAt: now,
+      })
+      .returning();
+    row = inserted!;
+  } catch (err) {
+    // Two concurrent POSTs with the same email can both pass the SELECT
+    // check above and race to INSERT. The unique index on email makes
+    // exactly one win; the loser gets a 23505. Return the same success
+    // shape as the existing-row branch so the user experience is identical.
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code: string }).code === "23505"
+    ) {
+      res.json({
+        success: true,
+        emailStatus: "skipped",
+        message:
+          "Check your email for a manage link to view or update your reminders.",
+      });
+      return;
+    }
+    throw err;
+  }
 
   // Same rationale as the existing-row branch above — assigned in every
   // path below, so declared without an initializer.
