@@ -3,6 +3,8 @@ export * from "./patients";
 export * from "./patient-notes";
 export * from "./patient-followups";
 export * from "./patient-onboarding-journeys";
+export * from "./patient-checkin-attempts";
+export * from "./csr-compliance-alerts";
 export * from "./patient-therapy-nights";
 export * from "./patient-therapy-links";
 export * from "./patient-integration-snapshots";

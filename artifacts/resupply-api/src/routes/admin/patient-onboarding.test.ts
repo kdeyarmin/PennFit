@@ -194,26 +194,31 @@ describe("POST /admin/patients/:id/onboarding/enroll", () => {
 });
 
 describe("POST /admin/onboarding/send-due (dispatcher)", () => {
-  it("fires the next due check-in + stamps + audits", async () => {
+  it("fires the next due check-in via email, stamps, and audits", async () => {
     mockAdmin.current = {
       userId: "u_admin",
       email: "ops@penn.example.com",
       role: "admin",
     };
-    // One active journey, started 8 days ago — day1 already sent,
-    // day7 still null and now due.
+    // One active journey, started 8 days ago — day3 already sent,
+    // day7 still null and now due. Patient has no phone so SMS+voice
+    // channels are unavailable; only email succeeds.
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
     selectQueue.push([
       {
         journeyId: "j_1",
         patientId: PATIENT_ID,
         startedAt: eightDaysAgo,
-        day1SentAt: new Date(eightDaysAgo.getTime() + 24 * 60 * 60 * 1000),
+        day1SentAt: null,
+        day3SentAt: new Date(eightDaysAgo.getTime() + 3 * 24 * 60 * 60 * 1000),
         day7SentAt: null,
         day30SentAt: null,
+        day60SentAt: null,
         day90SentAt: null,
         firstName: "Anna",
         email: "anna@example.com",
+        phoneE164: null,
+        channelPreference: null,
       },
     ]);
 
@@ -224,9 +229,9 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       attempted: 1,
-      sent: 1,
+      delivered: 1,
       failed: 0,
-      skippedNoEmail: 0,
+      skippedNoContact: 0,
       completedJourneys: 0,
     });
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
@@ -239,10 +244,10 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
     expect(sendCall.customArgs.kind).toBe("onboarding_checkin");
     expect(sendCall.customArgs.day).toBe("day7");
 
-    expect(updateSets).toHaveLength(1);
-    expect(updateSets[0]?.day7SentAt).toBeInstanceOf(Date);
-    // No status change yet — day7 is mid-cycle.
-    expect(updateSets[0]?.status).toBeUndefined();
+    // Stamp lands on the journey row.
+    const stampUpdate = updateSets.find((u) => "day7SentAt" in u);
+    expect(stampUpdate?.day7SentAt).toBeInstanceOf(Date);
+    expect(stampUpdate?.status).toBeUndefined();
 
     // Audit envelope is structural only.
     const audits = logAuditMock.mock.calls.map(
@@ -255,10 +260,11 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
     const sentAudit = audits.find(
       (a) => a.action === "patient.onboarding.checkin_sent",
     );
-    expect(sentAudit?.metadata).toEqual({
+    expect(sentAudit?.metadata).toMatchObject({
       patient_id: PATIENT_ID,
       day_label: "day7",
       channel: "email",
+      outcome: "sent",
     });
   });
 
@@ -274,12 +280,16 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
         journeyId: "j_1",
         patientId: PATIENT_ID,
         startedAt: ninetyOneDaysAgo,
-        day1SentAt: new Date(),
+        day1SentAt: null,
+        day3SentAt: new Date(),
         day7SentAt: new Date(),
         day30SentAt: new Date(),
+        day60SentAt: new Date(),
         day90SentAt: null,
         firstName: "Anna",
         email: "anna@example.com",
+        phoneE164: null,
+        channelPreference: null,
       },
     ]);
 
@@ -289,9 +299,9 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.completedJourneys).toBe(1);
-    expect(updateSets[0]?.status).toBe("completed");
+    const stampUpdate = updateSets.find((u) => "day90SentAt" in u);
+    expect(stampUpdate?.status).toBe("completed");
 
-    // Two audits — checkin_sent for day90 + complete.
     const auditActions = logAuditMock.mock.calls.map(
       (c) => (c[0] as { action: string }).action,
     );
@@ -299,7 +309,7 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
     expect(auditActions).toContain("patient.onboarding.complete");
   });
 
-  it("skips rows without an email on file", async () => {
+  it("skips rows without any contact channel", async () => {
     mockAdmin.current = {
       userId: "u_admin",
       email: "ops@penn.example.com",
@@ -311,12 +321,16 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
         journeyId: "j_1",
         patientId: PATIENT_ID,
         startedAt: eightDaysAgo,
-        day1SentAt: new Date(eightDaysAgo.getTime() + 24 * 60 * 60 * 1000),
+        day1SentAt: null,
+        day3SentAt: new Date(eightDaysAgo.getTime() + 3 * 24 * 60 * 60 * 1000),
         day7SentAt: null,
         day30SentAt: null,
+        day60SentAt: null,
         day90SentAt: null,
         firstName: "Anna",
         email: null,
+        phoneE164: null,
+        channelPreference: null,
       },
     ]);
 
@@ -327,10 +341,14 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       attempted: 1,
-      sent: 0,
-      skippedNoEmail: 1,
+      delivered: 0,
+      skippedNoContact: 1,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
-    expect(updateSets).toHaveLength(0);
+    // No stamp update because no channel succeeded.
+    const stampUpdate = updateSets.find((u) =>
+      Object.keys(u).some((k) => k.endsWith("SentAt")),
+    );
+    expect(stampUpdate).toBeUndefined();
   });
 });
