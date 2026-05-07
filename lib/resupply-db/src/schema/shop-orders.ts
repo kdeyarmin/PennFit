@@ -59,7 +59,9 @@ export const shopOrders = resupplySchema.table(
       .default(sql`gen_random_uuid()::text`),
     stripeSessionId: text("stripe_session_id").notNull().unique(),
     stripePaymentIntentId: text("stripe_payment_intent_id"),
-    status: text("status").notNull().default("pending"),
+    status: text("status", {
+      enum: ["pending", "paid", "refunded", "expired", "failed"],
+    }).notNull().default("pending"),
     amountTotalCents: integer("amount_total_cents"),
     currency: text("currency"),
     /**
@@ -67,6 +69,11 @@ export const shopOrders = resupplySchema.table(
      * (sha256 of stable-json line items). Lets us short-circuit
      * "is this a re-click of the same cart?" without storing
      * line items themselves.
+     *
+     * A partial unique index (WHERE cart_hash IS NOT NULL) is
+     * enforced at the DB level by migration 0062 — Drizzle-kit
+     * cannot express partial unique indexes so the migration is
+     * the source of truth for that constraint.
      */
     cartHash: text("cart_hash"),
     /**
@@ -85,7 +92,8 @@ export const shopOrders = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     /**
      * Snapshot of the shipping address used for THIS order. Same
@@ -177,6 +185,10 @@ export const shopOrders = resupplySchema.table(
     amountNonNegative: check(
       "shop_orders_amount_total_cents_non_negative",
       sql`amount_total_cents IS NULL OR amount_total_cents >= 0`,
+    ),
+    statusEnum: check(
+      "shop_orders_status_enum",
+      sql`${t.status} IN ('pending','paid','refunded','expired','failed')`,
     ),
   }),
 );

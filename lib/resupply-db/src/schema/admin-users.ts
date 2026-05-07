@@ -4,7 +4,7 @@
 // table; it is populated for every active admin / CSR row.
 
 import { sql } from "drizzle-orm";
-import { index, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, text, timestamp } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 
@@ -24,8 +24,8 @@ export const adminUsers = resupplySchema.table(
      * legacy pre-cutover rows.
      */
     authUserId: text("auth_user_id"),
-    role: text("role").notNull().default("agent"),
-    status: text("status").notNull().default("pending"),
+    role: text("role", { enum: ["admin", "agent"] }).notNull().default("agent"),
+    status: text("status", { enum: ["pending", "active", "revoked"] }).notNull().default("pending"),
     displayName: text("display_name"),
     notes: text("notes"),
     invitedBy: text("invited_by"),
@@ -41,10 +41,19 @@ export const adminUsers = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     statusIdx: index("admin_users_status_idx").on(t.status),
+    statusEnum: check(
+      "admin_users_status_enum",
+      sql`${t.status} IN ('pending','active','revoked')`,
+    ),
+    roleEnum: check(
+      "admin_users_role_enum",
+      sql`${t.role} IN ('admin','agent')`,
+    ),
   }),
 );
 

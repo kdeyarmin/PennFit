@@ -280,7 +280,8 @@ router.get("/admin/reminders", async (_req, res) => {
   const rows = await db
     .select()
     .from(reminderSubscriptionsTable)
-    .orderBy(desc(reminderSubscriptionsTable.createdAt));
+    .orderBy(desc(reminderSubscriptionsTable.createdAt))
+    .limit(2000);
   const today = new Date().toISOString().slice(0, 10);
   res.json({
     subscribers: rows.map((r) => {

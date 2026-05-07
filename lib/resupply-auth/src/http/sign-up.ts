@@ -30,10 +30,9 @@ const SignUpBody = z.object({
   displayName: z.string().min(1).max(120).optional(),
 });
 
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
 interface MakeSignUpHandlerOptions {
   productName: string;
+  uiPathPrefix?: string;
 }
 
 export function makeSignUpHandler(
@@ -42,6 +41,7 @@ export function makeSignUpHandler(
 ) {
   const role = deps.signUpRole ?? "customer";
   const now = deps.now ?? (() => new Date());
+  const tokenTtlMs = deps.env.emailTokenTtlHours * 60 * 60 * 1000;
 
   return async function handleSignUp(
     req: Request,
@@ -80,6 +80,7 @@ export function makeSignUpHandler(
     const ctx: AuthEmailContext = {
       productName: options.productName,
       publicBaseUrl: deps.publicBaseUrl,
+      uiPathPrefix: options.uiPathPrefix,
     };
 
     const existing = await deps.repo.findUserByEmail(emailLower);
@@ -138,7 +139,7 @@ export function makeSignUpHandler(
       tokenHash: token.hash,
       userId,
       purpose: "signup_verify",
-      expiresAt: new Date(t.getTime() + TOKEN_TTL_MS),
+      expiresAt: new Date(t.getTime() + tokenTtlMs),
     });
 
     const rendered = renderVerifyEmail(ctx, token.raw);

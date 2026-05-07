@@ -31,8 +31,7 @@ export const physicianFaxOutreach = resupplySchema.table(
     physicianName: text("physician_name").notNull(),
     physicianFaxE164: text("physician_fax_e164").notNull(),
     coverLetterText: text("cover_letter_text").notNull(),
-    status: text("status")
-      .$type<PhysicianFaxOutreachStatus>()
+    status: text("status", { enum: ["pending", "sent", "delivered", "failed"] })
       .notNull()
       .default("pending"),
     vendorRef: text("vendor_ref"),
@@ -47,7 +46,8 @@ export const physicianFaxOutreach = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     patientIdx: index("physician_fax_outreach_patient_idx").on(

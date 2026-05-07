@@ -7,7 +7,7 @@
 // composite index serves directly from disk.
 
 import { sql } from "drizzle-orm";
-import { index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { shopReturns } from "./shop-returns";
 import { resupplySchema } from "./_schema";
@@ -40,6 +40,10 @@ export const shopReturnNotes = resupplySchema.table(
     returnCreatedIdx: index("shop_return_notes_return_created_idx").on(
       t.returnId,
       t.createdAt,
+    ),
+    bodyLength: check(
+      "shop_return_notes_body_max_length",
+      sql`length(${t.body}) <= 10000`,
     ),
   }),
 );

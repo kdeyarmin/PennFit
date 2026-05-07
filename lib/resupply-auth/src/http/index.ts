@@ -35,6 +35,16 @@ export interface AuthRouterOptions {
    * both products from the same code path.
    */
   productName: string;
+  /**
+   * UI path prefix for the verify-email + reset-password links
+   * built into outbound emails. Mount the same router twice to
+   * get two different link prefixes:
+   *   * customer / storefront:  undefined (default)  → /reset-password
+   *   * staff / admin console:  "/admin"             → /admin/reset-password
+   * Must start with `/` and have no trailing slash. Optional;
+   * defaults to no prefix.
+   */
+  uiPathPrefix?: string;
 }
 
 export function makeAuthRouter(

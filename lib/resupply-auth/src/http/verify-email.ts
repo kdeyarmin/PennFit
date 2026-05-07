@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import { hashToken } from "../token";
 
+import { checkLoginRateLimit } from "../rate-limit";
 import { authError } from "./responses";
 import type { AuthDeps } from "./types";
 
@@ -24,7 +25,8 @@ const VerifyBody = z.object({
 // Brute-forcing a 256-bit token is computationally infeasible, but we
 // still rate-limit to prevent DB abuse and repeated failed attempts.
 const VERIFY_RATE_LIMIT = {
-  maxPerIp: 10,
+  maxPerEmail: 10, // keyed to the IP sentinel; email bucket == IP bucket for this endpoint
+  maxPerIp: Infinity, // not used — sentinel encodes the IP
   windowMs: 15 * 60 * 1000,
 };
 
@@ -39,26 +41,23 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
     // Per-endpoint sentinel isolates verify-email failures from sign-in and
     // forgot-password buckets so those counters don't bleed into each other.
     const ipSentinel = `__verify:${ip ?? "unknown"}`;
-    try {
-      const recentIpRequests = await deps.repo.countRecentFailures({
-        emailLower: ipSentinel,
-        ip: null,
-        sinceMs: VERIFY_RATE_LIMIT.windowMs,
-      });
-      if (recentIpRequests >= VERIFY_RATE_LIMIT.maxPerIp) {
-        const retryAfter = Math.ceil(VERIFY_RATE_LIMIT.windowMs / 1000);
-        res.setHeader("Retry-After", String(retryAfter));
-        authError(
-          res,
-          429,
-          "rate_limited",
-          "Too many verification attempts. Please wait a few minutes and try again.",
-          { retryAfterSeconds: retryAfter },
-        );
-        return;
-      }
-    } catch {
-      // Fail open on DB error — don't block legitimate verifications.
+    // checkLoginRateLimit with a sentinel key isolates this endpoint's
+    // counter from sign-in and forgot-password buckets.
+    const rl = await checkLoginRateLimit(
+      deps.repo,
+      { emailLower: ipSentinel, ip: null },
+      VERIFY_RATE_LIMIT,
+    );
+    if (!rl.allowed) {
+      res.setHeader("Retry-After", String(rl.retryAfterSeconds));
+      authError(
+        res,
+        429,
+        "rate_limited",
+        "Too many verification attempts. Please wait a few minutes and try again.",
+        { retryAfterSeconds: rl.retryAfterSeconds },
+      );
+      return;
     }
 
     const parsed = VerifyBody.safeParse(req.body);
@@ -104,6 +103,7 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       action: "auth.email_verified",
       adminUserId: consumed.userId,
       ip,
+      metadata: { token_purpose: consumed.purpose },
     });
 
     res.status(200).json({ ok: true });

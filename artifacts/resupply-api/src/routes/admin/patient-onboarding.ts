@@ -38,6 +38,23 @@ import {
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
+
+// Per-admin write rate limits (B-07). All three limiters key by
+// adminUserId so a compromised account's blast radius is capped
+// without affecting other staff.
+const adminEnrollLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  name: "admin_onboarding_enroll",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+const adminSendDueLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  name: "admin_onboarding_send_due",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const router: IRouter = Router();
 
@@ -105,6 +122,7 @@ router.get("/admin/patients/:id/onboarding", requireAdmin, async (req, res) => {
 router.post(
   "/admin/patients/:id/onboarding/enroll",
   requireAdmin,
+  adminEnrollLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -160,18 +178,31 @@ router.post(
       return;
     }
 
-    const inserted = await db
-      .insert(patientOnboardingJourneys)
-      .values({
-        patientId,
-        startedAt,
-        enrolledByEmail: req.adminEmail ?? "<unknown>",
-        enrolledByUserId: req.adminUserId ?? null,
-      })
-      .returning({
-        id: patientOnboardingJourneys.id,
-        startedAt: patientOnboardingJourneys.startedAt,
-      });
+    let inserted: { id: string; startedAt: Date }[];
+    try {
+      inserted = await db
+        .insert(patientOnboardingJourneys)
+        .values({
+          patientId,
+          startedAt,
+          enrolledByEmail: req.adminEmail ?? "<unknown>",
+          enrolledByUserId: req.adminUserId ?? null,
+        })
+        .returning({
+          id: patientOnboardingJourneys.id,
+          startedAt: patientOnboardingJourneys.startedAt,
+        });
+    } catch (err) {
+      // Concurrent request beat us to it — the partial unique index on
+      // (patient_id) WHERE status='active' fired. Return the same 409
+      // the pre-check above would have returned rather than bubbling
+      // the raw constraint violation as a 500.
+      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23505") {
+        res.status(409).json({ error: "already_enrolled" });
+        return;
+      }
+      throw err;
+    }
     const row = inserted[0];
     if (!row) {
       throw new Error("INSERT returned no rows");
@@ -268,7 +299,7 @@ router.patch(
   },
 );
 
-router.post("/admin/onboarding/send-due", requireAdmin, async (req, res) => {
+router.post("/admin/onboarding/send-due", requireAdmin, adminSendDueLimiter, async (req, res) => {
   const db = drizzle(getDbPool());
   const now = new Date();
   const cap = 50;

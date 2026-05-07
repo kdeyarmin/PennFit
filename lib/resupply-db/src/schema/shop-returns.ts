@@ -2,7 +2,7 @@
 // See migration 0016_shop_returns.sql for the rationale.
 
 import { sql } from "drizzle-orm";
-import { index, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, integer, text, timestamp } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 import { shopCustomers } from "./shop-customers";
@@ -50,7 +50,9 @@ export const shopReturns = resupplySchema.table(
      * without a fresh `shop_orders` join.
      */
     stripeSessionId: text("stripe_session_id").notNull(),
-    status: text("status").notNull().default("requested"),
+    status: text("status", {
+      enum: ["requested", "approved", "rejected", "shipped_back", "received", "refunded", "replaced", "closed"],
+    }).notNull().default("requested"),
     reason: text("reason").notNull(),
     reasonNote: text("reason_note"),
     resolution: text("resolution"),
@@ -72,7 +74,8 @@ export const shopReturns = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     rejectedAt: timestamp("rejected_at", { withTimezone: true }),
     shippedBackAt: timestamp("shipped_back_at", { withTimezone: true }),
@@ -86,6 +89,10 @@ export const shopReturns = resupplySchema.table(
       t.createdAt,
     ),
     byStatusIdx: index("shop_returns_status_idx").on(t.status, t.createdAt),
+    statusEnum: check(
+      "shop_returns_status_enum",
+      sql`${t.status} IN ('requested','approved','rejected','shipped_back','received','refunded','replaced','closed')`,
+    ),
     // NOTE: migration 0016 also creates a PARTIAL index
     //   "shop_returns_open_per_order_idx" ON (order_id)
     //     WHERE status IN ('requested','approved','shipped_back','received')

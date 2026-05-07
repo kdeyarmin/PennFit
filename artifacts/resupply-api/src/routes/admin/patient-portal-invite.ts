@@ -24,7 +24,7 @@
 // linked auth.users row — no separate status column to keep in sync.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
@@ -39,8 +39,19 @@ import {
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// B-07: 30 invite sends per hour per admin. Each call triggers one
+// email or SMS; 30/hour covers legitimate CSR workflows while capping
+// a compromised-account email-spam scenario.
+const adminInviteLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  name: "admin_portal_invite",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -86,6 +97,7 @@ const inviteBody = z
 router.post(
   "/admin/patients/:id/portal-invite",
   requireAdmin,
+  adminInviteLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -181,6 +193,24 @@ router.post(
     );
     const authUserId = upserted.rows[0]!.id;
 
+    // Guard against a CSR inadvertently (or maliciously) supplying an email
+    // that already belongs to a DIFFERENT patient's portal account. If we
+    // proceeded, that other patient's auth identity would be stitched to
+    // this patient's record — an IDOR vector. Reject with a clear 409.
+    const claimedByOther = await db
+      .select({ id: patients.id })
+      .from(patients)
+      .where(and(eq(patients.portalAuthUserId, authUserId), ne(patients.id, patientId)))
+      .limit(1);
+    if (claimedByOther[0]) {
+      res.status(409).json({
+        error: "email_already_linked",
+        message:
+          "This email address is already linked to a different patient's portal account. Use a different email or contact support.",
+      });
+      return;
+    }
+
     // Issue a 7-day password_reset token.
     const token = issueToken();
     const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
@@ -261,6 +291,7 @@ router.post(
 router.post(
   "/admin/patients/:id/portal-invite/resend",
   requireAdmin,
+  adminInviteLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {

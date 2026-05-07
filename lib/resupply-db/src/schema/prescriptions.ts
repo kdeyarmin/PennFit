@@ -70,7 +70,8 @@ export const prescriptions = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
 
     // Document attachment metadata. The bytes themselves live in
     // App Storage (GCS) under PRIVATE_OBJECT_DIR, gated by the

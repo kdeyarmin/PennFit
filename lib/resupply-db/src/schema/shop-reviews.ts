@@ -77,7 +77,9 @@ export const shopReviews = resupplySchema.table(
      */
     authorEmail: text("author_email").notNull(),
     /** See ShopReviewStatus jsdoc above. */
-    status: text("status").notNull().default("pending"),
+    status: text("status", {
+      enum: ["pending", "approved", "rejected"],
+    }).notNull().default("pending"),
     /** Admin's reason when status='rejected'. ≤500 chars. */
     moderationNote: text("moderation_note"),
     /** When the most recent moderation decision was applied. */
@@ -90,7 +92,8 @@ export const shopReviews = resupplySchema.table(
     /** Touched on every PATCH; used for ordering author's own view. */
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     /**

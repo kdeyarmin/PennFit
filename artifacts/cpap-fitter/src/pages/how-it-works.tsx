@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { openPennBot } from "@/lib/chat-events";
 import {
   Card,
   CardContent,
@@ -391,6 +392,21 @@ export function HowItWorks() {
               Shop CPAP supplies
             </Button>
           </Link>
+          <Button
+            size="lg"
+            type="button"
+            variant="ghost"
+            onClick={() =>
+              openPennBot({
+                prefill: "How does the on-device fitter work, exactly?",
+              })
+            }
+            className="w-full sm:w-auto h-12 px-8 rounded-full gap-2 text-muted-foreground hover:text-primary"
+            data-testid="how-it-works-ask-pennbot"
+          >
+            <Sparkles className="w-4 h-4" />
+            Ask PennBot
+          </Button>
         </div>
       </section>
     </div>

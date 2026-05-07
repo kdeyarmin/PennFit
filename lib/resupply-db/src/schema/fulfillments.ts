@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 import { episodes } from "./episodes";
 import { patients } from "./patients";
@@ -30,7 +30,7 @@ export const fulfillments = resupplySchema.table(
       .references(() => episodes.id, { onDelete: "cascade" }),
 
     itemSku: text("item_sku").notNull(),
-    quantity: text("quantity").notNull().default("1"),
+    quantity: integer("quantity").notNull().default(1),
 
     status: text("status", {
       enum: [
@@ -66,7 +66,8 @@ export const fulfillments = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     patientIdx: index("fulfillments_patient_idx").on(t.patientId),

@@ -32,6 +32,7 @@ import { registerPrescriptionAttachmentSweepJob } from "./jobs/prescription-atta
 import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator.js";
 import { registerSmartTriggerSendJob } from "./jobs/smart-trigger-send.js";
 import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
+import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -86,10 +87,14 @@ export async function startWorker(): Promise<void> {
   // trigger send so we don't double-burst the email vendor).
   // Email then SMS; both channels share renewal_requested_at.
   await registerRxRenewalSendJob(boss);
+  // D-12 — daily prune of expired idempotency_keys rows.
+  // Rows past their 24h TTL are functionally inert (treated as misses
+  // by the middleware) but accumulate indefinitely without a prune.
+  await registerIdempotencyKeysPruneJob(boss);
 
   workerReady = true;
   logger.info(
-    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep + smart-trigger-evaluator + smart-trigger-send + rx-renewal-send scheduled)",
+    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep + smart-trigger-evaluator + smart-trigger-send + rx-renewal-send + idempotency-keys-prune scheduled)",
   );
 }
 

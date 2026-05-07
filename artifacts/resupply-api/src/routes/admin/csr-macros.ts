@@ -60,7 +60,8 @@ router.get("/admin/csr-macros", requireAdmin, async (req, res) => {
     .select()
     .from(csrMacros)
     .where(includeInactive ? undefined : eq(csrMacros.isActive, true))
-    .orderBy(asc(csrMacros.sortOrder), asc(csrMacros.label));
+    .orderBy(asc(csrMacros.sortOrder), asc(csrMacros.label))
+    .limit(500);
   res.json({ macros: rows.map(serialize) });
 });
 

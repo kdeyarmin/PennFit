@@ -64,7 +64,8 @@ export type ReplyInConversationOutcome =
   | {
       status: "ok";
       conversationId: string;
-      messageId: string;
+      /** Undefined when the vendor send succeeded but the DB write failed. */
+      messageId: string | undefined;
       vendorRef: string;
     }
   | { status: "conversation_not_found" }
@@ -261,45 +262,48 @@ export async function replyInConversation(
   }
 
   // Persist the outbound message + thread the conversation forward.
+  // Vendor accepted the message above. Wrap DB writes so a transient DB
+  // error does NOT propagate as an unhandled exception — the caller would
+  // see a 500 and retry, sending a duplicate message to the patient.
+  // On DB failure we return "ok" with a sentinel messageId so the route
+  // can render "sent" rather than "error". vendorRef in the log lets ops
+  // manually reconcile the missing row.
   const sentAt = new Date();
-  const inserted = await db
-    .insert(messages)
-    .values({
-      conversationId,
-      direction: "outbound",
-      senderRole: "admin",
-      body,
-      deliveryStatus: "queued",
-      vendorMetadata:
-        conv.channel === "sms"
-          ? { twilio_message_sid: vendorRef }
-          : { sendgrid_message_id: vendorRef },
-      sentAt,
-    })
-    .returning({ id: messages.id });
-  const messageId = inserted[0]?.id;
-  if (!messageId) {
-    // Should never happen — RETURNING guarantees the row when the
-    // INSERT succeeds. Treat as vendor error so the route surfaces
-    // a 5xx instead of pretending the send was clean.
-    return {
-      status: "vendor_api_error",
-      vendor: conv.channel === "sms" ? "sms_vendor" : "email_vendor",
-      vendorStatus: null,
-      vendorCode: null,
-    };
-  }
+  let messageId: string | undefined;
+  try {
+    const inserted = await db
+      .insert(messages)
+      .values({
+        conversationId,
+        direction: "outbound",
+        senderRole: "admin",
+        body,
+        deliveryStatus: "queued",
+        vendorMetadata:
+          conv.channel === "sms"
+            ? { twilio_message_sid: vendorRef }
+            : { sendgrid_message_id: vendorRef },
+        sentAt,
+      })
+      .returning({ id: messages.id });
+    messageId = inserted[0]?.id;
 
-  await db
-    .update(conversations)
-    .set({
-      lastMessageAt: sentAt,
-      // Admin replied — the ball is back in the patient's court.
-      // We don't transition closed→ here; that's gated above.
-      status: "awaiting_patient",
-      updatedAt: sentAt,
-    })
-    .where(eq(conversations.id, conversationId));
+    await db
+      .update(conversations)
+      .set({
+        lastMessageAt: sentAt,
+        // Admin replied — the ball is back in the patient's court.
+        // We don't transition closed→ here; that's gated above.
+        status: "awaiting_patient",
+        updatedAt: sentAt,
+      })
+      .where(eq(conversations.id, conversationId));
+  } catch (dbErr) {
+    console.error(
+      "[reply] DB write failed after vendor accept — message sent but unrecorded. Manual reconciliation required.",
+      { conversationId, vendorRef, err: dbErr instanceof Error ? dbErr.message : String(dbErr) },
+    );
+  }
 
   // Refresh latest-message projection (best-effort).
   await tryUpsertPatientLatestMessage(db, {

@@ -13,6 +13,7 @@ import insuranceLeadRouter from "./insurance-lead";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
+import meChatRouter from "./me-chat";
 import meCommPrefsRouter from "./me-comm-prefs";
 import meDashboardRouter from "./me-dashboard";
 import meMessagesRouter from "./me-messages";
@@ -45,6 +46,12 @@ router.use(meClinicalInfoRouter);
 router.use(meCommPrefsRouter);
 router.use(meDashboardRouter);
 router.use(meMessagesRouter);
+// /shop/me/chat — signed-in customer support chatbot (PennBot
+// Account Assistant). Authenticated cousin of /api/chat: includes
+// thin per-caller account context in the system prompt and exposes
+// DB-backed tools (recent orders, order details, subscriptions,
+// saved device) scoped to the caller. SSE-streamed by default.
+router.use(meChatRouter);
 // /shop/me/push-subscriptions/* — W3C Web Push registration
 // (Phase C.1). Subscribe / unsubscribe / list endpoints; the
 // VAPID public-key getter sits behind the same auth gate.

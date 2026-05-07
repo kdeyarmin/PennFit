@@ -68,6 +68,7 @@ import {
 import { logger } from "../../lib/logger";
 import { createOpenAiFallbackAdapter } from "../../lib/messaging/ai-fallback-impl";
 import { ingestInboundMmsMedia } from "../../lib/messaging/ingest-mms";
+import { rateLimit } from "../../middlewares/rate-limit";
 import {
   readMessagingConfigOrNull,
   readSmsConfigOrNull,
@@ -100,6 +101,21 @@ function getAiAdapter(): AiFallbackAdapter | null {
   }
 }
 
+// Per-phone rate limit: 20 inbound keyword messages per hour per sender.
+// Prevents a single patient (or a spoofed number) from flooding the
+// keyword router and triggering many resupply orders in a short window.
+// The signature middleware runs first (guaranteeing the From number is
+// authentic) so this key can't be forged by an outside caller.
+const smsPhoneLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  name: "sms_inbound_per_phone",
+  keyFn: (req) => {
+    const from = req.body?.From;
+    return typeof from === "string" && from.length > 0 ? from : "unknown";
+  },
+});
+
 const signatureMiddleware = requireTwilioSignature({
   getAuthToken: () => readSmsConfigOrNull()?.twilioAuthToken,
   buildPublicUrl: (req) => {
@@ -110,7 +126,7 @@ const signatureMiddleware = requireTwilioSignature({
   },
 });
 
-router.post("/sms/inbound", signatureMiddleware, async (req, res) => {
+router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, res) => {
   const cfg = readMessagingConfigOrNull();
   if (!cfg) {
     // Vendor-only path; respond 503 in TwiML so Twilio surfaces a

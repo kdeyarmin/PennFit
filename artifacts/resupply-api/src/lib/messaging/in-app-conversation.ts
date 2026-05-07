@@ -28,7 +28,7 @@
 //   v1 we simply flip status back to "awaiting_admin" on customer
 //   messages and never auto-archive — keeps the inbox simple.
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import {
@@ -134,12 +134,11 @@ export async function fetchInAppThread(input: {
     })
     .from(messages)
     .where(eq(messages.conversationId, conv.id))
-    .orderBy(asc(messages.createdAt));
+    .orderBy(asc(messages.createdAt))
+    .limit(500);
 
-  // Compute unread-from-CSR. Walk the message list once; cheaper
-  // than a second SQL aggregate when v1 thread sizes are tens of
-  // messages. If we ever see threads with hundreds of messages we
-  // can push this into a SQL count(*) FILTER (WHERE …).
+  // Compute unread-from-CSR. Walk the message list once; acceptable
+  // because the fetch is capped at 500 rows above.
   const lastReadMs = conv.customerLastReadAt?.getTime() ?? 0;
   let unreadFromCsr = 0;
   for (const m of msgRows) {
@@ -204,21 +203,18 @@ export async function fetchInAppUnreadCount(input: {
     .limit(1);
   const conv = convRows[0];
   if (!conv) return 0;
-  const msgRows = await db
-    .select({ createdAt: messages.createdAt })
+  const lastReadAt = conv.customerLastReadAt ?? new Date(0);
+  const countRows = await db
+    .select({ n: count() })
     .from(messages)
     .where(
       and(
         eq(messages.conversationId, conv.id),
         eq(messages.direction, "outbound"),
+        gt(messages.createdAt, lastReadAt),
       ),
     );
-  const lastReadMs = conv.customerLastReadAt?.getTime() ?? 0;
-  let count = 0;
-  for (const m of msgRows) {
-    if (m.createdAt.getTime() > lastReadMs) count += 1;
-  }
-  return count;
+  return countRows[0]?.n ?? 0;
 }
 
 /**

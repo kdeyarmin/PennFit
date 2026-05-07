@@ -54,6 +54,12 @@ export async function registerRxRenewalSendJob(boss: PgBoss): Promise<void> {
       userAgent: null,
     };
 
+    // Run both channels regardless of individual failures so one
+    // broken channel doesn't block the other. Collect errors and
+    // re-throw at the end so pg-boss marks the job failed and the
+    // SOC monitor can see the gap in the schedule.
+    const channelErrors: Error[] = [];
+
     // Email first — higher delivery rate + cheaper than SMS.
     try {
       const emailOutcome = await runRxRenewalSendDue("email", actor);
@@ -73,6 +79,7 @@ export async function registerRxRenewalSendJob(boss: PgBoss): Promise<void> {
         { channel: "email", err },
         "rx-renewal.send-due: email channel threw",
       );
+      channelErrors.push(err instanceof Error ? err : new Error(String(err)));
     }
 
     // Then SMS — mops up patients with no email on file.
@@ -93,6 +100,14 @@ export async function registerRxRenewalSendJob(boss: PgBoss): Promise<void> {
       logger.error(
         { channel: "sms", err },
         "rx-renewal.send-due: SMS channel threw",
+      );
+      channelErrors.push(err instanceof Error ? err : new Error(String(err)));
+    }
+
+    if (channelErrors.length > 0) {
+      throw new AggregateError(
+        channelErrors,
+        `rx-renewal.send-due: ${channelErrors.length} channel(s) failed`,
       );
     }
   });

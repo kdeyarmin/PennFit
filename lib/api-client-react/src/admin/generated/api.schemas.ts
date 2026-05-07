@@ -840,7 +840,7 @@ export interface PatientFulfillmentSummary {
   id: string;
   episodeId: string;
   itemSku: string;
-  quantity: string;
+  quantity: number;
   status: PatientFulfillmentSummaryStatus;
   pacwareOrderRef?: string | null;
   submittedAt?: string | null;

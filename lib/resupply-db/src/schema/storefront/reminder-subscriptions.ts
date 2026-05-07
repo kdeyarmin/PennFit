@@ -68,7 +68,8 @@ export const reminderSubscriptionsTable = pgTable(
       .defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     emailUniqueIdx: uniqueIndex("reminder_subscriptions_email_unique_idx").on(

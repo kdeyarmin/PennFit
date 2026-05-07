@@ -48,7 +48,7 @@ describe("rxRenewalPushTitle", () => {
   });
 });
 
-const expectSingleSegmentAsciiSms = (body: string) => {
+const _expectSingleSegmentAsciiSms = (body: string) => {
   // Twilio uses a 160-character limit for single-segment GSM-7/ASCII SMS.
   // Non-ASCII copy edits (for example curly quotes or em dashes) can force
   // UCS-2 encoding and split the message into multiple segments even when
@@ -59,16 +59,36 @@ const expectSingleSegmentAsciiSms = (body: string) => {
 };
 
 describe("rxRenewalSms", () => {
-  it("fits a single ASCII Twilio segment for typical inputs", () => {
-    // 160-char segment limit; we also pin ASCII-only content so copy edits
-    // don't silently switch the SMS to UCS-2 and reduce segment capacity.
-    expectSingleSegmentAsciiSms(rxRenewalSms("Anna", 7));
-    expectSingleSegmentAsciiSms(rxRenewalSms("", 30));
-    // Worst-case name length (11 chars) still stays under 160.
-    expectSingleSegmentAsciiSms(rxRenewalSms("Christopher", 99));
+  it("fits a single Twilio segment for typical inputs (≤160 chars AND ASCII-only)", () => {
+    // Length alone isn't enough — Twilio switches to UCS-2 when ANY
+    // codepoint is ≥ 128, dropping the per-segment limit from 160
+    // to 70. A future em-dash/curly-quote regression would split
+    // this message even at length=120, so the test asserts both
+    // properties.
+    for (const fixture of [
+      ["Anna", 7],
+      ["", 30],
+      ["Anna", 0],
+      ["Anna", 1],
+      ["Maximilian", 30],
+    ] as const) {
+      const body = rxRenewalSms(fixture[0], fixture[1]);
+      expect(
+        body.length,
+        `length for ${JSON.stringify(fixture)}`,
+      ).toBeLessThanOrEqual(160);
+      const offenders = [...body].filter((c) => (c.codePointAt(0) ?? 0) >= 128);
+      expect(
+        offenders,
+        `non-ASCII chars in ${JSON.stringify(fixture)}: ${offenders.join("|")}`,
+      ).toEqual([]);
+    }
   });
 
-  it("includes 'STOP to opt out' for opt-out compliance", () => {
+  it("uses carrier-recommended 'STOP to opt out' wording", () => {
+    // Other SMS surfaces in the codebase use the full phrase. A
+    // shorter "Reply STOP." weakens A2P compliance posture and
+    // diverges from the rest of the dispatcher fleet.
     expect(rxRenewalSms("Bob", 7)).toContain("STOP to opt out");
   });
 

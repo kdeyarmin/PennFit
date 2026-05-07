@@ -570,6 +570,13 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         ORDER BY created_at ASC
         LIMIT 1
       ),
+      max_outbound AS (
+        SELECT m.conversation_id, MAX(m.created_at) AS max_at
+        FROM resupply.messages m
+        JOIN conv c ON c.id = m.conversation_id
+        WHERE m.direction = 'outbound'
+        GROUP BY m.conversation_id
+      ),
       msg_stats AS (
         SELECT
           c.id AS conversation_id,
@@ -580,19 +587,12 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
             AS last_outbound_at,
           COUNT(m.id) FILTER (
             WHERE m.direction = 'inbound'
-              AND (
-                (SELECT MAX(m2.created_at) FROM resupply.messages m2
-                  WHERE m2.conversation_id = c.id AND m2.direction = 'outbound'
-                ) IS NULL
-                OR m.created_at > (
-                  SELECT MAX(m2.created_at) FROM resupply.messages m2
-                  WHERE m2.conversation_id = c.id AND m2.direction = 'outbound'
-                )
-              )
+              AND m.created_at > COALESCE(mo.max_at, '-infinity'::timestamptz)
           )::int AS unread_from_customer
         FROM conv c
         LEFT JOIN resupply.messages m ON m.conversation_id = c.id
-        GROUP BY c.id
+        LEFT JOIN max_outbound mo ON mo.conversation_id = c.id
+        GROUP BY c.id, mo.max_at
       )
       SELECT
         c.id                       AS id,
