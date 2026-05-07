@@ -788,16 +788,16 @@ export function recommend(
 
     return {
       recommendation,
+      sortScore: rawScore,
       hasContraindications:
         activeContras.length > 0 || pressureMultiplier < 1.0,
       maskType: mask.type,
     };
   });
 
-  // Sort by confidence descending
-  scoredMasks.sort(
-    (a, b) => b.recommendation.confidence - a.recommendation.confidence,
-  );
+  // Sort by unclamped raw score so boosted masks can still outrank
+  // otherwise-equivalent peers even when display confidence is capped at 1.0.
+  scoredMasks.sort((a, b) => b.sortScore - a.sortScore);
 
   // Top 3 non-contraindicated recommendations
   const nonContraindicated = scoredMasks.filter((m) => !m.hasContraindications);
@@ -832,8 +832,7 @@ export function recommend(
         .find(
           (m) =>
             m.maskType !== top1Type &&
-            m.recommendation.confidence >=
-              slot3Default.recommendation.confidence - 0.2,
+            m.sortScore >= slot3Default.sortScore - 0.2,
         );
       topRecommendations.push((alt ?? slot3Default).recommendation);
     } else {

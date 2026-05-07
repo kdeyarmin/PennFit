@@ -202,17 +202,23 @@ describe("recommend — React Health manufacturer boost", () => {
     expect(ivolveP2!.confidence).toBeGreaterThan(airfitP10!.confidence);
   });
 
-  it("gives the React Health iVolve P2 a higher confidence than the ResMed AirFit P10 for a broadly viable profile", () => {
-    // Generic, no strong contraindications. Verify the manufacturer boost
-    // directly via an otherwise-comparable React vs non-React pair rather
-    // than relying on whichever masks happen to land in the top 3.
-    const result = recommend(PROFILE_MEASUREMENTS, answers());
+  it("keeps iVolve P2 ranked ahead of AirFit P10 by list order when both are viable", () => {
+    const result = recommend(
+      PROFILE_MEASUREMENTS,
+      answers({
+        claustrophobic: true,
+        sideOrStomachSleeper: true,
+        cpapPressureSetting: "low",
+      }),
+    );
     const all = [...result.topRecommendations, ...result.alternatives];
-    const ivolveP2 = all.find((m) => m.maskId === "react-health-ivolve-p2");
-    const airfitP10 = all.find((m) => m.maskId === "resmed-airfit-p10");
-    expect(ivolveP2).toBeDefined();
-    expect(airfitP10).toBeDefined();
-    expect(ivolveP2!.confidence).toBeGreaterThan(airfitP10!.confidence);
+    const ivolveP2Index = all.findIndex(
+      (m) => m.maskId === "react-health-ivolve-p2",
+    );
+    const airfitP10Index = all.findIndex((m) => m.maskId === "resmed-airfit-p10");
+    expect(ivolveP2Index).toBeGreaterThanOrEqual(0);
+    expect(airfitP10Index).toBeGreaterThanOrEqual(0);
+    expect(ivolveP2Index).toBeLessThan(airfitP10Index);
   });
 
   it("does NOT promote a clinically-inappropriate React Health pillow over a viable full-face mask for a heavy mouth breather", () => {
