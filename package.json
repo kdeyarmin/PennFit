@@ -22,7 +22,8 @@
   "pnpm": {
     "overrides": {
       "ip-address": ">=10.1.1",
-      "esbuild": ">=0.25.0"
+      "esbuild": ">=0.25.0",
+      "@tootallnate/once": ">=3.0.1"
     }
   },
   "devDependencies": {
