@@ -1,0 +1,768 @@
+/**
+ * POST /shop/me/chat — signed-in customer support chatbot.
+ *
+ * The signed-in cousin of /api/chat. Where the public PennBot answers
+ * pre-purchase questions over a static catalog, this bot answers the
+ * questions a current PennPaps patient asks AFTER they have an
+ * account: "where is my order", "did my last subscription bill",
+ * "what machine did I tell you about", "how do I cancel auto-ship".
+ *
+ * It runs behind `requireSignedIn`, so we know `req.userCustomerId`
+ * is set. The route attaches a thin slice of customer context to the
+ * system prompt (latest order summary, total order count, saved
+ * device, active subscription count) and exposes four DB-backed
+ * tools — `get_my_recent_orders`, `get_order_details`,
+ * `get_my_subscriptions`, `get_my_device` — scoped to the caller.
+ *
+ * Response modes (content negotiated):
+ *   - Default JSON mode: returns `{ reply, offline?, degraded? }`.
+ *     Used by tests and any non-streaming caller.
+ *   - SSE streaming mode (`Accept: text/event-stream`): emits
+ *     `data: {type:"chunk",text:"..."}` lines for each model delta
+ *     and a terminal `data: {type:"done", offline?, degraded?}`.
+ *
+ * Privacy posture (extension of /api/chat):
+ *   - Auth required. The tool dispatcher passes only the resolved
+ *     customerId; tools filter every read on `customer_id = ?`.
+ *   - Same outbound PII scrub the public bot uses (defence-in-depth;
+ *     the system prompt also forbids echoing PHI).
+ *   - We do not log request bodies, tool args, or tool results —
+ *     only counts of turns, rounds, and reply chars. Order request
+ *     bodies in particular contain PHI (per CLAUDE.md "hard rules").
+ *   - The system prompt explicitly tells the model never to ask for
+ *     SSN / DOB / member ID / full card.
+ *
+ * Failure modes mirror /api/chat:
+ *   - `OPENAI_API_KEY` unset → friendly "chat is offline" reply with
+ *     `offline: true`. Endpoint stays 200.
+ *   - Upstream HTTP error / abort / malformed JSON → "having trouble
+ *     answering" reply with `degraded: true`. We never throw out of
+ *     the route.
+ */
+
+import { Router, type IRouter, type Response } from "express";
+import { z } from "zod";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { and, count, desc, eq } from "drizzle-orm";
+
+import {
+  getDbPool,
+  shopCustomers,
+  shopOrders,
+  shopSubscriptions,
+} from "@workspace/resupply-db";
+
+import { logger } from "../../lib/logger.js";
+import {
+  buildCustomerChatSystemPrompt,
+  CUSTOMER_OFFLINE_FALLBACK_REPLY,
+  MAX_CUSTOMER_CHAT_TURNS,
+  MAX_CUSTOMER_USER_MESSAGE_CHARS,
+  type CustomerChatAccountContext,
+} from "../../lib/storefront/customerChatKnowledge.js";
+import {
+  CUSTOMER_CHAT_TOOLS,
+  MAX_CUSTOMER_TOOL_ROUNDS,
+  executeCustomerChatTool,
+  serializeCustomerToolResult,
+  type CustomerChatToolContext,
+} from "../../lib/storefront/customerChatTools.js";
+import { redactPiiForOutbound } from "../../lib/storefront/chatbotPii.js";
+import { requireSignedIn } from "../../middlewares/requireSignedIn.js";
+
+const router: IRouter = Router();
+
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+const DEGRADED_FALLBACK_REPLY =
+  "I'm having trouble answering right now. Please try again in a minute, or reach our team at (814) 471-0627 (Mon-Fri 9-5 ET) or support@pennpaps.com — they can answer anything I can't.";
+
+const chatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(MAX_CUSTOMER_USER_MESSAGE_CHARS),
+});
+
+const chatBodySchema = z
+  .object({
+    messages: z.array(chatMessageSchema).min(1).max(MAX_CUSTOMER_CHAT_TURNS),
+  })
+  .strict();
+
+/** OpenAI message shape, including tool roles. */
+type OpenAiMessage =
+  | { role: "system"; content: string }
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls?: OpenAiToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+interface OpenAiToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+interface OpenAiChatResponse {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+      tool_calls?: OpenAiToolCall[];
+    };
+    finish_reason?: string;
+  }>;
+}
+
+interface OpenAiStreamDelta {
+  choices?: Array<{
+    delta?: {
+      content?: string;
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+    finish_reason?: string | null;
+  }>;
+}
+
+let fetchImplOverride: typeof fetch | undefined;
+export function __setCustomerChatFetchForTests(
+  impl: typeof fetch | undefined,
+): void {
+  fetchImplOverride = impl;
+}
+
+function wantsStreaming(acceptHeader: string | undefined): boolean {
+  if (!acceptHeader) return false;
+  return acceptHeader.toLowerCase().includes("text/event-stream");
+}
+
+function writeSseEvent(res: Response, payload: object): void {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function startSseHeaders(res: Response): void {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+}
+
+/**
+ * Pull a small, deterministic, non-PHI-heavy slice of the caller's
+ * account state to inject into the system prompt. A single failure
+ * here must not break the chat: any error degrades to "no context"
+ * rather than aborting the request.
+ */
+async function loadAccountContext(
+  db: NodePgDatabase,
+  customerId: string,
+  displayName: string | null,
+): Promise<CustomerChatAccountContext> {
+  const empty: CustomerChatAccountContext = {
+    displayName,
+    memberSince: null,
+    totalPaidOrders: 0,
+    latestOrder: null,
+    activeSubscriptionCount: 0,
+    device: null,
+  };
+
+  try {
+    const [customerRow] = await db
+      .select({
+        cpapDevice: shopCustomers.cpapDevice,
+        createdAt: shopCustomers.createdAt,
+      })
+      .from(shopCustomers)
+      .where(eq(shopCustomers.customerId, customerId))
+      .limit(1);
+
+    const memberSince = customerRow?.createdAt
+      ? formatYearMonth(customerRow.createdAt)
+      : null;
+    const device = customerRow?.cpapDevice
+      ? {
+          manufacturer: customerRow.cpapDevice.manufacturer,
+          model: customerRow.cpapDevice.model,
+          pressureSetting: customerRow.cpapDevice.pressureSetting ?? null,
+        }
+      : null;
+
+    const [orderCountRow] = await db
+      .select({ value: count() })
+      .from(shopOrders)
+      .where(
+        and(
+          eq(shopOrders.customerId, customerId),
+          eq(shopOrders.status, "paid"),
+        ),
+      );
+    const totalPaidOrders = Number(orderCountRow?.value ?? 0);
+
+    const [latestOrder] = await db
+      .select({
+        id: shopOrders.id,
+        sessionId: shopOrders.stripeSessionId,
+        amountTotalCents: shopOrders.amountTotalCents,
+        paidAt: shopOrders.paidAt,
+        shippedAt: shopOrders.shippedAt,
+        deliveredAt: shopOrders.deliveredAt,
+        trackingCarrier: shopOrders.trackingCarrier,
+        trackingNumber: shopOrders.trackingNumber,
+        shippingAddress: shopOrders.shippingAddress,
+      })
+      .from(shopOrders)
+      .where(
+        and(
+          eq(shopOrders.customerId, customerId),
+          eq(shopOrders.status, "paid"),
+        ),
+      )
+      .orderBy(desc(shopOrders.paidAt), desc(shopOrders.id))
+      .limit(1);
+
+    // "Non-canceled" — anything still billable or recoverable. We
+    // deliberately INCLUDE paused / past_due / unpaid so the bot can
+    // warn the user about a card failure on its own. Terminal states
+    // (canceled, incomplete_expired) are filtered client-side; the
+    // count stays well under any practical upper bound (tens at most
+    // per customer) so a single SELECT is fine.
+    const subRows = await db
+      .select({ status: shopSubscriptions.status })
+      .from(shopSubscriptions)
+      .where(eq(shopSubscriptions.customerId, customerId));
+    const activeSubscriptionCount = subRows.filter(
+      (s) => s.status !== "canceled" && s.status !== "incomplete_expired",
+    ).length;
+
+    const latestOrderCtx = latestOrder
+      ? {
+          orderId: latestOrder.id,
+          sessionId: latestOrder.sessionId,
+          amountTotalCents: latestOrder.amountTotalCents ?? 0,
+          paidAt: latestOrder.paidAt
+            ? latestOrder.paidAt.toISOString().slice(0, 10)
+            : "",
+          shippedAt: latestOrder.shippedAt
+            ? latestOrder.shippedAt.toISOString().slice(0, 10)
+            : null,
+          deliveredAt: latestOrder.deliveredAt
+            ? latestOrder.deliveredAt.toISOString().slice(0, 10)
+            : null,
+          trackingCarrier: latestOrder.trackingCarrier,
+          trackingNumber: latestOrder.trackingNumber,
+          shipCityState:
+            latestOrder.shippingAddress?.city &&
+            latestOrder.shippingAddress?.state
+              ? `${latestOrder.shippingAddress.city}, ${latestOrder.shippingAddress.state}`
+              : null,
+        }
+      : null;
+
+    return {
+      displayName,
+      memberSince,
+      totalPaidOrders,
+      latestOrder: latestOrderCtx,
+      activeSubscriptionCount,
+      device,
+    };
+  } catch (err) {
+    logger.warn(
+      {
+        event: "customer_chat_context_load_failed",
+        err: err instanceof Error ? { name: err.name } : { name: "unknown" },
+      },
+      "customer chat: failed to load account context, proceeding with empty",
+    );
+    return empty;
+  }
+}
+
+function formatYearMonth(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function buildInitialMessages(
+  systemPrompt: string,
+  userTurns: z.infer<typeof chatBodySchema>["messages"],
+): { messages: OpenAiMessage[]; redactionCounts: Record<string, number> } {
+  const aggregateCounts: Record<string, number> = {};
+  const messages: OpenAiMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...userTurns.map((m): OpenAiMessage => {
+      if (m.role === "user") {
+        const { text, counts } = redactPiiForOutbound(m.content);
+        for (const [k, n] of Object.entries(counts)) {
+          aggregateCounts[k] = (aggregateCounts[k] ?? 0) + n;
+        }
+        return { role: "user", content: text };
+      }
+      return { role: "assistant", content: m.content };
+    }),
+  ];
+  return { messages, redactionCounts: aggregateCounts };
+}
+
+async function applyToolCalls(
+  messages: OpenAiMessage[],
+  toolCalls: OpenAiToolCall[],
+  toolCtx: CustomerChatToolContext,
+): Promise<OpenAiMessage[]> {
+  const next: OpenAiMessage[] = [
+    ...messages,
+    { role: "assistant", content: null, tool_calls: toolCalls },
+  ];
+  for (const call of toolCalls) {
+    let parsedArgs: unknown;
+    try {
+      parsedArgs = call.function.arguments
+        ? JSON.parse(call.function.arguments)
+        : {};
+    } catch {
+      parsedArgs = {};
+    }
+    const startedAt = Date.now();
+    const result = await executeCustomerChatTool(
+      call.function.name,
+      parsedArgs,
+      toolCtx,
+    );
+    logger.info(
+      {
+        event: "customer_chat_tool_invoked",
+        tool: call.function.name,
+        ok: result.ok,
+        durationMs: Date.now() - startedAt,
+      },
+      "customer chat: tool executed",
+    );
+    next.push({
+      role: "tool",
+      tool_call_id: call.id,
+      content: serializeCustomerToolResult(result),
+    });
+  }
+  return next;
+}
+
+router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
+  const customerId = req.userCustomerId;
+  if (!customerId) {
+    res.status(401).json({ error: "auth_required" });
+    return;
+  }
+
+  const parseResult = chatBodySchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      error: "Invalid input",
+      details: parseResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+    return;
+  }
+
+  const bodyStr = JSON.stringify(req.body);
+  const base64Pattern = /data:[a-z]+\/[a-z]+;base64,/i;
+  const longStringPattern = /[A-Za-z0-9+/]{1500,}/;
+  if (base64Pattern.test(bodyStr) || longStringPattern.test(bodyStr)) {
+    res.status(400).json({
+      error:
+        "Request body contains unexpected binary or encoded data. Send plain text only.",
+    });
+    return;
+  }
+
+  const { messages } = parseResult.data;
+  const lastMessage = messages.at(-1);
+  if (!lastMessage || lastMessage.role !== "user") {
+    res.status(400).json({
+      error: "The last message must be from the user.",
+    });
+    return;
+  }
+
+  const streaming = wantsStreaming(req.get("Accept"));
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey || apiKey.trim() === "") {
+    logger.info(
+      {
+        event: "customer_chat_openai_unconfigured",
+        turns: messages.length,
+        streaming,
+      },
+      "customer chat: OPENAI_API_KEY not set, returning offline fallback",
+    );
+    if (streaming) {
+      startSseHeaders(res);
+      writeSseEvent(res, {
+        type: "chunk",
+        text: CUSTOMER_OFFLINE_FALLBACK_REPLY,
+      });
+      writeSseEvent(res, { type: "done", offline: true });
+      res.end();
+    } else {
+      res.json({ reply: CUSTOMER_OFFLINE_FALLBACK_REPLY, offline: true });
+    }
+    return;
+  }
+
+  const db = drizzle(getDbPool());
+  const accountCtx = await loadAccountContext(
+    db,
+    customerId,
+    req.shopCustomerDisplayName ?? null,
+  );
+  const systemPrompt = buildCustomerChatSystemPrompt(accountCtx);
+
+  const { messages: initial, redactionCounts } = buildInitialMessages(
+    systemPrompt,
+    messages,
+  );
+  if (Object.keys(redactionCounts).length > 0) {
+    logger.info(
+      { event: "customer_chat_pii_redacted", counts: redactionCounts },
+      "customer chat: scrubbed PII patterns from outbound user message(s)",
+    );
+  }
+
+  const toolCtx: CustomerChatToolContext = { db, customerId };
+
+  return streaming
+    ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)
+    : handleJson(res, initial, apiKey, toolCtx, messages.length);
+});
+
+async function handleJson(
+  res: Response,
+  initialMessages: OpenAiMessage[],
+  apiKey: string,
+  toolCtx: CustomerChatToolContext,
+  turns: number,
+): Promise<void> {
+  const fetchImpl = fetchImplOverride ?? fetch;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
+  let messages = initialMessages;
+  try {
+    for (let round = 0; round <= MAX_CUSTOMER_TOOL_ROUNDS; round++) {
+      const upstream = await fetchImpl(OPENAI_API_URL, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: DEFAULT_MODEL,
+          temperature: 0.2,
+          max_tokens: 600,
+          tools: CUSTOMER_CHAT_TOOLS,
+          tool_choice: "auto",
+          messages,
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => "");
+        logger.warn(
+          {
+            event: "customer_chat_openai_http_error",
+            status: upstream.status,
+            detail: detail.slice(0, 200),
+          },
+          "customer chat: openai HTTP error",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+
+      const json = (await upstream.json()) as OpenAiChatResponse;
+      const message = json.choices?.[0]?.message;
+      const toolCalls = message?.tool_calls;
+      if (
+        toolCalls &&
+        toolCalls.length > 0 &&
+        round < MAX_CUSTOMER_TOOL_ROUNDS
+      ) {
+        messages = await applyToolCalls(messages, toolCalls, toolCtx);
+        continue;
+      }
+
+      const reply = (message?.content ?? "").trim();
+      if (reply.length === 0) {
+        logger.warn(
+          { event: "customer_chat_empty_reply", round },
+          "customer chat: openai returned empty content",
+        );
+        res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+        return;
+      }
+
+      logger.info(
+        {
+          event: "customer_chat_ok",
+          turns,
+          replyChars: reply.length,
+          rounds: round,
+        },
+        "customer chat: replied",
+      );
+      res.json({ reply });
+      return;
+    }
+    logger.warn(
+      { event: "customer_chat_tool_cap_hit" },
+      "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
+    );
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+  } catch (err) {
+    logger.warn(
+      {
+        event: "customer_chat_exception",
+        err: err instanceof Error ? { name: err.name } : { name: "unknown" },
+      },
+      "customer chat: exception (returning degraded fallback)",
+    );
+    res.json({ reply: DEGRADED_FALLBACK_REPLY, degraded: true });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface StreamRoundResult {
+  content: string;
+  toolCalls: OpenAiToolCall[];
+  finishReason: string | null;
+  degraded: boolean;
+}
+
+async function runStreamingRound(
+  messages: OpenAiMessage[],
+  apiKey: string,
+  signal: AbortSignal,
+  writeChunk: (text: string) => void,
+): Promise<StreamRoundResult> {
+  const fetchImpl = fetchImplOverride ?? fetch;
+  const upstream = await fetchImpl(OPENAI_API_URL, {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      temperature: 0.2,
+      max_tokens: 600,
+      stream: true,
+      tools: CUSTOMER_CHAT_TOOLS,
+      tool_choice: "auto",
+      messages,
+    }),
+  });
+
+  if (!upstream.ok || !upstream.body) {
+    const detail = upstream.body
+      ? await upstream.text().catch(() => "")
+      : "";
+    logger.warn(
+      {
+        event: "customer_chat_openai_http_error",
+        streaming: true,
+        status: upstream.status,
+        detail: detail.slice(0, 200),
+      },
+      "customer chat: openai HTTP error during stream open",
+    );
+    return { content: "", toolCalls: [], finishReason: null, degraded: true };
+  }
+
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let finishReason: string | null = null;
+  const toolAccumulator = new Map<
+    number,
+    { id: string; name: string; argumentsJson: string }
+  >();
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+
+      for (const line of rawEvent.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (payload === "" || payload === "[DONE]") continue;
+        let parsed: OpenAiStreamDelta;
+        try {
+          parsed = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        const choice = parsed.choices?.[0];
+        if (!choice) continue;
+        if (typeof choice.finish_reason === "string") {
+          finishReason = choice.finish_reason;
+        }
+        const delta = choice.delta;
+        if (!delta) continue;
+        if (typeof delta.content === "string" && delta.content.length > 0) {
+          content += delta.content;
+          writeChunk(delta.content);
+        }
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index;
+            const existing = toolAccumulator.get(idx);
+            if (existing) {
+              if (tc.id) existing.id = tc.id;
+              if (tc.function?.name) existing.name = tc.function.name;
+              if (typeof tc.function?.arguments === "string") {
+                existing.argumentsJson += tc.function.arguments;
+              }
+            } else {
+              toolAccumulator.set(idx, {
+                id: tc.id ?? "",
+                name: tc.function?.name ?? "",
+                argumentsJson: tc.function?.arguments ?? "",
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const toolCalls: OpenAiToolCall[] = [];
+  for (const acc of toolAccumulator.values()) {
+    if (!acc.name) continue;
+    toolCalls.push({
+      id: acc.id || `call_${toolCalls.length}`,
+      type: "function",
+      function: { name: acc.name, arguments: acc.argumentsJson },
+    });
+  }
+
+  return { content, toolCalls, finishReason, degraded: false };
+}
+
+async function handleStreaming(
+  res: Response,
+  initialMessages: OpenAiMessage[],
+  apiKey: string,
+  toolCtx: CustomerChatToolContext,
+  turns: number,
+): Promise<void> {
+  startSseHeaders(res);
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
+
+  let messages = initialMessages;
+  let totalChars = 0;
+  let degraded = false;
+
+  const writeChunk = (text: string) => {
+    totalChars += text.length;
+    writeSseEvent(res, { type: "chunk", text });
+  };
+
+  try {
+    for (let round = 0; round <= MAX_CUSTOMER_TOOL_ROUNDS; round++) {
+      const result = await runStreamingRound(
+        messages,
+        apiKey,
+        ctrl.signal,
+        writeChunk,
+      );
+      if (result.degraded) {
+        if (totalChars === 0) {
+          writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        }
+        writeSseEvent(res, { type: "done", degraded: true });
+        res.end();
+        return;
+      }
+      if (
+        result.toolCalls.length > 0 &&
+        round < MAX_CUSTOMER_TOOL_ROUNDS &&
+        result.finishReason === "tool_calls"
+      ) {
+        messages = await applyToolCalls(messages, result.toolCalls, toolCtx);
+        continue;
+      }
+      if (totalChars === 0) {
+        logger.warn(
+          { event: "customer_chat_empty_reply", streaming: true, round },
+          "customer chat: openai stream returned no content",
+        );
+        writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+        degraded = true;
+      }
+      logger.info(
+        {
+          event: "customer_chat_ok",
+          streaming: true,
+          turns,
+          replyChars: totalChars,
+          rounds: round + 1,
+          degraded,
+        },
+        "customer chat: streamed reply",
+      );
+      writeSseEvent(
+        res,
+        degraded ? { type: "done", degraded: true } : { type: "done" },
+      );
+      res.end();
+      return;
+    }
+    logger.warn(
+      { event: "customer_chat_tool_cap_hit", streaming: true },
+      "customer chat: hit MAX_CUSTOMER_TOOL_ROUNDS without a final reply",
+    );
+    if (totalChars === 0) {
+      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+    }
+    writeSseEvent(res, { type: "done", degraded: true });
+    res.end();
+  } catch (err) {
+    logger.warn(
+      {
+        event: "customer_chat_exception",
+        streaming: true,
+        err: err instanceof Error ? { name: err.name } : { name: "unknown" },
+      },
+      "customer chat: exception during stream (returning degraded fallback)",
+    );
+    if (totalChars === 0) {
+      writeSseEvent(res, { type: "chunk", text: DEGRADED_FALLBACK_REPLY });
+    }
+    writeSseEvent(res, { type: "done", degraded: true });
+    res.end();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export default router;
