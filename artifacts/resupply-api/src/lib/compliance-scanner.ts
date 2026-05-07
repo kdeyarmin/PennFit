@@ -35,9 +35,12 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import {
   csrComplianceAlerts,
   getDbPool,
+  patientCheckinAttempts,
+  patientLatestMessage,
   patientOnboardingJourneys,
   patientTherapyNights,
   type CsrComplianceAlertSeverity,
+  type CsrComplianceAlertType,
 } from "@workspace/resupply-db";
 
 type DbPool = ReturnType<typeof getDbPool>;
@@ -54,15 +57,20 @@ export interface ScanOptions {
 }
 
 export interface ScanSummary {
+  /** Active journeys evaluated for low-usage adherence. */
   scanned: number;
-  /** New alert rows created this run. */
+  /** New alert rows created this run (any alert type). */
   alertsCreated: number;
   /** Existing open alerts whose severity / snapshot was refreshed. */
   alertsUpdated: number;
   /** Active journeys with insufficient elapsed time to score. */
   skippedTooEarly: number;
-  /** Active journeys currently meeting the target. */
+  /** Active journeys currently meeting the adherence target. */
   onTrack: number;
+  /** Patients flagged this run for repeated vendor failures. */
+  sendFailureFlagged: number;
+  /** Patients flagged this run for going dark on outbound nudges. */
+  noResponseFlagged: number;
 }
 
 interface JourneyScanRow {
@@ -95,6 +103,8 @@ export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
   let alertsUpdated = 0;
   let skippedTooEarly = 0;
   let onTrack = 0;
+  let sendFailureFlagged = 0;
+  let noResponseFlagged = 0;
 
   for (const j of journeys) {
     scanned++;
@@ -155,9 +165,10 @@ export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
       target_pct: Math.round(verdict.target * 100),
     };
 
-    const wasUpdated = await upsertLowUsageAlert(db, {
+    const wasUpdated = await upsertOpenAlert(db, {
       patientId: j.patientId,
       journeyId: j.journeyId,
+      alertType: "low_usage",
       severity: verdict.level === "critical" ? "critical" : "warning",
       summary,
       snapshot,
@@ -169,7 +180,213 @@ export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
     }
   }
 
-  return { scanned, alertsCreated, alertsUpdated, skippedTooEarly, onTrack };
+  // Secondary detectors run AFTER the per-journey loop so they get a
+  // single batched query each, regardless of how many active journeys
+  // exist. Both keyed on the same csr_compliance_alerts table — same
+  // upsert helper, distinct alert_type values.
+  const sendFailures = await detectSendFailures(db, now);
+  for (const f of sendFailures) {
+    const wasUpdated = await upsertOpenAlert(db, {
+      patientId: f.patientId,
+      journeyId: f.journeyId,
+      alertType: "send_failure",
+      severity: f.severity,
+      summary: f.summary,
+      snapshot: f.snapshot,
+    });
+    if (wasUpdated) alertsUpdated++;
+    else alertsCreated++;
+    sendFailureFlagged++;
+  }
+
+  const noResponse = await detectNoResponse(db, now);
+  for (const r of noResponse) {
+    const wasUpdated = await upsertOpenAlert(db, {
+      patientId: r.patientId,
+      journeyId: r.journeyId,
+      alertType: "no_response",
+      severity: "warning",
+      summary: r.summary,
+      snapshot: r.snapshot,
+    });
+    if (wasUpdated) alertsUpdated++;
+    else alertsCreated++;
+    noResponseFlagged++;
+  }
+
+  return {
+    scanned,
+    alertsCreated,
+    alertsUpdated,
+    skippedTooEarly,
+    onTrack,
+    sendFailureFlagged,
+    noResponseFlagged,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Send-failure detector
+// ───────────────────────────────────────────────────────────────────
+//
+// Cluster patient_checkin_attempts rows over the last
+// SEND_FAILURE_WINDOW_DAYS and flag any (journey, channel) pair with
+// SEND_FAILURE_THRESHOLD or more vendor_error outcomes. Repeated
+// failures point at stale contact info — the patient changed phones,
+// the email bounced, or the carrier marked our messaging service
+// SID as spam — and that's exactly the case the dispatcher cannot
+// solve on its own (every retry fails the same way).
+
+const SEND_FAILURE_WINDOW_DAYS = 14;
+const SEND_FAILURE_THRESHOLD = 3;
+
+interface SendFailureFinding {
+  patientId: string;
+  journeyId: string | null;
+  severity: CsrComplianceAlertSeverity;
+  summary: string;
+  snapshot: Record<string, unknown>;
+}
+
+async function detectSendFailures(
+  db: ReturnType<typeof drizzle>,
+  now: Date,
+): Promise<SendFailureFinding[]> {
+  const since = new Date(now.getTime() - SEND_FAILURE_WINDOW_DAYS * MS_PER_DAY);
+
+  // GROUP BY (patient, journey) to get per-patient totals. We don't
+  // group by channel because a patient with vendor errors across
+  // multiple channels is even MORE likely to have stale contact info,
+  // not less — collapse to a single alert per patient.
+  const rows = await db
+    .select({
+      patientId: patientCheckinAttempts.patientId,
+      journeyId: patientCheckinAttempts.journeyId,
+      failures: sql<number>`COUNT(*)`,
+      lastError: sql<string | null>`MAX(${patientCheckinAttempts.errorCode})`,
+      lastAttemptAt: sql<Date>`MAX(${patientCheckinAttempts.attemptedAt})`,
+    })
+    .from(patientCheckinAttempts)
+    .where(
+      and(
+        eq(patientCheckinAttempts.outcome, "vendor_error"),
+        gte(patientCheckinAttempts.attemptedAt, since),
+      ),
+    )
+    .groupBy(
+      patientCheckinAttempts.patientId,
+      patientCheckinAttempts.journeyId,
+    )
+    .having(sql`COUNT(*) >= ${SEND_FAILURE_THRESHOLD}`);
+
+  return rows.map((r) => {
+    const failures = Number(r.failures);
+    return {
+      patientId: r.patientId,
+      journeyId: r.journeyId,
+      severity:
+        failures >= SEND_FAILURE_THRESHOLD * 2 ? "critical" : "warning",
+      summary: `${failures} vendor errors in last ${SEND_FAILURE_WINDOW_DAYS} days — likely stale contact info`,
+      snapshot: {
+        failures,
+        window_days: SEND_FAILURE_WINDOW_DAYS,
+        last_error_code: r.lastError ?? null,
+        last_attempt_at: r.lastAttemptAt
+          ? new Date(r.lastAttemptAt).toISOString()
+          : null,
+      },
+    };
+  });
+}
+
+// ───────────────────────────────────────────────────────────────────
+// No-response detector
+// ───────────────────────────────────────────────────────────────────
+//
+// For active journeys past day-30 with at least one outbound check-in
+// send, flag patients whose `patient_latest_message.last_message_at`
+// is older than NO_RESPONSE_GAP_DAYS (or who have no row at all). The
+// flagged ones get a CSR follow-up — usually a phone call from a
+// human — to either get them re-engaged or move them to status='paused'.
+//
+// We cap to journeys past day-30 because a patient who hasn't replied
+// to day-3/day-7 is statistically normal — most patients just receive
+// the nudge silently. By day-30 a still-engaged patient is much more
+// likely to have replied at least once.
+
+const NO_RESPONSE_GAP_DAYS = 21;
+const NO_RESPONSE_MIN_DAYS_ELAPSED = 30;
+
+interface NoResponseFinding {
+  patientId: string;
+  journeyId: string;
+  summary: string;
+  snapshot: Record<string, unknown>;
+}
+
+async function detectNoResponse(
+  db: ReturnType<typeof drizzle>,
+  now: Date,
+): Promise<NoResponseFinding[]> {
+  const cutoff = new Date(now.getTime() - NO_RESPONSE_GAP_DAYS * MS_PER_DAY);
+  const minStartedAt = new Date(
+    now.getTime() - NO_RESPONSE_MIN_DAYS_ELAPSED * MS_PER_DAY,
+  );
+
+  // LEFT JOIN against patient_latest_message — patients with zero
+  // messages have no row, and that's exactly the population we want
+  // to flag.
+  const rows = await db
+    .select({
+      patientId: patientOnboardingJourneys.patientId,
+      journeyId: patientOnboardingJourneys.id,
+      startedAt: patientOnboardingJourneys.startedAt,
+      lastMessageAt: patientLatestMessage.lastMessageAt,
+      lastMessageDirection: patientLatestMessage.lastMessageDirection,
+    })
+    .from(patientOnboardingJourneys)
+    .leftJoin(
+      patientLatestMessage,
+      eq(
+        patientLatestMessage.patientId,
+        patientOnboardingJourneys.patientId,
+      ),
+    )
+    .where(
+      and(
+        eq(patientOnboardingJourneys.status, "active"),
+        // Past the day-30 minimum elapsed window.
+        sql`${patientOnboardingJourneys.startedAt} <= ${minStartedAt}`,
+      ),
+    );
+
+  const findings: NoResponseFinding[] = [];
+  for (const r of rows) {
+    // Three fail-cases qualify:
+    //   - no inbound message at all (lastMessageAt null)
+    //   - last message is outbound (we sent something, no reply)
+    //   - last inbound message is older than the gap window
+    const lastInbound =
+      r.lastMessageDirection === "inbound" ? r.lastMessageAt : null;
+    if (lastInbound && lastInbound > cutoff) continue;
+
+    const elapsedDays = Math.floor(
+      (now.getTime() - r.startedAt.getTime()) / MS_PER_DAY,
+    );
+    findings.push({
+      patientId: r.patientId,
+      journeyId: r.journeyId,
+      summary: lastInbound
+        ? `No inbound reply in ${NO_RESPONSE_GAP_DAYS}+ days (day ${elapsedDays} of program)`
+        : `No reply ever (day ${elapsedDays} of program)`,
+      snapshot: {
+        elapsed_days: elapsedDays,
+        gap_days: NO_RESPONSE_GAP_DAYS,
+        last_inbound_at: lastInbound ? lastInbound.toISOString() : null,
+      },
+    });
+  }
+  return findings;
 }
 
 /**
@@ -221,25 +438,26 @@ function renderSummary(args: {
   return `Day ${args.elapsedDays}: ${pct}% nights >=4hr (${args.goodNights}/${args.elapsedDays}, target ${targetPct}%)`;
 }
 
-async function upsertLowUsageAlert(
+async function upsertOpenAlert(
   db: ReturnType<typeof drizzle>,
   input: {
     patientId: string;
-    journeyId: string;
+    journeyId: string | null;
+    alertType: CsrComplianceAlertType;
     severity: CsrComplianceAlertSeverity;
     summary: string;
     snapshot: Record<string, unknown>;
   },
 ): Promise<boolean> {
   // The partial unique index on (patient_id, alert_type) WHERE
-  // status='open' guarantees at most one open low_usage alert per
-  // patient. We try INSERT first; on conflict we UPDATE the
-  // severity/summary/snapshot/journey of the existing open row.
+  // status='open' guarantees at most one open alert per (patient,
+  // type). We try INSERT first; on conflict we UPDATE the existing
+  // open row. Returns true if an existing row was refreshed.
   try {
     await db.insert(csrComplianceAlerts).values({
       patientId: input.patientId,
       journeyId: input.journeyId,
-      alertType: "low_usage",
+      alertType: input.alertType,
       severity: input.severity,
       summary: input.summary,
       metricSnapshot: input.snapshot,
@@ -252,8 +470,6 @@ async function upsertLowUsageAlert(
       "code" in err &&
       (err as { code: string }).code === "23505"
     ) {
-      // Race with the partial unique index — refresh the existing
-      // open row instead.
       await db
         .update(csrComplianceAlerts)
         .set({
@@ -265,14 +481,14 @@ async function upsertLowUsageAlert(
         .where(
           and(
             eq(csrComplianceAlerts.patientId, input.patientId),
-            eq(csrComplianceAlerts.alertType, "low_usage"),
+            eq(csrComplianceAlerts.alertType, input.alertType),
             eq(csrComplianceAlerts.status, "open"),
           ),
         );
       return true;
     }
     logger.warn(
-      { err, patient_id: input.patientId },
+      { err, patient_id: input.patientId, alert_type: input.alertType },
       "csr_compliance_alerts upsert failed",
     );
     return false;

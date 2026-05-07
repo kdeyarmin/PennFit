@@ -168,6 +168,7 @@ export async function dispatchDueCheckins(
         day: due,
         channel,
         actor: opts.actor,
+        asOf: now,
       });
 
       if (result === "no_contact") continue;
@@ -241,12 +242,13 @@ interface AttemptInput {
   day: OnboardingDayLabel;
   channel: CheckinAttemptChannel;
   actor: CheckinActor;
+  asOf: Date;
 }
 
 type AttemptResult = "ok" | "no_contact" | "not_configured" | "vendor_error";
 
 async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
-  const { db, clients, row, day, channel, actor } = input;
+  const { db, clients, row, day, channel, actor, asOf } = input;
 
   let outcome: AttemptResult;
   let vendorRef: string | null;
@@ -266,6 +268,7 @@ async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
         clients,
         row,
         day,
+        asOf,
       ));
     }
   } catch (err) {
@@ -419,6 +422,7 @@ async function placeVoiceCall(
   clients: BuiltClients,
   row: JourneyRow,
   day: OnboardingDayLabel,
+  asOf: Date,
 ): Promise<{
   outcome: AttemptResult;
   vendorRef: string | null;
@@ -430,15 +434,28 @@ async function placeVoiceCall(
   if (!clients.voice) {
     return { outcome: "not_configured", vendorRef: null, errorCode: null };
   }
+  // Quiet-hours guard: never auto-dial outside the patient-facing
+  // call window. We don't have per-patient timezone yet, so we use
+  // America/New_York as a defensible default for our US-East patient
+  // base. A patient who'd rather we call earlier/later sets
+  // `channel_preference='voice'` and waits for a CSR-driven manual
+  // call from /voice/place-call instead.
+  if (!isWithinCallWindow(asOf)) {
+    return {
+      outcome: "not_configured",
+      vendorRef: null,
+      errorCode: "quiet_hours",
+    };
+  }
   try {
     const r = await clients.voice.client.placeCall({
       to: row.phoneE164,
       from: clients.voice.from,
       // Public TwiML endpoint — Twilio fetches this when the callee
-      // answers. The script is rendered server-side from the
-      // `day` query param so we don't have to embed the script body
-      // in this URL.
-      url: `${clients.voice.publicBaseUrl}/voice/checkin-twiml?day=${encodeURIComponent(day)}`,
+      // answers. We pass `day` AND `patientId` so the press-1 callback
+      // can attribute the manual alert to the right patient without
+      // touching the database first.
+      url: `${clients.voice.publicBaseUrl}/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
       statusCallbackUrl: `${clients.voice.publicBaseUrl}/voice/status-callback`,
       record: false,
       timeLimit: 120,
@@ -457,6 +474,31 @@ async function placeVoiceCall(
     }
     throw err;
   }
+}
+
+/**
+ * 9am-7pm ET, Monday-Saturday. Sunday is excluded because patients
+ * tend to ignore unfamiliar Sunday calls and FCC quiet-hours rules
+ * are stricter on weekends. Exported for tests.
+ */
+export function isWithinCallWindow(
+  now: Date,
+  timeZone = "America/New_York",
+): boolean {
+  // Intl.DateTimeFormat exposes the wall-clock parts in the requested
+  // zone without us having to ship a tz-conversion library.
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    weekday: "short",
+    hour: "2-digit",
+  });
+  const parts = fmt.formatToParts(now);
+  const weekday = parts.find((p) => p.type === "weekday")?.value;
+  const hourStr = parts.find((p) => p.type === "hour")?.value ?? "0";
+  const hour = parseInt(hourStr, 10);
+  if (weekday === "Sun") return false;
+  return hour >= 9 && hour < 19;
 }
 
 // ───────────────────────────────────────────────────────────────────

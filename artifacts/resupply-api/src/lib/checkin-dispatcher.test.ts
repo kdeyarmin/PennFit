@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isWithinCallWindow,
   nextDueCheckin,
   smsBodyForDay,
   stampFieldForDay,
@@ -119,5 +120,44 @@ describe("rendered scripts", () => {
     expect(subjectForDay("day3")).not.toBe(subjectForDay("day7"));
     expect(subjectForDay("day60")).not.toBe(subjectForDay("day30"));
     expect(subjectForDay("day60")).not.toBe(subjectForDay("day90"));
+  });
+});
+
+describe("isWithinCallWindow", () => {
+  // Anchor "now" timestamps to specific UTC instants we can reason
+  // about in ET. EST is UTC-5; EDT is UTC-4. We use winter dates so
+  // the offset is fixed at -5.
+  it("allows a Tuesday at 10am ET", () => {
+    // 2026-01-13 15:00 UTC = 10:00 EST (Tuesday)
+    expect(
+      isWithinCallWindow(new Date("2026-01-13T15:00:00Z")),
+    ).toBe(true);
+  });
+
+  it("blocks 8am ET (before 9am)", () => {
+    expect(
+      isWithinCallWindow(new Date("2026-01-13T13:00:00Z")),
+    ).toBe(false);
+  });
+
+  it("blocks 7pm ET on the dot", () => {
+    // 19:00 ET = 24:00 UTC = next day 00:00 UTC
+    expect(
+      isWithinCallWindow(new Date("2026-01-14T00:00:00Z")),
+    ).toBe(false);
+  });
+
+  it("allows a Saturday afternoon", () => {
+    // 2026-01-17 is a Saturday — 2pm ET = 19:00 UTC
+    expect(
+      isWithinCallWindow(new Date("2026-01-17T19:00:00Z")),
+    ).toBe(true);
+  });
+
+  it("blocks Sunday entirely", () => {
+    // 2026-01-18 is a Sunday — even 11am ET should fail.
+    expect(
+      isWithinCallWindow(new Date("2026-01-18T16:00:00Z")),
+    ).toBe(false);
   });
 });
