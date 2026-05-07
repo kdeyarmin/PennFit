@@ -1,0 +1,1673 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>PennPaps Customer Service Manual</title>
+    <style>
+      /* ────────────────────────────────────────────────────────────────
+       * PennPaps "Obsidian Aurum" palette — kept in lockstep with
+       * artifacts/cpap-fitter/src/admin.css so the mockup screenshots
+       * read as authentic captures of the real admin console.
+       * ──────────────────────────────────────────────────────────── */
+      :root {
+        --penn-onyx: hsl(222 70% 6%);
+        --penn-navy-deep: hsl(222 65% 8%);
+        --penn-navy: hsl(222 60% 10%);
+        --penn-navy-soft: hsl(220 36% 24%);
+        --penn-gold-deep: hsl(30 50% 32%);
+        --penn-gold: hsl(34 46% 50%);
+        --penn-gold-soft: hsl(36 56% 86%);
+        --penn-platinum: hsl(218 16% 86%);
+        --penn-pearl: hsl(216 22% 98%);
+        --penn-mist: hsl(216 28% 95%);
+        --penn-steel: hsl(210 38% 38%);
+
+        --surface-0: hsl(218 24% 97.5%);
+        --surface-1: hsl(218 26% 99%);
+        --surface-2: #ffffff;
+        --surface-3: hsl(218 22% 96%);
+
+        --ink-1: hsl(222 50% 10%);
+        --ink-2: hsl(220 22% 28%);
+        --ink-3: hsl(220 14% 44%);
+        --ink-muted: hsl(220 12% 56%);
+        --line-1: hsl(218 18% 89%);
+        --line-2: hsl(218 20% 84%);
+
+        --tone-emerald: hsl(152 48% 34%);
+        --tone-amber: hsl(34 88% 44%);
+        --tone-rose: hsl(354 64% 46%);
+        --tone-blue: hsl(210 68% 42%);
+
+        --shadow-card: 0 1px 2px hsl(222 65% 8% / 0.06),
+          0 6px 14px hsl(222 65% 8% / 0.05);
+      }
+
+      @page {
+        size: Letter;
+        margin: 0.6in 0.7in 0.7in 0.7in;
+        @bottom-center {
+          content: "PennPaps Customer Service Manual · " counter(page) " / "
+            counter(pages);
+          font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+          font-size: 9pt;
+          color: hsl(220 14% 44%);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+        font-size: 10.5pt;
+        line-height: 1.55;
+        color: var(--ink-1);
+        background: white;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        color: var(--penn-navy);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      h1 { font-size: 28pt; margin: 0 0 8pt; }
+      h2 { font-size: 18pt; margin: 22pt 0 8pt; padding-bottom: 4pt; border-bottom: 1px solid var(--line-1); }
+      h3 { font-size: 13pt; margin: 14pt 0 6pt; color: var(--penn-navy); }
+      h4 { font-size: 11pt; margin: 10pt 0 4pt; color: var(--penn-navy-soft); text-transform: uppercase; letter-spacing: 0.04em; font-size: 9pt; }
+
+      p { margin: 0 0 8pt; }
+      ul, ol { margin: 0 0 10pt; padding-left: 18pt; }
+      li { margin-bottom: 3pt; }
+      strong { color: var(--penn-navy); }
+      code {
+        font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+        font-size: 0.92em;
+        background: var(--surface-3);
+        padding: 1pt 4pt;
+        border-radius: 3pt;
+        color: var(--penn-navy-deep);
+      }
+
+      a { color: var(--tone-blue); text-decoration: none; }
+
+      .page-break { page-break-before: always; }
+      .avoid-break { page-break-inside: avoid; }
+
+      /* ─── Cover ─── */
+      .cover {
+        height: 9.6in;
+        background:
+          radial-gradient(circle at 80% 10%, hsl(34 46% 50% / 0.18), transparent 55%),
+          radial-gradient(circle at 10% 90%, hsl(222 60% 10% / 0.95), transparent 60%),
+          linear-gradient(135deg, var(--penn-navy-deep), var(--penn-navy) 60%, var(--penn-onyx));
+        color: white;
+        padding: 0.8in;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+        page-break-after: always;
+      }
+      .cover::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(
+          hsl(0 0% 100% / 0.04) 1px,
+          transparent 1px
+        );
+        background-size: 14px 14px;
+        pointer-events: none;
+      }
+      .cover-mark {
+        font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+        font-size: 11pt;
+        letter-spacing: 0.4em;
+        color: var(--penn-gold);
+        text-transform: uppercase;
+      }
+      .cover-mark-rule {
+        height: 2px;
+        width: 64px;
+        background: var(--penn-gold);
+        margin: 8pt 0 24pt;
+      }
+      .cover-title {
+        font-size: 52pt;
+        line-height: 1.02;
+        font-weight: 700;
+        color: white;
+        letter-spacing: -0.02em;
+        margin: 0;
+      }
+      .cover-subtitle {
+        font-size: 18pt;
+        font-weight: 400;
+        color: hsl(36 56% 86% / 0.92);
+        margin-top: 14pt;
+        max-width: 6in;
+      }
+      .cover-meta {
+        display: flex;
+        gap: 0.5in;
+        font-size: 10pt;
+        color: hsl(0 0% 100% / 0.7);
+        z-index: 1;
+      }
+      .cover-meta > div { flex: 1; }
+      .cover-meta strong {
+        display: block;
+        color: var(--penn-gold);
+        font-size: 8pt;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        margin-bottom: 4pt;
+      }
+      .cover-emblem {
+        position: absolute;
+        right: 0.8in;
+        bottom: 1.7in;
+        width: 1.4in;
+        height: 1.4in;
+        border-radius: 50%;
+        border: 2px solid var(--penn-gold);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "JetBrains Mono", monospace;
+        color: var(--penn-gold);
+        font-size: 9pt;
+        letter-spacing: 0.2em;
+        background: hsl(222 65% 8% / 0.4);
+      }
+      .cover-emblem span {
+        text-align: center;
+        line-height: 1.4;
+      }
+
+      /* ─── Section heading ─── */
+      .section-tag {
+        display: inline-block;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 8pt;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: var(--penn-gold-deep);
+        background: var(--penn-gold-soft);
+        padding: 2pt 8pt;
+        border-radius: 999px;
+        margin-bottom: 6pt;
+      }
+
+      /* ─── Callouts ─── */
+      .callout {
+        border-left: 3px solid var(--penn-gold);
+        background: linear-gradient(90deg, hsl(36 56% 86% / 0.4), transparent 80%);
+        padding: 9pt 12pt;
+        margin: 10pt 0;
+        border-radius: 0 6pt 6pt 0;
+        page-break-inside: avoid;
+      }
+      .callout strong { color: var(--penn-gold-deep); }
+      .callout.warn {
+        border-left-color: var(--tone-rose);
+        background: linear-gradient(90deg, hsl(354 64% 46% / 0.07), transparent 80%);
+      }
+      .callout.warn strong { color: var(--tone-rose); }
+      .callout.info {
+        border-left-color: var(--tone-blue);
+        background: linear-gradient(90deg, hsl(210 68% 42% / 0.07), transparent 80%);
+      }
+      .callout.info strong { color: var(--tone-blue); }
+
+      /* ─── Tables ─── */
+      table.spec {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8pt 0 12pt;
+        font-size: 9.5pt;
+      }
+      table.spec th,
+      table.spec td {
+        text-align: left;
+        padding: 6pt 8pt;
+        border-bottom: 1px solid var(--line-1);
+        vertical-align: top;
+      }
+      table.spec th {
+        background: var(--surface-3);
+        color: var(--penn-navy);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-size: 8pt;
+      }
+
+      /* ────────────────────────────────────────────────────────────────
+       * MOCKUP SCREENSHOT FRAMES
+       *
+       * Each "screenshot" is a real HTML render styled to match the
+       * actual admin console layout. They are wrapped in a Mac-style
+       * window chrome so the reader perceives them as captures.
+       * ──────────────────────────────────────────────────────────── */
+      .shot {
+        background: var(--surface-2);
+        border: 1px solid var(--line-2);
+        border-radius: 8pt;
+        box-shadow: var(--shadow-card);
+        margin: 12pt 0 6pt;
+        overflow: hidden;
+        page-break-inside: avoid;
+      }
+      .shot-chrome {
+        background: linear-gradient(180deg, hsl(218 22% 96%), hsl(218 18% 92%));
+        padding: 6pt 10pt;
+        display: flex;
+        align-items: center;
+        gap: 8pt;
+        border-bottom: 1px solid var(--line-1);
+      }
+      .shot-dot {
+        width: 9pt;
+        height: 9pt;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .shot-dot.r { background: #ed6a5e; }
+      .shot-dot.y { background: #f5bf4f; }
+      .shot-dot.g { background: #61c554; }
+      .shot-url {
+        flex: 1;
+        background: white;
+        border: 1px solid var(--line-1);
+        border-radius: 4pt;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 8pt;
+        color: var(--ink-2);
+        padding: 2pt 8pt;
+        text-align: center;
+      }
+      .shot-body {
+        display: grid;
+        grid-template-columns: 168px 1fr;
+        min-height: 320px;
+      }
+      .shot-body.no-side {
+        grid-template-columns: 1fr;
+      }
+
+      /* Sidebar */
+      .shot-side {
+        background: linear-gradient(180deg, var(--penn-navy-deep), var(--penn-onyx));
+        color: hsl(0 0% 100% / 0.78);
+        padding: 12pt 10pt;
+        font-size: 8.5pt;
+      }
+      .shot-side .brand {
+        color: white;
+        font-weight: 700;
+        font-size: 11pt;
+        letter-spacing: -0.01em;
+        margin-bottom: 12pt;
+        display: flex;
+        align-items: center;
+        gap: 6pt;
+      }
+      .shot-side .brand::before {
+        content: "";
+        width: 14pt;
+        height: 14pt;
+        border-radius: 4pt;
+        background: linear-gradient(135deg, var(--penn-gold), var(--penn-gold-deep));
+        display: inline-block;
+      }
+      .shot-side .group {
+        margin-top: 10pt;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 7pt;
+        color: hsl(36 56% 86% / 0.6);
+        padding: 4pt 6pt;
+      }
+      .shot-side .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 1pt;
+      }
+      .shot-side .nav a {
+        color: hsl(0 0% 100% / 0.78);
+        padding: 4pt 8pt;
+        border-radius: 4pt;
+        display: block;
+      }
+      .shot-side .nav a.active {
+        background: hsl(34 46% 50% / 0.18);
+        color: var(--penn-gold-soft);
+        border-left: 2px solid var(--penn-gold);
+        padding-left: 6pt;
+      }
+
+      /* Main panel */
+      .shot-main {
+        padding: 14pt 16pt;
+        background: var(--surface-0);
+      }
+      .shot-main h3.page-title {
+        margin: 0 0 4pt;
+        color: var(--ink-1);
+        font-size: 14pt;
+      }
+      .shot-main .page-sub {
+        color: var(--ink-3);
+        font-size: 8.5pt;
+        margin-bottom: 12pt;
+      }
+
+      /* Cards / KPI */
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8pt;
+        margin-bottom: 12pt;
+      }
+      .kpi-card {
+        background: var(--surface-2);
+        border: 1px solid var(--line-1);
+        border-radius: 6pt;
+        padding: 9pt 10pt;
+        box-shadow: 0 1px 2px hsl(222 65% 8% / 0.04);
+      }
+      .kpi-card .label {
+        font-size: 7.5pt;
+        color: var(--ink-3);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .kpi-card .value {
+        font-size: 22pt;
+        font-weight: 700;
+        color: var(--penn-navy);
+        margin-top: 2pt;
+        font-feature-settings: "tnum";
+      }
+      .kpi-card .hint {
+        font-size: 7.5pt;
+        color: var(--ink-muted);
+      }
+      .kpi-card .delta {
+        font-size: 7.5pt;
+        font-weight: 600;
+        color: var(--tone-emerald);
+      }
+      .kpi-card .delta.down { color: var(--tone-rose); }
+
+      /* Mini table */
+      table.shot-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 8.5pt;
+      }
+      table.shot-table th,
+      table.shot-table td {
+        text-align: left;
+        padding: 5pt 7pt;
+        border-bottom: 1px solid var(--line-1);
+      }
+      table.shot-table th {
+        font-size: 7pt;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ink-3);
+        background: var(--surface-3);
+        font-weight: 600;
+      }
+      table.shot-table td.muted { color: var(--ink-muted); }
+
+      /* Pills/badges */
+      .pill {
+        display: inline-block;
+        padding: 1pt 6pt;
+        border-radius: 999px;
+        font-size: 7pt;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .pill.emerald { background: hsl(152 48% 34% / 0.12); color: var(--tone-emerald); }
+      .pill.amber { background: hsl(34 88% 44% / 0.14); color: var(--tone-amber); }
+      .pill.rose { background: hsl(354 64% 46% / 0.12); color: var(--tone-rose); }
+      .pill.blue { background: hsl(210 68% 42% / 0.12); color: var(--tone-blue); }
+      .pill.gold { background: hsl(34 46% 50% / 0.16); color: var(--penn-gold-deep); }
+      .pill.slate { background: hsl(220 14% 44% / 0.12); color: var(--ink-2); }
+
+      /* Toolbar */
+      .toolbar {
+        display: flex;
+        gap: 6pt;
+        margin-bottom: 8pt;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .input,
+      .btn {
+        font-size: 8pt;
+        padding: 3pt 8pt;
+        border-radius: 4pt;
+        border: 1px solid var(--line-2);
+        background: white;
+        color: var(--ink-1);
+      }
+      .input { min-width: 130pt; color: var(--ink-3); }
+      .btn.primary {
+        background: var(--penn-navy);
+        color: white;
+        border-color: var(--penn-navy);
+      }
+      .btn.gold {
+        background: var(--penn-gold);
+        color: white;
+        border-color: var(--penn-gold-deep);
+      }
+
+      /* Conversation thread mockup */
+      .thread {
+        background: var(--surface-2);
+        border: 1px solid var(--line-1);
+        border-radius: 6pt;
+        padding: 10pt;
+        display: grid;
+        grid-template-columns: 1fr 1.6fr 1fr;
+        gap: 10pt;
+        font-size: 8.5pt;
+      }
+      .thread-col { min-height: 180pt; }
+      .thread-col h5 {
+        font-size: 8pt;
+        color: var(--ink-3);
+        margin: 0 0 4pt;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .msg {
+        background: var(--surface-3);
+        padding: 5pt 7pt;
+        border-radius: 5pt;
+        margin-bottom: 4pt;
+        font-size: 8pt;
+        color: var(--ink-2);
+      }
+      .msg.out {
+        background: hsl(34 46% 50% / 0.14);
+        color: var(--penn-navy-deep);
+      }
+      .msg .from {
+        display: block;
+        font-size: 6.5pt;
+        color: var(--ink-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 2pt;
+      }
+
+      /* Storefront mock */
+      .store-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8pt;
+      }
+      .product {
+        background: var(--surface-2);
+        border: 1px solid var(--line-1);
+        border-radius: 6pt;
+        padding: 8pt;
+        font-size: 8pt;
+      }
+      .product .img {
+        height: 60pt;
+        background: linear-gradient(135deg, var(--penn-mist), var(--penn-platinum));
+        border-radius: 4pt;
+        margin-bottom: 6pt;
+        position: relative;
+      }
+      .product .img::after {
+        content: "MASK";
+        position: absolute;
+        bottom: 4pt;
+        right: 4pt;
+        font-size: 6pt;
+        color: var(--ink-muted);
+        letter-spacing: 0.2em;
+      }
+      .product .name {
+        font-weight: 600;
+        color: var(--penn-navy);
+      }
+      .product .price {
+        color: var(--penn-gold-deep);
+        font-weight: 600;
+      }
+
+      /* Storefront cover (customer-facing) */
+      .store-shot .shot-side {
+        background: white;
+        color: var(--ink-2);
+        border-right: 1px solid var(--line-1);
+      }
+      .store-shot .topbar {
+        background: white;
+        border-bottom: 1px solid var(--line-1);
+        padding: 8pt 14pt;
+        display: flex;
+        align-items: center;
+        gap: 14pt;
+        font-size: 8.5pt;
+      }
+      .store-shot .topbar .brand {
+        color: var(--penn-navy);
+        font-weight: 700;
+        font-size: 11pt;
+        letter-spacing: -0.01em;
+      }
+      .store-shot .topbar a {
+        color: var(--ink-2);
+      }
+
+      .caption {
+        font-size: 8.5pt;
+        color: var(--ink-3);
+        font-style: italic;
+        margin-top: 2pt;
+        margin-bottom: 16pt;
+        text-align: center;
+      }
+
+      /* Two-column layouts */
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14pt;
+      }
+
+      /* Step list */
+      .steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+      }
+      .steps li {
+        counter-increment: step;
+        position: relative;
+        padding: 6pt 0 6pt 30pt;
+        border-bottom: 1px dashed var(--line-1);
+      }
+      .steps li:last-child { border-bottom: 0; }
+      .steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 6pt;
+        width: 20pt;
+        height: 20pt;
+        border-radius: 50%;
+        background: var(--penn-navy);
+        color: var(--penn-gold);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 9pt;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* TOC */
+      .toc {
+        margin-top: 14pt;
+      }
+      .toc ol {
+        list-style: none;
+        padding-left: 0;
+      }
+      .toc li {
+        display: flex;
+        justify-content: space-between;
+        padding: 5pt 0;
+        border-bottom: 1px dotted var(--line-1);
+        font-size: 10pt;
+      }
+      .toc li.h2 { padding-left: 0; font-weight: 600; color: var(--penn-navy); }
+      .toc li.h3 { padding-left: 16pt; font-size: 9.5pt; color: var(--ink-2); }
+      .toc .num {
+        color: var(--ink-muted);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 9pt;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ════════════════════════════════════════════════════════════════
+         COVER
+         ════════════════════════════════════════════════════════════ -->
+    <section class="cover">
+      <div>
+        <div class="cover-mark">PennPaps · Penn Home Medical Supply</div>
+        <div class="cover-mark-rule"></div>
+        <h1 class="cover-title">
+          Customer<br />Service<br />Manual
+        </h1>
+        <div class="cover-subtitle">
+          A complete operator's guide to the PennPaps platform — the most
+          patient-friendly CPAP supply experience on the market.
+        </div>
+      </div>
+      <div class="cover-meta">
+        <div>
+          <strong>Audience</strong>
+          Customer service representatives,<br />fulfillment, and resupply
+          coordinators.
+        </div>
+        <div>
+          <strong>Edition</strong>
+          May 2026 · v1.0<br />Issued by Penn Home Medical Supply
+        </div>
+      </div>
+      <div class="cover-emblem">
+        <span>EST<br />· 2025 ·<br />PENN</span>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         WELCOME + TOC
+         ════════════════════════════════════════════════════════════ -->
+    <section>
+      <span class="section-tag">Welcome</span>
+      <h2 style="border:0; margin-top: 4pt;">About this manual</h2>
+      <p>
+        This manual is the canonical reference for everyone on the
+        Penn Home Medical Supply customer service team. It walks you through
+        every screen of the PennPaps admin console, every customer-facing
+        flow on the storefront, and the policies behind both. Read it in
+        order on day one; keep it on your second monitor after that.
+      </p>
+      <p>
+        PennPaps is built on a single guiding principle: <strong>patients
+        get answers in seconds, not days</strong>. Every workflow in this
+        document is designed so you can resolve a question on the first
+        contact — whether it arrives by phone, SMS, email, web chat, or a
+        review left on a product page.
+      </p>
+
+      <div class="callout">
+        <strong>How to use this manual.</strong> Each chapter opens with a
+        screenshot of the screen in question, followed by the data on it,
+        the actions available, and the customer-facing language we use to
+        describe it. If a section is marked <span class="pill rose">PHI</span>
+        the contents are protected health information — never paste them
+        into a public channel or screenshot to a personal device.
+      </div>
+
+      <h3 style="margin-top: 18pt;">What's in the box</h3>
+      <div class="toc">
+        <ol>
+          <li class="h2"><span>1 · Platform overview</span><span class="num">p. 04</span></li>
+          <li class="h3"><span>1.1 · The four jobs PennPaps does</span><span class="num">04</span></li>
+          <li class="h3"><span>1.2 · Why we are the best CPAP supply app</span><span class="num">05</span></li>
+          <li class="h3"><span>1.3 · Privacy &amp; the on-device promise</span><span class="num">06</span></li>
+          <li class="h2"><span>2 · The customer journey</span><span class="num">07</span></li>
+          <li class="h3"><span>2.1 · Storefront &amp; mask fitter</span><span class="num">07</span></li>
+          <li class="h3"><span>2.2 · Insurance qualifier vs. cash-pay</span><span class="num">09</span></li>
+          <li class="h3"><span>2.3 · Customer accounts &amp; one-tap reorder</span><span class="num">10</span></li>
+          <li class="h2"><span>3 · The admin console</span><span class="num">11</span></li>
+          <li class="h3"><span>3.1 · Dashboard &amp; live KPIs</span><span class="num">11</span></li>
+          <li class="h3"><span>3.2 · Conversations (SMS, email, voice)</span><span class="num">12</span></li>
+          <li class="h3"><span>3.3 · Episodes &amp; resupply automation</span><span class="num">14</span></li>
+          <li class="h3"><span>3.4 · Patients (Patient 360)</span><span class="num">15</span></li>
+          <li class="h3"><span>3.5 · Follow-ups, canned replies, macros</span><span class="num">16</span></li>
+          <li class="h2"><span>4 · Orders &amp; shop</span><span class="num">17</span></li>
+          <li class="h3"><span>4.1 · Orders, subscriptions, returns</span><span class="num">17</span></li>
+          <li class="h3"><span>4.2 · Customers (Customer 360)</span><span class="num">18</span></li>
+          <li class="h3"><span>4.3 · Abandoned carts &amp; back-in-stock</span><span class="num">19</span></li>
+          <li class="h3"><span>4.4 · Reviews, Q&amp;A, inventory</span><span class="num">20</span></li>
+          <li class="h2"><span>5 · Insights, system, and audit</span><span class="num">21</span></li>
+          <li class="h3"><span>5.1 · Operations &amp; delivery failures</span><span class="num">21</span></li>
+          <li class="h3"><span>5.2 · Reports &amp; storefront analytics</span><span class="num">22</span></li>
+          <li class="h3"><span>5.3 · Rules, rule tester, audit logs</span><span class="num">23</span></li>
+          <li class="h2"><span>6 · Day-in-the-life playbook</span><span class="num">24</span></li>
+          <li class="h3"><span>6.1 · Common scenarios &amp; how to solve them</span><span class="num">24</span></li>
+          <li class="h3"><span>6.2 · Escalation &amp; service level targets</span><span class="num">25</span></li>
+          <li class="h3"><span>6.3 · Glossary &amp; quick-reference card</span><span class="num">26</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         CHAPTER 1
+         ════════════════════════════════════════════════════════════ -->
+    <section class="page-break">
+      <span class="section-tag">Chapter 1</span>
+      <h2 style="border:0; margin-top: 4pt;">Platform overview</h2>
+
+      <h3>1.1 · The four jobs PennPaps does</h3>
+      <p>
+        PennPaps is one product with four tightly-integrated jobs. Knowing
+        which "job" a customer is in is the single fastest way to solve their
+        problem.
+      </p>
+      <table class="spec">
+        <thead>
+          <tr><th>Job</th><th>Who uses it</th><th>What it does</th><th>Where it lives</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Mask fitter</strong></td>
+            <td>New patients</td>
+            <td>On-device facial measurement &amp; clinical questionnaire produce a ranked mask recommendation.</td>
+            <td><code>/how-it-works → /capture → /measure → /questionnaire → /results</code></td>
+          </tr>
+          <tr>
+            <td><strong>Cash-pay shop</strong></td>
+            <td>Returning &amp; uninsured patients</td>
+            <td>Direct-to-consumer storefront with Stripe Hosted Checkout, wishlists, and Subscribe &amp; Save.</td>
+            <td><code>/shop, /shop/cart, /shop/checkout, /account</code></td>
+          </tr>
+          <tr>
+            <td><strong>Insurance pipeline</strong></td>
+            <td>Insured patients</td>
+            <td>Qualifier form captures insurance + Rx info; leads route to the admin team for verification.</td>
+            <td><code>/insurance → admin Insurance Leads</code></td>
+          </tr>
+          <tr>
+            <td><strong>Resupply automation</strong></td>
+            <td>Existing patients on a replacement schedule</td>
+            <td>Two-way SMS, email, and voice outreach driven by a rule engine and an in-process pg-boss worker.</td>
+            <td><code>admin Conversations / Episodes / Rules</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        All four jobs ship as <strong>one customer-facing site</strong>
+        (<code>pennfit.replit.app</code>) and <strong>one internal admin
+        console</strong> mounted at <code>/admin/*</code>. There is no
+        separate dashboard URL to remember and no second SPA to load —
+        whatever a customer sees, you can see (and act on) from the same
+        domain.
+      </p>
+
+      <!-- Storefront mockup screenshot -->
+      <div class="shot store-shot">
+        <div class="shot-chrome">
+          <span class="shot-dot r"></span>
+          <span class="shot-dot y"></span>
+          <span class="shot-dot g"></span>
+          <span class="shot-url">https://pennfit.replit.app/</span>
+        </div>
+        <div class="shot-body no-side">
+          <div>
+            <div class="topbar">
+              <span class="brand">PennPaps</span>
+              <a>Mask Fitter</a><a>Shop</a><a>Insurance</a><a>How it works</a><a>FAQ</a>
+              <span style="flex:1"></span>
+              <span class="pill gold">Sign in</span>
+              <span class="pill slate">Cart · 0</span>
+            </div>
+            <div style="padding: 18pt 22pt; background: linear-gradient(135deg, var(--penn-pearl), var(--penn-mist)); min-height: 220pt;">
+              <span class="section-tag">For Penn-area sleep patients</span>
+              <h3 class="page-title" style="font-size: 22pt; margin-top: 6pt;">
+                Find the mask that finally fits — in 3 minutes, on your phone.
+              </h3>
+              <p class="page-sub" style="max-width: 4in; font-size: 9.5pt;">
+                On-device facial scan. No images leave your device. Insurance
+                or cash-pay. Free shipping over $50.
+              </p>
+              <div style="display:flex; gap:8pt; margin-top: 10pt;">
+                <span class="btn gold">Start the fitter →</span>
+                <span class="btn">Browse shop</span>
+              </div>
+              <div class="store-grid" style="margin-top: 18pt;">
+                <div class="product"><div class="img"></div><div class="name">ResMed AirFit F30i</div><div class="price">$229.00 <span class="pill emerald">Insurance</span></div></div>
+                <div class="product"><div class="img"></div><div class="name">Philips DreamWear Nasal</div><div class="price">$189.00 <span class="pill gold">Subscribe &amp; Save</span></div></div>
+                <div class="product"><div class="img"></div><div class="name">Fisher &amp; Paykel Brevida</div><div class="price">$165.00 <span class="pill blue">In stock</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">Figure 1 · The customer-facing storefront. Mask fitter, shop, and insurance qualifier all live at the same URL.</div>
+
+      <h3>1.2 · Why we are the best CPAP supply app on the market</h3>
+      <p>
+        Customers compare us to legacy DME suppliers and to one-stop online
+        shops. We win on every axis. Memorize these — they are the
+        differentiators you should bring up unprompted on every call.
+      </p>
+
+      <div class="grid-2">
+        <div class="callout">
+          <strong>1. The on-device fitter.</strong> Most competitors guess
+          mask sizing from a photo upload — we measure facial landmarks
+          on the patient's own phone using MediaPipe Face Mesh and send only
+          numbers. The patient's image never leaves the browser, never
+          touches our servers, and is never logged.
+        </div>
+        <div class="callout">
+          <strong>2. One unified surface.</strong> Fitter, shop, insurance,
+          and resupply all live behind the same login. Patients are not
+          shipped between three different vendors with three different
+          accounts. Reps see the whole journey in one Patient 360 view.
+        </div>
+        <div class="callout">
+          <strong>3. Two-way conversational AI.</strong> Patients can text
+          us in plain English ("running low on supplies, ship me what
+          worked last time") and the system threads it into the right
+          episode. Voice calls use OpenAI's voice API for natural
+          interactions; SMS uses GPT-completion drafts that you review
+          before sending.
+        </div>
+        <div class="callout">
+          <strong>4. One-tap reorder.</strong> Past orders are stored on
+          the customer's account (encrypted at rest in Postgres). A patient
+          who ordered twelve months ago can reorder the exact same SKU and
+          size with a single tap on their phone.
+        </div>
+        <div class="callout">
+          <strong>5. Subscribe &amp; Save with full transparency.</strong>
+          Recurring orders driven by Stripe with the customer in full control
+          — pause, skip, or change cadence from the account page without
+          calling us. (You can do the same from the admin Subscriptions
+          page when they ask you to.)
+        </div>
+        <div class="callout">
+          <strong>6. Insurance done right.</strong> The qualifier is a real
+          form — not a 'we'll get back to you' explainer page. Patients fill
+          in their carrier and member ID; we route the lead to verification
+          inside the admin Insurance Leads queue and ship as soon as
+          eligibility comes back clean.
+        </div>
+      </div>
+
+      <h3>1.3 · Privacy &amp; the on-device promise</h3>
+      <p>
+        Two non-negotiable rules govern everything we do with patient
+        data — repeat them to any patient who asks how we keep them safe.
+      </p>
+      <ul>
+        <li>
+          <strong>Camera images and video frames never leave the browser.</strong>
+          Only numeric facial measurements are transmitted. No image is
+          ever logged, persisted, or visible to staff.
+        </li>
+        <li>
+          <strong>Order request bodies are not logged.</strong> Treat every
+          log line as world-readable; PHI lives only in the application
+          database, behind row-level access controls.
+        </li>
+      </ul>
+      <div class="callout warn">
+        <strong>You will be asked.</strong> Patients ask "where do my photos
+        go?" on roughly one in eight calls. The answer is: nowhere. The
+        scan happens entirely on their device using a public on-device
+        machine-learning model (MediaPipe Face Mesh). The 16 numeric
+        measurements we keep — bridge width, philtrum depth, etc. — are the
+        only thing transmitted to us, and they are encrypted in transit.
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         CHAPTER 2 — CUSTOMER JOURNEY
+         ════════════════════════════════════════════════════════════ -->
+    <section class="page-break">
+      <span class="section-tag">Chapter 2</span>
+      <h2 style="border:0; margin-top: 4pt;">The customer journey</h2>
+
+      <h3>2.1 · Storefront &amp; mask fitter</h3>
+      <p>
+        Patients arrive at <code>pennfit.replit.app</code> from search,
+        sleep-study referrals, and our doctor partner network. The home page
+        gives them three doors: <strong>start the fitter</strong>,
+        <strong>browse the shop</strong>, or <strong>check insurance</strong>.
+      </p>
+      <p>
+        The fitter is a five-step flow. Customers can pause and resume; their
+        session is anonymous until they create an account.
+      </p>
+      <ol class="steps">
+        <li><strong>Consent (<code>/consent</code>).</strong> Plain-language overview of what we measure and what we do not store. Patients must explicitly accept before the camera turns on.</li>
+        <li><strong>Capture (<code>/capture</code>).</strong> Front-camera live preview with on-screen alignment guides. MediaPipe Face Mesh runs locally; the page only proceeds once landmarks are stable for two consecutive seconds.</li>
+        <li><strong>Measure (<code>/measure</code>).</strong> The 16 numeric measurements are computed on-device and sent to the API as a JSON payload. The image is discarded.</li>
+        <li><strong>Questionnaire (<code>/questionnaire</code>).</strong> Eight clinical questions: side sleeper, mouth-breather, claustrophobia, facial hair, glasses, etc. Each maps to mask attributes in the catalog.</li>
+        <li><strong>Results (<code>/results</code>).</strong> Top three masks are shown, ranked by a weighted scoring formula that combines fit (measurements) and feel (questionnaire). Patients see a confidence band, not a single "answer".</li>
+      </ol>
+
+      <!-- Fitter screenshot -->
+      <div class="shot store-shot">
+        <div class="shot-chrome">
+          <span class="shot-dot r"></span>
+          <span class="shot-dot y"></span>
+          <span class="shot-dot g"></span>
+          <span class="shot-url">https://pennfit.replit.app/results</span>
+        </div>
+        <div class="shot-body no-side">
+          <div>
+            <div class="topbar">
+              <span class="brand">PennPaps</span>
+              <a>Mask Fitter</a><a>Shop</a><a>Insurance</a><a>FAQ</a>
+              <span style="flex:1"></span>
+              <span class="pill emerald">Step 5 of 5 · Results</span>
+            </div>
+            <div style="padding: 14pt 18pt; background: var(--penn-pearl); min-height: 240pt;">
+              <span class="section-tag">Your top recommendations</span>
+              <h3 class="page-title" style="font-size: 16pt; margin-top: 4pt;">
+                Three masks fit your face — here's the order.
+              </h3>
+              <p class="page-sub" style="font-size: 9pt;">
+                Confidence based on 16 facial landmarks + your questionnaire. Side-sleeper, mouth-breather, glasses-wearer.
+              </p>
+              <div class="store-grid">
+                <div class="product" style="border: 2px solid var(--penn-gold);">
+                  <div class="img"></div>
+                  <div class="name">ResMed AirFit F30i</div>
+                  <div style="font-size: 7.5pt; color: var(--ink-3); margin: 2pt 0;">Top-of-head hose · Hybrid full-face · Size M</div>
+                  <div class="price">$229.00</div>
+                  <div style="margin-top: 4pt;"><span class="pill emerald">94% fit</span> <span class="pill gold">Best match</span></div>
+                </div>
+                <div class="product">
+                  <div class="img"></div>
+                  <div class="name">Philips DreamWear FF</div>
+                  <div style="font-size: 7.5pt; color: var(--ink-3); margin: 2pt 0;">Front-tube · Full-face · Size M</div>
+                  <div class="price">$219.00</div>
+                  <div style="margin-top: 4pt;"><span class="pill blue">88% fit</span></div>
+                </div>
+                <div class="product">
+                  <div class="img"></div>
+                  <div class="name">F&amp;P Vitera</div>
+                  <div style="font-size: 7.5pt; color: var(--ink-3); margin: 2pt 0;">Front-tube · Full-face · Size M</div>
+                  <div class="price">$199.00</div>
+                  <div style="margin-top: 4pt;"><span class="pill blue">82% fit</span></div>
+                </div>
+              </div>
+              <div style="display:flex; gap:8pt; margin-top: 12pt; align-items: center;">
+                <span class="btn gold">Order through insurance</span>
+                <span class="btn primary">Buy with card</span>
+                <span class="btn">Email me my results</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">Figure 2 · Results page. The top match is highlighted in gold; cash-pay and insurance options sit side by side.</div>
+
+      <h3>2.2 · Insurance qualifier vs. cash-pay</h3>
+      <p>
+        Customers who click <em>Order through insurance</em> land on the
+        Insurance qualifier (<code>/insurance</code>). It is a real form:
+        carrier, member ID, group number, primary cardholder, optional Rx
+        upload. Submissions create a row in <code>insurance_leads</code> and
+        appear in the <strong>Insurance Leads</strong> queue inside the admin
+        console (Chapter 4.4).
+      </p>
+      <p>
+        Cash-pay customers go straight to a Stripe Hosted Checkout session —
+        Stripe is the source of truth for products and prices, so the
+        admin Inventory page (Chapter 4.4) reflects whatever you change in
+        the Stripe dashboard within seconds.
+      </p>
+      <table class="spec">
+        <thead>
+          <tr><th>Decision</th><th>Cash-pay</th><th>Insurance</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Time to ship</td><td>Same / next business day</td><td>2–5 days (after eligibility)</td></tr>
+          <tr><td>Out-of-pocket</td><td>Listed price</td><td>Co-pay + deductible only</td></tr>
+          <tr><td>Rx required</td><td>No</td><td>Yes (we can request it)</td></tr>
+          <tr><td>Ships through</td><td>Stripe Checkout → fulfillment</td><td>Insurance Leads queue → fulfillment</td></tr>
+          <tr><td>Patient sees in admin as</td><td>Customer 360</td><td>Patient 360 + Insurance Lead</td></tr>
+        </tbody>
+      </table>
+
+      <h3>2.3 · Customer accounts &amp; one-tap reorder</h3>
+      <p>
+        Signed-in customers have an Account hub at <code>/account</code>
+        showing past orders, payment methods (the last four digits — full
+        cards live with Stripe), shipping addresses, active subscriptions,
+        and saved wishlists. The standout feature is one-tap reorder: every
+        prior order has a "Order again" button that re-creates the cart with
+        the same SKU and size in one tap.
+      </p>
+      <div class="callout info">
+        <strong>Why this matters on a call.</strong> When a patient says
+        "send me what I had last time", you can do it from the Customers →
+        Customer Detail page in three clicks. They never have to remember
+        the model name. (Chapter 4.2.)
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         CHAPTER 3 — ADMIN CONSOLE
+         ════════════════════════════════════════════════════════════ -->
+    <section class="page-break">
+      <span class="section-tag">Chapter 3</span>
+      <h2 style="border:0; margin-top: 4pt;">The admin console</h2>
+      <p>
+        The admin console is mounted at <code>/admin/*</code> — same
+        domain, gated by the <code>useGetAdminMe</code> session check. Your
+        permissions are role-based: <span class="pill gold">admin</span>,
+        <span class="pill blue">agent</span>, and
+        <span class="pill slate">operator</span>. Most CSRs are an
+        <strong>agent</strong>, which gives you full access to inboxes,
+        orders, and patients but not to Rules, Audit, or Team management.
+      </p>
+
+      <h3>3.1 · Dashboard &amp; live KPIs</h3>
+      <p>
+        Sign in at <code>/admin/sign-in</code> and you land on the
+        dashboard. Six KPI tiles drive every other page on the site — each
+        is a clickable link to its filtered queue.
+      </p>
+
+      <!-- Dashboard mockup -->
+      <div class="shot">
+        <div class="shot-chrome">
+          <span class="shot-dot r"></span>
+          <span class="shot-dot y"></span>
+          <span class="shot-dot g"></span>
+          <span class="shot-url">https://pennfit.replit.app/admin</span>
+        </div>
+        <div class="shot-body">
+          <div class="shot-side">
+            <div class="brand">PennPaps</div>
+            <div class="group">Inbox</div>
+            <div class="nav">
+              <a class="active">Dashboard</a>
+              <a>Conversations</a>
+              <a>Episodes</a>
+              <a>Follow-ups</a>
+              <a>Canned Replies</a>
+            </div>
+            <div class="group">Customers</div>
+            <div class="nav"><a>Patients</a></div>
+            <div class="group">Orders &amp; Shop</div>
+            <div class="nav">
+              <a>Orders</a>
+              <a>Subscriptions</a>
+              <a>Returns &amp; RMAs</a>
+              <a>Customers</a>
+              <a>Abandoned Carts</a>
+            </div>
+            <div class="group">Insights</div>
+            <div class="nav"><a>Operations</a><a>Reports</a></div>
+            <div class="group">System</div>
+            <div class="nav"><a>Rules</a><a>Audit Log</a><a>Team</a></div>
+          </div>
+          <div class="shot-main">
+            <h3 class="page-title">Dashboard</h3>
+            <div class="page-sub">Live counters across the resupply pipeline. Each tile links to its filtered queue.</div>
+            <div class="kpi-grid">
+              <div class="kpi-card">
+                <div class="label">Active conversations</div>
+                <div class="value">47</div>
+                <div class="hint">open · awaiting_patient · awaiting_admin</div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">Awaiting admin</div>
+                <div class="value" style="color: var(--tone-rose);">12</div>
+                <div class="hint">parked for human attention</div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">Overdue episodes</div>
+                <div class="value" style="color: var(--tone-amber);">8</div>
+                <div class="hint">due_at ≤ now &amp; pending</div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">Fulfillments this week</div>
+                <div class="value">214</div>
+                <div class="delta">▲ 18% vs last week</div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">Paused patients</div>
+                <div class="value">31</div>
+                <div class="hint">status = paused</div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">Cart abandons (24h)</div>
+                <div class="value">19</div>
+                <div class="hint">recoverable in /admin/shop/abandoned-carts</div>
+              </div>
+            </div>
+            <div style="background: var(--surface-2); border: 1px solid var(--line-1); border-radius: 6pt; padding: 9pt 10pt; font-size: 8.5pt;">
+              <div style="display:flex; justify-content: space-between; align-items: baseline;">
+                <strong style="color: var(--penn-navy);">PHI sweep status</strong>
+                <span class="pill emerald">Healthy</span>
+              </div>
+              <div style="color: var(--ink-3); margin-top: 3pt;">Last weekly attachment sweep: 2026-05-04 02:00 UTC · 0 stale rows · 0 errors</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">Figure 3 · The admin Dashboard. Click any KPI to land on its filtered queue.</div>
+
+      <h3>3.2 · Conversations (SMS, email, voice)</h3>
+      <p>
+        The Conversations page is your inbox. Every channel — outbound SMS,
+        inbound replies, MMS attachments, email replies, and voice
+        transcripts — funnels into the same threaded view, keyed to the
+        patient. Use the status filter to focus:
+      </p>
+      <ul>
+        <li><span class="pill amber">awaiting_admin</span> — patient replied; we owe them a human response. Default queue.</li>
+        <li><span class="pill blue">awaiting_patient</span> — we sent something; waiting on them. Don't bug them again.</li>
+        <li><span class="pill emerald">resolved</span> — closed; archive view.</li>
+        <li><span class="pill slate">snoozed</span> — comes back to <em>awaiting_admin</em> after the snooze interval.</li>
+      </ul>
+
+      <!-- Conversations list mockup -->
+      <div class="shot">
+        <div class="shot-chrome">
+          <span class="shot-dot r"></span>
+          <span class="shot-dot y"></span>
+          <span class="shot-dot g"></span>
+          <span class="shot-url">https://pennfit.replit.app/admin/conversations?status=awaiting_admin</span>
+        </div>
+        <div class="shot-body">
+          <div class="shot-side">
+            <div class="brand">PennPaps</div>
+            <div class="group">Inbox</div>
+            <div class="nav">
+              <a>Dashboard</a>
+              <a class="active">Conversations</a>
+              <a>Episodes</a>
+              <a>Follow-ups</a>
+              <a>Canned Replies</a>
+            </div>
+            <div class="group">Customers</div>
+            <div class="nav"><a>Patients</a></div>
+          </div>
+          <div class="shot-main">
+            <h3 class="page-title">Conversations</h3>
+            <div class="page-sub">12 awaiting admin · 47 active · 318 resolved this week</div>
+            <div class="toolbar">
+              <span class="input">⌕ Search by phone, name, episode…</span>
+              <span class="btn">Status: Awaiting admin ▾</span>
+              <span class="btn">Channel: All ▾</span>
+              <span class="btn">Assignee: Me ▾</span>
+              <span style="flex:1"></span>
+              <span class="btn primary">+ New conversation</span>
+            </div>
+            <table class="shot-table">
+              <thead>
+                <tr><th>Patient</th><th>Last message</th><th>Channel</th><th>Episode</th><th>Status</th><th>Wait</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>M. Alvarez</strong><br /><span class="muted">+1 (267) 555-0119</span></td>
+                  <td>"Mask leaks at the bridge — can I swap?"</td>
+                  <td><span class="pill blue">SMS</span></td>
+                  <td>EP-4012 · Mask</td>
+                  <td><span class="pill amber">Awaiting admin</span></td>
+                  <td class="muted">12m</td>
+                </tr>
+                <tr>
+                  <td><strong>D. Patel</strong><br /><span class="muted">d.patel@…</span></td>
+                  <td>"Confirm the F30i is in stock before you ship?"</td>
+                  <td><span class="pill emerald">Email</span></td>
+                  <td>EP-4007 · Resupply</td>
+                  <td><span class="pill amber">Awaiting admin</span></td>
+                  <td class="muted">28m</td>
+                </tr>
+                <tr>
+                  <td><strong>J. Yoo</strong><br /><span class="muted">+1 (215) 555-0144</span></td>
+                  <td><span class="pill gold">📷 MMS · 2 attachments</span> "this rash okay?"</td>
+                  <td><span class="pill blue">SMS · MMS</span></td>
+                  <td>EP-3998 · Cushion</td>
+                  <td><span class="pill amber">Awaiting admin</span></td>
+                  <td class="muted">42m</td>
+                </tr>
+                <tr>
+                  <td><strong>R. Chen</strong><br /><span class="muted">+1 (484) 555-0102</span></td>
+                  <td>"Voicemail · 0:38 · transcript ↗"</td>
+                  <td><span class="pill rose">Voice</span></td>
+                  <td>EP-3992 · Headgear</td>
+                  <td><span class="pill amber">Awaiting admin</span></td>
+                  <td class="muted">1h 04m</td>
+                </tr>
+                <tr>
+                  <td><strong>K. Brooks</strong><br /><span class="muted">+1 (267) 555-0188</span></td>
+                  <td>"Pause my subscription for July please"</td>
+                  <td><span class="pill blue">SMS</span></td>
+                  <td>SUB-2204</td>
+                  <td><span class="pill amber">Awaiting admin</span></td>
+                  <td class="muted">1h 22m</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="caption">Figure 4 · Conversations queue, filtered to <em>awaiting_admin</em>. Wait time turns amber after 30 minutes and rose after 2 hours.</div>
+
+      <p>
+        Click into a conversation and the detail view splits the screen
+        into three columns: <strong>thread</strong> (left),
+        <strong>composer</strong> (center), and
+        <strong>Patient 360</strong> (right). The composer offers an
+        AI-suggested draft you can accept, edit, or discard — drafts are
+        never sent without your click.
+      </p>
+
+      <!-- Conversation detail mockup -->
+      <div class="shot">
+        <div class="shot-chrome">
+          <span class="shot-dot r"></span>
+          <span class="shot-dot y"></span>
+          <span class="shot-dot g"></span>
+          <span class="shot-url">https://pennfit.replit.app/admin/conversations/CV-7741</span>
+        </div>
+        <div class="shot-body">
+          <div class="shot-side">
+            <div class="brand">PennPaps</div>
+            <div class="group">Inbox</div>
+            <div class="nav">
+              <a>Dashboard</a>
+              <a class="active">Conversations</a>
+              <a>Episodes</a>
+              <a>Follow-ups</a>
+            </div>
+          </div>
+          <div class="shot-main">
+            <div style="display:flex; justify-content: space-between; align-items: baseline;">
+              <div>
+                <h3 class="page-title">M. Alvarez · CV-7741</h3>
+                <div class="page-sub">SMS · +1 (267) 555-0119 · Episode EP-4012 · Mask resupply</div>
+              </div>
+              <div style="display:flex; gap:6pt;">
+                <span class="pill amber">Awaiting admin</span>
+                <span class="btn">Snooze</span>
+                <span class="btn">Resolve</span>
+              </div>
+            </div>
+            <div class="thread">
+              <div class="thread-col">
+                <h5>Thread · 6 messages</h5>
+                <div class="msg out"><span class="from">PennPaps · 2d ago</span>Time for your monthly resupply, M.! Reply YES to ship the F30i (med).</div>
+                <div class="msg"><span class="from">M. Alvarez · 2d ago</span>YES</div>
+                <div class="msg out"><span class="from">PennPaps · 2d ago</span>Got it — shipping today, tracking by tomorrow. ✨</div>
+                <div class="msg"><span class="from">M. Alvarez · 12m ago</span>Mask leaks at the bridge — can I swap?</div>
+                <div class="msg" style="background: hsl(34 88% 44% / 0.1); border: 1px dashed var(--tone-amber);"><span class="from" style="color: var(--tone-amber);">AI draft · review &amp; send</span>Sorry to hear that, M. — bridge leaks are usually a sizing issue. We'll send a small replacement at no charge under our Comfort Guarantee. Want it shipped to your home address on file?</div>
+              </div>
+              <div class="thread-col">
+                <h5>Compose</h5>
+                <div style="background: white; border: 1px solid var(--line-1); border-radius: 4pt; padding: 6pt; min-height: 80pt; font-size: 8pt; color: var(--ink-2);">
+                  Sorry to hear that, M. — bridge leaks are usually a sizing issue. We'll send a small replacement at no charge under our Comfort Guarantee. Want it shipped to your home address on file?
+                </div>
+                <div style="display:flex; gap:4pt; margin-top:6pt;">
+                  <span class="btn">📎 Attach</span>
+                  <span class="btn">Macros ▾</span>
+                  <span style="flex:1"></span>
+                  <span class="btn primary">Send SMS</span>
+                </div>
+                <h5 style="margin-top: 10pt;">Quick actions</h5>
+                <div style="display:flex; gap:4pt; flex-wrap: wrap;">
+                  <span class="btn">Re-ship same SKU</span>
+                  <span class="btn">Open RMA</span>
+                  <span class="btn">Pause subscription</span>
+                  <span class="btn">Escalate to lead</span>
+                </div>
+              </div>
+              <div class="thread-col">
+                <h5>Patient 360</h5>
+                <div style="font-size: 7.5pt; color: var(--ink-3); line-height: 1.5;">
+                  <strong style="color: var(--penn-navy);">Maria Alvarez</strong><br />
+                  Patient since <strong>Aug 2025</strong> · 9 orders<br />
+                  Insurance: <span class="pill emerald">Independence Blue Cross</span><br />
+                  Mask: <strong>F30i (M)</strong> · 30-day cadence<br />
+                  Last fitter run: 2025-08-12<br />
+                  Sleep position: side · mouth-breather: yes
+                </div>
+                <h5 style="margin-top: 8pt;">Recent orders</h5>
+                <div class="msg" style="background: var(--surface-3); font-size: 7pt;">
+                  ORD-9482 · Apr 30 · F30i M · $0 (insurance) · ✓ delivered
+                </div>
+                <div class="msg" style="background: var(--surface-3); font-size: 7pt;">
+                  ORD-9311 · Mar 28 · F30i M · $0 (insurance) · ✓ delivered
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">Figure 5 · Conversation detail with AI-drafted reply. The amber-bordered bubble is the suggestion — nothing sends until you click.</div>
+
+      <h3>3.3 · Episodes &amp; resupply automation</h3>
+      <p>
+        An <strong>episode</strong> is the unit of work the system tracks —
+        one mask resupply, one cushion replacement, one headgear swap. The
+        rule engine (<code>/admin/rules</code>) creates episodes
+        automatically based on each patient's replacement schedule. You'll
+        usually see them as the "Episode" link in the conversation list.
+      </p>
+      <p>
+        Episode lifecycle: <span class="pill slate">pending</span> →
+        <span class="pill blue">awaiting_patient</span> →
+        <span class="pill emerald">fulfilled</span>, with side-tracks for
+        <span class="pill amber">overdue</span>,
+        <span class="pill rose">cancelled</span>, and
+        <span class="pill slate">paused</span>.
+      </p>
+
+      <div class="shot">
+        <div class="shot-chrome">
+          <span class="shot-dot r"></span><span class="shot-dot y"></span><span class="shot-dot g"></span>
+          <span class="shot-url">https://pennfit.replit.app/admin/episodes?status=overdue</span>
+        </div>
+        <div class="shot-body">
+          <div class="shot-side">
+            <div class="brand">PennPaps</div>
+            <div class="group">Inbox</div>
+            <div class="nav"><a>Dashboard</a><a>Conversations</a><a class="active">Episodes</a><a>Follow-ups</a></div>
+          </div>
+          <div class="shot-main">
+            <h3 class="page-title">Episodes — overdue</h3>
+            <div class="page-sub">Due-date passed without fulfillment. Triage daily; auto-escalates to a phone call after 5 days.</div>
+            <div class="toolbar">
+              <span class="btn">Status: Overdue ▾</span>
+              <span class="btn">Type: All ▾</span>
+              <span class="btn">Carrier: All ▾</span>
+              <span style="flex:1"></span>
+              <span class="btn">Export CSV</span>
+            </div>
+            <table class="shot-table">
+              <thead>
+                <tr><th>Episode</th><th>Patient</th><th>Type</th><th>Due</th><th>Last touch</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>EP-3992</td><td>R. Chen</td><td>Headgear</td><td class="muted">2026-05-01 (6d)</td><td>Voicemail · 1h ago</td><td><span class="pill amber">Overdue</span></td></tr>
+                <tr><td>EP-3998</td><td>J. Yoo</td><td>Cushion</td><td class="muted">2026-05-02 (5d)</td><td>MMS · 42m ago</td><td><span class="pill amber">Overdue</span></td></tr>
+                <tr><td>EP-4007</td><td>D. Patel</td><td>Resupply</td><td class="muted">2026-05-03 (4d)</td><td>Email · 28m ago</td><td><span class="pill amber">Overdue</span></td></tr>
+                <tr><td>EP-4012</td><td>M. Alvarez</td><td>Mask</td><td class="muted">2026-05-04 (3d)</td><td>SMS · 12m ago</td><td><span class="pill amber">Overdue</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="caption">Figure 6 · Episodes filtered to <em>overdue</em>. The auto-call rule fires at day 5; you should reach out first if you can.</div>
+
+      <h3>3.4 · Patients (Patient 360)</h3>
+      <p>
+        The <strong>Patients</strong> page lists every PHI-bearing patient in
+        the system — distinct from the <strong>Customers</strong> page (cash
+        shoppers without an open insurance lead). Click into a row to see
+        the full Patient 360: demographics, prescription, mask history,
+        every conversation, every episode, and a notes timeline.
+      </p>
+      <ul>
+        <li><strong>Phone &amp; email lookup</strong> across all touchpoints — one search box, every channel.</li>
+        <li><strong>Status:</strong> active, paused, churned. Pausing suppresses outbound automation without deleting data.</li>
+        <li><strong>Notes:</strong> internal-only timeline; never visible to the patient.</li>
+        <li><strong>Recent activity:</strong> last fitter run, last order, last reply — at a glance.</li>
+      </ul>
+
+      <div class="callout warn">
+        <strong>PHI handling.</strong> Don't paste patient names, phone numbers, prescriptions, or carrier IDs into Slack, email, screenshot tools, or anything not behind PennPaps SSO. The audit log records every page view that surfaces PHI; pasting it elsewhere will not.
+      </div>
+
+      <h3>3.5 · Follow-ups, canned replies, macros</h3>
+      <p>
+        Three small but heavily-used tools:
+      </p>
+      <ul>
+        <li><strong>Follow-ups</strong> (<code>/admin/followups</code>) — your personal "come back to this" queue. Snooze a conversation and it lands here at the chosen time. Also surfaces every conversation assigned to you that has been silent for 24 hours.</li>
+        <li><strong>Canned Replies / Macros</strong> (<code>/admin/macros</code>) — shared, branded message templates with variable interpolation (<code>{{first_name}}</code>, <code>{{mask_model}}</code>, <code>{{rma_link}}</code>). Use these instead of free-typing common responses.</li>
+        <li><strong>Rule Tester</strong> (<code>/admin/rule-tester</code>) — sandbox for the rule engine. Operators (not agents) use it to dry-run a rule against a fake patient before flipping it on.</li>
+      </ul>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         CHAPTER 4 — ORDERS & SHOP
+         ════════════════════════════════════════════════════════════ -->
+    <section class="page-break">
+      <span class="section-tag">Chapter 4</span>
+      <h2 style="border:0; margin-top: 4pt;">Orders &amp; shop</h2>
+
+      <h3>4.1 · Orders, subscriptions, returns</h3>
+      <p>
+        Three sibling pages cover the cash-pay shop:
+      </p>
+      <table class="spec">
+        <thead><tr><th>Page</th><th>What it shows</th><th>Common CSR actions</th></tr></thead>
+        <tbody>
+          <tr><td><code>/admin/pennpaps/orders</code></td><td>Every Stripe-checkout order with status, tracking, fulfillment notes.</td><td>Re-send confirmation, edit shipping, refund, mark shipped.</td></tr>
+          <tr><td><code>/admin/shop/subscriptions</code></td><td>Active Subscribe &amp; Save subscriptions: cadence, next ship date, products.</td><td>Pause, skip, change cadence, change SKU, cancel.</td></tr>
+          <tr><td><code>/admin/shop/returns</code></td><td>RMA queue: requested → label_sent → received → refunded.</td><td>Generate prepaid label, refund (full / partial), close RMA.</td></tr>
+        </tbody>
+      </table>
+
+      <!-- Order detail mockup -->
+      <div class="shot">
+        <div class="shot-chrome">
+          <span class="shot-dot r"></span><span class="shot-dot y"></span><span class="shot-dot g"></span>
+          <span class="shot-url">https://pennfit.replit.app/admin/pennpaps/orders/ORD-9482</span>
+        </div>
+        <div class="shot-body">
+          <div class="shot-side">
+            <div class="brand">PennPaps</div>
+            <div class="group">Orders &amp; Shop</div>
+            <div class="nav"><a class="active">Orders</a><a>Subscriptions</a><a>Returns &amp; RMAs</a><a>Customers</a><a>Abandoned Carts</a></div>
+          </div>
+          <div class="shot-main">
+            <div style="display:flex; justify-content: space-between; align-items: baseline;">
+              <div>
+                <h3 class="page-title">Order ORD-9482</h3>
+                <div class="page-sub">M. Alvarez · placed Apr 30 · paid via Independence Blue Cross · 1 item</div>
+              </div>
+              <div style="display:flex; gap:6pt;">
+                <span class="pill emerald">Delivered</span>
+                <span class="btn">Resend confirmation</span>
+                <span class="btn gold">Reorder for customer</span>
+              </div>
+            </div>
+            <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+              <div class="kpi-card"><div class="label">Total</div><div class="value" style="font-size: 14pt;">$0.00</div><div class="hint">Insurance · co-pay $0</div></div>
+              <div class="kpi-card"><div class="label">Items</div><div class="value" style="font-size: 14pt;">1</div><div class="hint">F30i · M</div></div>
+              <div class="kpi-card"><div class="label">Tracking</div><div class="value" style="font-size: 11pt; color: var(--tone-blue);">USPS · 1Z…</div><div class="hint">Delivered May 02</div></div>
+              <div class="kpi-card"><div class="label">Source</div><div class="value" style="font-size: 11pt;">Resupply SMS</div><div class="hint">Episode EP-4012</div></div>
+            </div>
+            <table class="shot-table">
+              <thead><tr><th>Item</th><th>SKU</th><th>Qty</th><th>List</th><th>Charge</th></tr></thead>
+              <tbody>
+                <tr><td>ResMed AirFit F30i — Medium</td><td>RES-F30I-M</td><td>1</td><td>$229.00</td><td>$0.00 <span class="pill emerald">Insurance</span></td></tr>
+              </tbody>
+            </table>
+            <h4 style="margin-top: 10pt;">Activity</h4>
+            <div class="msg" style="font-size: 7.5pt;"><strong>May 02 14:12</strong> · Marked delivered (USPS scan).</div>
+            <div class="msg" style="font-size: 7.5pt;"><strong>May 01 09:34</strong> · Shipped (label printed by Penn Fulfillment).</div>
+            <div class="msg" style="font-size: 7.5pt;"><strong>Apr 30 18:01</strong> · Patient replied YES to resupply SMS · auto-created.</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">Figure 7 · Order detail. The "Reorder for customer" button drops the same SKU into a fresh cart in their account.</div>
+
+      <h3>4.2 · Customers (Customer 360)</h3>
+      <p>
+        Customers (<code>/admin/shop/customers</code>) is the cash-pay
+        analogue of Patients. Lifetime value, every order, every
+        subscription, every abandoned cart, every review they've left,
+        every wishlist they've saved — all on one screen. The
+        <strong>Reorder for customer</strong> action lives here too: click
+        any past order and the system creates a fresh cart and emails them
+        a checkout link.
+      </p>
+
+      <h3>4.3 · Abandoned carts &amp; back-in-stock</h3>
+      <p>
+        The shop captures two recoverable signals:
+      </p>
+      <ul>
+        <li><strong>Abandoned Carts</strong> (<code>/admin/shop/abandoned-carts</code>) — a customer added a product but didn't finish checkout. After 4 hours we send a reminder email; after 24 hours, a coupon. You can re-trigger either from this page.</li>
+        <li><strong>Back-in-Stock</strong> (<code>/admin/shop/back-in-stock</code>) — customers who asked to be notified when a SKU returns. The page shows pending notifications grouped by product so you can prioritize what to re-stock.</li>
+      </ul>
+
+      <h3>4.4 · Reviews, Q&amp;A, inventory, insurance leads</h3>
+      <ul>
+        <li><strong>Reviews</strong> (<code>/admin/shop/reviews</code>) — moderation queue for product reviews. Approve, reply publicly, or hide. Replies email the reviewer through the shared SendGrid client (one From address: <code>info@pennpaps.com</code>).</li>
+        <li><strong>Product Q&amp;A</strong> (<code>/admin/shop/product-questions</code>) — customer-asked questions on product pages. You answer here; the answer publishes on the storefront and emails the asker.</li>
+        <li><strong>Inventory</strong> (<code>/admin/shop/inventory</code>) — read-side mirror of Stripe's product/price catalog. Stripe is the source of truth; this page is the team's view of it.</li>
+        <li><strong>Insurance Leads</strong> (<code>/admin/shop/insurance-leads</code>) — every qualifier-form submission. Triage, run eligibility, and convert to a fulfilled order from here. The detail page links the lead, the patient, and any existing conversations.</li>
+      </ul>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         CHAPTER 5 — INSIGHTS, SYSTEM, AUDIT
+         ════════════════════════════════════════════════════════════ -->
+    <section class="page-break">
+      <span class="section-tag">Chapter 5</span>
+      <h2 style="border:0; margin-top: 4pt;">Insights, system, and audit</h2>
+
+      <h3>5.1 · Operations &amp; delivery failures</h3>
+      <p>
+        Two pages exist specifically for the things that go wrong, so you
+        can find them before the patient calls.
+      </p>
+      <ul>
+        <li><strong>Operations</strong> (<code>/admin/operations</code>) — health board: SMS delivery rate, email open/bounce rate, voice answer rate, pg-boss queue depth, last reminder scan, last PHI sweep. If anything is red here, escalate to the on-call lead before promising a delivery time.</li>
+        <li><strong>Delivery Failures</strong> (<code>/admin/delivery-failures</code>) — bounced emails, undeliverable SMS, voicemails-only after three attempts. Each row has a "switch channel" button so you can move the patient onto a working address.</li>
+      </ul>
+
+      <h3>5.2 · Reports &amp; storefront analytics</h3>
+      <p>
+        Four reporting surfaces, in order of how often you'll use them:
+      </p>
+      <ol>
+        <li><strong>Reports</strong> — operational metrics (resolution time, first-response time, fulfillment lead time, churn) by week/month/agent.</li>
+        <li><strong>Storefront Analytics</strong> — funnel: home → fitter → results → cart → checkout → confirmed. Use this to spot drop-off when product changes ship.</li>
+        <li><strong>Reminders</strong> — outbound reminder cadence health: how many fired, how many converted, how many bounced.</li>
+        <li><strong>Storefront Audit</strong> — a simplified audit view scoped to shop activity (separate from the full system audit log).</li>
+      </ol>
+
+      <h3>5.3 · Rules, rule tester, audit logs</h3>
+      <p>
+        Operators (not agents) own these screens; they're documented here so
+        you understand what's driving your inbox.
+      </p>
+      <ul>
+        <li><strong>Rules</strong> — every automation in the system: when to send the first resupply nudge, when to escalate to a phone call, when to move a conversation to <em>awaiting_admin</em>. Listed with a short summary; tap to expand the conditional.</li>
+        <li><strong>Rule Tester</strong> — paste a fake event, see which rules would fire and what each rule would do. Used before rolling a rule change to production.</li>
+        <li><strong>Audit Log</strong> — every admin action recorded with operator, target, timestamp, and IP. PHI never appears in the log — only the IDs and the action verbs.</li>
+        <li><strong>Settings &amp; Team</strong> — admin-only. Invite, promote, demote, and remove team members; rotate the link-signing HMAC if a leak is suspected.</li>
+      </ul>
+
+      <div class="callout info">
+        <strong>If a customer asks "did someone change my order?"</strong>
+        the audit log can tell you who did what and when. From the order
+        detail, click the timestamp on the activity entry — it deep-links
+        into the audit log filtered to that record. This is the single
+        most powerful feature for resolving "I didn't authorize that"
+        disputes in under a minute.
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         CHAPTER 6 — DAY IN THE LIFE
+         ════════════════════════════════════════════════════════════ -->
+    <section class="page-break">
+      <span class="section-tag">Chapter 6</span>
+      <h2 style="border:0; margin-top: 4pt;">Day-in-the-life playbook</h2>
+
+      <h3>6.1 · Common scenarios &amp; how to solve them</h3>
+
+      <h4>Scenario A · "My mask is leaking"</h4>
+      <ol class="steps">
+        <li>Open Conversations → click into the patient. Patient 360 shows current mask SKU + size.</li>
+        <li>Confirm sizing in the questionnaire history. If the patient has gained / lost weight or grown a beard, re-run the fitter (<em>Send fitter link</em> macro).</li>
+        <li>If sizing was wrong: open RMA, ship the next size up under <strong>Comfort Guarantee</strong> (no charge to patient).</li>
+        <li>If sizing was right: ship a fresh cushion (resupply episode) and check that the headgear isn't over-tightened.</li>
+      </ol>
+
+      <h4>Scenario B · "Pause my subscription"</h4>
+      <ol class="steps">
+        <li>Customers → search by name or phone → click their profile.</li>
+        <li>Scroll to Subscriptions → click <strong>Pause</strong>. Choose duration (4, 8, 12 weeks) or "until I unpause".</li>
+        <li>Stripe pauses the recurring charge automatically. The next-ship-date moves; the patient gets an email.</li>
+      </ol>
+
+      <h4>Scenario C · "I never got my order"</h4>
+      <ol class="steps">
+        <li>Look up the order in <code>/admin/pennpaps/orders</code>. Check the tracking link.</li>
+        <li>If the carrier shows delivered but the patient says no: open Delivery Failures to see if there's a known issue at that ZIP.</li>
+        <li>Reship same SKU at no charge; if the original turns up, the patient keeps it (under $10 in cost — not worth the friction).</li>
+        <li>For high-value items, escalate to a lead before reshipping.</li>
+      </ol>
+
+      <h4>Scenario D · "Insurance denied my claim"</h4>
+      <ol class="steps">
+        <li>Open the patient's Insurance Lead (linked from Patient 360).</li>
+        <li>Check the denial reason. Most common: missing recent sleep study or expired Rx — both can be re-submitted.</li>
+        <li>Send the patient the Rx-upload link macro; once received, re-run eligibility from the lead detail page.</li>
+        <li>If we can't qualify them, offer cash-pay with the loyalty discount macro.</li>
+      </ol>
+
+      <h3>6.2 · Escalation &amp; service level targets</h3>
+      <table class="spec">
+        <thead><tr><th>Channel</th><th>First response</th><th>Resolution</th><th>Escalate after</th></tr></thead>
+        <tbody>
+          <tr><td>SMS</td><td>15 minutes</td><td>4 hours</td><td>2 hours waiting on you</td></tr>
+          <tr><td>Email</td><td>2 hours</td><td>1 business day</td><td>4 hours waiting on you</td></tr>
+          <tr><td>Voice (voicemail)</td><td>30 minutes</td><td>Same day</td><td>1 hour</td></tr>
+          <tr><td>Web chat</td><td>1 minute</td><td>15 minutes</td><td>5 minutes</td></tr>
+          <tr><td>Insurance lead</td><td>1 business day</td><td>3 business days</td><td>2 business days</td></tr>
+        </tbody>
+      </table>
+
+      <p>
+        Escalation paths, in order: <strong>shift lead</strong> → on-call
+        operator → product on-call. Use the
+        <em>Escalate to lead</em> button on a conversation; it assigns,
+        notifies, and starts a 30-minute resolution timer.
+      </p>
+
+      <h3>6.3 · Glossary &amp; quick-reference card</h3>
+      <table class="spec">
+        <thead><tr><th>Term</th><th>What it means</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Episode</strong></td><td>One unit of resupply work — mask, cushion, headgear, etc. Created by the rule engine; closed when fulfilled.</td></tr>
+          <tr><td><strong>Conversation</strong></td><td>The threaded view of all messages exchanged with a patient (any channel) tied to one or more episodes.</td></tr>
+          <tr><td><strong>Patient 360</strong></td><td>Right-side panel on conversation/episode pages showing the patient's full history.</td></tr>
+          <tr><td><strong>Customer 360</strong></td><td>Cash-pay analogue of Patient 360; lives under <code>/admin/shop/customers</code>.</td></tr>
+          <tr><td><strong>Comfort Guarantee</strong></td><td>30-day "doesn't fit, swap free" policy. Use the macro on any leak/discomfort case.</td></tr>
+          <tr><td><strong>Subscribe &amp; Save</strong></td><td>Recurring shop subscription. Customer-controlled cadence; Stripe-driven billing.</td></tr>
+          <tr><td><strong>Macro / Canned Reply</strong></td><td>Branded message template with variable interpolation. Always prefer over free-text.</td></tr>
+          <tr><td><strong>Snooze</strong></td><td>Move a conversation out of the queue for a chosen interval; it returns to <em>awaiting_admin</em> when time's up.</td></tr>
+          <tr><td><strong>PHI</strong></td><td>Protected Health Information. Names, phone numbers, prescriptions, insurance IDs. Never leaves admin SSO.</td></tr>
+          <tr><td><strong>pg-boss / worker</strong></td><td>The background-job system that runs reminder scans hourly and PHI sweeps weekly. Lives inside the same API process.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>Quick-reference card.</strong> Tape this to your monitor:
+        <ul style="margin-top: 4pt; margin-bottom: 0;">
+          <li>⌘K — global search across patients, customers, orders.</li>
+          <li>⇧S — snooze the current conversation.</li>
+          <li>⇧R — resolve.</li>
+          <li>⇧M — open the macro picker.</li>
+          <li>⇧A — assign to me.</li>
+          <li>⇧E — escalate to lead.</li>
+        </ul>
+      </div>
+
+      <p style="margin-top: 18pt; font-size: 9pt; color: var(--ink-3); text-align: center; border-top: 1px solid var(--line-1); padding-top: 10pt;">
+        Penn Home Medical Supply · pennfit.replit.app · info@pennpaps.com<br />
+        Manual edition May 2026 · written for the v1 admin console (post-consolidation, single-storefront era).
+      </p>
+    </section>
+  </body>
+</html>

@@ -20,6 +20,10 @@
     "@workspace/resupply-db": "workspace:*",
     "@workspace/resupply-domain": "workspace:*",
     "@workspace/resupply-email": "workspace:*",
+    "@workspace/resupply-integrations": "workspace:*",
+    "@workspace/resupply-integrations-airview": "workspace:*",
+    "@workspace/resupply-integrations-care-orchestrator": "workspace:*",
+    "@workspace/resupply-integrations-health-connect": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",
@@ -56,6 +60,6 @@
     "pino-pretty": "^13",
     "supertest": "^7.1.4",
     "thread-stream": "3.1.0",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.4"
   }
 }
