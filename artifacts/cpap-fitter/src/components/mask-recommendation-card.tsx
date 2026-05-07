@@ -247,19 +247,38 @@ export function MaskRecommendationCard({
             {details?.sizesAvailable && details.sizesAvailable.length > 0 && (
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Available sizes
+                  {mask.recommendedSize
+                    ? "Try this size first"
+                    : "Available sizes"}
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
-                  {details.sizesAvailable.map((s, i) => (
-                    <Badge
-                      key={i}
-                      variant="outline"
-                      className="text-xs font-normal"
-                    >
-                      {s}
-                    </Badge>
-                  ))}
+                  {details.sizesAvailable.map((s, i) => {
+                    const isPicked = s === mask.recommendedSize;
+                    return (
+                      <Badge
+                        key={i}
+                        variant={isPicked ? "default" : "outline"}
+                        data-testid={
+                          isPicked
+                            ? `recommended-size-${mask.maskId}`
+                            : undefined
+                        }
+                        className={
+                          isPicked
+                            ? "text-xs font-semibold bg-[hsl(var(--penn-gold))] text-[hsl(var(--penn-navy))] hover:bg-[hsl(var(--penn-gold))]"
+                            : "text-xs font-normal"
+                        }
+                      >
+                        {s}
+                      </Badge>
+                    );
+                  })}
                 </div>
+                {mask.sizeRationale && (
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                    {mask.sizeRationale}
+                  </p>
+                )}
               </div>
             )}
           </div>
