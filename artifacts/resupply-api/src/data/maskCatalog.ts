@@ -1003,7 +1003,7 @@ export const maskCatalog: MaskEntry[] = [
     weightGrams: 52,
     sizesAvailable: ["XS", "S", "M", "L"],
     pressureRangeMin: 4,
-    pressureRangeMax: 20,
+    pressureRangeMax: 16,
     priceTier: "budget",
     bestFor: [
       "First-time CPAP users",
