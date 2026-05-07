@@ -21,6 +21,6 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/ws": "^8.5.13",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.4"
   }
 }
