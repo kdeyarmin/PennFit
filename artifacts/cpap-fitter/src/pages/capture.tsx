@@ -297,11 +297,10 @@ export function Capture() {
         <p className="hidden md:block text-muted-foreground leading-relaxed">
           Center your face in the oval and look straight at the camera. We
           measure off your iris — it's almost exactly the same size in every
-          adult — so you don't need a ruler or a credit card in the shot. The
-          photo never leaves your device.
+          adult.
         </p>
         <p className="md:hidden text-sm text-muted-foreground leading-snug">
-          Center your face in the oval. The photo never leaves your device.
+          Center your face in the oval.
         </p>
       </div>
 
