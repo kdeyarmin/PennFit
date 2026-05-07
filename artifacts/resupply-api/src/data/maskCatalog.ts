@@ -498,7 +498,7 @@ export const maskCatalog: MaskEntry[] = [
     ],
     contraindications: [
       "Mouth breathers",
-      "High CPAP pressures above 15 cmH₂O may cause leaks",
+      "High CPAP pressures above 15 cmH₂O — clinical advisory; may leak above this range despite the 20 cmH₂O mechanical max",
       "Severe nasal septum deviation",
     ],
     cushionMaterial: "Silicone (dual-wall pillows)",
@@ -995,7 +995,7 @@ export const maskCatalog: MaskEntry[] = [
     ],
     contraindications: [
       "Mouth breathers",
-      "High pressures above 16 cmH₂O may cause leaks",
+      "High pressures above 16 cmH₂O — clinical advisory; may leak above this range despite the 20 cmH₂O mechanical max",
     ],
     cushionMaterial: "Silicone (dual-wall pillows)",
     headgearStyle: "Slim split-strap design",
@@ -1041,7 +1041,7 @@ export const maskCatalog: MaskEntry[] = [
     weightGrams: 56,
     sizesAvailable: ["XS", "S", "M", "L"],
     pressureRangeMin: 4,
-    pressureRangeMax: 22,
+    pressureRangeMax: 20,
     priceTier: "premium",
     bestFor: [
       "Active sleepers",

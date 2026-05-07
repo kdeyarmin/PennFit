@@ -21,7 +21,11 @@ import {
 import { patients } from "./patients";
 import { resupplySchema } from "./_schema";
 
-export type TherapyCloudSource = "resmed_airview" | "philips_care" | "manual";
+export type TherapyCloudSource =
+  | "resmed_airview"
+  | "philips_care"
+  | "health_connect"
+  | "manual";
 
 export const patientTherapyNights = resupplySchema.table(
   "patient_therapy_nights",
@@ -58,7 +62,7 @@ export const patientTherapyNights = resupplySchema.table(
     ),
     sourceEnum: check(
       "patient_therapy_nights_source_enum",
-      sql`${t.source} IN ('resmed_airview','philips_care','manual')`,
+      sql`${t.source} IN ('resmed_airview','philips_care','health_connect','manual')`,
     ),
   }),
 );

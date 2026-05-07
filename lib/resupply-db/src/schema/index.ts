@@ -7,6 +7,7 @@ export * from "./patient-checkin-attempts";
 export * from "./csr-compliance-alerts";
 export * from "./patient-therapy-nights";
 export * from "./patient-therapy-links";
+export * from "./patient-integration-snapshots";
 export * from "./patient-smart-trigger-events";
 export * from "./prescriptions";
 export * from "./physician-fax-outreach";
