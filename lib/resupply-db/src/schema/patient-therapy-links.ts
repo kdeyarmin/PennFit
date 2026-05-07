@@ -58,6 +58,7 @@ export const patientTherapyLinks = resupplySchema.table(
     // unique index in SQL — Drizzle doesn't model partial uniques
     // natively, so it's enforced by the migration only. Inserts
     // that violate it surface as the index name in the PG error.
+    patientIdx: index("patient_therapy_links_patient_idx").on(t.patientId),
     scanIdx: index("patient_therapy_links_scan_idx").on(
       t.status,
       t.lastSyncedAt,

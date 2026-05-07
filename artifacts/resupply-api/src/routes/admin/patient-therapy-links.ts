@@ -14,7 +14,7 @@
 // Audit envelopes record link id + patient id + source only — not
 // the partner id or device serial. Logger never sees them either.
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -65,6 +65,22 @@ interface LinkResponse {
   lastSyncError: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface PgConstraintError {
+  code?: string;
+  constraint?: string;
+}
+
+function parsePgConstraintError(err: unknown): PgConstraintError {
+  if (!err || typeof err !== "object") {
+    return {};
+  }
+  const candidate = err as PgConstraintError;
+  return {
+    code: candidate.code,
+    constraint: candidate.constraint,
+  };
 }
 
 function toResponse(row: {
@@ -178,7 +194,7 @@ router.post(
       // and the (source, partner_patient_id) global unique both
       // surface as 23505. Distinguish by constraint name so the SPA
       // can show a useful message; default to a generic 409.
-      const pgErr = err as { code?: string; constraint?: string };
+      const pgErr = parsePgConstraintError(err);
       if (pgErr?.code === "23505") {
         if (pgErr.constraint === "patient_therapy_links_active_unique") {
           res.status(409).json({
@@ -198,7 +214,7 @@ router.post(
         return;
       }
       logger.warn(
-        { err, patient_id: patientId, source },
+        { db_error: pgErr, patient_id: patientId, source },
         "patient_therapy_links insert failed",
       );
       res.status(500).json({ error: "internal_error" });
@@ -277,7 +293,7 @@ router.patch(
         .returning();
       updated = rows[0];
     } catch (err) {
-      const pgErr = err as { code?: string; constraint?: string };
+      const pgErr = parsePgConstraintError(err);
       if (
         pgErr?.code === "23505" &&
         pgErr.constraint === "patient_therapy_links_active_unique"
@@ -291,7 +307,7 @@ router.patch(
         return;
       }
       logger.warn(
-        { err, patient_id: patientId, link_id: linkId },
+        { db_error: pgErr, patient_id: patientId, link_id: linkId },
         "patient_therapy_links update failed",
       );
       res.status(500).json({ error: "internal_error" });

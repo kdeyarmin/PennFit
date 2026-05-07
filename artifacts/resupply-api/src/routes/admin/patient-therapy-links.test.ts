@@ -334,9 +334,32 @@ describe("PATCH /admin/patients/:id/therapy-links/:linkId", () => {
     expect(audit.action).toBe("patient.therapy_link.updated");
     expect(audit.metadata.changed_fields).toEqual(["status"]);
   });
+
+  it("409 active_link_exists when setting status=active violates partial unique", async () => {
+    admin();
+    dbState.updateResult = {
+      err: {
+        code: "23505",
+        constraint: "patient_therapy_links_active_unique",
+        message: "duplicate key",
+      },
+    };
+    const res = await request(makeApp())
+      .patch(`/admin/patients/${PATIENT_ID}/therapy-links/${LINK_ID}`)
+      .send({ status: "active" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("active_link_exists");
+  });
 });
 
 describe("DELETE /admin/patients/:id/therapy-links/:linkId", () => {
+  it("401s without admin", async () => {
+    const res = await request(makeApp()).delete(
+      `/admin/patients/${PATIENT_ID}/therapy-links/${LINK_ID}`,
+    );
+    expect(res.status).toBe(401);
+  });
+
   it("soft-revokes (status='revoked') + audits", async () => {
     admin();
     dbState.updateResult = { rows: [makeRow({ status: "revoked" })] };

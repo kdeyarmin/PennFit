@@ -68,6 +68,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS "patient_therapy_links_active_unique"
   ON "resupply"."patient_therapy_links" ("patient_id", "source")
   WHERE "status" = 'active';
 
+-- Common admin lookup path: list all links for one patient across all
+-- statuses.
+CREATE INDEX IF NOT EXISTS "patient_therapy_links_patient_idx"
+  ON "resupply"."patient_therapy_links" ("patient_id");
+
 -- Worker scan index: "give me the active links most overdue for a
 -- sync." NULLs sort first by Postgres default — exactly what we
 -- want for never-synced rows.
