@@ -183,9 +183,9 @@ function answers(
 
 describe("recommend — React Health manufacturer boost", () => {
   it("ranks the React Health iVolve P2 above the ResMed AirFit P10 for a claustrophobic side-sleeper on low pressure", () => {
-    // Both masks are nasal pillow, both rated to 20+ cmH2O, both viable
-    // for this profile. Without the boost they score very close. With
-    // the 1.15× boost on the React Health entry, iVolve P2 should win.
+    // Both masks are nasal pillows and are viable for this low-pressure
+    // profile. Without the boost they score very close. With the 1.15×
+    // boost on the React Health entry, iVolve P2 should win.
     const result = recommend(
       PROFILE_MEASUREMENTS,
       answers({
