@@ -151,8 +151,8 @@ function MessageFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
           </span>
         ))}
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+        <table className="w-full text-sm min-w-[720px]">
           <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
             <tr>
               <th className="text-left px-3 py-2">When</th>
@@ -236,8 +236,8 @@ function AuditFailuresTable({ data }: { data: DeliveryFailuresResponse }) {
     );
   }
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+      <table className="w-full text-sm min-w-[720px]">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-600">
           <tr>
             <th className="text-left px-3 py-2">When</th>

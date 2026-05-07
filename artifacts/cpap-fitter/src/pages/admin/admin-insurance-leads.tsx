@@ -187,10 +187,10 @@ export function AdminInsuranceLeadsPage() {
       {isError && <ErrorPanel error={error} onRetry={() => void refetch()} />}
 
       <div
-        className="border rounded-lg bg-white overflow-hidden"
+        className="border rounded-lg bg-white overflow-x-auto"
         style={{ borderColor: "hsl(var(--line-1))" }}
       >
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[720px]">
           <thead style={{ backgroundColor: "#f8fafc" }}>
             <tr style={{ color: "#475569" }}>
               <th className="text-left px-3 py-2 font-semibold">Patient</th>

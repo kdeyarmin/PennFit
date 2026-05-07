@@ -342,8 +342,8 @@ export function Insurance() {
             </p>
           </div>
         </div>
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="glass-card rounded-2xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[420px]">
             <thead className="bg-secondary/30 text-foreground">
               <tr>
                 <th
