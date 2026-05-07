@@ -112,7 +112,7 @@ router.get(
       .from(patientTherapyLinks)
       .where(eq(patientTherapyLinks.patientId, patientId))
       // Active first, then by source for stable display.
-      .orderBy(desc(patientTherapyLinks.status), asc(patientTherapyLinks.source));
+      .orderBy(asc(patientTherapyLinks.status), asc(patientTherapyLinks.source));
 
     res.json({ links: rows.map(toResponse) });
   },
