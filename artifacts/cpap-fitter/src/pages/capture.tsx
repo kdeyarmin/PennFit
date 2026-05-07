@@ -339,10 +339,13 @@ export function Capture() {
           aria-hidden="true"
         >
           {/* Face Oval — softer, premium "scanner" feel.
-              Sized off the SHORTER dimension on mobile (h-3/5 via
-              fixed max-h) so the oval stays fully inside the
-              shorter capped frame instead of being cropped top/bottom. */}
-          <div className="h-3/5 max-h-[60%] aspect-[3/4] md:w-2/5 md:h-auto border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
+              Aspect-[2/3] is a tall portrait ratio (width:height = 2:3),
+              which matches the actual proportions of a human head far
+              better than the near-square 3:4 we had before. Sized off
+              height on mobile so the oval stays fully inside the
+              capped frame; off width on desktop where the frame is
+              wider than tall. */}
+          <div className="h-4/5 max-h-[80%] aspect-[2/3] md:h-auto md:w-1/3 md:max-h-none border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
 
           {/* Corner brackets for 'sci-fi' tech feel */}
           <CornerBrackets />
