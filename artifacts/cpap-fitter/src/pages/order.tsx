@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { track } from "@/lib/track";
+import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
 
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -180,6 +181,7 @@ export function Order() {
           orderReference: "PENN-FAKE",
           message: "Order received.",
           mask: chosenMask,
+          ...(measurements ? { measurements } : {}),
         }),
       );
       setChosenMask(null);
@@ -245,6 +247,10 @@ export function Order() {
               orderReference: data.orderReference,
               message: data.message,
               mask: chosenMask,
+              // Carry the measurements forward so the success page can
+              // show the customer the exact numbers Penn Home Medical
+              // Supply received with their order.
+              ...(measurements ? { measurements } : {}),
             }),
           );
           track("order_submitted_success", { mask: chosenMask.modelNumber });
@@ -325,6 +331,21 @@ export function Order() {
           </Link>
         </CardContent>
       </Card>
+
+      {/* Show the customer the measurements that will be transmitted
+          with this order. Older flows had these numbers vanish after
+          the measure step — surfacing them here lets the patient
+          spot a wildly off scan (e.g. nostril span 2 mm) before the
+          order goes out, and reassures CSR-bound shoppers exactly
+          what data Penn Home Medical Supply will receive. */}
+      {measurements && (
+        <div className="mb-8">
+          <FacialMeasurementsCard
+            measurements={measurements}
+            testIdPrefix="order-facial-measurements"
+          />
+        </div>
+      )}
 
       {apiError && (
         <Alert

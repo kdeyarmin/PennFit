@@ -151,9 +151,25 @@ export const updateShopMe = (input: {
  * on every call (each may be null when the customer hasn't filled
  * the form out yet).
  */
+/**
+ * On-device facial measurements (mm). Mirrors the FacialMeasurements
+ * type from the storefront OpenAPI client, plus the metadata fields
+ * we persist on shop_customers (calibration method + capture time).
+ */
+export interface ShopFacialMeasurements {
+  noseWidth: number;
+  noseHeight: number;
+  noseToChin: number;
+  mouthWidth: number;
+  faceWidthAtCheekbones: number;
+  calibrationMethod: "iris" | "manual_card";
+  capturedAt: string;
+}
+
 export interface ShopClinicalInfoResponse {
   cpapDevice: CpapDeviceInfo | null;
   physicianInfo: PhysicianInfo | null;
+  facialMeasurements: ShopFacialMeasurements | null;
 }
 
 export const fetchShopClinicalInfo = () =>

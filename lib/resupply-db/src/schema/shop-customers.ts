@@ -130,6 +130,37 @@ export interface CpapDeviceInfo {
  * coordinating prescription verification — the lightweight
  * version (name + phone) is enough to surface to a CSR.
  */
+/**
+ * On-device facial measurements captured by the fitter (MediaPipe
+ * face-mesh, calibrated against the iris diameter ~11.7 mm).
+ *
+ * Two clinical purposes, surfaced to the customer + CSR:
+ *   * Headgear / mask sizing — driven by faceWidthAtCheekbones,
+ *     noseToChin, mouthWidth.
+ *   * Nasal-pillow sizing — driven by noseWidth (alar/nostril span)
+ *     and noseHeight.
+ *
+ * `calibrationMethod` documents how the pixel→mm scale was set
+ * ("iris" today; "manual_card" was the legacy fallback).
+ *
+ * Stored as JSONB on shop_customers so /account and admin Customer
+ * 360 can show the *latest* values without replaying every order.
+ * Per-order historical snapshots still live on `orders.payload`.
+ */
+export interface FacialMeasurementsInfo {
+  noseWidth: number;
+  noseHeight: number;
+  noseToChin: number;
+  mouthWidth: number;
+  faceWidthAtCheekbones: number;
+  calibrationMethod: "iris" | "manual_card";
+  /**
+   * ISO timestamp the measurements were captured. Lets the UI show
+   * "Measured 3 weeks ago — re-scan?" without a separate column.
+   */
+  capturedAt: string;
+}
+
 export interface PhysicianInfo {
   name: string;
   practice?: string | null;
@@ -200,6 +231,16 @@ export const shopCustomers = resupplySchema.table(
      * route audit-logs every change with a non-PHI envelope.
      */
     physicianInfo: jsonb("physician_info_json").$type<PhysicianInfo | null>(),
+    /**
+     * Most-recent on-device facial measurements — see
+     * FacialMeasurementsInfo above. Migration 0066 added the column.
+     * Null until the customer completes a fitter scan that's tied to
+     * their signed-in identity (or to an email match on a guest
+     * order). Overwritten on every successful re-scan.
+     */
+    facialMeasurements: jsonb(
+      "facial_measurements_json",
+    ).$type<FacialMeasurementsInfo | null>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
