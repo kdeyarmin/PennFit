@@ -326,17 +326,16 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "charge.refunded": {
         // charge.refunded gives us a Charge, not a Session. Resolve
         // back to our row via payment_intent — that field is set on
-        // the row by markPaid().
+        // the row by markPaid(). Stripe may deliver payment_intent as
+        // either a string id or an expanded PaymentIntent object
+        // depending on event version / API expansion settings.
         const charge = event.data.object as Stripe.Charge;
-        if (
-          charge.payment_intent &&
+        const paymentIntentId =
           typeof charge.payment_intent === "string"
-        ) {
-          await markStatusByPaymentIntent(
-            charge.payment_intent,
-            "refunded",
-            log,
-          );
+            ? charge.payment_intent
+            : (charge.payment_intent?.id ?? null);
+        if (paymentIntentId) {
+          await markStatusByPaymentIntent(paymentIntentId, "refunded", log);
         }
         break;
       }

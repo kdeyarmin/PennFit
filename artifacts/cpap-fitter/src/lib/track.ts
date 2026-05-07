@@ -55,9 +55,6 @@ type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
   ? {
       cameraReady: boolean;
       runtimeReady?: boolean;
-      noGlasses: boolean;
-      evenLight: boolean;
-      facingCamera: boolean;
     }
   : T extends "results_retake_requested"
     ? { topConfidencePct: number }
