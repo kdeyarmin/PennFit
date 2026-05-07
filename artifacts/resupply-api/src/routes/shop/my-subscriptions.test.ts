@@ -148,8 +148,18 @@ function get(app: Express, path: string) {
   return request(app).get(path).set("X-Forwarded-For", uniqueIp());
 }
 
+// Per-call unique customer id. The pause/resume/cancel/cadence rate
+// limiters key on `req.userCustomerId` (NOT IP), so the
+// `uniqueIp()` trick above doesn't help them — once the same user
+// hits a limiter 5x within 60s the rest of the file's tests get
+// 429s. Minting a fresh id per signin call keeps each test in its
+// own bucket. Safe because the drizzle stub ignores WHERE clauses
+// (returns whatever's in `selectQueue`) and no assertion compares
+// against the literal USER_ID value.
+let signinCounter = 0;
 function stubSignedIn(userId: string): void {
-  mockSignedIn.current = userId;
+  signinCounter += 1;
+  mockSignedIn.current = `${userId}_${signinCounter}`;
 }
 
 function activeSubRow(

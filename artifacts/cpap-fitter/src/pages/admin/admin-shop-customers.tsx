@@ -235,7 +235,7 @@ export function AdminShopCustomersPage() {
             background: "var(--surface-1, #ffffff)",
             border: "1px solid var(--border, #e2e8f0)",
             borderRadius: 8,
-            overflow: "hidden",
+            overflowX: "auto",
             opacity: isFetching ? 0.7 : 1,
             transition: "opacity 120ms ease-out",
           }}
@@ -244,6 +244,7 @@ export function AdminShopCustomersPage() {
           <table
             style={{
               width: "100%",
+              minWidth: 720,
               borderCollapse: "collapse",
               fontSize: 13,
             }}

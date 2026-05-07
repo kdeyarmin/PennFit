@@ -78,6 +78,7 @@ const allowedOrigins = (() => {
     dev.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
   }
   dev.push(
+    "http://localhost",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:80",

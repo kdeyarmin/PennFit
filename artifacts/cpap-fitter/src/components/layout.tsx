@@ -275,60 +275,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <footer className="relative mt-10">
+      <footer className="relative mt-12">
         <div className="aurora-divider-live" aria-hidden="true" />
         <div className="glass-panel border-x-0 border-b-0">
-          <div className="container mx-auto px-4 md:px-6 py-6 md:py-7">
-            {/* Top: brand block + link columns */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8">
+          <div className="container mx-auto px-4 md:px-6 py-6">
+            {/* Top: brand + condensed link columns */}
+            <div className="grid grid-cols-2 md:grid-cols-12 gap-x-6 gap-y-5">
               {/* Brand block */}
-              <div className="md:col-span-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="relative">
-                    <div
-                      className="absolute -inset-1 rounded-xl bg-gradient-to-br from-[hsl(var(--penn-navy)/0.10)] to-[hsl(var(--penn-gold)/0.20)] blur-md"
-                      aria-hidden="true"
-                    />
-                    <img
-                      src={pennLogo}
-                      alt="Penn Home Medical Supply"
-                      className="relative h-9 w-auto rounded-md"
-                    />
-                  </div>
-                  <div className="leading-tight">
-                    <div className="font-semibold tracking-tight text-foreground text-sm">
-                      Penn Home Medical Supply
-                    </div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                      PennPaps.com — Mask Fitting · Shop · Resupply
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed max-w-md">
-                  <span className="font-semibold text-foreground">
-                    PennPaps.com
-                  </span>{" "}
-                  is the online CPAP storefront from{" "}
-                  <span className="font-semibold text-foreground">
+              <div className="col-span-2 md:col-span-4 flex items-center gap-3">
+                <img
+                  src={pennLogo}
+                  alt="Penn Home Medical Supply"
+                  className="h-9 w-auto rounded-md"
+                />
+                <div className="leading-tight">
+                  <div className="font-semibold tracking-tight text-foreground text-sm">
                     Penn Home Medical Supply
-                  </span>{" "}
-                  — fit a new mask, order supplies direct, and stay on a
-                  resupply schedule with your local DME team.
-                </p>
-                <div className="mt-2 inline-flex items-center gap-2">
-                  <span className="status-pill">
-                    <ShieldCheck
-                      className="h-3.5 w-3.5 text-primary"
-                      aria-hidden="true"
-                    />
-                    Secure checkout · private on-device fitting
-                  </span>
+                  </div>
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                    PennPaps.com — Fit · Shop · Resupply
+                  </div>
                 </div>
               </div>
 
               {/* Patient services */}
               <div className="md:col-span-3">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Patient Services
                 </div>
                 <ul className="space-y-1 text-sm">
@@ -342,14 +314,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </li>
                   <li>
                     <Link
-                      href="/masks"
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      Mask Catalog
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
                       href="/shop"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
@@ -358,42 +322,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </li>
                   <li>
                     <Link
-                      href="/shop/wishlist"
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      Saved for later
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href="/insurance"
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      How insurance works
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
                       href="/account"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
                       My Account
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href="/learn"
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      Learn
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href="/faq"
-                      className="text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      FAQ
                     </Link>
                   </li>
                   <li>
@@ -407,12 +339,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </ul>
               </div>
 
-              {/* Contact (Phase A.2) — phone + email + hours so a
-                  visitor never has to hunt for support. Mirrors the
-                  floating launcher in the bottom-right; both pull
-                  from lib/contact.ts so they stay in sync. */}
+              {/* Contact */}
               <div className="md:col-span-2">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
                   Talk to us
                 </div>
                 <ul className="space-y-1 text-sm">
@@ -442,8 +371,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Legal */}
               <div className="md:col-span-3">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
-                  Legal & Privacy
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 font-semibold">
+                  Legal &amp; Privacy
                 </div>
                 <ul className="space-y-1 text-sm">
                   <li>
@@ -471,32 +400,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       href="/consent"
                       className="text-muted-foreground hover:text-primary transition-colors"
                     >
-                      Data Use & Consent
+                      Data Use &amp; Consent
                     </Link>
                   </li>
                 </ul>
               </div>
             </div>
 
-            {/* Bottom bar: copyright + parent-company callout + staff link */}
+            {/* Bottom bar: copyright + staff sign-in (combined to save vertical space) */}
             <div className="mt-5 pt-4 border-t border-border/40 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
               <div>
-                © {new Date().getFullYear()} Penn Home Medical Supply. All
-                rights reserved.
+                © {new Date().getFullYear()} Penn Home Medical Supply. Licensed
+                DME provider.
               </div>
-              <div className="text-center md:text-right">
-                Penn Home Medical Supply is a licensed durable medical equipment
-                provider. PennPaps.com is its online patient-facing service.
-              </div>
-            </div>
-            {/*
-              Staff sign-in. Intentionally subdued and tucked at the
-              very bottom of the footer so customers — who have a
-              prominent "Sign in" affordance up in the header — don't
-              accidentally land on the admin console. The link routes
-              to the same admin sign-in page the console already uses.
-            */}
-            <div className="mt-2 pt-2 border-t border-border/30 flex justify-center md:justify-end">
               <Link
                 href="/admin/sign-in"
                 className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80 hover:text-[hsl(var(--penn-navy))] transition-colors"

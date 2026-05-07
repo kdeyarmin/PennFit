@@ -722,9 +722,11 @@ export function AdminShopInventoryPage() {
               // 0 to pause sales.
             }}
           />
+          <div style={{ overflowX: "auto" }}>
           <table
             style={{
               width: "100%",
+              minWidth: 720,
               borderCollapse: "collapse",
               background: "#ffffff",
               border: "1px solid #e5e7eb",
@@ -903,6 +905,7 @@ export function AdminShopInventoryPage() {
               })}
             </tbody>
           </table>
+          </div>
         </>
       )}
     </div>

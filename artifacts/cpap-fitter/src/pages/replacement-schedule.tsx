@@ -207,8 +207,8 @@ export function ReplacementSchedule() {
         </div>
 
         {/* Desktop: table */}
-        <div className="hidden md:block glass-card rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="hidden md:block glass-card rounded-2xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="bg-[hsl(var(--penn-navy)/0.06)] text-left text-xs uppercase tracking-wider text-[hsl(var(--penn-navy))]/80">
                 <th className="py-4 px-5 font-semibold">Item</th>

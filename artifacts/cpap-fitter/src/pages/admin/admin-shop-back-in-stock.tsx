@@ -106,8 +106,8 @@ export function AdminShopBackInStockPage() {
           {pendingRows.length === 0 && sortedQueue.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="rounded-xl border border-border bg-white overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-xl border border-border bg-white overflow-x-auto">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead className="bg-secondary/40 text-left">
                   <tr>
                     <th className="px-4 py-3 font-medium">Product</th>

@@ -2,14 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import {
-  Camera,
-  AlertCircle,
-  RefreshCw,
-  Eye,
-  Sun,
-  ScanFace,
-} from "lucide-react";
+import { Camera, AlertCircle, RefreshCw, ScanFace } from "lucide-react";
 import { useFitterStore } from "@/hooks/use-fitter-store";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { track } from "@/lib/track";
@@ -17,7 +10,6 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   getCaptureBlockers,
   isCaptureReady,
-  type PrepChecks,
 } from "@/lib/capture-readiness";
 import { useVisionRuntimeHealth } from "@/hooks/use-vision-runtime-health";
 
@@ -40,11 +32,6 @@ export function Capture() {
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [videoReady, setVideoReady] = useState(false);
-  const [prepChecks, setPrepChecks] = useState<PrepChecks>({
-    noGlasses: false,
-    evenLight: false,
-    facingCamera: false,
-  });
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -160,7 +147,7 @@ export function Capture() {
   };
 
   // 3-2-1 countdown so the user can steady the device before the shutter fires
-  const blockers = getCaptureBlockers(hasPermission, videoReady, prepChecks);
+  const blockers = getCaptureBlockers(hasPermission, videoReady);
   const captureReady = isCaptureReady(blockers) && visionHealth === "ready";
   const startCountdown = () => {
     if (countdown !== null) return;
@@ -393,52 +380,11 @@ export function Capture() {
         </div>
       </div>
 
-      {/* Pre-capture checklist */}
-      <div className="w-full max-w-lg glass-card rounded-2xl p-4 mb-6 border border-border/50">
-        <p className="text-sm font-medium mb-3">Before capture, confirm:</p>
-        <div className="space-y-2.5 text-sm">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={prepChecks.noGlasses}
-              onChange={(e) =>
-                setPrepChecks((prev) => ({ ...prev, noGlasses: e.target.checked }))
-              }
-            />
-            <Eye className="w-3.5 h-3.5 text-muted-foreground" /> Remove glasses
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={prepChecks.evenLight}
-              onChange={(e) =>
-                setPrepChecks((prev) => ({ ...prev, evenLight: e.target.checked }))
-              }
-            />
-            <Sun className="w-3.5 h-3.5 text-muted-foreground" /> Even lighting on your face
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={prepChecks.facingCamera}
-              onChange={(e) =>
-                setPrepChecks((prev) => ({
-                  ...prev,
-                  facingCamera: e.target.checked,
-                }))
-              }
-            />
-            <ScanFace className="w-3.5 h-3.5 text-muted-foreground" /> Look directly at the camera
-          </label>
-        </div>
-        {!captureReady && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            {visionHealth !== "ready"
-              ? "Vision runtime is not ready yet. Please wait a moment and try again."
-              : "Check all items to enable capture."}
-          </p>
-        )}
-      </div>
+      {!captureReady && visionHealth !== "ready" && (
+        <p className="w-full max-w-lg mb-4 text-xs text-muted-foreground text-center">
+          Vision runtime is not ready yet. Please wait a moment and try again.
+        </p>
+      )}
 
       <Button
         size="lg"
@@ -453,7 +399,7 @@ export function Capture() {
       <p className="mt-3 text-xs text-muted-foreground">
         {captureReady
           ? "Camera ready — you can capture now."
-          : "Complete the checklist above to improve scan quality before capture."}
+          : "Waiting for camera to be ready…"}
       </p>
     </div>
   );

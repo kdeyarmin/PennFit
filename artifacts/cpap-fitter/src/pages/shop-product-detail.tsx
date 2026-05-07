@@ -744,7 +744,7 @@ function Hero({
           </p>
         )}
         <div className="mt-6 flex items-baseline gap-3 flex-wrap">
-          <span className="text-4xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
+          <span className="text-3xl sm:text-4xl font-bold tracking-tight text-[hsl(var(--penn-navy))]">
             {formatMoneyCents(product.price.unitAmount, product.price.currency)}
           </span>
           {oneTimeOutOfStock ? (
@@ -1086,7 +1086,7 @@ function AggregateBlock({
       data-testid="pdp-reviews-aggregate"
     >
       <div className="text-center md:text-left">
-        <div className="text-5xl font-bold text-[hsl(var(--penn-navy))]">
+        <div className="text-4xl sm:text-5xl font-bold text-[hsl(var(--penn-navy))]">
           {aggregate.averageRating.toFixed(1)}
         </div>
         <StarRating
