@@ -30,10 +30,9 @@ const SignUpBody = z.object({
   displayName: z.string().min(1).max(120).optional(),
 });
 
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
 interface MakeSignUpHandlerOptions {
   productName: string;
+  uiPathPrefix?: string;
 }
 
 export function makeSignUpHandler(
@@ -81,6 +80,7 @@ export function makeSignUpHandler(
     const ctx: AuthEmailContext = {
       productName: options.productName,
       publicBaseUrl: deps.publicBaseUrl,
+      uiPathPrefix: options.uiPathPrefix,
     };
 
     const existing = await deps.repo.findUserByEmail(emailLower);

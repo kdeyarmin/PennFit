@@ -13,7 +13,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import { normalizeEmail } from "../email";
-import type { RateLimitConfig } from "../rate-limit";
+import { checkLoginRateLimit } from "../rate-limit";
 import { issueToken } from "../token";
 
 import {
@@ -26,14 +26,15 @@ const ForgotBody = z.object({
   email: z.string().min(3).max(254),
 });
 
-const FORGOT_RATE_LIMIT: RateLimitConfig = {
-  maxPerEmail: 3,
-  maxPerIp: 15,
+const FORGOT_RATE_LIMIT = {
+  maxPerEmail: 15, // keyed to the IP sentinel; email bucket == IP bucket for this endpoint
+  maxPerIp: Infinity, // not used — sentinel encodes the IP
   windowMs: 60 * 60 * 1000, // 1 hour
 };
 
 interface MakeForgotPasswordHandlerOptions {
   productName: string;
+  uiPathPrefix?: string;
 }
 
 export function makeForgotPasswordHandler(
@@ -55,23 +56,19 @@ export function makeForgotPasswordHandler(
     // sign-in and verify-email buckets so those counters don't bleed into
     // each other's rate limits.
     const ipSentinel = `__forgot:${ip ?? "unknown"}`;
-    try {
-      const recentIpRequests = await deps.repo.countRecentFailures({
-        emailLower: ipSentinel,
-        ip: null,
-        sinceMs: FORGOT_RATE_LIMIT.windowMs,
-      });
-      if (recentIpRequests >= FORGOT_RATE_LIMIT.maxPerIp) {
-        const retryAfter = Math.ceil(FORGOT_RATE_LIMIT.windowMs / 1000);
-        res.setHeader("Retry-After", String(retryAfter));
-        // Still return 200 to preserve non-enumeration: an attacker
-        // can't distinguish "rate limited" from "request accepted".
-        res.status(200).json({ ok: true });
-        return;
-      }
-    } catch {
-      // Fail open — a DB error on the rate-limit check shouldn't
-      // block legitimate password resets.
+    // checkLoginRateLimit with a sentinel key isolates this endpoint's
+    // counter from sign-in and verify-email buckets.
+    const rl = await checkLoginRateLimit(
+      deps.repo,
+      { emailLower: ipSentinel, ip: null },
+      FORGOT_RATE_LIMIT,
+    );
+    if (!rl.allowed) {
+      res.setHeader("Retry-After", String(rl.retryAfterSeconds));
+      // Still return 200 to preserve non-enumeration: an attacker
+      // can't distinguish "rate limited" from "request accepted".
+      res.status(200).json({ ok: true });
+      return;
     }
 
     const parsed = ForgotBody.safeParse(req.body);
@@ -133,6 +130,7 @@ export function makeForgotPasswordHandler(
     const ctx: AuthEmailContext = {
       productName: options.productName,
       publicBaseUrl: deps.publicBaseUrl,
+      uiPathPrefix: options.uiPathPrefix,
     };
     const rendered = renderPasswordResetEmail(ctx, token.raw);
     try {

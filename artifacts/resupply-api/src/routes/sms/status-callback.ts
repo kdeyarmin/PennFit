@@ -56,9 +56,10 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     return;
   }
 
+  const rawConvId = req.query.conversationId;
   const conversationId =
-    typeof req.query.conversationId === "string"
-      ? req.query.conversationId
+    typeof rawConvId === "string" && /^[0-9a-f-]{36}$/i.test(rawConvId)
+      ? rawConvId
       : null;
 
   const messageSid = parsed.MessageSid;

@@ -54,6 +54,7 @@ interface ParsedArgs {
   force: boolean;
   productName: string;
   publicBaseUrl: string;
+  uiPathPrefix: string;
   sendEmail: boolean;
 }
 
@@ -85,12 +86,20 @@ function parseArgs(argv: string[]): ParsedArgs {
     args.get("base-url") ??
     process.env.SHOP_PUBLIC_BASE_URL ??
     "http://localhost:5173";
+  // Admins land on the /admin SPA pages by default. Pass
+  // --ui-path-prefix= (empty) to mint a customer-facing link
+  // (e.g. when bootstrapping a customer-role row for testing).
+  const uiPathPrefix = (args.get("ui-path-prefix") ?? "/admin").replace(
+    /\/+$/,
+    "",
+  );
   return {
     email: email!,
     role: roleRaw as "admin" | "agent",
     force: flags.has("force"),
     productName,
     publicBaseUrl: publicBaseUrl.replace(/\/$/, ""),
+    uiPathPrefix,
     sendEmail: !flags.has("no-email"),
   };
 }
@@ -170,7 +179,7 @@ async function main(): Promise<void> {
       expiresAt,
     });
 
-    const link = `${argsParsed.publicBaseUrl}/reset-password?token=${encodeURIComponent(token.raw)}`;
+    const link = `${argsParsed.publicBaseUrl}${argsParsed.uiPathPrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
     process.stdout.write(
       `\n[auth:bootstrap-admin] Bootstrap link (valid 1 hour):\n  ${link}\n\n`,
@@ -180,6 +189,7 @@ async function main(): Promise<void> {
       const ctx = {
         productName: argsParsed.productName,
         publicBaseUrl: argsParsed.publicBaseUrl,
+        uiPathPrefix: argsParsed.uiPathPrefix,
       };
       const rendered = renderPasswordResetEmail(ctx, token.raw);
       try {

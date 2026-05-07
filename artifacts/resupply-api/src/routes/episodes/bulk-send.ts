@@ -35,8 +35,18 @@ import { EmailConfigError } from "@workspace/resupply-email";
 import { logger } from "../../lib/logger";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const MAX_IDS = 50;
+
+// Each bulk call may trigger up to 50 vendor sends. Cap per-admin to 10
+// calls/hour (500 messages max), matching the prescription-renewals limiter.
+const bulkSendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  name: "episodes_bulk_send",
+  keyFn: (req) => req.adminUserId ?? req.ip ?? "unknown",
+});
 
 const bulkBody = z
   .object({
@@ -62,7 +72,7 @@ interface ItemResult {
 
 const router: IRouter = Router();
 
-router.post("/episodes/bulk-send", requireAdmin, async (req, res) => {
+router.post("/episodes/bulk-send", requireAdmin, bulkSendLimiter, async (req, res) => {
   const cfg = readMessagingConfigOrNull();
   if (!cfg) {
     res.status(503).json({

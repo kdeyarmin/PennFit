@@ -113,7 +113,8 @@ export async function sendReminderSms(
   const otherOwners = await db
     .select({ id: patients.id })
     .from(patients)
-    .where(eq(patients.phoneE164, normalizedPhone));
+    .where(eq(patients.phoneE164, normalizedPhone))
+    .limit(2); // need at most 2 rows to detect the conflict
   const otherIds = otherOwners
     .map((r) => r.id)
     .filter((id) => id !== patientId);
@@ -207,19 +208,30 @@ export async function sendReminderSms(
   }
 
   const sentAt = new Date();
-  await db.insert(messages).values({
-    conversationId,
-    direction: "outbound",
-    senderRole: "agent",
-    body: messageBody,
-    deliveryStatus: "queued",
-    vendorMetadata: { twilio_message_sid: messageSid },
-    sentAt,
-  });
-  await db
-    .update(conversations)
-    .set({ externalRef: messageSid, updatedAt: new Date() })
-    .where(eq(conversations.id, conversationId));
+  // Twilio accepted the message. Wrap subsequent DB writes so a transient
+  // DB error does NOT propagate — a propagated error causes the worker to
+  // retry, which would re-call this function and send a duplicate SMS.
+  // The vendorRef in the log is sufficient for ops to manually reconcile.
+  try {
+    await db.insert(messages).values({
+      conversationId,
+      direction: "outbound",
+      senderRole: "agent",
+      body: messageBody,
+      deliveryStatus: "queued",
+      vendorMetadata: { twilio_message_sid: messageSid },
+      sentAt,
+    });
+    await db
+      .update(conversations)
+      .set({ externalRef: messageSid, updatedAt: new Date() })
+      .where(eq(conversations.id, conversationId));
+  } catch (dbErr) {
+    console.error(
+      "[send-sms] DB write failed after Twilio accept — SMS sent but unrecorded. Manual reconciliation required.",
+      { conversationId, messageSid, err: dbErr instanceof Error ? dbErr.message : String(dbErr) },
+    );
+  }
 
   // Refresh the latest-message projection. Best-effort — a projection
   // failure must not abort the send (the message itself is the source

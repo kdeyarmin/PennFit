@@ -24,7 +24,7 @@ export async function enforceCriticalMutationPolicy(
       ip: req.ip ?? null,
       metadata: { reason: `csrf_${csrf.reason ?? "unknown"}` },
     });
-    authError(res, 403, "forbidden", "Session validation failed.");
+    authError(res, 403, "csrf_failed", "Session validation failed.");
     return false;
   }
 

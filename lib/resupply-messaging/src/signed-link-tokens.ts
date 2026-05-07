@@ -190,7 +190,7 @@ export function verifyLinkToken(
   }
 
   const nowSeconds = Math.floor((opts.now ?? new Date()).getTime() / 1000);
-  if (payload.e <= nowSeconds) {
+  if (payload.e < nowSeconds) {
     return { valid: false, reason: "expired" };
   }
 

@@ -330,7 +330,13 @@ export async function scanForDueReminders(
         )`,
       ),
     )
-    .orderBy(desc(episodes.dueAt));
+    .orderBy(desc(episodes.dueAt))
+    // Safety cap: each row is one patient-prescription-episode triple.
+    // A real scan visits far fewer (the comment above says "low thousands
+    // of patients"); this bound prevents a misconfigured data state from
+    // loading an unbounded result set into memory. Mirrors the 200-patient
+    // cap in smart-trigger evaluator.
+    .limit(1000);
 
   // Step 3: per-row eligibility + channel resolution.
   const seenPatient = new Set<string>();
@@ -506,23 +512,28 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
   await boss.createQueue(SEND_EMAIL_JOB);
 
   await boss.work<ScanJobData>(SCAN_JOB, async (jobs) => {
-    const data = jobs[0]?.data ?? {};
-    const asOf = data.asOfIso ? new Date(data.asOfIso) : new Date();
-    const rows = await scanForDueReminders(asOf);
-    logger.info(
-      { count: rows.length },
-      "reminders.scan: enqueueing per-patient send jobs",
-    );
-    for (const row of rows) {
-      const send: SendJobData = {
-        patientId: row.patientId,
-        episodeId: row.episodeId,
-      };
-      if (row.channel === "sms") {
-        await boss.send(SEND_SMS_JOB, send);
-      } else {
-        await boss.send(SEND_EMAIL_JOB, send);
+    try {
+      const data = jobs[0]?.data ?? {};
+      const asOf = data.asOfIso ? new Date(data.asOfIso) : new Date();
+      const rows = await scanForDueReminders(asOf);
+      logger.info(
+        { count: rows.length },
+        "reminders.scan: enqueueing per-patient send jobs",
+      );
+      for (const row of rows) {
+        const send: SendJobData = {
+          patientId: row.patientId,
+          episodeId: row.episodeId,
+        };
+        if (row.channel === "sms") {
+          await boss.send(SEND_SMS_JOB, send);
+        } else {
+          await boss.send(SEND_EMAIL_JOB, send);
+        }
       }
+    } catch (err) {
+      logger.error({ err }, "reminders.scan: job failed");
+      throw err;
     }
   });
 
@@ -555,6 +566,14 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         },
         "reminders.send-sms: non-ok outcome",
       );
+      // Transient failures should be retried by pg-boss. Non-retryable
+      // outcomes (patient inactive, missing phone, etc.) are warnings only.
+      if (
+        outcome.status === "vendor_api_error" ||
+        outcome.status === "conversation_create_failed"
+      ) {
+        throw new Error(`reminders.send-sms: retryable failure: ${outcome.status}`);
+      }
     }
   });
 
@@ -587,6 +606,13 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
         },
         "reminders.send-email: non-ok outcome",
       );
+      // Transient failures should be retried by pg-boss.
+      if (
+        outcome.status === "vendor_api_error" ||
+        outcome.status === "conversation_create_failed"
+      ) {
+        throw new Error(`reminders.send-email: retryable failure: ${outcome.status}`);
+      }
     }
   });
 

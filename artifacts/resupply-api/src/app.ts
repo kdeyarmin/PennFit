@@ -143,7 +143,12 @@ app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 const authDeps = getAuthDeps();
 app.use(
   "/resupply-api/auth",
-  makeAuthRouter(authDeps, { productName: "Resupply" }),
+  makeAuthRouter(authDeps, {
+    productName: "Resupply",
+    // Admin SPA pages live under /admin/{reset-password,verify-email}
+    // — emit links that land there instead of on the customer pages.
+    uiPathPrefix: "/admin",
+  }),
 );
 logger.info(
   { event: "auth_in_house_mounted" },
@@ -200,6 +205,23 @@ const storefrontUsageEventLimiter = expressRateLimit({
   message: { error: "Too many tracking events" },
 });
 app.use("/api/usage-events", storefrontUsageEventLimiter);
+
+// Chat is a public, unauthenticated LLM gateway — every accepted
+// request burns OpenAI tokens. Throttle hard per IP so a buggy client
+// or an abusive visitor can't run up the bill or starve other users.
+const storefrontChatLimiter = expressRateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    reply:
+      "You're sending messages too quickly. Please wait a minute and try again, or call (814) 471-0627 for immediate help.",
+    rateLimited: true,
+  },
+});
+app.use("/api/chat", storefrontChatLimiter);
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,

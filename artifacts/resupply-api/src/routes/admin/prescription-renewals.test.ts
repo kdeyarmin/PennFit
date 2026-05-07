@@ -111,7 +111,15 @@ const dbStub = {
         updateSets.push(vals);
         return obj;
       },
-      where: () => Promise.resolve(),
+      where: () => ({
+        returning: () => Promise.resolve([{ id: "rx_claim" }]),
+        then: (
+          onfulfilled: (v: undefined) => unknown,
+          onrejected?: (r: unknown) => unknown,
+        ) => Promise.resolve(undefined as undefined).then(onfulfilled, onrejected),
+        catch: (onrejected?: (r: unknown) => unknown) =>
+          Promise.resolve(undefined as undefined).catch(onrejected),
+      }),
     };
     return obj;
   }),
@@ -297,8 +305,11 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
       sent: 0,
       failed: 1,
     });
-    // Row stays eligible — no UPDATE on failure.
-    expect(updateSets).toEqual([]);
+    // Row stays eligible: the claim (renewalRequestedAt=now) is undone
+    // (renewalRequestedAt=null) so the next cron tick picks it up again.
+    expect(updateSets).toHaveLength(2);
+    expect(updateSets[0]?.renewalRequestedAt).toBeInstanceOf(Date);
+    expect(updateSets[1]?.renewalRequestedAt).toBeNull();
     // Audit only logs successful sends.
     expect(logAuditMock).not.toHaveBeenCalled();
   });

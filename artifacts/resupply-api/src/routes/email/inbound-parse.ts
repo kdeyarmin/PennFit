@@ -498,9 +498,11 @@ function parseMultipart(req: Request): Promise<ParsedInboundEmail> {
  */
 function extractEmailAddress(raw: string | undefined): string | null {
   if (!raw) return null;
-  const angled = raw.match(/<([^<>@\s]+@[^<>@\s]+)>/);
+  // Require at least one dot in the domain portion so obviously malformed
+  // addresses like "user@localdomain" or "@domain.com" are rejected.
+  const angled = raw.match(/<([^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)>/);
   if (angled?.[1]) return angled[1].trim().toLowerCase();
-  const bare = raw.trim().match(/^([^\s,;<>]+@[^\s,;<>]+)$/);
+  const bare = raw.trim().match(/^([^\s,;<>]+@[^\s,;<>]+\.[^\s,;<>]+)$/);
   if (bare?.[1]) return bare[1].toLowerCase();
   return null;
 }

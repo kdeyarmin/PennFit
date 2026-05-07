@@ -117,7 +117,8 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
         })
         .from(prescriptions)
         .where(eq(prescriptions.patientId, id))
-        .orderBy(desc(prescriptions.createdAt)),
+        .orderBy(desc(prescriptions.createdAt))
+        .limit(200),
       db
         .select({
           id: episodes.id,
@@ -130,7 +131,8 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
         .from(episodes)
         .leftJoin(prescriptions, eq(prescriptions.id, episodes.prescriptionId))
         .where(eq(episodes.patientId, id))
-        .orderBy(desc(episodes.createdAt)),
+        .orderBy(desc(episodes.createdAt))
+        .limit(200),
       // Messages join conversations to filter by patient. We only
       // need the metadata, not the encrypted body.
       db
@@ -148,7 +150,8 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
         .from(messages)
         .innerJoin(conversations, eq(conversations.id, messages.conversationId))
         .where(eq(conversations.patientId, id))
-        .orderBy(desc(messages.createdAt)),
+        .orderBy(desc(messages.createdAt))
+        .limit(500),
       db
         .select({
           id: fulfillments.id,
@@ -163,7 +166,8 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
         })
         .from(fulfillments)
         .where(eq(fulfillments.patientId, id))
-        .orderBy(desc(fulfillments.createdAt)),
+        .orderBy(desc(fulfillments.createdAt))
+        .limit(200),
     ]);
 
   const events: TimelineEvent[] = [];

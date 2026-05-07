@@ -9,9 +9,11 @@ import {
   Mail,
   Phone,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { openPennBot } from "@/lib/chat-events";
 
 /**
  * Public policy page for the 60-day comfort/fit guarantee. Linked
@@ -203,6 +205,19 @@ export function ComfortGuaranteePage() {
               <Phone className="w-4 h-4 mr-2" /> Call us
             </Button>
           </a>
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() =>
+              openPennBot({
+                prefill:
+                  "My mask doesn't fit comfortably — what should I try first?",
+              })
+            }
+            data-testid="comfort-guarantee-ask-pennbot"
+          >
+            <Sparkles className="w-4 h-4 mr-2" /> Ask PennBot
+          </Button>
           <Link href="/shop/orders">
             <Button>
               View my orders <ArrowRight className="w-4 h-4 ml-1" />

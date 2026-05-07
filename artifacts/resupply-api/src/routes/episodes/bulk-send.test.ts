@@ -68,6 +68,12 @@ vi.mock("../../lib/messaging/messaging-config", () => ({
   readMessagingConfigOrNull: () => readMessagingConfigMock(),
 }));
 
+// Bypass the in-process rate limiter so its closure-scoped bucket state
+// doesn't bleed between test cases and cause 429s on later tests.
+vi.mock("../../middlewares/rate-limit", () => ({
+  rateLimit: () => (req: unknown, res: unknown, next: () => void) => next(),
+}));
+
 import { TwilioConfigError } from "@workspace/resupply-telecom";
 import { EmailConfigError } from "@workspace/resupply-email";
 

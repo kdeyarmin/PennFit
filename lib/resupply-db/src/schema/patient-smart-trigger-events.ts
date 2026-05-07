@@ -28,7 +28,9 @@ export const patientSmartTriggerEvents = resupplySchema.table(
     patientId: uuid("patient_id")
       .notNull()
       .references(() => patients.id, { onDelete: "cascade" }),
-    kind: text("kind").notNull(),
+    kind: text("kind", {
+      enum: ["leak_rising", "usage_dropping", "cushion_wear", "humidifier_drop"],
+    }).notNull(),
     detectedAt: timestamp("detected_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -43,7 +45,8 @@ export const patientSmartTriggerEvents = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     patientIdx: index("patient_smart_trigger_events_patient_idx").on(

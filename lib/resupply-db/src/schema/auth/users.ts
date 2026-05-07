@@ -2,7 +2,7 @@
 // (staff or customer). See migration 0022_in_house_auth.sql.
 
 import { sql } from "drizzle-orm";
-import { index, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, text, timestamp } from "drizzle-orm/pg-core";
 
 import { authSchema } from "./_schema";
 
@@ -20,9 +20,9 @@ export const authUsers = authSchema.table(
     /** Display name shown in dashboards; nullable for customers who haven't set one. */
     displayName: text("display_name"),
     /** customer | agent | admin. Authoritative; env allow-lists only seed first login. */
-    role: text("role").notNull().default("customer"),
+    role: text("role", { enum: ["customer", "agent", "admin"] }).notNull().default("customer"),
     /** active | invited | locked | revoked. */
-    status: text("status").notNull().default("invited"),
+    status: text("status", { enum: ["active", "invited", "locked", "revoked"] }).notNull().default("invited"),
     /** Set when a verification token has been consumed. NULL = unverified. */
     emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -30,11 +30,20 @@ export const authUsers = authSchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`),
+      .default(sql`now()`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     roleIdx: index("auth_users_role_idx").on(t.role),
     statusIdx: index("auth_users_status_idx").on(t.status),
+    statusEnum: check(
+      "auth_users_status_enum",
+      sql`${t.status} IN ('active','invited','locked','revoked')`,
+    ),
+    roleEnum: check(
+      "auth_users_role_enum",
+      sql`${t.role} IN ('customer','agent','admin')`,
+    ),
   }),
 );
 

@@ -95,7 +95,7 @@ function effectiveStatus(row: AuthUserRow): "active" | "pending" | "revoked" {
   return "pending";
 }
 
-router.get("/admin/users", async (req, res) => {
+router.get("/admin/users", requireAdminOnly, async (req, res) => {
   // List every staff row in auth.users. Penn's staff is small
   // (<200 in the foreseeable future), so we don't paginate.
   const result = await pool.query<AuthUserRow>(
@@ -202,6 +202,7 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
     displayName: null,
     productName: "PennFit",
     publicBaseUrl: buildInviteRedirectUrl(req),
+    uiPathPrefix: "/admin",
   });
 
   await writeAudit(req, `team.invite role=${role} email=${email}`);

@@ -199,7 +199,7 @@ router.post(
         moderatedBy: adminId,
         updatedAt: new Date(),
       })
-      .where(eq(shopReviews.id, id))
+      .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "pending")))
       .returning({
         id: shopReviews.id,
         status: shopReviews.status,
@@ -209,7 +209,7 @@ router.post(
       });
     const row = updated[0];
     if (!row) {
-      res.status(404).json({ error: "not_found" });
+      res.status(404).json({ error: "not_found_or_not_pending" });
       return;
     }
     req.log?.info?.(
@@ -274,7 +274,7 @@ router.post(
         moderatedBy: adminId,
         updatedAt: new Date(),
       })
-      .where(eq(shopReviews.id, id))
+      .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "pending")))
       .returning({
         id: shopReviews.id,
         status: shopReviews.status,
@@ -285,7 +285,7 @@ router.post(
       });
     const row = updated[0];
     if (!row) {
-      res.status(404).json({ error: "not_found" });
+      res.status(404).json({ error: "not_found_or_not_pending" });
       return;
     }
     req.log?.info?.(
