@@ -63,6 +63,21 @@ export interface MaskRecommendation {
   features: string[];
   contraindications: string[];
   imageUrl: string | null;
+  /**
+   * Best-guess size for this patient given their measurements, e.g. "M".
+   * `null` when the mask only ships in a single size (no choice to make)
+   * or when sizesAvailable is empty in the catalog. The string always
+   * matches one of the entries in MaskEntry.sizesAvailable so the UI
+   * can highlight it directly.
+   */
+  recommendedSize: string | null;
+  /**
+   * One-sentence rationale for `recommendedSize`. Always present (never
+   * null) so the UI can render it without a conditional. When the mask
+   * is single-sized this is a "no size choice" sentence. Treat as
+   * guidance, not a clinical fitting.
+   */
+  sizeRationale: string;
 }
 
 export interface RecommendationResult {
@@ -70,6 +85,28 @@ export interface RecommendationResult {
   alternatives: MaskRecommendation[];
   disclaimer: string;
 }
+
+/**
+ * Per-manufacturer score multiplier applied at the end of `recommend()`,
+ * AFTER the contraindication and pressure-rating penalties. PennPaps
+ * preferentially stocks the React Health line (iVolve, Numa, Viva), so
+ * a viable React Health mask should out-rank an otherwise-equivalent
+ * mask from another manufacturer.
+ *
+ * The multiplier kicks in *after* `contraMultiplier * pressureMultiplier`,
+ * so a contraindicated React mask (e.g. a nasal pillow for a heavy
+ * mouth breather) still loses to a viable non-React mask — the boost
+ * only matters when the React mask is already a clinically appropriate
+ * choice. That's the intent of "weight React most when one of their
+ * masks could be appropriate".
+ *
+ * Magnitude is intentionally modest: a ~15% bump is enough to promote
+ * a competitive React mask past a non-React peer with a similar score,
+ * but small enough that it cannot rescue a clearly worse-fitting mask.
+ */
+const MANUFACTURER_BOOST: Record<string, number> = {
+  "React Health": 1.15,
+};
 
 /**
  * Score questionnaire answers into mask type weights.
@@ -244,6 +281,107 @@ function scoreFitMatch(
 
   // Weight: nose width most critical (determines pillow/cushion size), then nose-to-chin, then mouth width
   return noseWidthScore * 0.45 + noseToChinScore * 0.35 + mouthWidthScore * 0.2;
+}
+
+/**
+ * Pick the best-guess size for `mask` given the patient's measurements.
+ *
+ * Why a heuristic and not per-size dimensions:
+ *   The mask catalog stores per-mask `fitRanges` (the overall envelope
+ *   across every size the mask ships in) and `sizesAvailable` as a
+ *   string array (e.g. ["S","M","L"]). We do NOT have per-size mm
+ *   bands in the catalog yet — adding them requires manufacturer
+ *   spec sheets we don't all have. Until then we partition the mask's
+ *   overall fit range into N equal buckets and pick by where the
+ *   patient lands. Conservative on purpose: the rationale always
+ *   labels the result as "estimated" and the UI repeats the
+ *   "verify at fitting" disclaimer the rest of the recommendation
+ *   already shows.
+ *
+ * Dimension choice mirrors the weighting in `scoreFitMatch`:
+ *   - nasal / nasalPillow: nose width (cushion seat is the constraint)
+ *   - fullFace / hybrid:   nose-to-chin (mask body length is the constraint)
+ *
+ * Edge cases:
+ *   - 0 sizes:    null + "single-size" rationale
+ *   - 1 size:     return it
+ *   - degenerate range (min == max): pick middle index
+ *   - measurement < min or > max: clamp to the smallest/largest size
+ *     and warn in the rationale (the patient may be marginal for the mask)
+ */
+export interface SizeRecommendation {
+  size: string | null;
+  rationale: string;
+}
+
+export function recommendSize(
+  mask: MaskEntry,
+  measurements: FacialMeasurements,
+): SizeRecommendation {
+  const sizes = mask.sizesAvailable ?? [];
+  if (sizes.length === 0) {
+    return {
+      size: null,
+      rationale: "This mask ships in a single universal size — no size choice needed.",
+    };
+  }
+  if (sizes.length === 1) {
+    return {
+      size: sizes[0],
+      rationale: `Only ships in size ${sizes[0]}.`,
+    };
+  }
+
+  let value: number;
+  let min: number;
+  let max: number;
+  let axisLabel: string;
+  if (mask.type === "fullFace" || mask.type === "hybrid") {
+    value = measurements.noseToChin;
+    min = mask.fitRanges.noseToChinMin;
+    max = mask.fitRanges.noseToChinMax;
+    axisLabel = "nose-to-chin distance";
+  } else {
+    // nasal, nasalPillow
+    value = measurements.noseWidth;
+    min = mask.fitRanges.noseWidthMin;
+    max = mask.fitRanges.noseWidthMax;
+    axisLabel = "nose width";
+  }
+
+  const range = max - min;
+  if (range <= 0) {
+    const idx = Math.floor(sizes.length / 2);
+    return {
+      size: sizes[idx],
+      rationale: `Estimated size ${sizes[idx]} (mask's ${axisLabel} range is too narrow to refine).`,
+    };
+  }
+
+  if (value < min) {
+    return {
+      size: sizes[0],
+      rationale: `Your ${axisLabel} (${value} mm) is below this mask's ${min}–${max} mm range. Try size ${sizes[0]} but verify in person — you may be a marginal fit.`,
+    };
+  }
+  if (value > max) {
+    const last = sizes[sizes.length - 1];
+    return {
+      size: last,
+      rationale: `Your ${axisLabel} (${value} mm) is above this mask's ${min}–${max} mm range. Try size ${last} but verify in person — you may be a marginal fit.`,
+    };
+  }
+
+  // Linear partition: divide [min, max] into sizes.length equal buckets.
+  // The boundary case `value === max` rounds the index down to the last
+  // bucket so we never overflow.
+  const fraction = (value - min) / range;
+  const rawIdx = Math.floor(fraction * sizes.length);
+  const idx = Math.min(rawIdx, sizes.length - 1);
+  return {
+    size: sizes[idx],
+    rationale: `Estimated size ${sizes[idx]} from your ${axisLabel} (${value} mm) within the mask's ${min}–${max} mm range. Final fit confirmed at PennPaps.`,
+  };
 }
 
 /**
@@ -612,10 +750,15 @@ export function recommend(
     }
 
     // Combined score: 60% type preference (questionnaire-driven), 40% physical fit
+    // Manufacturer boost is applied LAST (after contra/pressure penalties) so a
+    // contraindicated preferred-line mask still loses to a viable non-preferred
+    // mask. See MANUFACTURER_BOOST docstring.
+    const brandMultiplier = MANUFACTURER_BOOST[mask.manufacturer] ?? 1.0;
     const rawScore =
       (typeScore * 0.6 + fitScore * 0.4) *
       contraMultiplier *
-      pressureMultiplier;
+      pressureMultiplier *
+      brandMultiplier;
 
     const reasoning = generateReasoning(
       mask,
@@ -626,6 +769,7 @@ export function recommend(
     if (pressureNote) reasoning.unshift(pressureNote);
     const summary = generateSummary(mask, measurements, answers);
 
+    const sizeRec = recommendSize(mask, measurements);
     const recommendation: MaskRecommendation = {
       maskId: mask.id,
       name: mask.name,
@@ -638,20 +782,22 @@ export function recommend(
       features: mask.features,
       contraindications: mask.contraindications,
       imageUrl: mask.imageUrl,
+      recommendedSize: sizeRec.size,
+      sizeRationale: sizeRec.rationale,
     };
 
     return {
       recommendation,
+      sortScore: rawScore,
       hasContraindications:
         activeContras.length > 0 || pressureMultiplier < 1.0,
       maskType: mask.type,
     };
   });
 
-  // Sort by confidence descending
-  scoredMasks.sort(
-    (a, b) => b.recommendation.confidence - a.recommendation.confidence,
-  );
+  // Sort by unclamped raw score so boosted masks can still outrank
+  // otherwise-equivalent peers even when display confidence is capped at 1.0.
+  scoredMasks.sort((a, b) => b.sortScore - a.sortScore);
 
   // Top 3 non-contraindicated recommendations
   const nonContraindicated = scoredMasks.filter((m) => !m.hasContraindications);
@@ -686,8 +832,7 @@ export function recommend(
         .find(
           (m) =>
             m.maskType !== top1Type &&
-            m.recommendation.confidence >=
-              slot3Default.recommendation.confidence - 0.2,
+            m.sortScore >= slot3Default.sortScore - 0.2,
         );
       topRecommendations.push((alt ?? slot3Default).recommendation);
     } else {
