@@ -11,6 +11,7 @@
 
 import { Router, type IRouter } from "express";
 
+import checkinTwimlRouter from "./checkin-twiml";
 import placeCallRouter from "./place-call";
 import statusCallbackRouter from "./status-callback";
 import twimlConnectRouter from "./twiml-connect";
@@ -19,5 +20,9 @@ const router: IRouter = Router();
 router.use(placeCallRouter);
 router.use(twimlConnectRouter);
 router.use(statusCallbackRouter);
+// /voice/checkin-twiml — TwiML for automated onboarding check-in
+// calls (day 3 / 7 / 30 / 60 / 90). Twilio fetches this when the
+// patient answers; we render <Say> + <Hangup> based on ?day=<label>.
+router.use(checkinTwimlRouter);
 
 export default router;
