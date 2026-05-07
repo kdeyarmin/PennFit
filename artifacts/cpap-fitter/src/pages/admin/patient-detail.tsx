@@ -75,6 +75,18 @@ import {
   type PortalStatus,
   type Address,
 } from "@/lib/admin/patient-portal-invite-api";
+import {
+  listPatientIntegrations,
+  refreshPatientIntegration,
+  formatSourceLabel,
+  type ComplianceSummary,
+  type DeviceSettings,
+  type IntegrationSnapshotPayload,
+  type IntegrationSource,
+  type IntegrationSourceView,
+  type SupplyItem,
+  type TherapyNight,
+} from "@/lib/admin/patient-integrations-api";
 
 type Tab =
   | "timeline"
@@ -87,7 +99,8 @@ type Tab =
   | "onboarding"
   | "fax-outreach"
   | "documents"
-  | "portal";
+  | "portal"
+  | "device-data";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -301,6 +314,12 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Portal
         </TabButton>
+        <TabButton
+          active={tab === "device-data"}
+          onClick={() => setTab("device-data")}
+        >
+          Device data
+        </TabButton>
       </div>
 
       <Card>
@@ -339,6 +358,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "portal" && (
           <PortalTab patient={data} onChanged={() => void refetch()} />
         )}
+        {tab === "device-data" && <IntegrationsTab patientId={id} />}
       </Card>
     </div>
   );
@@ -3535,5 +3555,394 @@ function PortalTab({
         </form>
       )}
     </div>
+  );
+}
+
+// IntegrationsTab — unified "Device data" view across ResMed AirView,
+// Philips Care Orchestrator, and Health Connect. Reads the cached
+// snapshot per source; the Refresh button re-pulls from the partner.
+function IntegrationsTab({ patientId }: { patientId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = ["admin", "patient-integrations", patientId];
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey,
+    queryFn: () => listPatientIntegrations(patientId),
+  });
+  const [refreshingSource, setRefreshingSource] =
+    useState<IntegrationSource | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  const refreshMutation = useMutation({
+    mutationFn: (source: IntegrationSource) =>
+      refreshPatientIntegration(patientId, source),
+    onMutate: (source) => {
+      setRefreshingSource(source);
+      setRefreshError(null);
+    },
+    onSettled: () => {
+      setRefreshingSource(null);
+      void queryClient.invalidateQueries({ queryKey });
+    },
+    onSuccess: (result) => {
+      if (result.fetchError) {
+        setRefreshError(`Partner returned ${result.fetchError}`);
+      }
+    },
+    onError: (err: unknown) => {
+      setRefreshError(err instanceof Error ? err.message : "Refresh failed.");
+    },
+  });
+
+  if (isError) {
+    return (
+      <ErrorPanel
+        error={error}
+        onRetry={() => void refetch()}
+        title="Couldn't load device data"
+      />
+    );
+  }
+  if (isPending || !data) {
+    return <Spinner label="Loading device data…" />;
+  }
+  if (data.sources.length === 0) {
+    return (
+      <EmptyState title="No therapy-cloud integrations are configured for this patient." />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {refreshError && (
+        <div
+          className="rounded-md border px-3 py-2 text-sm"
+          style={{
+            borderColor: "hsl(var(--line-2))",
+            color: "hsl(var(--ink-2))",
+            background: "hsl(var(--bg-2))",
+          }}
+        >
+          {refreshError}
+        </div>
+      )}
+      {data.sources.map((src) => (
+        <IntegrationSourceCard
+          key={src.source}
+          view={src}
+          refreshing={refreshingSource === src.source}
+          onRefresh={() => refreshMutation.mutate(src.source)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function IntegrationSourceCard({
+  view,
+  refreshing,
+  onRefresh,
+}: {
+  view: IntegrationSourceView;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const { source, availability, link, snapshot } = view;
+  const linked = source === "health_connect" || link !== null;
+  const canRefresh = linked && !refreshing;
+
+  return (
+    <div
+      className="rounded-lg border p-4 space-y-3"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3
+            className="text-base font-semibold"
+            style={{ color: "hsl(var(--ink-1))" }}
+          >
+            {formatSourceLabel(source)}
+          </h3>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+            <Badge
+              variant={
+                availability.status === "configured"
+                  ? "success"
+                  : availability.status === "stub"
+                    ? "warning"
+                    : "danger"
+              }
+            >
+              {availability.status === "configured"
+                ? "Configured"
+                : availability.status === "stub"
+                  ? availability.reason === "stub_mode"
+                    ? "Stub mode"
+                    : "No credentials"
+                  : `Unavailable: ${availability.reason}`}
+            </Badge>
+            {link && (
+              <Badge variant={link.status === "active" ? "info" : "muted"}>
+                Link {link.status}
+              </Badge>
+            )}
+            {!link && source !== "health_connect" && (
+              <Badge variant="muted">No link</Badge>
+            )}
+            {snapshot && (
+              <span style={{ color: "hsl(var(--ink-3))" }}>
+                Cached {formatDateTime(snapshot.fetchedAt)}
+              </span>
+            )}
+          </div>
+        </div>
+        <Button
+          intent="secondary"
+          onClick={onRefresh}
+          disabled={!canRefresh}
+          title={
+            !linked
+              ? "Create an active link before refreshing."
+              : refreshing
+                ? "Refresh in progress…"
+                : "Pull the latest data from the partner."
+          }
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+
+      {!snapshot ? (
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          No data fetched yet. Click Refresh to pull from the partner.
+        </p>
+      ) : (
+        <IntegrationSnapshotBody snapshot={snapshot.payload} />
+      )}
+    </div>
+  );
+}
+
+function IntegrationSnapshotBody({
+  snapshot,
+}: {
+  snapshot: IntegrationSnapshotPayload;
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <SettingsBlock settings={snapshot.settings} />
+      <ComplianceBlock compliance={snapshot.compliance} />
+      <SuppliesBlock supplies={snapshot.supplies} />
+      <RecentNightsBlock nights={snapshot.recentNights} />
+    </div>
+  );
+}
+
+function SettingsBlock({ settings }: { settings: DeviceSettings | null }) {
+  return (
+    <div>
+      <h4
+        className="text-xs uppercase tracking-wider font-semibold mb-1"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        Device & settings
+      </h4>
+      {!settings ? (
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          Not reported.
+        </p>
+      ) : (
+        <dl className="text-sm grid grid-cols-2 gap-x-3 gap-y-1">
+          <Term label="Model" value={settings.deviceModel} />
+          <Term label="Serial" value={settings.deviceSerial} />
+          <Term label="Mode" value={settings.therapyMode} />
+          <Term label="Mask" value={settings.maskType} />
+          <Term
+            label="Pressure"
+            value={
+              settings.pressureMinCmh2o !== null &&
+              settings.pressureMaxCmh2o !== null
+                ? `${settings.pressureMinCmh2o}–${settings.pressureMaxCmh2o} cm H₂O`
+                : null
+            }
+          />
+          <Term
+            label="Ramp"
+            value={
+              settings.rampMinutes !== null
+                ? `${settings.rampMinutes} min`
+                : null
+            }
+          />
+          <Term
+            label="Humidifier"
+            value={
+              settings.humidifierLevel !== null
+                ? `Level ${settings.humidifierLevel}`
+                : null
+            }
+          />
+        </dl>
+      )}
+    </div>
+  );
+}
+
+function ComplianceBlock({
+  compliance,
+}: {
+  compliance: ComplianceSummary | null;
+}) {
+  return (
+    <div>
+      <h4
+        className="text-xs uppercase tracking-wider font-semibold mb-1"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        Compliance
+      </h4>
+      {!compliance ? (
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          Not reported.
+        </p>
+      ) : (
+        <dl className="text-sm grid grid-cols-2 gap-x-3 gap-y-1">
+          <Term label="Window" value={`${compliance.windowDays} nights`} />
+          <Term
+            label="Days with data"
+            value={String(compliance.daysWithData)}
+          />
+          <Term
+            label="≥ 4 hr nights"
+            value={String(compliance.daysOver4Hours)}
+          />
+          <Term
+            label="Avg usage"
+            value={
+              compliance.averageUsageMinutes !== null
+                ? `${(compliance.averageUsageMinutes / 60).toFixed(1)} hr`
+                : null
+            }
+          />
+          <Term
+            label="Avg AHI"
+            value={
+              compliance.averageAhi !== null
+                ? compliance.averageAhi.toFixed(1)
+                : null
+            }
+          />
+          <div className="col-span-2 mt-1">
+            <Badge
+              variant={compliance.meetsCmsCompliance ? "success" : "warning"}
+            >
+              {compliance.meetsCmsCompliance
+                ? "Meets CMS 90/30"
+                : "Does not meet CMS 90/30"}
+            </Badge>
+          </div>
+        </dl>
+      )}
+    </div>
+  );
+}
+
+function SuppliesBlock({ supplies }: { supplies: SupplyItem[] }) {
+  return (
+    <div>
+      <h4
+        className="text-xs uppercase tracking-wider font-semibold mb-1"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        Supplies on file
+      </h4>
+      {supplies.length === 0 ? (
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          No supplies reported by partner.
+        </p>
+      ) : (
+        <ul className="text-sm space-y-1">
+          {supplies.map((s, i) => (
+            <li key={i}>
+              <div style={{ color: "hsl(var(--ink-1))" }}>{s.description}</div>
+              <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+                {humanizeStatus(s.category)}
+                {s.lastReplacedDate
+                  ? ` · last ${formatDate(s.lastReplacedDate)}`
+                  : ""}
+                {s.nextEligibleDate
+                  ? ` · next ${formatDate(s.nextEligibleDate)}`
+                  : ""}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function RecentNightsBlock({ nights }: { nights: TherapyNight[] }) {
+  const last7 = nights.slice(0, 7);
+  return (
+    <div>
+      <h4
+        className="text-xs uppercase tracking-wider font-semibold mb-1"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        Last 7 nights
+      </h4>
+      {last7.length === 0 ? (
+        <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
+          No night data.
+        </p>
+      ) : (
+        <table className="w-full text-xs">
+          <thead style={{ color: "hsl(var(--ink-3))" }}>
+            <tr>
+              <th className="text-left font-normal pb-1">Date</th>
+              <th className="text-right font-normal pb-1">Use</th>
+              <th className="text-right font-normal pb-1">AHI</th>
+              <th className="text-right font-normal pb-1">Leak</th>
+              <th className="text-right font-normal pb-1">P95</th>
+            </tr>
+          </thead>
+          <tbody style={{ color: "hsl(var(--ink-1))" }}>
+            {last7.map((n) => (
+              <tr key={n.nightDate}>
+                <td>{formatDate(n.nightDate)}</td>
+                <td className="text-right">
+                  {n.usageMinutes !== null
+                    ? `${(n.usageMinutes / 60).toFixed(1)}h`
+                    : "—"}
+                </td>
+                <td className="text-right">
+                  {n.ahi !== null ? n.ahi.toFixed(1) : "—"}
+                </td>
+                <td className="text-right">
+                  {n.leakRateLMin !== null ? n.leakRateLMin.toFixed(0) : "—"}
+                </td>
+                <td className="text-right">
+                  {n.pressureP95Cmh2o !== null
+                    ? n.pressureP95Cmh2o.toFixed(1)
+                    : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function Term({ label, value }: { label: string; value: string | null }) {
+  return (
+    <>
+      <dt className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+        {label}
+      </dt>
+      <dd style={{ color: "hsl(var(--ink-1))" }}>{value ?? "—"}</dd>
+    </>
   );
 }
