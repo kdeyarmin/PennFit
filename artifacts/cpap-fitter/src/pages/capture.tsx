@@ -30,7 +30,7 @@ export function Capture() {
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
 
   const stopCamera = () => {
@@ -96,7 +96,7 @@ export function Capture() {
   }, []);
 
   // Capture the current frame from the video feed.
-  // Returns true on success, false on failure (so the caller can reset countdown).
+  // Returns true on success, false on failure (so the caller can reset state).
   const captureFrame = (): boolean => {
     try {
       if (!videoRef.current || !canvasRef.current) {
@@ -146,11 +146,15 @@ export function Capture() {
     }
   };
 
-  // 3-2-1 countdown so the user can steady the device before the shutter fires
+  // Immediate capture — no countdown. Older versions held a 3-2-1 timer
+  // so users could steady the camera, but the extra wait felt sluggish
+  // and drove drop-off; the iris-calibrated math is robust to small
+  // motion. Disabled-button gating still prevents a press before the
+  // camera/runtime is ready.
   const blockers = getCaptureBlockers(hasPermission, videoReady);
   const captureReady = isCaptureReady(blockers) && visionHealth === "ready";
-  const startCountdown = () => {
-    if (countdown !== null) return;
+  const handleCapture = () => {
+    if (capturing) return;
     if (!captureReady) {
       track("capture_blocked", {
         ...blockers,
@@ -158,24 +162,10 @@ export function Capture() {
       });
       return;
     }
-    setCountdown(3);
+    setCapturing(true);
+    const ok = captureFrame();
+    if (!ok) setCapturing(false);
   };
-
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown === 0) {
-      const ok = captureFrame();
-      // If capture failed, reset countdown so the user can retry.
-      if (!ok) setCountdown(null);
-      return;
-    }
-    const t = setTimeout(
-      () => setCountdown((c) => (c === null ? null : c - 1)),
-      1000,
-    );
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdown]);
 
   if (hasPermission === false || error) {
     // Browser-specific instructions for re-enabling the camera. We
@@ -347,36 +337,19 @@ export function Capture() {
           <CornerBrackets />
         </div>
 
-        {/* Countdown overlay */}
-        {countdown !== null && countdown > 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="text-white text-9xl font-bold tabular-nums drop-shadow-2xl animate-in zoom-in-50 duration-300">
-              {countdown}
-            </div>
-          </div>
-        )}
-        {countdown === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/90 animate-in fade-in duration-200">
+        {/* Brief shutter flash on capture so the press feels confirmed. */}
+        {capturing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/90 animate-in fade-in duration-150">
             <Camera className="w-16 h-16 text-primary" />
           </div>
         )}
-        {/*
-          A11y: announce the countdown to assistive tech. The visual
-          countdown above is decorative (a giant numeral inside an
-          overlay) — without this live region, a screen-reader user
-          would have no idea the photo is about to be taken.
-        */}
         <div
           className="sr-only"
           role="status"
           aria-live="assertive"
           aria-atomic="true"
         >
-          {countdown === null
-            ? ""
-            : countdown > 0
-              ? `Capturing in ${countdown}…`
-              : "Capturing now"}
+          {capturing ? "Capturing now" : ""}
         </div>
       </div>
 
@@ -389,16 +362,16 @@ export function Capture() {
       <Button
         size="lg"
         className="h-16 px-12 rounded-full text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"
-        onClick={startCountdown}
-        disabled={countdown !== null}
+        onClick={handleCapture}
+        disabled={capturing || !captureReady}
         data-testid="button-capture"
       >
         <Camera className="mr-2 h-6 w-6" />
-        {countdown === null ? "Capture Measurement Frame" : "Hold still…"}
+        {capturing ? "Capturing…" : "Take Photo"}
       </Button>
-      <p className="mt-3 text-xs text-muted-foreground">
+      <p className="mt-3 text-xs text-muted-foreground text-center max-w-md">
         {captureReady
-          ? "Camera ready — you can capture now."
+          ? "We'll measure your face for headgear sizing and your nostrils for nasal pillow sizing — all on this device."
           : "Waiting for camera to be ready…"}
       </p>
     </div>
