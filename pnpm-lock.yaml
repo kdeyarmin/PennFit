@@ -324,6 +324,18 @@ importers:
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../../lib/resupply-email
+      '@workspace/resupply-integrations':
+        specifier: workspace:*
+        version: link:../../lib/resupply-integrations
+      '@workspace/resupply-integrations-airview':
+        specifier: workspace:*
+        version: link:../../lib/resupply-integrations-airview
+      '@workspace/resupply-integrations-care-orchestrator':
+        specifier: workspace:*
+        version: link:../../lib/resupply-integrations-care-orchestrator
+      '@workspace/resupply-integrations-health-connect':
+        specifier: workspace:*
+        version: link:../../lib/resupply-integrations-health-connect
       '@workspace/resupply-messaging':
         specifier: workspace:*
         version: link:../../lib/resupply-messaging
@@ -589,6 +601,67 @@ importers:
       '@sendgrid/mail':
         specifier: ^8.1.4
         version: 8.1.6
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.32.0)
+
+  lib/resupply-integrations:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.32.0)
+
+  lib/resupply-integrations-airview:
+    dependencies:
+      '@workspace/resupply-integrations':
+        specifier: workspace:*
+        version: link:../resupply-integrations
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.32.0)
+
+  lib/resupply-integrations-care-orchestrator:
+    dependencies:
+      '@workspace/resupply-integrations':
+        specifier: workspace:*
+        version: link:../resupply-integrations
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.32.0)
+
+  lib/resupply-integrations-health-connect:
+    dependencies:
+      '@workspace/resupply-integrations':
+        specifier: workspace:*
+        version: link:../resupply-integrations
       zod:
         specifier: 'catalog:'
         version: 3.25.76
