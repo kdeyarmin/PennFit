@@ -256,8 +256,8 @@ export function Capture() {
   }
 
   return (
-    <div className="container max-w-3xl mx-auto px-4 py-12 flex flex-col items-center animate-shimmer-in">
-      <div className="text-center mb-8 max-w-xl">
+    <div className="container max-w-3xl mx-auto px-4 py-6 md:py-12 flex flex-col items-center animate-shimmer-in">
+      <div className="text-center mb-3 md:mb-8 max-w-xl">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-xs font-medium mb-4">
           <ScanFace className="w-3.5 h-3.5" />
           <span className="font-semibold tracking-wide">
@@ -291,18 +291,27 @@ export function Capture() {
           </span>
           <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
-        <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight mb-3 text-gradient-brand">
+        <h1 className="text-display text-2xl md:text-5xl font-bold tracking-tight mb-2 md:mb-3 text-gradient-brand">
           Position Your Face
         </h1>
-        <p className="text-muted-foreground leading-relaxed">
+        <p className="hidden md:block text-muted-foreground leading-relaxed">
           Center your face in the oval and look straight at the camera. We
           measure off your iris — it's almost exactly the same size in every
           adult — so you don't need a ruler or a credit card in the shot. The
           photo never leaves your device.
         </p>
+        <p className="md:hidden text-sm text-muted-foreground leading-snug">
+          Center your face in the oval. The photo never leaves your device.
+        </p>
       </div>
 
-      <div className="relative w-full max-w-lg aspect-[3/4] md:aspect-video bg-black rounded-2xl overflow-hidden mb-6 border border-[hsl(var(--penn-navy)/0.18)] shadow-[0_20px_60px_hsl(var(--penn-navy)/0.20),0_0_0_1px_hsl(var(--penn-navy)/0.08)]">
+      {/* Camera frame.
+          Mobile (portrait phones): cap the height to ~50vh so the
+          oval AND the "Take Photo" button always fit on one screen
+          without scrolling — the previous aspect-[3/4] container
+          would push the button below the fold on shorter handsets.
+          Desktop keeps the wider 16:9 framing. */}
+      <div className="relative w-full max-w-lg h-[min(50vh,28rem)] md:h-auto md:aspect-video bg-black rounded-2xl overflow-hidden mb-4 md:mb-6 border border-[hsl(var(--penn-navy)/0.18)] shadow-[0_20px_60px_hsl(var(--penn-navy)/0.20),0_0_0_1px_hsl(var(--penn-navy)/0.08)]">
         {/* Loading state indicator */}
         {hasPermission === null && (
           <div className="absolute inset-0 flex items-center justify-center text-white/50">
@@ -330,8 +339,11 @@ export function Capture() {
           className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center"
           aria-hidden="true"
         >
-          {/* Face Oval — softer, premium "scanner" feel */}
-          <div className="w-3/5 md:w-2/5 aspect-[3/4] border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
+          {/* Face Oval — softer, premium "scanner" feel.
+              Sized off the SHORTER dimension on mobile (h-3/5 via
+              fixed max-h) so the oval stays fully inside the
+              shorter capped frame instead of being cropped top/bottom. */}
+          <div className="h-3/5 max-h-[60%] aspect-[3/4] md:w-2/5 md:h-auto border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
 
           {/* Corner brackets for 'sci-fi' tech feel */}
           <CornerBrackets />
@@ -361,15 +373,15 @@ export function Capture() {
 
       <Button
         size="lg"
-        className="h-16 px-12 rounded-full text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"
+        className="h-12 md:h-16 px-8 md:px-12 rounded-full text-base md:text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"
         onClick={handleCapture}
         disabled={capturing || !captureReady}
         data-testid="button-capture"
       >
-        <Camera className="mr-2 h-6 w-6" />
+        <Camera className="mr-2 h-5 w-5 md:h-6 md:w-6" />
         {capturing ? "Capturing…" : "Take Photo"}
       </Button>
-      <p className="mt-3 text-xs text-muted-foreground text-center max-w-md">
+      <p className="hidden md:block mt-3 text-xs text-muted-foreground text-center max-w-md">
         {captureReady
           ? "We'll measure your face for headgear sizing and your nostrils for nasal pillow sizing — all on this device."
           : "Waiting for camera to be ready…"}
