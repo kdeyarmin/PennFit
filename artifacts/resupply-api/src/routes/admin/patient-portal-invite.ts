@@ -23,9 +23,10 @@
 // Portal status (returned on GET /patients/:id) is computed from the
 // linked auth.users row — no separate status column to keep in sync.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { and, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
@@ -39,18 +40,26 @@ import {
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
-import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
 
 // B-07: 30 invite sends per hour per admin. Each call triggers one
 // email or SMS; 30/hour covers legitimate CSR workflows while capping
-// a compromised-account email-spam scenario.
-const adminInviteLimiter = rateLimit({
+// a compromised-account email-spam scenario. Keyed by adminUserId
+// (populated by requireAdmin, which runs first) so one CSR's burst
+// doesn't starve other staff.
+const adminInviteLimiter = expressRateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 30,
-  name: "admin_portal_invite",
-  keyFn: (req) => req.adminUserId ?? "unknown",
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.adminUserId ?? "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "admin_portal_invite",
+    message:
+      "You're sending invites too quickly. Please wait a few minutes and try again.",
+  },
 });
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
