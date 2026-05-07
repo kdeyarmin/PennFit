@@ -33,6 +33,7 @@ import { registerSmartTriggerEvaluatorJob } from "./jobs/smart-trigger-evaluator
 import { registerSmartTriggerSendJob } from "./jobs/smart-trigger-send.js";
 import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
+import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -91,10 +92,15 @@ export async function startWorker(): Promise<void> {
   // Rows past their 24h TTL are functionally inert (treated as misses
   // by the middleware) but accumulate indefinitely without a prune.
   await registerIdempotencyKeysPruneJob(boss);
+  // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
+  // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
+  // CSR alerts for at-risk patients. Both crons share `getDbPool()`
+  // and are idempotent on re-run.
+  await registerOnboardingCheckinJobs(boss);
 
   workerReady = true;
   logger.info(
-    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep + smart-trigger-evaluator + smart-trigger-send + rx-renewal-send + idempotency-keys-prune scheduled)",
+    "resupply in-process worker ready (pg-boss started, reminders + attachment-sweep + smart-trigger-evaluator + smart-trigger-send + rx-renewal-send + idempotency-keys-prune + onboarding-checkins scheduled)",
   );
 }
 
