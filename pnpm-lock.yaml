@@ -306,6 +306,9 @@ importers:
       '@google-cloud/storage':
         specifier: ^7.19.0
         version: 7.19.0
+      '@swc/helpers':
+        specifier: 0.3.17
+        version: 0.3.17
       '@workspace/resupply-ai':
         specifier: workspace:*
         version: link:../../lib/resupply-ai
@@ -372,6 +375,9 @@ importers:
       stripe:
         specifier: ^22.1.0
         version: 22.1.0(@types/node@25.3.5)
+      twilio:
+        specifier: ^5.13.1
+        version: 5.13.1
       web-push:
         specifier: ^3.6.7
         version: 3.6.7
