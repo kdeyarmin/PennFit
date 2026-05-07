@@ -114,6 +114,10 @@ export interface MaskRecommendation {
   features: string[];
   contraindications: string[];
   imageUrl?: string | null;
+  /** Best-guess size for this patient given their measurements (e.g. "M"). Null when the mask only ships in one size. */
+  recommendedSize: string | null;
+  /** One-sentence rationale for recommendedSize. Always present so the UI can render it without a conditional. */
+  sizeRationale: string;
 }
 
 export interface RecommendationResponse {

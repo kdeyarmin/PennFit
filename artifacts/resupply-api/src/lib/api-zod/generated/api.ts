@@ -519,6 +519,8 @@ export const GetRecommendationResponse = zod.object({
         features: zod.array(zod.string()),
         contraindications: zod.array(zod.string()),
         imageUrl: zod.string().nullish(),
+        recommendedSize: zod.string().nullable(),
+        sizeRationale: zod.string(),
       }),
     )
     .max(getRecommendationResponseTopRecommendationsMax),
@@ -544,6 +546,8 @@ export const GetRecommendationResponse = zod.object({
       features: zod.array(zod.string()),
       contraindications: zod.array(zod.string()),
       imageUrl: zod.string().nullish(),
+      recommendedSize: zod.string().nullable(),
+      sizeRationale: zod.string(),
     }),
   ),
   disclaimer: zod.string(),

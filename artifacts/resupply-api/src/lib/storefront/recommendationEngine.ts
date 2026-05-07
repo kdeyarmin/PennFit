@@ -63,6 +63,21 @@ export interface MaskRecommendation {
   features: string[];
   contraindications: string[];
   imageUrl: string | null;
+  /**
+   * Best-guess size for this patient given their measurements, e.g. "M".
+   * `null` when the mask only ships in a single size (no choice to make)
+   * or when sizesAvailable is empty in the catalog. The string always
+   * matches one of the entries in MaskEntry.sizesAvailable so the UI
+   * can highlight it directly.
+   */
+  recommendedSize: string | null;
+  /**
+   * One-sentence rationale for `recommendedSize`. Always present (never
+   * null) so the UI can render it without a conditional. When the mask
+   * is single-sized this is a "no size choice" sentence. Treat as
+   * guidance, not a clinical fitting.
+   */
+  sizeRationale: string;
 }
 
 export interface RecommendationResult {
@@ -244,6 +259,107 @@ function scoreFitMatch(
 
   // Weight: nose width most critical (determines pillow/cushion size), then nose-to-chin, then mouth width
   return noseWidthScore * 0.45 + noseToChinScore * 0.35 + mouthWidthScore * 0.2;
+}
+
+/**
+ * Pick the best-guess size for `mask` given the patient's measurements.
+ *
+ * Why a heuristic and not per-size dimensions:
+ *   The mask catalog stores per-mask `fitRanges` (the overall envelope
+ *   across every size the mask ships in) and `sizesAvailable` as a
+ *   string array (e.g. ["S","M","L"]). We do NOT have per-size mm
+ *   bands in the catalog yet — adding them requires manufacturer
+ *   spec sheets we don't all have. Until then we partition the mask's
+ *   overall fit range into N equal buckets and pick by where the
+ *   patient lands. Conservative on purpose: the rationale always
+ *   labels the result as "estimated" and the UI repeats the
+ *   "verify at fitting" disclaimer the rest of the recommendation
+ *   already shows.
+ *
+ * Dimension choice mirrors the weighting in `scoreFitMatch`:
+ *   - nasal / nasalPillow: nose width (cushion seat is the constraint)
+ *   - fullFace / hybrid:   nose-to-chin (mask body length is the constraint)
+ *
+ * Edge cases:
+ *   - 0 sizes:    null + "single-size" rationale
+ *   - 1 size:     return it
+ *   - degenerate range (min == max): pick middle index
+ *   - measurement < min or > max: clamp to the smallest/largest size
+ *     and warn in the rationale (the patient may be marginal for the mask)
+ */
+export interface SizeRecommendation {
+  size: string | null;
+  rationale: string;
+}
+
+export function recommendSize(
+  mask: MaskEntry,
+  measurements: FacialMeasurements,
+): SizeRecommendation {
+  const sizes = mask.sizesAvailable ?? [];
+  if (sizes.length === 0) {
+    return {
+      size: null,
+      rationale: "This mask ships in a single universal size — no size choice needed.",
+    };
+  }
+  if (sizes.length === 1) {
+    return {
+      size: sizes[0],
+      rationale: `Only ships in size ${sizes[0]}.`,
+    };
+  }
+
+  let value: number;
+  let min: number;
+  let max: number;
+  let axisLabel: string;
+  if (mask.type === "fullFace" || mask.type === "hybrid") {
+    value = measurements.noseToChin;
+    min = mask.fitRanges.noseToChinMin;
+    max = mask.fitRanges.noseToChinMax;
+    axisLabel = "nose-to-chin distance";
+  } else {
+    // nasal, nasalPillow
+    value = measurements.noseWidth;
+    min = mask.fitRanges.noseWidthMin;
+    max = mask.fitRanges.noseWidthMax;
+    axisLabel = "nose width";
+  }
+
+  const range = max - min;
+  if (range <= 0) {
+    const idx = Math.floor(sizes.length / 2);
+    return {
+      size: sizes[idx],
+      rationale: `Estimated size ${sizes[idx]} (mask's ${axisLabel} range is too narrow to refine).`,
+    };
+  }
+
+  if (value < min) {
+    return {
+      size: sizes[0],
+      rationale: `Your ${axisLabel} (${value} mm) is below this mask's ${min}–${max} mm range. Try size ${sizes[0]} but verify in person — you may be a marginal fit.`,
+    };
+  }
+  if (value > max) {
+    const last = sizes[sizes.length - 1];
+    return {
+      size: last,
+      rationale: `Your ${axisLabel} (${value} mm) is above this mask's ${min}–${max} mm range. Try size ${last} but verify in person — you may be a marginal fit.`,
+    };
+  }
+
+  // Linear partition: divide [min, max] into sizes.length equal buckets.
+  // The boundary case `value === max` rounds the index down to the last
+  // bucket so we never overflow.
+  const fraction = (value - min) / range;
+  const rawIdx = Math.floor(fraction * sizes.length);
+  const idx = Math.min(rawIdx, sizes.length - 1);
+  return {
+    size: sizes[idx],
+    rationale: `Estimated size ${sizes[idx]} from your ${axisLabel} (${value} mm) within the mask's ${min}–${max} mm range. Final fit confirmed at PennPaps.`,
+  };
 }
 
 /**
@@ -626,6 +742,7 @@ export function recommend(
     if (pressureNote) reasoning.unshift(pressureNote);
     const summary = generateSummary(mask, measurements, answers);
 
+    const sizeRec = recommendSize(mask, measurements);
     const recommendation: MaskRecommendation = {
       maskId: mask.id,
       name: mask.name,
@@ -638,6 +755,8 @@ export function recommend(
       features: mask.features,
       contraindications: mask.contraindications,
       imageUrl: mask.imageUrl,
+      recommendedSize: sizeRec.size,
+      sizeRationale: sizeRec.rationale,
     };
 
     return {
