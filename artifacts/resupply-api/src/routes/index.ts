@@ -25,6 +25,7 @@ import patientPortalInviteRouter from "./admin/patient-portal-invite.js";
 import prescriptionRenewalsRouter from "./admin/prescription-renewals.js";
 import shopProductCompatibilityAdminRouter from "./admin/product-compatibility.js";
 import patientTherapySyncRouter from "./admin/patient-therapy-sync.js";
+import patientTherapyLinksRouter from "./admin/patient-therapy-links.js";
 import smartTriggersRouter from "./admin/smart-triggers.js";
 import physicianFaxOutreachRouter from "./admin/physician-fax-outreach.js";
 import shopBackInStockAdminRouter from "./admin/shop-back-in-stock.js";
@@ -111,6 +112,11 @@ router.use(shopProductCompatibilityAdminRouter);
 // + API access is in place. Sync endpoint 503s until the chosen
 // adapter's env var is set.
 router.use(patientTherapySyncRouter);
+// /admin/patients/:id/therapy-links/* — durable per-patient mapping
+// to a therapy-cloud account so the nightly sync worker doesn't
+// need a human re-typing the partner id. See patient-therapy-sync
+// above for the read/import companion.
+router.use(patientTherapyLinksRouter);
 // /admin/smart-triggers/* — data-driven reorder-trigger evaluator +
 // dispatcher (Phase E.2 / feature #19). Reads patient_therapy_nights,
 // runs the rule library, queues + sends nudges that convert at 3-5x
