@@ -122,12 +122,36 @@ interface MediaSlot {
   declaredContentType: string | null;
 }
 
+// Twilio's media URLs come from one of two hosts depending on the
+// account region / API version. We allowlist them explicitly so a
+// tampered webhook body cannot point us at an attacker-controlled
+// URL — mitigates server-side request forgery on the basic-auth
+// download fetch below. Twilio media URLs always live on these
+// hosts; new regions would require an explicit code change.
+const ALLOWED_TWILIO_MEDIA_HOSTS = new Set<string>([
+  "api.twilio.com",
+  "media.twiliocdn.com",
+]);
+
+function isAllowedTwilioMediaUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (!ALLOWED_TWILIO_MEDIA_HOSTS.has(parsed.hostname)) return false;
+  return true;
+}
+
 /**
  * Resolve numbered MediaUrl/MediaContentType keys from the raw
  * Twilio body. Twilio sends `MediaUrl0`, `MediaUrl1`, …,
  * `MediaUrlN-1`. We don't trust NumMedia blindly — we cross-check
  * against actual key presence so a tampered NumMedia=99 with no
- * URLs is bounded.
+ * URLs is bounded. The host allowlist prevents SSRF: a forged
+ * webhook body cannot redirect us at a non-Twilio host.
  */
 function readMediaSlots(
   body: Record<string, unknown>,
@@ -137,7 +161,7 @@ function readMediaSlots(
   const slots: MediaSlot[] = [];
   for (let i = 0; i < cap; i++) {
     const url = body[`MediaUrl${i}`];
-    if (typeof url !== "string" || !url.startsWith("https://")) continue;
+    if (typeof url !== "string" || !isAllowedTwilioMediaUrl(url)) continue;
     const ct = body[`MediaContentType${i}`];
     slots.push({
       url,

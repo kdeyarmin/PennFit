@@ -27,7 +27,8 @@
 // and is invisible publicly until an admin approves via
 // POST /admin/shop/reviews/:id/approve. See routes/admin/shop-reviews.ts.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -40,6 +41,21 @@ import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 
 const router: IRouter = Router();
+
+// Cap review-write volume per signed-in customer (fall back to IP
+// for any pre-auth burst). Reviews require requireSignedIn upstream,
+// but we still cap volume because each write touches the moderation
+// queue + product aggregate caches; a burst from one account would
+// otherwise let a single attacker flood the queue.
+const reviewWriteLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.userCustomerId ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 const TITLE_MAX = 100;
 const BODY_MIN = 20;
@@ -425,6 +441,7 @@ router.get("/shop/reviews/site-aggregate", async (_req, res) => {
 
 router.post(
   "/shop/products/:productId/reviews",
+  reviewWriteLimiter,
   requireSignedIn,
   async (req, res) => {
     const customerId = req.userCustomerId;

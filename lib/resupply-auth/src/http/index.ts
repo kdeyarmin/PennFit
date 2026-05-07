@@ -21,6 +21,7 @@ import { makeCsrfSeedHandler } from "./csrf-seed";
 import { makeForgotPasswordHandler } from "./forgot-password";
 import { handleMe } from "./me";
 import { makeRequireSession } from "./middleware";
+import { makeAuthRateLimiter } from "./rate-limit-middleware";
 import { makeResetPasswordHandler } from "./reset-password";
 import { makeSignInHandler } from "./sign-in";
 import { makeSignOutHandler } from "./sign-out";
@@ -55,18 +56,67 @@ export function makeAuthRouter(
 
   const requireSession = makeRequireSession(deps);
 
+  // Edge rate-limits per IP. Defence-in-depth on top of the DB-backed
+  // per-email/per-IP failure counter — those throttle GUESS attempts;
+  // these cap ATTEMPT VOLUME so an attacker can't burn CPU+DB hammering
+  // any one endpoint. Numbers chosen for human-rate use plus headroom
+  // for office NAT (many users, one egress IP).
+  const signUpLimiter = makeAuthRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    name: "auth_sign_up",
+  });
+  const signInLimiter = makeAuthRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    name: "auth_sign_in",
+  });
+  const verifyEmailLimiter = makeAuthRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    name: "auth_verify_email",
+  });
+  const forgotPasswordLimiter = makeAuthRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    name: "auth_forgot_password",
+  });
+  const resetPasswordLimiter = makeAuthRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: 20,
+    name: "auth_reset_password",
+  });
+  const changePasswordLimiter = makeAuthRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: 20,
+    name: "auth_change_password",
+  });
+
   router.get("/csrf", makeCsrfSeedHandler(deps));
 
   if (deps.allowSignUp) {
-    router.post("/sign-up", makeSignUpHandler(deps, options));
+    router.post("/sign-up", signUpLimiter, makeSignUpHandler(deps, options));
   }
-  router.post("/sign-in", makeSignInHandler(deps));
+  router.post("/sign-in", signInLimiter, makeSignInHandler(deps));
   router.post("/sign-out", makeSignOutHandler(deps));
-  router.post("/verify-email", makeVerifyEmailHandler(deps));
-  router.post("/forgot-password", makeForgotPasswordHandler(deps, options));
-  router.post("/reset-password", makeResetPasswordHandler(deps));
+  router.post(
+    "/verify-email",
+    verifyEmailLimiter,
+    makeVerifyEmailHandler(deps),
+  );
+  router.post(
+    "/forgot-password",
+    forgotPasswordLimiter,
+    makeForgotPasswordHandler(deps, options),
+  );
+  router.post(
+    "/reset-password",
+    resetPasswordLimiter,
+    makeResetPasswordHandler(deps),
+  );
   router.post(
     "/change-password",
+    changePasswordLimiter,
     requireSession,
     makeChangePasswordHandler(deps),
   );

@@ -19,6 +19,7 @@
     "argon2": "^0.43.0",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "express-rate-limit": "^8.4.1",
     "pg": "^8.20.0",
     "zod": "catalog:"
   },

@@ -26,6 +26,15 @@ import { renderPasswordResetEmail } from "./http/email-templates";
  *  expect the email. */
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Char-by-char trim avoids the polynomial-backtracking pattern
+// CodeQL flags for `replace(/\/+$/, "")` against attacker-supplied
+// input lengths.
+function stripTrailingSlashes(s: string): string {
+  let i = s.length;
+  while (i > 0 && s.charCodeAt(i - 1) === 0x2f) i--;
+  return i === s.length ? s : s.slice(0, i);
+}
+
 export interface InviteResult {
   /** auth.users.id for the resolved row. */
   authUserId: string;
@@ -106,7 +115,7 @@ export async function inviteTeamMember(
     [token.hash, authUserId, expiresAt],
   );
 
-  const safePrefix = (args.uiPathPrefix ?? "").replace(/\/+$/, "");
+  const safePrefix = stripTrailingSlashes(args.uiPathPrefix ?? "");
   const inviteLink = `${baseUrl}${safePrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
   const rendered = renderPasswordResetEmail(
     {

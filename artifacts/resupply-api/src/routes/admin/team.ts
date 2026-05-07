@@ -28,7 +28,8 @@
 // false` and an `inviteLink` field so the operator can share the
 // link out-of-band.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
@@ -51,6 +52,20 @@ import { getAuthDeps } from "../../lib/auth-deps";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+// Per-admin (fall back to per-IP) rate limiter for the team-management
+// surface. requireAdminOnly already gates these on a valid admin
+// session — these limits are defence-in-depth so a compromised admin
+// cookie cannot script bulk invites/revokes/role-changes.
+const teamWriteLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.adminUserId ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 const ROLE_VALUES: AdminRole[] = ["admin", "agent"];
 const inviteBody = z
@@ -111,7 +126,7 @@ router.get("/admin/team", requireAdminOnly, async (_req, res) => {
   res.json({ members: rows.map(serialize) });
 });
 
-router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
+router.post("/admin/team/invite", teamWriteLimiter, requireAdminOnly, async (req, res) => {
   const parsed = inviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -218,7 +233,7 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
   });
 });
 
-router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
+router.post("/admin/team/:id/resend", teamWriteLimiter, requireAdminOnly, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -269,7 +284,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
   });
 });
 
-router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
+router.post("/admin/team/:id/revoke", teamWriteLimiter, requireAdminOnly, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -325,7 +340,7 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
   });
 });
 
-router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
+router.patch("/admin/team/:id", teamWriteLimiter, requireAdminOnly, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });

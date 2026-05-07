@@ -43,13 +43,22 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+// Char-by-char trim avoids the polynomial-backtracking pattern
+// CodeQL flags for `replace(/\/+$/, "")` against attacker-supplied
+// input lengths.
+function stripTrailingSlashes(s: string): string {
+  let i = s.length;
+  while (i > 0 && s.charCodeAt(i - 1) === 0x2f) i--;
+  return i === s.length ? s : s.slice(0, i);
+}
+
 function makeLink(
   base: string,
   prefix: string | undefined,
   path: string,
   token: string,
 ): string {
-  const safePrefix = (prefix ?? "").replace(/\/+$/, "");
+  const safePrefix = stripTrailingSlashes(prefix ?? "");
   return `${base}${safePrefix}${path}?token=${encodeURIComponent(token)}`;
 }
 

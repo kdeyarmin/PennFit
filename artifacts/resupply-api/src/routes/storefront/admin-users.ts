@@ -18,7 +18,8 @@
  * but never block the user-visible operation.
  */
 
-import { Router } from "express";
+import { Router, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 import {
   inviteTeamMember,
@@ -33,6 +34,29 @@ import { getAuthDeps } from "../../lib/auth-deps.js";
 import { requireAdminOnly } from "../../middlewares/requireAdmin.js";
 
 const router = Router();
+
+// Rate limiters for the team-management surface. requireAdminOnly
+// already gates these on a valid admin session, but we still cap
+// per-admin / per-IP volume so a compromised admin cookie cannot be
+// used to script bulk invites/revokes against the auth.users table.
+const adminUsersReadLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.adminUserId ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
+const adminUsersWriteLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.adminUserId ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 const inviteBody = z.object({
   email: z.string().trim().email().max(254).toLowerCase(),
@@ -95,7 +119,7 @@ function effectiveStatus(row: AuthUserRow): "active" | "pending" | "revoked" {
   return "pending";
 }
 
-router.get("/admin/users", requireAdminOnly, async (req, res) => {
+router.get("/admin/users", adminUsersReadLimiter, requireAdminOnly, async (req, res) => {
   // List every staff row in auth.users. Penn's staff is small
   // (<200 in the foreseeable future), so we don't paginate.
   const result = await pool.query<AuthUserRow>(
@@ -157,7 +181,7 @@ function buildInviteRedirectUrl(req: import("express").Request): string {
   return `${proto}://${host}`;
 }
 
-router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
+router.post("/admin/users/invite", adminUsersWriteLimiter, requireAdminOnly, async (req, res) => {
   const parsed = inviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -218,6 +242,7 @@ router.post("/admin/users/invite", requireAdminOnly, async (req, res) => {
 
 router.patch(
   "/admin/users/:userId/role",
+  adminUsersWriteLimiter,
   requireAdminOnly,
   async (req, res) => {
     const userId = req.params.userId;
@@ -257,7 +282,7 @@ router.patch(
   },
 );
 
-router.delete("/admin/users/:userId", requireAdminOnly, async (req, res) => {
+router.delete("/admin/users/:userId", adminUsersWriteLimiter, requireAdminOnly, async (req, res) => {
   const userId = req.params.userId;
   if (!userId || typeof userId !== "string") {
     res.status(400).json({ error: "Missing user id." });
@@ -285,6 +310,7 @@ router.delete("/admin/users/:userId", requireAdminOnly, async (req, res) => {
 
 router.delete(
   "/admin/users/invitations/:invId",
+  adminUsersWriteLimiter,
   requireAdminOnly,
   async (req, res) => {
     const invId = req.params.invId;
