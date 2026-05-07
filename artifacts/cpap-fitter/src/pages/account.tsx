@@ -89,6 +89,7 @@ import {
 import { useCart, type CartItem } from "@/hooks/use-cart";
 import { ClinicalInfoSection } from "@/components/clinical-info-section";
 import { AccountMessagesSection } from "@/components/account-messages-section";
+import { CustomerChatSection } from "@/components/customer-chat-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
@@ -315,6 +316,14 @@ function AccountInner() {
             from /admin/conversations.
           */}
           <AccountMessagesSection />
+          {/*
+            Account chatbot — answers order/subscription/supply/device
+            questions for the signed-in user. Hits the auth-gated
+            /shop/me/chat endpoint, which loads a thin slice of the
+            caller's account context into the system prompt and exposes
+            DB-backed tools scoped to this customer.
+          */}
+          <CustomerChatSection />
           <DocumentsSection />
           <InsightsSection />
           <ReorderSuggestionsSection />
