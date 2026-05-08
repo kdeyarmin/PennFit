@@ -28,6 +28,7 @@
     "@workspace/resupply-reminders": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",
     "@workspace/resupply-telecom": "workspace:*",
+    "@workspace/resupply-templates": "workspace:*",
     "argon2": "^0.43.0",
     "busboy": "^1.6.0",
     "cors": "^2",

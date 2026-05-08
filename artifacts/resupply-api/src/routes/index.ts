@@ -8,6 +8,7 @@ import shopOrderNotesRouter from "./admin/order-notes.js";
 import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
+import messageTemplatesRouter from "./admin/message-templates.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
@@ -173,6 +174,15 @@ router.use(shopReturnNotesRouter);
 // macroMerge helper in the dashboard for the {{namespace.key}}
 // substitution syntax.
 router.use(csrMacrosRouter);
+// /admin/message-templates/* — admin read + edit for the
+// customer-message template library (Phase 1 of
+// docs/proposals/customer-message-templates.md). The render path
+// (lib/resupply-templates) falls back to each call site's
+// hard-coded baseline when the table is missing or the lookup
+// fails, so this route is forward-safe even before the migration
+// is journaled — see lib/resupply-db/drizzle/0067_message_templates.sql
+// for the journal posture.
+router.use(messageTemplatesRouter);
 // /admin/shop/subscriptions/metrics — KPI rollup for the
 // subscription health dashboard. Pure SQL aggregation — no Stripe
 // round-trip on this path.
