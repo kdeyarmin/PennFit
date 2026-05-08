@@ -16,11 +16,9 @@
 // pairs. A pending question with no answer yet is just noise.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool, shopProductQuestions } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -51,34 +49,27 @@ router.get("/shop/products/:productId/questions", async (req, res) => {
   }
   const productId = parsed.data;
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: shopProductQuestions.id,
-      askerDisplayName: shopProductQuestions.askerDisplayName,
-      questionBody: shopProductQuestions.questionBody,
-      answerBody: shopProductQuestions.answerBody,
-      answeredAt: shopProductQuestions.answeredAt,
-      createdAt: shopProductQuestions.createdAt,
-    })
-    .from(shopProductQuestions)
-    .where(
-      and(
-        eq(shopProductQuestions.productId, productId),
-        eq(shopProductQuestions.status, "answered"),
-      ),
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("shop_product_questions")
+    .select(
+      "id, asker_display_name, question_body, answer_body, answered_at, created_at",
     )
-    .orderBy(desc(shopProductQuestions.answeredAt))
+    .eq("product_id", productId)
+    .eq("status", "answered")
+    .order("answered_at", { ascending: false })
     .limit(50);
+  if (error) throw error;
 
   res.json({
-    questions: rows.map((r) => ({
+    questions: (rows ?? []).map((r) => ({
       id: r.id,
-      askerDisplayName: r.askerDisplayName,
-      questionBody: r.questionBody,
-      answerBody: r.answerBody ?? "",
-      answeredAt: r.answeredAt ? r.answeredAt.toISOString() : null,
-      createdAt: r.createdAt.toISOString(),
+      askerDisplayName: r.asker_display_name,
+      questionBody: r.question_body,
+      answerBody: r.answer_body ?? "",
+      answeredAt: r.answered_at,
+      createdAt: r.created_at,
     })),
   });
 });
@@ -124,30 +115,25 @@ router.post(
     }
     const askerEmail = resolvedCustomerEmail.toLowerCase();
 
-    const db = drizzle(getDbPool());
-    const inserted = await db
-      .insert(shopProductQuestions)
-      .values({
-        productId,
-        customerId,
-        askerDisplayName: displayName,
-        askerEmail,
-        questionBody,
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_product_questions")
+      .insert({
+        product_id: productId,
+        customer_id: customerId,
+        asker_display_name: displayName,
+        asker_email: askerEmail,
+        question_body: questionBody,
       })
-      .returning({
-        id: shopProductQuestions.id,
-        status: shopProductQuestions.status,
-        createdAt: shopProductQuestions.createdAt,
-      });
-    const row = inserted[0];
-    if (!row) {
-      throw new Error("INSERT returned no rows");
-    }
+      .select("id, status, created_at")
+      .single();
+    if (error) throw error;
 
     res.status(201).json({
       id: row.id,
       status: row.status,
-      createdAt: row.createdAt.toISOString(),
+      createdAt: row.created_at,
     });
   },
 );

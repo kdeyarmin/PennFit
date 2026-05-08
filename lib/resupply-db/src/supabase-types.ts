@@ -291,6 +291,45 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
         Relationships: [];
       };
+      shop_product_questions: {
+        Row: {
+          id: string;
+          product_id: string;
+          customer_id: string;
+          asker_display_name: string;
+          asker_email: string;
+          question_body: string;
+          status: string;
+          answer_body: string | null;
+          answered_by_email: string | null;
+          answered_by_user_id: string | null;
+          answered_at: string | null;
+          moderation_note: string | null;
+          moderated_at: string | null;
+          moderated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_product_questions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_product_questions"]["Row"]>;
+        Relationships: [];
+      };
+      shop_customer_push_subscriptions: {
+        Row: {
+          id: string;
+          customer_id: string;
+          endpoint: string;
+          auth_b64: string;
+          p256dh_b64: string;
+          user_agent: string | null;
+          expired_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
+        Relationships: [];
+      };
       patient_smart_trigger_events: {
         Row: {
           id: string;

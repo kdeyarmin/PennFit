@@ -17,10 +17,8 @@
 // /learn/replacement-schedule (insurance-aligned defaults).
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool, shopOrderItems, shopOrders } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
@@ -49,28 +47,69 @@ router.get(
   requireSignedIn,
   async (req, res) => {
     const customerId = req.userCustomerId!;
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    // Per-product last purchase, scoped to PAID orders only. We
-    // aggregate at the SQL layer (one row per product) rather than
-    // pulling every line item into memory.
-    const rows = await db
-      .select({
-        productId: shopOrderItems.productId,
-        lastPaidAt: sql<Date>`max(${shopOrderItems.paidAt})`,
-        totalQuantity: sql<number>`sum(${shopOrderItems.quantity})::int`,
-      })
-      .from(shopOrderItems)
-      .innerJoin(shopOrders, eq(shopOrderItems.orderId, shopOrders.id))
-      .where(
-        and(
-          eq(shopOrderItems.customerId, customerId),
-          eq(shopOrders.status, "paid"),
-        ),
-      )
-      .groupBy(shopOrderItems.productId)
-      .orderBy(desc(sql`max(${shopOrderItems.paidAt})`))
-      .limit(50);
+    // PostgREST has no GROUP BY / aggregate, so we fetch the line
+    // items + their parent order statuses and aggregate in JS. The
+    // original SQL also INNER JOINed on shop_orders.status='paid';
+    // we replicate that with a bulk-fetch + Map filter. Cap the
+    // line-item scan at 1000 rows (heavy customers will still get
+    // the most-recent activity reflected since we group on product
+    // and take MAX paid_at).
+    const { data: items, error: itemsErr } = await supabase
+      .schema("resupply")
+      .from("shop_order_items")
+      .select("order_id, product_id, paid_at, quantity")
+      .eq("customer_id", customerId)
+      .order("paid_at", { ascending: false })
+      .limit(1000);
+    if (itemsErr) throw itemsErr;
+
+    const orderIds = Array.from(
+      new Set((items ?? []).map((i) => i.order_id)),
+    );
+    let paidOrderIds = new Set<string>();
+    if (orderIds.length > 0) {
+      const { data: orders, error: ordersErr } = await supabase
+        .schema("resupply")
+        .from("shop_orders")
+        .select("id, status")
+        .in("id", orderIds);
+      if (ordersErr) throw ordersErr;
+      paidOrderIds = new Set(
+        (orders ?? []).filter((o) => o.status === "paid").map((o) => o.id),
+      );
+    }
+
+    // Group: per product, MAX(paid_at) + SUM(quantity).
+    const grouped = new Map<
+      string,
+      { lastPaidAt: Date; totalQuantity: number }
+    >();
+    for (const it of items ?? []) {
+      if (!paidOrderIds.has(it.order_id)) continue;
+      const paidAt = new Date(it.paid_at);
+      const existing = grouped.get(it.product_id);
+      if (!existing) {
+        grouped.set(it.product_id, {
+          lastPaidAt: paidAt,
+          totalQuantity: it.quantity,
+        });
+      } else {
+        if (paidAt.getTime() > existing.lastPaidAt.getTime()) {
+          existing.lastPaidAt = paidAt;
+        }
+        existing.totalQuantity += it.quantity;
+      }
+    }
+    const rows = Array.from(grouped.entries())
+      .map(([productId, agg]) => ({
+        productId,
+        lastPaidAt: agg.lastPaidAt,
+        totalQuantity: agg.totalQuantity,
+      }))
+      .sort((a, b) => b.lastPaidAt.getTime() - a.lastPaidAt.getTime())
+      .slice(0, 50);
 
     if (rows.length === 0) {
       res.json({ suggestions: [] });
@@ -131,7 +170,7 @@ router.get(
         if (!meta) return null;
         const cadence = CATEGORY_CADENCE_DAYS[meta.category];
         if (!cadence) return null; // mask / accessory / bundle — skip
-        const lastPaidAt = new Date(r.lastPaidAt);
+        const lastPaidAt = r.lastPaidAt;
         const ageDays = Math.floor(
           (now.getTime() - lastPaidAt.getTime()) / (1000 * 60 * 60 * 24),
         );
