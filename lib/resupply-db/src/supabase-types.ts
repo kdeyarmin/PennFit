@@ -291,6 +291,29 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
         Relationships: [];
       };
+      physician_fax_outreach: {
+        Row: {
+          id: string;
+          patient_id: string;
+          prescription_id: string | null;
+          physician_name: string;
+          physician_fax_e164: string;
+          cover_letter_text: string;
+          status: string;
+          vendor_ref: string | null;
+          vendor_name: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+          failed_at: string | null;
+          failure_reason: string | null;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]>;
+        Relationships: [];
+      };
       patient_followups: {
         Row: {
           id: string;
@@ -306,6 +329,29 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
+        Relationships: [];
+      };
+      prescriptions: {
+        Row: {
+          id: string;
+          patient_id: string;
+          item_sku: string;
+          cadence_days: number;
+          valid_from: string;
+          valid_until: string | null;
+          details: Json | null;
+          status: string;
+          attachment_object_key: string | null;
+          attachment_filename: string | null;
+          attachment_content_type: string | null;
+          attachment_size_bytes: number | null;
+          attachment_uploaded_at: string | null;
+          renewal_requested_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["prescriptions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["prescriptions"]["Row"]>;
         Relationships: [];
       };
       messages: {

@@ -13,13 +13,11 @@
 // where "changing the model" might mean "this isn't the same row
 // anymore" anyway.
 
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, shopProductCompatibility } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -74,26 +72,22 @@ router.post(
     }
     const { machineManufacturer, machineModel, notes } = bodyParsed.data;
 
-    const db = drizzle(getDbPool());
-    let inserted: Array<{ id: string }>;
-    try {
-      inserted = await db
-        .insert(shopProductCompatibility)
-        .values({
-          productId,
-          machineManufacturer,
-          machineModel: machineModel ?? null,
-          notes: notes ?? null,
-        })
-        .returning({ id: shopProductCompatibility.id });
-    } catch (err) {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_product_compatibility")
+      .insert({
+        product_id: productId,
+        machine_manufacturer: machineManufacturer,
+        machine_model: machineModel ?? null,
+        notes: notes ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) {
       // Unique-violation on (product, mfr, model) → 409 with a
       // friendly message instead of bubbling the constraint name.
-      const isUnique =
-        err && typeof err === "object" && "code" in err
-          ? (err as { code: string }).code === "23505"
-          : false;
-      if (isUnique) {
+      if (error.code === "23505") {
         res.status(409).json({
           error: "already_exists",
           message:
@@ -101,11 +95,7 @@ router.post(
         });
         return;
       }
-      throw err;
-    }
-    const row = inserted[0];
-    if (!row) {
-      throw new Error("INSERT returned no rows");
+      throw error;
     }
 
     await logAudit({
@@ -149,19 +139,15 @@ router.delete(
     }
     const entryId = entryParsed.data;
 
-    const db = drizzle(getDbPool());
-    const existing = await db
-      .select({
-        id: shopProductCompatibility.id,
-        productId: shopProductCompatibility.productId,
-        manufacturer: shopProductCompatibility.machineManufacturer,
-        model: shopProductCompatibility.machineModel,
-      })
-      .from(shopProductCompatibility)
-      .where(eq(shopProductCompatibility.id, entryId))
-      .limit(1);
-    const row = existing[0];
-    if (!row || row.productId !== productId) {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row } = await supabase
+      .schema("resupply")
+      .from("shop_product_compatibility")
+      .select("id, product_id, machine_manufacturer, machine_model")
+      .eq("id", entryId)
+      .limit(1)
+      .maybeSingle();
+    if (!row || row.product_id !== productId) {
       // Defense-in-depth: the URL contract is "this entry belongs
       // to this product". A mismatch could be a CSR clicking a
       // stale tab; either way we 404 rather than expose the row.
@@ -169,14 +155,13 @@ router.delete(
       return;
     }
 
-    await db
-      .delete(shopProductCompatibility)
-      .where(
-        and(
-          eq(shopProductCompatibility.id, entryId),
-          eq(shopProductCompatibility.productId, productId),
-        ),
-      );
+    const { error: delErr } = await supabase
+      .schema("resupply")
+      .from("shop_product_compatibility")
+      .delete()
+      .eq("id", entryId)
+      .eq("product_id", productId);
+    if (delErr) throw delErr;
 
     await logAudit({
       action: "shop_product_compatibility.remove",
@@ -186,8 +171,8 @@ router.delete(
       targetId: entryId,
       metadata: {
         product_id: productId,
-        manufacturer: row.manufacturer,
-        model: row.model,
+        manufacturer: row.machine_manufacturer,
+        model: row.machine_model,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,

@@ -16,13 +16,11 @@
 //   avoids "the prescription cadence silently changed mid-cycle"
 //   debugging surprises.
 
-import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, prescriptions } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -58,19 +56,15 @@ router.patch("/prescriptions/:rxId", requireAdmin, async (req, res) => {
   const { rxId } = idParsed.data;
   const { status: nextStatus } = bodyParsed.data;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const existing = await db
-    .select({
-      id: prescriptions.id,
-      patientId: prescriptions.patientId,
-      itemSku: prescriptions.itemSku,
-      status: prescriptions.status,
-    })
-    .from(prescriptions)
-    .where(eq(prescriptions.id, rxId))
-    .limit(1);
-  const rx = existing[0];
+  const { data: rx } = await supabase
+    .schema("resupply")
+    .from("prescriptions")
+    .select("id, patient_id, item_sku, status")
+    .eq("id", rxId)
+    .limit(1)
+    .maybeSingle();
   if (!rx) {
     res.status(404).json({ error: "not_found" });
     return;
@@ -99,10 +93,12 @@ router.patch("/prescriptions/:rxId", requireAdmin, async (req, res) => {
     return;
   }
 
-  await db
-    .update(prescriptions)
-    .set({ status: nextStatus, updatedAt: sql`now()` })
-    .where(eq(prescriptions.id, rxId));
+  const { error } = await supabase
+    .schema("resupply")
+    .from("prescriptions")
+    .update({ status: nextStatus, updated_at: new Date().toISOString() })
+    .eq("id", rxId);
+  if (error) throw error;
 
   await logAudit({
     action: "patient.prescription.status_changed",
@@ -111,8 +107,8 @@ router.patch("/prescriptions/:rxId", requireAdmin, async (req, res) => {
     targetTable: "prescriptions",
     targetId: rxId,
     metadata: {
-      patient_id: rx.patientId,
-      item_sku: rx.itemSku,
+      patient_id: rx.patient_id,
+      item_sku: rx.item_sku,
       from_status: rx.status,
       to_status: nextStatus,
     },

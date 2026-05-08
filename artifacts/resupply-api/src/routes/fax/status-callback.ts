@@ -19,15 +19,18 @@
 //     name, no page count beyond "did it arrive?".
 
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, physicianFaxOutreach } from "@workspace/resupply-db";
+import {
+  type Database,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger.js";
+
+type FaxOutreachUpdate = Database["resupply"]["Tables"]["physician_fax_outreach"]["Update"];
 
 const router: IRouter = Router();
 
@@ -125,34 +128,25 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
     parsed.data;
   const dbStatus = mapTwilioStatus(twilioStatus);
 
-  const db = drizzle(getDbPool());
-  const now = new Date();
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
 
-  const updates: {
-    status: DbFaxStatus;
-    updatedAt: Date;
-    deliveredAt?: Date;
-    failedAt?: Date;
-    failureReason?: string;
-  } = { status: dbStatus, updatedAt: now };
-
+  const updates: FaxOutreachUpdate = { status: dbStatus, updated_at: nowIso };
   if (dbStatus === "delivered") {
-    updates.deliveredAt = now;
+    updates.delivered_at = nowIso;
   } else if (dbStatus === "failed") {
-    updates.failedAt = now;
-    if (errorCode) updates.failureReason = `Twilio error ${errorCode}`;
+    updates.failed_at = nowIso;
+    if (errorCode) updates.failure_reason = `Twilio error ${errorCode}`;
   }
 
   try {
-    await db
-      .update(physicianFaxOutreach)
-      .set(updates)
-      .where(
-        and(
-          eq(physicianFaxOutreach.vendorRef, faxSid),
-          eq(physicianFaxOutreach.vendorName, "twilio"),
-        ),
-      );
+    const { error } = await supabase
+      .schema("resupply")
+      .from("physician_fax_outreach")
+      .update(updates)
+      .eq("vendor_ref", faxSid)
+      .eq("vendor_name", "twilio");
+    if (error) throw error;
   } catch (err) {
     logger.warn(
       { event: "fax_status_db_failed", faxSid, err },
