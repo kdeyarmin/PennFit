@@ -84,14 +84,19 @@ function mockFetch(impl: (url: string, init?: RequestInit) => Response) {
       impl(String(url), init as RequestInit | undefined)) as never);
 }
 
-// Hostname-equality check used by the fetch mocks below. A naive
+// Exact Twilio-media URL check used by the fetch mocks below. A naive
 // `url.includes("api.twilio.com")` would also match a hostile
-// `https://evil.example.com/api.twilio.com/...` URL — this helper
-// parses the URL and compares the hostname exactly so the test
-// fixtures stay aligned with the production allowlist semantics.
+// `https://evil.example.com/api.twilio.com/...` URL, and production
+// also requires HTTPS. Parse once and require both the expected
+// protocol and hostname so the test fixtures stay aligned with the
+// production allowlist semantics.
 function isTwilioMediaUrl(url: string): boolean {
   try {
-    return new URL(url).hostname === "api.twilio.com";
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.protocol === "https:" &&
+      parsedUrl.hostname === "api.twilio.com"
+    );
   } catch {
     return false;
   }
