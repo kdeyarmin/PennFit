@@ -25,7 +25,8 @@
 //   - Conversation lookup fails → generic "link no longer valid" page.
 //   - Signature mismatch / malformed → same generic page (no detail leak).
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
@@ -46,6 +47,21 @@ import {
 import { safeAudit } from "../../lib/messaging/safe-audit";
 
 const router: IRouter = Router();
+
+// /email/click is publicly reachable (it accepts a signed token via
+// query string). The signature is enough to keep an attacker from
+// performing actions, but a flood of requests with garbage tokens
+// still walks the verifyLinkToken HMAC and (on the GET path) issues
+// a DB lookup. Cap per IP so an abusive client cannot run that work
+// in a tight loop.
+const emailClickLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,7 +108,7 @@ function extractVerifiedToken(
 // GET — landing page only (no side-effects)
 // ---------------------------------------------------------------------------
 
-router.get("/email/click", async (req, res) => {
+router.get("/email/click", emailClickLimiter, async (req, res) => {
   const cfg = readMessagingConfigOrNull();
   if (!cfg) {
     res
@@ -163,7 +179,7 @@ router.get("/email/click", async (req, res) => {
 // POST — perform the signed action
 // ---------------------------------------------------------------------------
 
-router.post("/email/click", async (req, res) => {
+router.post("/email/click", emailClickLimiter, async (req, res) => {
   const cfg = readMessagingConfigOrNull();
   if (!cfg) {
     res

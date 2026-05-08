@@ -21,12 +21,27 @@
 // JSON dump to the page is exactly the silent PHI-leak vector this
 // endpoint exists to prevent.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getDbPool } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+// Rate limit the audit viewer per admin (fall back to IP for the
+// pre-auth burst). The query joins audit_log against indexed columns
+// and is expected to be cheap, but a tight loop scrolling through
+// pages would still pile DB work without this cap.
+const auditReadLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.adminUserId ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
 
 const listQuery = z
   .object({
@@ -57,7 +72,7 @@ interface CountRow {
 
 const router: IRouter = Router();
 
-router.get("/audit", requireAdmin, async (req, res) => {
+router.get("/audit", requireAdmin, auditReadLimiter, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({
