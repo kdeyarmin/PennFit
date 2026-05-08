@@ -71,6 +71,18 @@ export function makeForgotPasswordHandler(
       return;
     }
 
+    // Record every request (regardless of outcome) against the per-endpoint
+    // sentinel so repeat callers accumulate toward the cap, including
+    // malformed inputs that exit early below. Without recording up-front,
+    // an attacker could spam Zod-parse failures (or unparseable email
+    // values) to bypass the cap before sending real probes. Mirrors the
+    // reset-password / verify-email handlers.
+    void deps.repo.recordLoginAttempt({
+      emailLower: ipSentinel,
+      ip,
+      success: false,
+    });
+
     const parsed = ForgotBody.safeParse(req.body);
     if (!parsed.success) {
       // Even input validation has to NOT enumerate. Return the
@@ -94,17 +106,9 @@ export function makeForgotPasswordHandler(
         ip,
         metadata: { invalidEmail: true },
       });
-      // Record against the per-endpoint sentinel so only forgot-password
-      // failures count toward this IP cap.
-      void deps.repo.recordLoginAttempt({ emailLower: ipSentinel, ip, success: false });
       res.status(200).json({ ok: true });
       return;
     }
-
-    // Record every request (regardless of outcome) against the per-endpoint
-    // sentinel so repeat callers accumulate toward the cap without bleeding
-    // into sign-in or verify-email counters.
-    void deps.repo.recordLoginAttempt({ emailLower: ipSentinel, ip, success: false });
 
     const user = await deps.repo.findUserByEmail(emailLower);
     if (!user || user.status === "revoked") {
