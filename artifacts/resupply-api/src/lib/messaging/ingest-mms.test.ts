@@ -345,15 +345,11 @@ describe("ingestInboundMmsMedia", () => {
 
     // Fetch must only have been called for the valid Twilio URL —
     // never for example.com.
-    const fetchedUrls = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls.map(
-      (c: unknown[]) => String(c[0]),
+    const fetchedHosts = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => new URL(String(c[0])).hostname,
     );
-    expect(fetchedUrls.some((u: string) => u.includes("example.com"))).toBe(
-      false,
-    );
-    expect(fetchedUrls.some((u: string) => u.includes("api.twilio.com"))).toBe(
-      true,
-    );
+    expect(fetchedHosts.some((h: string) => h === "example.com")).toBe(false);
+    expect(fetchedHosts.some((h: string) => h === "api.twilio.com")).toBe(true);
   });
 
   describe("persistInboundAttachment (shared validate→upload→insert tail)", () => {
