@@ -84,6 +84,24 @@ function mockFetch(impl: (url: string, init?: RequestInit) => Response) {
       impl(String(url), init as RequestInit | undefined)) as never);
 }
 
+// Exact Twilio-media URL check used by the fetch mocks below. A naive
+// `url.includes("api.twilio.com")` would also match a hostile
+// `https://evil.example.com/api.twilio.com/...` URL, and production
+// also requires HTTPS. Parse once and require both the expected
+// protocol and hostname so the test fixtures stay aligned with the
+// production allowlist semantics.
+function isTwilioMediaUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.protocol === "https:" &&
+      parsedUrl.hostname === "api.twilio.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
 describe("ingestInboundMmsMedia", () => {
   let fetchSpy: MockInstance;
 
@@ -123,7 +141,7 @@ describe("ingestInboundMmsMedia", () => {
 
   it("downloads, uploads, and persists a single allowed image", async () => {
     fetchSpy = mockFetch((url) => {
-      if (url.includes("api.twilio.com")) {
+      if (isTwilioMediaUrl(url)) {
         return new Response(pngBytes(64), {
           status: 200,
           headers: { "content-type": "image/png" },
@@ -200,7 +218,7 @@ describe("ingestInboundMmsMedia", () => {
   it("rejects oversize bytes (>5MB) without inserting", async () => {
     const big = new Uint8Array(5 * 1024 * 1024 + 1);
     fetchSpy = mockFetch((url) => {
-      if (url.includes("api.twilio.com")) {
+      if (isTwilioMediaUrl(url)) {
         return new Response(big, {
           status: 200,
           headers: { "content-type": "image/jpeg" },
@@ -215,7 +233,7 @@ describe("ingestInboundMmsMedia", () => {
         rawWebhookBody: {
           NumMedia: "1",
           MediaUrl0:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEbig",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEbig",
           MediaContentType0: "image/jpeg",
         },
         numMedia: 1,
@@ -250,10 +268,10 @@ describe("ingestInboundMmsMedia", () => {
         rawWebhookBody: {
           NumMedia: "2",
           MediaUrl0:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEgone",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEgone",
           MediaContentType0: "image/png",
           MediaUrl1:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEgood",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEgood",
           MediaContentType1: "image/png",
         },
         numMedia: 2,
@@ -284,7 +302,7 @@ describe("ingestInboundMmsMedia", () => {
     const body: Record<string, string> = { NumMedia: "99" };
     for (let i = 0; i < 99; i++) {
       body[`MediaUrl${i}`] =
-        `https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/ME${i}`;
+        `https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/ME${i}`;
       body[`MediaContentType${i}`] = "image/png";
     }
 
@@ -326,7 +344,7 @@ describe("ingestInboundMmsMedia", () => {
           MediaContentType0: "image/png",
           // Valid Twilio URL — should proceed normally.
           MediaUrl1:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEsafe",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEsafe",
           MediaContentType1: "image/png",
         },
         numMedia: 2,
@@ -563,13 +581,13 @@ describe("ingestInboundMmsMedia", () => {
           rawWebhookBody: {
             NumMedia: "3",
             MediaUrl0:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEa",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEa",
             MediaContentType0: "image/png",
             MediaUrl1:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEb",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEb",
             MediaContentType1: "image/png",
             MediaUrl2:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEc",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEc",
             MediaContentType2: "image/png",
           },
           numMedia: 3,
@@ -623,10 +641,10 @@ describe("ingestInboundMmsMedia", () => {
           rawWebhookBody: {
             NumMedia: "2",
             MediaUrl0:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEx",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEx",
             MediaContentType0: "image/png",
             MediaUrl1:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEy",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEy",
             MediaContentType1: "image/png",
           },
           numMedia: 2,
@@ -655,7 +673,7 @@ describe("ingestInboundMmsMedia", () => {
 
   it("counts a DB insert failure as errored without throwing", async () => {
     fetchSpy = mockFetch((url) => {
-      if (url.includes("api.twilio.com")) {
+      if (isTwilioMediaUrl(url)) {
         return new Response(pngBytes(8), {
           status: 200,
           headers: { "content-type": "image/png" },
@@ -673,7 +691,7 @@ describe("ingestInboundMmsMedia", () => {
         rawWebhookBody: {
           NumMedia: "1",
           MediaUrl0:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEdup",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEdup",
           MediaContentType0: "image/png",
         },
         numMedia: 1,

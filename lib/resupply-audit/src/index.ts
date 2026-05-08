@@ -146,3 +146,76 @@ export async function logAudit(event: AuditEvent): Promise<void> {
     ],
   );
 }
+
+/**
+ * Best-effort variant of `logAudit` for call sites where audit-write
+ * failure must NOT block the user-visible flow (post-success
+ * background tasks, webhook handlers, worker jobs).
+ *
+ * Behavior:
+ *   * Sanitizer errors (PHI, shape, size, depth) STILL THROW. The
+ *     metadata-validation gate is a programmer correctness check —
+ *     a silent-eat there would defeat its purpose, so we re-throw
+ *     so the call site sees the bug.
+ *   * DB-level errors (pool exhaustion, deadlock, transient
+ *     connection issue) are swallowed and logged via the caller-
+ *     provided `onWriteFailure` callback (or no-op if none given).
+ *   * The callback receives the original error AND a stable event
+ *     name (`audit_write_failed`) so a logging adapter can grep
+ *     for systemic outages: a single failure is normal noise; a
+ *     run of them under a few minutes is a signal that the audit
+ *     DB or pool is unhealthy.
+ *
+ * Returns `true` on successful write, `false` on swallowed DB
+ * failure, and re-throws on sanitizer / programmer errors.
+ *
+ * Call sites adopt this helper instead of try/catch so the
+ * categorization of "what's a programmer bug vs what's transient"
+ * stays in one place.
+ */
+export async function logAuditBestEffort(
+  event: AuditEvent,
+  options: {
+    /** Stable label for the failure log — e.g. "post_login_audit". */
+    contextLabel: string;
+    /**
+     * Caller-provided logger hook. Receives the categorized failure
+     * envelope so a pino consumer can grep for `audit_write_failed`
+     * across services without depending on this lib's logger choice.
+     */
+    onWriteFailure?: (failure: {
+      event: "audit_write_failed";
+      contextLabel: string;
+      action: string;
+      err: unknown;
+    }) => void;
+  },
+): Promise<boolean> {
+  try {
+    await logAudit(event);
+    return true;
+  } catch (err) {
+    // Re-throw programmer errors. The classes are exported above so
+    // call sites can also instanceof-check; here we use name-equality
+    // to avoid an import cycle on the sanitize file.
+    const name =
+      err instanceof Error
+        ? err.name
+        : null;
+    if (
+      name === "AuditMetadataPhiError" ||
+      name === "AuditMetadataSizeError" ||
+      name === "AuditMetadataDepthError" ||
+      name === "AuditMetadataShapeError"
+    ) {
+      throw err;
+    }
+    options.onWriteFailure?.({
+      event: "audit_write_failed",
+      contextLabel: options.contextLabel,
+      action: event.action,
+      err,
+    });
+    return false;
+  }
+}

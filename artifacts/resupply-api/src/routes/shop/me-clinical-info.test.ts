@@ -113,7 +113,11 @@ describe("GET /shop/me/clinical-info", () => {
     selectQueue.push([]);
     const res = await request(makeApp()).get("/shop/me/clinical-info");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ cpapDevice: null, physicianInfo: null });
+    expect(res.body).toEqual({
+      cpapDevice: null,
+      physicianInfo: null,
+      facialMeasurements: null,
+    });
   });
 
   it("returns the persisted device + physician shape", async () => {
@@ -188,10 +192,16 @@ describe("PUT /shop/me/clinical-info", () => {
 
   it("no-op PUT (empty body) returns current values without an audit", async () => {
     mockSignedIn.current = "cust_1";
-    selectQueue.push([{ cpapDevice: null, physicianInfo: null }]);
+    selectQueue.push([
+      { cpapDevice: null, physicianInfo: null, facialMeasurements: null },
+    ]);
     const res = await request(makeApp()).put("/shop/me/clinical-info").send({});
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ cpapDevice: null, physicianInfo: null });
+    expect(res.body).toEqual({
+      cpapDevice: null,
+      physicianInfo: null,
+      facialMeasurements: null,
+    });
     expect(logAuditMock).not.toHaveBeenCalled();
     expect(dbStub.update).not.toHaveBeenCalled();
   });

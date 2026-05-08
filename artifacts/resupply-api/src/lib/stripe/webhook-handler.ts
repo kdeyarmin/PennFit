@@ -34,6 +34,7 @@ import { z } from "zod";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
+import { logAudit } from "@workspace/resupply-audit";
 import {
   getDbPool,
   shopCustomers,
@@ -335,7 +336,27 @@ export const stripeWebhookHandler: RequestHandler = async (
             ? charge.payment_intent
             : (charge.payment_intent?.id ?? null);
         if (paymentIntentId) {
-          await markStatusByPaymentIntent(paymentIntentId, "refunded", log);
+          // Capture the structured "why" so audit consumers can answer
+          // "was this admin-initiated, customer-initiated, fraud-flagged,
+          // or duplicate?" without re-fetching from Stripe. Stripe's
+          // canonical refund reasons are: duplicate, fraudulent,
+          // requested_by_customer; null/undefined = no reason supplied
+          // (typically admin-initiated through the dashboard with no
+          // dropdown selection).
+          const lastRefund = charge.refunds?.data?.[0];
+          await markStatusByPaymentIntent(paymentIntentId, "refunded", {
+            chargeId: charge.id,
+            stripeEventId: event.id,
+            // amount_refunded is cumulative — captures partial refunds
+            // and re-refunds within the same charge correctly.
+            amountRefundedCents: charge.amount_refunded,
+            currency: charge.currency,
+            // `reason` is per-refund; the latest refund's reason is
+            // the most informative one for the audit row.
+            refundReason: lastRefund?.reason ?? null,
+            refundId: lastRefund?.id ?? null,
+            log,
+          });
         }
         break;
       }
@@ -893,14 +914,80 @@ async function upsertSubscription(
 async function markStatusByPaymentIntent(
   paymentIntentId: string,
   status: "refunded",
-  log: { info?: (...args: unknown[]) => void } | undefined,
+  ctx: {
+    chargeId: string;
+    stripeEventId: string;
+    amountRefundedCents: number;
+    currency: string | null;
+    refundReason: string | null;
+    refundId: string | null;
+    log: { info?: (...args: unknown[]) => void } | undefined;
+  },
 ): Promise<void> {
   const db = drizzle(getDbPool());
-  await db
+  // RETURNING the affected row so we can stamp the audit with the
+  // local order id and short-circuit the audit write if the update
+  // matched nothing (Stripe re-deliveries on a missing row, etc.).
+  const updated = await db
     .update(shopOrders)
     .set({ status, updatedAt: sql`now()` })
-    .where(eq(shopOrders.stripePaymentIntentId, paymentIntentId));
-  log?.info?.({ status }, "shop order marked refunded");
+    .where(eq(shopOrders.stripePaymentIntentId, paymentIntentId))
+    .returning({ id: shopOrders.id, customerId: shopOrders.customerId });
+  ctx.log?.info?.(
+    { status, matched: updated.length },
+    "shop order marked refunded",
+  );
+  if (updated.length === 0) return;
+
+  // Audit row carries the structured "why" so admins can later answer
+  // questions like "how many refunds last month were customer-
+  // requested vs fraud-flagged" without re-querying Stripe.
+  // Metadata is intentionally non-PHI: amounts, currency, Stripe
+  // identifiers, and the canonical refund reason — no email, no
+  // shipping address, no card details.
+  for (const row of updated) {
+    try {
+      await logAudit({
+        action: "shop_order.refunded",
+        targetTable: "shop_orders",
+        targetId: row.id,
+        adminEmail: "system:webhook:stripe",
+        adminUserId: null,
+        metadata: {
+          stripe_event_id: ctx.stripeEventId,
+          stripe_charge_id: ctx.chargeId,
+          stripe_refund_id: ctx.refundId,
+          stripe_payment_intent_id: paymentIntentId,
+          amount_refunded_cents: ctx.amountRefundedCents,
+          currency: ctx.currency,
+          refund_reason: ctx.refundReason,
+          customer_id: row.customerId,
+        },
+      });
+    } catch (err) {
+      // Audit write failures are non-fatal — the DB status update is
+      // the source of truth. Log so we can find systemic audit
+      // outages, but don't 500 the webhook (Stripe would retry
+      // forever on transient audit DB issues).
+      const pgCode =
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        typeof err.code === "string"
+          ? err.code
+          : null;
+      ctx.log?.info?.(
+        {
+          event: "refund_audit_failed",
+          errName: err instanceof Error ? err.name : typeof err,
+          pgCode,
+          ...(err instanceof Error ? { err } : {}),
+          stripeEventId: ctx.stripeEventId,
+        },
+        "refund audit write failed",
+      );
+    }
+  }
 }
 
 /**

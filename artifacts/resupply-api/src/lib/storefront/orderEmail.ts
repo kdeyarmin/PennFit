@@ -26,7 +26,7 @@
  * so the entire platform sends from a single From address.
  */
 
-import { randomBytes } from "node:crypto";
+import { randomInt } from "node:crypto";
 import {
   createSendgridClient,
   EmailApiError,
@@ -92,10 +92,11 @@ export interface SendOrderResult {
  */
 export function generateOrderReference(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
-  const bytes = randomBytes(6);
   let ref = "";
   for (let i = 0; i < 6; i++) {
-    ref += alphabet[bytes[i]! % alphabet.length];
+    // randomInt is uniform across [0, alphabet.length); randomBytes()%len
+    // would be biased whenever 256 isn't an exact multiple of len.
+    ref += alphabet[randomInt(alphabet.length)];
   }
   return `PHM-${ref.slice(0, 3)}-${ref.slice(3, 6)}`;
 }

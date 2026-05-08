@@ -941,12 +941,28 @@ function Field({
   children: React.ReactNode;
 }) {
   const generatedId = useId();
+  const errorId = `${generatedId}-error`;
+  // When the field has an error we clone the child so screen readers
+  // announce both the invalid state (aria-invalid) and the error
+  // text (via aria-describedby). The role="alert" on the message
+  // also re-announces it when it appears or changes.
+  type ChildProps = {
+    id?: string;
+    "aria-invalid"?: boolean | "true" | "false";
+    "aria-describedby"?: string;
+  };
   const child =
     !skipHtmlFor && isValidElement(children)
-      ? cloneElement(children as React.ReactElement<{ id?: string }>, {
+      ? cloneElement(children as React.ReactElement<ChildProps>, {
           id:
-            (children as React.ReactElement<{ id?: string }>).props.id ??
+            (children as React.ReactElement<ChildProps>).props.id ??
             generatedId,
+          ...(error
+            ? {
+                "aria-invalid": true,
+                "aria-describedby": errorId,
+              }
+            : {}),
         })
       : children;
   const inputId = skipHtmlFor
@@ -963,7 +979,15 @@ function Field({
         {required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
       {child}
-      {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+      {error && (
+        <p
+          id={errorId}
+          role="alert"
+          className="text-xs text-destructive mt-1"
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }
