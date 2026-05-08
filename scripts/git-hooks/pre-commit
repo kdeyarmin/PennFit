@@ -20,6 +20,12 @@
 #           (co-change rule: any schema TS edit must ship with a new
 #           migration SQL in the same commit; weaker than a structural
 #           diff but works around the resupply snapshot-chain gap)
+#       * scripts/check-resupply-migration-prefix.sh
+#           when a new SQL file is added under
+#           lib/resupply-db/drizzle/. Enforces the moratorium on new
+#           migrations with prefix <= 0066 while the journal/files
+#           drift is being reconciled (see the README in that
+#           directory for the full rationale).
 #   - Both checks run against an isolated snapshot of the staged
 #     index — unstaged edits and untracked files are stashed for the
 #     duration of the hook and restored after, so the checks see
@@ -89,6 +95,7 @@ need_codegen=0
 need_arch=0
 need_drizzle=0
 need_resupply_pair=0
+need_resupply_prefix=0
 
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
@@ -128,10 +135,21 @@ while IFS= read -r file; do
       need_resupply_pair=1
       ;;
   esac
+  # Resupply DB migration-prefix moratorium: while the journal/files
+  # drift is being reconciled (see lib/resupply-db/drizzle/README.md),
+  # any newly-added migration SQL is checked to ensure it doesn't
+  # land in the duplicate-prefix set or the unjournaled range.
+  # Trigger on any change under lib/resupply-db/drizzle/; the script
+  # itself filters to ADDED *.sql files with forbidden prefixes.
+  case "$file" in
+    lib/resupply-db/drizzle/*|lib/resupply-db/drizzle/*/*)
+      need_resupply_prefix=1
+      ;;
+  esac
 done <<< "$staged"
 
 if [[ $need_codegen -eq 0 && $need_arch -eq 0 && $need_drizzle -eq 0 \
-      && $need_resupply_pair -eq 0 ]]; then
+      && $need_resupply_pair -eq 0 && $need_resupply_prefix -eq 0 ]]; then
   exit 0
 fi
 
@@ -166,6 +184,12 @@ run_checks() {
   if [[ $need_resupply_pair -eq 1 ]]; then
     printf '[pre-commit] Running resupply schema/migration co-change check…\n' >&2
     if ! bash "$REPO_ROOT/scripts/check-resupply-migration-pair.sh"; then
+      f=1
+    fi
+  fi
+  if [[ $need_resupply_prefix -eq 1 ]]; then
+    printf '[pre-commit] Running resupply migration-prefix moratorium check…\n' >&2
+    if ! bash "$REPO_ROOT/scripts/check-resupply-migration-prefix.sh"; then
       f=1
     fi
   fi

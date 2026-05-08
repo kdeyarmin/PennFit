@@ -1,0 +1,111 @@
+# `lib/resupply-db/drizzle/` — migration moratorium
+
+> **Stop. Read this before adding a migration here.**
+
+The Drizzle migration journal in this directory is currently out of sync
+with the SQL files on disk. There are 73 `.sql` files but only 52 entries
+in `meta/_journal.json`, and six prefixes are duplicated. Until that drift
+is reconciled with production state, **no new migration may be added with
+prefix `<= 0066`**, and the duplicate prefixes below must not be reused.
+
+The full investigation, the production-state facts that need to be
+collected first, and the coordinated rewrite procedure live in
+[`docs/migration-state-investigation-2026-05-08.md`](../../../docs/migration-state-investigation-2026-05-08.md).
+
+## What you need to know in 30 seconds
+
+1. **`scripts/post-merge.sh` runs `migrate.mjs` with no `drizzle-kit
+   generate` step beforehand.** The migrator only applies files
+   referenced by `meta/_journal.json`. Files in this directory that are
+   not journaled are silently skipped at deploy time.
+2. **The journal stops at `0049_physician_fax_outreach_status_pending_idx`.**
+   Every SQL file from `0049_patient_documents.sql` through `0066_*` is
+   present on disk but **not journaled** — meaning the schema state these
+   files encode is *not* applied by a fresh `migrate.mjs` run from this
+   tree. (Production may or may not have applied them via a different
+   path; that is one of the open questions.)
+3. **Six prefixes collide:** `0016`, `0017`, `0049`, `0050`, `0052`,
+   `0065`. Each pair was added independently and the canonical apply
+   order can only be determined by inspecting prod's
+   `drizzle.resupply_migrations.created_at`.
+
+## The rule (enforced by `scripts/check-resupply-migration-prefix.sh`)
+
+Any migration file *added* under `lib/resupply-db/drizzle/` must have a
+4-digit prefix **strictly greater than `0066`** (i.e. `0067` or higher).
+The pre-commit hook fails the commit otherwise. This applies to *added*
+files only — modifying existing migrations is already prohibited by
+ADR 003 and caught in review.
+
+This rule deliberately overshoots the duplicate-prefix set: capping at
+`0066` covers every duplicate (`0016`, `0017`, `0049`, `0050`, `0052`,
+`0065`) **and** the unjournaled range (`0049`–`0066`). A new migration
+landing inside the unjournaled range — even on a unique prefix — would
+become yet another file the deployed `migrate.mjs` silently ignores,
+compounding the drift.
+
+### Bypass
+
+Genuine emergencies (e.g. a hotfix authored as part of the coordinated
+rewrite itself) can bypass with:
+
+```
+SKIP_HOOKS=1 git commit ...
+    (or)
+git commit --no-verify ...
+```
+
+If you bypass, leave a comment in the commit body explaining why and
+link to the rewrite ticket.
+
+## Why we don't "just regenerate the journal"
+
+It's tempting to run `pnpm --filter @workspace/resupply-db run generate`,
+let drizzle-kit rewrite `_journal.json` from the current TS schema, and
+ship it. **Don't.** That breaks under any of the three scenarios listed
+in the investigation doc:
+
+- If production applied these files under their current names (via
+  `drizzle-kit push` or a manual `psql` session), production's
+  `drizzle.resupply_migrations` table holds the original tags. After a
+  rename + journal rebuild, those tags no longer match → next deploy
+  either fails on a missing-tag check or treats the migrations as new
+  and re-applies them (e.g. `42P07 duplicate_object` from a second
+  `CREATE TABLE patient_therapy_links`).
+- If production runs `drizzle-kit generate` mid-deploy somewhere, the
+  journal it produced won't match what we'd rebuild here (timestamps
+  and hashes differ), so the next run synthesizes "new" migrations.
+- If production hasn't redeployed since the journal was last in sync,
+  we'd be rebuilding on a stale baseline; the next deploy attempts a
+  from-scratch reapply that races with whatever else is in flight.
+
+The repo cannot answer "which one"; that requires a read-only
+`SELECT id, hash, created_at, migration_name FROM
+drizzle.resupply_migrations ORDER BY created_at` against production.
+
+## Duplicate-prefix inventory
+
+| Prefix | File A                                                | File B                                                            |
+| ------ | ----------------------------------------------------- | ----------------------------------------------------------------- |
+| `0016` | `0016_shop_orders_email_tracking.sql`                 | `0016_shop_returns.sql`                                           |
+| `0017` | `0017_csr_macros.sql`                                 | `0017_shop_orders_customer_email.sql`                             |
+| `0049` | `0049_patient_documents.sql`                          | `0049_physician_fax_outreach_status_pending_idx.sql`              |
+| `0050` | _two `0050_*` files — see `ls drizzle/0050_*.sql`_    |                                                                   |
+| `0052` | _two `0052_*` files — see `ls drizzle/0052_*.sql`_    |                                                                   |
+| `0065` | _two `0065_*` files — see `ls drizzle/0065_*.sql`_    |                                                                   |
+
+(Tabulated dynamically rather than statically pinned to keep the README
+honest if a file is renamed during the eventual rewrite.)
+
+## When the moratorium lifts
+
+Once the production state is captured and the coordinated rename + UPDATE
+script has shipped:
+
+1. The duplicate-prefix list goes to zero.
+2. `meta/_journal.json` matches the on-disk SQL files.
+3. `scripts/check-drizzle-drift.sh` passes without `continue-on-error`.
+4. `scripts/check-resupply-migration-prefix.sh` is updated (or removed)
+   so new migrations can be added in the normal `<next-prefix>` slot.
+
+Until all four are true, this guardrail stays.
