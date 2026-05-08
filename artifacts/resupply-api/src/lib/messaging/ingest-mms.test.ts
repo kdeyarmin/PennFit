@@ -84,6 +84,24 @@ function mockFetch(impl: (url: string, init?: RequestInit) => Response) {
       impl(String(url), init as RequestInit | undefined)) as never);
 }
 
+// Exact Twilio-media URL check used by the fetch mocks below. A naive
+// `url.includes("api.twilio.com")` would also match a hostile
+// `https://evil.example.com/api.twilio.com/...` URL, and production
+// also requires HTTPS. Parse once and require both the expected
+// protocol and hostname so the test fixtures stay aligned with the
+// production allowlist semantics.
+function isTwilioMediaUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.protocol === "https:" &&
+      parsedUrl.hostname === "api.twilio.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
 describe("ingestInboundMmsMedia", () => {
   let fetchSpy: MockInstance;
 
@@ -123,7 +141,7 @@ describe("ingestInboundMmsMedia", () => {
 
   it("downloads, uploads, and persists a single allowed image", async () => {
     fetchSpy = mockFetch((url) => {
-      if (url.includes("api.twilio.com")) {
+      if (isTwilioMediaUrl(url)) {
         return new Response(pngBytes(64), {
           status: 200,
           headers: { "content-type": "image/png" },
@@ -200,7 +218,7 @@ describe("ingestInboundMmsMedia", () => {
   it("rejects oversize bytes (>5MB) without inserting", async () => {
     const big = new Uint8Array(5 * 1024 * 1024 + 1);
     fetchSpy = mockFetch((url) => {
-      if (url.includes("api.twilio.com")) {
+      if (isTwilioMediaUrl(url)) {
         return new Response(big, {
           status: 200,
           headers: { "content-type": "image/jpeg" },
@@ -655,7 +673,7 @@ describe("ingestInboundMmsMedia", () => {
 
   it("counts a DB insert failure as errored without throwing", async () => {
     fetchSpy = mockFetch((url) => {
-      if (url.includes("api.twilio.com")) {
+      if (isTwilioMediaUrl(url)) {
         return new Response(pngBytes(8), {
           status: 200,
           headers: { "content-type": "image/png" },

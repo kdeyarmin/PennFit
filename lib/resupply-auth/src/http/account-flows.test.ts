@@ -466,6 +466,30 @@ describe("POST /auth/reset-password", () => {
     // user keeps the same status and no credential change.
     expect(res.status).toBe(410);
   });
+
+  it("returns 429 once the per-IP rate limit threshold is hit", async () => {
+    const h = buildHarness();
+    // Cap is 10 per 15 minutes, keyed by the per-endpoint IP sentinel.
+    // Drive the bucket up to the cap with cheap no-op calls (each
+    // records a failure attempt regardless of whether the body parses)
+    // and assert the next request is rejected with 429 + Retry-After.
+    // Avoids hard-coding the test environment's req.ip value.
+    for (let i = 0; i < 10; i++) {
+      // 410 (invalid token) for the first 10; rate-limit check passes,
+      // then the handler records the attempt and rejects the token.
+      await supertest(h.app)
+        .post("/auth/reset-password")
+        .send({ token: "fake-token", password: "brand new long password" });
+    }
+
+    const res = await supertest(h.app)
+      .post("/auth/reset-password")
+      .send({ token: "fake-token", password: "brand new long password" });
+
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe("rate_limited");
+    expect(res.headers["retry-after"]).toBeDefined();
+  });
 });
 
 // ---- change-password ----------------------------------------------------
@@ -608,6 +632,123 @@ describe("POST /auth/change-password", () => {
       .set(CSRF_HEADER, csrf)
       .send({ currentPassword: "current password", newPassword: "short" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("rate-limit counter records on every early-return branch", () => {
+  // Regression coverage for the per-IP rate-limit bypass: every reset /
+  // verify / forgot request — including malformed input that exits early
+  // before the token is consumed — must increment the per-endpoint
+  // IP-sentinel counter so an attacker can't avoid the cap by spamming
+  // unparseable payloads.
+
+  describe("POST /auth/reset-password", () => {
+    it("records IP-sentinel failure on Zod-parse rejection", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__reset:");
+      const res = await supertest(h.app)
+        .post("/auth/reset-password")
+        .send({ token: "" }); // empty string → fails z.string().min(1)
+      expect(res.status).toBe(400);
+      expect(h.repo.__failuresStartingWith("__reset:")).toBe(before + 1);
+    });
+
+    it("records IP-sentinel failure on password-policy rejection", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__reset:");
+      // Use a well-formed token so the password-policy rejection is the
+      // branch under test (not the hashToken-null branch).
+      const res = await supertest(h.app)
+        .post("/auth/reset-password")
+        .send({ token: "A".repeat(43), password: "short" });
+      expect(res.status).toBe(400);
+      expect(h.repo.__failuresStartingWith("__reset:")).toBe(before + 1);
+    });
+
+    it("records IP-sentinel failure on hashToken null (invalid token bytes)", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__reset:");
+      // hashToken returns null for tokens that fail base64url decode.
+      // A control character is guaranteed to be invalid base64url.
+      const res = await supertest(h.app)
+        .post("/auth/reset-password")
+        .send({ token: "not*valid*base64!", password: "brand new long password" });
+      expect(res.status).toBe(410);
+      expect(h.repo.__failuresStartingWith("__reset:")).toBe(before + 1);
+    });
+
+    it("records IP-sentinel failure on invalid/expired token", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__reset:");
+      // Well-formed (43-char base64url) but unknown token: hashToken
+      // succeeds, then consumeEmailToken returns null.
+      const res = await supertest(h.app)
+        .post("/auth/reset-password")
+        .send({
+          token: "A".repeat(43),
+          password: "brand new long password",
+        });
+      expect(res.status).toBe(410);
+      expect(h.repo.__failuresStartingWith("__reset:")).toBe(before + 1);
+    });
+  });
+
+  describe("POST /auth/verify-email", () => {
+    it("records IP-sentinel failure on Zod-parse rejection", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__verify:");
+      const res = await supertest(h.app)
+        .post("/auth/verify-email")
+        .send({ token: "" });
+      expect(res.status).toBe(400);
+      expect(h.repo.__failuresStartingWith("__verify:")).toBe(before + 1);
+    });
+
+    it("records IP-sentinel failure on hashToken null (invalid token bytes)", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__verify:");
+      const res = await supertest(h.app)
+        .post("/auth/verify-email")
+        .send({ token: "not*valid*base64!" });
+      expect(res.status).toBe(410);
+      expect(h.repo.__failuresStartingWith("__verify:")).toBe(before + 1);
+    });
+
+    it("records IP-sentinel failure on invalid/expired token", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__verify:");
+      // Well-formed (43-char base64url) but unknown token: hashToken
+      // succeeds, then consumeEmailToken returns null.
+      const res = await supertest(h.app)
+        .post("/auth/verify-email")
+        .send({ token: "A".repeat(43) });
+      expect(res.status).toBe(410);
+      expect(h.repo.__failuresStartingWith("__verify:")).toBe(before + 1);
+    });
+  });
+
+  describe("POST /auth/forgot-password", () => {
+    it("records IP-sentinel failure on Zod-parse rejection", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__forgot:");
+      // Missing email field → Zod parse fails. Endpoint still returns 200
+      // (non-enumeration) but the counter must tick.
+      const res = await supertest(h.app)
+        .post("/auth/forgot-password")
+        .send({});
+      expect(res.status).toBe(200);
+      expect(h.repo.__failuresStartingWith("__forgot:")).toBe(before + 1);
+    });
+
+    it("records IP-sentinel failure on email-normalize rejection", async () => {
+      const h = buildHarness();
+      const before = h.repo.__failuresStartingWith("__forgot:");
+      const res = await supertest(h.app)
+        .post("/auth/forgot-password")
+        .send({ email: "not-a-valid-email" });
+      expect(res.status).toBe(200);
+      expect(h.repo.__failuresStartingWith("__forgot:")).toBe(before + 1);
+    });
   });
 });
 

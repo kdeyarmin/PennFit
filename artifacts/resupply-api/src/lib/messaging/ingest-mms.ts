@@ -134,14 +134,19 @@ function normalizeAllowedTwilioMediaUrl(raw: string): string | null {
     const parsed = new URL(raw);
     if (parsed.protocol !== "https:") return null;
     if (parsed.hostname !== "api.twilio.com") return null;
-    if (
-      !/^\/2010-04-01\/Accounts\/[^/]+\/Messages\/[^/]+\/Media\/[^/]+$/.test(
+    // Match strictly alphanumeric segments (with Twilio's documented
+    // SID prefixes) and rebuild the URL from a hardcoded host + the
+    // captured path components. Require at least one character after
+    // each SID prefix so incomplete values like AC / MM / SM / ME are
+    // rejected instead of being canonicalized as valid Twilio media
+    // URLs.
+    const match =
+      /^\/2010-04-01\/Accounts\/(AC[A-Za-z0-9]+)\/Messages\/((?:MM|SM)[A-Za-z0-9]+)\/Media\/(ME[A-Za-z0-9]+)$/.exec(
         parsed.pathname,
-      )
-    ) {
-      return null;
-    }
-    return parsed.toString();
+      );
+    if (!match) return null;
+    const [, accountSid, messageSid, mediaSid] = match;
+    return `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages/${messageSid}/Media/${mediaSid}`;
   } catch {
     return null;
   }

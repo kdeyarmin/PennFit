@@ -139,7 +139,74 @@ function nextId(): string {
   return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Chat-scoped error boundary. The app's top-level ErrorBoundary
+// already exists, but it replaces the entire page — overkill if the
+// chat hits a render error from a malformed streamed token. With a
+// localized boundary, the surrounding /account page (orders,
+// subscriptions, etc.) keeps working and the patient sees a small
+// "chat unavailable" card with a recovery button instead of a full
+// "something went wrong" page.
+interface ChatBoundaryState {
+  hasError: boolean;
+}
+class ChatErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ChatBoundaryState
+> {
+  state: ChatBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ChatBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Mirror the top-level boundary so the diagnostic shows up in
+    // the same place during development.
+    console.error("[CustomerChatSection] caught a render error:", error, info);
+  }
+
+  private handleReset = () => {
+    // Clear the persisted thread before unmounting the fallback so
+    // the recovered view doesn't immediately re-render the message
+    // that triggered the crash.
+    clearPersistedMessages();
+    this.setState({ hasError: false });
+  };
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div
+        role="alert"
+        aria-live="assertive"
+        data-testid="customer-chat-error-fallback"
+        className="glass-card rounded-2xl p-6 text-center"
+      >
+        <h2 className="text-lg font-semibold mb-2">Chat is unavailable</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          The chat hit an unexpected error. The rest of your account is
+          still available; clear the conversation to try again.
+        </p>
+        <Button
+          onClick={this.handleReset}
+          data-testid="customer-chat-error-reset"
+        >
+          Reset chat
+        </Button>
+      </div>
+    );
+  }
+}
+
 export function CustomerChatSection(): React.JSX.Element | null {
+  return (
+    <ChatErrorBoundary>
+      <CustomerChatSectionInner />
+    </ChatErrorBoundary>
+  );
+}
+
+function CustomerChatSectionInner(): React.JSX.Element | null {
   const { isSignedIn, isLoaded, displayName } = useShopIdentity();
   const { toast } = useToast();
   const [messages, setMessages] = useState<DisplayMessage[]>(() =>
@@ -485,11 +552,29 @@ function ChatBubble({ message }: ChatBubbleProps): React.JSX.Element {
 }
 
 function StreamingDots(): React.JSX.Element {
+  // role="status" + aria-live="polite" announces the assistant's
+  // "Thinking" state once when the dots mount, so screen-reader
+  // users hear that a response is being generated rather than
+  // sitting in silence after sending a message.
   return (
-    <span className="inline-flex items-center gap-1" aria-label="Thinking">
-      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.3s]" />
-      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.15s]" />
-      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce" />
+    <span
+      className="inline-flex items-center gap-1"
+      role="status"
+      aria-live="polite"
+      aria-label="Thinking"
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.3s]"
+        aria-hidden="true"
+      />
+      <span
+        className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.15s]"
+        aria-hidden="true"
+      />
+      <span
+        className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce"
+        aria-hidden="true"
+      />
     </span>
   );
 }

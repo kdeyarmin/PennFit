@@ -46,8 +46,28 @@ import {
 } from "../../lib/smart-triggers/renderers";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// Per-admin rate limits on smart-trigger ops (B-07). Two buckets:
+//   * adminSmartTriggerRunLimiter — 10/hour. /evaluate and /send-due
+//     are heavy fan-outs (DB scan + outbound email/SMS dispatch).
+//     Tighter cap so a runaway script can't burn vendor quota or DB.
+//   * adminSmartTriggerDismissLimiter — 60/hour. Per-event dismissals
+//     are part of the regular CSR queue workflow.
+const adminSmartTriggerRunLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  name: "admin_smart_trigger_run",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+const adminSmartTriggerDismissLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  name: "admin_smart_trigger_dismiss",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const triggerIdParam = z.string().uuid();
 const dismissBody = z
@@ -63,6 +83,7 @@ const dismissBody = z
 router.post(
   "/admin/smart-triggers/evaluate",
   requireAdmin,
+  adminSmartTriggerRunLimiter,
   async (req, res) => {
     const result = await runSmartTriggerEvaluator({
       adminEmail: req.adminEmail ?? null,
@@ -79,6 +100,7 @@ const sendDueChannelQuery = z.enum(["email", "sms"]).default("email");
 router.post(
   "/admin/smart-triggers/send-due",
   requireAdmin,
+  adminSmartTriggerRunLimiter,
   async (req, res) => {
     const channelParse = sendDueChannelQuery.safeParse(
       req.query.channel ?? "email",
@@ -132,6 +154,7 @@ router.post(
 router.post(
   "/admin/smart-triggers/:id/dismiss",
   requireAdmin,
+  adminSmartTriggerDismissLimiter,
   async (req, res) => {
     const idParsed = triggerIdParam.safeParse(req.params.id);
     if (!idParsed.success) {

@@ -49,12 +49,33 @@ interface Hit {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const STRIPE_SESSION_RE = /^cs_[a-zA-Z0-9_]{20,}$/;
+// Real Stripe Checkout Session IDs are well below 128 chars
+// (cs_test_/cs_live_ prefix + ~58-char body). Cap the upper bound so
+// no caller can blow the regex up with a multi-MB string and force
+// the whole admin-lookup handler to spend time matching.
+const STRIPE_SESSION_RE = /^cs_[a-zA-Z0-9_]{20,128}$/;
 const HEX_TAIL_RE = /^[A-Za-z0-9_-]{8,40}$/;
+// Bounded length is deliberate (max 19 chars total: optional '+' + 18
+// digit/separator characters) so a malformed input can't drag the
+// route into a long-running normalization or DB call.
 const PHONE_RE = /^\+?\d[\d\s().-]{6,18}$/;
 
+// Max accepted query length. Above this we short-circuit to an empty
+// result rather than running every regex + DB lookup. Defense-in-
+// depth — the route is already admin-gated, but a slow query log
+// flooded with megabyte-long `q` values is its own problem.
+const MAX_QUERY_LENGTH = 200;
+
 router.get("/admin/lookup", requireAdmin, async (req, res) => {
-  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const raw = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  // Cap before any further work. Deliberate empty-result response (not
+  // 400) so the admin UI can keep typing without the lookup bar going
+  // red on a single keystroke that briefly exceeds the cap.
+  if (raw.length > MAX_QUERY_LENGTH) {
+    res.json({ q: raw.slice(0, MAX_QUERY_LENGTH), hits: [] });
+    return;
+  }
+  const q = raw;
   if (q.length < 3) {
     res.json({ q, hits: [] });
     return;

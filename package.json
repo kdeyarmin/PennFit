@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock'",
+    "preinstall": "node -e \"for(const f of ['package-lock.json','yarn.lock'])if(require('fs').existsSync(f)){process.stderr.write('\\n[preinstall] ERROR: '+f+' is in the repo root.\\nThis is a pnpm workspace; npm and yarn lockfiles are not supported.\\nRun:  rm '+f+' && pnpm install\\n\\n');process.exit(1)}\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
@@ -19,6 +19,9 @@
   },
   "private": true,
   "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "pnpm": ">=10.33.0"
+  },
   "pnpm": {
     "overrides": {
       "ip-address": ">=10.1.1",

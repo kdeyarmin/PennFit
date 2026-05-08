@@ -29,6 +29,13 @@ export interface MemoryRepo extends AuthRepository {
   __credentials(): PasswordCredential[];
   __emailTokens(): AuthEmailTokenRow[];
   __failures(emailLower: string): number;
+  /**
+   * Count failed attempts whose `emailLower` starts with `prefix`.
+   * Useful for asserting per-endpoint IP-sentinel counters
+   * (e.g. `__reset:`, `__verify:`, `__forgot:`) without having
+   * to know the actual `req.ip` that supertest will produce.
+   */
+  __failuresStartingWith(prefix: string): number;
   __successes(emailLower: string): number;
   __forceFailures(emailLower: string, count: number): void;
 }
@@ -201,6 +208,11 @@ export function makeMemoryRepo(now: () => Date = () => new Date()): MemoryRepo {
     __failures(emailLower) {
       return attempts.filter((a) => !a.success && a.emailLower === emailLower)
         .length;
+    },
+    __failuresStartingWith(prefix) {
+      return attempts.filter(
+        (a) => !a.success && a.emailLower.startsWith(prefix),
+      ).length;
     },
     __successes(emailLower) {
       return attempts.filter((a) => a.success && a.emailLower === emailLower)

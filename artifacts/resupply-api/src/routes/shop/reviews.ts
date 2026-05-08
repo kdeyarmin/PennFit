@@ -33,6 +33,7 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { z } from "zod";
+import sanitizeHtml from "sanitize-html";
 
 import { getDbPool, shopOrderItems, shopReviews } from "@workspace/resupply-db";
 import type { InsertShopReviewRow } from "@workspace/resupply-db";
@@ -126,16 +127,11 @@ const aggregatesQuery = z
  * the body as innerHTML would otherwise be at risk.
  */
 function stripHtml(input: string): string {
-  // Drop script/style blocks *with* their inner contents first — a
-  // simple tag-stripper would leave `alert(1)` from
-  // `<script>alert(1)</script>` behind. Then strip remaining tags
-  // and collapse whitespace. Defense in depth on top of React's
-  // text-node escaping.
-  return input
-    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const textOnly = sanitizeHtml(input, {
+    allowedTags: [],
+    allowedAttributes: {},
+  });
+  return textOnly.replace(/\s+/g, " ").trim();
 }
 
 interface ReviewAuthorIdentity {

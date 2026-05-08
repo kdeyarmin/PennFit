@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { hashPassword } from "../password";
 import { validatePassword } from "../password-policy";
+import { checkLoginRateLimit } from "../rate-limit";
 import { hashToken } from "../token";
 
 import { authError } from "./responses";
@@ -25,6 +26,19 @@ const ResetBody = z.object({
   password: z.string().min(1).max(2048),
 });
 
+// IP-only limit on token consumption attempts. The token itself is a
+// 256-bit random secret so brute-forcing one is infeasible, but
+// rate-limiting protects the DB from abuse and gives us a chokepoint
+// if a leaked token is being replayed in parallel. Mirrors the
+// verify-email policy (10 per 15 minutes); the two endpoints share a
+// nearly identical abuse profile (anonymous POST + token consumption +
+// password-hash work).
+const RESET_RATE_LIMIT = {
+  maxPerEmail: 10, // keyed to the IP sentinel; email bucket == IP bucket for this endpoint
+  maxPerIp: Infinity, // not used — sentinel encodes the IP
+  windowMs: 15 * 60 * 1000,
+};
+
 export function makeResetPasswordHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
 
@@ -32,6 +46,38 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
     req: Request,
     res: Response,
   ): Promise<void> {
+    const ip = req.ip ?? null;
+    // Per-endpoint sentinel keeps reset-password failures isolated from
+    // sign-in / forgot-password / verify-email buckets so those counters
+    // don't bleed into each other's rate limits.
+    const ipSentinel = `__reset:${ip ?? "unknown"}`;
+    const rl = await checkLoginRateLimit(
+      deps.repo,
+      { emailLower: ipSentinel, ip: null },
+      RESET_RATE_LIMIT,
+    );
+    if (!rl.allowed) {
+      res.setHeader("Retry-After", String(rl.retryAfterSeconds));
+      authError(
+        res,
+        429,
+        "rate_limited",
+        "Too many password-reset attempts. Please wait a few minutes and try again.",
+        { retryAfterSeconds: rl.retryAfterSeconds },
+      );
+      return;
+    }
+
+    // Record every request (regardless of outcome) against the per-endpoint
+    // sentinel so repeat callers accumulate toward the cap without bleeding
+    // into sign-in / forgot-password / verify-email counters. This repo
+    // method is named for sign-in attempts, but here the `success: false`
+    // flag is intentionally just "count this request toward the bucket."
+    void deps.repo.recordLoginAttempt({
+      emailLower: ipSentinel,
+      ip,
+      success: false,
+    });
     const parsed = ResetBody.safeParse(req.body);
     if (!parsed.success) {
       authError(
