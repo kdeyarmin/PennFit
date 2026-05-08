@@ -35,6 +35,7 @@ import { z } from "zod";
 
 import {
   type CpapDeviceInfo,
+  type FacialMeasurementsInfo,
   type PhysicianInfo,
   getDbPool,
   shopCustomers,
@@ -131,6 +132,7 @@ router.get("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     .select({
       cpapDevice: shopCustomers.cpapDevice,
       physicianInfo: shopCustomers.physicianInfo,
+      facialMeasurements: shopCustomers.facialMeasurements,
     })
     .from(shopCustomers)
     .where(eq(shopCustomers.customerId, customerId))
@@ -139,6 +141,7 @@ router.get("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   res.json({
     cpapDevice: row?.cpapDevice ?? null,
     physicianInfo: row?.physicianInfo ?? null,
+    facialMeasurements: row?.facialMeasurements ?? null,
   });
 });
 
@@ -216,6 +219,7 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
       .select({
         cpapDevice: shopCustomers.cpapDevice,
         physicianInfo: shopCustomers.physicianInfo,
+        facialMeasurements: shopCustomers.facialMeasurements,
       })
       .from(shopCustomers)
       .where(eq(shopCustomers.customerId, customerId))
@@ -224,6 +228,7 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     res.json({
       cpapDevice: row?.cpapDevice ?? null,
       physicianInfo: row?.physicianInfo ?? null,
+      facialMeasurements: row?.facialMeasurements ?? null,
     });
     return;
   }
@@ -236,6 +241,7 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     .returning({
       cpapDevice: shopCustomers.cpapDevice,
       physicianInfo: shopCustomers.physicianInfo,
+      facialMeasurements: shopCustomers.facialMeasurements,
     });
 
   if (!row) {
@@ -285,6 +291,7 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   res.json({
     cpapDevice: row.cpapDevice ?? null,
     physicianInfo: row.physicianInfo ?? null,
+    facialMeasurements: row.facialMeasurements ?? null,
   });
 });
 

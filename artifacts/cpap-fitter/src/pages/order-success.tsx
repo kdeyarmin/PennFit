@@ -16,6 +16,10 @@ import {
 } from "lucide-react";
 import { ComfortGuarantee } from "@/components/comfort-guarantee";
 import { SubscribeRemindersCta } from "@/components/subscribe-reminders-cta";
+import {
+  FacialMeasurementsCard,
+  type FacialMeasurementsLike,
+} from "@/components/facial-measurements-card";
 
 interface OrderConfirmation {
   orderReference: string;
@@ -25,6 +29,12 @@ interface OrderConfirmation {
     manufacturer: string;
     modelNumber: string;
   };
+  /**
+   * Persisted on /order submit so the customer keeps seeing the
+   * exact measurements Penn Home Medical Supply received, even
+   * after the in-memory fitter store resets on success.
+   */
+  measurements?: FacialMeasurementsLike | null;
 }
 
 export function OrderSuccess() {
@@ -114,6 +124,15 @@ export function OrderSuccess() {
           </div>
         </CardContent>
       </Card>
+
+      {confirmation.measurements && (
+        <div className="mb-6">
+          <FacialMeasurementsCard
+            measurements={confirmation.measurements}
+            testIdPrefix="order-success-facial-measurements"
+          />
+        </div>
+      )}
 
       <Card className="mb-6 border-0 glass-card rounded-2xl">
         <CardContent className="p-6 space-y-4">

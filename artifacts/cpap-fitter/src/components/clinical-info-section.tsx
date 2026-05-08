@@ -34,9 +34,12 @@ import {
   AccountApiError,
   type CpapDeviceInfo,
   type PhysicianInfo,
+  type ShopFacialMeasurements,
   fetchShopClinicalInfo,
   updateShopClinicalInfo,
 } from "@/lib/account-api";
+import { FacialMeasurementsCard } from "@/components/facial-measurements-card";
+import { Link } from "wouter";
 import {
   CPAP_DEVICE_CATALOG,
   CPAP_DEVICE_OTHER_ID,
@@ -47,6 +50,8 @@ import {
 export function ClinicalInfoSection() {
   const [device, setDevice] = useState<CpapDeviceInfo | null>(null);
   const [physician, setPhysician] = useState<PhysicianInfo | null>(null);
+  const [measurements, setMeasurements] =
+    useState<ShopFacialMeasurements | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +63,7 @@ export function ClinicalInfoSection() {
         if (cancelled) return;
         setDevice(r.cpapDevice);
         setPhysician(r.physicianInfo);
+        setMeasurements(r.facialMeasurements);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
@@ -83,27 +89,70 @@ export function ClinicalInfoSection() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <DeviceCard
-        device={device}
-        onSaved={(d) => setDevice(d)}
-        onError={setError}
-      />
-      <PhysicianCard
-        physician={physician}
-        onSaved={(p) => setPhysician(p)}
-        onError={setError}
-      />
-      {error && (
-        <p
-          className="text-xs text-rose-700 md:col-span-2"
-          role="alert"
-          data-testid="clinical-info-error"
-        >
-          {error}
-        </p>
-      )}
+    <div className="space-y-6">
+      <FacialMeasurementsAccountCard measurements={measurements} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <DeviceCard
+          device={device}
+          onSaved={(d) => setDevice(d)}
+          onError={setError}
+        />
+        <PhysicianCard
+          physician={physician}
+          onSaved={(p) => setPhysician(p)}
+          onError={setError}
+        />
+        {error && (
+          <p
+            className="text-xs text-rose-700 md:col-span-2"
+            role="alert"
+            data-testid="clinical-info-error"
+          >
+            {error}
+          </p>
+        )}
+      </div>
     </div>
+  );
+}
+
+// ───── FacialMeasurementsAccountCard ──────────────────────────
+//
+// Surfaces the measurements in the same headgear/nostril framing as
+// the post-scan readout on /measure. When the customer hasn't yet
+// completed a fitting tied to their account we show a small empty
+// state with a CTA back into the fitter so the column doesn't look
+// broken.
+
+function FacialMeasurementsAccountCard({
+  measurements,
+}: {
+  measurements: ShopFacialMeasurements | null;
+}) {
+  if (measurements) {
+    return <FacialMeasurementsCard measurements={measurements} />;
+  }
+  return (
+    <section
+      className="glass-card rounded-2xl p-6 space-y-3"
+      data-testid="facial-measurements-empty"
+    >
+      <h2 className="text-base font-semibold tracking-tight">
+        Your facial measurements
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        We don't have a recent on-device scan saved for your account yet.
+        Running the fitter while signed in saves your sizing here so the team
+        can recommend the right cushion and pillow on every order.
+      </p>
+      <Link
+        href="/consent"
+        className="inline-flex items-center text-sm font-semibold text-primary hover:underline"
+        data-testid="facial-measurements-empty-cta"
+      >
+        Start a fitting
+      </Link>
+    </section>
   );
 }
 

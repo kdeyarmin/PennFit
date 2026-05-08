@@ -28,14 +28,20 @@ import { SubmitOrderBody } from "../../lib/api-zod/index.js";
 import { db, ordersTable } from "../../lib/storefront/db.js";
 import { eq } from "drizzle-orm";
 import {
+  shopCustomers,
+  type FacialMeasurementsInfo,
+} from "@workspace/resupply-db";
+import {
   sendOrderToPenn,
   generateOrderReference,
 } from "../../lib/storefront/orderEmail.js";
 import { logger } from "../../lib/logger.js";
+import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
+import { ensureShopCustomerRow } from "../../lib/stripe/customer.js";
 
 const router = Router();
 
-router.post("/orders", async (req, res) => {
+router.post("/orders", attachSignedIn, async (req, res) => {
   // Honeypot check — must run BEFORE schema parse, because Zod (with default
   // strip mode) would silently drop the unknown field and we'd lose the
   // signal. We deliberately return a fake-looking success so the bot
@@ -116,6 +122,67 @@ router.post("/orders", async (req, res) => {
       { err },
       "Failed to persist order before send (continuing with email)",
     );
+  }
+
+  // If the order arrived with on-device measurements AND the caller
+  // is signed in, mirror the latest measurements onto their
+  // shop_customers row so /account and the admin Customer 360 can
+  // surface them without parsing every past order's payload. Email
+  // match is intentionally NOT used as a fallback — it would let an
+  // anonymous order overwrite a registered customer's saved sizing.
+  // Best-effort: never blocks delivery.
+  const rawMeasurements = (order as { measurements?: unknown }).measurements as
+    | (Omit<FacialMeasurementsInfo, "capturedAt" | "calibrationMethod"> & {
+        capturedAt?: string;
+        calibrationMethod?: string;
+      })
+    | undefined;
+  if (req.userCustomerId && rawMeasurements) {
+    try {
+      // The OpenAPI schema for SubmitOrderBody allows a wider
+      // `calibrationMethod` enum than `FacialMeasurementsInfo` (the DB
+      // column type) does. Normalize to the DB-enforced enum so that
+      // a future legitimate value can never poison persisted data.
+      // Anything other than the iris-calibrated path falls back to
+      // "manual_card", which is the only other variant the fitter
+      // actually emits today.
+      const calibrationMethod: FacialMeasurementsInfo["calibrationMethod"] =
+        rawMeasurements.calibrationMethod === "iris" ? "iris" : "manual_card";
+      const value: FacialMeasurementsInfo = {
+        noseWidth: rawMeasurements.noseWidth,
+        noseHeight: rawMeasurements.noseHeight,
+        noseToChin: rawMeasurements.noseToChin,
+        mouthWidth: rawMeasurements.mouthWidth,
+        faceWidthAtCheekbones: rawMeasurements.faceWidthAtCheekbones,
+        calibrationMethod,
+        capturedAt: rawMeasurements.capturedAt ?? new Date().toISOString(),
+      };
+      // A signed-in customer who has never opened /shop/me or hit
+      // checkout has no shop_customers row yet — without this an
+      // .update() would silently no-op and the measurements would
+      // never reach /account or admin Customer 360. Use the same
+      // upsert helper the rest of the shop surface uses so we
+      // share the email/displayName invariants.
+      await ensureShopCustomerRow({
+        customerId: req.userCustomerId,
+        email: order.patient.email ?? null,
+        displayName:
+          [order.patient.firstName, order.patient.lastName]
+            .filter(Boolean)
+            .join(" ") || null,
+      });
+      await db
+        .update(shopCustomers)
+        .set({ facialMeasurements: value, updatedAt: new Date() })
+        .where(eq(shopCustomers.customerId, req.userCustomerId));
+    } catch (err) {
+      // Audit-relevant but non-fatal. Log structurally only — no
+      // measurement values, no customer id (treat logs as world-readable).
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to mirror facial measurements onto shop_customers (continuing)",
+      );
+    }
   }
 
   const result = await sendOrderToPenn(order, { orderReference });

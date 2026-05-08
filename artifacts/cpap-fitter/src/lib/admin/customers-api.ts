@@ -39,9 +39,25 @@ export interface AdminCustomerPhysicianInfo {
   npi?: string | null;
 }
 
+export interface AdminCustomerFacialMeasurements {
+  noseWidth: number;
+  noseHeight: number;
+  noseToChin: number;
+  mouthWidth: number;
+  faceWidthAtCheekbones: number;
+  calibrationMethod: "iris" | "manual_card";
+  capturedAt: string;
+}
+
 export interface AdminCustomerClinicalInfo {
   cpapDevice: AdminCustomerCpapDevice | null;
   physicianInfo: AdminCustomerPhysicianInfo | null;
+  /**
+   * Latest on-device fitter scan for this customer. Null until the
+   * customer completes a fitting tied to their signed-in account.
+   * See migration 0066.
+   */
+  facialMeasurements: AdminCustomerFacialMeasurements | null;
 }
 
 export interface AdminCustomerCard {
