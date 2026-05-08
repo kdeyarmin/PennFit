@@ -201,6 +201,25 @@ async function downloadOneMedia(
   twilioMediaSid: string | null;
 } | null> {
   const twilioMediaSid = slot.mediaSid;
+  const ACCOUNT_SID_RE = /^AC[A-Za-z0-9]{32}$/;
+  const MESSAGE_SID_RE = /^SM[A-Za-z0-9]{32}$/;
+  const MEDIA_SID_RE = /^ME[A-Za-z0-9]{32}$/;
+  if (
+    !ACCOUNT_SID_RE.test(slot.accountSid) ||
+    !MESSAGE_SID_RE.test(slot.messageSid) ||
+    !MEDIA_SID_RE.test(slot.mediaSid) ||
+    slot.accountSid !== twilioAccountSid
+  ) {
+    logger.warn(
+      {
+        twilio_media_sid: twilioMediaSid,
+        account_sid: slot.accountSid,
+        message_sid: slot.messageSid,
+      },
+      "mms_ingest_rejected_invalid_twilio_media_ref",
+    );
+    return null;
+  }
   const mediaUrl = `https://api.twilio.com/2010-04-01/Accounts/${slot.accountSid}/Messages/${slot.messageSid}/Media/${slot.mediaSid}`;
   const auth = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString(
     "base64",
