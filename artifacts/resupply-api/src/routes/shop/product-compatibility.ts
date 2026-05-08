@@ -17,11 +17,9 @@
 // data is non-PHI and used by guest browsers.
 
 import { Router, type IRouter } from "express";
-import { and, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool, shopProductCompatibility } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 const router: IRouter = Router();
 
@@ -43,23 +41,20 @@ router.get("/shop/products/:productId/compatibility", async (req, res) => {
   }
   const productId = parsed.data;
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: shopProductCompatibility.id,
-      machineManufacturer: shopProductCompatibility.machineManufacturer,
-      machineModel: shopProductCompatibility.machineModel,
-      notes: shopProductCompatibility.notes,
-    })
-    .from(shopProductCompatibility)
-    .where(eq(shopProductCompatibility.productId, productId))
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("shop_product_compatibility")
+    .select("id, machine_manufacturer, machine_model, notes")
+    .eq("product_id", productId)
     .limit(100);
+  if (error) throw error;
 
   res.json({
-    compatibility: rows.map((r) => ({
+    compatibility: (data ?? []).map((r) => ({
       id: r.id,
-      machineManufacturer: r.machineManufacturer,
-      machineModel: r.machineModel,
+      machineManufacturer: r.machine_manufacturer,
+      machineModel: r.machine_model,
       notes: r.notes,
     })),
   });
@@ -79,48 +74,56 @@ router.get("/shop/products/compatibility", async (req, res) => {
   }
   const model = modelParsed.data ?? null;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  // Match the requested machine: rows where (manufacturer matches
-  // case-insensitively) AND (model matches OR model is null — null
+  // Match the requested machine: rows where the manufacturer matches
+  // case-insensitively AND (model matches OR model is null — null
   // means "any model from this manufacturer"). When the caller
   // doesn't pass a model, we accept any row for the manufacturer.
-  //
-  // Returns the set of EXPLICITLY compatible product IDs. The SPA
-  // unions this with "all products that have NO compatibility rows
-  // at all" client-side to surface universal products too — that's
-  // simpler than a NOT EXISTS subquery and fits how the catalog
-  // is hydrated (one product list + this filter overlay).
-  const rows = await db
-    .selectDistinct({
-      productId: shopProductCompatibility.productId,
-    })
-    .from(shopProductCompatibility)
-    .where(
-      and(
-        sql`lower(${shopProductCompatibility.machineManufacturer}) = lower(${manufacturer})`,
-        model
-          ? sql`(${shopProductCompatibility.machineModel} IS NULL OR lower(${shopProductCompatibility.machineModel}) = lower(${model}))`
-          : sql`true`,
-      ),
+  // PostgREST's `.ilike(col, value)` with no wildcards is exact
+  // case-insensitive equality. Two ilikes are AND'd; the model
+  // disjunction goes through `.or(...)`.
+  let matchQuery = supabase
+    .schema("resupply")
+    .from("shop_product_compatibility")
+    .select("product_id")
+    .ilike("machine_manufacturer", manufacturer);
+  if (model) {
+    // ilike pattern is value-controlled here; both the column name and
+    // the operator are literal. PostgREST escapes `,` inside `.or()`
+    // values via `*` so we restrict the param value to the validated
+    // shape (model went through Zod above).
+    matchQuery = matchQuery.or(
+      `machine_model.is.null,machine_model.ilike.${model}`,
     );
+  }
+  const { data: matched, error: matchedErr } = await matchQuery;
+  if (matchedErr) throw matchedErr;
 
   // Also surface the set of products that are constrained AT ALL
   // (i.e. have any compatibility row). The SPA uses this to know
   // "anything NOT in this list is universal" — without it, a guest
   // browsing a product without compat rows would have to do a
-  // per-product round-trip to know whether to show it. Client filter:
-  //
-  //   keepProduct(p) =
-  //     explicitCompatibleProductIds.includes(p.id) ||
-  //     !constrainedProductIds.includes(p.id)
-  const allConstrainedRows = await db
-    .selectDistinct({ productId: shopProductCompatibility.productId })
-    .from(shopProductCompatibility);
+  // per-product round-trip to know whether to show it.
+  const { data: allConstrained, error: allErr } = await supabase
+    .schema("resupply")
+    .from("shop_product_compatibility")
+    .select("product_id");
+  if (allErr) throw allErr;
+
+  // PostgREST has no SELECT DISTINCT; dedupe in JS. The compatibility
+  // table is small (one row per product × machine combo, ≪ 1000 rows
+  // even for a full catalog), so the dedup cost is trivial.
+  const explicitCompatibleProductIds = Array.from(
+    new Set((matched ?? []).map((r) => r.product_id)),
+  );
+  const constrainedProductIds = Array.from(
+    new Set((allConstrained ?? []).map((r) => r.product_id)),
+  );
 
   res.json({
-    explicitCompatibleProductIds: rows.map((r) => r.productId),
-    constrainedProductIds: allConstrainedRows.map((r) => r.productId),
+    explicitCompatibleProductIds,
+    constrainedProductIds,
   });
 });
 

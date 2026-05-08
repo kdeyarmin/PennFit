@@ -281,6 +281,10 @@ export interface Database {
           body: string;
           due_at: string;
           completed_at: string | null;
+          completed_by_email: string | null;
+          completed_by_user_id: string | null;
+          created_by_email: string;
+          created_by_user_id: string | null;
           created_at: string;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
@@ -294,10 +298,27 @@ export interface Database {
           body: string;
           due_at: string;
           completed_at: string | null;
+          completed_by_email: string | null;
+          completed_by_user_id: string | null;
+          created_by_email: string;
+          created_by_user_id: string | null;
           created_at: string;
         };
         Insert: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
+        Relationships: [];
+      };
+      patient_latest_message: {
+        Row: {
+          patient_id: string;
+          last_message_at: string;
+          last_message_direction: string;
+          last_message_preview: string;
+          last_message_conversation_id: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_latest_message"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_latest_message"]["Row"]>;
         Relationships: [];
       };
       patient_notes: {
@@ -408,6 +429,20 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
+        Relationships: [];
+      };
+      shop_product_compatibility: {
+        Row: {
+          id: string;
+          product_id: string;
+          machine_manufacturer: string;
+          machine_model: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]>;
         Relationships: [];
       };
       csr_macros: {
