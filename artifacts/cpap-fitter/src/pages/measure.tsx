@@ -264,10 +264,13 @@ export function Measure() {
           const mm = (pixels: number) =>
             Math.round((pixels / pxPerMm) * 10) / 10;
 
+          // Nose alar (nostril span) — outer alar landmarks. This is the
+          // nasal-pillow base width (drives small/medium/large pillow fit).
           const noseWidthPx = dist(landmarks[129], landmarks[358]);
           const noseHeightPx = dist(landmarks[6], landmarks[4]);
           const noseToChinPx = dist(landmarks[4], landmarks[152]);
           const mouthWidthPx = dist(landmarks[61], landmarks[291]);
+          // Face width at cheekbones drives headgear strap sizing.
           const faceWidthPx = dist(landmarks[234], landmarks[454]);
 
           const measurements: FacialMeasurements = {
@@ -522,28 +525,68 @@ function MeasurementsReadout({
 }: {
   measurements: FacialMeasurements;
 }) {
-  const rows: { label: string; value: number }[] = [
-    { label: "Nose width", value: measurements.noseWidth },
-    { label: "Nose height", value: measurements.noseHeight },
+  // Group the readout by what each measurement is *for* so patients
+  // immediately see "this is my headgear size" and "this is my nasal
+  // pillow size" instead of a flat list of clinical dimensions.
+  const headgearRows = [
+    { label: "Face width (cheekbones)", value: measurements.faceWidthAtCheekbones },
     { label: "Nose to chin", value: measurements.noseToChin },
     { label: "Mouth width", value: measurements.mouthWidth },
-    { label: "Face width", value: measurements.faceWidthAtCheekbones },
+  ];
+  const nostrilRows = [
+    { label: "Nostril span (alar width)", value: measurements.noseWidth },
+    { label: "Nose height", value: measurements.noseHeight },
   ];
   return (
-    <dl
-      className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs callout-navy px-4 py-3 rounded-xl"
+    <div
+      className="space-y-3"
       data-testid="measure-readout"
       aria-label="Extracted facial measurements"
     >
-      {rows.map((row) => (
-        <div key={row.label} className="flex items-baseline justify-between">
-          <dt className="text-foreground/70">{row.label}</dt>
-          <dd className="font-mono font-semibold text-foreground tabular-nums">
-            {row.value.toFixed(1)} mm
-          </dd>
-        </div>
-      ))}
-    </dl>
+      <MeasurementGroup
+        title="Headgear & mask sizing"
+        subtitle="Drives strap fit and full-face / nasal mask cushion size."
+        rows={headgearRows}
+      />
+      <MeasurementGroup
+        title="Nasal pillow sizing"
+        subtitle="Sets the small / medium / large pillow that seals at your nostrils."
+        rows={nostrilRows}
+      />
+    </div>
+  );
+}
+
+function MeasurementGroup({
+  title,
+  subtitle,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  rows: { label: string; value: number }[];
+}) {
+  return (
+    <div className="callout-navy px-4 py-3 rounded-xl">
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[hsl(var(--penn-navy))]/85">
+          {title}
+        </p>
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
+        {subtitle}
+      </p>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-baseline justify-between">
+            <dt className="text-foreground/70">{row.label}</dt>
+            <dd className="font-mono font-semibold text-foreground tabular-nums">
+              {row.value.toFixed(1)} mm
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 

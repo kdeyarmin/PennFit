@@ -334,6 +334,7 @@ interface CustomerRow {
    */
   cpap_device_json: unknown;
   physician_info_json: unknown;
+  facial_measurements_json: unknown;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -452,6 +453,7 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         default_payment_method_exp_year   AS default_payment_method_exp_year,
         cpap_device_json                  AS cpap_device_json,
         physician_info_json               AS physician_info_json,
+        facial_measurements_json          AS facial_measurements_json,
         created_at                        AS created_at,
         updated_at                        AS updated_at
       FROM resupply.shop_customers
@@ -666,6 +668,9 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         clinicalInfo: {
           cpapDevice: customerRow.cpap_device_json ?? null,
           physicianInfo: customerRow.physician_info_json ?? null,
+          // Latest on-device fitter scan (PR #66). Null until the
+          // customer completes a fitter order while signed in.
+          facialMeasurements: customerRow.facial_measurements_json ?? null,
         },
         createdAt: new Date(customerRow.created_at).toISOString(),
         updatedAt: new Date(customerRow.updated_at).toISOString(),
@@ -682,7 +687,11 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         // can't have stored clinical info. Surface explicit nulls
         // so the UI doesn't have to special-case `clinicalInfo`
         // being undefined.
-        clinicalInfo: { cpapDevice: null, physicianInfo: null },
+        clinicalInfo: {
+          cpapDevice: null,
+          physicianInfo: null,
+          facialMeasurements: null,
+        },
         createdAt: ordersResult.rows[ordersResult.rows.length - 1]
           ? new Date(
               ordersResult.rows[ordersResult.rows.length - 1]!.created_at,

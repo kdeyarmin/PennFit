@@ -1,0 +1,150 @@
+
+Select alert #7
+Server-side request forgery
+Critical
+#7 opened 13 minutes ago • Detected by CodeQL in artifacts/.../messaging/ingest-mms.ts :198
+main
+
+Select alert #37
+Polynomial regular expression used on uncontrolled data
+High
+#37 opened 13 minutes ago • Detected by CodeQL in lib/.../src/signed-link-tokens.ts :81
+main
+
+Select alert #36
+Polynomial regular expression used on uncontrolled data
+High
+#36 opened 13 minutes ago • Detected by CodeQL in lib/.../src/team-invite.ts :109
+main
+
+Select alert #35
+Polynomial regular expression used on uncontrolled data
+High
+#35 opened 13 minutes ago • Detected by CodeQL in lib/.../http/email-templates.ts :52
+main
+
+Select alert #34
+Polynomial regular expression used on uncontrolled data
+High
+#34 opened 13 minutes ago • Detected by CodeQL in lib/.../storefront/custom-fetch.ts :29
+main
+
+Select alert #33
+Polynomial regular expression used on uncontrolled data
+High
+#33 opened 13 minutes ago • Detected by CodeQL in lib/.../admin/custom-fetch.ts :29
+main
+
+Select alert #32
+Missing rate limiting
+High
+#32 opened 13 minutes ago • Detected by CodeQL in lib/.../http/index.ts :71
+main
+
+Select alert #31
+Missing rate limiting
+High
+#31 opened 13 minutes ago • Detected by CodeQL in lib/.../http/index.ts :66
+main
+
+Select alert #30
+Missing rate limiting
+High
+#30 opened 13 minutes ago • Detected by CodeQL in lib/.../http/index.ts :65
+main
+
+Select alert #29
+Missing rate limiting
+High
+#29 opened 13 minutes ago • Detected by CodeQL in lib/.../http/index.ts :63
+main
+
+Select alert #28
+Missing rate limiting
+High
+#28 opened 13 minutes ago • Detected by CodeQL in lib/.../http/index.ts :61
+main
+
+Select alert #27
+Missing rate limiting
+High
+#27 opened 13 minutes ago • Detected by CodeQL in artifacts/.../storefront/admin-users.ts :289
+main
+
+Select alert #26
+Missing rate limiting
+High
+#26 opened 13 minutes ago • Detected by CodeQL in artifacts/.../storefront/admin-users.ts :260
+main
+
+Select alert #25
+Missing rate limiting
+High
+#25 opened 13 minutes ago • Detected by CodeQL in artifacts/.../storefront/admin-users.ts :222
+main
+
+Select alert #24
+Missing rate limiting
+High
+#24 opened 13 minutes ago • Detected by CodeQL in artifacts/.../storefront/admin-users.ts :160
+main
+
+Select alert #23
+Missing rate limiting
+High
+#23 opened 13 minutes ago • Detected by CodeQL in artifacts/.../storefront/admin-users.ts :98
+main
+
+Select alert #22
+Missing rate limiting
+High
+#22 opened 13 minutes ago • Detected by CodeQL in artifacts/.../shop/reviews.ts :429
+main
+
+Select alert #21
+Missing rate limiting
+High
+#21 opened 13 minutes ago • Detected by CodeQL in artifacts/.../fax/document.ts :32
+main
+
+Select alert #20
+Missing rate limiting
+High
+#20 opened 13 minutes ago • Detected by CodeQL in artifacts/.../episodes/bulk-send.ts :75
+main
+
+Select alert #19
+Missing rate limiting
+High
+#19 opened 13 minutes ago • Detected by CodeQL in artifacts/.../email/inbound-parse.ts :80
+main
+
+Select alert #18
+Missing rate limiting
+High
+#18 opened 13 minutes ago • Detected by CodeQL in artifacts/.../email/click.ts :166
+main
+
+Select alert #17
+Missing rate limiting
+High
+#17 opened 13 minutes ago • Detected by CodeQL in artifacts/.../email/click.ts :95
+main
+
+Select alert #16
+Missing rate limiting
+High
+#16 opened 13 minutes ago • Detected by CodeQL in artifacts/.../audit/list.ts :60
+main
+
+Select alert #15
+Missing rate limiting
+High
+#15 opened 13 minutes ago • Detected by CodeQL in artifacts/.../admin/team.ts :328
+main
+
+Select alert #14
+Missing rate limiting
+High
+#14 opened 13 minutes ago • Detected by CodeQL in artifacts/.../admin/team.ts :272
+main
