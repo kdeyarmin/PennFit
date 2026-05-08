@@ -21,6 +21,7 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, physicianFaxOutreach } from "@workspace/resupply-db";
@@ -47,7 +48,43 @@ const signatureMiddleware = requireTwilioSignature({
 
 type DbFaxStatus = "sent" | "delivered" | "failed";
 
-function mapTwilioStatus(twilioStatus: string): DbFaxStatus | null {
+// Twilio's outbound-fax callback payload is form-encoded. Validating
+// it through Zod (rather than ad-hoc `as Record<string, string>`
+// casts) gives us:
+//   * a single source of truth for which fields the route actually
+//     consumes — anything else Twilio sends is ignored on purpose.
+//   * a guarantee at the route boundary that FaxSid / Status are
+//     non-empty strings, so the downstream WHERE clause cannot be
+//     fed a blank vendor_ref by a malformed payload.
+//   * an automatic 200-and-skip when the payload doesn't match (the
+//     same posture the route takes for unknown statuses) so Twilio
+//     does not retry a request our DB code couldn't have used.
+//
+// Allow-listing only the seven Twilio statuses we actually map keeps
+// noise out of audit logs: any future Twilio status that we haven't
+// taught the mapper about gets logged once at warn level and dropped.
+const TWILIO_STATUSES = [
+  "queued",
+  "processing",
+  "sending",
+  "delivered",
+  "no-answer",
+  "busy",
+  "failed",
+  "canceled",
+] as const;
+
+const FaxStatusCallbackBody = z
+  .object({
+    FaxSid: z.string().min(1),
+    Status: z.enum(TWILIO_STATUSES),
+    ErrorCode: z.string().min(1).optional(),
+  })
+  .passthrough();
+
+function mapTwilioStatus(
+  twilioStatus: (typeof TWILIO_STATUSES)[number],
+): DbFaxStatus {
   switch (twilioStatus) {
     case "queued":
     case "processing":
@@ -60,8 +97,6 @@ function mapTwilioStatus(twilioStatus: string): DbFaxStatus | null {
     case "failed":
     case "canceled":
       return "failed";
-    default:
-      return null;
   }
 }
 
@@ -69,17 +104,17 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
   // Respond 200 immediately — Twilio retries on 5xx.
   res.status(200).type("text/xml").send("<Response/>");
 
-  const body = (req.body ?? {}) as Record<string, string>;
-  const faxSid = typeof body.FaxSid === "string" ? body.FaxSid : null;
-  const twilioStatus =
-    typeof body.Status === "string" ? body.Status : null;
-  const errorCode =
-    typeof body.ErrorCode === "string" ? body.ErrorCode : null;
-
-  if (!faxSid || !twilioStatus) return;
-
+  const parsed = FaxStatusCallbackBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    logger.warn(
+      { event: "fax_status_invalid_body" },
+      "fax status-callback: payload failed validation",
+    );
+    return;
+  }
+  const { FaxSid: faxSid, Status: twilioStatus, ErrorCode: errorCode } =
+    parsed.data;
   const dbStatus = mapTwilioStatus(twilioStatus);
-  if (!dbStatus) return;
 
   const db = drizzle(getDbPool());
   const now = new Date();
