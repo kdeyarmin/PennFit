@@ -2,6 +2,14 @@
   "env": {
     "npm_config_user_agent": "pnpm/9.0.0 npm/? node/v20.0.0 linux x64"
   },
+  "extraKnownMarketplaces": {
+    "anthropics-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      }
+    }
+  },
   "hooks": {
     "SessionStart": [
       {
