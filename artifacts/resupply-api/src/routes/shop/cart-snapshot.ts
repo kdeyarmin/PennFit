@@ -30,16 +30,14 @@
 // signing in.
 
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { z } from "zod";
 
-import { getDbPool, shopAbandonedCarts } from "@workspace/resupply-db";
-import type {
-  InsertShopAbandonedCartRow,
-  ShopAbandonedCartItem,
+import {
+  type Json,
+  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
+import type { ShopAbandonedCartItem } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
@@ -109,22 +107,25 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   }
   const { items, subtotalCents, currency } = parsed.data;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
 
   // Empty PUT → treat as explicit clear. Cheaper than asking the
   // frontend to remember to call DELETE separately when the user
   // removed the last item.
   if (items.length === 0) {
-    await db
-      .update(shopAbandonedCarts)
-      .set({
-        items: [],
-        subtotalCents: 0,
+    const { error } = await supabase
+      .schema("resupply")
+      .from("shop_abandoned_carts")
+      .update({
+        items: [] as unknown as Json,
+        subtotal_cents: 0,
         currency,
-        clearedAt: new Date(),
-        updatedAt: new Date(),
+        cleared_at: nowIso,
+        updated_at: nowIso,
       })
-      .where(eq(shopAbandonedCarts.customerId, customerId));
+      .eq("customer_id", customerId);
+    if (error) throw error;
     res.json({ ok: true, items: [], subtotalCents: 0 });
     return;
   }
@@ -133,17 +134,16 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   // material enough to reset the suppression flags. A pure subtotal
   // re-tick (e.g. price metadata refresh) doesn't reset; a quantity
   // or composition change does.
-  const existingRows = await db
-    .select({
-      items: shopAbandonedCarts.items,
-      email: shopAbandonedCarts.email,
-    })
-    .from(shopAbandonedCarts)
-    .where(eq(shopAbandonedCarts.customerId, customerId))
-    .limit(1);
-  const existing = existingRows[0];
+  const { data: existing } = await supabase
+    .schema("resupply")
+    .from("shop_abandoned_carts")
+    .select("items, email")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  const existingItems = (existing?.items ?? []) as unknown as ShopAbandonedCartItem[];
   const materiallyChanged =
-    !existing || itemsSignature(existing.items) !== itemsSignature(items);
+    !existing || itemsSignature(existingItems) !== itemsSignature(items);
 
   // Refresh the denormalized email from the request (set by
   // requireSignedIn from auth.users). Never overwrite a known
@@ -153,45 +153,31 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   const freshEmail = profile.email?.toLowerCase() ?? null;
   const email = freshEmail ?? existing?.email ?? null;
 
-  const now = new Date();
-  const insertRow: InsertShopAbandonedCartRow = {
-    customerId,
+  // PostgREST `.upsert(..., { onConflict: 'customer_id' })` updates
+  // every column we send, exactly the equivalent of the original
+  // `EXCLUDED.<col>` ON CONFLICT clause. The materially-changed
+  // suppression-flag reset is included in the same payload (only
+  // when needed) so the upsert atomically transitions a re-fill
+  // back into "eligible for nudge" state.
+  const upsertRow: Record<string, unknown> = {
+    customer_id: customerId,
     email,
-    items,
-    subtotalCents,
+    items: items as unknown as Json,
+    subtotal_cents: subtotalCents,
     currency,
-    updatedAt: now,
-    // Only stamp recovered/cleared/reminded resets when the cart
-    // actually changed. Otherwise leave existing values alone.
-    ...(materiallyChanged
-      ? {
-          remindedAt: null,
-          recoveredAt: null,
-          clearedAt: null,
-        }
-      : {}),
+    updated_at: nowIso,
   };
+  if (materiallyChanged) {
+    upsertRow.reminded_at = null;
+    upsertRow.recovered_at = null;
+    upsertRow.cleared_at = null;
+  }
 
-  await db
-    .insert(shopAbandonedCarts)
-    .values(insertRow)
-    .onConflictDoUpdate({
-      target: shopAbandonedCarts.customerId,
-      set: {
-        email: sql`excluded.email`,
-        items: sql`excluded.items`,
-        subtotalCents: sql`excluded.subtotal_cents`,
-        currency: sql`excluded.currency`,
-        updatedAt: sql`excluded.updated_at`,
-        ...(materiallyChanged
-          ? {
-              remindedAt: sql`NULL`,
-              recoveredAt: sql`NULL`,
-              clearedAt: sql`NULL`,
-            }
-          : {}),
-      },
-    });
+  const { error: upsertErr } = await supabase
+    .schema("resupply")
+    .from("shop_abandoned_carts")
+    .upsert(upsertRow, { onConflict: "customer_id" });
+  if (upsertErr) throw upsertErr;
 
   res.json({ ok: true, items, subtotalCents });
 });
@@ -202,20 +188,23 @@ router.delete("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
   // Idempotent: 200 even if no row exists. Setting items=[] +
   // cleared_at=now suppresses the dispatcher; leaves the row in
   // place so an immediate re-fill can decide whether to re-trigger
   // (handled by PUT's materially-changed path).
-  await db
-    .update(shopAbandonedCarts)
-    .set({
-      items: [],
-      subtotalCents: 0,
-      clearedAt: new Date(),
-      updatedAt: new Date(),
+  const { error } = await supabase
+    .schema("resupply")
+    .from("shop_abandoned_carts")
+    .update({
+      items: [] as unknown as Json,
+      subtotal_cents: 0,
+      cleared_at: nowIso,
+      updated_at: nowIso,
     })
-    .where(eq(shopAbandonedCarts.customerId, customerId));
+    .eq("customer_id", customerId);
+  if (error) throw error;
   res.json({ ok: true });
 });
 
@@ -225,27 +214,23 @@ router.get("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      items: shopAbandonedCarts.items,
-      subtotalCents: shopAbandonedCarts.subtotalCents,
-      currency: shopAbandonedCarts.currency,
-      updatedAt: shopAbandonedCarts.updatedAt,
-    })
-    .from(shopAbandonedCarts)
-    .where(eq(shopAbandonedCarts.customerId, customerId))
-    .limit(1);
-  const row = rows[0];
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row } = await supabase
+    .schema("resupply")
+    .from("shop_abandoned_carts")
+    .select("items, subtotal_cents, currency, updated_at")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
   if (!row) {
     res.json({ items: [], subtotalCents: 0, currency: "usd", updatedAt: null });
     return;
   }
   res.json({
     items: row.items,
-    subtotalCents: row.subtotalCents,
+    subtotalCents: row.subtotal_cents,
     currency: row.currency,
-    updatedAt: row.updatedAt.toISOString(),
+    updatedAt: row.updated_at,
   });
 });
 

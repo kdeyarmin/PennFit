@@ -291,6 +291,33 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
         Relationships: [];
       };
+      insurance_leads: {
+        Row: {
+          id: string;
+          full_name: string;
+          email: string;
+          phone: string;
+          date_of_birth: string;
+          insurance_carrier: string;
+          member_id: string;
+          group_number: string | null;
+          prescribing_physician: string | null;
+          notes: string | null;
+          status: string;
+          csr_note: string | null;
+          notification_email_delivered: boolean;
+          confirmation_email_delivered: boolean;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          moderated_at: string | null;
+          moderated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["insurance_leads"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["insurance_leads"]["Row"]>;
+        Relationships: [];
+      };
       shop_product_questions: {
         Row: {
           id: string;
