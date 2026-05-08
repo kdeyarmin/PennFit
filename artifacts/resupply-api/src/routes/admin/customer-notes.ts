@@ -20,17 +20,11 @@
 // The audit row records the customer_id + body_length only — never
 // the body itself.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  shopCustomerNotes,
-  shopCustomers,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -68,43 +62,39 @@ router.get(
       return;
     }
     const userId = parsed.data;
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    // Pre-check: customer must exist. We could rely on the FK to
-    // surface a 23503 on insert (POST), but for GET we want to
-    // distinguish "no notes" (200 + empty array) from "no
-    // customer" (404).
-    const exists = await db
-      .select({ id: shopCustomers.customerId })
-      .from(shopCustomers)
-      .where(eq(shopCustomers.customerId, userId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: customer } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("customer_id")
+      .eq("customer_id", userId)
+      .limit(1)
+      .maybeSingle();
+    if (!customer) {
       res.status(404).json({ error: "customer_not_found" });
       return;
     }
 
-    const rows = await db
-      .select({
-        id: shopCustomerNotes.id,
-        body: shopCustomerNotes.body,
-        authorEmail: shopCustomerNotes.authorEmail,
-        authorUserId: shopCustomerNotes.authorUserId,
-        createdAt: shopCustomerNotes.createdAt,
-      })
-      .from(shopCustomerNotes)
-      .where(eq(shopCustomerNotes.customerId, userId))
-      .orderBy(desc(shopCustomerNotes.createdAt))
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("shop_customer_notes")
+      .select("id, body, author_email, author_user_id, created_at")
+      .eq("customer_id", userId)
+      .order("created_at", { ascending: false })
       .limit(50);
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
 
-    // Audit. Structural metadata only — body content is never emitted.
     await logAudit({
       action: "shop_customer.notes.list",
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "shop_customer_notes",
       targetId: userId,
-      metadata: { customer_id: userId, count: rows.length },
+      metadata: { customer_id: userId, count: rows?.length ?? 0 },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
@@ -112,12 +102,12 @@ router.get(
     });
 
     res.json({
-      notes: rows.map((r) => ({
+      notes: (rows ?? []).map((r) => ({
         id: r.id,
         body: r.body ?? "",
-        authorEmail: r.authorEmail,
-        authorUserId: r.authorUserId,
-        createdAt: r.createdAt.toISOString(),
+        authorEmail: r.author_email,
+        authorUserId: r.author_user_id,
+        createdAt: r.created_at,
       })),
     });
   },
@@ -147,45 +137,42 @@ router.post(
     }
     const { body } = bodyParsed.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    // Pre-check the customer to map the FK violation to a clean 404.
-    const exists = await db
-      .select({ id: shopCustomers.customerId })
-      .from(shopCustomers)
-      .where(eq(shopCustomers.customerId, userId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: customer } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("customer_id")
+      .eq("customer_id", userId)
+      .limit(1)
+      .maybeSingle();
+    if (!customer) {
       res.status(404).json({ error: "customer_not_found" });
       return;
     }
 
-    const inserted = await db
-      .insert(shopCustomerNotes)
-      .values({
-        customerId: userId,
+    const { data: inserted, error: insErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_notes")
+      .insert({
+        customer_id: userId,
         body,
-        authorEmail: req.adminEmail ?? "<unknown>",
-        authorUserId: req.adminUserId ?? null,
+        author_email: req.adminEmail ?? "<unknown>",
+        author_user_id: req.adminUserId ?? null,
       })
-      .returning({
-        id: shopCustomerNotes.id,
-        createdAt: shopCustomerNotes.createdAt,
-      });
-    const row = inserted[0];
-    if (!row) {
-      throw new Error("INSERT returned no rows");
-    }
+      .select("id, created_at")
+      .single();
+    if (insErr) throw insErr;
 
-    // Audit. Structural metadata only — `body_length` lets reviewers
-    // spot suspiciously long pastes (paste-attack from a clipboard,
+    // Structural metadata only — `body_length` lets reviewers spot
+    // suspiciously long pastes (paste-attack from a clipboard,
     // accidental dump of an email body) without exposing contents.
     await logAudit({
       action: "shop_customer.note.create",
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "shop_customer_notes",
-      targetId: row.id,
+      targetId: inserted.id,
       metadata: { customer_id: userId, body_length: body.length },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -194,8 +181,8 @@ router.post(
     });
 
     res.status(201).json({
-      id: row.id,
-      createdAt: row.createdAt.toISOString(),
+      id: inserted.id,
+      createdAt: inserted.created_at,
     });
   },
 );

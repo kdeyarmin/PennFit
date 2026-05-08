@@ -300,6 +300,148 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
         Relationships: [];
       };
+      patient_notes: {
+        Row: {
+          id: string;
+          patient_id: string;
+          body: string;
+          author_email: string;
+          author_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_notes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_notes"]["Row"]>;
+        Relationships: [];
+      };
+      shop_subscriptions: {
+        Row: {
+          id: string;
+          customer_id: string;
+          stripe_subscription_id: string;
+          stripe_customer_id: string | null;
+          status: string;
+          items: Json;
+          current_period_end: string | null;
+          cancel_at_period_end: boolean;
+          canceled_at: string | null;
+          initial_amount_total_cents: number | null;
+          last_stripe_event_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_subscriptions"]["Row"]>;
+        Relationships: [];
+      };
+      shop_customers: {
+        Row: {
+          customer_id: string;
+          stripe_customer_id: string | null;
+          display_name: string | null;
+          email_lower: string | null;
+          shipping_address_json: Json | null;
+          default_payment_method_id: string | null;
+          default_payment_method_brand: string | null;
+          default_payment_method_last4: string | null;
+          default_payment_method_exp_month: number | null;
+          default_payment_method_exp_year: number | null;
+          communication_preferences: Json | null;
+          cpap_device_json: Json | null;
+          physician_info_json: Json | null;
+          facial_measurements_json: Json | null;
+          auth_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_customers"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_customers"]["Row"]>;
+        Relationships: [];
+      };
+      shop_orders: {
+        Row: {
+          id: string;
+          stripe_session_id: string;
+          stripe_payment_intent_id: string | null;
+          status: string;
+          amount_total_cents: number | null;
+          currency: string | null;
+          cart_hash: string | null;
+          customer_id: string | null;
+          tracking_carrier: string | null;
+          tracking_number: string | null;
+          shipped_at: string | null;
+          delivered_at: string | null;
+          shipping_address_json: Json | null;
+          confirmation_email_sent_at: string | null;
+          shipping_email_sent_at: string | null;
+          customer_email: string | null;
+          review_request_sent_at: string | null;
+          created_at: string;
+          updated_at: string;
+          paid_at: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
+        Relationships: [];
+      };
+      shop_order_notes: {
+        Row: {
+          id: string;
+          order_id: string;
+          body: string;
+          author_email: string;
+          author_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_order_notes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_order_notes"]["Row"]>;
+        Relationships: [];
+      };
+      shop_customer_notes: {
+        Row: {
+          id: string;
+          customer_id: string;
+          body: string;
+          author_email: string;
+          author_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
+        Relationships: [];
+      };
+      csr_macros: {
+        Row: {
+          id: string;
+          key: string;
+          label: string;
+          category: string | null;
+          body: string;
+          channels: Json;
+          is_active: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+          created_by: string | null;
+          updated_by: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["csr_macros"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["csr_macros"]["Row"]>;
+        Relationships: [];
+      };
+      shop_return_notes: {
+        Row: {
+          id: string;
+          return_id: string;
+          body: string;
+          author_email: string;
+          author_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_return_notes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_return_notes"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };
