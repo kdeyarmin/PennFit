@@ -26,12 +26,30 @@ export type Json =
   | Json[];
 
 export interface Database {
-  // PostgREST default schema. Resupply doesn't put any tables under
-  // `public`, but Supabase's generic defaulting expects this key to
-  // exist for inference to settle. Keeping it empty matches the
-  // generated-types convention.
+  // PostgREST default schema. Storefront-funnel tables (orders,
+  // usage_events, admin_audit_log, reminder_subscriptions from
+  // migration 0027) live here.
   public: {
-    Tables: { [_ in never]: never };
+    Tables: {
+      usage_events: {
+        Row: {
+          id: string;
+          session_id: string;
+          step: string;
+          metadata: string | null;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          session_id: string;
+          step: string;
+          metadata?: string | null;
+          occurred_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["usage_events"]["Insert"]>;
+        Relationships: [];
+      };
+    };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };
     Enums: { [_ in never]: never };
@@ -81,7 +99,7 @@ export interface Database {
         Row: {
           id: string;
           operator_email: string | null;
-          operator_clerk_id: string | null;
+          operator_user_id: string | null;
           action: string;
           target_table: string | null;
           target_id: string | null;
@@ -93,7 +111,7 @@ export interface Database {
         Insert: {
           id?: string;
           operator_email?: string | null;
-          operator_clerk_id?: string | null;
+          operator_user_id?: string | null;
           action: string;
           target_table?: string | null;
           target_id?: string | null;
@@ -135,6 +153,98 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["resupply_auth"]["Tables"]["users"]["Insert"]>;
+        Relationships: [];
+      };
+      password_credentials: {
+        Row: {
+          user_id: string;
+          password_hash: string;
+          algo: string;
+          must_change: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          password_hash: string;
+          algo?: string;
+          must_change?: boolean;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["resupply_auth"]["Tables"]["password_credentials"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      sessions: {
+        Row: {
+          id: string;
+          // bytea — Supabase JS round-trips bytea as a hex string by
+          // default ("\\x...").  Typed as `string` so the type system
+          // matches what the wire actually carries; the in-house
+          // helpers convert back to Buffer at the API boundary.
+          token_hash: string;
+          user_id: string;
+          issued_at: string;
+          expires_at: string;
+          last_seen_at: string;
+          revoked_at: string | null;
+          ip: string | null;
+          user_agent_hash: string | null;
+        };
+        Insert: {
+          id?: string;
+          token_hash: string;
+          user_id: string;
+          issued_at?: string;
+          expires_at: string;
+          last_seen_at?: string;
+          revoked_at?: string | null;
+          ip?: string | null;
+          user_agent_hash?: string | null;
+        };
+        Update: Partial<Database["resupply_auth"]["Tables"]["sessions"]["Insert"]>;
+        Relationships: [];
+      };
+      email_tokens: {
+        Row: {
+          token_hash: string;
+          user_id: string;
+          purpose: string;
+          expires_at: string;
+          consumed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          token_hash: string;
+          user_id: string;
+          purpose: string;
+          expires_at: string;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["resupply_auth"]["Tables"]["email_tokens"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      login_attempts: {
+        Row: {
+          id: number;
+          email_lower: string;
+          ip: string | null;
+          success: boolean;
+          attempted_at: string;
+        };
+        Insert: {
+          id?: number;
+          email_lower: string;
+          ip?: string | null;
+          success: boolean;
+          attempted_at?: string;
+        };
+        Update: Partial<
+          Database["resupply_auth"]["Tables"]["login_attempts"]["Insert"]
+        >;
         Relationships: [];
       };
     };
