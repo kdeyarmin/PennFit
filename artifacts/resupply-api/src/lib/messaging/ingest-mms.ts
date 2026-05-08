@@ -129,6 +129,24 @@ interface MediaSlot {
  * against actual key presence so a tampered NumMedia=99 with no
  * URLs is bounded.
  */
+function normalizeAllowedTwilioMediaUrl(raw: string): string | null {
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:") return null;
+    if (parsed.hostname !== "api.twilio.com") return null;
+    if (
+      !/^\/2010-04-01\/Accounts\/[^/]+\/Messages\/[^/]+\/Media\/[^/]+$/.test(
+        parsed.pathname,
+      )
+    ) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 function readMediaSlots(
   body: Record<string, unknown>,
   numMedia: number,
@@ -136,8 +154,10 @@ function readMediaSlots(
   const cap = Math.min(numMedia, MAX_MEDIA_PER_MESSAGE);
   const slots: MediaSlot[] = [];
   for (let i = 0; i < cap; i++) {
-    const url = body[`MediaUrl${i}`];
-    if (typeof url !== "string" || !url.startsWith("https://")) continue;
+    const rawUrl = body[`MediaUrl${i}`];
+    if (typeof rawUrl !== "string") continue;
+    const url = normalizeAllowedTwilioMediaUrl(rawUrl);
+    if (!url) continue;
     const ct = body[`MediaContentType${i}`];
     slots.push({
       url,
