@@ -9,10 +9,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Path import (not the package re-export) so the test always reaches
-// the source we modified. The package barrel resolves to the same
-// file at runtime; the explicit relative path keeps a future
-// re-export rename from silently skipping coverage.
+// Import from the storefront package entrypoint used by consumers.
+// This test lives in cpap-fitter because that package provides the
+// test infrastructure for exercising the helper's runtime behavior.
 import { customFetch } from "@workspace/api-client-react/storefront";
 
 interface CapturedRequest {
