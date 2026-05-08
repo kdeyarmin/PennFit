@@ -20,7 +20,7 @@ env:
   # the workflow runner uses the same interpreter the lockfile was
   # produced with.
   PNPM_VERSION: "10.33.2"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
 
 jobs:
   lint-typecheck:
@@ -40,7 +40,7 @@ jobs:
           npm install -g pnpm@${{ env.PNPM_VERSION }}
           pnpm --version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
@@ -70,7 +70,7 @@ jobs:
           npm install -g pnpm@${{ env.PNPM_VERSION }}
           pnpm --version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
@@ -135,7 +135,7 @@ jobs:
           npm install -g pnpm@${{ env.PNPM_VERSION }}
           pnpm --version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
@@ -172,7 +172,7 @@ jobs:
           npm install -g pnpm@${{ env.PNPM_VERSION }}
           pnpm --version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
@@ -246,7 +246,7 @@ jobs:
           npm install -g pnpm@${{ env.PNPM_VERSION }}
           pnpm --version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
