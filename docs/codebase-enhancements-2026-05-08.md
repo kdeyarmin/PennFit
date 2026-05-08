@@ -13,11 +13,12 @@ plan below carries forward only items that still apply, with severity, effort
 
 ## TL;DR
 
-- **3 items dropped** as already addressed (idempotency response capture; Stripe
-  webhook middleware order; Stripe customer create idempotency key).
-- **53 items carried forward**, grouped P0–P3.
-- **P0 (8 items)**: schema-deploy correctness + the loudest security gaps.
-  Estimated 6–9 engineer-days. Should land before any further feature work
+- **4 items dropped** as already addressed (idempotency response capture;
+  Stripe webhook middleware order; Stripe customer create idempotency key;
+  CSRF timing side-channel).
+- **52 items carried forward**, grouped P0–P3.
+- **P0 (7 items)**: schema-deploy correctness + the loudest security gaps.
+  Estimated 5–8 engineer-days. Should land before any further feature work
   that touches migrations or money flows.
 - **P1 (12 items)**: reliability + database integrity. ~10–14 engineer-days.
 - **P2 (19 items)**: performance, code quality, UX/a11y. Mostly bounded
@@ -29,14 +30,15 @@ plan below carries forward only items that still apply, with severity, effort
 
 ## Validation results — items dropped
 
-These three appeared in the input list but are no longer applicable. They
+These four appeared in the input list but are no longer applicable. They
 should not enter the new backlog:
 
 | # | Input claim | Status | Evidence |
 | --- | --- | --- | --- |
 | Reliability #2 | Idempotency middleware doesn't capture `res.send`/`res.end`/streamed (Prior B-04) | **Stale — fixed** | `artifacts/resupply-api/src/middlewares/idempotency.ts:199-201` patches all three; streaming covered via `res.end`. |
-| Security #6 | Stripe webhook raw-body ordering risk | **Reframed** | `artifacts/resupply-api/src/app.ts:132` registers `express.raw({type:'application/json',limit:'256kb'})` for `/webhooks/stripe` BEFORE `express.json()` at `:138`. Order is correct. Carry forward only the regression-test action (P0 #5). |
-| Reliability #8 | Stripe customer creation idempotency keys absent (Prior B-10) | **Partial — main path fixed** | `artifacts/resupply-api/src/lib/stripe/customer.ts:80-90` passes `idempotencyKey: \`pennpaps-shop-customer-${customerId}\``. Carry forward only the audit of other Stripe mutation call sites (P1 #11). |
+| Security #6 | Stripe webhook raw-body ordering risk | **Reframed** | `artifacts/resupply-api/src/app.ts:132` registers `express.raw({type:'application/json',limit:'256kb'})` for `/resupply-api/stripe/webhook` BEFORE `express.json()` at `:138`. Order is correct. Carry forward only the regression-test action (P0.5). |
+| Reliability #8 | Stripe customer creation idempotency keys absent (Prior B-10) | **Partial — main path fixed** | `artifacts/resupply-api/src/lib/stripe/customer.ts:80-90` passes `idempotencyKey: \`pennpaps-shop-customer-${customerId}\``. Carry forward only the audit of other Stripe mutation call sites (P1.11). |
+| Security #2 | CSRF token timing side-channel — early-exit on length mismatch (Prior D-BA A-01) | **Stale — fixed** | `lib/resupply-auth/src/csrf.ts:44-50` pads both sides to 128 bytes, runs `timingSafeEqual` on the padded buffers, and folds in the length check as a separate boolean. Tests at `csrf.test.ts:21-52`. Landed in commit `e2b6437` (sprint-1 audit fixes). Item P0.4 in the original plan is dropped. |
 
 ---
 
@@ -47,15 +49,23 @@ should not enter the new backlog:
 | P0.1 | Drizzle journal drift: 52 journal entries vs **73 SQL files** | HIGH | M | `lib/resupply-db/drizzle/meta/_journal.json` last entry is `0049_physician_fax_outreach_status_pending_idx`; everything `0050…0066` is journalless | After P0.2, run `pnpm --filter @workspace/resupply-db run generate` to rebuild snapshot; verify `scripts/check-drizzle-drift.sh` passes. |
 | P0.2 | **Six duplicate migration prefixes** (0016, 0017, 0049, 0050, 0052, 0065) | HIGH | M | `lib/resupply-db/drizzle/` — `ls \| awk -F_ '{print $1}' \| sort \| uniq -d` returns 6 collisions | Decide canonical apply order per pair (smallest blast radius: rename newer file `00NN`→`00NN+0.5` then regenerate journal); coordinate with anyone holding open PRs that touch these prefixes. |
 | P0.3 | No CI workflow runs `typecheck`/`lint`/tests/drizzle-drift | HIGH | S–M | `.github/workflows/` only contains `copilot-setup-steps.yml` | Add `.github/workflows/ci.yml` with jobs for `pnpm install`, `pnpm typecheck`, `pnpm lint:resupply`, `pnpm -r test`, and the four `scripts/check-*.sh`. Required check on PRs. |
-| P0.4 | CSRF token timing side-channel — early-exit on length mismatch (Prior D-BA A-01) | HIGH | S | Per prior audit | Replace length-check + branch with single `crypto.timingSafeEqual` over fixed-length pad. |
-| P0.5 | No regression test guarding Stripe webhook raw-body ordering | HIGH | S | `artifacts/resupply-api/src/app.ts:132` (correct today) | Add `app.test.ts` case posting to `/webhooks/stripe` with a known signature, asserting `req.body` is a Buffer and `req.headers["stripe-signature"]` validates. Pin the order so a future middleware reorder fails CI. |
+| ~~P0.4~~ | ~~CSRF token timing side-channel~~ | — | — | — | **Dropped — already fixed.** See "Validation results" above. |
+| P0.5 | No regression test guarding Stripe webhook raw-body ordering | HIGH | S | `artifacts/resupply-api/src/app.ts:132` (correct today) | Add a test that posts to `/resupply-api/stripe/webhook` with a JSON payload, mocks the handler to capture `req.body`, and asserts `Buffer.isBuffer(req.body)` so a future middleware reorder fails CI. |
 | P0.6 | Auth-recovery rate-limits incomplete: `forgot-password`, `reset-password`, `verify-email` (Prior D-BA B-02/03) | HIGH | S | Per prior audit | Wire the existing `lib/resupply-auth` rate-limiter (already used on sign-in) onto these three routes; per-IP **and** per-email keys. |
 | P0.7 | Admin write-path per-actor rate-limits missing on most mutations (Prior D-BA B-07) | HIGH | M | Per prior audit | Add a small `adminRateLimit(req)` middleware keyed by `actor.userId`; default 60/min for write verbs; opt-in per route. |
 | P0.8 | Duplicate router registration causing double-execution (Prior D-BA B-01) | HIGH | S | Per prior audit | Identify the duplicated `app.use(...)` lines in `artifacts/resupply-api/src/app.ts` (or per-router `mount()` wrappers), remove the duplicate, add a startup assertion that no `(method, path)` pair is registered twice. |
 
-**P0 rollup:** ~6–9 engineer-days. P0.1 + P0.2 are coupled (do P0.2 first;
+**P0 rollup:** ~5–8 engineer-days. P0.1 + P0.2 are coupled (do P0.2 first;
 P0.1 is its tail). P0.3 is independent and unblocks visible CI signal for the
-remaining work.
+remaining work. P0.5 is a single-file test that pins behaviour already
+implemented correctly.
+
+**Note on `lint:resupply` baseline.** As of 2026-05-08 the
+`facialMeasurementsInfo` import in `artifacts/resupply-api/src/routes/shop/me-clinical-info.ts:38`
+is unused (introduced in commit `fb6c8a5` on 2026-05-07) and breaks
+`pnpm lint:resupply`. The CI workflow being added under P0.3 cannot go
+green until this is removed; the cleanup ships as a one-line companion
+commit to P0.3.
 
 ---
 
