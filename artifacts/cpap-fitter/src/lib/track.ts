@@ -44,7 +44,9 @@ function randomToken(): string {
   // not unique under burst, but the surrounding code only invokes
   // this when both sessionStorage AND crypto are unavailable, which
   // is effectively unreachable in supported browsers.
-  return Date.now().toString(36) + "-" + performance.now().toString(36);
+  const perfNow =
+    typeof performance !== "undefined" ? performance.now().toString(36) : "0";
+  return Date.now().toString(36) + "-" + perfNow;
 }
 
 export type TrackStep =
