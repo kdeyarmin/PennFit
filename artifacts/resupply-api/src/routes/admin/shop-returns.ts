@@ -421,15 +421,25 @@ router.post(
     const stripe = stripeConfig ? getStripeClient(stripeConfig) : null;
     if (stripe && orderRow.stripe_payment_intent_id) {
       try {
-        const refund = await stripe.refunds.create({
-          payment_intent: orderRow.stripe_payment_intent_id,
-          amount: refundCents,
-          reason: "requested_by_customer",
-          metadata: {
-            shop_return_id: ret.id,
-            shop_order_id: ret.orderId,
+        // Per-return + per-amount idempotency key. Two admins clicking
+        // "Refund" on the same return for the same amount collapse to a
+        // single Stripe Refund object. Different partial-refund amounts
+        // on the same return each create a separate Refund — that's
+        // intentional (partial refunds may legitimately stack). Mirrors
+        // the shop_orders refund pattern (sprint 5, e98a0bf).
+        const idempotencyKey = `shop-return-refund-${ret.id}-${refundCents}`;
+        const refund = await stripe.refunds.create(
+          {
+            payment_intent: orderRow.stripe_payment_intent_id,
+            amount: refundCents,
+            reason: "requested_by_customer",
+            metadata: {
+              shop_return_id: ret.id,
+              shop_order_id: ret.orderId,
+            },
           },
-        });
+          { idempotencyKey },
+        );
         stripeRefundId = refund.id;
       } catch (err) {
         // Don't block the workflow on a Stripe-side error — log it and
