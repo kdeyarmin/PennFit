@@ -20,7 +20,7 @@ env:
   # the workflow runner uses the same interpreter the lockfile was
   # produced with.
   PNPM_VERSION: "10.33.2"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
 
 jobs:
   lint-typecheck:
