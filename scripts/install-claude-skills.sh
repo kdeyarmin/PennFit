@@ -34,6 +34,7 @@ REPOS=(
   "nidhinjs/prompt-master"                # 14. Meta: prompt writing
 )
 
+# install_skill_from_repo clones the given GitHub repo slug and copies any directories containing `SKILL.md` into the user's Claude skills directory (`~/.claude/skills`) — using the repo name for root-level skills or the containing folder name for nested skills — and if no `SKILL.md` is found copies the entire repository; the function skips the repo on clone failure.
 install_skill_from_repo() {
   local repo="$1"
   local repo_name="${repo##*/}"
