@@ -233,7 +233,7 @@ router.post("/admin/team/invite", requireAdminOnly, teamWriteLimiter, async (req
   });
 });
 
-router.post("/admin/team/:id/resend", teamWriteLimiter, requireAdminOnly, async (req, res) => {
+router.post("/admin/team/:id/resend", requireAdminOnly, teamWriteLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -284,7 +284,7 @@ router.post("/admin/team/:id/resend", teamWriteLimiter, requireAdminOnly, async 
   });
 });
 
-router.post("/admin/team/:id/revoke", teamWriteLimiter, requireAdminOnly, async (req, res) => {
+router.post("/admin/team/:id/revoke", requireAdminOnly, teamWriteLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -340,7 +340,7 @@ router.post("/admin/team/:id/revoke", teamWriteLimiter, requireAdminOnly, async 
   });
 });
 
-router.patch("/admin/team/:id", teamWriteLimiter, requireAdminOnly, async (req, res) => {
+router.patch("/admin/team/:id", requireAdminOnly, teamWriteLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });

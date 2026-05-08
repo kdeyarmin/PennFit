@@ -305,6 +305,57 @@ describe("ingestInboundMmsMedia", () => {
     ).toBeLessThanOrEqual(10);
   });
 
+  it("silently drops MediaUrls on non-Twilio hosts without fetching", async () => {
+    // A tampered webhook body pointing at an attacker-controlled host
+    // must be filtered out by the allowlist before any fetch is issued.
+    fetchSpy = mockFetch(
+      () =>
+        new Response(pngBytes(8), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+    );
+
+    const result = await ingestInboundMmsMedia(
+      {
+        messageId: MSG_ID,
+        rawWebhookBody: {
+          NumMedia: "2",
+          // Attacker-controlled URL — must never be fetched.
+          MediaUrl0: "https://example.com/evil-image.png",
+          MediaContentType0: "image/png",
+          // Valid Twilio URL — should proceed normally.
+          MediaUrl1:
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEsafe",
+          MediaContentType1: "image/png",
+        },
+        numMedia: 2,
+        twilioAccountSid: TWILIO_SID,
+        twilioAuthToken: TWILIO_TOKEN,
+      },
+      SILENT_LOGGER,
+    );
+
+    // Only the allowlisted Twilio URL should be attempted; the
+    // non-Twilio URL must be silently dropped (not counted as
+    // attempted, rejected, or errored — it never enters the pipeline).
+    expect(result.attempted).toBe(1);
+    expect(result.succeeded).toBe(1);
+    expect(result.rejected).toBe(0);
+
+    // Fetch must only have been called for the valid Twilio URL —
+    // never for example.com.
+    const fetchedUrls = (fetchSpy as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => String(c[0]),
+    );
+    expect(fetchedUrls.some((u: string) => u.includes("example.com"))).toBe(
+      false,
+    );
+    expect(fetchedUrls.some((u: string) => u.includes("api.twilio.com"))).toBe(
+      true,
+    );
+  });
+
   describe("persistInboundAttachment (shared validate→upload→insert tail)", () => {
     const SAMPLE_MSG = "22222222-2222-4222-8222-222222222222";
 

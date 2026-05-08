@@ -12,6 +12,8 @@
 // the cpap-fitter shop and the resupply staff dashboard. The
 // product name is passed in by the caller.
 
+import { stripTrailingSlashes } from "../string-utils";
+
 export interface AuthEmailContext {
   /** "PennFit" / "Resupply" — appears in subject + signature. */
   productName: string;
@@ -41,15 +43,6 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-// Char-by-char trim avoids the polynomial-backtracking pattern
-// CodeQL flags for `replace(/\/+$/, "")` against attacker-supplied
-// input lengths.
-function stripTrailingSlashes(s: string): string {
-  let i = s.length;
-  while (i > 0 && s.charCodeAt(i - 1) === 0x2f) i--;
-  return i === s.length ? s : s.slice(0, i);
 }
 
 function makeLink(

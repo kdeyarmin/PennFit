@@ -181,7 +181,7 @@ function buildInviteRedirectUrl(req: import("express").Request): string {
   return `${proto}://${host}`;
 }
 
-router.post("/admin/users/invite", adminUsersWriteLimiter, requireAdminOnly, async (req, res) => {
+router.post("/admin/users/invite", requireAdminOnly, adminUsersWriteLimiter, async (req, res) => {
   const parsed = inviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -242,8 +242,8 @@ router.post("/admin/users/invite", adminUsersWriteLimiter, requireAdminOnly, asy
 
 router.patch(
   "/admin/users/:userId/role",
-  adminUsersWriteLimiter,
   requireAdminOnly,
+  adminUsersWriteLimiter,
   async (req, res) => {
     const userId = req.params.userId;
     if (!userId || typeof userId !== "string") {
@@ -282,7 +282,7 @@ router.patch(
   },
 );
 
-router.delete("/admin/users/:userId", adminUsersWriteLimiter, requireAdminOnly, async (req, res) => {
+router.delete("/admin/users/:userId", requireAdminOnly, adminUsersWriteLimiter, async (req, res) => {
   const userId = req.params.userId;
   if (!userId || typeof userId !== "string") {
     res.status(400).json({ error: "Missing user id." });
@@ -310,8 +310,8 @@ router.delete("/admin/users/:userId", adminUsersWriteLimiter, requireAdminOnly, 
 
 router.delete(
   "/admin/users/invitations/:invId",
-  adminUsersWriteLimiter,
   requireAdminOnly,
+  adminUsersWriteLimiter,
   async (req, res) => {
     const invId = req.params.invId;
     if (!invId || typeof invId !== "string") {

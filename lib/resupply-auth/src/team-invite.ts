@@ -20,20 +20,12 @@ import type { Pool } from "pg";
 import { issueToken } from "./token";
 import type { AuthDeps } from "./http/types";
 import { renderPasswordResetEmail } from "./http/email-templates";
+import { stripTrailingSlashes } from "./string-utils";
 
 /** Invite tokens are valid for 7 days. Long enough that an
  *  operator can run an invite ahead of telling the user to
  *  expect the email. */
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-// Char-by-char trim avoids the polynomial-backtracking pattern
-// CodeQL flags for `replace(/\/+$/, "")` against attacker-supplied
-// input lengths.
-function stripTrailingSlashes(s: string): string {
-  let i = s.length;
-  while (i > 0 && s.charCodeAt(i - 1) === 0x2f) i--;
-  return i === s.length ? s : s.slice(0, i);
-}
 
 export interface InviteResult {
   /** auth.users.id for the resolved row. */
