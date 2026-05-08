@@ -40,6 +40,7 @@ import {
   type AdminStatus,
   authUsers,
   getDbPool,
+  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
 import {
@@ -203,7 +204,7 @@ router.post("/admin/team/invite", requireAdminOnly, adminInviteLimiter, async (r
   }
 
   // Mint or refresh the auth row + send the invite email.
-  const invite = await inviteTeamMember(getDbPool(), deps, {
+  const invite = await inviteTeamMember(getSupabaseServiceRoleClient(), deps, {
     emailLower: email,
     role,
     displayName: displayName ?? prior?.displayName ?? null,
@@ -285,7 +286,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, adminInviteLimiter, asyn
   }
 
   const deps = getAuthDeps();
-  const invite = await inviteTeamMember(getDbPool(), deps, {
+  const invite = await inviteTeamMember(getSupabaseServiceRoleClient(), deps, {
     emailLower: row.emailLower,
     role: row.role as AdminRole,
     displayName: row.displayName,
@@ -347,7 +348,7 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, adminTeamMutationLimiter
   }
 
   if (row.authUserId) {
-    await revokeTeamMember(getDbPool(), row.authUserId);
+    await revokeTeamMember(getSupabaseServiceRoleClient(), row.authUserId);
   }
 
   const now = new Date();
@@ -415,7 +416,7 @@ router.patch("/admin/team/:id", requireAdminOnly, adminTeamMutationLimiter, asyn
   // Mirror the role change on auth.users so requireAdmin sees it.
   if (parsed.data.role && updated[0]!.authUserId) {
     await updateTeamMemberRole(
-      getDbPool(),
+      getSupabaseServiceRoleClient(),
       updated[0]!.authUserId,
       parsed.data.role,
     );

@@ -30,7 +30,12 @@ import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { authUsers, getDbPool, patients } from "@workspace/resupply-db";
+import {
+  authUsers,
+  getDbPool,
+  getSupabaseServiceRoleClient,
+  patients,
+} from "@workspace/resupply-db";
 import {
   issueToken,
   renderPatientPortalInviteEmail,
@@ -484,7 +489,7 @@ router.delete(
       return;
     }
 
-    await revokeTeamMember(getDbPool(), patient.portalAuthUserId);
+    await revokeTeamMember(getSupabaseServiceRoleClient(), patient.portalAuthUserId);
 
     const now = new Date();
     await db

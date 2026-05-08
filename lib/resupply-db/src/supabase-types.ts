@@ -123,6 +123,183 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["audit_log"]["Insert"]>;
         Relationships: [];
       };
+      conversations: {
+        Row: {
+          id: string;
+          patient_id: string | null;
+          episode_id: string | null;
+          customer_id: string | null;
+          channel: string;
+          status: string;
+          priority: string;
+          external_ref: string | null;
+          last_message_at: string | null;
+          assigned_admin_user_id: string | null;
+          assigned_at: string | null;
+          sla_due_at: string | null;
+          escalated_at: string | null;
+          escalated_to: string | null;
+          escalation_reason: string | null;
+          customer_last_read_at: string | null;
+          last_in_app_notification_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["conversations"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["conversations"]["Row"]>;
+        Relationships: [];
+      };
+      episodes: {
+        Row: {
+          id: string;
+          patient_id: string;
+          prescription_id: string;
+          status: string;
+          due_at: string;
+          expires_at: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["episodes"]["Row"]>;
+        Relationships: [];
+      };
+      fulfillments: {
+        Row: {
+          id: string;
+          patient_id: string;
+          episode_id: string;
+          item_sku: string;
+          quantity: number;
+          status: string;
+          pacware_order_ref: string | null;
+          shipment_metadata: Json;
+          submitted_at: string | null;
+          shipped_at: string | null;
+          delivered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["fulfillments"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["fulfillments"]["Row"]>;
+        Relationships: [];
+      };
+      patients: {
+        Row: {
+          id: string;
+          pacware_id: string;
+          legal_first_name: string;
+          legal_last_name: string;
+          date_of_birth: string;
+          phone_e164: string | null;
+          email: string | null;
+          address: Json | null;
+          status: string;
+          insurance_payer: string | null;
+          cadence_override_days: number | null;
+          channel_preference: string | null;
+          portal_auth_user_id: string | null;
+          portal_invited_at: string | null;
+          portal_invited_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patients"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patients"]["Row"]>;
+        Relationships: [];
+      };
+      frequency_rules: {
+        Row: {
+          id: string;
+          name: string;
+          priority: number;
+          match_item_sku_prefix: string | null;
+          match_insurance_payer: string | null;
+          min_tenure_days: number | null;
+          max_tenure_days: number | null;
+          cadence_days: number;
+          default_channel: string | null;
+          active: boolean;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["frequency_rules"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["frequency_rules"]["Row"]>;
+        Relationships: [];
+      };
+      // Minimal coverage for count-style queries; expand to full Row
+      // as more callers migrate.
+      shop_returns: {
+        Row: {
+          id: string;
+          customer_id: string;
+          order_id: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_returns"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_returns"]["Row"]>;
+        Relationships: [];
+      };
+      shop_reviews: {
+        Row: {
+          id: string;
+          customer_id: string;
+          product_id: string;
+          rating: number;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_reviews"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_reviews"]["Row"]>;
+        Relationships: [];
+      };
+      patient_documents: {
+        Row: {
+          id: string;
+          patient_id: string;
+          object_key: string;
+          document_type: string;
+          reviewed_at: string | null;
+          reviewed_by_admin_id: string | null;
+          review_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_documents"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_documents"]["Row"]>;
+        Relationships: [];
+      };
+      shop_customer_followups: {
+        Row: {
+          id: string;
+          customer_id: string;
+          body: string;
+          due_at: string;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
+        Relationships: [];
+      };
+      patient_followups: {
+        Row: {
+          id: string;
+          patient_id: string;
+          body: string;
+          due_at: string;
+          completed_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

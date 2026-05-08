@@ -17,11 +17,10 @@
  * client (best-effort: we log on failure but never block the
  * user-visible operation).
  *
- * This is the FIRST module ported off Drizzle to the Supabase JS
- * client. The route-level reads use `getSupabaseServiceRoleClient()`;
+ * Fully on the Supabase JS client — both the route-level reads and
  * the inviteTeamMember / revokeTeamMember / updateTeamMemberRole
- * helpers from @workspace/resupply-auth still take the legacy pg
- * Pool (their internal port is tracked separately).
+ * helpers from @workspace/resupply-auth (ported in the same series
+ * of commits).
  */
 
 import { Router, type Request } from "express";
@@ -33,8 +32,6 @@ import {
   updateTeamMemberRole,
 } from "@workspace/resupply-auth";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
-
-import { pool } from "../../lib/storefront/db.js";
 
 import { logger } from "../../lib/logger.js";
 import { getAuthDeps } from "../../lib/auth-deps.js";
@@ -260,7 +257,7 @@ router.post("/admin/users/invite", requireAdminOnly, adminUsersWriteLimiter, asy
   }
 
   const deps = getAuthDeps();
-  const invite = await inviteTeamMember(pool, deps, {
+  const invite = await inviteTeamMember(supabase, deps, {
     emailLower: email,
     role,
     displayName: null,
@@ -315,7 +312,7 @@ router.patch(
       .maybeSingle();
     const targetEmail = lookup?.email_lower ?? "(unknown)";
 
-    const ok = await updateTeamMemberRole(pool, userId, role);
+    const ok = await updateTeamMemberRole(supabase, userId, role);
     if (!ok) {
       res.status(404).json({ error: "Could not find that teammate." });
       return;
@@ -350,7 +347,7 @@ router.delete("/admin/users/:userId", requireAdminOnly, adminUsersWriteLimiter, 
     .maybeSingle();
   const targetEmail = lookup?.email_lower ?? "(unknown)";
 
-  await revokeTeamMember(pool, userId);
+  await revokeTeamMember(supabase, userId);
 
   await writeAudit(req, `team.revoke user=${targetEmail}`);
   res.json({ ok: true, userId });
@@ -389,7 +386,7 @@ router.delete(
       return;
     }
 
-    await revokeTeamMember(pool, invId);
+    await revokeTeamMember(supabase, invId);
 
     await writeAudit(req, `team.invitation_revoke email=${row.email_lower}`);
     res.json({ ok: true, invitationId: invId });
