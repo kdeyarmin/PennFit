@@ -137,19 +137,35 @@ for (const [cat, agg] of totalsSorted) {
 const grand = records.reduce((s, r) => s + r.gzipped, 0);
 console.log(`\nTotal transfer size: ${fmtKb(grand)} across ${records.length} files`);
 
-// Hint / tripwire — print a warning if any single js chunk exceeds
-// 500 KB gzipped. Not a hard fail (the script doesn't exit non-zero
-// here yet — that's the next step once we agree on a budget) but
-// the warning surfaces obvious regressions immediately.
+// Bundle-size budget. A single JS chunk over `HEAVY_CHUNK_GZIP_KB`
+// gzipped is treated as a failure unless `--no-fail` is passed (or
+// `BUNDLE_REPORT_NO_FAIL=1` is set). The 500 KB ceiling is generous
+// — react + react-dom alone is ~140 KB gzipped, so a single chunk
+// breaching this means a vendor or page module has bloomed and is
+// worth investigating before merge.
+//
+// Why a CLI flag and an env var both: developers running locally
+// against a known-heavy work-in-progress branch want a quick way to
+// suppress the failure; CI explicitly does NOT pass the flag so the
+// gate stays on by default.
 const HEAVY_CHUNK_GZIP_KB = 500;
+const noFail =
+  process.argv.includes("--no-fail") ||
+  process.env["BUNDLE_REPORT_NO_FAIL"] === "1";
 const heavy = records.filter(
   (r) => r.category === "js" && r.gzipped / 1024 > HEAVY_CHUNK_GZIP_KB,
 );
 if (heavy.length > 0) {
   console.log(
-    `\nWARN: ${heavy.length} JS chunk(s) > ${HEAVY_CHUNK_GZIP_KB} KB gzipped:`,
+    `\n${noFail ? "WARN" : "FAIL"}: ${heavy.length} JS chunk(s) > ${HEAVY_CHUNK_GZIP_KB} KB gzipped:`,
   );
   for (const r of heavy) {
     console.log(`  ${fmtKb(r.gzipped)}  ${r.relPath}`);
+  }
+  if (!noFail) {
+    console.log(
+      `\nIf this is intentional, re-run with --no-fail (or set BUNDLE_REPORT_NO_FAIL=1).`,
+    );
+    process.exit(1);
   }
 }
