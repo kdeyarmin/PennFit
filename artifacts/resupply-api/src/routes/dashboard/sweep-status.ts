@@ -52,7 +52,7 @@
 
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 
@@ -108,31 +108,28 @@ export interface PhiSweepStatus {
   counters: PhiSweepCounters;
 }
 
-interface SweepAuditRow {
-  occurred_at: Date | string | null;
-  metadata: unknown;
-}
-
 /**
  * Fetch + project the most recent sweep audit row. Returns null when
  * no row exists OR when the row's metadata fails validation.
  *
- * Implementation note: raw parameterised SQL via the shared pool is
- * the project convention for `audit_log` reads (Rule 8 — see file
- * header). Mirrors `routes/audit/list.ts`.
+ * Implementation note: read goes through the Supabase JS client
+ * (Drizzle → Supabase migration). Mirrors `routes/audit/list.ts`.
  */
 export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> {
-  const pool = getDbPool();
-  const result = await pool.query<SweepAuditRow>(
-    `SELECT occurred_at, metadata
-       FROM resupply.audit_log
-      WHERE action = $1
-      ORDER BY occurred_at DESC
-      LIMIT 1`,
-    [SWEEP_AUDIT_ACTION],
-  );
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("audit_log")
+    .select("occurred_at, metadata")
+    .eq("action", SWEEP_AUDIT_ACTION)
+    .order("occurred_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const row = result.rows[0];
+  if (error) {
+    logger.warn({ err: error }, "phi-sweep-status: query failed; surfacing null");
+    return null;
+  }
   if (!row) return null;
 
   const parsed = sweepMetadataSchema.safeParse(row.metadata);
@@ -148,17 +145,11 @@ export async function getLatestPhiSweepStatus(): Promise<PhiSweepStatus | null> 
     return null;
   }
   const m = parsed.data;
-  // occurred_at is `timestamptz` → comes back as a Date through the
-  // pg driver. Coerce to a JS-side ISO string for a stable response
-  // shape (matches the spec's `format: date-time`). If the value is
-  // missing or unparseable we degrade to null — same defensive
-  // posture as a malformed metadata payload (don't 500 the whole
-  // dashboard on a single corrupted row).
-  const occurredAt = row.occurred_at;
-  const dateCandidate =
-    occurredAt instanceof Date
-      ? occurredAt
-      : new Date(String(occurredAt ?? ""));
+  // occurred_at comes back from PostgREST as an ISO string. If the
+  // value is missing or unparseable we degrade to null — same
+  // defensive posture as a malformed metadata payload (don't 500 the
+  // whole dashboard on a single corrupted row).
+  const dateCandidate = new Date(row.occurred_at ?? "");
   if (Number.isNaN(dateCandidate.getTime())) {
     logger.warn(
       "phi-sweep-status: latest audit row has missing/invalid occurred_at; surfacing null",
