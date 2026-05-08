@@ -485,11 +485,29 @@ function ChatBubble({ message }: ChatBubbleProps): React.JSX.Element {
 }
 
 function StreamingDots(): React.JSX.Element {
+  // role="status" + aria-live="polite" announces the assistant's
+  // "Thinking" state once when the dots mount, so screen-reader
+  // users hear that a response is being generated rather than
+  // sitting in silence after sending a message.
   return (
-    <span className="inline-flex items-center gap-1" aria-label="Thinking">
-      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.3s]" />
-      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.15s]" />
-      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce" />
+    <span
+      className="inline-flex items-center gap-1"
+      role="status"
+      aria-live="polite"
+      aria-label="Thinking"
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.3s]"
+        aria-hidden="true"
+      />
+      <span
+        className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.15s]"
+        aria-hidden="true"
+      />
+      <span
+        className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce"
+        aria-hidden="true"
+      />
     </span>
   );
 }

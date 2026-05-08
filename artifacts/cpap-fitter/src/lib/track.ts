@@ -53,11 +53,15 @@ export type TrackStep =
 
 type MetadataForStep<T extends TrackStep> = T extends "capture_blocked"
   ? {
+      // Mirrors `CaptureBlockers` from src/lib/capture-readiness.ts.
+      // Earlier iterations also tracked face-orientation / lighting
+      // blockers (noGlasses, evenLight, facingCamera), but the
+      // capture flow now relies entirely on the iris-calibrated
+      // measurement and only gates on camera readiness, so the
+      // payload was narrowed to match what the helper actually
+      // returns.
       cameraReady: boolean;
       runtimeReady?: boolean;
-      noGlasses: boolean;
-      evenLight: boolean;
-      facingCamera: boolean;
     }
   : T extends "results_retake_requested"
     ? { topConfidencePct: number }

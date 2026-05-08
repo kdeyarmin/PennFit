@@ -172,6 +172,16 @@ function getCsrfToken(): string | null {
   return match ? decodeURIComponent(match.split("=")[1]) : null;
 }
 
+// Spread into a fetch() `headers` object on every state-changing call
+// so the server can verify the double-submit CSRF token. When the
+// cookie is missing (unauthenticated visitor, SSR, tests) we omit the
+// header rather than send an empty value — the server rejects empty
+// tokens, so an explicit absence is clearer.
+function csrfHeader(): Record<string, string> {
+  const token = getCsrfToken();
+  return token ? { "X-PF-CSRF": token } : {};
+}
+
 export async function startCheckout(
   items: CheckoutItem[],
   options?: { successPath?: string; cancelPath?: string },
@@ -180,13 +190,12 @@ export async function startCheckout(
   // few seconds will hit Stripe's idempotency cache and reuse the
   // same Session URL instead of creating a duplicate.
   const idempotencyKey = crypto.randomUUID();
-  const csrfToken = getCsrfToken();
   const res = await fetch("/resupply-api/shop/checkout", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Idempotency-Key": idempotencyKey,
-      ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
+      ...csrfHeader(),
     },
     body: JSON.stringify({
       items,
@@ -347,11 +356,10 @@ export async function submitReview(
   productId: string,
   payload: ReviewWritePayload,
 ): Promise<WriteReviewResult> {
-  const csrfToken = getCsrfToken();
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
+    ...csrfHeader(),
   };
   const res = await fetch(
     `/resupply-api/shop/products/${encodeURIComponent(productId)}/reviews`,
@@ -377,11 +385,10 @@ export async function updateMyReview(
   productId: string,
   payload: ReviewWritePayload,
 ): Promise<MyReview> {
-  const csrfToken = getCsrfToken();
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
-    ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
+    ...csrfHeader(),
   };
   const res = await fetch(
     `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
@@ -396,10 +403,9 @@ export async function updateMyReview(
 }
 
 export async function deleteMyReview(productId: string): Promise<void> {
-  const csrfToken = getCsrfToken();
   const headers = {
     Accept: "application/json",
-    ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
+    ...csrfHeader(),
   };
   const res = await fetch(
     `/resupply-api/shop/me/reviews/${encodeURIComponent(productId)}`,
@@ -651,13 +657,12 @@ export interface InsuranceLeadInput {
 export async function submitInsuranceLead(
   input: InsuranceLeadInput,
 ): Promise<{ ok: true; delivered: boolean }> {
-  const csrfToken = getCsrfToken();
   const res = await fetch("/resupply-api/shop/insurance-leads", {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });
@@ -693,13 +698,12 @@ export async function submitBackInStockNotify(input: {
   ok: true;
   status: "inserted" | "duplicate" | "error" | "queued";
 }> {
-  const csrfToken = getCsrfToken();
   const res = await fetch("/resupply-api/shop/back-in-stock", {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      ...(csrfToken ? { "X-PF-CSRF": csrfToken } : {}),
+      ...csrfHeader(),
     },
     body: JSON.stringify(input),
   });
