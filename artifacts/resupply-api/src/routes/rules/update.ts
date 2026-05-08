@@ -4,16 +4,35 @@
 // are written. `null` explicitly clears a nullable field. This is the
 // same PATCH-with-nullable-clears idiom used by /patients/:id.
 
-import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { frequencyRules, getDbPool } from "@workspace/resupply-db";
+import {
+  type Database,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+type FrequencyRulesUpdate = Database["resupply"]["Tables"]["frequency_rules"]["Update"];
+
+// camelCase request keys → snake_case DB columns. Keeping the body
+// shape the same as `create.ts` so the frontend doesn't need to know
+// the column names.
+const FIELD_MAP = {
+  name: "name",
+  priority: "priority",
+  matchItemSkuPrefix: "match_item_sku_prefix",
+  matchInsurancePayer: "match_insurance_payer",
+  minTenureDays: "min_tenure_days",
+  maxTenureDays: "max_tenure_days",
+  cadenceDays: "cadence_days",
+  defaultChannel: "default_channel",
+  active: "active",
+  notes: "notes",
+} as const;
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -70,51 +89,48 @@ router.patch("/rules/:id", requireAdmin, async (req, res) => {
   }
 
   const body = bodyParsed.data;
-  const updates: Record<string, unknown> = {};
-  for (const k of [
-    "name",
-    "priority",
-    "matchItemSkuPrefix",
-    "matchInsurancePayer",
-    "minTenureDays",
-    "maxTenureDays",
-    "cadenceDays",
-    "defaultChannel",
-    "active",
-    "notes",
-  ] as const) {
-    if (k in body) updates[k] = (body as Record<string, unknown>)[k] ?? null;
+  const updates: FrequencyRulesUpdate = {};
+  const changedKeys: string[] = [];
+  for (const [camel, snake] of Object.entries(FIELD_MAP) as Array<
+    [keyof typeof FIELD_MAP, (typeof FIELD_MAP)[keyof typeof FIELD_MAP]]
+  >) {
+    if (camel in body) {
+      const value = (body as Record<string, unknown>)[camel] ?? null;
+      // Cast through `unknown` because each column is its own narrow
+      // union; the per-key write is type-safe at the call site.
+      (updates as Record<string, unknown>)[snake] = value;
+      changedKeys.push(camel);
+    }
   }
 
   // Cross-field validation: if either tenure bound is being touched
   // and BOTH end up non-null, enforce min <= max. We only have the
   // partial picture from the request body, so we resolve against the
   // existing row.
+  const supabase = getSupabaseServiceRoleClient();
   if (
-    updates.minTenureDays !== undefined ||
-    updates.maxTenureDays !== undefined
+    "minTenureDays" in body ||
+    "maxTenureDays" in body
   ) {
-    const db = drizzle(getDbPool());
-    const [existing] = await db
-      .select({
-        minTenureDays: frequencyRules.minTenureDays,
-        maxTenureDays: frequencyRules.maxTenureDays,
-      })
-      .from(frequencyRules)
-      .where(eq(frequencyRules.id, idParsed.data.id))
-      .limit(1);
+    const { data: existing } = await supabase
+      .schema("resupply")
+      .from("frequency_rules")
+      .select("min_tenure_days, max_tenure_days")
+      .eq("id", idParsed.data.id)
+      .limit(1)
+      .maybeSingle();
     if (!existing) {
       res.status(404).json({ error: "not_found" });
       return;
     }
     const finalMin =
-      "minTenureDays" in updates
-        ? (updates.minTenureDays as number | null)
-        : existing.minTenureDays;
+      "minTenureDays" in body
+        ? (body.minTenureDays ?? null)
+        : existing.min_tenure_days;
     const finalMax =
-      "maxTenureDays" in updates
-        ? (updates.maxTenureDays as number | null)
-        : existing.maxTenureDays;
+      "maxTenureDays" in body
+        ? (body.maxTenureDays ?? null)
+        : existing.max_tenure_days;
     if (finalMin != null && finalMax != null && finalMin > finalMax) {
       res.status(400).json({
         error: "invalid_body",
@@ -129,26 +145,27 @@ router.patch("/rules/:id", requireAdmin, async (req, res) => {
     }
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (changedKeys.length === 0) {
     res.status(200).json({ id: idParsed.data.id, changed: [] });
     return;
   }
 
-  updates.updatedAt = sql`now()`;
+  updates.updated_at = new Date().toISOString();
 
-  const db = drizzle(getDbPool());
-  const result = await db
-    .update(frequencyRules)
-    .set(updates)
-    .where(eq(frequencyRules.id, idParsed.data.id))
-    .returning({ id: frequencyRules.id });
+  const { data: result, error } = await supabase
+    .schema("resupply")
+    .from("frequency_rules")
+    .update(updates)
+    .eq("id", idParsed.data.id)
+    .select("id");
+  if (error) throw error;
 
-  if (result.length === 0) {
+  if (!result || result.length === 0) {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
-  const changedColumns = Object.keys(updates).filter((k) => k !== "updatedAt");
+  const changedColumns = changedKeys;
   try {
     await logAudit({
       action: "rules.update",

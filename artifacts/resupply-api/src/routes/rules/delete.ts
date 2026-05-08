@@ -5,13 +5,11 @@
 // stop applying it should toggle `active` instead — the dashboard
 // makes both options easy.
 
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { frequencyRules, getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
@@ -34,13 +32,16 @@ router.delete("/rules/:id", requireAdminOnly, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const result = await db
-    .delete(frequencyRules)
-    .where(eq(frequencyRules.id, parsed.data.id))
-    .returning({ id: frequencyRules.id, name: frequencyRules.name });
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("frequency_rules")
+    .delete()
+    .eq("id", parsed.data.id)
+    .select("id, name");
+  if (error) throw error;
 
-  if (result.length === 0) {
+  if (!data || data.length === 0) {
     res.status(404).json({ error: "not_found" });
     return;
   }
@@ -54,7 +55,7 @@ router.delete("/rules/:id", requireAdminOnly, async (req, res) => {
       targetId: parsed.data.id,
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
-      metadata: { ruleName: result[0].name },
+      metadata: { ruleName: data[0]!.name },
     });
   } catch (err) {
     logger.error(
