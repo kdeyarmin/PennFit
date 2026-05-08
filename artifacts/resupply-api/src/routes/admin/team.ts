@@ -29,9 +29,9 @@
 // link out-of-band.
 
 import { Router, type IRouter, type Request } from "express";
-import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import {
@@ -53,18 +53,24 @@ import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-// Per-admin (fall back to per-IP) rate limiter for the team-management
-// surface. requireAdminOnly already gates these on a valid admin
-// session — these limits are defence-in-depth so a compromised admin
-// cookie cannot script bulk invites/revokes/role-changes.
-const teamWriteLimiter = expressRateLimit({
+// B-07: 30 invite/resend sends per hour per admin. Each call mints an
+// auth.email_tokens row and triggers an outbound email; 30/hour covers
+// legitimate onboarding workflows while capping a compromised-account
+// email-spam scenario. Keyed by adminUserId (populated by
+// requireAdminOnly, which runs first) so one admin's burst doesn't
+// starve other staff.
+const adminInviteLimiter = expressRateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req: Request) =>
-    req.adminUserId ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
-  message: { error: "too_many_requests" },
+  keyGenerator: (req: Request) => req.adminUserId ?? "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "admin_team_invite",
+    message:
+      "You're sending invites too quickly. Please wait a few minutes and try again.",
+  },
 });
 
 const ROLE_VALUES: AdminRole[] = ["admin", "agent"];
@@ -126,7 +132,7 @@ router.get("/admin/team", requireAdminOnly, async (_req, res) => {
   res.json({ members: rows.map(serialize) });
 });
 
-router.post("/admin/team/invite", requireAdminOnly, teamWriteLimiter, async (req, res) => {
+router.post("/admin/team/invite", requireAdminOnly, adminInviteLimiter, async (req, res) => {
   const parsed = inviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -233,7 +239,7 @@ router.post("/admin/team/invite", requireAdminOnly, teamWriteLimiter, async (req
   });
 });
 
-router.post("/admin/team/:id/resend", requireAdminOnly, teamWriteLimiter, async (req, res) => {
+router.post("/admin/team/:id/resend", requireAdminOnly, adminInviteLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -284,7 +290,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, teamWriteLimiter, async 
   });
 });
 
-router.post("/admin/team/:id/revoke", requireAdminOnly, teamWriteLimiter, async (req, res) => {
+router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -340,7 +346,7 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, teamWriteLimiter, async 
   });
 });
 
-router.patch("/admin/team/:id", requireAdminOnly, teamWriteLimiter, async (req, res) => {
+router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
