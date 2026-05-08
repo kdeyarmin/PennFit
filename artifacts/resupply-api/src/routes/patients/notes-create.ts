@@ -9,13 +9,11 @@
 // text post-migration 0025; never log the plaintext, and never echo
 // it back into the audit metadata.
 
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patientNotes, patients } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -56,34 +54,34 @@ router.post("/patients/:id/notes", requireAdmin, async (req, res) => {
   const { id: patientId } = idParsed.data;
   const { body } = bodyParsed.data;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Verify patient exists. We could rely on the FK to fire a 23503
   // here, but a pre-check yields a cleaner 404 vs. 500 mapping.
-  const exists = await db
-    .select({ id: patients.id })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  if (exists.length === 0) {
+  const { data: patient } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
-  const inserted = await db
-    .insert(patientNotes)
-    .values({
-      patientId,
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("patient_notes")
+    .insert({
+      patient_id: patientId,
       body,
-      authorEmail: req.adminEmail ?? "<unknown>",
-      authorUserId: req.adminUserId ?? null,
+      author_email: req.adminEmail ?? "<unknown>",
+      author_user_id: req.adminUserId ?? null,
     })
-    .returning({ id: patientNotes.id, createdAt: patientNotes.createdAt });
-
-  const row = inserted[0];
-  if (!row) {
-    throw new Error("INSERT returned no rows");
-  }
+    .select("id, created_at")
+    .single();
+  if (error) throw error;
 
   await logAudit({
     action: "patient.note.create",
@@ -102,7 +100,7 @@ router.post("/patients/:id/notes", requireAdmin, async (req, res) => {
 
   res.status(201).json({
     id: row.id,
-    createdAt: row.createdAt.toISOString(),
+    createdAt: row.created_at,
   });
 });
 

@@ -13,16 +13,8 @@
 // the existing /me audit on session bootstrap.
 
 import { Router, type IRouter } from "express";
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import {
-  conversations,
-  episodes,
-  fulfillments,
-  getDbPool,
-  patients,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { getLatestPhiSweepStatus } from "./sweep-status";
@@ -30,61 +22,57 @@ import { getLatestPhiSweepStatus } from "./sweep-status";
 const router: IRouter = Router();
 
 router.get("/dashboard/summary", requireAdmin, async (_req, res) => {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
 
-  const countCol = sql<number>`count(*)::int`;
-
-  const [activeConversationsRow] = await db
-    .select({ count: countCol })
-    .from(conversations)
-    .where(
-      inArray(conversations.status, [
-        "open",
-        "awaiting_patient",
-        "awaiting_admin",
-      ]),
-    );
-
-  const [awaitingAdminRow] = await db
-    .select({ count: countCol })
-    .from(conversations)
-    .where(eq(conversations.status, "awaiting_admin"));
-
-  const [overdueEpisodesRow] = await db
-    .select({ count: countCol })
-    .from(episodes)
-    .where(
-      and(
-        inArray(episodes.status, ["outreach_pending", "awaiting_response"]),
-        lte(episodes.dueAt, sql`now()`),
-      ),
-    );
-
-  const [fulfillmentsThisWeekRow] = await db
-    .select({ count: countCol })
-    .from(fulfillments)
-    .where(gte(fulfillments.createdAt, sql`now() - interval '7 days'`));
-
-  const [pausedPatientsRow] = await db
-    .select({ count: countCol })
-    .from(patients)
-    .where(eq(patients.status, "paused"));
+  const [
+    { count: activeConversations },
+    { count: awaitingAdmin },
+    { count: overdueEpisodes },
+    { count: fulfillmentsThisWeek },
+    { count: pausedPatients },
+  ] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["open", "awaiting_patient", "awaiting_admin"]),
+    supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "awaiting_admin"),
+    supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["outreach_pending", "awaiting_response"])
+      .lte("due_at", nowIso),
+    supabase
+      .schema("resupply")
+      .from("fulfillments")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo),
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "paused"),
+  ]);
 
   // Latest PHI sweep status — read-only projection over the
-  // most recent `prescription.attachment.sweep` audit row. Helper
-  // uses raw SQL via the shared pool (Rule 8 forbids importing
-  // `auditLog` outside the audit lib, even for SELECTs — see
-  // `sweep-status.ts` header). Defensive: helper returns null on
-  // no-row-yet OR malformed metadata; we never let it 500 the
-  // dashboard.
+  // most recent `prescription.attachment.sweep` audit row. Defensive:
+  // helper returns null on no-row-yet OR malformed metadata; we
+  // never let it 500 the dashboard.
   const prescriptionAttachmentSweep = await getLatestPhiSweepStatus();
 
   res.status(200).json({
-    activeConversations: activeConversationsRow?.count ?? 0,
-    awaitingAdmin: awaitingAdminRow?.count ?? 0,
-    overdueEpisodes: overdueEpisodesRow?.count ?? 0,
-    fulfillmentsThisWeek: fulfillmentsThisWeekRow?.count ?? 0,
-    pausedPatients: pausedPatientsRow?.count ?? 0,
+    activeConversations: activeConversations ?? 0,
+    awaitingAdmin: awaitingAdmin ?? 0,
+    overdueEpisodes: overdueEpisodes ?? 0,
+    fulfillmentsThisWeek: fulfillmentsThisWeek ?? 0,
+    pausedPatients: pausedPatients ?? 0,
     prescriptionAttachmentSweep,
   });
 });

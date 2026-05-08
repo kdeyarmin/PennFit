@@ -13,15 +13,13 @@
 // lookup.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
   type CommunicationPreferences,
-  getDbPool,
-  shopCustomers,
+  type Json,
+  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
@@ -54,13 +52,17 @@ const prefsSchema = z
 router.get("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
   await ensureShopCustomerRow({ customerId, email: null });
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({ prefs: shopCustomers.communicationPreferences })
-    .from(shopCustomers)
-    .where(eq(shopCustomers.customerId, customerId))
-    .limit(1);
-  const stored = rows[0]?.prefs ?? null;
+  const supabase = getSupabaseServiceRoleClient();
+  const { data } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("communication_preferences")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  const stored = (data?.communication_preferences ?? null) as
+    | CommunicationPreferences
+    | null;
   res.json({ preferences: mergeWithDefaults(stored) });
 });
 
@@ -78,13 +80,19 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
   }
   const customerId = req.userCustomerId!;
   await ensureShopCustomerRow({ customerId, email: null });
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({ prefs: shopCustomers.communicationPreferences })
-    .from(shopCustomers)
-    .where(eq(shopCustomers.customerId, customerId))
-    .limit(1);
-  const current = mergeWithDefaults(rows[0]?.prefs ?? null);
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("communication_preferences")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  const current = mergeWithDefaults(
+    (row?.communication_preferences ?? null) as
+      | CommunicationPreferences
+      | null,
+  );
   // Validate DND window: either both null or both set with start != end.
   const proposedDndStart =
     parsed.data.dndStartHour !== undefined
@@ -119,10 +127,15 @@ router.put("/shop/me/comm-prefs", requireSignedIn, async (req, res) => {
     dndStartHour: proposedDndStart,
     dndEndHour: proposedDndEnd,
   };
-  await db
-    .update(shopCustomers)
-    .set({ communicationPreferences: next, updatedAt: new Date() })
-    .where(eq(shopCustomers.customerId, customerId));
+  const { error } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update({
+      communication_preferences: next as unknown as Json,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("customer_id", customerId);
+  if (error) throw error;
   res.json({ preferences: next });
 });
 

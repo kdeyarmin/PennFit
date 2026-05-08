@@ -7,12 +7,11 @@
 // default as the column) so a rule created without one slots in
 // next to other unprioritised rules.
 
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { frequencyRules, getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -79,22 +78,25 @@ router.post("/rules", requireAdmin, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const [row] = await db
-    .insert(frequencyRules)
-    .values({
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("frequency_rules")
+    .insert({
       name: parsed.data.name,
       priority: parsed.data.priority,
-      matchItemSkuPrefix: parsed.data.matchItemSkuPrefix ?? null,
-      matchInsurancePayer: parsed.data.matchInsurancePayer ?? null,
-      minTenureDays: parsed.data.minTenureDays ?? null,
-      maxTenureDays: parsed.data.maxTenureDays ?? null,
-      cadenceDays: parsed.data.cadenceDays,
-      defaultChannel: parsed.data.defaultChannel ?? null,
+      match_item_sku_prefix: parsed.data.matchItemSkuPrefix ?? null,
+      match_insurance_payer: parsed.data.matchInsurancePayer ?? null,
+      min_tenure_days: parsed.data.minTenureDays ?? null,
+      max_tenure_days: parsed.data.maxTenureDays ?? null,
+      cadence_days: parsed.data.cadenceDays,
+      default_channel: parsed.data.defaultChannel ?? null,
       active: parsed.data.active,
       notes: parsed.data.notes ?? null,
     })
-    .returning();
+    .select("*")
+    .single();
+  if (error) throw error;
 
   try {
     await logAudit({
@@ -121,16 +123,16 @@ router.post("/rules", requireAdmin, async (req, res) => {
     id: row.id,
     name: row.name,
     priority: row.priority,
-    matchItemSkuPrefix: row.matchItemSkuPrefix,
-    matchInsurancePayer: row.matchInsurancePayer,
-    minTenureDays: row.minTenureDays,
-    maxTenureDays: row.maxTenureDays,
-    cadenceDays: row.cadenceDays,
-    defaultChannel: row.defaultChannel,
+    matchItemSkuPrefix: row.match_item_sku_prefix,
+    matchInsurancePayer: row.match_insurance_payer,
+    minTenureDays: row.min_tenure_days,
+    maxTenureDays: row.max_tenure_days,
+    cadenceDays: row.cadence_days,
+    defaultChannel: row.default_channel,
     active: row.active,
     notes: row.notes,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   });
 });
 

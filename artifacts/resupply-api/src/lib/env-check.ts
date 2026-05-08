@@ -22,8 +22,13 @@
  * request doesn't fail mid-flight on a misconfigured deploy.
  */
 
+import { validateSupabaseEnv } from "@workspace/resupply-db";
 import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 
+// `DATABASE_URL` is still required during the Drizzle → Supabase
+// migration: most query sites haven't been ported yet and continue
+// to use the shared pg pool. Once every site is on the Supabase JS
+// client, drop DATABASE_URL from this list and from .env.example.
 const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
 
 export function assertRequiredEnv(): void {
@@ -35,6 +40,7 @@ export function assertRequiredEnv(): void {
     }
   }
   if (!hasLinkHmacKey()) missing.push(LINK_HMAC_KEY_ENV);
+  missing.push(...validateSupabaseEnv());
 
   if (missing.length === 0) return;
 
