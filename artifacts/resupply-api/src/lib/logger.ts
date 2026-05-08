@@ -1,10 +1,24 @@
 import pino from "pino";
 
+import { getRequestId } from "./request-context";
+
 const isProduction = process.env.NODE_ENV === "production";
 
 export const logger = pino({
   name: "resupply-api",
   level: process.env.LOG_LEVEL ?? "info",
+  // Mixin runs on every log call. Reads the active AsyncLocalStorage
+  // request context (if any) and attaches `requestId` to the line.
+  // The result: every logger.warn / .error / .info called from inside
+  // a route handler (including ones called many awaits / callbacks
+  // deep) carries the same id pino-http already put on the access
+  // log, so a single grep ties an HTTP entry to every downstream log
+  // event. Worker jobs and top-level boot code log without the
+  // field; the mixin returns an empty object in that case.
+  mixin() {
+    const requestId = getRequestId();
+    return requestId ? { requestId } : {};
+  },
   // Defense in depth: never log raw auth headers or cookies. This does NOT
   // remove the obligation to redact PHI before passing it to the logger —
   // see ADR 006 + ADR 007. Anything sensitive should be redacted at the

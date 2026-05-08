@@ -94,8 +94,40 @@ export interface AuditEvent {
  * 500s, do not silently swallow. The point of this gate is to make
  * the bug LOUD so we don't ship silent PHI leakage to plaintext.
  */
+/**
+ * Optional bridge from a host process's request-context mechanism
+ * (e.g. AsyncLocalStorage in the API) to this lib. When set, every
+ * `logAudit()` call automatically adds `_request_id: <id>` to its
+ * metadata so an audit row from inside a request handler ties back
+ * to the same correlation key the access log + structured log lines
+ * already carry.
+ *
+ * Kept as a registration pattern (not a direct import of the API's
+ * AsyncLocalStorage) so this lib stays usable from places without
+ * a request context — worker jobs, CLI scripts, tests. Outside an
+ * API process, the resolver is unset and audit rows simply don't
+ * gain the field.
+ */
+let resolveRequestId: (() => string | null) | null = null;
+
+export function registerAuditRequestIdResolver(
+  fn: (() => string | null) | null,
+): void {
+  resolveRequestId = fn;
+}
+
 export async function logAudit(event: AuditEvent): Promise<void> {
-  const metadata = sanitizeMetadata(event.metadata);
+  const requestId = resolveRequestId?.() ?? null;
+  // Don't mutate the caller's metadata object. `_request_id` uses an
+  // underscore prefix so it's visually distinct from the
+  // caller-supplied keys in the resulting jsonb and so the
+  // sanitizer's denylist (which targets PHI-shaped keys) doesn't
+  // accidentally match it.
+  const metadataInput =
+    requestId !== null
+      ? { _request_id: requestId, ...event.metadata }
+      : event.metadata;
+  const metadata = sanitizeMetadata(metadataInput);
 
   await getDbPool().query(
     "INSERT INTO resupply.audit_log " +
