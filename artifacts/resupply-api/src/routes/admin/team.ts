@@ -126,7 +126,7 @@ router.get("/admin/team", requireAdminOnly, async (_req, res) => {
   res.json({ members: rows.map(serialize) });
 });
 
-router.post("/admin/team/invite", teamWriteLimiter, requireAdminOnly, async (req, res) => {
+router.post("/admin/team/invite", requireAdminOnly, teamWriteLimiter, async (req, res) => {
   const parsed = inviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
