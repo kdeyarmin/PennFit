@@ -19,7 +19,7 @@
 // parent ProductCard doesn't have to thread props through. The
 // only thing the parent does is open/close the dialog.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { CheckCircle2, Repeat, ShieldCheck, ShoppingCart } from "lucide-react";
 
@@ -102,8 +102,16 @@ export function QuickViewDialog({
     });
     if (!result.ok) return;
     setJustAdded(true);
-    window.setTimeout(() => setJustAdded(false), 1800);
   };
+
+  // Clear the "Added!" pill ~1.8s later. Effect owns the timer so
+  // closing the dialog before the pill clears doesn't leak the
+  // closure or fire setState on an unmounted component.
+  useEffect(() => {
+    if (!justAdded) return;
+    const id = window.setTimeout(() => setJustAdded(false), 1800);
+    return () => window.clearTimeout(id);
+  }, [justAdded]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

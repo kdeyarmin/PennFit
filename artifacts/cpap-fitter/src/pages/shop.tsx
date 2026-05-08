@@ -622,8 +622,17 @@ function ProductCard({
       return;
     }
     setJustAdded(true);
-    window.setTimeout(() => setJustAdded(false), 1800);
   };
+
+  // Clear the "Added!" pill ~1.8s later. Owned by an effect so the
+  // timer is cleaned up on unmount (the prior `window.setTimeout`
+  // inside the click handler leaked the closure when the user
+  // navigated away mid-pill).
+  useEffect(() => {
+    if (!justAdded) return;
+    const id = window.setTimeout(() => setJustAdded(false), 1800);
+    return () => window.clearTimeout(id);
+  }, [justAdded]);
 
   // Build the small "ResMed · Model #62932" line. Falls back gracefully
   // if either field is missing so legacy products still render cleanly.
