@@ -16,14 +16,35 @@ function getSessionId(): string {
       id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
-          : Math.random().toString(36).slice(2) + Date.now().toString(36);
+          : randomToken();
       sessionStorage.setItem(SESSION_KEY, id);
     }
     return id;
   } catch {
     // private browsing or storage disabled — generate ephemeral id
-    return Math.random().toString(36).slice(2);
+    return randomToken();
   }
+}
+
+// Cryptographically-random token fallback for environments without
+// crypto.randomUUID. We avoid Math.random — even for an anonymous
+// session id collisions/predictability would skew funnel analytics
+// and trip CodeQL's insecure-randomness rule.
+function randomToken(): string {
+  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+    const buf = new Uint8Array(16);
+    crypto.getRandomValues(buf);
+    let out = "";
+    for (const byte of buf) {
+      out += byte.toString(16).padStart(2, "0");
+    }
+    return out;
+  }
+  // Last-ditch fallback for ancient runtimes — timestamp-only is
+  // not unique under burst, but the surrounding code only invokes
+  // this when both sessionStorage AND crypto are unavailable, which
+  // is effectively unreachable in supported browsers.
+  return Date.now().toString(36) + "-" + performance.now().toString(36);
 }
 
 export type TrackStep =

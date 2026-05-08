@@ -126,16 +126,22 @@ const aggregatesQuery = z
  * the body as innerHTML would otherwise be at risk.
  */
 function stripHtml(input: string): string {
-  // Drop script/style blocks *with* their inner contents first — a
-  // simple tag-stripper would leave `alert(1)` from
-  // `<script>alert(1)</script>` behind. Then strip remaining tags
-  // and collapse whitespace. Defense in depth on top of React's
-  // text-node escaping.
-  return input
-    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Strip script/style blocks (with their inner contents) and any
+  // remaining tags. We loop to a fixed point so nested or
+  // overlapping tag-like constructs — e.g. `<<script>script>` or
+  // `<scri<script>pt>alert(1)</script>` — can't smuggle a tag
+  // through by having the first pass leave a fresh tag-shaped
+  // substring behind. Defense in depth on top of React's text-node
+  // escaping.
+  let prev: string;
+  let cur = input;
+  do {
+    prev = cur;
+    cur = cur
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+      .replace(/<[^>]*>/g, "");
+  } while (cur !== prev);
+  return cur.replace(/\s+/g, " ").trim();
 }
 
 interface ReviewAuthorIdentity {

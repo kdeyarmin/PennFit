@@ -173,11 +173,9 @@ router.get("/audit/export.csv", requireAdmin, exportLimiter, async (req, res) =>
   const emit = truncated ? result.rows.slice(0, MAX_ROWS) : result.rows;
 
   // Filename: audit-export-<UTC-ish>.csv. Use a colon-free format
-  // so Windows clients can save without renaming.
-  const stamp = new Date()
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .replace(/Z$/, "Z");
+  // so Windows clients can save without renaming. The trailing "Z"
+  // from toISOString is preserved so the timezone is unambiguous.
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `audit-export-${stamp}.csv`;
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
