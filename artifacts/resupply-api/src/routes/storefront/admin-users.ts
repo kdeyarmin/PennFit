@@ -119,7 +119,7 @@ function effectiveStatus(row: AuthUserRow): "active" | "pending" | "revoked" {
   return "pending";
 }
 
-router.get("/admin/users", adminUsersReadLimiter, requireAdminOnly, async (req, res) => {
+router.get("/admin/users", requireAdminOnly, adminUsersReadLimiter, async (req, res) => {
   // List every staff row in auth.users. Penn's staff is small
   // (<200 in the foreseeable future), so we don't paginate.
   const result = await pool.query<AuthUserRow>(
