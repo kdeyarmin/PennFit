@@ -153,6 +153,28 @@ describe("sendOrderConfirmationEmail", () => {
     expect(result.error).toContain("400");
   });
 
+  it("does not retry EmailConfigError from sendEmail", async () => {
+    process.env.SENDGRID_API_KEY = "SG.test";
+    process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
+    sendEmailMock.mockRejectedValue(
+      new EmailConfigError("SENDGRID_FROM_EMAIL is not set"),
+    );
+
+    const result = await sendOrderConfirmationEmail({
+      toEmail: "buyer@example.com",
+      stripeSessionId: "cs_test_cfg",
+      items: [],
+      amountTotalCents: 4500,
+      currency: "usd",
+      shippingAddress: ADDR,
+    });
+
+    expect(result.configured).toBe(true);
+    expect(result.delivered).toBe(false);
+    expect(result.error).toContain("SENDGRID_FROM_EMAIL");
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+  });
+
   it("renders cleanly with no shipping address and an empty item list", async () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";

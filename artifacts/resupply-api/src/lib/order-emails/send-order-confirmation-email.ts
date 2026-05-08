@@ -293,11 +293,11 @@ export async function sendOrderConfirmationEmail(
 </html>`;
 
   try {
-    // Retry once on 5xx / network failures so a single SendGrid hiccup
-    // doesn't drop the customer's order confirmation. 4xx (config /
-    // recipient errors) and EmailConfigError are NOT retried —
-    // they're permanent and replays would just stack identical
-    // failures in the audit log.
+    // Retry up to 2 more times on 5xx / network failures so a brief
+    // SendGrid hiccup doesn't drop the customer's order confirmation.
+    // 4xx (config / recipient errors) and EmailConfigError are NOT
+    // retried — they're permanent and replays would just stack
+    // identical failures in the audit log.
     const { messageId } = await withRetry(
       () =>
         client.sendEmail({
@@ -315,6 +315,9 @@ export async function sendOrderConfirmationEmail(
         baseDelayMs: 250,
         maxDelayMs: 1_500,
         isRetriable: (err) => {
+          if (err instanceof EmailConfigError) {
+            return false;
+          }
           if (err instanceof EmailApiError) {
             // Retry only on 5xx and missing-status (network /
             // timeout / DNS — the SDK leaves status undefined when
@@ -322,7 +325,7 @@ export async function sendOrderConfirmationEmail(
             return err.status === undefined || err.status >= 500;
           }
           // Non-EmailApiError ⇒ likely a thrown TypeError /
-          // AbortError from undici. Retry once — if it persists the
+          // AbortError from undici. Retry up to 2 more times — if it persists the
           // attempts cap will surface it.
           return true;
         },

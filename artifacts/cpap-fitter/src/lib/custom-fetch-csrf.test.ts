@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // test infrastructure for exercising the helper's runtime behavior.
 import { customFetch } from "@workspace/api-client-react/storefront";
 
+const ORIGINAL_FETCH = globalThis.fetch;
+
 interface CapturedRequest {
   url: string;
   method: string;
@@ -64,7 +66,9 @@ describe("storefront customFetch CSRF auto-attach", () => {
     vi.restoreAllMocks();
   });
   afterEach(() => {
+    globalThis.fetch = ORIGINAL_FETCH;
     delete (globalThis as unknown as { document?: unknown }).document;
+    vi.restoreAllMocks();
   });
 
   it("attaches X-PF-CSRF on POST when pf_csrf cookie is present", async () => {

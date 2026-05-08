@@ -969,10 +969,19 @@ async function markStatusByPaymentIntent(
       // the source of truth. Log so we can find systemic audit
       // outages, but don't 500 the webhook (Stripe would retry
       // forever on transient audit DB issues).
+      const pgCode =
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        typeof err.code === "string"
+          ? err.code
+          : null;
       ctx.log?.info?.(
         {
           event: "refund_audit_failed",
-          err: err instanceof Error ? err.message : String(err),
+          errName: err instanceof Error ? err.name : typeof err,
+          pgCode,
+          ...(err instanceof Error ? { err } : {}),
           stripeEventId: ctx.stripeEventId,
         },
         "refund audit write failed",
