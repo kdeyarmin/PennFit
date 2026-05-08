@@ -1,10 +1,10 @@
 // Shared invite logic for the team-management routes.
 //
 // Mirrors the pattern used by `scripts/src/auth-bootstrap-admin.ts`:
-// upsert an `auth.users` row (idempotent on email_lower), issue a
+// upsert an `resupply_auth.users` row (idempotent on email_lower), issue a
 // long-TTL `password_reset` email-token, send a "set your
 // password" email via the configured EmailSender, and return the
-// resolved auth.users.id so the caller can link any product-level
+// resolved resupply_auth.users.id so the caller can link any product-level
 // roster row (e.g. resupply.admin_users.auth_user_id).
 //
 // Both team-management routes (Resupply admin/team and Penn
@@ -28,7 +28,7 @@ import { stripTrailingSlashes } from "./string-utils";
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface InviteResult {
-  /** auth.users.id for the resolved row. */
+  /** resupply_auth.users.id for the resolved row. */
   authUserId: string;
   /** True iff the email was actually delivered to SendGrid. */
   emailSent: boolean;
@@ -57,12 +57,12 @@ export interface InviteArgs {
 }
 
 /**
- * Mint or refresh an `auth.users` row for an invited team
+ * Mint or refresh an `resupply_auth.users` row for an invited team
  * member, issue a 7-day password_reset email-token, and send the
  * email. Idempotent: re-inviting the same email upgrades the
  * existing row's role + reissues the token.
  *
- * Customer-role rows in auth.users (e.g. someone who shopped at
+ * Customer-role rows in resupply_auth.users (e.g. someone who shopped at
  * the store and is now being promoted) are upgraded to
  * admin/agent. The caller is responsible for any "you can't
  * promote yourself" / "this email is already a member" gating.
@@ -75,20 +75,20 @@ export async function inviteTeamMember(
   const now = new Date();
   const baseUrl = (args.publicBaseUrl ?? deps.publicBaseUrl).replace(/\/$/, "");
 
-  // Upsert the auth.users row. Conflict on email_lower → update
+  // Upsert the resupply_auth.users row. Conflict on email_lower → update
   // role to the requested value AND clear status to 'invited' if
   // the row was 'revoked'. Active rows keep their email_verified_at
   // (they already proved they own the inbox); we just bump the
   // role.
   const upserted = await pool.query<{ id: string; status: string }>(
-    `INSERT INTO auth.users
+    `INSERT INTO resupply_auth.users
        (email_lower, display_name, role, status)
      VALUES ($1, $2, $3, 'invited')
      ON CONFLICT (email_lower) DO UPDATE
        SET role = EXCLUDED.role,
-           display_name = COALESCE(EXCLUDED.display_name, auth.users.display_name),
-           status = CASE WHEN auth.users.status = 'revoked' THEN 'invited'
-                         ELSE auth.users.status END,
+           display_name = COALESCE(EXCLUDED.display_name, resupply_auth.users.display_name),
+           status = CASE WHEN resupply_auth.users.status = 'revoked' THEN 'invited'
+                         ELSE resupply_auth.users.status END,
            updated_at = NOW()
      RETURNING id, status`,
     [args.emailLower, args.displayName, args.role],
@@ -101,7 +101,7 @@ export async function inviteTeamMember(
   const token = issueToken();
   const expiresAt = new Date(now.getTime() + INVITE_TOKEN_TTL_MS);
   await pool.query(
-    `INSERT INTO auth.email_tokens
+    `INSERT INTO resupply_auth.email_tokens
        (token_hash, user_id, purpose, expires_at)
      VALUES ($1, $2, 'password_reset', $3)`,
     [token.hash, authUserId, expiresAt],
@@ -146,7 +146,7 @@ export async function inviteTeamMember(
 
 /**
  * Revoke an invited or active team member. Sets
- * `auth.users.status='revoked'` (which makes requireAdmin reject
+ * `resupply_auth.users.status='revoked'` (which makes requireAdmin reject
  * subsequent cookies) AND revokes every active session for the
  * user (so a logged-in tab loses access on its next request).
  */
@@ -156,13 +156,13 @@ export async function revokeTeamMember(
 ): Promise<void> {
   const now = new Date();
   await pool.query(
-    `UPDATE auth.users
+    `UPDATE resupply_auth.users
         SET status = 'revoked', updated_at = $2
       WHERE id = $1`,
     [authUserId, now],
   );
   await pool.query(
-    `UPDATE auth.sessions
+    `UPDATE resupply_auth.sessions
         SET revoked_at = $2
       WHERE user_id = $1
         AND revoked_at IS NULL`,
@@ -171,7 +171,7 @@ export async function revokeTeamMember(
 }
 
 /**
- * Update the role on an existing auth.users row. Returns true if
+ * Update the role on an existing resupply_auth.users row. Returns true if
  * a row was updated, false otherwise.
  */
 export async function updateTeamMemberRole(
@@ -180,7 +180,7 @@ export async function updateTeamMemberRole(
   role: "admin" | "agent",
 ): Promise<boolean> {
   const result = await pool.query(
-    `UPDATE auth.users
+    `UPDATE resupply_auth.users
         SET role = $2, updated_at = NOW()
       WHERE id = $1`,
     [authUserId, role],

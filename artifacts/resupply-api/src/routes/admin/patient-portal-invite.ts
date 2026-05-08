@@ -12,7 +12,7 @@
 //   1. CSR opens the patient Portal tab, fills in any missing required
 //      fields (email, phone, address, insurance payer, channel pref),
 //      and clicks "Send invite".
-//   2. We upsert an auth.users row (role=customer, status=invited) and
+//   2. We upsert an resupply_auth.users row (role=customer, status=invited) and
 //      issue a 7-day password_reset token.
 //   3. A patient-specific "Set up your portal" email is sent. If
 //      SendGrid isn't configured, emailSent=false and inviteLink is
@@ -21,7 +21,7 @@
 //      portal_invited_by are stamped.
 //
 // Portal status (returned on GET /patients/:id) is computed from the
-// linked auth.users row — no separate status column to keep in sync.
+// linked resupply_auth.users row — no separate status column to keep in sync.
 
 import { Router, type IRouter, type Request } from "express";
 import { and, eq, ne, sql } from "drizzle-orm";
@@ -186,16 +186,16 @@ router.post(
     if ("channelPreference" in bodyParsed.data)
       fieldUpdates.channelPreference = bodyParsed.data.channelPreference;
 
-    // Upsert auth.users (role=customer). Conflict on email_lower →
+    // Upsert resupply_auth.users (role=customer). Conflict on email_lower →
     // keep existing row (patient may have previously signed up in the
     // shop). We never downgrade an admin/agent row to customer.
     const pool = getDbPool();
     const upserted = await pool.query<{ id: string }>(
-      `INSERT INTO auth.users (email_lower, role, status)
+      `INSERT INTO resupply_auth.users (email_lower, role, status)
        VALUES ($1, 'customer', 'invited')
        ON CONFLICT (email_lower) DO UPDATE
-         SET status = CASE WHEN auth.users.status = 'revoked' THEN 'invited'
-                           ELSE auth.users.status END,
+         SET status = CASE WHEN resupply_auth.users.status = 'revoked' THEN 'invited'
+                           ELSE resupply_auth.users.status END,
              updated_at = NOW()
        RETURNING id`,
       [emailLower],
@@ -220,7 +220,7 @@ router.post(
     // We deliberately do this BEFORE the token insert / email send so
     // a 409 short-circuits the rest of the flow without spending an
     // outbound email or leaving an orphan password-reset token in
-    // auth.email_tokens. If the link succeeds but the email later
+    // resupply_auth.email_tokens. If the link succeeds but the email later
     // fails, emailSent=false is returned and the inviteLink is
     // surfaced for out-of-band delivery (existing contract).
     const now = new Date();
@@ -263,7 +263,7 @@ router.post(
     const token = issueToken();
     const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
     await pool.query(
-      `INSERT INTO auth.email_tokens (token_hash, user_id, purpose, expires_at)
+      `INSERT INTO resupply_auth.email_tokens (token_hash, user_id, purpose, expires_at)
        VALUES ($1, $2, 'password_reset', $3)`,
       [token.hash, authUserId, expiresAt],
     );
@@ -387,7 +387,7 @@ router.post(
     const token = issueToken();
     const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
     await pool.query(
-      `INSERT INTO auth.email_tokens (token_hash, user_id, purpose, expires_at)
+      `INSERT INTO resupply_auth.email_tokens (token_hash, user_id, purpose, expires_at)
        VALUES ($1, $2, 'password_reset', $3)`,
       [token.hash, auth.id, expiresAt],
     );
