@@ -125,7 +125,7 @@ export async function logAudit(event: AuditEvent): Promise<void> {
   // accidentally match it.
   const metadataInput =
     requestId !== null
-      ? { _request_id: requestId, ...event.metadata }
+      ? { ...event.metadata, _request_id: requestId }
       : event.metadata;
   const metadata = sanitizeMetadata(metadataInput);
 

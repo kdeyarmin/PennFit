@@ -45,6 +45,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, messageTemplates } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { isAsciiOnly } from "../../lib/message-templates/sms";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
@@ -257,6 +258,16 @@ router.patch(
           "These placeholders are not in the template's allowedVariables list:",
         offending: [...new Set(offenders)],
         allowed,
+      });
+      return;
+    }
+    if (
+      existing.channel === "sms" &&
+      parsed.data.bodyText !== undefined &&
+      !isAsciiOnly(parsed.data.bodyText)
+    ) {
+      res.status(400).json({
+        error: "sms_body_text_must_be_ascii",
       });
       return;
     }

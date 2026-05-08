@@ -13,7 +13,11 @@
 import { __resetDbPoolForTests, getDbPool } from "@workspace/resupply-db";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
-import { AuditMetadataPhiError, logAudit } from "./index";
+import {
+  AuditMetadataPhiError,
+  logAudit,
+  registerAuditRequestIdResolver,
+} from "./index";
 
 const skip = !process.env.DATABASE_URL;
 
@@ -26,6 +30,7 @@ describeIfDb("logAudit (live db)", () => {
   const runTag = `audit-helper-test-${Math.random().toString(36).slice(2)}`;
 
   afterEach(async () => {
+    registerAuditRequestIdResolver(null);
     // Use a json-path filter so we delete exactly the rows we
     // wrote, never anyone else's.
     await getDbPool().query(
@@ -110,5 +115,28 @@ describeIfDb("logAudit (live db)", () => {
       [runTag],
     );
     expect(result.rows[0].n).toBe(0);
+  });
+
+  it("forces resolver-provided _request_id over caller metadata", async () => {
+    registerAuditRequestIdResolver(() => "req_from_resolver");
+    await logAudit({
+      action: "patient.view",
+      metadata: {
+        _runTag: runTag,
+        _request_id: "spoofed",
+        requestId: "req_abc",
+      },
+    });
+
+    const result = await getDbPool().query(
+      "SELECT metadata FROM resupply.audit_log WHERE metadata->>'_runTag' = $1",
+      [runTag],
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].metadata).toMatchObject({
+      _runTag: runTag,
+      _request_id: "req_from_resolver",
+      requestId: "req_abc",
+    });
   });
 });

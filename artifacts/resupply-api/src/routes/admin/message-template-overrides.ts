@@ -44,6 +44,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { isAsciiOnly } from "../../lib/message-templates/sms";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
@@ -235,6 +236,17 @@ router.post(
       });
       return;
     }
+    if (
+      parsed.data.channel === "sms" &&
+      parsed.data.bodyText !== undefined &&
+      parsed.data.bodyText !== null &&
+      !isAsciiOnly(parsed.data.bodyText)
+    ) {
+      res.status(400).json({
+        error: "sms_body_text_must_be_ascii",
+      });
+      return;
+    }
 
     const adminId = req.adminUserId ?? null;
     let inserted;
@@ -373,6 +385,17 @@ router.patch(
         error: "disallowed_variables",
         offending: [...new Set(offenders)],
         allowed,
+      });
+      return;
+    }
+    if (
+      existing.channel === "sms" &&
+      parsed.data.bodyText !== undefined &&
+      parsed.data.bodyText !== null &&
+      !isAsciiOnly(parsed.data.bodyText)
+    ) {
+      res.status(400).json({
+        error: "sms_body_text_must_be_ascii",
       });
       return;
     }
