@@ -118,7 +118,8 @@ export async function getObjectAclPolicy(
   try {
     return JSON.parse(aclPolicy as string) as ObjectAclPolicy;
   } catch {
-    // Malformed metadata — treat as unclaimed (same as the setter at L93).
+    // Malformed metadata — treat as unclaimed, consistent with
+    // setObjectAclPolicy validation behavior.
     return null;
   }
 }
