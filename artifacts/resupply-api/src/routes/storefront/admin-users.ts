@@ -90,12 +90,22 @@ async function writeAudit(
       ip: req.ip ?? null,
     });
   } catch (err) {
+    const pgCode =
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      typeof err.code === "string"
+        ? err.code
+        : null;
+
     logger.error(
       {
         event: "admin_audit_write_failed",
         action,
         adminUserId: req.adminUserId ?? null,
-        err: err instanceof Error ? err.message : String(err),
+        errName: err instanceof Error ? err.name : typeof err,
+        pgCode,
+        ...(err instanceof Error ? { err } : {}),
       },
       "Failed to write admin audit row",
     );
