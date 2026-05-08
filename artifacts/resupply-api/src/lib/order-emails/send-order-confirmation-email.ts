@@ -43,6 +43,8 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
+import { withMetrics } from "../observability";
+
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
 export interface OrderConfirmationLineItem {
@@ -291,16 +293,23 @@ export async function sendOrderConfirmationEmail(
 </html>`;
 
   try {
-    const { messageId } = await client.sendEmail({
-      to: toEmail,
-      subject,
-      html,
-      text,
-      customArgs: {
-        kind: "shop_order_confirmation_v1",
-        stripe_session_id: stripeSessionId,
+    const { messageId } = await withMetrics(
+      {
+        name: "sendgrid.send_email",
+        attrs: { kind: "shop_order_confirmation_v1" },
       },
-    });
+      () =>
+        client.sendEmail({
+          to: toEmail,
+          subject,
+          html,
+          text,
+          customArgs: {
+            kind: "shop_order_confirmation_v1",
+            stripe_session_id: stripeSessionId,
+          },
+        }),
+    );
     return { configured: true, delivered: true, messageId };
   } catch (err) {
     if (err instanceof EmailApiError) {
