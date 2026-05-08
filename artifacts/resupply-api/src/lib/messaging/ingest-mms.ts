@@ -221,7 +221,7 @@ async function downloadOneMedia(
     // + hardcoded host), re-parse and re-check the destination here
     // so the host allowlist sits immediately above the outgoing
     // request. This is what static analysis (CodeQL `js/request-
-    // forgery`) recognises as a sanitiser, and it guarantees that
+    // forgery`) recognizes as a sanitizer, and it guarantees that
     // any future caller of this helper can't smuggle in a URL
     // pointing somewhere other than Twilio's media API.
     const target = new URL(slot.url);
