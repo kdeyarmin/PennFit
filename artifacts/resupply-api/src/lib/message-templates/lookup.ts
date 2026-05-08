@@ -176,12 +176,22 @@ export const messageTemplateLookup: TemplateLookup = async (
     // network blip. Log once at debug so we know it's happening
     // without spamming on every cron tick. The render path's
     // fallback is the safety net.
+    const errCode =
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      typeof err.code === "string"
+        ? err.code
+        : undefined;
+
     logger.debug(
       {
         event: "message_template_lookup_failed",
         template_key: templateKey,
         channel,
-        err: err instanceof Error ? err.message : String(err),
+        err,
+        errCategory: errCode ? "db_query_error" : "template_lookup_error",
+        errCode,
       },
       "message-template lookup failed; renderMessage will use the call-site fallback",
     );
