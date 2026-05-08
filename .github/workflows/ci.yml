@@ -192,7 +192,17 @@ jobs:
       # Serve the built SPA in the background. `vite preview` exits
       # the process when the parent shell exits, so we don't need an
       # explicit shutdown step.
+      #
+      # vite.config.ts requires PORT + BASE_PATH at config-resolution
+      # time (the !isBuild guard fires for `vite preview` since
+      # process.argv contains "preview", not "build"). Set both here
+      # so the config loads cleanly. PORT must match the --port flag
+      # we pass (the config feeds it into preview.port; mismatch
+      # causes strictPort failures).
       - name: Start vite preview
+        env:
+          PORT: "5173"
+          BASE_PATH: "/"
         run: |
           pnpm --filter @workspace/cpap-fitter exec \
             vite preview --config vite.config.ts --host 127.0.0.1 --port 5173 &
@@ -260,7 +270,14 @@ jobs:
       - name: Install Playwright browsers (chromium only)
         run: pnpm exec playwright install --with-deps chromium
 
+      # vite.config.ts requires PORT + BASE_PATH at config-resolution
+      # time (the !isBuild guard fires for `vite preview` because
+      # process.argv contains "preview", not "build"). Setting them
+      # here mirrors the a11y job above.
       - name: Start vite preview
+        env:
+          PORT: "5173"
+          BASE_PATH: "/"
         run: |
           pnpm --filter @workspace/cpap-fitter exec \
             vite preview --config vite.config.ts --host 127.0.0.1 --port 5173 &
