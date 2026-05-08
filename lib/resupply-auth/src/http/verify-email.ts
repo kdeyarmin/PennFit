@@ -60,6 +60,18 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       return;
     }
 
+    // Record every request (regardless of outcome) against the per-endpoint
+    // sentinel so repeat callers accumulate toward the cap, including
+    // malformed inputs that exit early below. Mirrors the reset-password /
+    // forgot-password handlers — without recording up-front, an attacker
+    // could spam Zod-parse failures (or pre-hash invalidation) to bypass
+    // the cap before sending real probes.
+    void deps.repo.recordLoginAttempt({
+      emailLower: ipSentinel,
+      ip,
+      success: false,
+    });
+
     const parsed = VerifyBody.safeParse(req.body);
     if (!parsed.success) {
       authError(res, 400, "invalid_input", "Verification token is required.");
@@ -82,12 +94,6 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       at: t,
     });
     if (!consumed || consumed.purpose !== "signup_verify") {
-      // Record failed attempt so repeated probes accumulate toward cap.
-      void deps.repo.recordLoginAttempt({
-        emailLower: ipSentinel,
-        ip,
-        success: false,
-      });
       authError(
         res,
         410,
