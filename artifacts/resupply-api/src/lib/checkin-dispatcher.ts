@@ -49,6 +49,7 @@ import {
 } from "@workspace/resupply-telecom";
 
 import { logger } from "./logger";
+import { withRetry } from "./with-retry";
 
 export interface CheckinActor {
   /** "admin" when an authenticated CSR pressed Run-now; "system" when the cron fired. */
@@ -391,13 +392,36 @@ async function sendSms(
     return { outcome: "not_configured", vendorRef: null, errorCode: null };
   }
   try {
-    const r = await clients.sms.client.sendSms({
-      to: row.phoneE164,
-      body: smsBodyForDay(day, greetingFor(row.firstName)),
-      // No status callback URL — onboarding SMS attempts are tracked
-      // in patient_checkin_attempts, not the conversations table.
-      statusCallbackUrl: "",
-    });
+    // Retry on 5xx / network failures only. 4xx errors from Twilio
+    // (invalid number, opted-out destination, blocked content) are
+    // permanent — replays would just stack identical failures and
+    // burn opt-out reputation. TwilioApiError without a status is a
+    // network-level failure (DNS / TLS / undici timeout) and is
+    // worth retrying once.
+    const r = await withRetry(
+      () =>
+        clients.sms!.client.sendSms({
+          to: row.phoneE164!,
+          body: smsBodyForDay(day, greetingFor(row.firstName)),
+          // No status callback URL — onboarding SMS attempts are tracked
+          // in patient_checkin_attempts, not the conversations table.
+          statusCallbackUrl: "",
+        }),
+      {
+        attempts: 3,
+        baseDelayMs: 250,
+        maxDelayMs: 1_500,
+        isRetriable: (err) => {
+          if (err instanceof TwilioApiError) {
+            return err.status === undefined || err.status >= 500;
+          }
+          // TwilioConfigError is permanent — propagate.
+          if (err instanceof TwilioConfigError) return false;
+          // Other errors (network / undici / DNS) — retry once.
+          return true;
+        },
+      },
+    );
     return {
       outcome: "ok",
       vendorRef: r.messageSid,

@@ -393,15 +393,29 @@ router.post(
     const stripe = stripeConfig ? getStripeClient(stripeConfig) : null;
     if (stripe && orderRow.stripe_payment_intent_id) {
       try {
-        const refund = await stripe.refunds.create({
-          payment_intent: orderRow.stripe_payment_intent_id,
-          amount: refundCents,
-          reason: "requested_by_customer",
-          metadata: {
-            shop_return_id: ret.id,
-            shop_order_id: ret.orderId,
+        // Idempotency key keys off the return id + amount so a
+        // double-click (or a transient retry) doesn't create two
+        // refunds. The amount is part of the key so a deliberate
+        // partial-refund-then-additional-refund flow on the SAME
+        // return record (which we don't currently support, but
+        // which an admin could issue manually) wouldn't collapse
+        // into a single Stripe refund. Stripe scopes idempotency
+        // to (account secret + key), so the key need only be
+        // distinct within our account.
+        const refund = await stripe.refunds.create(
+          {
+            payment_intent: orderRow.stripe_payment_intent_id,
+            amount: refundCents,
+            reason: "requested_by_customer",
+            metadata: {
+              shop_return_id: ret.id,
+              shop_order_id: ret.orderId,
+            },
           },
-        });
+          {
+            idempotencyKey: `shop-return-refund-${ret.id}-${refundCents}`,
+          },
+        );
         stripeRefundId = refund.id;
       } catch (err) {
         // Don't block the workflow on a Stripe-side error — log it and

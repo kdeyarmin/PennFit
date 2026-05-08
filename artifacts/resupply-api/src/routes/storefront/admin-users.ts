@@ -43,7 +43,17 @@ const roleChangeBody = z.object({
   role: z.enum(["admin", "agent"]),
 });
 
-/** Best-effort audit write. */
+/**
+ * Best-effort admin audit write. Writes to the legacy admin-audit
+ * table (NOT `resupply.audit_log`).
+ *
+ * Failures are intentionally swallowed: the caller has already
+ * committed the user-visible side effect by the time we're called,
+ * and a propagated error would 500 a successful invite/role-change.
+ * We DO emit a structured ERROR with a stable `event` tag so a
+ * logging consumer can alert on systemic admin-audit DB outages
+ * (`event=admin_audit_write_failed`, count > N over M minutes).
+ */
 async function writeAudit(
   req: import("express").Request,
   action: string,
@@ -56,7 +66,15 @@ async function writeAudit(
       ip: req.ip ?? null,
     });
   } catch (err) {
-    logger.error({ err, action }, "Failed to write admin audit row");
+    logger.error(
+      {
+        event: "admin_audit_write_failed",
+        action,
+        adminUserId: req.adminUserId ?? null,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      "Failed to write admin audit row",
+    );
   }
 }
 
