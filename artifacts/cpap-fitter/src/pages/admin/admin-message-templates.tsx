@@ -109,14 +109,23 @@ function TemplateList() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <input
-          type="search"
-          placeholder="Filter by key (e.g. rx_renewal)"
-          value={filterKey}
-          onChange={(e) => setFilterKey(e.currentTarget.value.trim())}
-          className="rounded border border-slate-300 px-2 py-1 text-sm w-72"
-          data-testid="templates-filter-key"
-        />
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="templates-filter-key"
+            className="text-sm text-slate-700"
+          >
+            Filter templates
+          </label>
+          <input
+            id="templates-filter-key"
+            type="search"
+            placeholder="Filter by key (e.g. rx_renewal)"
+            value={filterKey}
+            onChange={(e) => setFilterKey(e.currentTarget.value.trim())}
+            className="rounded border border-slate-300 px-2 py-1 text-sm w-72"
+            data-testid="templates-filter-key"
+          />
+        </div>
         <label className="flex items-center gap-1.5 text-sm text-slate-700">
           <input
             type="checkbox"
