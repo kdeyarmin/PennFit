@@ -60,7 +60,7 @@ type DbFaxStatus = "sent" | "delivered" | "failed";
 //     same posture the route takes for unknown statuses) so Twilio
 //     does not retry a request our DB code couldn't have used.
 //
-// Allow-listing only the seven Twilio statuses we actually map keeps
+// Allow-listing only the eight Twilio statuses we actually map keeps
 // noise out of audit logs: any future Twilio status that we haven't
 // taught the mapper about gets logged once at warn level and dropped.
 const TWILIO_STATUSES = [
@@ -74,11 +74,11 @@ const TWILIO_STATUSES = [
   "canceled",
 ] as const;
 
-const FaxStatusCallbackBody = z
+const faxStatusCallbackBody = z
   .object({
-    FaxSid: z.string().min(1),
+    FaxSid: z.string().trim().min(1).max(64),
     Status: z.enum(TWILIO_STATUSES),
-    ErrorCode: z.string().min(1).optional(),
+    ErrorCode: z.string().trim().min(1).max(32).optional(),
   })
   .passthrough();
 
@@ -104,11 +104,20 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
   // Respond 200 immediately — Twilio retries on 5xx.
   res.status(200).type("text/xml").send("<Response/>");
 
-  const parsed = FaxStatusCallbackBody.safeParse(req.body ?? {});
+  const parsed = faxStatusCallbackBody.safeParse(req.body ?? {});
   if (!parsed.success) {
+    // Signature was already validated; a malformed body still 200s
+    // (otherwise Twilio retries forever) but we log so a real
+    // schema drift surfaces in ops dashboards.
     logger.warn(
-      { event: "fax_status_invalid_body" },
-      "fax status-callback: payload failed validation",
+      {
+        event: "fax_status_body_invalid",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          code: i.code,
+        })),
+      },
+      "fax status-callback: body did not match expected shape",
     );
     return;
   }

@@ -327,12 +327,15 @@ export const stripeWebhookHandler: RequestHandler = async (
       case "charge.refunded": {
         // charge.refunded gives us a Charge, not a Session. Resolve
         // back to our row via payment_intent — that field is set on
-        // the row by markPaid().
+        // the row by markPaid(). Stripe may deliver payment_intent as
+        // either a string id or an expanded PaymentIntent object
+        // depending on event version / API expansion settings.
         const charge = event.data.object as Stripe.Charge;
-        if (
-          charge.payment_intent &&
+        const paymentIntentId =
           typeof charge.payment_intent === "string"
-        ) {
+            ? charge.payment_intent
+            : (charge.payment_intent?.id ?? null);
+        if (paymentIntentId) {
           // Capture the structured "why" so audit consumers can answer
           // "was this admin-initiated, customer-initiated, fraud-flagged,
           // or duplicate?" without re-fetching from Stripe. Stripe's
@@ -341,7 +344,7 @@ export const stripeWebhookHandler: RequestHandler = async (
           // (typically admin-initiated through the dashboard with no
           // dropdown selection).
           const lastRefund = charge.refunds?.data?.[0];
-          await markStatusByPaymentIntent(charge.payment_intent, "refunded", {
+          await markStatusByPaymentIntent(paymentIntentId, "refunded", {
             chargeId: charge.id,
             stripeEventId: event.id,
             // amount_refunded is cumulative — captures partial refunds
@@ -366,8 +369,24 @@ export const stripeWebhookHandler: RequestHandler = async (
       }
     }
   } catch (err) {
+    // Capture full structured error context so a 500 here is debuggable
+    // without re-running the failing event. `err` itself goes through
+    // pino's default serializer (stack + cause). Stripe SDK errors
+    // additionally expose statusCode / code / requestId / type / raw —
+    // we surface those explicitly so an ops grep on `stripe_request_id`
+    // pivots from our logs into the Stripe Dashboard. event.id and
+    // event.type are already on `log`'s child context (see above).
+    const stripeMeta =
+      err && typeof err === "object"
+        ? {
+            stripe_status_code: (err as { statusCode?: unknown }).statusCode,
+            stripe_code: (err as { code?: unknown }).code,
+            stripe_request_id: (err as { requestId?: unknown }).requestId,
+            stripe_error_type: (err as { type?: unknown }).type,
+          }
+        : undefined;
     log?.error?.(
-      { err: err instanceof Error ? err.message : String(err) },
+      { err, ...stripeMeta },
       "stripe webhook handler threw — Stripe will retry",
     );
     res.status(500).json({ error: "internal_error" });

@@ -28,9 +28,10 @@
 // false` and an `inviteLink` field so the operator can share the
 // link out-of-band.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import {
@@ -51,6 +52,46 @@ import { getAuthDeps } from "../../lib/auth-deps";
 import { requireAdminOnly } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
+
+// B-07: 30 invite/resend sends per hour per admin. Each call mints an
+// auth.email_tokens row and triggers an outbound email; 30/hour covers
+// legitimate onboarding workflows while capping a compromised-account
+// email-spam scenario. Keyed by adminUserId (populated by
+// requireAdminOnly, which runs first) so one admin's burst doesn't
+// starve other staff.
+const adminInviteLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.adminUserId ?? "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "admin_team_invite",
+    message:
+      "You're sending invites too quickly. Please wait a few minutes and try again.",
+  },
+});
+
+// B-07: 30 role / membership mutations per hour per admin. Covers
+// /admin/team/:id/revoke (terminates all sessions for the target) and
+// PATCH /admin/team/:id (role / status / displayName edits). Each call
+// changes who has access to the admin surface area, so a compromised
+// admin must be capped without affecting other staff. Same envelope as
+// adminInviteLimiter for ops consistency.
+const adminTeamMutationLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.adminUserId ?? "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "admin_team_mutation",
+    message:
+      "You're changing team members too quickly. Please wait a few minutes and try again.",
+  },
+});
 
 const ROLE_VALUES: AdminRole[] = ["admin", "agent"];
 const inviteBody = z
@@ -111,7 +152,7 @@ router.get("/admin/team", requireAdminOnly, async (_req, res) => {
   res.json({ members: rows.map(serialize) });
 });
 
-router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
+router.post("/admin/team/invite", requireAdminOnly, adminInviteLimiter, async (req, res) => {
   const parsed = inviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -218,7 +259,7 @@ router.post("/admin/team/invite", requireAdminOnly, async (req, res) => {
   });
 });
 
-router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
+router.post("/admin/team/:id/resend", requireAdminOnly, adminInviteLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -269,7 +310,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, async (req, res) => {
   });
 });
 
-router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
+router.post("/admin/team/:id/revoke", requireAdminOnly, adminTeamMutationLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -325,7 +366,7 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
   });
 });
 
-router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
+router.patch("/admin/team/:id", requireAdminOnly, adminTeamMutationLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });

@@ -48,6 +48,7 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -56,6 +57,19 @@ import { sendShippingNotificationEmail } from "../../lib/order-emails/send-shipp
 import { sendPushToCustomer } from "../../lib/web-push";
 
 const router: IRouter = Router();
+
+// Per-admin rate limit on the refund endpoint (B-07). Each call moves
+// real money out via Stripe; a compromised admin account abusing the
+// endpoint must be capped without affecting other staff. 10/hour
+// per-admin covers legitimate dispute / partial-refund workflows
+// while bounding blast radius. Keyed by adminUserId (populated by
+// requireAdmin, which runs first).
+const adminOrderRefundLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  name: "admin_shop_order_refund",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 // ID validation: shop_orders.id is a text column whose values are
 // `gen_random_uuid()::text`. Accept the canonical UUID format so a
@@ -650,6 +664,7 @@ router.patch(
 router.post(
   "/admin/shop/orders/:orderId/refund",
   requireAdmin,
+  adminOrderRefundLimiter,
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {

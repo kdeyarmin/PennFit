@@ -43,12 +43,35 @@ import {
 } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
 
 const router: IRouter = Router();
+
+// Per-admin rate limits on return-lifecycle mutations (B-07). Two
+// buckets keyed by adminUserId:
+//   * adminReturnFinancialLimiter — 10/hour. Refund + replace move
+//     real money / inventory. Tighter cap to bound a compromised
+//     account.
+//   * adminReturnLifecycleLimiter — 60/hour. approve/reject/mark-
+//     shipped/mark-received are state-machine transitions with no
+//     direct money movement, but still deserve a per-actor cap so a
+//     scripted abuser can't churn the queue.
+const adminReturnFinancialLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  name: "admin_shop_return_financial",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
+const adminReturnLifecycleLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  name: "admin_shop_return_lifecycle",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const STATUS_VALUES: ShopReturnStatus[] = [
   "requested",
@@ -164,6 +187,7 @@ const approveBody = z
 router.post(
   "/admin/shop/returns/:id/approve",
   requireAdmin,
+  adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;
     if (!id || typeof id !== "string") {
@@ -213,6 +237,7 @@ const noteOnly = z
 router.post(
   "/admin/shop/returns/:id/reject",
   requireAdmin,
+  adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;
     if (!id || typeof id !== "string") {
@@ -250,6 +275,7 @@ router.post(
 router.post(
   "/admin/shop/returns/:id/mark-shipped",
   requireAdmin,
+  adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;
     if (!id || typeof id !== "string") {
@@ -286,6 +312,7 @@ router.post(
 router.post(
   "/admin/shop/returns/:id/mark-received",
   requireAdmin,
+  adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;
     if (!id || typeof id !== "string") {
@@ -341,6 +368,7 @@ const refundBody = z
 router.post(
   "/admin/shop/returns/:id/refund",
   requireAdmin,
+  adminReturnFinancialLimiter,
   async (req, res) => {
     const id = req.params.id;
     if (!id || typeof id !== "string") {
@@ -393,15 +421,13 @@ router.post(
     const stripe = stripeConfig ? getStripeClient(stripeConfig) : null;
     if (stripe && orderRow.stripe_payment_intent_id) {
       try {
-        // Idempotency key keys off the return id + amount so a
-        // double-click (or a transient retry) doesn't create two
-        // refunds. The amount is part of the key so a deliberate
-        // partial-refund-then-additional-refund flow on the SAME
-        // return record (which we don't currently support, but
-        // which an admin could issue manually) wouldn't collapse
-        // into a single Stripe refund. Stripe scopes idempotency
-        // to (account secret + key), so the key need only be
-        // distinct within our account.
+        // Per-return + per-amount idempotency key. Two admins clicking
+        // "Refund" on the same return for the same amount collapse to a
+        // single Stripe Refund object. Different partial-refund amounts
+        // on the same return each create a separate Refund — that's
+        // intentional (partial refunds may legitimately stack). Mirrors
+        // the shop_orders refund pattern (sprint 5, e98a0bf).
+        const idempotencyKey = `shop-return-refund-${ret.id}-${refundCents}`;
         const refund = await stripe.refunds.create(
           {
             payment_intent: orderRow.stripe_payment_intent_id,
@@ -412,9 +438,7 @@ router.post(
               shop_order_id: ret.orderId,
             },
           },
-          {
-            idempotencyKey: `shop-return-refund-${ret.id}-${refundCents}`,
-          },
+          { idempotencyKey },
         );
         stripeRefundId = refund.id;
       } catch (err) {
@@ -467,9 +491,13 @@ router.post(
 
 const replaceBody = z
   .object({
-    exchangeProductId: z.string().min(1),
-    exchangePriceId: z.string().min(1),
-    exchangeOrderId: z.string().min(1).optional().nullable(),
+    // Stripe product/price/order ids are short fixed-format strings
+    // (`prod_<...>`, `price_<...>`, etc., 14-30 chars). Cap at 100 to
+    // match the project-wide convention of bounding every Zod string
+    // that lands in the DB.
+    exchangeProductId: z.string().min(1).max(100),
+    exchangePriceId: z.string().min(1).max(100),
+    exchangeOrderId: z.string().min(1).max(100).optional().nullable(),
     note: z.string().trim().max(2000).optional().nullable(),
   })
   .strict();
@@ -477,6 +505,7 @@ const replaceBody = z
 router.post(
   "/admin/shop/returns/:id/replace",
   requireAdmin,
+  adminReturnFinancialLimiter,
   async (req, res) => {
     const id = req.params.id;
     if (!id || typeof id !== "string") {

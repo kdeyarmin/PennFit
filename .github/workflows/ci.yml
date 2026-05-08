@@ -1,62 +1,146 @@
 name: CI
 
-# Run the standard quality gates on every push to main and every PR.
-# Today the repo has only the Copilot setup-steps workflow + the
-# default-setup CodeQL Analyze jobs; this fills the gap by running
-# typecheck / lint / test against every PR so a regression doesn't
-# need a human to remember to run them locally.
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
 
-# Cancel in-progress runs of the same workflow on the same ref when
-# a new push lands. CI on a stale commit is just wasted minutes.
+# Cancel an in-flight CI run for a given branch when a new commit lands.
+# Saves runner minutes on rapid push sequences and avoids a stale "passing"
+# check from a previous head sticking around.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  # The pnpm version pinned in root package.json. Mirror it explicitly so
+  # the workflow runner uses the same interpreter the lockfile was
+  # produced with.
+  PNPM_VERSION: "10.33.2"
+  NODE_VERSION: "20"
+
 jobs:
-  quality:
-    name: Typecheck, lint, test
+  lint-typecheck:
+    name: Lint + Typecheck
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
+      # Install pnpm via npm rather than corepack — corepack's pnpm shim
+      # fails with ERR_PNPM_NO_PKG_MANIFEST when the runner cwd doesn't
+      # contain a package.json (see copilot-setup-steps.yml for the long
+      # version of this rationale). Disabling the corepack shim first
+      # ensures the npm-installed binary wins the PATH lookup.
       - name: Install pnpm
-        # Same install pattern as copilot-setup-steps.yml — see that
-        # file for the full Corepack-vs-npm rationale. Keeping the two
-        # in lockstep prevents Copilot's environment and CI from
-        # drifting.
-        working-directory: ${{ github.workspace }}
         run: |
           corepack disable pnpm 2>/dev/null || true
-          npm install -g pnpm@10.33.2
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
           pnpm --version
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install dependencies
-        working-directory: ${{ github.workspace }}
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - run: pnpm lint:resupply
 
-      - name: Lint
-        run: pnpm lint:resupply
+      - run: pnpm typecheck
 
-      - name: Test
-        run: pnpm test
+  drift:
+    name: Schema + codegen + architecture drift
+    runs-on: ubuntu-latest
+    env:
+      # `lib/resupply-db/drizzle.config.ts` and the codegen scripts throw
+      # on import if DATABASE_URL is unset, but `check-drizzle-drift.sh`
+      # documents that drizzle-kit generate itself does not connect — a
+      # syntactic URL is enough.
+      DATABASE_URL: postgresql://drift:drift@localhost:5432/drift_check
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Codegen drift
+        run: scripts/check-codegen.sh
+
+      - name: Architecture drift
+        run: scripts/check-resupply-architecture.sh
+
+      - name: Migration co-change
+        run: scripts/check-resupply-migration-pair.sh
+
+      # Drizzle drift currently fails because the journal lags
+      # `lib/resupply-db/drizzle/*.sql` by ~21 entries (P0.1 in
+      # docs/codebase-enhancements-2026-05-08.md). Run as informational
+      # so the failure is visible on every PR without blocking merges
+      # until P0.1 lands. Flip continue-on-error to false once the
+      # journal has been rebuilt.
+      - name: Drizzle drift (informational — pending P0.1)
+        continue-on-error: true
+        run: scripts/check-drizzle-drift.sh
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    # Most vitest suites mock the DB layer with fluent stubs and do not
+    # need a real Postgres. The exception is
+    # `lib/resupply-db/scripts/migrate.test.ts`, which shells out to
+    # `migrate.mjs` against a live DB and creates throwaway databases
+    # to exercise the from-scratch reapply path. Hosting a service
+    # container here keeps that test runnable in CI without per-package
+    # opt-outs.
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: pennfit
+          POSTGRES_PASSWORD: pennfit
+          POSTGRES_DB: pennfit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pennfit -d pennfit_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://pennfit:pennfit@localhost:5432/pennfit_test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm -r --if-present run test

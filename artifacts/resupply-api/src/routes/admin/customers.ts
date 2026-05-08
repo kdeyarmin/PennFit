@@ -972,39 +972,51 @@ router.post(
 
     let session;
     try {
-      session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        line_items: itemsResult.rows.map((it) => ({
-          price: it.price_id,
-          quantity: it.quantity,
-        })),
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        shipping_address_collection: { allowed_countries: ["US"] },
-        phone_number_collection: { enabled: true },
-        ...(customerLookup?.stripe_customer_id
-          ? {
-              customer: customerLookup.stripe_customer_id,
-              customer_update: {
-                shipping: "auto",
-                address: "auto",
-                name: "auto",
-              },
-            }
-          : customerLookup?.email_lower
-            ? { customer_email: customerLookup.email_lower }
-            : {}),
-        metadata: {
-          source: "pennpaps-admin-reorder",
-          // The reorder_for_user_id stamp lets the webhook attribute
-          // the resulting shop_order row to the right customer even
-          // if the email/Stripe-customer linkage is novel.
-          customer_id: userId,
-          reorder_source_order_id: sourceOrderId,
-          initiated_by_admin: req.adminEmail ?? "unknown",
-          initiated_by_admin_user_id: req.adminUserId ?? "unknown",
+      // Per-(user, source order) idempotency key. Two admin clicks on
+      // the "Reorder" button for the same customer + same source
+      // collapse to a single Stripe Checkout Session within Stripe's
+      // 24h idempotency window, so the customer doesn't end up with
+      // two competing payment links in their inbox. After 24h the key
+      // expires and a fresh retry produces a new session — the
+      // typical interval where a CSR might legitimately re-issue
+      // because the original link expired or was lost.
+      const idempotencyKey = `admin-reorder-${userId}-${sourceOrderId}`;
+      session = await stripe.checkout.sessions.create(
+        {
+          mode: "payment",
+          line_items: itemsResult.rows.map((it) => ({
+            price: it.price_id,
+            quantity: it.quantity,
+          })),
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          shipping_address_collection: { allowed_countries: ["US"] },
+          phone_number_collection: { enabled: true },
+          ...(customerLookup?.stripe_customer_id
+            ? {
+                customer: customerLookup.stripe_customer_id,
+                customer_update: {
+                  shipping: "auto",
+                  address: "auto",
+                  name: "auto",
+                },
+              }
+            : customerLookup?.email_lower
+              ? { customer_email: customerLookup.email_lower }
+              : {}),
+          metadata: {
+            source: "pennpaps-admin-reorder",
+            // The reorder_for_user_id stamp lets the webhook attribute
+            // the resulting shop_order row to the right customer even
+            // if the email/Stripe-customer linkage is novel.
+            customer_id: userId,
+            reorder_source_order_id: sourceOrderId,
+            initiated_by_admin: req.adminEmail ?? "unknown",
+            initiated_by_admin_user_id: req.adminUserId ?? "unknown",
+          },
         },
-      });
+        { idempotencyKey },
+      );
     } catch (err) {
       const status =
         typeof (err as { statusCode?: number })?.statusCode === "number"

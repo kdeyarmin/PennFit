@@ -20,7 +20,8 @@
 // conversation persist independently — that's the property the
 // dispatcher relies on to "see what actually went out."
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
 import { getDbPool } from "@workspace/resupply-db";
@@ -35,17 +36,19 @@ import { EmailConfigError } from "@workspace/resupply-email";
 import { logger } from "../../lib/logger";
 import { readMessagingConfigOrNull } from "../../lib/messaging/messaging-config";
 import { requireAdmin } from "../../middlewares/requireAdmin";
-import { rateLimit } from "../../middlewares/rate-limit";
 
 const MAX_IDS = 50;
 
 // Each bulk call may trigger up to 50 vendor sends. Cap per-admin to 10
 // calls/hour (500 messages max), matching the prescription-renewals limiter.
-const bulkSendLimiter = rateLimit({
+const bulkSendLimiter = expressRateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 10,
-  name: "episodes_bulk_send",
-  keyFn: (req) => req.adminUserId ?? req.ip ?? "unknown",
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) =>
+    req.adminUserId ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests", limiter: "episodes_bulk_send" },
 });
 
 const bulkBody = z

@@ -466,6 +466,30 @@ describe("POST /auth/reset-password", () => {
     // user keeps the same status and no credential change.
     expect(res.status).toBe(410);
   });
+
+  it("returns 429 once the per-IP rate limit threshold is hit", async () => {
+    const h = buildHarness();
+    // Cap is 10 per 15 minutes, keyed by the per-endpoint IP sentinel.
+    // Drive the bucket up to the cap with cheap no-op calls (each
+    // records a failure attempt regardless of whether the body parses)
+    // and assert the next request is rejected with 429 + Retry-After.
+    // Avoids hard-coding the test environment's req.ip value.
+    for (let i = 0; i < 10; i++) {
+      // 410 (invalid token) for the first 10; rate-limit check passes,
+      // then the handler records the attempt and rejects the token.
+      await supertest(h.app)
+        .post("/auth/reset-password")
+        .send({ token: "fake-token", password: "brand new long password" });
+    }
+
+    const res = await supertest(h.app)
+      .post("/auth/reset-password")
+      .send({ token: "fake-token", password: "brand new long password" });
+
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe("rate_limited");
+    expect(res.headers["retry-after"]).toBeDefined();
+  });
 });
 
 // ---- change-password ----------------------------------------------------

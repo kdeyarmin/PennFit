@@ -26,26 +26,17 @@ const ResetBody = z.object({
   password: z.string().min(1).max(2048),
 });
 
-// Per-IP rate limit on /reset-password.
-//
-// The dominant threat is token-brute-force — an attacker hitting the
-// endpoint with random 32-byte tokens hoping to find a live one.
-// That's already infeasible at scale (256 bits of entropy per
-// token), but a rate limit makes it categorically impossible without
-// pinning a real signal in our audit log.
-//
-// 30 attempts/hour from a single IP is generous for a real user
-// retrying after typing the new-password constraints wrong, and 4
-// orders of magnitude tighter than what an attacker would want.
-//
-// We use the same sentinel-keyed bucket pattern as forgot-password
-// and verify-email so reset-password failures don't bleed into the
-// sign-in counter (which would degrade the sign-in lockout policy
-// for legit users).
+// IP-only limit on token consumption attempts. The token itself is a
+// 256-bit random secret so brute-forcing one is infeasible, but
+// rate-limiting protects the DB from abuse and gives us a chokepoint
+// if a leaked token is being replayed in parallel. Mirrors the
+// verify-email policy (10 per 15 minutes); the two endpoints share a
+// nearly identical abuse profile (anonymous POST + token consumption +
+// password-hash work).
 const RESET_RATE_LIMIT = {
-  maxPerEmail: 30, // keyed to the IP sentinel; email bucket == IP bucket
+  maxPerEmail: 10, // keyed to the IP sentinel; email bucket == IP bucket for this endpoint
   maxPerIp: Infinity, // not used — sentinel encodes the IP
-  windowMs: 60 * 60 * 1000, // 1 hour
+  windowMs: 15 * 60 * 1000,
 };
 
 export function makeResetPasswordHandler(deps: AuthDeps) {
@@ -55,9 +46,10 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
     req: Request,
     res: Response,
   ): Promise<void> {
-    // Rate-limit FIRST so an attacker brute-forcing tokens can't
-    // even reach Zod parsing.
     const ip = req.ip ?? null;
+    // Per-endpoint sentinel keeps reset-password failures isolated from
+    // sign-in / forgot-password / verify-email buckets so those counters
+    // don't bleed into each other's rate limits.
     const ipSentinel = `__reset:${ip ?? "unknown"}`;
     const rl = await checkLoginRateLimit(
       deps.repo,
@@ -70,19 +62,23 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
         res,
         429,
         "rate_limited",
-        "Too many password-reset attempts. Please try again later.",
+        "Too many password-reset attempts. Please wait a few minutes and try again.",
+        { retryAfterSeconds: rl.retryAfterSeconds },
       );
       return;
     }
 
+    // Record every request (regardless of outcome) against the per-endpoint
+    // sentinel so repeat callers accumulate toward the cap without bleeding
+    // into sign-in / forgot-password / verify-email counters. Mirrors the
+    // forgot-password / verify-email handlers.
+    void deps.repo.recordLoginAttempt({
+      emailLower: ipSentinel,
+      ip,
+      success: false,
+    });
     const parsed = ResetBody.safeParse(req.body);
     if (!parsed.success) {
-      // Record against the sentinel so noisy bots accumulate.
-      void deps.repo.recordLoginAttempt({
-        emailLower: ipSentinel,
-        ip,
-        success: false,
-      });
       authError(
         res,
         400,
@@ -123,13 +119,6 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
         adminUserId: null,
         ip: req.ip ?? null,
         metadata: { reason: "invalid_or_expired_token" },
-      });
-      // Bad tokens count toward the per-IP cap — defense-in-depth
-      // against guessing.
-      void deps.repo.recordLoginAttempt({
-        emailLower: ipSentinel,
-        ip,
-        success: false,
       });
       authError(
         res,

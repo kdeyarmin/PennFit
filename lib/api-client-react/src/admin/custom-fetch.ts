@@ -18,6 +18,15 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 
+// Char-by-char trim avoids the polynomial-backtracking pattern
+// CodeQL flags for `replace(/\/+$/, "")` against caller-controlled
+// URL lengths.
+function stripTrailingSlashes(s: string): string {
+  let i = s.length;
+  while (i > 0 && s.charCodeAt(i - 1) === 0x2f) i--;
+  return i === s.length ? s : s.slice(0, i);
+}
+
 /**
  * Set a base URL that is prepended to every relative request URL
  * (i.e. paths that start with `/`).
@@ -26,7 +35,7 @@ let _authTokenGetter: AuthTokenGetter | null = null;
  * Pass `null` to clear the base URL.
  */
 export function setBaseUrl(url: string | null): void {
-  _baseUrl = url ? url.replace(/\/+$/, "") : null;
+  _baseUrl = url ? stripTrailingSlashes(url) : null;
 }
 
 /**

@@ -115,7 +115,13 @@ export async function getObjectAclPolicy(
   if (!aclPolicy) {
     return null;
   }
-  return JSON.parse(aclPolicy as string);
+  try {
+    return JSON.parse(aclPolicy as string) as ObjectAclPolicy;
+  } catch {
+    // Malformed metadata — treat as unclaimed, consistent with
+    // setObjectAclPolicy validation behavior.
+    return null;
+  }
 }
 
 export async function canAccessObject({

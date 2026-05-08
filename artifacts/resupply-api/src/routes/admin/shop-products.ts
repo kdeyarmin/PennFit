@@ -28,6 +28,7 @@ import { z } from "zod";
 import type Stripe from "stripe";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -40,6 +41,20 @@ import {
 import { dispatchBackInStockForProduct } from "../../lib/back-in-stock-record";
 
 const router: IRouter = Router();
+
+// Per-admin rate limit on every catalog mutation (B-07). Each call
+// hits Stripe (products.update / products.create / prices.create) and
+// can fan out a back-in-stock notification, so a compromised account
+// looping on the endpoint can both burn Stripe quota and spam
+// subscribers. 30/hour per-admin covers legitimate catalog work
+// without bounding ops review or onboarding bursts. Keyed by
+// adminUserId (populated by requireAdmin which runs first).
+const adminProductMutationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  name: "admin_shop_product_mutation",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 // Input shape: integer stock count, OR null to UNTRACK the SKU.
 // Negative values are explicitly rejected — the parsing path in
@@ -67,6 +82,7 @@ const patchThresholdBodySchema = z.object({
 router.patch(
   "/admin/shop/products/:productId/stock",
   requireAdmin,
+  adminProductMutationLimiter,
   async (req, res) => {
     const productId = String(req.params.productId ?? "");
     if (!productId.startsWith("prod_")) {
@@ -259,6 +275,7 @@ router.patch(
 router.patch(
   "/admin/shop/products/:productId/threshold",
   requireAdmin,
+  adminProductMutationLimiter,
   async (req, res) => {
     const productId = String(req.params.productId ?? "");
     if (!productId.startsWith("prod_")) {
@@ -443,7 +460,7 @@ const createBodySchema = z.object({
   recurringIntervalCount: z.number().int().min(1).max(12).nullish(),
 });
 
-router.post("/admin/shop/products", requireAdmin, async (req, res) => {
+router.post("/admin/shop/products", requireAdmin, adminProductMutationLimiter, async (req, res) => {
   const parsed = createBodySchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
