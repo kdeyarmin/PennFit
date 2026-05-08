@@ -122,37 +122,31 @@ interface MediaSlot {
   declaredContentType: string | null;
 }
 
-// Twilio's media URLs come from one of two hosts depending on the
-// account region / API version. We allowlist them explicitly so a
-// tampered webhook body cannot point us at an attacker-controlled
-// URL — mitigates server-side request forgery on the basic-auth
-// download fetch below. Twilio media URLs always live on these
-// hosts; new regions would require an explicit code change.
-const ALLOWED_TWILIO_MEDIA_HOSTS = new Set<string>([
-  "api.twilio.com",
-  "media.twiliocdn.com",
-]);
-
-function isAllowedTwilioMediaUrl(url: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "https:") return false;
-  if (!ALLOWED_TWILIO_MEDIA_HOSTS.has(parsed.hostname)) return false;
-  return true;
-}
-
 /**
  * Resolve numbered MediaUrl/MediaContentType keys from the raw
  * Twilio body. Twilio sends `MediaUrl0`, `MediaUrl1`, …,
  * `MediaUrlN-1`. We don't trust NumMedia blindly — we cross-check
  * against actual key presence so a tampered NumMedia=99 with no
- * URLs is bounded. The host allowlist prevents SSRF: a forged
- * webhook body cannot redirect us at a non-Twilio host.
+ * URLs is bounded.
  */
+function normalizeAllowedTwilioMediaUrl(raw: string): string | null {
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:") return null;
+    if (parsed.hostname !== "api.twilio.com") return null;
+    if (
+      !/^\/2010-04-01\/Accounts\/[^/]+\/Messages\/[^/]+\/Media\/[^/]+$/.test(
+        parsed.pathname,
+      )
+    ) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 function readMediaSlots(
   body: Record<string, unknown>,
   numMedia: number,
@@ -160,8 +154,10 @@ function readMediaSlots(
   const cap = Math.min(numMedia, MAX_MEDIA_PER_MESSAGE);
   const slots: MediaSlot[] = [];
   for (let i = 0; i < cap; i++) {
-    const url = body[`MediaUrl${i}`];
-    if (typeof url !== "string" || !isAllowedTwilioMediaUrl(url)) continue;
+    const rawUrl = body[`MediaUrl${i}`];
+    if (typeof rawUrl !== "string") continue;
+    const url = normalizeAllowedTwilioMediaUrl(rawUrl);
+    if (!url) continue;
     const ct = body[`MediaContentType${i}`];
     slots.push({
       url,
