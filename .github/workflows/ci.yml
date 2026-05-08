@@ -221,3 +221,69 @@ jobs:
           name: playwright-a11y-report
           path: playwright-report/
           retention-days: 14
+
+  smoke:
+    name: Smoke (Playwright)
+    runs-on: ubuntu-latest
+
+    # Required check (NOT continue-on-error): a smoke-test failure
+    # means the SPA build is broken — anyone visiting the site would
+    # see a blank page or a runtime error. The single existing test
+    # (e2e/tests/storefront-loads.spec.ts) just confirms the React
+    # app mounts and the landing nav renders without console errors.
+    # Add more specs here as the team picks up the suite.
+    #
+    # Job structure mirrors the a11y job above; the duplication is
+    # intentional so each signal reports independently. If future
+    # work bundles them, factor the shared setup into a composite
+    # action.
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build cpap-fitter SPA
+        run: pnpm --filter @workspace/cpap-fitter run build
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start vite preview
+        run: |
+          pnpm --filter @workspace/cpap-fitter exec \
+            vite preview --config vite.config.ts --host 127.0.0.1 --port 5173 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5173/ > /dev/null 2>&1; then
+              echo "vite preview is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "vite preview did not respond on :5173 within 30s"
+          exit 1
+
+      - name: Run smoke test
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5173
+          CI: "true"
+        run: pnpm exec playwright test --config e2e/playwright.config.ts e2e/tests/storefront-loads.spec.ts
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: playwright-report/
+          retention-days: 14
