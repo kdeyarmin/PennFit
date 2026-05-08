@@ -441,8 +441,8 @@ router.get("/shop/reviews/site-aggregate", async (_req, res) => {
 
 router.post(
   "/shop/products/:productId/reviews",
-  reviewWriteLimiter,
   requireSignedIn,
+  reviewWriteLimiter,
   async (req, res) => {
     const customerId = req.userCustomerId;
     if (!customerId) {
