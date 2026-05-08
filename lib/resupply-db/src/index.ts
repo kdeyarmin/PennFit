@@ -15,6 +15,14 @@
 export * from "./schema/index";
 export { getDbPool, setPoolErrorLogger, __resetDbPoolForTests } from "./pool";
 export {
+  getSupabaseServiceRoleClient,
+  validateSupabaseEnv,
+  __resetSupabaseClientForTests,
+  type ResupplySupabaseClient,
+  type SupabaseClientOptions,
+} from "./supabase-client";
+export type { Database, Json } from "./supabase-types";
+export {
   PREVIEW_MAX_CHARS,
   buildPreview,
   upsertPatientLatestMessage,

@@ -9,7 +9,7 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import { db, usageEventsTable } from "../../lib/storefront/db.js";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { logger } from "../../lib/logger.js";
 
 const router = Router();
@@ -48,11 +48,16 @@ router.post("/usage-events", async (req, res) => {
     return;
   }
   try {
-    await db.insert(usageEventsTable).values({
-      sessionId: parsed.data.sessionId,
-      step: parsed.data.step,
-      metadata: parsed.data.metadata ?? null,
-    });
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("public")
+      .from("usage_events")
+      .insert({
+        session_id: parsed.data.sessionId,
+        step: parsed.data.step,
+        metadata: parsed.data.metadata ?? null,
+      });
+    if (error) throw error;
   } catch (err) {
     logger.warn({ err }, "Failed to insert usage event (ignored)");
   }

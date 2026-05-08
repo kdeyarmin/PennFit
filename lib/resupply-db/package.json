@@ -19,6 +19,7 @@
     "rotate-to-master-key": "node scripts/rotate-to-master-key.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.3",
     "@workspace/resupply-secrets": "workspace:*",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",

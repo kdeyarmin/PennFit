@@ -6,7 +6,7 @@
 // This is the chicken-and-egg solution for ADR 014 / the Stage 3
 // cutover described in docs/resupply/AUTH-MIGRATION-PLAN.md:
 // once the env-var allow-list stops gating the dashboard (the
-// in-house path reads role from auth.users.role only), there
+// in-house path reads role from resupply_auth.users.role only), there
 // has to be SOMETHING that creates that very first row. This
 // script is it.
 //
@@ -16,7 +16,7 @@
 //     --email=alice@example.com --role=admin
 //
 // Behaviour:
-//   * If `auth.users` already has a row for the email, we report
+//   * If `resupply_auth.users` already has a row for the email, we report
 //     the current role + status and (with --force) update the
 //     role to the requested value. We NEVER silently rewrite an
 //     existing user's role without --force.
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
         // updateUserRole helper for one caller. Keep this script
         // dependent on raw pg only for these one-off ops.
         await pool.query(
-          `UPDATE auth.users SET role = $2, updated_at = NOW() WHERE id = $1`,
+          `UPDATE resupply_auth.users SET role = $2, updated_at = NOW() WHERE id = $1`,
           [userId, argsParsed.role],
         );
       }

@@ -35,7 +35,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -68,19 +68,6 @@ const exportQuery = z
     since: z.string().datetime({ offset: true }).optional(),
   })
   .strict();
-
-interface AuditRow {
-  id: string;
-  occurred_at: Date | string | null;
-  operator_email: string | null;
-  operator_user_id: string | null;
-  action: string;
-  target_table: string | null;
-  target_id: string | null;
-  metadata: unknown;
-  ip: string | null;
-  user_agent: string | null;
-}
 
 // RFC4180-ish CSV field escape. Quote when the field contains
 // comma, double-quote, CR, or LF. Doubled internal quotes.
@@ -137,40 +124,31 @@ router.get("/audit/export.csv", requireAdmin, exportLimiter, async (req, res) =>
   }
   const { action, targetTable, since } = parsed.data;
 
-  const where: string[] = [];
-  const params: unknown[] = [];
-  if (action) {
-    params.push(`%${action}%`);
-    where.push(`action ILIKE $${params.length}`);
-  }
-  if (targetTable) {
-    params.push(targetTable);
-    where.push(`target_table = $${params.length}`);
-  }
-  if (since) {
-    params.push(new Date(since));
-    where.push(`occurred_at >= $${params.length}`);
-  }
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-
-  // Query MAX_ROWS + 1 so we can detect overflow without a separate
+  const supabase = getSupabaseServiceRoleClient();
+  // Pull MAX_ROWS + 1 so we can detect overflow without a separate
   // COUNT round-trip.
-  params.push(MAX_ROWS + 1);
-  const limitIdx = params.length;
+  let query = supabase
+    .schema("resupply")
+    .from("audit_log")
+    .select(
+      "id, occurred_at, operator_email, operator_user_id, action, target_table, target_id, metadata, ip, user_agent",
+    )
+    .order("occurred_at", { ascending: false })
+    .range(0, MAX_ROWS);
 
-  const sql = (
-    `SELECT id, occurred_at, operator_email, operator_user_id, ` +
-    `action, target_table, target_id, metadata, ip, user_agent ` +
-    `FROM resupply.audit_log ${whereSql} ` +
-    `ORDER BY occurred_at DESC ` +
-    `LIMIT $${limitIdx}`
-  ).replace(/\s+/g, " ");
+  if (action) query = query.ilike("action", `%${action}%`);
+  if (targetTable) query = query.eq("target_table", targetTable);
+  if (since) query = query.gte("occurred_at", new Date(since).toISOString());
 
-  const pool = getDbPool();
-  const result = await pool.query<AuditRow>(sql, params);
+  const { data, error } = await query;
+  if (error) {
+    res.status(500).json({ error: "query_failed", message: error.message });
+    return;
+  }
 
-  const truncated = result.rows.length > MAX_ROWS;
-  const emit = truncated ? result.rows.slice(0, MAX_ROWS) : result.rows;
+  const rows = data ?? [];
+  const truncated = rows.length > MAX_ROWS;
+  const emit = truncated ? rows.slice(0, MAX_ROWS) : rows;
 
   // Filename: audit-export-<UTC-ish>.csv. Use a colon-free format
   // so Windows clients can save without renaming. The trailing "Z"
@@ -189,9 +167,7 @@ router.get("/audit/export.csv", requireAdmin, exportLimiter, async (req, res) =>
     res.write(
       csvRow([
         r.id,
-        r.occurred_at instanceof Date
-          ? r.occurred_at.toISOString()
-          : (r.occurred_at ?? ""),
+        r.occurred_at ?? "",
         r.operator_email,
         r.operator_user_id,
         r.action,

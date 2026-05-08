@@ -11,8 +11,6 @@
 // caller already supplied (no PHI in / no PHI out).
 
 import { Router, type IRouter } from "express";
-import { asc } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
@@ -21,7 +19,7 @@ import {
   type OutreachPrescription,
   type OutreachRule,
 } from "@workspace/resupply-domain";
-import { frequencyRules, getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -95,23 +93,26 @@ router.post("/rules/test", requireAdmin, async (req, res) => {
     cadenceDays: parsed.data.prescription.cadenceDays,
   };
 
-  const db = drizzle(getDbPool());
-  const ruleRows = await db
-    .select()
-    .from(frequencyRules)
-    .orderBy(asc(frequencyRules.priority), asc(frequencyRules.createdAt));
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: ruleRows, error } = await supabase
+    .schema("resupply")
+    .from("frequency_rules")
+    .select("*")
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) throw error;
 
-  const rules: OutreachRule[] = ruleRows.map((r) => ({
+  const rules: OutreachRule[] = (ruleRows ?? []).map((r) => ({
     id: r.id,
     priority: r.priority,
-    createdAt: r.createdAt,
+    createdAt: new Date(r.created_at),
     active: r.active,
-    matchItemSkuPrefix: r.matchItemSkuPrefix,
-    matchInsurancePayer: r.matchInsurancePayer,
-    minTenureDays: r.minTenureDays,
-    maxTenureDays: r.maxTenureDays,
-    cadenceDays: r.cadenceDays,
-    defaultChannel: r.defaultChannel,
+    matchItemSkuPrefix: r.match_item_sku_prefix,
+    matchInsurancePayer: r.match_insurance_payer,
+    minTenureDays: r.min_tenure_days,
+    maxTenureDays: r.max_tenure_days,
+    cadenceDays: r.cadence_days,
+    defaultChannel: r.default_channel as "sms" | "email" | "voice" | null,
   }));
 
   const plan = resolveOutreachPlan({ patient, prescription, rules, now });

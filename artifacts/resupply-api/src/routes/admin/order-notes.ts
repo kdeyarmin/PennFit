@@ -21,13 +21,11 @@
 // The audit row records the order_id + body_length only — never
 // the body content itself.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, shopOrderNotes, shopOrders } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -62,51 +60,52 @@ router.get(
       return;
     }
     const orderId = parsed.data;
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
     // Pre-check: order must exist. Same rationale as the customer
     // notes route — distinguish "no notes" (200 + empty array) from
     // "no order" (404).
-    const exists = await db
-      .select({ id: shopOrders.id })
-      .from(shopOrders)
-      .where(eq(shopOrders.id, orderId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: order } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("id")
+      .eq("id", orderId)
+      .limit(1)
+      .maybeSingle();
+    if (!order) {
       res.status(404).json({ error: "order_not_found" });
       return;
     }
 
-    const rows = await db
-      .select({
-        id: shopOrderNotes.id,
-        body: shopOrderNotes.body,
-        authorEmail: shopOrderNotes.authorEmail,
-        authorUserId: shopOrderNotes.authorUserId,
-        createdAt: shopOrderNotes.createdAt,
-      })
-      .from(shopOrderNotes)
-      .where(eq(shopOrderNotes.orderId, orderId))
-      .orderBy(desc(shopOrderNotes.createdAt))
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("shop_order_notes")
+      .select("id, body, author_email, author_user_id, created_at")
+      .eq("order_id", orderId)
+      .order("created_at", { ascending: false })
       .limit(50);
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
 
     // Safe log. NO note bodies; just the count + admin who looked.
     req.log?.info(
       {
         orderId,
-        count: rows.length,
+        count: rows?.length ?? 0,
         adminEmail: req.adminEmail,
       },
       "admin.shop.order.notes.list",
     );
 
     res.json({
-      notes: rows.map((r) => ({
+      notes: (rows ?? []).map((r) => ({
         id: r.id,
         body: r.body ?? "",
-        authorEmail: r.authorEmail,
-        authorUserId: r.authorUserId,
-        createdAt: r.createdAt.toISOString(),
+        authorEmail: r.author_email,
+        authorUserId: r.author_user_id,
+        createdAt: r.created_at,
       })),
     });
   },
@@ -136,35 +135,33 @@ router.post(
     }
     const { body } = bodyParsed.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
     // Pre-check the order to map the FK violation to a clean 404.
-    const exists = await db
-      .select({ id: shopOrders.id })
-      .from(shopOrders)
-      .where(eq(shopOrders.id, orderId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: order } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("id")
+      .eq("id", orderId)
+      .limit(1)
+      .maybeSingle();
+    if (!order) {
       res.status(404).json({ error: "order_not_found" });
       return;
     }
 
-    const inserted = await db
-      .insert(shopOrderNotes)
-      .values({
-        orderId,
+    const { data: inserted, error: insErr } = await supabase
+      .schema("resupply")
+      .from("shop_order_notes")
+      .insert({
+        order_id: orderId,
         body,
-        authorEmail: req.adminEmail ?? "<unknown>",
-        authorUserId: req.adminUserId ?? null,
+        author_email: req.adminEmail ?? "<unknown>",
+        author_user_id: req.adminUserId ?? null,
       })
-      .returning({
-        id: shopOrderNotes.id,
-        createdAt: shopOrderNotes.createdAt,
-      });
-    const row = inserted[0];
-    if (!row) {
-      throw new Error("INSERT returned no rows");
-    }
+      .select("id, created_at")
+      .single();
+    if (insErr) throw insErr;
 
     // Audit. Structural metadata only — same policy as the
     // shop_customer.note.create envelope.
@@ -173,7 +170,7 @@ router.post(
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "shop_order_notes",
-      targetId: row.id,
+      targetId: inserted.id,
       metadata: { order_id: orderId, body_length: body.length },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -182,8 +179,8 @@ router.post(
     });
 
     res.status(201).json({
-      id: row.id,
-      createdAt: row.createdAt.toISOString(),
+      id: inserted.id,
+      createdAt: inserted.created_at,
     });
   },
 );
