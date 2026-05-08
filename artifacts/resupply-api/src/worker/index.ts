@@ -60,10 +60,53 @@ export async function startWorker(): Promise<void> {
     // application tables. The /readyz check also probes this exact
     // schema for its `version` table — keep them in lockstep.
     schema: "pgboss_resupply",
+    // Enable periodic per-queue state snapshots (default is 0 — no
+    // monitoring). We tap the resulting `monitor-states` event below
+    // to alert ops when a job moves to the `failed` state. 60s is
+    // tight enough to surface a stuck queue within a sleep cycle and
+    // loose enough to add no meaningful DB load.
+    monitorStateIntervalSeconds: 60,
   });
 
   boss.on("error", (err) => {
     logger.error({ err }, "pg-boss error");
+  });
+
+  // Failed-job alerting (P1.2). pg-boss does NOT emit a per-job
+  // "failed" event we can subscribe to directly; instead, the
+  // `monitor-states` snapshot exposes the rolling count of jobs in
+  // each terminal state (`failed`, `cancelled`, etc.) per queue. We
+  // remember the last-seen `failed` count per queue and fire ONE
+  // structured warn line on each delta — i.e. a single permanent
+  // failure logs once, not every monitoring tick. ops dashboards can
+  // alert on `event: "pgboss_jobs_failed"` to page on a stuck queue.
+  //
+  // The snapshot lives in this closure and resets on worker restart;
+  // a restart re-baselines counts so historical archived failures
+  // don't trigger a false alert at boot. Tradeoff: a process bounce
+  // immediately after a failure could miss a single alert, which is
+  // acceptable — the failed-state row is still visible in the DB and
+  // the next failure will alert.
+  const lastFailedCounts = new Map<string, number>();
+  boss.on("monitor-states", (snapshot) => {
+    for (const [queueName, state] of Object.entries(snapshot.queues ?? {})) {
+      const prev = lastFailedCounts.get(queueName) ?? state.failed;
+      if (state.failed > prev) {
+        logger.warn(
+          {
+            event: "pgboss_jobs_failed",
+            queue: queueName,
+            newly_failed: state.failed - prev,
+            total_failed: state.failed,
+            queue_size: state.all,
+            retry_pending: state.retry,
+            active: state.active,
+          },
+          `pg-boss queue '${queueName}' has ${state.failed - prev} newly failed job(s) (${state.failed} total)`,
+        );
+      }
+      lastFailedCounts.set(queueName, state.failed);
+    }
   });
 
   await boss.start();
