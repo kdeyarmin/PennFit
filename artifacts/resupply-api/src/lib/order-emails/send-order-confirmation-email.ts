@@ -43,6 +43,8 @@ import {
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
 
+import { withRetry } from "../with-retry.js";
+
 const DEFAULT_BASE_URL = "https://pennpaps.com";
 
 export interface OrderConfirmationLineItem {
@@ -291,16 +293,41 @@ export async function sendOrderConfirmationEmail(
 </html>`;
 
   try {
-    const { messageId } = await client.sendEmail({
-      to: toEmail,
-      subject,
-      html,
-      text,
-      customArgs: {
-        kind: "shop_order_confirmation_v1",
-        stripe_session_id: stripeSessionId,
+    // Retry once on 5xx / network failures so a single SendGrid hiccup
+    // doesn't drop the customer's order confirmation. 4xx (config /
+    // recipient errors) and EmailConfigError are NOT retried —
+    // they're permanent and replays would just stack identical
+    // failures in the audit log.
+    const { messageId } = await withRetry(
+      () =>
+        client.sendEmail({
+          to: toEmail,
+          subject,
+          html,
+          text,
+          customArgs: {
+            kind: "shop_order_confirmation_v1",
+            stripe_session_id: stripeSessionId,
+          },
+        }),
+      {
+        attempts: 3,
+        baseDelayMs: 250,
+        maxDelayMs: 1_500,
+        isRetriable: (err) => {
+          if (err instanceof EmailApiError) {
+            // Retry only on 5xx and missing-status (network /
+            // timeout / DNS — the SDK leaves status undefined when
+            // the request never made it to a SendGrid response).
+            return err.status === undefined || err.status >= 500;
+          }
+          // Non-EmailApiError ⇒ likely a thrown TypeError /
+          // AbortError from undici. Retry once — if it persists the
+          // attempts cap will surface it.
+          return true;
+        },
       },
-    });
+    );
     return { configured: true, delivered: true, messageId };
   } catch (err) {
     if (err instanceof EmailApiError) {

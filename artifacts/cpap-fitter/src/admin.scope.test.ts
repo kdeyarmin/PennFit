@@ -1,0 +1,140 @@
+// Static guard for the "admin theme stays scoped" rule.
+//
+// CLAUDE.md hard rule:
+//   "Admin theme stays scoped. Admin tokens (--penn-navy, etc.) live
+//    in src/admin.css under `.admin-root`. Every admin surface must
+//    wrap its outer <div> with className=\"admin-root\" so it doesn't
+//    clobber storefront brand tokens."
+//
+// Without enforcement the failure mode is silent: a contributor adds
+// `:root { --penn-navy: ... }` to admin.css for "convenience", the
+// storefront chunk lazy-loads admin.css from a shared barrel, and now
+// the customer marketing pages render with the admin palette. This
+// test parses admin.css and fails if any `--penn-*` token (or any
+// other admin-only brand token we explicitly enumerate) is declared
+// outside a `.admin-root`-scoped block.
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ADMIN_CSS = readFileSync(path.join(__dirname, "admin.css"), "utf8");
+
+// Strip /* ... */ block comments so an example token in a comment
+// can't trip the static check.
+function stripCssComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+// Walk a CSS source forwards, yielding each top-level rule with its
+// selector list. We don't need a real parser — every rule we care
+// about is at the file's top level (ignoring nesting under @media,
+// which we treat as transparent for the purposes of selector
+// extraction).
+function* iterateTopLevelRules(
+  src: string,
+): Generator<{ selectors: string; body: string }> {
+  let i = 0;
+  while (i < src.length) {
+    // Skip whitespace and at-rules whose body we want to recurse
+    // into (e.g. @media). For simplicity we treat @media's body as
+    // a sub-source: if a rule appears inside it, we surface its
+    // selectors as if at the top level.
+    while (i < src.length && /\s/.test(src[i]!)) i++;
+    if (i >= src.length) return;
+
+    if (src[i] === "@") {
+      // Find the matching brace block.
+      const braceStart = src.indexOf("{", i);
+      if (braceStart === -1) return;
+      // Match braces.
+      let depth = 1;
+      let j = braceStart + 1;
+      while (j < src.length && depth > 0) {
+        if (src[j] === "{") depth++;
+        else if (src[j] === "}") depth--;
+        j++;
+      }
+      const inner = src.slice(braceStart + 1, j - 1);
+      // Recurse into media-query inner CSS so nested selectors
+      // surface to the test.
+      yield* iterateTopLevelRules(inner);
+      i = j;
+      continue;
+    }
+
+    // Read selector list up to the opening brace.
+    const braceStart = src.indexOf("{", i);
+    if (braceStart === -1) return;
+    const selectors = src.slice(i, braceStart).trim();
+    let depth = 1;
+    let j = braceStart + 1;
+    while (j < src.length && depth > 0) {
+      if (src[j] === "{") depth++;
+      else if (src[j] === "}") depth--;
+      j++;
+    }
+    const body = src.slice(braceStart + 1, j - 1);
+    yield { selectors, body };
+    i = j;
+  }
+}
+
+// Match a CSS custom-property *declaration*: `--penn-foo: …;`. We
+// anchor on a leading boundary that's either the start of the
+// stripped block or one of the legal pre-declaration characters
+// (whitespace, `;`, `{`). Crucially this does NOT match reads of
+// the token through `var(--penn-foo)`, because those have `(` to
+// the left of the token, not start-of-block / `;` / `{`.
+const ADMIN_TOKEN_DECL_RE = /(?:^|[\s;{])(--penn-[A-Za-z0-9_-]+)\s*:/;
+
+function findDeclarations(body: string): string[] {
+  const matches = body.matchAll(
+    /(?:^|[\s;{])(--penn-[A-Za-z0-9_-]+)\s*:/g,
+  );
+  const tokens: string[] = [];
+  for (const m of matches) tokens.push(m[1]!);
+  return tokens;
+}
+
+describe("admin.css scoping", () => {
+  const cleaned = stripCssComments(ADMIN_CSS);
+  const rules = Array.from(iterateTopLevelRules(cleaned));
+
+  it("declares every --penn-* token inside a .admin-root rule", () => {
+    const offenders: Array<{ selectors: string; token: string }> = [];
+    for (const { selectors, body } of rules) {
+      const tokens = findDeclarations(body);
+      if (tokens.length === 0) continue;
+      // Selector list is OK if every selector is or starts with
+      // `.admin-root`. We allow `.admin-root::before`, `.admin-root
+      // .foo`, etc. — anything else (e.g. `:root`, `body`, `.foo`)
+      // is a leak.
+      const allOk = selectors
+        .split(",")
+        .map((s) => s.trim())
+        .every((s) => s === ".admin-root" || s.startsWith(".admin-root"));
+      if (!allOk) {
+        for (const token of tokens) offenders.push({ selectors, token });
+      }
+    }
+    expect(
+      offenders,
+      `--penn-* tokens must be declared inside .admin-root selectors. Offenders: ${JSON.stringify(offenders, null, 2)}`,
+    ).toEqual([]);
+  });
+
+  it("never declares --penn-* tokens on :root", () => {
+    const rootRules = rules.filter((r) =>
+      r.selectors
+        .split(",")
+        .map((s) => s.trim())
+        .includes(":root"),
+    );
+    for (const r of rootRules) {
+      expect(ADMIN_TOKEN_DECL_RE.test(r.body)).toBe(false);
+    }
+  });
+});
