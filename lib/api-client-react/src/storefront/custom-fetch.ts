@@ -48,6 +48,27 @@ function isRequest(input: RequestInfo | URL): input is Request {
   return typeof Request !== "undefined" && input instanceof Request;
 }
 
+/**
+ * Read the `pf_csrf` cookie value (if present) from `document.cookie`.
+ * Returns `null` when the document or cookie is unavailable so the
+ * caller can skip header attachment cleanly.
+ */
+function readCsrfCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const cookie = document.cookie;
+  if (!cookie) return null;
+  for (const part of cookie.split("; ")) {
+    if (part.startsWith("pf_csrf=")) {
+      try {
+        return decodeURIComponent(part.slice("pf_csrf=".length));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 function resolveMethod(
   input: RequestInfo | URL,
   explicitMethod?: string,
@@ -369,6 +390,31 @@ export async function customFetch<T = unknown>(
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
+  }
+
+  // Attach the double-submit CSRF token on state-changing methods.
+  // The token is read from the readable `pf_csrf` cookie set at sign-
+  // in by the auth lib. Servers that don't enforce X-PF-CSRF simply
+  // ignore the header; servers that do (the resupply auth endpoints
+  // already; storefront write endpoints in the future) get the
+  // double-submit check for free without each call site having to
+  // remember to attach it.
+  //
+  // Skip when:
+  //   * Method is GET / HEAD / OPTIONS (no CSRF surface).
+  //   * Header was already explicitly set by the caller (manual
+  //     overrides win — keeps the shop-api.ts wrappers backwards-
+  //     compatible).
+  //   * `document` is undefined (SSR / RN — neither has cookies).
+  if (
+    typeof document !== "undefined" &&
+    !headers.has("x-pf-csrf") &&
+    method !== "GET" &&
+    method !== "HEAD" &&
+    method !== "OPTIONS"
+  ) {
+    const csrf = readCsrfCookie();
+    if (csrf) headers.set("x-pf-csrf", csrf);
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
