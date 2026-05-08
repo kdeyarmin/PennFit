@@ -72,7 +72,7 @@ interface CountRow {
 
 const router: IRouter = Router();
 
-router.get("/audit", auditReadLimiter, requireAdmin, async (req, res) => {
+router.get("/audit", requireAdmin, auditReadLimiter, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({
