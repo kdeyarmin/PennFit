@@ -35,7 +35,6 @@ import { z } from "zod";
 
 import {
   type CpapDeviceInfo,
-  type FacialMeasurementsInfo,
   type PhysicianInfo,
   getDbPool,
   shopCustomers,
