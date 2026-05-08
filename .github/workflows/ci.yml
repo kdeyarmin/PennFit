@@ -1,0 +1,62 @@
+name: CI
+
+# Run the standard quality gates on every push to main and every PR.
+# Today the repo has only the Copilot setup-steps workflow + the
+# default-setup CodeQL Analyze jobs; this fills the gap by running
+# typecheck / lint / test against every PR so a regression doesn't
+# need a human to remember to run them locally.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+# Cancel in-progress runs of the same workflow on the same ref when
+# a new push lands. CI on a stale commit is just wasted minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        # Same install pattern as copilot-setup-steps.yml — see that
+        # file for the full Corepack-vs-npm rationale. Keeping the two
+        # in lockstep prevents Copilot's environment and CI from
+        # drifting.
+        working-directory: ${{ github.workspace }}
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@10.33.2
+          pnpm --version
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint:resupply
+
+      - name: Test
+        run: pnpm test

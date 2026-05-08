@@ -26,35 +26,107 @@ import { useEffect, useRef, useState } from "react";
 
 const STORAGE_PREFIX = "reply-draft:";
 const DEBOUNCE_MS = 250;
+// 7-day TTL: long enough to cover "I started a draft Friday and came
+// back Monday" while short enough that a draft from a previous quarter
+// — typed by an admin who might no longer be on the team — quietly
+// expires instead of resurrecting on rehydrate. The value is rewritten
+// on every change so an actively-edited draft never expires.
+const DEFAULT_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-function readDraft(key: string): string {
-  if (typeof window === "undefined") return "";
+interface StoredDraft {
+  value: string;
+  /** ISO 8601 timestamp of the last write. */
+  savedAt: string;
+}
+
+function readRaw(key: string): string | null {
+  if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(STORAGE_PREFIX + key) ?? "";
+    return window.localStorage.getItem(STORAGE_PREFIX + key);
   } catch {
     // localStorage can throw in private-browsing modes or when
     // quota is exceeded. Treat as "no draft available" — autosave
     // is an opportunistic feature, not a correctness guarantee.
-    return "";
+    return null;
   }
 }
 
-function writeDraft(key: string, value: string): void {
-  if (typeof window === "undefined") return;
+function readDraft(
+  key: string,
+  ttlMs: number,
+): { value: string; savedAt: Date | null } {
+  const raw = readRaw(key);
+  if (raw == null || raw.length === 0) return { value: "", savedAt: null };
+  // Backwards-compat: earlier versions stored the raw string. Treat
+  // those as "no metadata, but still a draft" — surface the value but
+  // re-write to the JSON shape on the next save so the next read has
+  // a savedAt.
+  if (raw.length === 0 || raw[0] !== "{") {
+    return { value: raw, savedAt: null };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredDraft>;
+    if (typeof parsed.value !== "string") return { value: "", savedAt: null };
+    if (typeof parsed.savedAt !== "string") {
+      return { value: parsed.value, savedAt: null };
+    }
+    const savedAt = new Date(parsed.savedAt);
+    if (Number.isNaN(savedAt.getTime())) {
+      return { value: parsed.value, savedAt: null };
+    }
+    if (Date.now() - savedAt.getTime() > ttlMs) {
+      // Expired — drop it on read so a stale draft never resurfaces
+      // weeks after the conversation it belonged to.
+      try {
+        window.localStorage.removeItem(STORAGE_PREFIX + key);
+      } catch {
+        /* ignore */
+      }
+      return { value: "", savedAt: null };
+    }
+    return { value: parsed.value, savedAt };
+  } catch {
+    // JSON-parse failure on what looked like JSON — treat as no draft
+    // and clean up the corrupted entry.
+    try {
+      window.localStorage.removeItem(STORAGE_PREFIX + key);
+    } catch {
+      /* ignore */
+    }
+    return { value: "", savedAt: null };
+  }
+}
+
+function writeDraft(key: string, value: string): Date | null {
+  if (typeof window === "undefined") return null;
   try {
     if (value.length === 0) {
       window.localStorage.removeItem(STORAGE_PREFIX + key);
-    } else {
-      window.localStorage.setItem(STORAGE_PREFIX + key, value);
+      return null;
     }
+    const savedAt = new Date();
+    const stored: StoredDraft = {
+      value,
+      savedAt: savedAt.toISOString(),
+    };
+    window.localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(stored));
+    return savedAt;
   } catch {
     // Same as readDraft — ignore storage failures.
+    return null;
   }
 }
 
 export interface DraftAutosave {
   /** True if a non-empty draft was found at mount and restored. */
   restored: boolean;
+  /**
+   * Timestamp of the most recent autosave. `null` until the first
+   * write completes (or when localStorage is unavailable). Useful
+   * for rendering a "saved 5 minutes ago" hint without forcing the
+   * caller to track its own timer.
+   */
+  savedAt: Date | null;
   /** Drop the saved draft (call on successful send). */
   clear: () => void;
 }
@@ -103,8 +175,11 @@ export function useDraftAutosave(
   key: string,
   value: string,
   applyRestored: (restored: string) => void,
+  options?: { ttlMs?: number },
 ): DraftAutosave {
+  const ttlMs = options?.ttlMs ?? DEFAULT_DRAFT_TTL_MS;
   const [restored, setRestored] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const hasHydratedRef = useRef(false);
   // Always reflect the latest applyRestored without forcing the
   // mount-effect to re-run when the caller's identity changes
@@ -117,15 +192,17 @@ export function useDraftAutosave(
   // re-hydrate from that key.
   useEffect(() => {
     hasHydratedRef.current = false;
-    const existing = readDraft(key);
+    const existing = readDraft(key, ttlMs);
     hasHydratedRef.current = true;
-    if (existing.length > 0) {
-      applyRef.current(existing);
+    if (existing.value.length > 0) {
+      applyRef.current(existing.value);
       setRestored(true);
+      setSavedAt(existing.savedAt);
     } else {
       setRestored(false);
+      setSavedAt(null);
     }
-  }, [key]);
+  }, [key, ttlMs]);
 
   // Debounced write on value change. Skip the very first effect
   // run (it would write the empty initial value over a real
@@ -133,16 +210,19 @@ export function useDraftAutosave(
   useEffect(() => {
     if (!hasHydratedRef.current) return;
     const t = window.setTimeout(() => {
-      writeDraft(key, value);
+      const at = writeDraft(key, value);
+      setSavedAt(at);
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [key, value]);
 
   return {
     restored,
+    savedAt,
     clear: () => {
       writeDraft(key, "");
       setRestored(false);
+      setSavedAt(null);
     },
   };
 }
