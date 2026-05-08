@@ -453,9 +453,13 @@ router.post(
 
 const replaceBody = z
   .object({
-    exchangeProductId: z.string().min(1),
-    exchangePriceId: z.string().min(1),
-    exchangeOrderId: z.string().min(1).optional().nullable(),
+    // Stripe product/price/order ids are short fixed-format strings
+    // (`prod_<...>`, `price_<...>`, etc., 14-30 chars). Cap at 100 to
+    // match the project-wide convention of bounding every Zod string
+    // that lands in the DB.
+    exchangeProductId: z.string().min(1).max(100),
+    exchangePriceId: z.string().min(1).max(100),
+    exchangeOrderId: z.string().min(1).max(100).optional().nullable(),
     note: z.string().trim().max(2000).optional().nullable(),
   })
   .strict();
