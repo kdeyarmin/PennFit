@@ -134,13 +134,14 @@ function normalizeAllowedTwilioMediaUrl(raw: string): string | null {
     const parsed = new URL(raw);
     if (parsed.protocol !== "https:") return null;
     if (parsed.hostname !== "api.twilio.com") return null;
-    // Match strictly alphanumeric segments and rebuild the URL from a
-    // hardcoded host + the captured path components. This guarantees the
-    // value handed to fetch() cannot contain a userinfo@ host override,
-    // a different port, query string, or fragment — even if a future
-    // refactor weakens the hostname check above.
+    // Match strictly alphanumeric segments (with Twilio's documented
+    // SID prefixes) and rebuild the URL from a hardcoded host + the
+    // captured path components. This guarantees the value handed to
+    // fetch() cannot contain a userinfo@ host override, a different
+    // port, query string, or fragment — even if a future refactor
+    // weakens the hostname check above.
     const match =
-      /^\/2010-04-01\/Accounts\/([A-Za-z0-9]+)\/Messages\/([A-Za-z0-9]+)\/Media\/(ME[A-Za-z0-9]+)$/.exec(
+      /^\/2010-04-01\/Accounts\/(AC[A-Za-z0-9]*)\/Messages\/((?:MM|SM)[A-Za-z0-9]*)\/Media\/(ME[A-Za-z0-9]*)$/.exec(
         parsed.pathname,
       );
     if (!match) return null;
