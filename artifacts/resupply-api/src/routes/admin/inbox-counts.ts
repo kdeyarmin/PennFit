@@ -34,69 +34,72 @@
 // so we keep the surface tiny and the SQL fast.
 
 import { Router, type IRouter } from "express";
-import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import {
-  getDbPool,
-  patientFollowups,
-  shopCustomerFollowups,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
-interface CountsRow {
-  awaiting_reply_conversations: number;
-  pending_returns: number;
-  pending_reviews: number;
-  new_patient_documents: number;
-}
-
 router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
 
-  // Single round-trip: four scalar subqueries in one SELECT.
-  const result = await db.execute(sql`
-    SELECT
-      (SELECT count(*)::int FROM conversations
-        WHERE status = 'awaiting_admin') AS awaiting_reply_conversations,
-      (SELECT count(*)::int FROM shop_returns
-        WHERE status IN ('requested','approved','shipped_back','received')) AS pending_returns,
-      (SELECT count(*)::int FROM shop_reviews
-        WHERE status = 'pending') AS pending_reviews,
-      (SELECT count(*)::int FROM resupply.patient_documents
-        WHERE reviewed_at IS NULL) AS new_patient_documents
-  `);
-
-  const row = result.rows[0] as unknown as CountsRow | undefined;
-
-  // Overdue followups across BOTH shop_customer and patient surfaces.
-  // Each side uses its own partial index (open AND due) so the count
-  // scales with the open queue, not the full history. Sum in JS.
-  const [[overdueShopRow], [overduePatientRow]] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(shopCustomerFollowups)
-      .where(
-        sql`${shopCustomerFollowups.completedAt} IS NULL AND ${shopCustomerFollowups.dueAt} < now()`,
-      ),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(patientFollowups)
-      .where(
-        sql`${patientFollowups.completedAt} IS NULL AND ${patientFollowups.dueAt} < now()`,
-      ),
+  // Six counts in parallel. The original code packed four into one
+  // round-trip via `SELECT (subquery), (subquery), …` for a single
+  // payload; PostgREST doesn't expose that shape, so we issue six
+  // and parallelize via Promise.all. Each individual query is
+  // already index-backed (every WHERE clause hits a partial or
+  // narrow index), so the wall-clock cost is the slowest of the
+  // six rather than their sum.
+  const [
+    { count: awaitingReplyConversations },
+    { count: pendingReturns },
+    { count: pendingReviews },
+    { count: newPatientDocuments },
+    { count: overdueShop },
+    { count: overduePatient },
+  ] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "awaiting_admin"),
+    supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["requested", "approved", "shipped_back", "received"]),
+    supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabase
+      .schema("resupply")
+      .from("patient_documents")
+      .select("*", { count: "exact", head: true })
+      .is("reviewed_at", null),
+    supabase
+      .schema("resupply")
+      .from("shop_customer_followups")
+      .select("*", { count: "exact", head: true })
+      .is("completed_at", null)
+      .lt("due_at", nowIso),
+    supabase
+      .schema("resupply")
+      .from("patient_followups")
+      .select("*", { count: "exact", head: true })
+      .is("completed_at", null)
+      .lt("due_at", nowIso),
   ]);
 
   res.json({
-    awaitingReplyConversations: row?.awaiting_reply_conversations ?? 0,
-    pendingReturns: row?.pending_returns ?? 0,
-    pendingReviews: row?.pending_reviews ?? 0,
-    overdueFollowups:
-      (overdueShopRow?.count ?? 0) + (overduePatientRow?.count ?? 0),
-    newPatientDocuments: row?.new_patient_documents ?? 0,
+    awaitingReplyConversations: awaitingReplyConversations ?? 0,
+    pendingReturns: pendingReturns ?? 0,
+    pendingReviews: pendingReviews ?? 0,
+    overdueFollowups: (overdueShop ?? 0) + (overduePatient ?? 0),
+    newPatientDocuments: newPatientDocuments ?? 0,
     serverTime: new Date().toISOString(),
   });
 });

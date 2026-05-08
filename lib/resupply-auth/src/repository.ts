@@ -199,7 +199,7 @@ async function findUserByEmail(
   const { rows } = await q.query<UserRow>(
     `SELECT id, email_lower, display_name, role, status,
             email_verified_at, created_at, updated_at
-       FROM auth.users
+       FROM resupply_auth.users
       WHERE email_lower = $1
       LIMIT 1`,
     [emailLower],
@@ -214,7 +214,7 @@ async function findUserById(
   const { rows } = await q.query<UserRow>(
     `SELECT id, email_lower, display_name, role, status,
             email_verified_at, created_at, updated_at
-       FROM auth.users
+       FROM resupply_auth.users
       WHERE id = $1
       LIMIT 1`,
     [id],
@@ -236,7 +236,7 @@ async function findCredentialByUserId(
 ): Promise<PasswordCredential | null> {
   const { rows } = await q.query<CredRow>(
     `SELECT user_id, password_hash, algo, must_change, updated_at
-       FROM auth.password_credentials
+       FROM resupply_auth.password_credentials
       WHERE user_id = $1
       LIMIT 1`,
     [userId],
@@ -283,7 +283,7 @@ async function findSessionByTokenHash(
   const { rows } = await q.query<SessionRow>(
     `SELECT id, user_id, issued_at, expires_at, last_seen_at,
             revoked_at, ip::text AS ip, user_agent_hash
-       FROM auth.sessions
+       FROM resupply_auth.sessions
       WHERE token_hash = $1
       LIMIT 1`,
     [hash],
@@ -302,7 +302,7 @@ async function insertSession(
   },
 ): Promise<AuthSession> {
   const { rows } = await q.query<SessionRow>(
-    `INSERT INTO auth.sessions
+    `INSERT INTO resupply_auth.sessions
        (token_hash, user_id, expires_at, ip, user_agent_hash)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, user_id, issued_at, expires_at, last_seen_at,
@@ -324,7 +324,7 @@ async function revokeSession(
   at: Date,
 ): Promise<void> {
   await q.query(
-    `UPDATE auth.sessions
+    `UPDATE resupply_auth.sessions
         SET revoked_at = $2
       WHERE id = $1
         AND revoked_at IS NULL`,
@@ -339,7 +339,7 @@ async function bumpSession(
   at: Date,
 ): Promise<void> {
   await q.query(
-    `UPDATE auth.sessions
+    `UPDATE resupply_auth.sessions
         SET expires_at = $2,
             last_seen_at = $3
       WHERE id = $1
@@ -358,7 +358,7 @@ async function insertUser(
   },
 ): Promise<AuthUser> {
   const { rows } = await q.query<UserRow>(
-    `INSERT INTO auth.users
+    `INSERT INTO resupply_auth.users
        (email_lower, display_name, role, status)
      VALUES ($1, $2, $3, $4)
      RETURNING id, email_lower, display_name, role, status,
@@ -374,7 +374,7 @@ async function markEmailVerified(
   at: Date,
 ): Promise<void> {
   await q.query(
-    `UPDATE auth.users
+    `UPDATE resupply_auth.users
         SET email_verified_at = COALESCE(email_verified_at, $2),
             status = CASE WHEN status = 'invited' THEN 'active' ELSE status END,
             updated_at = $2
@@ -389,7 +389,7 @@ async function updateUserStatus(
   status: AuthUserStatus,
 ): Promise<void> {
   await q.query(
-    `UPDATE auth.users
+    `UPDATE resupply_auth.users
         SET status = $2,
             updated_at = NOW()
       WHERE id = $1`,
@@ -402,7 +402,7 @@ async function upsertCredential(
   input: { userId: string; passwordHash: string; mustChange?: boolean },
 ): Promise<void> {
   await q.query(
-    `INSERT INTO auth.password_credentials
+    `INSERT INTO resupply_auth.password_credentials
        (user_id, password_hash, must_change)
      VALUES ($1, $2, $3)
      ON CONFLICT (user_id) DO UPDATE
@@ -419,7 +419,7 @@ async function revokeAllUserSessions(
   at: Date,
 ): Promise<void> {
   await q.query(
-    `UPDATE auth.sessions
+    `UPDATE resupply_auth.sessions
         SET revoked_at = $2
       WHERE user_id = $1
         AND revoked_at IS NULL`,
@@ -434,7 +434,7 @@ async function revokeOtherUserSessions(
   at: Date,
 ): Promise<void> {
   await q.query(
-    `UPDATE auth.sessions
+    `UPDATE resupply_auth.sessions
         SET revoked_at = $3
       WHERE user_id = $1
         AND id <> $2
@@ -473,7 +473,7 @@ async function insertEmailToken(
   },
 ): Promise<void> {
   await q.query(
-    `INSERT INTO auth.email_tokens
+    `INSERT INTO resupply_auth.email_tokens
        (token_hash, user_id, purpose, expires_at)
      VALUES ($1, $2, $3, $4)`,
     [input.tokenHash, input.userId, input.purpose, input.expiresAt],
@@ -489,7 +489,7 @@ async function consumeEmailToken(
   // back; subsequent calls see consumed_at IS NOT NULL and miss the
   // WHERE clause.
   const { rows } = await q.query<EmailTokenRow>(
-    `UPDATE auth.email_tokens
+    `UPDATE resupply_auth.email_tokens
         SET consumed_at = $2
       WHERE token_hash = $1
         AND consumed_at IS NULL
@@ -506,7 +506,7 @@ async function recordLoginAttempt(
   input: { emailLower: string; ip: string | null; success: boolean },
 ): Promise<void> {
   await q.query(
-    `INSERT INTO auth.login_attempts (email_lower, ip, success)
+    `INSERT INTO resupply_auth.login_attempts (email_lower, ip, success)
      VALUES ($1, $2, $3)`,
     [input.emailLower, input.ip, input.success],
   );
@@ -524,7 +524,7 @@ async function countRecentFailures(
   // decides which limiter to interpret the count against.
   const { rows } = await q.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
-       FROM auth.login_attempts
+       FROM resupply_auth.login_attempts
       WHERE success = false
         AND attempted_at > NOW() - ($1::int || ' milliseconds')::interval
         AND (

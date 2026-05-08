@@ -5,17 +5,22 @@
  * from inside the cpap-fitter admin console — no engineer / env-
  * var change / restart required for routine staff turnover.
  *
- * The roster lives in `auth.users` directly — there's no Penn-
+ * The roster lives in `resupply_auth.users` directly — there's no Penn-
  * specific admin_users table (that's a Resupply concept).
- * Pending invitations are auth.users rows with status='invited'
+ * Pending invitations are resupply_auth.users rows with status='invited'
  * and email_verified_at IS NULL. Active members are status='active'
  * (or any non-revoked row with a verified email).
  *
  * Lockout guard: an admin cannot demote or revoke themselves.
  *
- * Audit: every state-changing call writes a row via
- * `db.insert(adminAuditLogTable)`. Best-effort: we log on failure
- * but never block the user-visible operation.
+ * Audit: every state-changing call writes a row via the Supabase
+ * client (best-effort: we log on failure but never block the
+ * user-visible operation).
+ *
+ * Fully on the Supabase JS client — both the route-level reads and
+ * the inviteTeamMember / revokeTeamMember / updateTeamMemberRole
+ * helpers from @workspace/resupply-auth (ported in the same series
+ * of commits).
  */
 
 import { Router, type Request } from "express";
@@ -26,8 +31,7 @@ import {
   revokeTeamMember,
   updateTeamMemberRole,
 } from "@workspace/resupply-auth";
-
-import { db, adminAuditLogTable, pool } from "../../lib/storefront/db.js";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { getAuthDeps } from "../../lib/auth-deps.js";
@@ -35,10 +39,6 @@ import { requireAdminOnly } from "../../middlewares/requireAdmin.js";
 
 const router = Router();
 
-// Rate limiters for the team-management surface. requireAdminOnly
-// already gates these on a valid admin session, but we still cap
-// per-admin / per-IP volume so a compromised admin cookie cannot be
-// used to script bulk invites/revokes against the auth.users table.
 const adminUsersReadLimiter = expressRateLimit({
   windowMs: 60 * 1000,
   limit: 60,
@@ -67,28 +67,28 @@ const roleChangeBody = z.object({
   role: z.enum(["admin", "agent"]),
 });
 
-/**
- * Best-effort admin audit write. Writes to the legacy admin-audit
- * table (NOT `resupply.audit_log`).
- *
- * Failures are intentionally swallowed: the caller has already
- * committed the user-visible side effect by the time we're called,
- * and a propagated error would 500 a successful invite/role-change.
- * We DO emit a structured ERROR with a stable `event` tag so a
- * logging consumer can alert on systemic admin-audit DB outages
- * (`event=admin_audit_write_failed`, count > N over M minutes).
- */
+// Best-effort admin audit write. Writes to `resupply.audit_log` via
+// the Supabase client. Failures are intentionally swallowed: the
+// caller has already committed the user-visible side effect by the
+// time we're called, and a propagated error would 500 a successful
+// invite/role-change. We DO emit a structured ERROR with a stable
+// `event` tag so a logging consumer can alert on systemic admin-audit
+// outages (`event=admin_audit_write_failed`, count > N over M minutes).
 async function writeAudit(
   req: import("express").Request,
   action: string,
 ): Promise<void> {
   try {
-    await db.insert(adminAuditLogTable).values({
-      adminEmail: req.adminEmail ?? "system",
-      adminUserId: req.adminUserId ?? "system",
-      action,
-      ip: req.ip ?? null,
-    });
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("audit_log")
+      .insert({
+        operator_email: req.adminEmail ?? "system",
+        action,
+        ip: req.ip ?? null,
+      });
+    if (error) throw error;
   } catch (err) {
     const pgCode =
       typeof err === "object" &&
@@ -112,17 +112,6 @@ async function writeAudit(
   }
 }
 
-interface AuthUserRow {
-  id: string;
-  email_lower: string;
-  display_name: string | null;
-  role: string;
-  status: string;
-  email_verified_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
 interface MemberRow {
   id: string;
   email: string;
@@ -141,35 +130,50 @@ interface PendingInviteRow {
   createdAt: number;
 }
 
-function effectiveStatus(row: AuthUserRow): "active" | "pending" | "revoked" {
+function effectiveStatus(row: {
+  status: string;
+  email_verified_at: string | null;
+}): "active" | "pending" | "revoked" {
   if (row.status === "revoked") return "revoked";
   if (row.email_verified_at) return "active";
   return "pending";
 }
 
 router.get("/admin/users", requireAdminOnly, adminUsersReadLimiter, async (req, res) => {
-  // List every staff row in auth.users. Penn's staff is small
+  // List every staff row in resupply_auth.users. Penn's staff is small
   // (<200 in the foreseeable future), so we don't paginate.
-  const result = await pool.query<AuthUserRow>(
-    `SELECT id, email_lower, display_name, role, status,
-            email_verified_at, created_at, updated_at
-       FROM auth.users
-      WHERE role IN ('admin', 'agent')
-      ORDER BY created_at DESC`,
-  );
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply_auth")
+    .from("users")
+    .select(
+      "id, email_lower, display_name, role, status, email_verified_at, created_at, updated_at",
+    )
+    .in("role", ["admin", "agent"])
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    logger.error(
+      { event: "admin_users_list_failed", err: error },
+      "Failed to list admin users",
+    );
+    res.status(500).json({ error: "Could not load the team list." });
+    return;
+  }
 
   const members: MemberRow[] = [];
   const pendingInvitations: PendingInviteRow[] = [];
 
-  for (const u of result.rows) {
+  for (const u of data ?? []) {
     const role = u.role as "admin" | "agent";
     const status = effectiveStatus(u);
+    const createdAtMs = new Date(u.created_at).getTime();
     if (status === "pending") {
       pendingInvitations.push({
         id: u.id,
         email: u.email_lower,
         role,
-        createdAt: u.created_at.getTime(),
+        createdAt: createdAtMs,
       });
       continue;
     }
@@ -179,9 +183,11 @@ router.get("/admin/users", requireAdminOnly, adminUsersReadLimiter, async (req, 
       name: u.display_name,
       role,
       isSelf: u.id === req.adminUserId,
-      createdAt: u.created_at.getTime(),
+      createdAt: createdAtMs,
       status,
-      emailVerifiedAt: u.email_verified_at?.getTime() ?? null,
+      emailVerifiedAt: u.email_verified_at
+        ? new Date(u.email_verified_at).getTime()
+        : null,
     });
   }
 
@@ -221,19 +227,22 @@ router.post("/admin/users/invite", requireAdminOnly, adminUsersWriteLimiter, asy
   const { email, role } = parsed.data;
 
   // Block re-inviting an already-active member.
-  const existing = await pool.query<{
-    id: string;
-    role: string;
-    status: string;
-    email_verified_at: Date | null;
-  }>(
-    `SELECT id, role, status, email_verified_at
-       FROM auth.users
-      WHERE email_lower = $1
-      LIMIT 1`,
-    [email],
-  );
-  const prior = existing.rows[0];
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: existingRows, error: existingErr } = await supabase
+    .schema("resupply_auth")
+    .from("users")
+    .select("id, role, status, email_verified_at")
+    .eq("email_lower", email)
+    .limit(1);
+  if (existingErr) {
+    logger.error(
+      { event: "admin_invite_lookup_failed", err: existingErr },
+      "Failed to look up existing user",
+    );
+    res.status(500).json({ error: "Could not check for an existing account." });
+    return;
+  }
+  const prior = existingRows?.[0];
   if (
     prior &&
     prior.status === "active" &&
@@ -248,7 +257,7 @@ router.post("/admin/users/invite", requireAdminOnly, adminUsersWriteLimiter, asy
   }
 
   const deps = getAuthDeps();
-  const invite = await inviteTeamMember(pool, deps, {
+  const invite = await inviteTeamMember(supabase, deps, {
     emailLower: email,
     role,
     displayName: null,
@@ -293,13 +302,17 @@ router.patch(
       return;
     }
 
-    const lookup = await pool.query<{ email_lower: string }>(
-      `SELECT email_lower FROM auth.users WHERE id = $1 LIMIT 1`,
-      [userId],
-    );
-    const targetEmail = lookup.rows[0]?.email_lower ?? "(unknown)";
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: lookup } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .select("email_lower")
+      .eq("id", userId)
+      .limit(1)
+      .maybeSingle();
+    const targetEmail = lookup?.email_lower ?? "(unknown)";
 
-    const ok = await updateTeamMemberRole(pool, userId, role);
+    const ok = await updateTeamMemberRole(supabase, userId, role);
     if (!ok) {
       res.status(404).json({ error: "Could not find that teammate." });
       return;
@@ -324,13 +337,17 @@ router.delete("/admin/users/:userId", requireAdminOnly, adminUsersWriteLimiter, 
     return;
   }
 
-  const lookup = await pool.query<{ email_lower: string }>(
-    `SELECT email_lower FROM auth.users WHERE id = $1 LIMIT 1`,
-    [userId],
-  );
-  const targetEmail = lookup.rows[0]?.email_lower ?? "(unknown)";
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: lookup } = await supabase
+    .schema("resupply_auth")
+    .from("users")
+    .select("email_lower")
+    .eq("id", userId)
+    .limit(1)
+    .maybeSingle();
+  const targetEmail = lookup?.email_lower ?? "(unknown)";
 
-  await revokeTeamMember(pool, userId);
+  await revokeTeamMember(supabase, userId);
 
   await writeAudit(req, `team.revoke user=${targetEmail}`);
   res.json({ ok: true, userId });
@@ -347,17 +364,14 @@ router.delete(
       return;
     }
 
-    // After Stage 5b, "invitations" are auth.users rows with
-    // status='invited'. Cancelling an invitation = setting
-    // status='revoked' (which prevents the user from
-    // accepting + makes the email_token consumption a no-op).
-    const lookup = await pool.query<{
-      email_lower: string;
-      status: string;
-    }>(`SELECT email_lower, status FROM auth.users WHERE id = $1 LIMIT 1`, [
-      invId,
-    ]);
-    const row = lookup.rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row } = await supabase
+      .schema("resupply_auth")
+      .from("users")
+      .select("email_lower, status")
+      .eq("id", invId)
+      .limit(1)
+      .maybeSingle();
     if (!row) {
       res.status(404).json({
         error: "Could not cancel that invitation. It may already be gone.",
@@ -372,7 +386,7 @@ router.delete(
       return;
     }
 
-    await revokeTeamMember(pool, invId);
+    await revokeTeamMember(supabase, invId);
 
     await writeAudit(req, `team.invitation_revoke email=${row.email_lower}`);
     res.json({ ok: true, invitationId: invId });

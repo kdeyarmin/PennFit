@@ -6,12 +6,11 @@
 // happened?").
 //
 // Architecture note: per Rule 8 of check-resupply-architecture.sh
-// the bare `import { auditLog }` Drizzle symbol is forbidden
-// outside @workspace/resupply-audit (so the helper stays the only
-// chokepoint for WRITES). Raw SQL SELECT against
-// resupply.audit_log is explicitly allowed by the same rule, so
-// this read-only viewer issues a parameterised raw query through
-// the shared pool.
+// the bare `import { auditLog }` Drizzle symbol is forbidden outside
+// @workspace/resupply-audit (so the helper stays the only chokepoint
+// for WRITES). Reads against resupply.audit_log are explicitly
+// allowed by the same rule, and now go through the shared Supabase
+// service-role client (Drizzle → Supabase migration).
 //
 // `metadata` is the plaintext jsonb context written through
 // @workspace/resupply-audit's sanitiser (PHI-key denylist + size +
@@ -25,7 +24,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -53,23 +52,6 @@ const listQuery = z
   })
   .strict();
 
-interface AuditRow {
-  id: string;
-  occurred_at: Date | string | null;
-  operator_email: string | null;
-  operator_user_id: string | null;
-  action: string;
-  target_table: string | null;
-  target_id: string | null;
-  metadata: unknown;
-  ip: string | null;
-  user_agent: string | null;
-}
-
-interface CountRow {
-  count: number | string;
-}
-
 const router: IRouter = Router();
 
 router.get("/audit", requireAdmin, auditReadLimiter, async (req, res) => {
@@ -86,72 +68,44 @@ router.get("/audit", requireAdmin, auditReadLimiter, async (req, res) => {
   }
   const { action, targetTable, since, limit, offset } = parsed.data;
 
-  // Build WHERE incrementally using parameterised placeholders.
-  const where: string[] = [];
-  const params: unknown[] = [];
-  if (action) {
-    params.push(`%${action}%`);
-    where.push(`action ILIKE $${params.length}`);
+  const supabase = getSupabaseServiceRoleClient();
+  let query = supabase
+    .schema("resupply")
+    .from("audit_log")
+    .select(
+      "id, occurred_at, operator_email, operator_user_id, action, target_table, target_id, metadata, ip, user_agent",
+      { count: "exact" },
+    )
+    .order("occurred_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (action) query = query.ilike("action", `%${action}%`);
+  if (targetTable) query = query.eq("target_table", targetTable);
+  if (since) query = query.gte("occurred_at", new Date(since).toISOString());
+
+  const { data, count, error } = await query;
+  if (error) {
+    res.status(500).json({ error: "query_failed", message: error.message });
+    return;
   }
-  if (targetTable) {
-    params.push(targetTable);
-    where.push(`target_table = $${params.length}`);
-  }
-  if (since) {
-    params.push(new Date(since));
-    where.push(`occurred_at >= $${params.length}`);
-  }
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-
-  const pool = getDbPool();
-
-  const countSql =
-    `SELECT count(*)::int AS count FROM resupply.audit_log ${whereSql}`.trim();
-  // Pass a snapshot copy of params so vitest call captures don't
-  // see later mutations from the rows query.
-  const countResult = await pool.query<CountRow>(countSql, params.slice());
-  const total = Number(countResult.rows[0]?.count ?? 0);
-
-  // limit + offset are validated ints from zod so safe to inline,
-  // but we still bind them as parameters for symmetry/safety.
-  params.push(limit);
-  const limitIdx = params.length;
-  params.push(offset);
-  const offsetIdx = params.length;
-
-  const rowsSql = (
-    `SELECT id, occurred_at, operator_email, operator_user_id, ` +
-    `action, target_table, target_id, metadata, ip, user_agent ` +
-    `FROM resupply.audit_log ${whereSql} ` +
-    `ORDER BY occurred_at DESC ` +
-    `LIMIT $${limitIdx} OFFSET $${offsetIdx}`
-  ).replace(/\s+/g, " ");
-
-  const rowsResult = await pool.query<AuditRow>(rowsSql, params);
-
-  const toIsoRequired = (v: unknown): string => {
-    if (v == null) return new Date(0).toISOString();
-    if (v instanceof Date) return v.toISOString();
-    return String(v);
-  };
 
   res.status(200).json({
-    items: rowsResult.rows.map((r) => ({
+    items: (data ?? []).map((r) => ({
       id: r.id,
-      occurredAt: toIsoRequired(r.occurred_at),
+      occurredAt: r.occurred_at ?? new Date(0).toISOString(),
       adminEmail: r.operator_email,
       adminUserId: r.operator_user_id,
       action: r.action,
       targetTable: r.target_table,
       targetId: r.target_id,
       metadata:
-        r.metadata && typeof r.metadata === "object"
+        r.metadata && typeof r.metadata === "object" && !Array.isArray(r.metadata)
           ? (r.metadata as Record<string, unknown>)
           : {},
       ip: r.ip,
       userAgent: r.user_agent,
     })),
-    total,
+    total: count ?? 0,
     limit,
     offset,
   });

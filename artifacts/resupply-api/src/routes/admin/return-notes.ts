@@ -15,17 +15,11 @@
 // audit row records the return_id + body_length only — never the
 // body content itself.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  shopReturnNotes,
-  shopReturns,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -59,47 +53,48 @@ router.get(
       return;
     }
     const returnId = parsed.data;
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const exists = await db
-      .select({ id: shopReturns.id })
-      .from(shopReturns)
-      .where(eq(shopReturns.id, returnId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: ret } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select("id")
+      .eq("id", returnId)
+      .limit(1)
+      .maybeSingle();
+    if (!ret) {
       res.status(404).json({ error: "return_not_found" });
       return;
     }
 
-    const rows = await db
-      .select({
-        id: shopReturnNotes.id,
-        body: shopReturnNotes.body,
-        authorEmail: shopReturnNotes.authorEmail,
-        authorUserId: shopReturnNotes.authorUserId,
-        createdAt: shopReturnNotes.createdAt,
-      })
-      .from(shopReturnNotes)
-      .where(eq(shopReturnNotes.returnId, returnId))
-      .orderBy(desc(shopReturnNotes.createdAt))
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("shop_return_notes")
+      .select("id, body, author_email, author_user_id, created_at")
+      .eq("return_id", returnId)
+      .order("created_at", { ascending: false })
       .limit(50);
+    if (error) {
+      res.status(500).json({ error: "query_failed", message: error.message });
+      return;
+    }
 
     req.log?.info(
       {
         returnId,
-        count: rows.length,
+        count: rows?.length ?? 0,
         adminEmail: req.adminEmail,
       },
       "admin.shop.return.notes.list",
     );
 
     res.json({
-      notes: rows.map((r) => ({
+      notes: (rows ?? []).map((r) => ({
         id: r.id,
         body: r.body ?? "",
-        authorEmail: r.authorEmail,
-        authorUserId: r.authorUserId,
-        createdAt: r.createdAt.toISOString(),
+        authorEmail: r.author_email,
+        authorUserId: r.author_user_id,
+        createdAt: r.created_at,
       })),
     });
   },
@@ -129,41 +124,39 @@ router.post(
     }
     const { body } = bodyParsed.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const exists = await db
-      .select({ id: shopReturns.id })
-      .from(shopReturns)
-      .where(eq(shopReturns.id, returnId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: ret } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select("id")
+      .eq("id", returnId)
+      .limit(1)
+      .maybeSingle();
+    if (!ret) {
       res.status(404).json({ error: "return_not_found" });
       return;
     }
 
-    const inserted = await db
-      .insert(shopReturnNotes)
-      .values({
-        returnId,
+    const { data: inserted, error: insErr } = await supabase
+      .schema("resupply")
+      .from("shop_return_notes")
+      .insert({
+        return_id: returnId,
         body,
-        authorEmail: req.adminEmail ?? "<unknown>",
-        authorUserId: req.adminUserId ?? null,
+        author_email: req.adminEmail ?? "<unknown>",
+        author_user_id: req.adminUserId ?? null,
       })
-      .returning({
-        id: shopReturnNotes.id,
-        createdAt: shopReturnNotes.createdAt,
-      });
-    const row = inserted[0];
-    if (!row) {
-      throw new Error("INSERT returned no rows");
-    }
+      .select("id, created_at")
+      .single();
+    if (insErr) throw insErr;
 
     await logAudit({
       action: "shop_return.note.create",
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "shop_return_notes",
-      targetId: row.id,
+      targetId: inserted.id,
       metadata: { return_id: returnId, body_length: body.length },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -172,8 +165,8 @@ router.post(
     });
 
     res.status(201).json({
-      id: row.id,
-      createdAt: row.createdAt.toISOString(),
+      id: inserted.id,
+      createdAt: inserted.created_at,
     });
   },
 );
