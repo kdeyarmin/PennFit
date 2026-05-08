@@ -12,6 +12,8 @@
 // the cpap-fitter shop and the resupply staff dashboard. The
 // product name is passed in by the caller.
 
+import { stripTrailingSlashes } from "../string-utils";
+
 export interface AuthEmailContext {
   /** "PennFit" / "Resupply" — appears in subject + signature. */
   productName: string;
@@ -49,7 +51,7 @@ function makeLink(
   path: string,
   token: string,
 ): string {
-  const safePrefix = (prefix ?? "").replace(/\/+$/, "");
+  const safePrefix = stripTrailingSlashes(prefix ?? "");
   return `${base}${safePrefix}${path}?token=${encodeURIComponent(token)}`;
 }
 

@@ -13,7 +13,8 @@
 //   * No audit event here — the dispatch audit in the POST route is
 //     sufficient; logging every Twilio fetch would add noise without value.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import PDFDocument from "pdfkit";
@@ -24,12 +25,25 @@ import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 
 const router: IRouter = Router();
 
+// The fax-document URL is signed (HMAC + 1h TTL) so an attacker
+// can't enumerate outreach IDs, but the route still does a DB lookup
+// + PDF render per request. Cap per IP so a flood of expired/invalid
+// tokens cannot run that work in a tight loop.
+const faxDocumentLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
+
 // Left/right margins and usable width for a US Letter page at 72 dpi.
 const MARGIN = 72;
 const PAGE_WIDTH = 612;
 const USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
-router.get("/fax/document/:token", async (req, res) => {
+router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   const rawToken = req.params.token;
   const token = Array.isArray(rawToken)
     ? (rawToken[0] ?? "")
