@@ -148,7 +148,7 @@ commit to P0.3.
 | P3.2 | No Lighthouse / axe CI for SPA a11y regressions | MED | M | Add a Playwright + axe-core job to the CI workflow added in P0.3. |
 | P3.3 | Playwright E2E exists but no smoke run on PRs | LOW | S | Wire `pnpm playwright test --grep @smoke` into the CI workflow. |
 | P3.4 | No bundle-budget gate in CI | LOW | S | After P2.12 lands, fail CI on >X% bundle growth. |
-| P3.5 | `pnpm` version drift — 10.33.2 in package.json vs 10.33.0 installed | LOW | S | Pin `packageManager` strictly + add `engines.pnpm`/`engines.node`. |
+| P3.5 | Package-manager metadata could be tightened (`engines.pnpm` / `engines.node`) | LOW | S | Keep the existing `packageManager: pnpm@10.33.2` pin and add `engines.pnpm`/`engines.node`. |
 | P3.6 | `preinstall` silently `rm -f`s lockfiles | LOW | S | Replace with a guard that errors if a non-pnpm lockfile is present and instructs the developer. |
 
 ### Observability
