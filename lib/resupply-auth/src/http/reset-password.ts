@@ -70,14 +70,14 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
 
     // Record every request (regardless of outcome) against the per-endpoint
     // sentinel so repeat callers accumulate toward the cap without bleeding
-    // into sign-in / forgot-password / verify-email counters. Mirrors the
-    // forgot-password / verify-email handlers.
+    // into sign-in / forgot-password / verify-email counters. This repo
+    // method is named for sign-in attempts, but here the `success: false`
+    // flag is intentionally just "count this request toward the bucket."
     void deps.repo.recordLoginAttempt({
       emailLower: ipSentinel,
       ip,
       success: false,
     });
-
     const parsed = ResetBody.safeParse(req.body);
     if (!parsed.success) {
       authError(

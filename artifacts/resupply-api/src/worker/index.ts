@@ -54,22 +54,62 @@ export async function startWorker(): Promise<void> {
     throw new Error("DATABASE_URL must be set for the resupply worker.");
   }
 
+  // Periodic state-monitor heartbeat. With `monitorStateIntervalSeconds`
+  // set, pg-boss emits a `monitor-states` event with per-queue counts
+  // (created/active/retry/failed/etc) on the given cadence. We use it
+  // as a poor-person's DLQ-alert: when ANY queue carries a non-zero
+  // `failed` or `retry` count, we emit ONE structured WARN line per
+  // tick listing the affected queues — that line is the canonical
+  // grep target for "are crons quietly broken?". When everything is
+  // clean we stay silent so the log isn't dominated by heartbeats.
+  // 60 seconds is tight enough to surface a stuck queue quickly and
+  // loose enough to add no meaningful DB load.
+  const MONITOR_STATE_INTERVAL_SECONDS = 60;
+
   const boss = new PgBoss({
     connectionString: databaseUrl,
     // Dedicated schema so pg-boss tables never collide with our
     // application tables. The /readyz check also probes this exact
     // schema for its `version` table — keep them in lockstep.
     schema: "pgboss_resupply",
-    // Enable periodic per-queue state snapshots (default is 0 — no
-    // monitoring). We tap the resulting `monitor-states` event below
-    // to alert ops when a job moves to the `failed` state. 60s is
-    // tight enough to surface a stuck queue within a sleep cycle and
-    // loose enough to add no meaningful DB load.
-    monitorStateIntervalSeconds: 60,
+    monitorStateIntervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
   });
 
   boss.on("error", (err) => {
-    logger.error({ err }, "pg-boss error");
+    logger.error({ err, event: "pg_boss_error" }, "pg-boss error");
+  });
+
+  boss.on("monitor-states", (states) => {
+    // pg-boss MonitorStates shape:
+    //   { all, created, retry, active, completed, cancelled, failed,
+    //     queues: { [name]: { ...same } } }
+    // We only care about the per-queue rollup. A non-zero `failed`
+    // means at least one job exhausted its retry policy; a non-zero
+    // `retry` means at least one job is currently between attempts.
+    // Both are worth surfacing.
+    const trouble: Array<{
+      queue: string;
+      failed: number;
+      retry: number;
+    }> = [];
+    for (const [queue, counts] of Object.entries(states.queues ?? {})) {
+      if (counts.failed > 0 || counts.retry > 0) {
+        trouble.push({
+          queue,
+          failed: counts.failed,
+          retry: counts.retry,
+        });
+      }
+    }
+    if (trouble.length === 0) return;
+    logger.warn(
+      {
+        event: "pg_boss_jobs_unhealthy",
+        queues: trouble,
+        intervalSeconds: MONITOR_STATE_INTERVAL_SECONDS,
+      },
+      "pg-boss queues report failed or retrying jobs",
+    );
   });
 
   // Failed-job alerting (P1.2). pg-boss does NOT emit a per-job

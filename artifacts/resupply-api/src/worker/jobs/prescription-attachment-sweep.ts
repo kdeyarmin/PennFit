@@ -407,7 +407,11 @@ export function buildProductionSweepDeps(
     audit: async (counters) => {
       await logAudit({
         action: "prescription.attachment.sweep",
-        adminEmail: null,
+        // Stable system actor (matches the convention used by the
+        // other cron-driven workers — smart-trigger-*, rx-renewal-*)
+        // so audit consumers can filter cron-triggered rows by
+        // adminEmail prefix instead of by null.
+        adminEmail: "system:cron:prescription-attachment-sweep",
         adminUserId: null,
         targetTable: "prescriptions",
         targetId: null,

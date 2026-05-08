@@ -57,6 +57,28 @@ function isRequest(input: RequestInfo | URL): input is Request {
   return typeof Request !== "undefined" && input instanceof Request;
 }
 
+/**
+ * Read the `pf_csrf` cookie value (if present) from `document.cookie`.
+ * Returns `null` when the document or cookie is unavailable so the
+ * caller can skip header attachment cleanly. Mirror of the helper in
+ * the storefront custom-fetch.ts.
+ */
+function readCsrfCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const cookie = document.cookie;
+  if (!cookie) return null;
+  for (const part of cookie.split("; ")) {
+    if (part.startsWith("pf_csrf=")) {
+      try {
+        return decodeURIComponent(part.slice("pf_csrf=".length));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 function resolveMethod(
   input: RequestInfo | URL,
   explicitMethod?: string,
@@ -378,6 +400,20 @@ export async function customFetch<T = unknown>(
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
+  }
+
+  // Attach the double-submit CSRF token on state-changing methods.
+  // See lib/api-client-react/src/storefront/custom-fetch.ts for the
+  // full rationale — kept in lockstep with the storefront variant.
+  if (
+    typeof document !== "undefined" &&
+    !headers.has("x-pf-csrf") &&
+    method !== "GET" &&
+    method !== "HEAD" &&
+    method !== "OPTIONS"
+  ) {
+    const csrf = readCsrfCookie();
+    if (csrf) headers.set("x-pf-csrf", csrf);
   }
 
   const requestInfo = { method, url: resolveUrl(input) };

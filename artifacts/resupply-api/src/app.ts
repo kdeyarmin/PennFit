@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import express, { type Express, type Request } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -104,9 +106,44 @@ app.use(
   }),
 );
 
+// Request-ID propagation:
+//   * Honor an inbound `X-Request-Id` (or `X-Correlation-Id`) header
+//     when it's a sensible UUID-shaped string. That lets a caller
+//     (load balancer, frontend with sentry, another service) hand us
+//     a trace id and have it stitch into our pino lines plus our
+//     errorHandler's JSON envelope.
+//   * Generate a fresh UUIDv4 when no inbound header is present, so
+//     every request still has a stable correlation key.
+//   * Echo the resolved id back as `X-Request-Id` so a customer
+//     hitting a 500 can read the id from the response and we can
+//     find the matching server log without a timestamp dance.
+//
+// We sanitize the inbound header so a forged or unbounded
+// `X-Request-Id` from the public internet can't blow up log
+// dashboards or smuggle log-injection sequences. The allow-list is
+// intentionally narrow (UUID-ish) — anything else is silently
+// replaced with a server-generated id.
+const REQUEST_ID_HEADER = "x-request-id";
+const REQUEST_ID_FALLBACK_HEADER = "x-correlation-id";
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
+
 app.use(
   pinoHttp({
     logger,
+    genReqId(req, res) {
+      const fromHeader =
+        req.headers[REQUEST_ID_HEADER] ??
+        req.headers[REQUEST_ID_FALLBACK_HEADER];
+      const candidate = Array.isArray(fromHeader) ? fromHeader[0] : fromHeader;
+      const id =
+        typeof candidate === "string" && REQUEST_ID_PATTERN.test(candidate)
+          ? candidate
+          : randomUUID();
+      // Echo on the response so the client has a stable handle on
+      // this request even when the body is the generic 500 envelope.
+      res.setHeader("X-Request-Id", id);
+      return id;
+    },
     serializers: {
       req(req) {
         return {
