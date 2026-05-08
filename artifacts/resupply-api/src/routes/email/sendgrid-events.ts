@@ -84,64 +84,74 @@ router.post(
     const pool = getDbPool();
     const db = drizzle(pool);
 
-    for (const ev of events) {
-      const sgMessageId = ev.sg_message_id ?? null;
-      const conversationId = ev.conversation_id ?? null;
+    // SendGrid posts up to ~30 events per batch and we'd like the
+    // webhook to ack quickly so SendGrid doesn't queue retries. The
+    // per-event work — one UPDATE keyed on sg_message_id, plus an
+    // optional audit row for bounce/dropped — is independent across
+    // events (no row overlaps; safeAudit is event-scoped). Run each
+    // event's chain concurrently so a 30-event batch costs ~one
+    // round-trip instead of 30. Errors are still caught + logged per
+    // event so a single bad row doesn't poison the rest.
+    await Promise.all(
+      events.map(async (ev) => {
+        const sgMessageId = ev.sg_message_id ?? null;
+        const conversationId = ev.conversation_id ?? null;
 
-      try {
-        // Map SendGrid event names to our delivery_status taxonomy.
-        const statusUpdate = mapEventToStatus(ev.event);
-        if (statusUpdate && sgMessageId) {
-          await db.execute(sql`
-            update resupply.messages
-            set
-              delivery_status = ${statusUpdate.deliveryStatus},
-              delivery_error = ${statusUpdate.deliveryError ?? null},
-              delivered_at = case when ${statusUpdate.deliveryStatus} = 'delivered' then now() else delivered_at end
-            where vendor_metadata->>'sendgrid_message_id' = ${sgMessageId}
-          `);
+        try {
+          // Map SendGrid event names to our delivery_status taxonomy.
+          const statusUpdate = mapEventToStatus(ev.event);
+          if (statusUpdate && sgMessageId) {
+            await db.execute(sql`
+              update resupply.messages
+              set
+                delivery_status = ${statusUpdate.deliveryStatus},
+                delivery_error = ${statusUpdate.deliveryError ?? null},
+                delivered_at = case when ${statusUpdate.deliveryStatus} = 'delivered' then now() else delivered_at end
+              where vendor_metadata->>'sendgrid_message_id' = ${sgMessageId}
+            `);
+          }
+        } catch (err) {
+          logger.warn(
+            {
+              event: "sendgrid_events_update_failed",
+              sg_message_id: sgMessageId,
+              err: serializeErr(err),
+            },
+            "sendgrid-events: failed to update messages row",
+          );
         }
-      } catch (err) {
-        logger.warn(
-          {
-            event: "sendgrid_events_update_failed",
-            sg_message_id: sgMessageId,
-            err: serializeErr(err),
-          },
-          "sendgrid-events: failed to update messages row",
-        );
-      }
 
-      if (ev.event === "bounce" || ev.event === "dropped") {
-        // PHI safety: SendGrid `reason` is freeform vendor text and
-        // routinely echoes the recipient address (e.g. "550 5.1.1
-        // <patient@example.com>: User unknown"). We refuse to write it
-        // to the audit row. SendGrid `type` is a small enumerated set
-        // for bounce events (`bounce`, `blocked`, `expired`, etc.) —
-        // we whitelist it through a fixed vocabulary, falling back to
-        // `other` rather than echoing whatever the vendor sent.
-        // The freeform reason is preserved on the `messages` row above
-        // (encrypted at rest), where investigators can pull it via the
-        // bound conversation_id without it leaking into the admin
-        // audit feed.
-        await safeAudit({
-          action: "email.delivery.bounced",
-          adminEmail: null,
-          adminUserId: null,
-          targetTable: "messages",
-          targetId: null,
-          metadata: {
-            channel: "email",
-            conversation_id: conversationId,
-            sendgrid_message_id: sgMessageId,
-            event: ev.event,
-            bounce_classification: classifyBounceType(ev.type),
-          },
-          ip: req.ip ?? null,
-          userAgent: req.get("user-agent") ?? null,
-        });
-      }
-    }
+        if (ev.event === "bounce" || ev.event === "dropped") {
+          // PHI safety: SendGrid `reason` is freeform vendor text and
+          // routinely echoes the recipient address (e.g. "550 5.1.1
+          // <patient@example.com>: User unknown"). We refuse to write it
+          // to the audit row. SendGrid `type` is a small enumerated set
+          // for bounce events (`bounce`, `blocked`, `expired`, etc.) —
+          // we whitelist it through a fixed vocabulary, falling back to
+          // `other` rather than echoing whatever the vendor sent.
+          // The freeform reason is preserved on the `messages` row above
+          // (encrypted at rest), where investigators can pull it via the
+          // bound conversation_id without it leaking into the admin
+          // audit feed.
+          await safeAudit({
+            action: "email.delivery.bounced",
+            adminEmail: null,
+            adminUserId: null,
+            targetTable: "messages",
+            targetId: null,
+            metadata: {
+              channel: "email",
+              conversation_id: conversationId,
+              sendgrid_message_id: sgMessageId,
+              event: ev.event,
+              bounce_classification: classifyBounceType(ev.type),
+            },
+            ip: req.ip ?? null,
+            userAgent: req.get("user-agent") ?? null,
+          });
+        }
+      }),
+    );
 
     res.status(200).json({ ok: true });
   },

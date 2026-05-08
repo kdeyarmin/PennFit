@@ -51,119 +51,132 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
 
   const db = drizzle(getDbPool());
 
-  // Detail header LEFT JOINs the latest-message projection so the
+  // Five independent reads (header + four child collections), each
+  // keyed on the patient id. Run them concurrently so the detail
+  // page pays max(query) latency rather than sum(query). When the
+  // patient row is missing we still issue the four child reads —
+  // they return empty result sets cheaply and the wasted work is
+  // far smaller than a round-trip on the success path.
+  //
+  // The header LEFT JOINs the latest-message projection so the
   // patient header strip can show "last contacted" without a
-  // separate /messages query.
-  const patientRows = await db
-    .select({
-      id: patients.id,
-      pacwareId: patients.pacwareId,
-      firstName: patients.legalFirstName,
-      lastName: patients.legalLastName,
-      status: patients.status,
-      hasPhone: sql<boolean>`(${patients.phoneE164} IS NOT NULL)`,
-      hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
-      // Admin-editable settings the new dashboard panel reads/writes
-      // via PATCH /patients/:id. All three are nullable: NULL means
-      // "no override / fall back to global rules / fall back to legacy
-      // SMS-then-email selection".
-      insurancePayer: patients.insurancePayer,
-      cadenceOverrideDays: patients.cadenceOverrideDays,
-      channelPreference: patients.channelPreference,
-      createdAt: patients.createdAt,
-      updatedAt: patients.updatedAt,
-      lastMessageAt: patientLatestMessage.lastMessageAt,
-      lastMessageDirection: patientLatestMessage.lastMessageDirection,
-      lastMessagePreview: patientLatestMessage.lastMessagePreview,
-      // Portal invite fields
-      portalAuthUserId: patients.portalAuthUserId,
-      portalInvitedAt: patients.portalInvitedAt,
-      portalAuthVerifiedAt: authUsers.emailVerifiedAt,
-    })
-    .from(patients)
-    .leftJoin(
-      patientLatestMessage,
-      eq(patientLatestMessage.patientId, patients.id),
-    )
-    .leftJoin(authUsers, eq(authUsers.id, patients.portalAuthUserId))
-    .where(eq(patients.id, id))
-    .limit(1);
+  // separate /messages query, and LEFT JOINs auth.users so portal
+  // status (active / pending / not_invited) can be computed
+  // without a follow-up auth lookup.
+  const [
+    patientRows,
+    prescriptionRows,
+    episodeRows,
+    conversationRows,
+    fulfillmentRows,
+  ] = await Promise.all([
+    db
+      .select({
+        id: patients.id,
+        pacwareId: patients.pacwareId,
+        firstName: patients.legalFirstName,
+        lastName: patients.legalLastName,
+        status: patients.status,
+        hasPhone: sql<boolean>`(${patients.phoneE164} IS NOT NULL)`,
+        hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
+        // Admin-editable settings the dashboard panel reads/writes
+        // via PATCH /patients/:id. All three are nullable: NULL means
+        // "no override / fall back to global rules / fall back to legacy
+        // SMS-then-email selection".
+        insurancePayer: patients.insurancePayer,
+        cadenceOverrideDays: patients.cadenceOverrideDays,
+        channelPreference: patients.channelPreference,
+        createdAt: patients.createdAt,
+        updatedAt: patients.updatedAt,
+        lastMessageAt: patientLatestMessage.lastMessageAt,
+        lastMessageDirection: patientLatestMessage.lastMessageDirection,
+        lastMessagePreview: patientLatestMessage.lastMessagePreview,
+        // Portal invite fields
+        portalAuthUserId: patients.portalAuthUserId,
+        portalInvitedAt: patients.portalInvitedAt,
+        portalAuthVerifiedAt: authUsers.emailVerifiedAt,
+      })
+      .from(patients)
+      .leftJoin(
+        patientLatestMessage,
+        eq(patientLatestMessage.patientId, patients.id),
+      )
+      .leftJoin(authUsers, eq(authUsers.id, patients.portalAuthUserId))
+      .where(eq(patients.id, id))
+      .limit(1),
+    db
+      .select({
+        id: prescriptions.id,
+        itemSku: prescriptions.itemSku,
+        cadenceDays: prescriptions.cadenceDays,
+        validFrom: prescriptions.validFrom,
+        validUntil: prescriptions.validUntil,
+        status: prescriptions.status,
+        createdAt: prescriptions.createdAt,
+        // Attachment metadata. We only forward the bounded technical
+        // fields the dashboard needs to render the "Document attached"
+        // chip + download link — the actual object key is intentionally
+        // NOT exposed here. Downloads go through the dedicated GET
+        // endpoint which is admin-gated and audit-logged on every hit.
+        attachmentFilename: prescriptions.attachmentFilename,
+        attachmentContentType: prescriptions.attachmentContentType,
+        attachmentSizeBytes: prescriptions.attachmentSizeBytes,
+        attachmentUploadedAt: prescriptions.attachmentUploadedAt,
+      })
+      .from(prescriptions)
+      .where(eq(prescriptions.patientId, id))
+      .orderBy(desc(prescriptions.createdAt)),
+    db
+      .select({
+        id: episodes.id,
+        prescriptionId: episodes.prescriptionId,
+        itemSku: prescriptions.itemSku,
+        status: episodes.status,
+        dueAt: episodes.dueAt,
+        expiresAt: episodes.expiresAt,
+        createdAt: episodes.createdAt,
+      })
+      .from(episodes)
+      .leftJoin(prescriptions, eq(prescriptions.id, episodes.prescriptionId))
+      .where(eq(episodes.patientId, id))
+      .orderBy(desc(episodes.createdAt)),
+    db
+      .select({
+        id: conversations.id,
+        episodeId: conversations.episodeId,
+        channel: conversations.channel,
+        status: conversations.status,
+        lastMessageAt: conversations.lastMessageAt,
+        createdAt: conversations.createdAt,
+      })
+      .from(conversations)
+      .where(eq(conversations.patientId, id))
+      .orderBy(desc(conversations.createdAt))
+      .limit(10),
+    db
+      .select({
+        id: fulfillments.id,
+        episodeId: fulfillments.episodeId,
+        itemSku: fulfillments.itemSku,
+        quantity: fulfillments.quantity,
+        status: fulfillments.status,
+        pacwareOrderRef: fulfillments.pacwareOrderRef,
+        submittedAt: fulfillments.submittedAt,
+        shippedAt: fulfillments.shippedAt,
+        deliveredAt: fulfillments.deliveredAt,
+        createdAt: fulfillments.createdAt,
+      })
+      .from(fulfillments)
+      .where(eq(fulfillments.patientId, id))
+      .orderBy(desc(fulfillments.createdAt))
+      .limit(10),
+  ]);
 
   const patient = patientRows[0];
   if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
   }
-
-  const prescriptionRows = await db
-    .select({
-      id: prescriptions.id,
-      itemSku: prescriptions.itemSku,
-      cadenceDays: prescriptions.cadenceDays,
-      validFrom: prescriptions.validFrom,
-      validUntil: prescriptions.validUntil,
-      status: prescriptions.status,
-      createdAt: prescriptions.createdAt,
-      // Attachment metadata. We only forward the bounded technical
-      // fields the dashboard needs to render the "Document attached"
-      // chip + download link — the actual object key is intentionally
-      // NOT exposed here. Downloads go through the dedicated GET
-      // endpoint which is admin-gated and audit-logged on every hit.
-      attachmentFilename: prescriptions.attachmentFilename,
-      attachmentContentType: prescriptions.attachmentContentType,
-      attachmentSizeBytes: prescriptions.attachmentSizeBytes,
-      attachmentUploadedAt: prescriptions.attachmentUploadedAt,
-    })
-    .from(prescriptions)
-    .where(eq(prescriptions.patientId, id))
-    .orderBy(desc(prescriptions.createdAt));
-
-  const episodeRows = await db
-    .select({
-      id: episodes.id,
-      prescriptionId: episodes.prescriptionId,
-      itemSku: prescriptions.itemSku,
-      status: episodes.status,
-      dueAt: episodes.dueAt,
-      expiresAt: episodes.expiresAt,
-      createdAt: episodes.createdAt,
-    })
-    .from(episodes)
-    .leftJoin(prescriptions, eq(prescriptions.id, episodes.prescriptionId))
-    .where(eq(episodes.patientId, id))
-    .orderBy(desc(episodes.createdAt));
-
-  const conversationRows = await db
-    .select({
-      id: conversations.id,
-      episodeId: conversations.episodeId,
-      channel: conversations.channel,
-      status: conversations.status,
-      lastMessageAt: conversations.lastMessageAt,
-      createdAt: conversations.createdAt,
-    })
-    .from(conversations)
-    .where(eq(conversations.patientId, id))
-    .orderBy(desc(conversations.createdAt))
-    .limit(10);
-
-  const fulfillmentRows = await db
-    .select({
-      id: fulfillments.id,
-      episodeId: fulfillments.episodeId,
-      itemSku: fulfillments.itemSku,
-      quantity: fulfillments.quantity,
-      status: fulfillments.status,
-      pacwareOrderRef: fulfillments.pacwareOrderRef,
-      submittedAt: fulfillments.submittedAt,
-      shippedAt: fulfillments.shippedAt,
-      deliveredAt: fulfillments.deliveredAt,
-      createdAt: fulfillments.createdAt,
-    })
-    .from(fulfillments)
-    .where(eq(fulfillments.patientId, id))
-    .orderBy(desc(fulfillments.createdAt))
-    .limit(10);
 
   const toIso = (v: unknown): string | null => {
     if (v == null) return null;

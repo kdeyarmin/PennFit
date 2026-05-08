@@ -40,61 +40,66 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
 
   const db = drizzle(getDbPool());
 
-  const headerRows = await db
-    .select({
-      id: conversations.id,
-      patientId: conversations.patientId,
-      patientFirstName: patients.legalFirstName,
-      patientLastName: patients.legalLastName,
-      // Shop-customer subject — null for patient-flow rows, set for
-      // in_app rows. Joined nullable so the existing patient-flow
-      // queries don't change shape.
-      customerId: conversations.customerId,
-      customerDisplayName: shopCustomers.displayName,
-      customerEmail: shopCustomers.emailLower,
-      episodeId: conversations.episodeId,
-      channel: conversations.channel,
-      status: conversations.status,
-      lastMessageAt: conversations.lastMessageAt,
-      createdAt: conversations.createdAt,
-      assignedAdminUserId: conversations.assignedAdminUserId,
-      assignedAt: conversations.assignedAt,
-      priority: conversations.priority,
-      slaDueAt: conversations.slaDueAt,
-      escalatedAt: conversations.escalatedAt,
-      escalatedTo: conversations.escalatedTo,
-      escalationReason: conversations.escalationReason,
-    })
-    .from(conversations)
-    .leftJoin(patients, eq(patients.id, conversations.patientId))
-    .leftJoin(
-      shopCustomers,
-      eq(shopCustomers.customerId, conversations.customerId),
-    )
-    .where(eq(conversations.id, id))
-    .limit(1);
+  // Header + messages are independent reads (both keyed on the same
+  // conversation id). Run them concurrently; on a 404 we waste one
+  // bounded message scan, which is far cheaper than an extra
+  // round-trip on every successful read.
+  const [headerRows, messageRows] = await Promise.all([
+    db
+      .select({
+        id: conversations.id,
+        patientId: conversations.patientId,
+        patientFirstName: patients.legalFirstName,
+        patientLastName: patients.legalLastName,
+        // Shop-customer subject — null for patient-flow rows, set for
+        // in_app rows. Joined nullable so the existing patient-flow
+        // queries don't change shape.
+        customerId: conversations.customerId,
+        customerDisplayName: shopCustomers.displayName,
+        customerEmail: shopCustomers.emailLower,
+        episodeId: conversations.episodeId,
+        channel: conversations.channel,
+        status: conversations.status,
+        lastMessageAt: conversations.lastMessageAt,
+        createdAt: conversations.createdAt,
+        assignedAdminUserId: conversations.assignedAdminUserId,
+        assignedAt: conversations.assignedAt,
+        priority: conversations.priority,
+        slaDueAt: conversations.slaDueAt,
+        escalatedAt: conversations.escalatedAt,
+        escalatedTo: conversations.escalatedTo,
+        escalationReason: conversations.escalationReason,
+      })
+      .from(conversations)
+      .leftJoin(patients, eq(patients.id, conversations.patientId))
+      .leftJoin(
+        shopCustomers,
+        eq(shopCustomers.customerId, conversations.customerId),
+      )
+      .where(eq(conversations.id, id))
+      .limit(1),
+    db
+      .select({
+        id: messages.id,
+        direction: messages.direction,
+        senderRole: messages.senderRole,
+        body: messages.body,
+        deliveryStatus: messages.deliveryStatus,
+        sentAt: messages.sentAt,
+        deliveredAt: messages.deliveredAt,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(asc(messages.createdAt), asc(messages.id))
+      .limit(500),
+  ]);
 
   const header = headerRows[0];
   if (!header) {
     res.status(404).json({ error: "not_found" });
     return;
   }
-
-  const messageRows = await db
-    .select({
-      id: messages.id,
-      direction: messages.direction,
-      senderRole: messages.senderRole,
-      body: messages.body,
-      deliveryStatus: messages.deliveryStatus,
-      sentAt: messages.sentAt,
-      deliveredAt: messages.deliveredAt,
-      createdAt: messages.createdAt,
-    })
-    .from(messages)
-    .where(eq(messages.conversationId, id))
-    .orderBy(asc(messages.createdAt), asc(messages.id))
-    .limit(500);
 
   // Pull attachments for the loaded messages in a single follow-up
   // query, then group in memory. Two-step rather than a join because

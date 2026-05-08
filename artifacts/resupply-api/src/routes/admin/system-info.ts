@@ -23,35 +23,49 @@ const router: IRouter = Router();
 
 router.get("/admin/system-info", requireAdmin, async (_req, res) => {
   const db = drizzle(getDbPool());
-  let pgVersion: string | null;
-  try {
-    const v = await db.execute<{ server_version: string }>(
-      sql`SHOW server_version`,
-    );
-    pgVersion = v.rows[0]?.server_version ?? null;
-  } catch {
-    pgVersion = null;
-  }
 
-  let migrationCount = 0;
-  let lastMigrationAt: string | null = null;
-  try {
-    const rows = await db.execute<{ count: number; last_at: Date | null }>(sql`
-      SELECT count(*)::int AS count, max(created_at) AS last_at
-      FROM resupply.__drizzle_migrations
-    `);
-    migrationCount = Number(rows.rows[0]?.count ?? 0);
-    const lastAt = rows.rows[0]?.last_at;
-    lastMigrationAt =
-      lastAt instanceof Date
-        ? lastAt.toISOString()
-        : lastAt
-          ? new Date(String(lastAt)).toISOString()
-          : null;
-  } catch {
-    // Drizzle migrations table may not exist on a fresh DB — that's
-    // fine, leave the defaults.
-  }
+  // Two independent reads (server_version and migration rollup); run
+  // them concurrently so the page pays max(query) latency. Each query
+  // has its own try/catch since the migration table may legitimately
+  // not exist on a freshly-bootstrapped DB.
+  const [pgVersion, migrations] = await Promise.all([
+    (async () => {
+      try {
+        const v = await db.execute<{ server_version: string }>(
+          sql`SHOW server_version`,
+        );
+        return v.rows[0]?.server_version ?? null;
+      } catch {
+        return null;
+      }
+    })(),
+    (async () => {
+      try {
+        const rows = await db.execute<{ count: number; last_at: Date | null }>(
+          sql`
+            SELECT count(*)::int AS count, max(created_at) AS last_at
+            FROM resupply.__drizzle_migrations
+          `,
+        );
+        const lastAt = rows.rows[0]?.last_at;
+        return {
+          count: Number(rows.rows[0]?.count ?? 0),
+          lastAt:
+            lastAt instanceof Date
+              ? lastAt.toISOString()
+              : lastAt
+                ? new Date(String(lastAt)).toISOString()
+                : null,
+        };
+      } catch {
+        // Drizzle migrations table may not exist on a fresh DB —
+        // that's fine, return the defaults.
+        return { count: 0, lastAt: null };
+      }
+    })(),
+  ]);
+  const migrationCount = migrations.count;
+  const lastMigrationAt = migrations.lastAt;
 
   const env = process.env;
   const allowlistCount = (raw: string | undefined) =>

@@ -187,37 +187,41 @@ router.get("/admin/orders/:id", async (req, res) => {
 // ---------- GET /admin/analytics ----------
 
 router.get("/admin/analytics", async (_req, res) => {
-  const [totalOrdersRow, statusBreakdown, maskBreakdown, funnelBreakdown] =
-    await Promise.all([
-      db.select({ value: count() }).from(ordersTable),
-      db
-        .select({ status: ordersTable.emailStatus, count: count() })
-        .from(ordersTable)
-        .groupBy(ordersTable.emailStatus),
-      db
-        .select({
-          maskName: ordersTable.maskName,
-          maskManufacturer: ordersTable.maskManufacturer,
-          count: count(),
-        })
-        .from(ordersTable)
-        .groupBy(ordersTable.maskName, ordersTable.maskManufacturer)
-        .orderBy(desc(count()))
-        .limit(10),
-      db
-        .select({ step: usageEventsTable.step, count: count() })
-        .from(usageEventsTable)
-        .groupBy(usageEventsTable.step),
-    ]);
-
-  // Recent orders (last 30 days, by day) for a sparkline
-  const recentByDay = await db.execute(sql`
-    SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::int AS count
-    FROM orders
-    WHERE created_at > now() - interval '30 days'
-    GROUP BY 1
-    ORDER BY 1
-  `);
+  const [
+    totalOrdersRow,
+    statusBreakdown,
+    maskBreakdown,
+    funnelBreakdown,
+    recentByDay,
+  ] = await Promise.all([
+    db.select({ value: count() }).from(ordersTable),
+    db
+      .select({ status: ordersTable.emailStatus, count: count() })
+      .from(ordersTable)
+      .groupBy(ordersTable.emailStatus),
+    db
+      .select({
+        maskName: ordersTable.maskName,
+        maskManufacturer: ordersTable.maskManufacturer,
+        count: count(),
+      })
+      .from(ordersTable)
+      .groupBy(ordersTable.maskName, ordersTable.maskManufacturer)
+      .orderBy(desc(count()))
+      .limit(10),
+    db
+      .select({ step: usageEventsTable.step, count: count() })
+      .from(usageEventsTable)
+      .groupBy(usageEventsTable.step),
+    // Recent orders (last 30 days, by day) for a sparkline.
+    db.execute(sql`
+      SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::int AS count
+      FROM orders
+      WHERE created_at > now() - interval '30 days'
+      GROUP BY 1
+      ORDER BY 1
+    `),
+  ]);
 
   res.json({
     totalOrders: totalOrdersRow[0]?.value ?? 0,
