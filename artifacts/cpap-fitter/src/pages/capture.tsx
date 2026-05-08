@@ -30,7 +30,7 @@ export function Capture() {
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState<number | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
 
   const stopCamera = () => {
@@ -96,7 +96,7 @@ export function Capture() {
   }, []);
 
   // Capture the current frame from the video feed.
-  // Returns true on success, false on failure (so the caller can reset countdown).
+  // Returns true on success, false on failure (so the caller can reset state).
   const captureFrame = (): boolean => {
     try {
       if (!videoRef.current || !canvasRef.current) {
@@ -146,11 +146,15 @@ export function Capture() {
     }
   };
 
-  // 3-2-1 countdown so the user can steady the device before the shutter fires
+  // Immediate capture — no countdown. Older versions held a 3-2-1 timer
+  // so users could steady the camera, but the extra wait felt sluggish
+  // and drove drop-off; the iris-calibrated math is robust to small
+  // motion. Disabled-button gating still prevents a press before the
+  // camera/runtime is ready.
   const blockers = getCaptureBlockers(hasPermission, videoReady);
   const captureReady = isCaptureReady(blockers) && visionHealth === "ready";
-  const startCountdown = () => {
-    if (countdown !== null) return;
+  const handleCapture = () => {
+    if (capturing) return;
     if (!captureReady) {
       track("capture_blocked", {
         ...blockers,
@@ -158,24 +162,10 @@ export function Capture() {
       });
       return;
     }
-    setCountdown(3);
+    setCapturing(true);
+    const ok = captureFrame();
+    if (!ok) setCapturing(false);
   };
-
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown === 0) {
-      const ok = captureFrame();
-      // If capture failed, reset countdown so the user can retry.
-      if (!ok) setCountdown(null);
-      return;
-    }
-    const t = setTimeout(
-      () => setCountdown((c) => (c === null ? null : c - 1)),
-      1000,
-    );
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdown]);
 
   if (hasPermission === false || error) {
     // Browser-specific instructions for re-enabling the camera. We
@@ -266,8 +256,8 @@ export function Capture() {
   }
 
   return (
-    <div className="container max-w-3xl mx-auto px-4 py-12 flex flex-col items-center animate-shimmer-in">
-      <div className="text-center mb-8 max-w-xl">
+    <div className="container max-w-3xl mx-auto px-4 py-6 md:py-12 flex flex-col items-center animate-shimmer-in">
+      <div className="text-center mb-3 md:mb-8 max-w-xl">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel text-primary text-xs font-medium mb-4">
           <ScanFace className="w-3.5 h-3.5" />
           <span className="font-semibold tracking-wide">
@@ -301,18 +291,26 @@ export function Capture() {
           </span>
           <div className="h-px w-8 bg-gradient-to-l from-transparent to-[hsl(var(--penn-gold))]" />
         </div>
-        <h1 className="text-display text-3xl md:text-5xl font-bold tracking-tight mb-3 text-gradient-brand">
+        <h1 className="text-display text-2xl md:text-5xl font-bold tracking-tight mb-2 md:mb-3 text-gradient-brand">
           Position Your Face
         </h1>
-        <p className="text-muted-foreground leading-relaxed">
+        <p className="hidden md:block text-muted-foreground leading-relaxed">
           Center your face in the oval and look straight at the camera. We
           measure off your iris — it's almost exactly the same size in every
-          adult — so you don't need a ruler or a credit card in the shot. The
-          photo never leaves your device.
+          adult.
+        </p>
+        <p className="md:hidden text-sm text-muted-foreground leading-snug">
+          Center your face in the oval.
         </p>
       </div>
 
-      <div className="relative w-full max-w-lg aspect-[3/4] md:aspect-video bg-black rounded-2xl overflow-hidden mb-6 border border-[hsl(var(--penn-navy)/0.18)] shadow-[0_20px_60px_hsl(var(--penn-navy)/0.20),0_0_0_1px_hsl(var(--penn-navy)/0.08)]">
+      {/* Camera frame.
+          Mobile (portrait phones): cap the height to ~50vh so the
+          oval AND the "Take Photo" button always fit on one screen
+          without scrolling — the previous aspect-[3/4] container
+          would push the button below the fold on shorter handsets.
+          Desktop keeps the wider 16:9 framing. */}
+      <div className="relative w-full max-w-lg h-[min(50vh,28rem)] md:h-auto md:aspect-video bg-black rounded-2xl overflow-hidden mb-4 md:mb-6 border border-[hsl(var(--penn-navy)/0.18)] shadow-[0_20px_60px_hsl(var(--penn-navy)/0.20),0_0_0_1px_hsl(var(--penn-navy)/0.08)]">
         {/* Loading state indicator */}
         {hasPermission === null && (
           <div className="absolute inset-0 flex items-center justify-center text-white/50">
@@ -340,43 +338,32 @@ export function Capture() {
           className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center"
           aria-hidden="true"
         >
-          {/* Face Oval — softer, premium "scanner" feel */}
-          <div className="w-3/5 md:w-2/5 aspect-[3/4] border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
+          {/* Face Oval — softer, premium "scanner" feel.
+              Aspect-[2/3] is a tall portrait ratio (width:height = 2:3),
+              which matches the actual proportions of a human head far
+              better than the near-square 3:4 we had before. Sized off
+              height on mobile so the oval stays fully inside the
+              capped frame; off width on desktop where the frame is
+              wider than tall. */}
+          <div className="h-4/5 max-h-[80%] aspect-[2/3] md:h-auto md:w-1/3 md:max-h-none border-[3px] border-primary/80 rounded-[100%] shadow-[0_0_0_9999px_rgba(0,0,0,0.45),inset_0_0_30px_rgba(255,255,255,0.08)]" />
 
           {/* Corner brackets for 'sci-fi' tech feel */}
           <CornerBrackets />
         </div>
 
-        {/* Countdown overlay */}
-        {countdown !== null && countdown > 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="text-white text-9xl font-bold tabular-nums drop-shadow-2xl animate-in zoom-in-50 duration-300">
-              {countdown}
-            </div>
-          </div>
-        )}
-        {countdown === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/90 animate-in fade-in duration-200">
+        {/* Brief shutter flash on capture so the press feels confirmed. */}
+        {capturing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/90 animate-in fade-in duration-150">
             <Camera className="w-16 h-16 text-primary" />
           </div>
         )}
-        {/*
-          A11y: announce the countdown to assistive tech. The visual
-          countdown above is decorative (a giant numeral inside an
-          overlay) — without this live region, a screen-reader user
-          would have no idea the photo is about to be taken.
-        */}
         <div
           className="sr-only"
           role="status"
           aria-live="assertive"
           aria-atomic="true"
         >
-          {countdown === null
-            ? ""
-            : countdown > 0
-              ? `Capturing in ${countdown}…`
-              : "Capturing now"}
+          {capturing ? "Capturing now" : ""}
         </div>
       </div>
 
@@ -388,17 +375,17 @@ export function Capture() {
 
       <Button
         size="lg"
-        className="h-16 px-12 rounded-full text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"
-        onClick={startCountdown}
-        disabled={countdown !== null}
+        className="h-12 md:h-16 px-8 md:px-12 rounded-full text-base md:text-lg btn-primary-glow hover:scale-[1.02] transition-transform disabled:opacity-60"
+        onClick={handleCapture}
+        disabled={capturing || !captureReady}
         data-testid="button-capture"
       >
-        <Camera className="mr-2 h-6 w-6" />
-        {countdown === null ? "Capture Measurement Frame" : "Hold still…"}
+        <Camera className="mr-2 h-5 w-5 md:h-6 md:w-6" />
+        {capturing ? "Capturing…" : "Take Photo"}
       </Button>
-      <p className="mt-3 text-xs text-muted-foreground">
+      <p className="hidden md:block mt-3 text-xs text-muted-foreground text-center max-w-md">
         {captureReady
-          ? "Camera ready — you can capture now."
+          ? "We'll measure your face for headgear sizing and your nostrils for nasal pillow sizing — all on this device."
           : "Waiting for camera to be ready…"}
       </p>
     </div>

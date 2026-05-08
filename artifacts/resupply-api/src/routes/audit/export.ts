@@ -31,7 +31,8 @@
 // reviewer can answer "who pulled the audit log?" — which is
 // exactly the kind of bulk PHI exposure event HIPAA wants logged.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
+import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
 
 import { getDbPool } from "@workspace/resupply-db";
@@ -40,6 +41,25 @@ import { logAudit } from "@workspace/resupply-audit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const MAX_ROWS = 50_000;
+
+// Bulk PHI download throttle. Each call can return up to MAX_ROWS audit
+// rows containing patient identifiers in `metadata`; cap at 10/hour/admin
+// so a compromised account can't quietly exfiltrate the entire log. Keyed
+// by adminUserId (set by requireAdmin, which runs first) so one
+// reviewer's session doesn't lock out other staff.
+const exportLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.adminUserId ?? "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "audit_export_csv",
+    message:
+      "Audit export rate limit reached. Please wait a few minutes and try again.",
+  },
+});
 
 const exportQuery = z
   .object({
@@ -103,7 +123,7 @@ const COLUMNS: ReadonlyArray<string> = [
 
 const router: IRouter = Router();
 
-router.get("/audit/export.csv", requireAdmin, async (req, res) => {
+router.get("/audit/export.csv", requireAdmin, exportLimiter, async (req, res) => {
   const parsed = exportQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({

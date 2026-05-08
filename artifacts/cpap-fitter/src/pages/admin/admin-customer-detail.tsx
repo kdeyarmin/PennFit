@@ -36,6 +36,7 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  Ruler,
   Stethoscope,
   User as UserIcon,
 } from "lucide-react";
@@ -51,6 +52,7 @@ import {
   AdminCustomerNotFoundError,
   getAdminCustomerDetail,
   type AdminCustomerCpapDevice,
+  type AdminCustomerFacialMeasurements,
   type AdminCustomerPhysicianInfo,
   type AdminCustomerInAppConversation,
   type AdminCustomerProfile,
@@ -132,6 +134,9 @@ export function AdminCustomerDetailPage({ userId }: Props) {
           <ClinicalInfoCard
             cpapDevice={data.customer.clinicalInfo.cpapDevice}
             physicianInfo={data.customer.clinicalInfo.physicianInfo}
+          />
+          <FacialMeasurementsAdminCard
+            measurements={data.customer.clinicalInfo.facialMeasurements}
           />
           <InAppConversationCard
             inApp={data.inAppConversation}
@@ -387,6 +392,160 @@ function ClinicalInfoCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+// ─── Facial measurements card ──────────────────────────────────
+//
+// Surfaces the latest on-device fitter scan persisted to
+// shop_customers.facial_measurements_json (migration 0066). Lets a
+// CSR answer "what cushion size should we ship?" without opening
+// every past order. Numbers are mm at one decimal — extra precision
+// would imply accuracy the iris-calibrated face-mesh doesn't deliver.
+
+function FacialMeasurementsAdminCard({
+  measurements,
+}: {
+  measurements: AdminCustomerFacialMeasurements | null;
+}) {
+  return (
+    <Card>
+      <div style={{ padding: 16 }} data-testid="admin-customer-facial-measurements">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 12,
+            gap: 8,
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Ruler size={14} />
+            Facial measurements
+          </h2>
+          {measurements && (
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted, #475569)",
+              }}
+            >
+              Captured {new Date(measurements.capturedAt).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+        {!measurements ? (
+          <p style={{ margin: 0, color: "var(--text-muted, #475569)" }}>
+            No on-device scan saved. Customer hasn&apos;t completed a fitting
+            while signed in.
+          </p>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 16,
+            }}
+          >
+            <FacialMeasurementsGroup
+              title="Headgear & mask sizing"
+              rows={[
+                {
+                  label: "Face width (cheekbones)",
+                  value: measurements.faceWidthAtCheekbones,
+                },
+                { label: "Nose to chin", value: measurements.noseToChin },
+                { label: "Mouth width", value: measurements.mouthWidth },
+              ]}
+            />
+            <FacialMeasurementsGroup
+              title="Nasal pillow sizing"
+              rows={[
+                {
+                  label: "Nostril span (alar width)",
+                  value: measurements.noseWidth,
+                },
+                { label: "Nose height", value: measurements.noseHeight },
+              ]}
+            />
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function FacialMeasurementsGroup({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { label: string; value: number }[];
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--surface-1, #f8fafc)",
+        border: "1px solid var(--border, #e2e8f0)",
+        borderRadius: 8,
+        padding: "10px 12px",
+      }}
+    >
+      <p
+        style={{
+          margin: 0,
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: 0.6,
+          color: "var(--text-muted, #475569)",
+          marginBottom: 8,
+        }}
+      >
+        {title}
+      </p>
+      <dl
+        style={{
+          display: "grid",
+          gap: 4,
+          margin: 0,
+        }}
+      >
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              fontSize: 12,
+              gap: 8,
+            }}
+          >
+            <dt style={{ color: "var(--text-muted, #475569)" }}>{row.label}</dt>
+            <dd
+              style={{
+                margin: 0,
+                fontFamily: "monospace",
+                fontWeight: 600,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {row.value.toFixed(1)} mm
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
