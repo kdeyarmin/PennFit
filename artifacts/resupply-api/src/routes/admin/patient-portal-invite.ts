@@ -24,7 +24,7 @@
 // linked auth.users row — no separate status column to keep in sync.
 
 import { Router, type IRouter, type Request } from "express";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import expressRateLimit from "express-rate-limit";
 import { z } from "zod";
@@ -202,16 +202,55 @@ router.post(
     );
     const authUserId = upserted.rows[0]!.id;
 
-    // Guard against a CSR inadvertently (or maliciously) supplying an email
-    // that already belongs to a DIFFERENT patient's portal account. If we
-    // proceeded, that other patient's auth identity would be stitched to
-    // this patient's record — an IDOR vector. Reject with a clear 409.
-    const claimedByOther = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(and(eq(patients.portalAuthUserId, authUserId), ne(patients.id, patientId)))
-      .limit(1);
-    if (claimedByOther[0]) {
+    // Guard against a CSR inadvertently (or maliciously) supplying an
+    // email that already belongs to a DIFFERENT patient's portal
+    // account. Without the guard, that other patient's auth identity
+    // would be stitched to this patient's record — an IDOR vector.
+    //
+    // The check + the patient UPDATE that actually links
+    // portal_auth_user_id MUST be atomic. There is no unique
+    // constraint on patients.portal_auth_user_id today (only a
+    // non-unique partial index in migration 0050) so the database
+    // alone can't catch a duplicate. Take a transaction-scoped
+    // advisory lock keyed on the auth user id and do the check +
+    // link UPDATE inside the same transaction. Concurrent invites
+    // for the same target email serialize on the lock; invites for
+    // other emails are unaffected.
+    //
+    // We deliberately do this BEFORE the token insert / email send so
+    // a 409 short-circuits the rest of the flow without spending an
+    // outbound email or leaving an orphan password-reset token in
+    // auth.email_tokens. If the link succeeds but the email later
+    // fails, emailSent=false is returned and the inviteLink is
+    // surfaced for out-of-band delivery (existing contract).
+    const now = new Date();
+    const linked = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`portal-invite:${authUserId}`}, 0))`,
+      );
+      const claimedByOther = await tx
+        .select({ id: patients.id })
+        .from(patients)
+        .where(
+          and(
+            eq(patients.portalAuthUserId, authUserId),
+            ne(patients.id, patientId),
+          ),
+        )
+        .limit(1);
+      if (claimedByOther[0]) return false;
+      await tx
+        .update(patients)
+        .set({
+          ...fieldUpdates,
+          portalAuthUserId: authUserId,
+          portalInvitedAt: now,
+          portalInvitedBy: req.adminUserId ?? null,
+        })
+        .where(eq(patients.id, patientId));
+      return true;
+    });
+    if (!linked) {
       res.status(409).json({
         error: "email_already_linked",
         message:
@@ -254,19 +293,6 @@ router.post(
         "patient portal invite email send failed",
       );
     }
-
-    // Link the auth row and stamp invite metadata on the patient row,
-    // plus any onboarding field updates the CSR provided.
-    const now = new Date();
-    await db
-      .update(patients)
-      .set({
-        ...fieldUpdates,
-        portalAuthUserId: authUserId,
-        portalInvitedAt: now,
-        portalInvitedBy: req.adminUserId ?? null,
-      })
-      .where(eq(patients.id, patientId));
 
     await logAudit({
       action: "patient.portal.invite_issued",

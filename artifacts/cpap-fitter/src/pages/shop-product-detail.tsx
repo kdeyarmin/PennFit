@@ -636,8 +636,16 @@ function Hero({
     });
     if (!result.ok) return;
     setJustAdded(true);
-    window.setTimeout(() => setJustAdded(false), 1800);
   };
+
+  // Clear the "Added!" pill ~1.8s later. Effect owns the timer so it
+  // cleans up on unmount instead of leaking the closure when the
+  // shopper navigates away mid-pill.
+  useEffect(() => {
+    if (!justAdded) return;
+    const id = window.setTimeout(() => setJustAdded(false), 1800);
+    return () => window.clearTimeout(id);
+  }, [justAdded]);
   return (
     <div
       className="grid grid-cols-1 md:grid-cols-2 gap-8"

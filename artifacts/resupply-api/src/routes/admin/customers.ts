@@ -189,7 +189,14 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
   // when the primary sort key has duplicates (e.g. lifetime=0).
   const awaitingReplyFilterSql = awaitingReply ? sql`true` : sql`false`;
 
-  const listResult = (await db.execute(sql`
+  // The list page + the total-count read the same shop_customers /
+  // shop_subscriptions / conversations slice with the same WHERE
+  // clause; they only diverge on SELECT/ORDER/LIMIT. Run them in
+  // parallel so the listing endpoint pays max(query) latency rather
+  // than sum(query). The pagination UX still needs both results
+  // before responding.
+  const [listResult, totalResult] = await Promise.all([
+    db.execute(sql`
     WITH order_agg AS (
       SELECT
         customer_id,
@@ -243,11 +250,10 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
       AND (${awaitingReplyFilterSql} = false OR n.customer_id IS NOT NULL)
     ORDER BY ${orderClauseExpr} ${orderDirSql}, c.customer_id ASC
     LIMIT ${Math.min(pageSize, 200)} OFFSET ${offset}
-  `)) as unknown as { rows: ListRow[] };
-
-  // Total count (same WHERE) — separate query because the LIMIT/OFFSET
-  // page would otherwise hide the true total for pagination UX.
-  const totalResult = (await db.execute(sql`
+  `) as unknown as Promise<{ rows: ListRow[] }>,
+    // Total count (same WHERE) — separate query because the LIMIT/OFFSET
+    // page would otherwise hide the true total for pagination UX.
+    db.execute(sql`
     WITH sub_agg AS (
       SELECT customer_id, true AS has_active
       FROM resupply.shop_subscriptions
@@ -272,7 +278,8 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
         OR (${subFilter}::text = 'none' AND s.has_active IS NOT TRUE)
       )
       AND (${awaitingReplyFilterSql} = false OR n.customer_id IS NOT NULL)
-  `)) as unknown as { rows: Array<{ total: number }> };
+  `) as unknown as Promise<{ rows: Array<{ total: number }> }>,
+  ]);
 
   const total = totalResult.rows[0]?.total ?? 0;
 
@@ -439,8 +446,24 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
   const userId = parsed.data;
   const db = drizzle(getDbPool());
 
-  // 1. Customer mirror row (may be missing for guest-only users).
-  const customerResult = (await db.execute(sql`
+  // The seven sub-queries below are independent (each is keyed only on
+  // userId; none consumes another's result). Run them concurrently so
+  // the Customer-360 detail endpoint pays max(query) latency rather
+  // than sum(query). The early-404 check that consults rows from #1 +
+  // #2 happens AFTER all queries settle, which is fine — the queries
+  // themselves are read-only and parallelizing them never produces a
+  // semantically-different page.
+  const [
+    customerResult,
+    ordersResult,
+    subsResult,
+    cartResult,
+    reviewsResult,
+    inAppResult,
+    statsResult,
+  ] = await Promise.all([
+    // 1. Customer mirror row (may be missing for guest-only users).
+    db.execute(sql`
       SELECT
         customer_id                     AS user_id,
         display_name                      AS display_name,
@@ -459,12 +482,10 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
       FROM resupply.shop_customers
       WHERE customer_id = ${userId}
       LIMIT 1
-    `)) as unknown as { rows: CustomerRow[] };
-  const customerRow = customerResult.rows[0] ?? null;
-
-  // 2. Recent orders (cap 25). Item count is computed by a
-  //    correlated subquery so we don't need a second round-trip.
-  const ordersResult = (await db.execute(sql`
+    `) as unknown as Promise<{ rows: CustomerRow[] }>,
+    // 2. Recent orders (cap 25). Item count is computed by a
+    //    correlated subquery so we don't need a second round-trip.
+    db.execute(sql`
       SELECT
         o.id                       AS id,
         o.stripe_session_id        AS stripe_session_id,
@@ -488,20 +509,9 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
       WHERE o.customer_id = ${userId}
       ORDER BY o.created_at DESC
       LIMIT 25
-    `)) as unknown as { rows: OrderRow[] };
-
-  // True 404 — neither a customer record nor any orders.
-  if (!customerRow && ordersResult.rows.length === 0) {
-    req.log?.info(
-      { userId, adminEmail: req.adminEmail },
-      "admin.shop.customers.detail.not_found",
-    );
-    res.status(404).json({ error: "customer_not_found" });
-    return;
-  }
-
-  // 3. Subscriptions (typically 0–2 per customer; no LIMIT needed).
-  const subsResult = (await db.execute(sql`
+    `) as unknown as Promise<{ rows: OrderRow[] }>,
+    // 3. Subscriptions (typically 0–2 per customer; no LIMIT needed).
+    db.execute(sql`
       SELECT
         id                          AS id,
         stripe_subscription_id      AS stripe_subscription_id,
@@ -517,10 +527,9 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
       FROM resupply.shop_subscriptions
       WHERE customer_id = ${userId}
       ORDER BY created_at DESC
-    `)) as unknown as { rows: SubscriptionRow[] };
-
-  // 4. Abandoned cart (UNIQUE(customer_id) — at most 1).
-  const cartResult = (await db.execute(sql`
+    `) as unknown as Promise<{ rows: SubscriptionRow[] }>,
+    // 4. Abandoned cart (UNIQUE(customer_id) — at most 1).
+    db.execute(sql`
       SELECT
         id              AS id,
         items           AS items,
@@ -534,10 +543,9 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
       FROM resupply.shop_abandoned_carts
       WHERE customer_id = ${userId}
       LIMIT 1
-    `)) as unknown as { rows: AbandonedCartRow[] };
-
-  // 5. Reviews (typically a handful; cap at 100 for safety).
-  const reviewsResult = (await db.execute(sql`
+    `) as unknown as Promise<{ rows: AbandonedCartRow[] }>,
+    // 5. Reviews (typically a handful; cap at 100 for safety).
+    db.execute(sql`
       SELECT
         id              AS id,
         product_id      AS product_id,
@@ -553,17 +561,16 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
       WHERE customer_id = ${userId}
       ORDER BY created_at DESC
       LIMIT 100
-    `)) as unknown as { rows: ReviewRow[] };
-
-  // 6a. In-app conversation thread (added in PR #53 / migration 0033).
-  //     At most one row per customer (single-thread-per-customer
-  //     policy enforced by appendCustomerMessage). The message_count
-  //     and unread_from_customer crumbs let the admin UI render
-  //     "5 messages · 2 new from customer" without a second
-  //     round-trip. unread_from_customer counts inbound messages
-  //     that landed AFTER the most-recent CSR reply (or every
-  //     inbound message when there's no CSR reply yet).
-  const inAppResult = (await db.execute(sql`
+    `) as unknown as Promise<{ rows: ReviewRow[] }>,
+    // 6a. In-app conversation thread (added in PR #53 / migration 0033).
+    //     At most one row per customer (single-thread-per-customer
+    //     policy enforced by appendCustomerMessage). The message_count
+    //     and unread_from_customer crumbs let the admin UI render
+    //     "5 messages · 2 new from customer" without a second
+    //     round-trip. unread_from_customer counts inbound messages
+    //     that landed AFTER the most-recent CSR reply (or every
+    //     inbound message when there's no CSR reply yet).
+    db.execute(sql`
       WITH conv AS (
         SELECT id, status, last_message_at, created_at
         FROM resupply.conversations
@@ -607,12 +614,10 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         s.last_outbound_at         AS last_outbound_at
       FROM conv c
       LEFT JOIN msg_stats s ON s.conversation_id = c.id
-    `)) as unknown as { rows: InAppConversationRow[] };
-  const inAppRow = inAppResult.rows[0] ?? null;
-
-  // 6. Lifetime stats — over ALL orders (not just the recent 25
-  //    we returned), so the headline numbers are honest.
-  const statsResult = (await db.execute(sql`
+    `) as unknown as Promise<{ rows: InAppConversationRow[] }>,
+    // 6. Lifetime stats — over ALL orders (not just the recent 25
+    //    we returned), so the headline numbers are honest.
+    db.execute(sql`
       WITH paid AS (
         SELECT amount_total_cents, created_at
         FROM resupply.shop_orders
@@ -630,7 +635,21 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         (SELECT COUNT(*)::int FROM resupply.shop_reviews
          WHERE customer_id = ${userId}
            AND status = 'pending')                            AS pending_reviews_count
-    `)) as unknown as { rows: StatsRow[] };
+    `) as unknown as Promise<{ rows: StatsRow[] }>,
+  ]);
+
+  const customerRow = customerResult.rows[0] ?? null;
+  const inAppRow = inAppResult.rows[0] ?? null;
+
+  // True 404 — neither a customer record nor any orders.
+  if (!customerRow && ordersResult.rows.length === 0) {
+    req.log?.info(
+      { userId, adminEmail: req.adminEmail },
+      "admin.shop.customers.detail.not_found",
+    );
+    res.status(404).json({ error: "customer_not_found" });
+    return;
+  }
 
   const statsRow = statsResult.rows[0] ?? {
     orders_count: 0,

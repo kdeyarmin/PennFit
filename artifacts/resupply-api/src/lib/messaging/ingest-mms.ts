@@ -201,9 +201,17 @@ async function downloadOneMedia(
   twilioMediaSid: string | null;
 } | null> {
   const twilioMediaSid = slot.mediaSid;
-  const ACCOUNT_SID_RE = /^AC[A-Za-z0-9]{32}$/;
-  const MESSAGE_SID_RE = /^SM[A-Za-z0-9]{32}$/;
-  const MEDIA_SID_RE = /^ME[A-Za-z0-9]{32}$/;
+  // Defense-in-depth re-validation of the SID identifiers parsed
+  // out of the webhook URL by `parseAllowedTwilioMediaRef`. The
+  // tenant binding (slot.accountSid === twilioAccountSid) is the
+  // load-bearing check; the regexes ensure the values are still
+  // pure alphanumerics with the documented Twilio prefix before we
+  // re-interpolate them into a URL. Note that MMS messages use the
+  // MM prefix (SM is SMS-only) — restricting to SM here breaks all
+  // real-world inbound MMS ingest.
+  const ACCOUNT_SID_RE = /^AC[A-Za-z0-9]+$/;
+  const MESSAGE_SID_RE = /^(?:MM|SM)[A-Za-z0-9]+$/;
+  const MEDIA_SID_RE = /^ME[A-Za-z0-9]+$/;
   if (
     !ACCOUNT_SID_RE.test(slot.accountSid) ||
     !MESSAGE_SID_RE.test(slot.messageSid) ||
