@@ -20,6 +20,7 @@ import type { Pool } from "pg";
 import { issueToken } from "./token";
 import type { AuthDeps } from "./http/types";
 import { renderPasswordResetEmail } from "./http/email-templates";
+import { stripTrailingSlashes } from "./string-utils";
 
 /** Invite tokens are valid for 7 days. Long enough that an
  *  operator can run an invite ahead of telling the user to
@@ -106,7 +107,7 @@ export async function inviteTeamMember(
     [token.hash, authUserId, expiresAt],
   );
 
-  const safePrefix = (args.uiPathPrefix ?? "").replace(/\/+$/, "");
+  const safePrefix = stripTrailingSlashes(args.uiPathPrefix ?? "");
   const inviteLink = `${baseUrl}${safePrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
   const rendered = renderPasswordResetEmail(
     {

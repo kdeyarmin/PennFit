@@ -78,11 +78,15 @@ export type VerifyLinkTokenResult =
     };
 
 function base64urlEncode(buf: Buffer): string {
+  // Use replaceAll on a single character rather than `=+$` — base64
+  // padding never occurs except at the end, so removing every `=`
+  // is equivalent and avoids the polynomial backtracking CodeQL
+  // flags for `=+$` against attacker-controlled-length inputs.
   return buf
     .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/u, "");
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }
 
 function base64urlDecode(s: string): Buffer | null {

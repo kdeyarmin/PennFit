@@ -40,6 +40,7 @@
 //   So we audit and 200 even on parse failures.
 
 import { Router, type IRouter, type Request, type Response } from "express";
+import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import busboy from "busboy";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -63,6 +64,21 @@ import { safeAudit } from "../../lib/messaging/safe-audit";
 
 const router: IRouter = Router();
 
+// Although the route is gated by basic auth, an attacker who knows
+// the shared secret (or anyone hitting it before the auth check)
+// could still pile multipart parses against the process. Cap the
+// volume per IP so the upstream busboy parse cannot be used to burn
+// CPU. SendGrid's webhook source IPs are stable, so a generous limit
+// won't impede legitimate delivery.
+const inboundParseLimiter = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: { error: "too_many_requests" },
+});
+
 // SendGrid documents 30MB as the per-payload cap on Inbound Parse —
 // total of headers+body+all attachments. 35MB gives us headroom; we
 // also enforce per-attachment MAX_BYTES inside the parser.
@@ -77,7 +93,7 @@ const MAX_ATTACHMENTS_PER_EMAIL = 10;
 // standard `Authorization: Basic <base64>` header.
 const BASIC_AUTH_ENV = "SENDGRID_INBOUND_PARSE_BASIC_AUTH";
 
-router.post("/email/inbound-parse", async (req, res) => {
+router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // 1. Vendor-feature gate. The shared SendGrid email config governs
   // outbound; if it's missing the inbound endpoint can't sensibly
   // route replies (no patients are receiving emails to reply to)

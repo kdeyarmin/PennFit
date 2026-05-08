@@ -509,6 +509,9 @@ importers:
       express:
         specifier: ^5
         version: 5.2.1
+      express-rate-limit:
+        specifier: ^8.4.1
+        version: 8.4.1(express@5.2.1)
       pg:
         specifier: ^8.20.0
         version: 8.20.0
