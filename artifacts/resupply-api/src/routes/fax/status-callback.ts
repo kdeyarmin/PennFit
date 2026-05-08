@@ -21,12 +21,25 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import { getDbPool, physicianFaxOutreach } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger.js";
+
+// Twilio Programmable Fax posts urlencoded form fields. We only consume
+// FaxSid + Status + ErrorCode; everything else (FaxStatus, AccountSid,
+// To/From, NumPages, etc.) is allowed but ignored. .passthrough() keeps
+// future Twilio-side additions from breaking the parse.
+const faxStatusCallbackBody = z
+  .object({
+    FaxSid: z.string().trim().min(1).max(64),
+    Status: z.string().trim().min(1).max(32),
+    ErrorCode: z.string().trim().min(1).max(32).optional(),
+  })
+  .passthrough();
 
 const router: IRouter = Router();
 
@@ -69,14 +82,25 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
   // Respond 200 immediately — Twilio retries on 5xx.
   res.status(200).type("text/xml").send("<Response/>");
 
-  const body = (req.body ?? {}) as Record<string, string>;
-  const faxSid = typeof body.FaxSid === "string" ? body.FaxSid : null;
-  const twilioStatus =
-    typeof body.Status === "string" ? body.Status : null;
-  const errorCode =
-    typeof body.ErrorCode === "string" ? body.ErrorCode : null;
-
-  if (!faxSid || !twilioStatus) return;
+  const parsed = faxStatusCallbackBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    // Signature was already validated; a malformed body still 200s
+    // (otherwise Twilio retries forever) but we log so a real
+    // schema drift surfaces in ops dashboards.
+    logger.warn(
+      {
+        event: "fax_status_body_invalid",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          code: i.code,
+        })),
+      },
+      "fax status-callback: body did not match expected shape",
+    );
+    return;
+  }
+  const { FaxSid: faxSid, Status: twilioStatus, ErrorCode: errorCode } =
+    parsed.data;
 
   const dbStatus = mapTwilioStatus(twilioStatus);
   if (!dbStatus) return;

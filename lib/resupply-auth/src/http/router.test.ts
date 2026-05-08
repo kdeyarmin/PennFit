@@ -163,6 +163,54 @@ describe("POST /auth/sign-in", () => {
     expect(h.audit.events.map((e) => e.action)).toContain("auth.sign_in");
   });
 
+  it("issues pf_session with HttpOnly + SameSite=Lax + Path=/ + Max-Age, and pf_csrf with the same flags MINUS HttpOnly (P1.5)", async () => {
+    await seedAlice();
+    const csrf = await seedCsrf(h.app);
+
+    // Harness sets secureCookies: false (development), so Secure must
+    // NOT appear. The production path is covered by the unit-level
+    // tests in cookies.test.ts; this case pins the env-aware wiring
+    // through the live sign-in handler so a regression in the cookie
+    // helper or its caller fails CI.
+    const res = await supertest(h.app)
+      .post("/auth/sign-in")
+      .set("Cookie", `${CSRF_COOKIE}=${csrf}`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        email: "alice@example.com",
+        password: "correct horse battery staple",
+      });
+    expect(res.status).toBe(200);
+
+    const setCookie = res.headers["set-cookie"] as unknown as
+      | string[]
+      | undefined;
+    expect(setCookie).toBeDefined();
+    const sessionLine = setCookie!.find((c) =>
+      c.startsWith(`${SESSION_COOKIE}=`),
+    );
+    const csrfLine = setCookie!.find((c) => c.startsWith(`${CSRF_COOKIE}=`));
+    expect(sessionLine).toBeDefined();
+    expect(csrfLine).toBeDefined();
+
+    // pf_session: HttpOnly is non-negotiable (XSS defense); SameSite=Lax
+    // + Path=/ + Max-Age round out the policy.
+    expect(sessionLine).toContain("HttpOnly");
+    expect(sessionLine).toContain("SameSite=Lax");
+    expect(sessionLine).toContain("Path=/");
+    expect(sessionLine).toMatch(/Max-Age=\d+/u);
+    // Harness is dev (secureCookies:false), so Secure must NOT be set.
+    expect(sessionLine).not.toContain("Secure");
+
+    // pf_csrf: deliberately readable from JS so the SPA can echo it as
+    // X-PF-CSRF. Everything else mirrors the session cookie.
+    expect(csrfLine).not.toContain("HttpOnly");
+    expect(csrfLine).toContain("SameSite=Lax");
+    expect(csrfLine).toContain("Path=/");
+    expect(csrfLine).toMatch(/Max-Age=\d+/u);
+    expect(csrfLine).not.toContain("Secure");
+  });
+
   it("returns 401 + records failure on wrong password", async () => {
     await seedAlice();
     const csrf = await seedCsrf(h.app);

@@ -49,7 +49,11 @@ interface Hit {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const STRIPE_SESSION_RE = /^cs_[a-zA-Z0-9_]{20,}$/;
+// Real Stripe Checkout Session IDs are well below 128 chars
+// (cs_test_/cs_live_ prefix + ~58-char body). Cap the upper bound so
+// no caller can blow the regex up with a multi-MB string and force
+// the whole admin-lookup handler to spend time matching.
+const STRIPE_SESSION_RE = /^cs_[a-zA-Z0-9_]{20,128}$/;
 const HEX_TAIL_RE = /^[A-Za-z0-9_-]{8,40}$/;
 const PHONE_RE = /^\+?\d[\d\s().-]{6,18}$/;
 

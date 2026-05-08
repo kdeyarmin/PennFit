@@ -73,6 +73,26 @@ const adminInviteLimiter = expressRateLimit({
   },
 });
 
+// B-07: 30 role / membership mutations per hour per admin. Covers
+// /admin/team/:id/revoke (terminates all sessions for the target) and
+// PATCH /admin/team/:id (role / status / displayName edits). Each call
+// changes who has access to the admin surface area, so a compromised
+// admin must be capped without affecting other staff. Same envelope as
+// adminInviteLimiter for ops consistency.
+const adminTeamMutationLimiter = expressRateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => req.adminUserId ?? "unknown",
+  message: {
+    error: "too_many_requests",
+    limiter: "admin_team_mutation",
+    message:
+      "You're changing team members too quickly. Please wait a few minutes and try again.",
+  },
+});
+
 const ROLE_VALUES: AdminRole[] = ["admin", "agent"];
 const inviteBody = z
   .object({
@@ -290,7 +310,7 @@ router.post("/admin/team/:id/resend", requireAdminOnly, adminInviteLimiter, asyn
   });
 });
 
-router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
+router.post("/admin/team/:id/revoke", requireAdminOnly, adminTeamMutationLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });
@@ -346,7 +366,7 @@ router.post("/admin/team/:id/revoke", requireAdminOnly, async (req, res) => {
   });
 });
 
-router.patch("/admin/team/:id", requireAdminOnly, async (req, res) => {
+router.patch("/admin/team/:id", requireAdminOnly, adminTeamMutationLimiter, async (req, res) => {
   const id = req.params.id;
   if (!id || typeof id !== "string") {
     res.status(400).json({ error: "missing_id" });

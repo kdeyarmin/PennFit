@@ -348,8 +348,24 @@ export const stripeWebhookHandler: RequestHandler = async (
       }
     }
   } catch (err) {
+    // Capture full structured error context so a 500 here is debuggable
+    // without re-running the failing event. `err` itself goes through
+    // pino's default serializer (stack + cause). Stripe SDK errors
+    // additionally expose statusCode / code / requestId / type / raw —
+    // we surface those explicitly so an ops grep on `stripe_request_id`
+    // pivots from our logs into the Stripe Dashboard. event.id and
+    // event.type are already on `log`'s child context (see above).
+    const stripeMeta =
+      err && typeof err === "object"
+        ? {
+            stripe_status_code: (err as { statusCode?: unknown }).statusCode,
+            stripe_code: (err as { code?: unknown }).code,
+            stripe_request_id: (err as { requestId?: unknown }).requestId,
+            stripe_error_type: (err as { type?: unknown }).type,
+          }
+        : undefined;
     log?.error?.(
-      { err: err instanceof Error ? err.message : String(err) },
+      { err, ...stripeMeta },
       "stripe webhook handler threw — Stripe will retry",
     );
     res.status(500).json({ error: "internal_error" });

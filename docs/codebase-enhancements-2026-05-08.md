@@ -16,15 +16,15 @@ plan below carries forward only items that still apply, with severity, effort
 - **4 items dropped** as already addressed (idempotency response capture;
   Stripe webhook middleware order; Stripe customer create idempotency key;
   CSRF timing side-channel).
-- **52 items carried forward**, grouped P0–P3.
+- **56 items carried forward**, grouped P0–P3 (P0 7 + P1 12 + P2 21 + P3 16).
 - **P0 (7 items)**: schema-deploy correctness + the loudest security gaps.
   Estimated 5–8 engineer-days. Should land before any further feature work
   that touches migrations or money flows.
 - **P1 (12 items)**: reliability + database integrity. ~10–14 engineer-days.
-- **P2 (19 items)**: performance, code quality, UX/a11y. Mostly bounded
+- **P2 (21 items)**: performance, code quality, UX/a11y. Mostly bounded
   refactors; SPA decomposition is the largest single chunk (~3–5 weeks across
   4 files).
-- **P3 (14 items)**: DX, observability, docs. Rolling backlog.
+- **P3 (16 items)**: DX, observability, docs. Rolling backlog.
 
 ---
 
@@ -37,7 +37,7 @@ should not enter the new backlog:
 | --- | --- | --- | --- |
 | Reliability #2 | Idempotency middleware doesn't capture `res.send`/`res.end`/streamed (Prior B-04) | **Stale — fixed** | `artifacts/resupply-api/src/middlewares/idempotency.ts:199-201` patches all three; streaming covered via `res.end`. |
 | Security #6 | Stripe webhook raw-body ordering risk | **Reframed** | `artifacts/resupply-api/src/app.ts:132` registers `express.raw({type:'application/json',limit:'256kb'})` for `/resupply-api/stripe/webhook` BEFORE `express.json()` at `:138`. Order is correct. Carry forward only the regression-test action (P0.5). |
-| Reliability #8 | Stripe customer creation idempotency keys absent (Prior B-10) | **Partial — main path fixed** | `artifacts/resupply-api/src/lib/stripe/customer.ts:80-90` passes `idempotencyKey: \`pennpaps-shop-customer-${customerId}\``. Carry forward only the audit of other Stripe mutation call sites (P1.11). |
+| Reliability #8 | Stripe customer creation idempotency keys absent (Prior B-10) | **Partial — main path fixed** | `artifacts/resupply-api/src/lib/stripe/customer.ts:80-90` passes `idempotencyKey: \`pennpaps-shop-customer-${args.customerId}\``. Carry forward only the audit of other Stripe mutation call sites (P1.11). |
 | Security #2 | CSRF token timing side-channel — early-exit on length mismatch (Prior D-BA A-01) | **Stale — fixed** | `lib/resupply-auth/src/csrf.ts:44-50` pads both sides to 128 bytes, runs `timingSafeEqual` on the padded buffers, and folds in the length check as a separate boolean. Tests at `csrf.test.ts:21-52`. Landed in commit `e2b6437` (sprint-1 audit fixes). Item P0.4 in the original plan is dropped. |
 
 ---
@@ -177,11 +177,11 @@ commit to P0.3.
 
 | Tier | Items | S | M | L | Approx engineer-days |
 | --- | --- | --- | --- | --- | --- |
-| P0 | 8 | 4 | 4 | 0 | 6–9 |
+| P0 | 7 | 3 | 4 | 0 | 5–8 |
 | P1 | 12 | 7 | 5 | 0 | 10–14 |
 | P2 | 21 | 13 | 4 | 4 | 25–35 |
 | P3 | 16 | 11 | 5 | 0 | 8–12 |
-| **Total** | **57** | 35 | 18 | 4 | **49–70** |
+| **Total** | **56** | 34 | 18 | 4 | **48–69** |
 
 (P3 has 16 entries because the input's "ADRs" line was kept as a single
 ticket with multiple S sub-tasks.)
@@ -191,9 +191,9 @@ ticket with multiple S sub-tasks.)
 ## Suggested PR sequence
 
 **Wave 1 — Schema + visible CI signal (1 sprint):**
-P0.2 → P0.1 (paired) → P0.3 (CI workflow) → P0.5 (Stripe ordering test) → P0.4
-(CSRF timing fix). Lands within ~1 week. Gives the team passing CI on every PR
-and closes the schema-deploy hazard.
+P0.2 → P0.1 (paired) → P0.3 (CI workflow) → P0.5 (Stripe ordering test). Lands
+within ~1 week. Gives the team passing CI on every PR and closes the
+schema-deploy hazard. (P0.4 is already done — see "Validation results".)
 
 **Wave 2 — Auth + admin write rate-limits (~½ sprint):**
 P0.6 → P0.7 → P0.8. All in `artifacts/resupply-api/src/middlewares/`; can ship
