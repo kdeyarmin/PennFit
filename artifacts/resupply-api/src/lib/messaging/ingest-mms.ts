@@ -118,7 +118,9 @@ export interface IngestMmsMediaResult {
 }
 
 interface MediaSlot {
-  url: string;
+  accountSid: string;
+  messageSid: string;
+  mediaSid: string;
   declaredContentType: string | null;
 }
 
@@ -129,24 +131,25 @@ interface MediaSlot {
  * against actual key presence so a tampered NumMedia=99 with no
  * URLs is bounded.
  */
-function normalizeAllowedTwilioMediaUrl(raw: string): string | null {
+function parseAllowedTwilioMediaRef(raw: string): {
+  accountSid: string;
+  messageSid: string;
+  mediaSid: string;
+} | null {
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== "https:") return null;
     if (parsed.hostname !== "api.twilio.com") return null;
     // Match strictly alphanumeric segments (with Twilio's documented
-    // SID prefixes) and rebuild the URL from a hardcoded host + the
-    // captured path components. Require at least one character after
-    // each SID prefix so incomplete values like AC / MM / SM / ME are
-    // rejected instead of being canonicalized as valid Twilio media
-    // URLs.
+    // SID prefixes). We extract only identifiers and construct the
+    // request URL later from trusted constants.
     const match =
       /^\/2010-04-01\/Accounts\/(AC[A-Za-z0-9]+)\/Messages\/((?:MM|SM)[A-Za-z0-9]+)\/Media\/(ME[A-Za-z0-9]+)$/.exec(
         parsed.pathname,
       );
     if (!match) return null;
     const [, accountSid, messageSid, mediaSid] = match;
-    return `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages/${messageSid}/Media/${mediaSid}`;
+    return { accountSid, messageSid, mediaSid };
   } catch {
     return null;
   }
@@ -161,28 +164,17 @@ function readMediaSlots(
   for (let i = 0; i < cap; i++) {
     const rawUrl = body[`MediaUrl${i}`];
     if (typeof rawUrl !== "string") continue;
-    const url = normalizeAllowedTwilioMediaUrl(rawUrl);
-    if (!url) continue;
+    const mediaRef = parseAllowedTwilioMediaRef(rawUrl);
+    if (!mediaRef) continue;
     const ct = body[`MediaContentType${i}`];
     slots.push({
-      url,
+      accountSid: mediaRef.accountSid,
+      messageSid: mediaRef.messageSid,
+      mediaSid: mediaRef.mediaSid,
       declaredContentType: typeof ct === "string" ? ct : null,
     });
   }
   return slots;
-}
-
-/**
- * Extract the Twilio media SID from the canonical media URL
- * (https://api.twilio.com/2010-04-01/Accounts/<sid>/Messages/<msid>/Media/<mediaSid>).
- * Returns null when the URL doesn't follow the expected shape — a
- * future Twilio URL change would gracefully degrade to "no SID,
- * replay-protection on this row disabled" rather than throwing
- * inside the webhook handler.
- */
-function extractTwilioMediaSid(url: string): string | null {
-  const match = url.match(/\/Media\/(ME[a-zA-Z0-9]+)(?:\/|$|\?)/);
-  return match ? (match[1] ?? null) : null;
 }
 
 /**
@@ -208,7 +200,8 @@ async function downloadOneMedia(
   contentType: string;
   twilioMediaSid: string | null;
 } | null> {
-  const twilioMediaSid = extractTwilioMediaSid(slot.url);
+  const twilioMediaSid = slot.mediaSid;
+  const mediaUrl = `https://api.twilio.com/2010-04-01/Accounts/${slot.accountSid}/Messages/${slot.messageSid}/Media/${slot.mediaSid}`;
   const auth = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString(
     "base64",
   );
@@ -216,32 +209,13 @@ async function downloadOneMedia(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PER_MEDIA_TIMEOUT_MS);
   try {
-    // Defense in depth: even though `slot.url` was already produced
-    // by `normalizeAllowedTwilioMediaUrl` (strict regex over the path
-    // + hardcoded host), re-parse and re-check the destination here
-    // so the host allowlist sits immediately above the outgoing
-    // request. This is what static analysis (CodeQL `js/request-
-    // forgery`) recognizes as a sanitizer, and it guarantees that
-    // any future caller of this helper can't smuggle in a URL
-    // pointing somewhere other than Twilio's media API.
-    const target = new URL(slot.url);
-    if (
-      target.protocol !== "https:" ||
-      target.hostname !== "api.twilio.com"
-    ) {
-      logger.warn(
-        { twilio_media_sid: twilioMediaSid },
-        "mms_ingest_rejected_non_twilio_host",
-      );
-      return null;
-    }
     // Twilio media URL responds with a 307 redirect to a temporary
     // signed URL on Twilio's CDN that does NOT require auth. Fetch
     // follows redirects by default; we just need to send the basic
     // auth on the first hop.
-    const resp = await fetch(target, {
+    const resp = await fetch(mediaUrl, {
       headers: { Authorization: `Basic ${auth}` },
-      redirect: "follow",
+      redirect: "manual",
       signal: controller.signal,
     });
     if (!resp.ok) {
