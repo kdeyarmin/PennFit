@@ -47,6 +47,7 @@ import { Spinner } from "@/components/admin/Spinner";
 import { Badge } from "@/components/admin/Badge";
 import { CustomerNotesPanel } from "@/components/admin/CustomerNotesPanel";
 import { CustomerFollowupsPanel } from "@/components/admin/CustomerFollowupsPanel";
+import { MessageTemplateOverridesPanel } from "@/components/admin/message-template-overrides-panel";
 import { OrderNotesPanel } from "@/components/admin/OrderNotesPanel";
 import {
   AdminCustomerNotFoundError,
@@ -144,6 +145,7 @@ export function AdminCustomerDetailPage({ userId }: Props) {
           />
           <CustomerFollowupsPanel userId={userId} />
           <CustomerNotesPanel userId={userId} />
+          <MessageTemplateOverridesPanel userId={userId} />
           <RecentOrdersCard orders={data.orders} />
         </div>
         <aside style={{ display: "grid", gap: 16 }}>

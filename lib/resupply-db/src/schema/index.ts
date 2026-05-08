@@ -39,6 +39,7 @@ export * from "./insurance-leads";
 export * from "./back-in-stock";
 export * from "./csr-macros";
 export * from "./message-templates";
+export * from "./shop-customer-message-template-overrides";
 export * from "./admin-users";
 export * from "./auth";
 // Storefront (PennPaps fitter) tables in the `public` schema. See

@@ -9,6 +9,7 @@ import shopOrdersAdminRouter from "./admin/shop-orders.js";
 import shopProductsAdminRouter from "./admin/shop-products.js";
 import csrMacrosRouter from "./admin/csr-macros.js";
 import messageTemplatesRouter from "./admin/message-templates.js";
+import messageTemplateOverridesRouter from "./admin/message-template-overrides.js";
 import shopReturnsAdminRouter from "./admin/shop-returns.js";
 import shopReturnNotesRouter from "./admin/return-notes.js";
 import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
@@ -183,6 +184,12 @@ router.use(csrMacrosRouter);
 // is journaled — see lib/resupply-db/drizzle/0067_message_templates.sql
 // for the journal posture.
 router.use(messageTemplatesRouter);
+// /admin/shop/customers/:userId/message-template-overrides/* —
+// per-customer overrides for the global library (Phase 3 of
+// docs/proposals/customer-message-templates.md). Same posture as
+// the parent route: forward-deploy-safe via the lookup-fallback
+// chain even before the migration is journaled.
+router.use(messageTemplateOverridesRouter);
 // /admin/shop/subscriptions/metrics — KPI rollup for the
 // subscription health dashboard. Pure SQL aggregation — no Stripe
 // round-trip on this path.
