@@ -216,11 +216,30 @@ async function downloadOneMedia(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PER_MEDIA_TIMEOUT_MS);
   try {
+    // Defense in depth: even though `slot.url` was already produced
+    // by `normalizeAllowedTwilioMediaUrl` (strict regex over the path
+    // + hardcoded host), re-parse and re-check the destination here
+    // so the host allowlist sits immediately above the outgoing
+    // request. This is what static analysis (CodeQL `js/request-
+    // forgery`) recognises as a sanitiser, and it guarantees that
+    // any future caller of this helper can't smuggle in a URL
+    // pointing somewhere other than Twilio's media API.
+    const target = new URL(slot.url);
+    if (
+      target.protocol !== "https:" ||
+      target.hostname !== "api.twilio.com"
+    ) {
+      logger.warn(
+        { twilio_media_sid: twilioMediaSid },
+        "mms_ingest_rejected_non_twilio_host",
+      );
+      return null;
+    }
     // Twilio media URL responds with a 307 redirect to a temporary
     // signed URL on Twilio's CDN that does NOT require auth. Fetch
     // follows redirects by default; we just need to send the basic
     // auth on the first hop.
-    const resp = await fetch(slot.url, {
+    const resp = await fetch(target, {
       headers: { Authorization: `Basic ${auth}` },
       redirect: "follow",
       signal: controller.signal,
