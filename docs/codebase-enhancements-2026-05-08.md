@@ -144,7 +144,7 @@ commit to P0.3.
 
 | # | Item | Sev | Effort | Sketch |
 | --- | --- | --- | --- | --- |
-| P3.1 | `cpap-fitter` excluded from ESLint (200+ unlinted files) | MED | M | `eslint.config.mjs:1-12` — relax exclusion file-by-file; absorb violations across follow-up PRs. |
+| P3.1 | `cpap-fitter` now appears to be in ESLint scope; lint cleanup/enforcement should be tracked explicitly | MED | M | `eslint.config.mjs` already includes `artifacts/cpap-fitter/src/**/*.{ts,tsx}`; reframe this as staged violation burn-down and CI enforcement follow-up, not exclusion removal. |
 | P3.2 | No Lighthouse / axe CI for SPA a11y regressions | MED | M | Add a Playwright + axe-core job to the CI workflow added in P0.3. |
 | P3.3 | Playwright E2E exists but no smoke run on PRs | LOW | S | Wire `pnpm playwright test --grep @smoke` into the CI workflow. |
 | P3.4 | No bundle-budget gate in CI | LOW | S | After P2.12 lands, fail CI on >X% bundle growth. |
