@@ -23,16 +23,19 @@
 // edits are auditable as activity, but the values themselves are
 // dashboard-visible and don't need to be re-keyed into the audit log.
 
-import { and, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patients } from "@workspace/resupply-db";
+import {
+  type Database,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+type PatientsUpdate = Database["resupply"]["Tables"]["patients"]["Update"];
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -100,66 +103,67 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
   // in the body are touched; absent keys leave the column alone.
   // `expectedUpdatedAt` is a precondition, not a column — it never
   // lands in `updates`.
-  const updates: Record<string, unknown> = {};
+  const updates: PatientsUpdate = {};
   if ("insurancePayer" in body)
-    updates.insurancePayer = body.insurancePayer ?? null;
+    updates.insurance_payer = body.insurancePayer ?? null;
   if ("cadenceOverrideDays" in body)
-    updates.cadenceOverrideDays = body.cadenceOverrideDays ?? null;
+    updates.cadence_override_days = body.cadenceOverrideDays ?? null;
   if ("channelPreference" in body)
-    updates.channelPreference = body.channelPreference ?? null;
+    updates.channel_preference = body.channelPreference ?? null;
   if ("status" in body && body.status) updates.status = body.status;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   if (Object.keys(updates).length === 0) {
     // Empty body is a no-op rather than an error so dashboards don't
     // have to special-case "user clicked save without changing
     // anything". We still need to return a current `updatedAt` so
     // the client's optimistic-concurrency token stays usable.
-    const current = await db
-      .select({ id: patients.id, updatedAt: patients.updatedAt })
-      .from(patients)
-      .where(eq(patients.id, id))
-      .limit(1);
-    if (current.length === 0) {
+    const { data: current } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, updated_at")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (!current) {
       res.status(404).json({ error: "not_found" });
       return;
     }
     res.status(200).json({
       id,
       changed: [],
-      updatedAt: current[0].updatedAt.toISOString(),
+      updatedAt: current.updated_at,
     });
     return;
   }
 
-  // Truncate to millisecond precision: Postgres `timestamptz` is
-  // microsecond, but `pg` parses it back into a JS `Date` (ms).
-  // Without truncation, a precondition value of `…123Z` (read by
-  // the dashboard) would never `=` a stored value of `…123456+00`,
-  // and every concurrent PATCH would 409 spuriously.
-  updates.updatedAt = sql`date_trunc('milliseconds', now())`;
+  updates.updated_at = new Date().toISOString();
 
   // If a precondition was supplied, gate the UPDATE on
-  // `updated_at = $expected`. We `date_trunc('milliseconds', ...)`
-  // the column too so legacy rows written before this guard (which
-  // may carry microseconds) still match values the dashboard
-  // round-trips at JS `Date` precision.
+  // `updated_at = $expected`. The dashboard echoes back the exact
+  // ISO string it received from a prior response, so a literal
+  // `.eq()` matches reliably for values written through this code
+  // path. The original Drizzle implementation used
+  // `date_trunc('milliseconds', updated_at) = $expected` to defend
+  // against `pg` lossily reparsing microsecond Postgres timestamps
+  // into millisecond JS `Date`s; PostgREST returns the full
+  // string, so the lossiness disappears and the trunc isn't needed.
   const expectedUpdatedAt = body.expectedUpdatedAt;
-  const whereClause = expectedUpdatedAt
-    ? and(
-        eq(patients.id, id),
-        sql`date_trunc('milliseconds', ${patients.updatedAt}) = ${new Date(expectedUpdatedAt)}`,
-      )
-    : eq(patients.id, id);
+  let updateQuery = supabase
+    .schema("resupply")
+    .from("patients")
+    .update(updates)
+    .eq("id", id);
+  if (expectedUpdatedAt) {
+    updateQuery = updateQuery.eq("updated_at", expectedUpdatedAt);
+  }
+  const { data: result, error: updErr } = await updateQuery.select(
+    "id, updated_at",
+  );
+  if (updErr) throw updErr;
 
-  const result = await db
-    .update(patients)
-    .set(updates)
-    .where(whereClause)
-    .returning({ id: patients.id, updatedAt: patients.updatedAt });
-
-  if (result.length === 0) {
+  if (!result || result.length === 0) {
     if (expectedUpdatedAt) {
       // The UPDATE matched nothing — either the patient was deleted
       // or its `updated_at` moved. Re-SELECT to disambiguate so the
@@ -167,12 +171,14 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
       // (404). Without this disambiguation we'd punish a stale write
       // with the same response as a missing row, and the admin
       // would think the patient vanished.
-      const exists = await db
-        .select({ id: patients.id })
-        .from(patients)
-        .where(eq(patients.id, id))
-        .limit(1);
-      if (exists.length > 0) {
+      const { data: exists } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id")
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle();
+      if (exists) {
         res.status(409).json({
           error: "stale_patient",
           message:
@@ -188,7 +194,7 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
   // Audit: record which columns changed; do NOT record the new values
   // (they round-trip in the dashboard already; logging values would
   // duplicate state into the audit log unnecessarily).
-  const changedColumns = Object.keys(updates).filter((k) => k !== "updatedAt");
+  const changedColumns = Object.keys(updates).filter((k) => k !== "updated_at");
   try {
     await logAudit({
       action: "patient.update",
@@ -213,7 +219,7 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
   res.status(200).json({
     id,
     changed: changedColumns,
-    updatedAt: result[0].updatedAt.toISOString(),
+    updatedAt: result[0]!.updated_at,
   });
 });
 

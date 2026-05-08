@@ -27,13 +27,11 @@
 //     "export what I'm looking at" button on the dashboard returns
 //     exactly the rows the admin currently sees.
 
-import { and, asc, eq, sql, type SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patients } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -94,69 +92,50 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
   }
 
   const { status, search } = parsed.data;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  // Build the WHERE clause. We mirror GET /patients' behavior:
-  //   * status: simple eq
-  //   * search: case-insensitive substring across pacware_id AND the
-  //     name columns. Plaintext columns make this a straightforward
-  //     ILIKE; the row cap and the admin gate keep it acceptable
-  //     without an additional index.
-  const conditions: SQL[] = [];
-  if (status) conditions.push(eq(patients.status, status));
+  // Mirror GET /patients' behavior:
+  //   * status: simple .eq
+  //   * search: case-insensitive substring across pacware_id +
+  //     legal_first_name + legal_last_name via PostgREST `.or()`
+  //     with `.ilike` clauses. Zod-capped at 64 chars so the value
+  //     can't smuggle metacharacters.
+  let query = supabase
+    .schema("resupply")
+    .from("patients")
+    .select(
+      "pacware_id, legal_first_name, legal_last_name, date_of_birth, phone_e164, email, status, created_at, updated_at",
+    )
+    .order("created_at", { ascending: true })
+    // Fetch one extra row so we know whether to flag truncation
+    // without a separate COUNT(*) query.
+    .limit(MAX_ROWS + 1);
+  if (status) query = query.eq("status", status);
   if (search) {
-    const pattern = `%${search}%`;
-    conditions.push(
-      sql`(
-        ${patients.pacwareId} ILIKE ${pattern}
-        OR ${patients.legalFirstName} ILIKE ${pattern}
-        OR ${patients.legalLastName} ILIKE ${pattern}
-      )`,
+    const pattern = `*${search}*`;
+    query = query.or(
+      `pacware_id.ilike.${pattern},legal_first_name.ilike.${pattern},legal_last_name.ilike.${pattern}`,
     );
   }
-  const whereClause: SQL | undefined =
-    conditions.length === 0
-      ? undefined
-      : conditions.length === 1
-        ? conditions[0]
-        : and(...conditions);
+  const { data: rows, error } = await query;
+  if (error) throw error;
 
-  // Fetch one extra row so we know whether to flag truncation
-  // without a separate COUNT(*) query.
-  const limit = MAX_ROWS + 1;
-  const baseQuery = db
-    .select({
-      pacwareId: patients.pacwareId,
-      firstName: patients.legalFirstName,
-      lastName: patients.legalLastName,
-      dateOfBirth: patients.dateOfBirth,
-      phoneE164: patients.phoneE164,
-      email: patients.email,
-      status: patients.status,
-      createdAt: patients.createdAt,
-      updatedAt: patients.updatedAt,
-    })
-    .from(patients);
-  const rows = await (whereClause ? baseQuery.where(whereClause) : baseQuery)
-    .orderBy(asc(patients.createdAt))
-    .limit(limit);
-
-  const truncated = rows.length > MAX_ROWS;
-  const exportRows = truncated ? rows.slice(0, MAX_ROWS) : rows;
+  const truncated = (rows?.length ?? 0) > MAX_ROWS;
+  const exportRows = truncated ? rows!.slice(0, MAX_ROWS) : (rows ?? []);
 
   const lines: string[] = [COLUMNS.join(",")];
   for (const r of exportRows) {
     lines.push(
       [
-        csvEscape(r.pacwareId),
-        csvEscape(r.firstName),
-        csvEscape(r.lastName),
-        csvEscape(r.dateOfBirth),
-        csvEscape(r.phoneE164),
+        csvEscape(r.pacware_id),
+        csvEscape(r.legal_first_name),
+        csvEscape(r.legal_last_name),
+        csvEscape(r.date_of_birth),
+        csvEscape(r.phone_e164),
         csvEscape(r.email),
         csvEscape(r.status),
-        csvEscape(r.createdAt.toISOString()),
-        csvEscape(r.updatedAt.toISOString()),
+        csvEscape(r.created_at),
+        csvEscape(r.updated_at),
       ].join(","),
     );
   }

@@ -291,6 +291,25 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
         Relationships: [];
       };
+      patient_smart_trigger_events: {
+        Row: {
+          id: string;
+          patient_id: string;
+          kind: string;
+          detected_at: string;
+          window_start_date: string;
+          window_end_date: string;
+          sent_at: string | null;
+          dismissed_at: string | null;
+          dismissed_by_email: string | null;
+          dismissed_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]>;
+        Relationships: [];
+      };
       physician_fax_outreach: {
         Row: {
           id: string;

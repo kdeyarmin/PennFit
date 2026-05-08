@@ -14,11 +14,13 @@
 // branch deliberately.
 
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool, shopOrders, shopCustomers } from "@workspace/resupply-db";
+import {
+  type Database,
+  type Json,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
 import { readCustomerProfile } from "../../lib/customer-profile";
@@ -26,6 +28,8 @@ import {
   attachSignedIn,
   requireSignedIn,
 } from "../../middlewares/requireSignedIn";
+
+type ShopCustomersUpdate = Database["resupply"]["Tables"]["shop_customers"]["Update"];
 
 const router: IRouter = Router();
 
@@ -51,20 +55,15 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   // Recent orders summary (last 5). We DON'T expose price/line items
   // here — that's behind /shop/me/orders so the account header stays
   // light. Just enough to render "3 past orders, latest Apr 22".
-  const db = drizzle(getDbPool());
-  const recent = await db
-    .select({
-      id: shopOrders.id,
-      stripeSessionId: shopOrders.stripeSessionId,
-      status: shopOrders.status,
-      amountTotalCents: shopOrders.amountTotalCents,
-      currency: shopOrders.currency,
-      createdAt: shopOrders.createdAt,
-    })
-    .from(shopOrders)
-    .where(eq(shopOrders.customerId, req.userCustomerId))
-    .orderBy(desc(shopOrders.createdAt))
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: recent, error: recentErr } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select("id, stripe_session_id, status, amount_total_cents, currency, created_at")
+    .eq("customer_id", req.userCustomerId)
+    .order("created_at", { ascending: false })
     .limit(RECENT_ORDERS_LIMIT);
+  if (recentErr) throw recentErr;
 
   res.json({
     signedIn: true,
@@ -91,13 +90,13 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
           expYear: row.defaultPaymentMethodExpYear,
         }
       : null,
-    recentOrders: recent.map((r) => ({
+    recentOrders: (recent ?? []).map((r) => ({
       id: r.id,
-      sessionId: r.stripeSessionId,
+      sessionId: r.stripe_session_id,
       status: r.status,
-      amountTotalCents: r.amountTotalCents,
+      amountTotalCents: r.amount_total_cents,
       currency: r.currency,
-      createdAt: r.createdAt.toISOString(),
+      createdAt: r.created_at,
     })),
   });
 });
@@ -143,23 +142,30 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
     email: null,
   });
 
-  const updates: Partial<typeof shopCustomers.$inferInsert> & {
-    updatedAt: Date;
-  } = { updatedAt: new Date() };
-  if (displayName !== undefined) updates.displayName = displayName;
+  const updates: ShopCustomersUpdate = {
+    updated_at: new Date().toISOString(),
+  };
+  if (displayName !== undefined) updates.display_name = displayName;
   if (shippingAddress !== undefined) {
-    updates.shippingAddress = shippingAddress
-      ? { ...shippingAddress, line2: shippingAddress.line2 ?? null }
-      : null;
+    updates.shipping_address_json = (
+      shippingAddress
+        ? { ...shippingAddress, line2: shippingAddress.line2 ?? null }
+        : null
+    ) as unknown as Json;
   }
 
-  const db = drizzle(getDbPool());
-  const [row] = await db
-    .update(shopCustomers)
-    .set(updates)
-    .where(eq(shopCustomers.customerId, req.userCustomerId!))
-    .returning();
-
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update(updates)
+    .eq("customer_id", req.userCustomerId!)
+    .select("customer_id, email_lower, display_name, shipping_address_json")
+    .single();
+  if (error) {
+    res.status(500).json({ error: "update_failed", message: error.message });
+    return;
+  }
   if (!row) {
     res.status(500).json({ error: "update_failed" });
     return;
@@ -167,10 +173,10 @@ router.put("/shop/me", requireSignedIn, async (req, res) => {
 
   res.json({
     profile: {
-      customerId: row.customerId,
-      email: row.emailLower,
-      displayName: row.displayName,
-      shippingAddress: row.shippingAddress ?? null,
+      customerId: row.customer_id,
+      email: row.email_lower,
+      displayName: row.display_name,
+      shippingAddress: row.shipping_address_json ?? null,
     },
   });
 });

@@ -11,16 +11,9 @@
 // row, since that is where message bodies cross the wire.
 
 import { Router, type IRouter } from "express";
-import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import {
-  conversations,
-  getDbPool,
-  patients,
-  shopCustomers,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -75,119 +68,123 @@ router.get("/conversations", requireAdmin, async (req, res) => {
     offset,
   } = parsed.data;
 
-  const filters: SQL[] = [];
-  if (status) filters.push(eq(conversations.status, status));
-  if (channel) filters.push(eq(conversations.channel, channel));
-  if (patientId) filters.push(eq(conversations.patientId, patientId));
-  if (priority) filters.push(eq(conversations.priority, priority));
+  const supabase = getSupabaseServiceRoleClient();
+
+  // Sort: escalated first (NULLS LAST so non-SLA threads don't push
+  // to the top), then SLA ascending, then last-message recency.
+  let query = supabase
+    .schema("resupply")
+    .from("conversations")
+    .select(
+      "id, patient_id, customer_id, episode_id, channel, status, last_message_at, created_at, assigned_admin_user_id, assigned_at, priority, sla_due_at, escalated_at, escalation_reason",
+      { count: "exact" },
+    )
+    .order("escalated_at", { ascending: false, nullsFirst: false })
+    .order("sla_due_at", { ascending: true, nullsFirst: false })
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (status) query = query.eq("status", status);
+  if (channel) query = query.eq("channel", channel);
+  if (patientId) query = query.eq("patient_id", patientId);
+  if (priority) query = query.eq("priority", priority);
   if (view === "mine") {
     if (req.adminUserId) {
-      filters.push(eq(conversations.assignedAdminUserId, req.adminUserId));
-      filters.push(
-        sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
-      );
+      query = query
+        .eq("assigned_admin_user_id", req.adminUserId)
+        .in("status", ["open", "awaiting_admin", "awaiting_patient"]);
     }
   } else if (view === "unassigned") {
-    filters.push(isNull(conversations.assignedAdminUserId));
-    filters.push(
-      sql`${conversations.status} IN ('open','awaiting_admin','awaiting_patient')`,
-    );
+    query = query
+      .is("assigned_admin_user_id", null)
+      .in("status", ["open", "awaiting_admin", "awaiting_patient"]);
   } else if (view === "escalated") {
-    filters.push(isNotNull(conversations.escalatedAt));
+    query = query.not("escalated_at", "is", null);
   } else if (view === "breaching") {
     // SLA breach within 30 min OR already breached.
-    filters.push(isNotNull(conversations.slaDueAt));
-    filters.push(
-      sql`${conversations.slaDueAt} <= now() + interval '30 minutes'`,
-    );
-    filters.push(sql`${conversations.status} IN ('open','awaiting_admin')`);
+    const breachCutoff = new Date(Date.now() + 30 * 60_000).toISOString();
+    query = query
+      .not("sla_due_at", "is", null)
+      .lte("sla_due_at", breachCutoff)
+      .in("status", ["open", "awaiting_admin"]);
   } else if (assignedTo) {
-    filters.push(eq(conversations.assignedAdminUserId, assignedTo));
+    query = query.eq("assigned_admin_user_id", assignedTo);
   }
-  const whereClause = filters.length ? and(...filters) : undefined;
 
-  const db = drizzle(getDbPool());
+  const { data: rows, count, error } = await query;
+  if (error) throw error;
 
-  const [totalRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(conversations)
-    .where(whereClause);
+  // Bulk-fetch the joined identity rows. The original Drizzle query
+  // LEFT JOINed patients + shop_customers; PostgREST has no JOIN, so
+  // we collect the IDs from this page's rows and fetch in one extra
+  // round-trip per side.
+  const patientIds = Array.from(
+    new Set(
+      (rows ?? [])
+        .map((r) => r.patient_id)
+        .filter((v): v is string => v !== null),
+    ),
+  );
+  const customerIds = Array.from(
+    new Set(
+      (rows ?? [])
+        .map((r) => r.customer_id)
+        .filter((v): v is string => v !== null),
+    ),
+  );
 
-  const rows = await db
-    .select({
-      id: conversations.id,
-      patientId: conversations.patientId,
-      patientFirstName: patients.legalFirstName,
-      patientLastName: patients.legalLastName,
-      // Customer subject (in_app channel only). Both fields nullable
-      // for patient-flow conversations — the XOR check guarantees
-      // exactly one of (patient_id, customer_id) is set.
-      customerId: conversations.customerId,
-      customerDisplayName: shopCustomers.displayName,
-      customerEmail: shopCustomers.emailLower,
-      episodeId: conversations.episodeId,
-      channel: conversations.channel,
-      status: conversations.status,
-      lastMessageAt: conversations.lastMessageAt,
-      createdAt: conversations.createdAt,
-      assignedAdminUserId: conversations.assignedAdminUserId,
-      assignedAt: conversations.assignedAt,
-      priority: conversations.priority,
-      slaDueAt: conversations.slaDueAt,
-      escalatedAt: conversations.escalatedAt,
-      escalationReason: conversations.escalationReason,
-    })
-    .from(conversations)
-    .leftJoin(patients, eq(patients.id, conversations.patientId))
-    .leftJoin(
-      shopCustomers,
-      eq(shopCustomers.customerId, conversations.customerId),
-    )
-    .where(whereClause)
-    // Sort: breaching/escalated first (NULLS LAST so non-SLA threads
-    // don't push themselves to the top), then last-message recency.
-    .orderBy(
-      sql`${conversations.escalatedAt} DESC NULLS LAST`,
-      sql`${conversations.slaDueAt} ASC NULLS LAST`,
-      sql`${conversations.lastMessageAt} DESC NULLS LAST`,
-      sql`${conversations.createdAt} DESC`,
-    )
-    .limit(limit)
-    .offset(offset);
-
-  const toIso = (v: unknown): string | null => {
-    if (v == null) return null;
-    if (v instanceof Date) return v.toISOString();
-    return String(v);
-  };
-  const toIsoRequired = (v: unknown): string =>
-    toIso(v) ?? new Date(0).toISOString();
+  const [patientsRes, customersRes] = await Promise.all([
+    patientIds.length > 0
+      ? supabase
+          .schema("resupply")
+          .from("patients")
+          .select("id, legal_first_name, legal_last_name")
+          .in("id", patientIds)
+      : Promise.resolve({ data: [], error: null } as const),
+    customerIds.length > 0
+      ? supabase
+          .schema("resupply")
+          .from("shop_customers")
+          .select("customer_id, display_name, email_lower")
+          .in("customer_id", customerIds)
+      : Promise.resolve({ data: [], error: null } as const),
+  ]);
+  if (patientsRes.error) throw patientsRes.error;
+  if (customersRes.error) throw customersRes.error;
+  const patientsById = new Map(
+    (patientsRes.data ?? []).map((p) => [p.id, p] as const),
+  );
+  const customersById = new Map(
+    (customersRes.data ?? []).map((c) => [c.customer_id, c] as const),
+  );
 
   res.status(200).json({
-    items: rows.map((r) => ({
-      id: r.id,
-      // Patient/episode subject — null for in_app rows (post-0033).
-      patientId: r.patientId,
-      patientFirstName: r.patientFirstName ?? "",
-      patientLastName: r.patientLastName ?? "",
-      episodeId: r.episodeId,
-      // Customer subject — null for patient-flow rows. The UI
-      // branches on these for in_app channel rendering.
-      customerId: r.customerId,
-      customerDisplayName: r.customerDisplayName ?? null,
-      customerEmail: r.customerEmail ?? null,
-      channel: r.channel,
-      status: r.status,
-      lastMessageAt: toIso(r.lastMessageAt),
-      createdAt: toIsoRequired(r.createdAt),
-      assignedAdminUserId: r.assignedAdminUserId ?? null,
-      assignedAt: toIso(r.assignedAt),
-      priority: r.priority ?? "normal",
-      slaDueAt: toIso(r.slaDueAt),
-      escalatedAt: toIso(r.escalatedAt),
-      escalationReason: r.escalationReason ?? null,
-    })),
-    total: totalRow?.count ?? 0,
+    items: (rows ?? []).map((r) => {
+      const pt = r.patient_id ? patientsById.get(r.patient_id) : undefined;
+      const cu = r.customer_id ? customersById.get(r.customer_id) : undefined;
+      return {
+        id: r.id,
+        patientId: r.patient_id,
+        patientFirstName: pt?.legal_first_name ?? "",
+        patientLastName: pt?.legal_last_name ?? "",
+        episodeId: r.episode_id,
+        customerId: r.customer_id,
+        customerDisplayName: cu?.display_name ?? null,
+        customerEmail: cu?.email_lower ?? null,
+        channel: r.channel,
+        status: r.status,
+        lastMessageAt: r.last_message_at,
+        createdAt: r.created_at,
+        assignedAdminUserId: r.assigned_admin_user_id ?? null,
+        assignedAt: r.assigned_at,
+        priority: r.priority ?? "normal",
+        slaDueAt: r.sla_due_at,
+        escalatedAt: r.escalated_at,
+        escalationReason: r.escalation_reason ?? null,
+      };
+    }),
+    total: count ?? 0,
     limit,
     offset,
   });
