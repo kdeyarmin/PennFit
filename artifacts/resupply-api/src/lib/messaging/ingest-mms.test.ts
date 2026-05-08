@@ -233,7 +233,7 @@ describe("ingestInboundMmsMedia", () => {
         rawWebhookBody: {
           NumMedia: "1",
           MediaUrl0:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEbig",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEbig",
           MediaContentType0: "image/jpeg",
         },
         numMedia: 1,
@@ -268,10 +268,10 @@ describe("ingestInboundMmsMedia", () => {
         rawWebhookBody: {
           NumMedia: "2",
           MediaUrl0:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEgone",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEgone",
           MediaContentType0: "image/png",
           MediaUrl1:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEgood",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEgood",
           MediaContentType1: "image/png",
         },
         numMedia: 2,
@@ -302,7 +302,7 @@ describe("ingestInboundMmsMedia", () => {
     const body: Record<string, string> = { NumMedia: "99" };
     for (let i = 0; i < 99; i++) {
       body[`MediaUrl${i}`] =
-        `https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/ME${i}`;
+        `https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/ME${i}`;
       body[`MediaContentType${i}`] = "image/png";
     }
 
@@ -344,7 +344,7 @@ describe("ingestInboundMmsMedia", () => {
           MediaContentType0: "image/png",
           // Valid Twilio URL — should proceed normally.
           MediaUrl1:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEsafe",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEsafe",
           MediaContentType1: "image/png",
         },
         numMedia: 2,
@@ -581,13 +581,13 @@ describe("ingestInboundMmsMedia", () => {
           rawWebhookBody: {
             NumMedia: "3",
             MediaUrl0:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEa",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEa",
             MediaContentType0: "image/png",
             MediaUrl1:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEb",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEb",
             MediaContentType1: "image/png",
             MediaUrl2:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEc",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEc",
             MediaContentType2: "image/png",
           },
           numMedia: 3,
@@ -641,10 +641,10 @@ describe("ingestInboundMmsMedia", () => {
           rawWebhookBody: {
             NumMedia: "2",
             MediaUrl0:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEx",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEx",
             MediaContentType0: "image/png",
             MediaUrl1:
-              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEy",
+              "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEy",
             MediaContentType1: "image/png",
           },
           numMedia: 2,
@@ -691,7 +691,7 @@ describe("ingestInboundMmsMedia", () => {
         rawWebhookBody: {
           NumMedia: "1",
           MediaUrl0:
-            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM/Media/MEdup",
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MMtest/Media/MEdup",
           MediaContentType0: "image/png",
         },
         numMedia: 1,
