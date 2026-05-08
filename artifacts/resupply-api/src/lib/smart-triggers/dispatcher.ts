@@ -36,15 +36,18 @@ import {
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
+  EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
 import {
   createTwilioSmsClient,
+  TwilioApiError,
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
 import { logger } from "../logger";
 import { sendPushToCustomerByEmail } from "../web-push";
+import { withRetry } from "../with-retry";
 import { type TriggerKind } from "./index";
 
 /** Per-dispatcher-run cap. Same value the route uses. */
@@ -220,22 +223,59 @@ export async function runSmartTriggerSendDue(
 
     try {
       if (channel === "email") {
-        await sg!.sendEmail({
-          to: contact,
-          subject: renderers.subjectForKind(row.kind as TriggerKind),
-          text: renderers.textBody(greeting, row.kind as TriggerKind),
-          html: renderers.htmlBody(greeting, row.kind as TriggerKind),
-          customArgs: {
-            kind: "smart_trigger",
-            trigger_kind: row.kind,
-            event_id: row.eventId,
+        // Retry transient SendGrid failures (5xx / network) so a single
+        // hiccup doesn't drop a smart-trigger nudge. Permanent 4xx
+        // errors and EmailConfigError are NOT retried (the latter
+        // propagates out of withRetry's predicate to the outer
+        // catch where the existing config-error branch handles it).
+        await withRetry(
+          () =>
+            sg!.sendEmail({
+              to: contact,
+              subject: renderers.subjectForKind(row.kind as TriggerKind),
+              text: renderers.textBody(greeting, row.kind as TriggerKind),
+              html: renderers.htmlBody(greeting, row.kind as TriggerKind),
+              customArgs: {
+                kind: "smart_trigger",
+                trigger_kind: row.kind,
+                event_id: row.eventId,
+              },
+            }),
+          {
+            attempts: 3,
+            baseDelayMs: 250,
+            maxDelayMs: 1_500,
+            isRetriable: (err) => {
+              if (err instanceof EmailApiError) {
+                return err.status === undefined || err.status >= 500;
+              }
+              if (err instanceof EmailConfigError) return false;
+              return true;
+            },
           },
-        });
+        );
       } else {
-        await sms!.sendSms({
-          to: contact,
-          body: renderers.smsBody(firstName, row.kind as TriggerKind),
-        });
+        // Same posture as checkin-dispatcher's sendSms — retry 5xx /
+        // network only; 4xx (opt-out, invalid number) is permanent.
+        await withRetry(
+          () =>
+            sms!.sendSms({
+              to: contact,
+              body: renderers.smsBody(firstName, row.kind as TriggerKind),
+            }),
+          {
+            attempts: 3,
+            baseDelayMs: 250,
+            maxDelayMs: 1_500,
+            isRetriable: (err) => {
+              if (err instanceof TwilioApiError) {
+                return err.status === undefined || err.status >= 500;
+              }
+              if (err instanceof TwilioConfigError) return false;
+              return true;
+            },
+          },
+        );
       }
 
       // sent_at was already stamped by the atomic claim — no UPDATE here.

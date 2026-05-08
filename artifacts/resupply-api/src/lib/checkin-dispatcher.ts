@@ -472,18 +472,36 @@ async function placeVoiceCall(
     };
   }
   try {
-    const r = await clients.voice.client.placeCall({
-      to: row.phoneE164,
-      from: clients.voice.from,
-      // Public TwiML endpoint — Twilio fetches this when the callee
-      // answers. We pass `day` AND `patientId` so the press-1 callback
-      // can attribute the manual alert to the right patient without
-      // touching the database first.
-      url: `${clients.voice.publicBaseUrl}/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
-      statusCallbackUrl: `${clients.voice.publicBaseUrl}/voice/status-callback`,
-      record: false,
-      timeLimit: 120,
-    });
+    // Same retry posture as sendSms above — 5xx + network failures
+    // get up to 3 attempts; 4xx (invalid number, blocked, opt-out)
+    // is permanent.
+    const r = await withRetry(
+      () =>
+        clients.voice!.client.placeCall({
+          to: row.phoneE164!,
+          from: clients.voice!.from,
+          // Public TwiML endpoint — Twilio fetches this when the callee
+          // answers. We pass `day` AND `patientId` so the press-1 callback
+          // can attribute the manual alert to the right patient without
+          // touching the database first.
+          url: `${clients.voice!.publicBaseUrl}/voice/checkin-twiml?day=${encodeURIComponent(day)}&patientId=${encodeURIComponent(row.patientId)}&journeyId=${encodeURIComponent(row.journeyId)}`,
+          statusCallbackUrl: `${clients.voice!.publicBaseUrl}/voice/status-callback`,
+          record: false,
+          timeLimit: 120,
+        }),
+      {
+        attempts: 3,
+        baseDelayMs: 250,
+        maxDelayMs: 1_500,
+        isRetriable: (err) => {
+          if (err instanceof TwilioApiError) {
+            return err.status === undefined || err.status >= 500;
+          }
+          if (err instanceof TwilioConfigError) return false;
+          return true;
+        },
+      },
+    );
     return { outcome: "ok", vendorRef: r.sid, errorCode: null };
   } catch (err) {
     if (err instanceof TwilioApiError) {
