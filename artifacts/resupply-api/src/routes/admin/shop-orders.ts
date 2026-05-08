@@ -49,6 +49,7 @@ import type { SavedShippingAddress } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { withMetrics } from "../../lib/observability";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -734,28 +735,40 @@ router.post(
     //     each create a separate Stripe Refund (intentional).
     const idempotencyKey = `refund-${orderId}-${amountCents ?? "full"}`;
 
+    // Capture the narrowed string into a const so the arrow-fn
+    // callback below keeps the TS control-flow narrowing the
+    // earlier `if (!existing.stripePaymentIntentId)` guard
+    // established.
+    const paymentIntentId = existing.stripePaymentIntentId;
     let refund;
     try {
-      refund = await stripe.refunds.create(
+      refund = await withMetrics(
         {
-          payment_intent: existing.stripePaymentIntentId,
-          ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
-          ...(reason ? { reason } : {}),
-          metadata: {
-            // Records WHO issued the refund directly on the Stripe
-            // Refund object; survives even if our local audit log
-            // is later purged or queried out of band.
-            admin_email: req.adminEmail ?? "unknown",
-            shop_order_id: orderId,
-          },
+          name: "stripe.refunds.create",
+          attrs: { surface: "admin_shop_order" },
         },
-        // Per-order + per-amount idempotency key: if two admins click
-        // "Refund" before the charge.refunded webhook flips status, Stripe
-        // deduplicates and returns the same Refund object rather than
-        // issuing a second refund.  Amount is included so different partial
-        // refund amounts on the same order each create a separate Stripe
-        // Refund (intentional).
-        { idempotencyKey },
+        () =>
+          stripe.refunds.create(
+            {
+              payment_intent: paymentIntentId,
+              ...(typeof amountCents === "number" ? { amount: amountCents } : {}),
+              ...(reason ? { reason } : {}),
+              metadata: {
+                // Records WHO issued the refund directly on the Stripe
+                // Refund object; survives even if our local audit log
+                // is later purged or queried out of band.
+                admin_email: req.adminEmail ?? "unknown",
+                shop_order_id: orderId,
+              },
+            },
+            // Per-order + per-amount idempotency key: if two admins click
+            // "Refund" before the charge.refunded webhook flips status, Stripe
+            // deduplicates and returns the same Refund object rather than
+            // issuing a second refund.  Amount is included so different partial
+            // refund amounts on the same order each create a separate Stripe
+            // Refund (intentional).
+            { idempotencyKey },
+          ),
       );
     } catch (err) {
       const status =

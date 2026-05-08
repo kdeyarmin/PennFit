@@ -33,8 +33,22 @@ import {
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// Per-admin rate limit on followup writes (B-07). create + complete
+// are CSR queue actions, low-impact individually but worth a per-
+// actor cap so a scripted abuser can't churn the table. 60/hour
+// matches the existing adminReturnLifecycleLimiter envelope for
+// non-financial admin write workflows. Keyed by adminUserId
+// (populated by requireAdmin which runs first).
+const adminFollowupMutationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  name: "admin_customer_followup_mutation",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const userIdParam = z
   .string()
@@ -144,6 +158,7 @@ router.get(
 router.post(
   "/admin/shop/customers/:userId/followups",
   requireAdmin,
+  adminFollowupMutationLimiter,
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
     if (!idCheck.success) {
@@ -224,6 +239,7 @@ router.post(
 router.patch(
   "/admin/shop/customers/:userId/followups/:id/complete",
   requireAdmin,
+  adminFollowupMutationLimiter,
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
     if (!idCheck.success) {

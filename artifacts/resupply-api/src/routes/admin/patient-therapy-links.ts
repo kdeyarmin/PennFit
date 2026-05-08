@@ -28,8 +28,23 @@ import {
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// Per-admin rate limit on therapy-link writes (B-07). Each create
+// or revoke decides which patient pairs to which therapy-cloud
+// account; the nightly sync worker reads from this table, so a
+// scripted abuse here would mis-route every subsequent sync. 30/hour
+// is plenty for legitimate CSR workflows (typically 0–5 per day per
+// admin) and bounds blast radius from a compromised account. Keyed
+// by adminUserId (populated by requireAdmin which runs first).
+const adminTherapyLinkMutationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  name: "admin_patient_therapy_link_mutation",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const patientIdParam = z.string().uuid();
 const linkIdParam = z.string().uuid();
@@ -137,6 +152,7 @@ router.get(
 router.post(
   "/admin/patients/:id/therapy-links",
   requireAdmin,
+  adminTherapyLinkMutationLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -247,6 +263,7 @@ router.post(
 router.patch(
   "/admin/patients/:id/therapy-links/:linkId",
   requireAdmin,
+  adminTherapyLinkMutationLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     const linkCheck = linkIdParam.safeParse(req.params.linkId);
@@ -346,6 +363,7 @@ router.patch(
 router.delete(
   "/admin/patients/:id/therapy-links/:linkId",
   requireAdmin,
+  adminTherapyLinkMutationLimiter,
   async (req, res) => {
     // DELETE is a soft-revoke (status='revoked') so the audit
     // trail of "patient was linked to AirView between X and Y"

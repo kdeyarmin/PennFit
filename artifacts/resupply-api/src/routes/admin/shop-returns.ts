@@ -44,6 +44,7 @@ import {
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+import { withMetrics } from "../../lib/observability";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -428,17 +429,28 @@ router.post(
         // intentional (partial refunds may legitimately stack). Mirrors
         // the shop_orders refund pattern (sprint 5, e98a0bf).
         const idempotencyKey = `shop-return-refund-${ret.id}-${refundCents}`;
-        const refund = await stripe.refunds.create(
+        // Capture the narrowed string into a const so the arrow-fn
+        // callback below keeps the TS control-flow narrowing from the
+        // outer `if (stripe && orderRow.stripe_payment_intent_id)`.
+        const paymentIntentId = orderRow.stripe_payment_intent_id;
+        const refund = await withMetrics(
           {
-            payment_intent: orderRow.stripe_payment_intent_id,
-            amount: refundCents,
-            reason: "requested_by_customer",
-            metadata: {
-              shop_return_id: ret.id,
-              shop_order_id: ret.orderId,
-            },
+            name: "stripe.refunds.create",
+            attrs: { surface: "admin_shop_return" },
           },
-          { idempotencyKey },
+          () =>
+            stripe.refunds.create(
+              {
+                payment_intent: paymentIntentId,
+                amount: refundCents,
+                reason: "requested_by_customer",
+                metadata: {
+                  shop_return_id: ret.id,
+                  shop_order_id: ret.orderId,
+                },
+              },
+              { idempotencyKey },
+            ),
         );
         stripeRefundId = refund.id;
       } catch (err) {

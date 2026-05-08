@@ -22,7 +22,10 @@ import {
   TwilioConfigError,
 } from "@workspace/resupply-telecom";
 
+import { renderMessage } from "@workspace/resupply-templates";
+
 import { logger } from "../logger";
+import { messageTemplateLookup } from "../message-templates/lookup";
 import { sendPushToCustomerByEmail } from "../web-push";
 import {
   rxRenewalHtml,
@@ -165,13 +168,42 @@ export async function runRxRenewalSendDue(
       continue;
     }
 
+    // Variables exposed to the templated path. Names are
+    // snake_case + ASCII per the renderMessage substitution rules.
+    // The fallback strings below are pre-rendered (existing renderer
+    // contract) so even with no template row present, the fallback
+    // path returns the same bytes — guaranteed by the parity test
+    // in renderers.template-parity.test.ts.
+    const tmplVars = {
+      first_name: firstName,
+      days_until_expiry: String(daysUntilExpiry),
+      greeting,
+    };
+
     try {
       if (channel === "email") {
+        const rendered = await renderMessage(
+          {
+            templateKey: "rx_renewal.email",
+            channel: "email",
+            // No shop_customers context here — patients !=
+            // shop_customers in this stack. Per-customer
+            // overrides skip; global template still applies.
+            customerId: null,
+            variables: tmplVars,
+          },
+          {
+            subject: rxRenewalSubject(daysUntilExpiry),
+            bodyHtml: rxRenewalHtml(greeting, daysUntilExpiry),
+            bodyText: rxRenewalText(greeting, daysUntilExpiry),
+          },
+          messageTemplateLookup,
+        );
         await sg!.sendEmail({
           to: contact,
-          subject: rxRenewalSubject(daysUntilExpiry),
-          text: rxRenewalText(greeting, daysUntilExpiry),
-          html: rxRenewalHtml(greeting, daysUntilExpiry),
+          subject: rendered.subject ?? "",
+          text: rendered.bodyText,
+          html: rendered.bodyHtml ?? rendered.bodyText,
           customArgs: {
             kind: "prescription_renewal_request",
             prescription_id: row.prescriptionId,
@@ -179,9 +211,23 @@ export async function runRxRenewalSendDue(
           },
         });
       } else {
+        const rendered = await renderMessage(
+          {
+            templateKey: "rx_renewal.sms",
+            channel: "sms",
+            customerId: null,
+            variables: tmplVars,
+          },
+          {
+            subject: null,
+            bodyHtml: null,
+            bodyText: rxRenewalSms(firstName, daysUntilExpiry),
+          },
+          messageTemplateLookup,
+        );
         await sms!.sendSms({
           to: contact,
-          body: rxRenewalSms(firstName, daysUntilExpiry),
+          body: rendered.bodyText,
         });
       }
 
@@ -208,8 +254,26 @@ export async function runRxRenewalSendDue(
       // Phase G.9 — best-effort push fan-out by email lookup.
       const pushEmail = row.email;
       if (pushEmail) {
+        // Push title goes through renderMessage so admins can edit
+        // it from /admin/templates without a deploy. Body stays
+        // hard-coded in this iteration; if A/B-tweaking that copy
+        // becomes a need, lift it into the same template row.
+        const pushRendered = await renderMessage(
+          {
+            templateKey: "rx_renewal.push",
+            channel: "push",
+            customerId: null,
+            variables: tmplVars,
+          },
+          {
+            subject: null,
+            bodyHtml: null,
+            bodyText: rxRenewalPushTitle(daysUntilExpiry),
+          },
+          messageTemplateLookup,
+        );
         void sendPushToCustomerByEmail(pushEmail, {
-          title: rxRenewalPushTitle(daysUntilExpiry),
+          title: pushRendered.bodyText,
           body: "Tap to coordinate a renewal with your physician.",
           url: "/account",
           tag: `rx_renewal:${row.prescriptionId}`,

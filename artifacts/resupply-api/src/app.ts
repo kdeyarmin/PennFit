@@ -5,13 +5,25 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { makeAuthRouter, type AuthDeps } from "@workspace/resupply-auth";
+import { registerAuditRequestIdResolver } from "@workspace/resupply-audit";
 import router from "./routes";
 import storefrontRouter from "./routes/storefront";
 import { getAuthDeps } from "./lib/auth-deps";
 import { logger } from "./lib/logger";
+import {
+  getRequestId,
+  requestContextMiddleware,
+} from "./lib/request-context";
 import { errorHandler } from "./middlewares/errorHandler";
 import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
+
+// Register the audit lib's request-id bridge once at import time so
+// any logAudit() call from inside an HTTP request automatically
+// inherits the same id pino-http put on the access log. Worker jobs
+// and CLI scripts run outside the request scope; the resolver
+// returns null there and audit rows skip the field.
+registerAuditRequestIdResolver(getRequestId);
 
 const app: Express = express();
 
@@ -160,6 +172,17 @@ app.use(
     },
   }),
 );
+
+// Bind every downstream callback in this request's scope to a
+// RequestContext carrying pino-http's req.id. Mounted AFTER pinoHttp
+// (which sets req.id) so the AsyncLocalStorage scope wraps everything
+// downstream — route handlers, helpers, deferred work via await.
+// `lib/logger.ts`'s mixin reads from this context to attach
+// `requestId` to every line; `@workspace/resupply-audit` uses the
+// resolver registered above to add `_request_id` to audit row
+// metadata. See `lib/request-context.ts` for the full rationale.
+app.use(requestContextMiddleware);
+
 // Stripe webhook is registered BEFORE express.json() because Stripe's
 // signature verification is computed over the exact bytes Stripe sent
 // — express.json() would mutate `req.body` to a parsed object that we

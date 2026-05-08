@@ -144,3 +144,146 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm -r --if-present run test
+
+  a11y:
+    name: A11y (Playwright + axe)
+    runs-on: ubuntu-latest
+
+    # Independent from the rest of CI: builds the SPA, serves it via
+    # vite preview, and runs e2e/tests/a11y.spec.ts against the major
+    # public routes. Fails on `serious` or `critical` axe violations
+    # (the lower tiers tend to be cosmetic-but-debatable; tightening
+    # the bar after the noisier findings are addressed is a one-line
+    # change in e2e/tests/a11y.spec.ts).
+    #
+    # Marked continue-on-error so the FIRST failing finding doesn't
+    # immediately gate every PR — the team needs a window to triage
+    # baseline violations on the existing pages before flipping this
+    # to required. Mirrors the drift-check pattern (P0.1 in
+    # docs/codebase-enhancements-2026-05-08.md).
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Build the SPA. vite preview serves the built artifact on the
+      # port we pass in via E2E_PORT; the e2e config defaults to
+      # 5173 if E2E_PORT is unset.
+      - name: Build cpap-fitter SPA
+        run: pnpm --filter @workspace/cpap-fitter run build
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Serve the built SPA in the background. `vite preview` exits
+      # the process when the parent shell exits, so we don't need an
+      # explicit shutdown step.
+      - name: Start vite preview
+        run: |
+          pnpm --filter @workspace/cpap-fitter exec \
+            vite preview --config vite.config.ts --host 127.0.0.1 --port 5173 &
+          # Wait for the port to be ready (vite preview is fast but
+          # not instant); fail fast at 30s if it never opens.
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5173/ > /dev/null 2>&1; then
+              echo "vite preview is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "vite preview did not respond on :5173 within 30s"
+          exit 1
+
+      - name: Run a11y tests
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5173
+          CI: "true"
+        run: pnpm exec playwright test --config e2e/playwright.config.ts e2e/tests/a11y.spec.ts
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-a11y-report
+          path: playwright-report/
+          retention-days: 14
+
+  smoke:
+    name: Smoke (Playwright)
+    runs-on: ubuntu-latest
+
+    # Required check (NOT continue-on-error): a smoke-test failure
+    # means the SPA build is broken — anyone visiting the site would
+    # see a blank page or a runtime error. The single existing test
+    # (e2e/tests/storefront-loads.spec.ts) just confirms the React
+    # app mounts and the landing nav renders without console errors.
+    # Add more specs here as the team picks up the suite.
+    #
+    # Job structure mirrors the a11y job above; the duplication is
+    # intentional so each signal reports independently. If future
+    # work bundles them, factor the shared setup into a composite
+    # action.
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install pnpm
+        run: |
+          corepack disable pnpm 2>/dev/null || true
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build cpap-fitter SPA
+        run: pnpm --filter @workspace/cpap-fitter run build
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start vite preview
+        run: |
+          pnpm --filter @workspace/cpap-fitter exec \
+            vite preview --config vite.config.ts --host 127.0.0.1 --port 5173 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5173/ > /dev/null 2>&1; then
+              echo "vite preview is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "vite preview did not respond on :5173 within 30s"
+          exit 1
+
+      - name: Run smoke test
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5173
+          CI: "true"
+        run: pnpm exec playwright test --config e2e/playwright.config.ts e2e/tests/storefront-loads.spec.ts
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: playwright-report/
+          retention-days: 14

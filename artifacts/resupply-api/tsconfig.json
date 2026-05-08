@@ -15,6 +15,7 @@
     { "path": "../../lib/resupply-email" },
     { "path": "../../lib/resupply-messaging" },
     { "path": "../../lib/resupply-reminders" },
-    { "path": "../../lib/resupply-ai" }
+    { "path": "../../lib/resupply-ai" },
+    { "path": "../../lib/resupply-templates" }
   ]
 }
