@@ -311,7 +311,10 @@ function TemplateForm({
    *  affordance the macros editor offers via merge tokens. */
   function insertToken(token: string): void {
     const target = lastFocusedRef.current;
-    if (!target) return;
+    if (!target) {
+      setBodyText((current) => current + token);
+      return;
+    }
     const start = target.selectionStart ?? target.value.length;
     const end = target.selectionEnd ?? start;
     const next = target.value.slice(0, start) + token + target.value.slice(end);
