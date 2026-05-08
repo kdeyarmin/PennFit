@@ -62,8 +62,8 @@ export async function startWorker(): Promise<void> {
   // tick listing the affected queues — that line is the canonical
   // grep target for "are crons quietly broken?". When everything is
   // clean we stay silent so the log isn't dominated by heartbeats.
-  // 60s is tight enough to surface a stuck queue quickly and loose
-  // enough to add no meaningful DB load.
+  // 60 seconds is tight enough to surface a stuck queue quickly and
+  // loose enough to add no meaningful DB load.
   const MONITOR_STATE_INTERVAL_SECONDS = 60;
 
   const boss = new PgBoss({

@@ -74,7 +74,7 @@ const TWILIO_STATUSES = [
   "canceled",
 ] as const;
 
-const faxStatusCallbackBody = z
+const FaxStatusCallbackBody = z
   .object({
     FaxSid: z.string().trim().min(1).max(64),
     Status: z.enum(TWILIO_STATUSES),
@@ -104,7 +104,7 @@ router.post("/fax/status-callback", signatureMiddleware, async (req, res) => {
   // Respond 200 immediately — Twilio retries on 5xx.
   res.status(200).type("text/xml").send("<Response/>");
 
-  const parsed = faxStatusCallbackBody.safeParse(req.body ?? {});
+  const parsed = FaxStatusCallbackBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     // Signature was already validated; a malformed body still 200s
     // (otherwise Twilio retries forever) but we log so a real
