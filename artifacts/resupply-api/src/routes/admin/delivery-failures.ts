@@ -19,15 +19,8 @@
 // permitted in the rest of the admin console).
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import {
-  conversations,
-  getDbPool,
-  messages,
-  patients,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -50,97 +43,126 @@ router.get("/admin/delivery-failures", requireAdmin, async (req, res) => {
     Math.max(1, Number(req.query.sinceDays ?? DEFAULT_DAYS_BACK)),
     90,
   );
-  const since = new Date(Date.now() - sinceDays * 86400_000);
+  const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  // Per-message failures. Joined to conversations + patients so the
-  // operator can see who it was for and click through to the thread.
-  const messageRows = await db
-    .select({
-      id: messages.id,
-      conversationId: messages.conversationId,
-      direction: messages.direction,
-      senderRole: messages.senderRole,
-      deliveryStatus: messages.deliveryStatus,
-      deliveryError: messages.deliveryError,
-      sentAt: messages.sentAt,
-      createdAt: messages.createdAt,
-      channel: conversations.channel,
-      patientId: conversations.patientId,
-      patientFirstName: patients.legalFirstName,
-      patientLastName: patients.legalLastName,
-    })
-    .from(messages)
-    .leftJoin(conversations, eq(messages.conversationId, conversations.id))
-    .leftJoin(patients, eq(patients.id, conversations.patientId))
-    .where(
-      and(
-        sql`${messages.deliveryStatus} IN ('failed','undelivered','bounced','dropped','rejected','spam_report')`,
-        gte(messages.createdAt, since),
-      ),
+  // Per-message failures. The original Drizzle path joined to
+  // conversations + patients in one shot; PostgREST has no JOIN, so
+  // we fetch messages first then bulk-fetch the parent conversations
+  // and (via the conversation's patient_id) the patients in a second
+  // round-trip. Latency cost is bounded by MAX_ROWS.
+  const { data: messageRows, error: msgErr } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .select(
+      "id, conversation_id, direction, sender_role, delivery_status, delivery_error, sent_at, created_at",
     )
-    .orderBy(desc(messages.createdAt))
+    .in("delivery_status", [
+      "failed",
+      "undelivered",
+      "bounced",
+      "dropped",
+      "rejected",
+      "spam_report",
+    ])
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
     .limit(MAX_ROWS);
+  if (msgErr) throw msgErr;
 
-  // System-level failure events from the audit log. We use raw SQL
-  // here (rather than a Drizzle import of audit_log) because the
-  // resupply-audit lib is the source of truth for that table — we
-  // read but never join to it from outside the lib.
-  const auditRows = await db.execute<{
-    id: string;
-    created_at: Date;
-    action: string;
-    target_table: string | null;
-    target_id: string | null;
-    actor_email: string | null;
-    metadata: Record<string, unknown> | null;
-  }>(sql`
-    SELECT id, created_at, action, target_table, target_id, actor_email, metadata
-    FROM resupply.audit_log
-    WHERE created_at >= ${since}
-      AND (
-        action LIKE '%.delivery.%'
-        OR action LIKE '%.failed'
-        OR action LIKE '%.bounced'
-        OR action LIKE '%.error'
-      )
-    ORDER BY created_at DESC
-    LIMIT ${MAX_ROWS}
-  `);
+  const conversationIds = Array.from(
+    new Set((messageRows ?? []).map((r) => r.conversation_id)),
+  );
+  const conversationsById = new Map<
+    string,
+    { id: string; channel: string; patient_id: string | null }
+  >();
+  if (conversationIds.length > 0) {
+    const { data: convs, error: convErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("id, channel, patient_id")
+      .in("id", conversationIds);
+    if (convErr) throw convErr;
+    for (const c of convs ?? []) {
+      conversationsById.set(c.id, {
+        id: c.id,
+        channel: c.channel,
+        patient_id: c.patient_id,
+      });
+    }
+  }
+  const patientIds = Array.from(
+    new Set(
+      Array.from(conversationsById.values())
+        .map((c) => c.patient_id)
+        .filter((v): v is string => v !== null),
+    ),
+  );
+  const patientsById = new Map<
+    string,
+    { legal_first_name: string; legal_last_name: string }
+  >();
+  if (patientIds.length > 0) {
+    const { data: pts, error: ptErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, legal_first_name, legal_last_name")
+      .in("id", patientIds);
+    if (ptErr) throw ptErr;
+    for (const p of pts ?? []) {
+      patientsById.set(p.id, {
+        legal_first_name: p.legal_first_name,
+        legal_last_name: p.legal_last_name,
+      });
+    }
+  }
 
-  const messageEvents = messageRows.map((r) => ({
-    kind: "message" as const,
-    id: r.id,
-    occurredAt: (r.createdAt instanceof Date
-      ? r.createdAt
-      : new Date(String(r.createdAt))
-    ).toISOString(),
-    channel: r.channel,
-    direction: r.direction,
-    senderRole: r.senderRole,
-    deliveryStatus: r.deliveryStatus,
-    deliveryError: r.deliveryError,
-    conversationId: r.conversationId,
-    patientId: r.patientId,
-    patientName:
-      [r.patientFirstName, r.patientLastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim() || null,
-  }));
+  // System-level failure events from the audit log. PostgREST `.or()`
+  // supports `like` patterns; the LIKE wildcards (%) need to use
+  // PostgREST's `*` syntax instead.
+  const { data: auditRowsData, error: auditErr } = await supabase
+    .schema("resupply")
+    .from("audit_log")
+    .select("id, occurred_at, action, target_table, target_id, operator_email, metadata")
+    .gte("occurred_at", since)
+    .or(
+      "action.like.*.delivery.*,action.like.*.failed,action.like.*.bounced,action.like.*.error",
+    )
+    .order("occurred_at", { ascending: false })
+    .limit(MAX_ROWS);
+  if (auditErr) throw auditErr;
 
-  const auditEvents = (auditRows.rows ?? []).map((r) => ({
+  const messageEvents = (messageRows ?? []).map((r) => {
+    const conv = conversationsById.get(r.conversation_id);
+    const pt = conv?.patient_id ? patientsById.get(conv.patient_id) : undefined;
+    const fullName = pt
+      ? [pt.legal_first_name, pt.legal_last_name].filter(Boolean).join(" ").trim()
+      : "";
+    return {
+      kind: "message" as const,
+      id: r.id,
+      occurredAt: r.created_at,
+      channel: conv?.channel ?? null,
+      direction: r.direction,
+      senderRole: r.sender_role,
+      deliveryStatus: r.delivery_status,
+      deliveryError: r.delivery_error,
+      conversationId: r.conversation_id,
+      patientId: conv?.patient_id ?? null,
+      patientName: fullName || null,
+    };
+  });
+
+  const auditEvents = (auditRowsData ?? []).map((r) => ({
     kind: "audit" as const,
     id: r.id,
-    occurredAt: (r.created_at instanceof Date
-      ? r.created_at
-      : new Date(String(r.created_at))
-    ).toISOString(),
+    occurredAt: r.occurred_at,
     action: r.action,
     targetTable: r.target_table,
     targetId: r.target_id,
-    actorEmail: r.actor_email,
+    actorEmail: r.operator_email,
     metadata: r.metadata ?? null,
   }));
 

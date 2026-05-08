@@ -10,10 +10,11 @@
 // backoff, which would amplify any downstream incident.
 
 import { Router, type IRouter } from "express";
-import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool } from "@workspace/resupply-db";
+import {
+  type Database,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 import {
   parseSmsStatusCallbackParams,
   requireTwilioSignature,
@@ -22,6 +23,8 @@ import {
 import { logger } from "../../lib/logger";
 import { readSmsConfigOrNull } from "../../lib/messaging/messaging-config";
 import { safeAudit } from "../../lib/messaging/safe-audit";
+
+type MessagesUpdate = Database["resupply"]["Tables"]["messages"]["Update"];
 
 const router: IRouter = Router();
 
@@ -71,19 +74,28 @@ router.post("/sms/status-callback", signatureMiddleware, async (req, res) => {
     return;
   }
 
-  const pool = getDbPool();
-  const db = drizzle(pool);
   try {
-    // Update the messages row whose vendorMetadata.twilio_message_sid
-    // matches. We can't FK on this so we use a jsonb predicate.
-    await db.execute(sql`
-        update resupply.messages
-        set
-          delivery_status = ${status},
-          delivery_error = ${parsed.ErrorCode ?? null},
-          delivered_at = case when ${status} = 'delivered' then now() else delivered_at end
-        where vendor_metadata->>'twilio_message_sid' = ${messageSid}
-      `);
+    const supabase = getSupabaseServiceRoleClient();
+    // Update the messages row whose vendor_metadata.twilio_message_sid
+    // matches. PostgREST supports the `->>` JSON-text-extract filter
+    // natively. The original SQL had a conditional `delivered_at = case
+    // when status = 'delivered' then now() else delivered_at end`;
+    // we get the same effect by only setting delivered_at when the
+    // status transitions to 'delivered' (omitting the column preserves
+    // its existing value).
+    const update: MessagesUpdate = {
+      delivery_status: status,
+      delivery_error: parsed.ErrorCode ?? null,
+    };
+    if (status === "delivered") {
+      update.delivered_at = new Date().toISOString();
+    }
+    const { error } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .update(update)
+      .filter("vendor_metadata->>twilio_message_sid", "eq", messageSid);
+    if (error) throw error;
   } catch (err) {
     // Don't 500 — Twilio retries amplify the issue.
     logger.warn(

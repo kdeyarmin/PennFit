@@ -12,10 +12,8 @@
 // shoulder-surfer.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool, shopOrders } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -44,13 +42,15 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   // This stops an attacker from probing arbitrary session IDs from
   // unrelated Stripe accounts (Stripe would 404 those, but we'd
   // rather not even ask).
-  const db = drizzle(getDbPool());
-  const local = await db
-    .select()
-    .from(shopOrders)
-    .where(eq(shopOrders.stripeSessionId, sessionId))
-    .limit(1);
-  if (local.length === 0) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: local } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select("status")
+    .eq("stripe_session_id", sessionId)
+    .limit(1)
+    .maybeSingle();
+  if (!local) {
     res.status(404).json({ error: "order_not_found" });
     return;
   }
@@ -91,7 +91,7 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
 
   res.json({
     sessionId: session.id,
-    status: local[0]?.status ?? "pending",
+    status: local.status ?? "pending",
     paymentStatus: session.payment_status,
     amountTotalCents: session.amount_total,
     currency: session.currency,

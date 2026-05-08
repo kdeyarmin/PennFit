@@ -308,6 +308,24 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
         Relationships: [];
       };
+      messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          direction: string;
+          sender_role: string;
+          body: string;
+          delivery_status: string | null;
+          delivery_error: string | null;
+          vendor_metadata: Json;
+          sent_at: string | null;
+          delivered_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["messages"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["messages"]["Row"]>;
+        Relationships: [];
+      };
       patient_latest_message: {
         Row: {
           patient_id: string;
@@ -376,6 +394,42 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_customers"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_customers"]["Row"]>;
+        Relationships: [];
+      };
+      shop_order_items: {
+        Row: {
+          id: string;
+          order_id: string;
+          stripe_session_id: string;
+          customer_id: string | null;
+          product_id: string;
+          price_id: string;
+          quantity: number;
+          unit_amount_cents: number | null;
+          currency: string | null;
+          paid_at: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_order_items"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_order_items"]["Row"]>;
+        Relationships: [];
+      };
+      shop_abandoned_carts: {
+        Row: {
+          id: string;
+          customer_id: string;
+          email: string | null;
+          items: Json;
+          subtotal_cents: number;
+          currency: string;
+          updated_at: string;
+          reminded_at: string | null;
+          recovered_at: string | null;
+          cleared_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]>;
         Relationships: [];
       };
       shop_orders: {
