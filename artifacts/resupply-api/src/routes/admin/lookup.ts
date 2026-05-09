@@ -15,19 +15,9 @@
 // in the admin console).
 
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
-import {
-  conversations,
-  episodes,
-  fulfillments,
-  getDbPool,
-  patients,
-  shopCustomers,
-  shopOrders,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -81,7 +71,7 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   const hits: Hit[] = [];
 
   // Phone? Strip non-digits and check.
@@ -91,69 +81,87 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
       digits.length === 10 ? `+1${digits}` : `+${digits}`,
     );
     if (e164) {
-      const rows = await db
-        .select({
-          patientId: patients.id,
-          firstName: patients.legalFirstName,
-          lastName: patients.legalLastName,
-          pacwareId: patients.pacwareId,
-        })
-        .from(patients)
-        .where(eq(patients.phoneE164, e164))
+      const { data: rows } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, legal_first_name, legal_last_name, pacware_id")
+        .eq("phone_e164", e164)
         .limit(5);
-      for (const r of rows) {
-        const name = [r.firstName, r.lastName].filter(Boolean).join(" ").trim();
+      for (const r of rows ?? []) {
+        const name = [r.legal_first_name, r.legal_last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
         hits.push({
           kind: "patient",
-          id: r.patientId,
+          id: r.id,
           label: name || "(no name on file)",
-          href: `/admin/patients/${r.patientId}`,
-          hint: r.pacwareId ? `PACware #${r.pacwareId}` : null,
+          href: `/admin/patients/${r.id}`,
+          hint: r.pacware_id ? `PACware #${r.pacware_id}` : null,
         });
       }
     }
   }
 
-  // Email? Look up by email_lower in shopCustomers (the only place we
+  // Email? Look up by email_lower in shop_customers (the only place we
   // store email in plaintext on the cash-pay surface).
   if (q.includes("@")) {
     const emailLower = q.toLowerCase();
-    const rows = await db
-      .select({
-        customerId: shopCustomers.customerId,
-        emailLower: shopCustomers.emailLower,
-        displayName: shopCustomers.displayName,
-      })
-      .from(shopCustomers)
-      .where(eq(shopCustomers.emailLower, emailLower))
+    const { data: rows } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("customer_id, email_lower, display_name")
+      .eq("email_lower", emailLower)
       .limit(5);
-    for (const r of rows) {
+    for (const r of rows ?? []) {
       hits.push({
         kind: "shop_customer",
-        id: r.customerId,
-        label: r.displayName ?? r.emailLower ?? r.customerId,
+        id: r.customer_id,
+        label: r.display_name ?? r.email_lower ?? r.customer_id,
         // Customers don't have an admin detail page yet; deep-link to
         // the abandoned-cart list filtered on the user (close enough).
-        href: `/admin/shop/abandoned-carts?customerId=${encodeURIComponent(r.customerId)}`,
+        href: `/admin/shop/abandoned-carts?customerId=${encodeURIComponent(r.customer_id)}`,
         hint: "Cash-pay shop customer",
       });
     }
   }
 
-  // UUID? Try patients / conversations / episodes / fulfillments.
+  // UUID? Try patients / conversations / episodes / fulfillments. The
+  // four queries are independent so we fire them in parallel.
   if (UUID_RE.test(q)) {
-    const [pat] = await db
-      .select({
-        id: patients.id,
-        firstName: patients.legalFirstName,
-        lastName: patients.legalLastName,
-        pacwareId: patients.pacwareId,
-      })
-      .from(patients)
-      .where(eq(patients.id, q))
-      .limit(1);
-    if (pat) {
-      const name = [pat.firstName, pat.lastName]
+    const [patRes, convRes, epRes, fuRes] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id, legal_first_name, legal_last_name, pacware_id")
+        .eq("id", q)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .schema("resupply")
+        .from("conversations")
+        .select("id, patient_id, channel, status")
+        .eq("id", q)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .schema("resupply")
+        .from("episodes")
+        .select("id, status, due_at")
+        .eq("id", q)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .schema("resupply")
+        .from("fulfillments")
+        .select("id, status")
+        .eq("id", q)
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (patRes.data) {
+      const pat = patRes.data;
+      const name = [pat.legal_first_name, pat.legal_last_name]
         .filter(Boolean)
         .join(" ")
         .trim();
@@ -162,20 +170,11 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
         id: pat.id,
         label: name || "(no name on file)",
         href: `/admin/patients/${pat.id}`,
-        hint: pat.pacwareId ? `PACware #${pat.pacwareId}` : null,
+        hint: pat.pacware_id ? `PACware #${pat.pacware_id}` : null,
       });
     }
-    const [conv] = await db
-      .select({
-        id: conversations.id,
-        patientId: conversations.patientId,
-        channel: conversations.channel,
-        status: conversations.status,
-      })
-      .from(conversations)
-      .where(eq(conversations.id, q))
-      .limit(1);
-    if (conv) {
+    if (convRes.data) {
+      const conv = convRes.data;
       hits.push({
         kind: "conversation",
         id: conv.id,
@@ -183,29 +182,17 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
         href: `/admin/conversations/${conv.id}`,
       });
     }
-    const [ep] = await db
-      .select({
-        id: episodes.id,
-        status: episodes.status,
-        dueAt: episodes.dueAt,
-      })
-      .from(episodes)
-      .where(eq(episodes.id, q))
-      .limit(1);
-    if (ep) {
+    if (epRes.data) {
+      const ep = epRes.data;
       hits.push({
         kind: "episode",
         id: ep.id,
-        label: `Episode · ${ep.status}${ep.dueAt ? ` · due ${ep.dueAt.toISOString().slice(0, 10)}` : ""}`,
+        label: `Episode · ${ep.status}${ep.due_at ? ` · due ${ep.due_at.slice(0, 10)}` : ""}`,
         href: `/admin/episodes`,
       });
     }
-    const [fu] = await db
-      .select({ id: fulfillments.id, status: fulfillments.status })
-      .from(fulfillments)
-      .where(eq(fulfillments.id, q))
-      .limit(1);
-    if (fu) {
+    if (fuRes.data) {
+      const fu = fuRes.data;
       hits.push({
         kind: "fulfillment",
         id: fu.id,
@@ -219,45 +206,40 @@ router.get("/admin/lookup", requireAdmin, async (req, res) => {
 
   // Stripe Checkout Session id (full or last-12).
   if (STRIPE_SESSION_RE.test(q)) {
-    const [order] = await db
-      .select({
-        id: shopOrders.id,
-        stripeSessionId: shopOrders.stripeSessionId,
-        status: shopOrders.status,
-        amountTotalCents: shopOrders.amountTotalCents,
-      })
-      .from(shopOrders)
-      .where(eq(shopOrders.stripeSessionId, q))
-      .limit(1);
+    const { data: order } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("id, stripe_session_id, status, amount_total_cents")
+      .eq("stripe_session_id", q)
+      .limit(1)
+      .maybeSingle();
     if (order) {
       hits.push({
         kind: "shop_order",
         id: order.id,
-        label: `Shop order · ${order.status}${order.amountTotalCents ? ` · $${(order.amountTotalCents / 100).toFixed(2)}` : ""}`,
+        label: `Shop order · ${order.status}${order.amount_total_cents ? ` · $${(order.amount_total_cents / 100).toFixed(2)}` : ""}`,
         href: `/admin/shop/returns?orderId=${order.id}`,
-        hint: order.stripeSessionId.slice(-12),
+        hint: order.stripe_session_id.slice(-12),
       });
     }
   } else if (HEX_TAIL_RE.test(q) && !UUID_RE.test(q) && !q.includes("@")) {
-    // Last-N tail of a session id — match suffix.
-    const rows = await db
-      .select({
-        id: shopOrders.id,
-        stripeSessionId: shopOrders.stripeSessionId,
-        status: shopOrders.status,
-      })
-      .from(shopOrders)
-      // Escape LIKE metacharacters so an underscore in `q` matches a literal
-      // underscore rather than acting as a single-character wildcard.
-      .where(sql`${shopOrders.stripeSessionId} LIKE ${"%" + q.replace(/[%_\\]/g, "\\$&")} ESCAPE '\\'`)
+    // Last-N tail of a session id — match suffix via PostgREST
+    // `.like('*<tail>')` (the `*` wildcard is PostgREST's stand-in
+    // for SQL `%`). The tail is regex-validated so it can't smuggle
+    // metacharacters.
+    const { data: rows } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("id, stripe_session_id, status")
+      .like("stripe_session_id", `*${q}`)
       .limit(5);
-    for (const order of rows) {
+    for (const order of rows ?? []) {
       hits.push({
         kind: "shop_order",
         id: order.id,
         label: `Shop order · ${order.status}`,
         href: `/admin/shop/returns?orderId=${order.id}`,
-        hint: order.stripeSessionId.slice(-12),
+        hint: order.stripe_session_id.slice(-12),
       });
     }
   }
