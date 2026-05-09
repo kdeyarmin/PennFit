@@ -29,17 +29,19 @@
 
 import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
-import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import { z } from "zod";
 import sanitizeHtml from "sanitize-html";
 
-import { getDbPool, shopOrderItems, shopReviews } from "@workspace/resupply-db";
-import type { InsertShopReviewRow } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Database,
+} from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
+
+type ShopReviewInsert = Database["resupply"]["Tables"]["shop_reviews"]["Insert"];
 
 const router: IRouter = Router();
 
@@ -91,7 +93,7 @@ const writeBody = z
   })
   .strict();
 
-const listQuery = z
+const reviewListQuery = z
   .object({
     cursor: z.string().min(1).max(120).optional(),
     limit: z
@@ -221,14 +223,12 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
   }
   const productId = productIdParse.data;
 
-  const queryParse = listQuery.safeParse(req.query);
+  const queryParse = reviewListQuery.safeParse(req.query);
   if (!queryParse.success) {
     res.status(400).json({ error: "invalid_query" });
     return;
   }
   const { cursor, limit } = queryParse.data;
-
-  const db = drizzle(getDbPool());
 
   // Composite cursor `<ISO timestamp>__<id>` — see CURSOR_DELIM
   // comment for why a timestamp-only cursor is unsafe at page
@@ -239,94 +239,87 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
     return;
   }
 
-  const baseFilter = and(
-    eq(shopReviews.productId, productId),
-    eq(shopReviews.status, "approved"),
-  );
+  const supabase = getSupabaseServiceRoleClient();
 
   // Strict-less composite predicate:
   //   created_at < ts OR (created_at = ts AND id < cursorId)
   // matches the `ORDER BY created_at DESC, id DESC` traversal.
-  const cursorClause =
-    parsedCursor.date && parsedCursor.id
-      ? or(
-          lt(shopReviews.createdAt, parsedCursor.date),
-          and(
-            eq(shopReviews.createdAt, parsedCursor.date),
-            lt(shopReviews.id, parsedCursor.id),
-          ),
-        )
-      : undefined;
-
-  const items = await db
-    .select({
-      id: shopReviews.id,
-      // customerId is selected only to drive the verified-purchaser
-      // join below — we MUST NOT echo it back in the public response
-      // (it would let any visitor scrape per-review identity).
-      customerId: shopReviews.customerId,
-      rating: shopReviews.rating,
-      title: shopReviews.title,
-      body: shopReviews.body,
-      authorDisplayName: shopReviews.authorDisplayName,
-      createdAt: shopReviews.createdAt,
-    })
-    .from(shopReviews)
-    .where(cursorClause ? and(baseFilter, cursorClause) : baseFilter)
-    .orderBy(desc(shopReviews.createdAt), desc(shopReviews.id))
+  let itemsQuery = supabase
+    .schema("resupply")
+    .from("shop_reviews")
+    .select(
+      "id, customer_id, rating, title, body, author_display_name, created_at",
+    )
+    .eq("product_id", productId)
+    .eq("status", "approved")
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(limit + 1);
+  if (parsedCursor.date && parsedCursor.id) {
+    const cursorIso = parsedCursor.date.toISOString();
+    itemsQuery = itemsQuery.or(
+      `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${parsedCursor.id})`,
+    );
+  }
+  const { data: items, error: itemsErr } = await itemsQuery;
+  if (itemsErr) throw itemsErr;
+  const itemRows = items ?? [];
 
-  const hasMore = items.length > limit;
-  const trimmed = hasMore ? items.slice(0, limit) : items;
+  const hasMore = itemRows.length > limit;
+  const trimmed = hasMore ? itemRows.slice(0, limit) : itemRows;
   const lastItem = trimmed[trimmed.length - 1];
   const nextCursor =
     hasMore && lastItem
-      ? encodeCompositeCursor(lastItem.createdAt, lastItem.id)
+      ? encodeCompositeCursor(new Date(lastItem.created_at), lastItem.id)
       : null;
 
   // Verified-purchaser join. One indexed lookup per page (NOT per
   // row) against shop_order_items: ask Postgres for the distinct
   // customer_ids on the page that have at least one paid item for
-  // this product. We don't care about quantities or order ids — only
-  // membership. Anonymous reviewers (customerId === null) are never
-  // verified by definition. If the table has no rows yet (fresh
-  // install) the IN list yields an empty set and every flag is false.
+  // this product. PostgREST has no `selectDistinct`, so we fetch
+  // the matching customer_id values and de-dupe JS-side. Anonymous
+  // reviewers (customerId === null) are never verified by definition.
   const reviewerIds = Array.from(
     new Set(
       trimmed
-        .map((it) => it.customerId)
+        .map((it) => it.customer_id)
         .filter((v): v is string => typeof v === "string" && v.length > 0),
     ),
   );
   const verifiedSet = new Set<string>();
   if (reviewerIds.length > 0) {
-    const verifiedRows = await db
-      .selectDistinct({ customerId: shopOrderItems.customerId })
-      .from(shopOrderItems)
-      .where(
-        and(
-          eq(shopOrderItems.productId, productId),
-          inArray(shopOrderItems.customerId, reviewerIds),
-        ),
-      );
-    for (const row of verifiedRows) {
-      if (row.customerId) verifiedSet.add(row.customerId);
+    const { data: verifiedRows, error: verifiedErr } = await supabase
+      .schema("resupply")
+      .from("shop_order_items")
+      .select("customer_id")
+      .eq("product_id", productId)
+      .in("customer_id", reviewerIds);
+    if (verifiedErr) throw verifiedErr;
+    for (const row of verifiedRows ?? []) {
+      if (row.customer_id) verifiedSet.add(row.customer_id);
     }
   }
 
   // Aggregate is computed in a separate query but in the same
   // request so the product detail page renders the rating header
-  // without a second round trip.
-  const aggRows = await db
-    .select({ rating: shopReviews.rating, n: sql<number>`count(*)::int` })
-    .from(shopReviews)
-    .where(
-      and(
-        eq(shopReviews.productId, productId),
-        eq(shopReviews.status, "approved"),
-      ),
-    )
-    .groupBy(shopReviews.rating);
+  // without a second round trip. PostgREST has no GROUP BY; we
+  // fetch just the rating column for approved rows and reduce
+  // JS-side. Approved reviews per product are a bounded count.
+  const { data: ratingRows, error: aggErr } = await supabase
+    .schema("resupply")
+    .from("shop_reviews")
+    .select("rating")
+    .eq("product_id", productId)
+    .eq("status", "approved");
+  if (aggErr) throw aggErr;
+  const aggMap = new Map<number, number>();
+  for (const r of ratingRows ?? []) {
+    aggMap.set(r.rating, (aggMap.get(r.rating) ?? 0) + 1);
+  }
+  const aggRows = Array.from(aggMap.entries()).map(([rating, n]) => ({
+    rating,
+    n,
+  }));
 
   res.json({
     items: trimmed.map((it) => ({
@@ -334,10 +327,11 @@ router.get("/shop/products/:productId/reviews", async (req, res) => {
       rating: it.rating,
       title: it.title,
       body: it.body,
-      authorDisplayName: it.authorDisplayName,
+      authorDisplayName: it.author_display_name,
       verifiedPurchaser:
-        it.customerId != null && verifiedSet.has(it.customerId),
-      createdAt: it.createdAt.toISOString(),
+        it.customer_id != null && verifiedSet.has(it.customer_id),
+      // PostgREST returns timestamptz as ISO string already.
+      createdAt: it.created_at,
     })),
     nextCursor,
     aggregate: aggregateFromRows(aggRows),
@@ -362,41 +356,36 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      productId: shopReviews.productId,
-      rating: shopReviews.rating,
-      n: sql<number>`count(*)::int`,
-    })
-    .from(shopReviews)
-    .where(
-      and(
-        // `inArray` produces the standard `product_id IN ($1, $2, …)`
-        // form, which both pg and Drizzle bind correctly. We avoid
-        // `= ANY($1)` because Drizzle binds the JS array as a single
-        // text param rather than a typed pg array, which the planner
-        // then can't match.
-        inArray(shopReviews.productId, productIds),
-        eq(shopReviews.status, "approved"),
-      ),
-    )
-    .groupBy(shopReviews.productId, shopReviews.rating);
+  // PostgREST has no GROUP BY. Fetch the rating column for every
+  // approved review in the requested product set and group JS-side.
+  // The result set is bounded by `BULK_AGGREGATE_MAX` products.
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("shop_reviews")
+    .select("product_id, rating")
+    .in("product_id", productIds)
+    .eq("status", "approved");
+  if (error) throw error;
 
   // Group rows by productId so we can call aggregateFromRows once per
   // product. Always emit a zero-aggregate for every requested id so
   // the frontend doesn't need a "missing key" branch.
-  const byProduct = new Map<string, Array<{ rating: number; n: number }>>();
-  for (const r of rows) {
-    const arr = byProduct.get(r.productId) ?? [];
-    arr.push({ rating: r.rating, n: r.n });
-    byProduct.set(r.productId, arr);
+  const byProduct = new Map<string, Map<number, number>>();
+  for (const r of rows ?? []) {
+    const m = byProduct.get(r.product_id) ?? new Map<number, number>();
+    m.set(r.rating, (m.get(r.rating) ?? 0) + 1);
+    byProduct.set(r.product_id, m);
   }
 
   const aggregates: Record<string, { count: number; averageRating: number }> =
     {};
   for (const pid of productIds) {
-    const agg = aggregateFromRows(byProduct.get(pid) ?? []);
+    const buckets = byProduct.get(pid);
+    const aggInput = buckets
+      ? Array.from(buckets.entries()).map(([rating, n]) => ({ rating, n }))
+      : [];
+    const agg = aggregateFromRows(aggInput);
     aggregates[pid] = {
       count: agg.count,
       averageRating: agg.averageRating,
@@ -407,29 +396,36 @@ router.get("/shop/products/reviews/aggregates", async (req, res) => {
 });
 
 // Site-wide aggregate across ALL approved reviews — powers the
-// trust-signal strip on the marketing home page. One COUNT + one
-// AVG; the trust strip caches client-side via React Query so this
-// runs at most a handful of times per visitor.
-//
-// Returns 0/0 cleanly when no reviews exist (fresh install) so the
-// frontend can hide the strip without a special-case.
+// trust-signal strip on the marketing home page. PostgREST has no
+// AVG/COUNT aggregate exposure, so we fetch the rating column for
+// every approved review (bounded — startup-stage; admin-only growth)
+// and aggregate JS-side. Returns 0/0 cleanly when no reviews exist
+// (fresh install) so the frontend can hide the strip without a
+// special-case.
 router.get("/shop/reviews/site-aggregate", async (_req, res) => {
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      count: sql<number>`count(*)::int`,
-      avg: sql<number>`coalesce(avg(${shopReviews.rating}), 0)::float`,
-    })
-    .from(shopReviews)
-    .where(eq(shopReviews.status, "approved"));
-  const row = rows[0] ?? { count: 0, avg: 0 };
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("shop_reviews")
+    .select("rating")
+    .eq("status", "approved");
+  if (error) throw error;
+  const ratings = rows ?? [];
+  let count = 0;
+  let sum = 0;
+  for (const r of ratings) {
+    if (r.rating >= 1 && r.rating <= 5) {
+      count++;
+      sum += r.rating;
+    }
+  }
   // 5 minutes of public CDN-friendly caching is fine — a brand-new
   // approved review showing up in 5 minutes vs. immediately is
   // imperceptible on a marketing surface.
   res.set("Cache-Control", "public, max-age=300, s-maxage=300");
   res.json({
-    count: row.count,
-    averageRating: row.count === 0 ? 0 : Math.round(row.avg * 10) / 10,
+    count,
+    averageRating: count === 0 ? 0 : Math.round((sum / count) * 10) / 10,
   });
 });
 
@@ -485,64 +481,63 @@ router.post(
       return;
     }
 
-    const insertRow: InsertShopReviewRow = {
-      customerId,
-      productId,
+    const insertRow: ShopReviewInsert = {
+      customer_id: customerId,
+      product_id: productId,
       rating,
       title: cleanTitle,
       body: cleanBody,
-      authorDisplayName: identity.displayName,
-      authorEmail: identity.email,
+      author_display_name: identity.displayName,
+      author_email: identity.email,
       status: "pending",
     };
 
-    try {
-      const [inserted] = await db_insert(insertRow);
-      if (!inserted) {
-        res.status(500).json({ error: "insert_returned_no_row" });
-        return;
-      }
-      res.status(201).json({
-        id: inserted.id,
-        status: inserted.status,
-        rating: inserted.rating,
-        title: inserted.title,
-        body: inserted.body,
-        createdAt: inserted.createdAt.toISOString(),
-      });
-    } catch (err) {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .insert(insertRow)
+      .select("id, status, rating, title, body, created_at")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) {
       // UNIQUE (customer_id, product_id) violation → caller already
       // has a review for this product. The frontend should swap to the
-      // edit affordance.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (
-        msg.includes("shop_reviews_customer_id_product_id_unique") ||
-        msg.includes("duplicate key")
-      ) {
+      // edit affordance. PostgREST surfaces the constraint name
+      // inconsistently — match the err.code first, then constraint /
+      // message / details.
+      const e = insertErr as {
+        code?: string;
+        constraint?: string;
+        message?: string;
+        details?: string;
+      };
+      const isDuplicate =
+        e.code === "23505" &&
+        (e.constraint === "shop_reviews_customer_id_product_id_unique" ||
+          e.message?.includes("shop_reviews_customer_id_product_id_unique") ||
+          e.details?.includes("shop_reviews_customer_id_product_id_unique") ||
+          e.message?.includes("duplicate key"));
+      if (isDuplicate) {
         res.status(409).json({ error: "already_reviewed" });
         return;
       }
-      throw err;
+      throw insertErr;
     }
+    if (!inserted) {
+      res.status(500).json({ error: "insert_returned_no_row" });
+      return;
+    }
+    res.status(201).json({
+      id: inserted.id,
+      status: inserted.status,
+      rating: inserted.rating,
+      title: inserted.title,
+      body: inserted.body,
+      createdAt: inserted.created_at,
+    });
   },
 );
-
-/**
- * Thin wrapper around the insert so the route handler stays readable
- * and the duplicate-key error path is the only place that needs the
- * try/catch. Returns the freshly-inserted row.
- */
-async function db_insert(row: InsertShopReviewRow) {
-  const db = drizzle(getDbPool());
-  return db.insert(shopReviews).values(row).returning({
-    id: shopReviews.id,
-    status: shopReviews.status,
-    rating: shopReviews.rating,
-    title: shopReviews.title,
-    body: shopReviews.body,
-    createdAt: shopReviews.createdAt,
-  });
-}
 
 router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId;
@@ -555,27 +550,18 @@ router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
     res.status(400).json({ error: "invalid_product_id" });
     return;
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: shopReviews.id,
-      rating: shopReviews.rating,
-      title: shopReviews.title,
-      body: shopReviews.body,
-      status: shopReviews.status,
-      moderationNote: shopReviews.moderationNote,
-      createdAt: shopReviews.createdAt,
-      updatedAt: shopReviews.updatedAt,
-    })
-    .from(shopReviews)
-    .where(
-      and(
-        eq(shopReviews.customerId, customerId),
-        eq(shopReviews.productId, productIdParse.data),
-      ),
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("shop_reviews")
+    .select(
+      "id, rating, title, body, status, moderation_note, created_at, updated_at",
     )
-    .limit(1);
-  const row = rows[0];
+    .eq("customer_id", customerId)
+    .eq("product_id", productIdParse.data)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
   if (!row) {
     res.status(404).json({ error: "not_found" });
     return;
@@ -586,9 +572,9 @@ router.get("/shop/me/reviews/:productId", requireSignedIn, async (req, res) => {
     title: row.title,
     body: row.body,
     status: row.status,
-    moderationNote: row.moderationNote,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    moderationNote: row.moderation_note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   });
 });
 
@@ -628,36 +614,28 @@ router.patch(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(shopReviews)
-      .set({
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .update({
         rating,
         title: cleanTitle,
         body: cleanBody,
         // Re-moderate every edit. Clear prior moderation metadata so
         // the admin queue reflects the new content cleanly.
         status: "pending",
-        moderationNote: null,
-        moderatedAt: null,
-        moderatedBy: null,
-        updatedAt: new Date(),
+        moderation_note: null,
+        moderated_at: null,
+        moderated_by: null,
+        updated_at: new Date().toISOString(),
       })
-      .where(
-        and(
-          eq(shopReviews.customerId, customerId),
-          eq(shopReviews.productId, productId),
-        ),
-      )
-      .returning({
-        id: shopReviews.id,
-        rating: shopReviews.rating,
-        title: shopReviews.title,
-        body: shopReviews.body,
-        status: shopReviews.status,
-        updatedAt: shopReviews.updatedAt,
-      });
-    const row = updated[0];
+      .eq("customer_id", customerId)
+      .eq("product_id", productId)
+      .select("id, rating, title, body, status, updated_at")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -668,7 +646,7 @@ router.patch(
       title: row.title,
       body: row.body,
       status: row.status,
-      updatedAt: row.updatedAt.toISOString(),
+      updatedAt: row.updated_at,
     });
   },
 );
@@ -687,27 +665,21 @@ router.delete(
       res.status(400).json({ error: "invalid_product_id" });
       return;
     }
-    const db = drizzle(getDbPool());
     // Idempotent: 200 even if the row never existed. Returning the
     // delete count lets the frontend distinguish between "we just
     // deleted yours" and "you didn't have one to begin with" if it
     // ever cares to.
-    const deleted = await db
-      .delete(shopReviews)
-      .where(
-        and(
-          eq(shopReviews.customerId, customerId),
-          eq(shopReviews.productId, productIdParse.data),
-        ),
-      )
-      .returning({ id: shopReviews.id });
-    res.json({ ok: true, deleted: deleted.length });
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: deleted, error } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .delete()
+      .eq("customer_id", customerId)
+      .eq("product_id", productIdParse.data)
+      .select("id");
+    if (error) throw error;
+    res.json({ ok: true, deleted: (deleted ?? []).length });
   },
 );
-
-// Suppress unused-import warning for `asc` — keeping it imported in
-// case a future endpoint wants oldest-first author timeline; trivially
-// removable. No-op runtime cost.
-void asc;
 
 export default router;

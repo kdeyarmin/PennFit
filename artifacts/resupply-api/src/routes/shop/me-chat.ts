@@ -42,14 +42,13 @@
 
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { and, count, desc, eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
   getDbPool,
-  shopCustomers,
-  shopOrders,
-  shopSubscriptions,
+  getSupabaseServiceRoleClient,
+  type CpapDeviceInfo,
+  type SavedShippingAddress,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
@@ -159,7 +158,6 @@ function startSseHeaders(res: Response): void {
  * rather than aborting the request.
  */
 async function loadAccountContext(
-  db: NodePgDatabase,
   customerId: string,
   displayName: string | null,
 ): Promise<CustomerChatAccountContext> {
@@ -173,96 +171,102 @@ async function loadAccountContext(
   };
 
   try {
-    const [customerRow] = await db
-      .select({
-        cpapDevice: shopCustomers.cpapDevice,
-        createdAt: shopCustomers.createdAt,
-      })
-      .from(shopCustomers)
-      .where(eq(shopCustomers.customerId, customerId))
-      .limit(1);
+    const supabase = getSupabaseServiceRoleClient();
+    // Run the four reads in parallel — the original Drizzle path
+    // ran them sequentially but they're independent and indexed on
+    // customer_id.
+    const [customerRes, orderCountRes, latestOrderRes, subsRes] =
+      await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("shop_customers")
+          .select("cpap_device_json, created_at")
+          .eq("customer_id", customerId)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .schema("resupply")
+          .from("shop_orders")
+          .select("*", { count: "exact", head: true })
+          .eq("customer_id", customerId)
+          .eq("status", "paid"),
+        supabase
+          .schema("resupply")
+          .from("shop_orders")
+          .select(
+            "id, stripe_session_id, amount_total_cents, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, shipping_address_json",
+          )
+          .eq("customer_id", customerId)
+          .eq("status", "paid")
+          .order("paid_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        // "Non-canceled" — anything still billable or recoverable. We
+        // deliberately INCLUDE paused / past_due / unpaid so the bot
+        // can warn the user about a card failure on its own. Terminal
+        // states (canceled, incomplete_expired) are filtered
+        // client-side; the count stays well under any practical
+        // upper bound (tens at most per customer) so a single SELECT
+        // is fine.
+        supabase
+          .schema("resupply")
+          .from("shop_subscriptions")
+          .select("status")
+          .eq("customer_id", customerId),
+      ]);
+    if (customerRes.error) throw customerRes.error;
+    if (orderCountRes.error) throw orderCountRes.error;
+    if (latestOrderRes.error) throw latestOrderRes.error;
+    if (subsRes.error) throw subsRes.error;
 
-    const memberSince = customerRow?.createdAt
-      ? formatYearMonth(customerRow.createdAt)
+    const customerRow = customerRes.data;
+    const cpapDevice = (customerRow?.cpap_device_json ??
+      null) as CpapDeviceInfo | null;
+    const memberSince = customerRow?.created_at
+      ? formatYearMonth(new Date(customerRow.created_at))
       : null;
-    const device = customerRow?.cpapDevice
+    const device = cpapDevice
       ? {
-          manufacturer: customerRow.cpapDevice.manufacturer,
-          model: customerRow.cpapDevice.model,
-          pressureSetting: customerRow.cpapDevice.pressureSetting ?? null,
+          manufacturer: cpapDevice.manufacturer,
+          model: cpapDevice.model,
+          pressureSetting: cpapDevice.pressureSetting ?? null,
         }
       : null;
 
-    const [orderCountRow] = await db
-      .select({ value: count() })
-      .from(shopOrders)
-      .where(
-        and(
-          eq(shopOrders.customerId, customerId),
-          eq(shopOrders.status, "paid"),
-        ),
-      );
-    const totalPaidOrders = Number(orderCountRow?.value ?? 0);
+    const totalPaidOrders = orderCountRes.count ?? 0;
 
-    const [latestOrder] = await db
-      .select({
-        id: shopOrders.id,
-        sessionId: shopOrders.stripeSessionId,
-        amountTotalCents: shopOrders.amountTotalCents,
-        paidAt: shopOrders.paidAt,
-        shippedAt: shopOrders.shippedAt,
-        deliveredAt: shopOrders.deliveredAt,
-        trackingCarrier: shopOrders.trackingCarrier,
-        trackingNumber: shopOrders.trackingNumber,
-        shippingAddress: shopOrders.shippingAddress,
-      })
-      .from(shopOrders)
-      .where(
-        and(
-          eq(shopOrders.customerId, customerId),
-          eq(shopOrders.status, "paid"),
-        ),
-      )
-      .orderBy(desc(shopOrders.paidAt), desc(shopOrders.id))
-      .limit(1);
-
-    // "Non-canceled" — anything still billable or recoverable. We
-    // deliberately INCLUDE paused / past_due / unpaid so the bot can
-    // warn the user about a card failure on its own. Terminal states
-    // (canceled, incomplete_expired) are filtered client-side; the
-    // count stays well under any practical upper bound (tens at most
-    // per customer) so a single SELECT is fine.
-    const subRows = await db
-      .select({ status: shopSubscriptions.status })
-      .from(shopSubscriptions)
-      .where(eq(shopSubscriptions.customerId, customerId));
-    const activeSubscriptionCount = subRows.filter(
-      (s) => s.status !== "canceled" && s.status !== "incomplete_expired",
-    ).length;
-
+    const latestOrder = latestOrderRes.data;
+    const latestOrderShipAddr = (latestOrder?.shipping_address_json ??
+      null) as SavedShippingAddress | null;
     const latestOrderCtx = latestOrder
       ? {
           orderId: latestOrder.id,
-          sessionId: latestOrder.sessionId,
-          amountTotalCents: latestOrder.amountTotalCents ?? 0,
-          paidAt: latestOrder.paidAt
-            ? latestOrder.paidAt.toISOString().slice(0, 10)
+          sessionId: latestOrder.stripe_session_id,
+          amountTotalCents: latestOrder.amount_total_cents ?? 0,
+          // PostgREST returns timestamptz as ISO string; slice to
+          // YYYY-MM-DD for the system-prompt context.
+          paidAt: latestOrder.paid_at
+            ? latestOrder.paid_at.slice(0, 10)
             : "",
-          shippedAt: latestOrder.shippedAt
-            ? latestOrder.shippedAt.toISOString().slice(0, 10)
+          shippedAt: latestOrder.shipped_at
+            ? latestOrder.shipped_at.slice(0, 10)
             : null,
-          deliveredAt: latestOrder.deliveredAt
-            ? latestOrder.deliveredAt.toISOString().slice(0, 10)
+          deliveredAt: latestOrder.delivered_at
+            ? latestOrder.delivered_at.slice(0, 10)
             : null,
-          trackingCarrier: latestOrder.trackingCarrier,
-          trackingNumber: latestOrder.trackingNumber,
+          trackingCarrier: latestOrder.tracking_carrier,
+          trackingNumber: latestOrder.tracking_number,
           shipCityState:
-            latestOrder.shippingAddress?.city &&
-            latestOrder.shippingAddress?.state
-              ? `${latestOrder.shippingAddress.city}, ${latestOrder.shippingAddress.state}`
+            latestOrderShipAddr?.city && latestOrderShipAddr?.state
+              ? `${latestOrderShipAddr.city}, ${latestOrderShipAddr.state}`
               : null,
         }
       : null;
+
+    const activeSubscriptionCount = (subsRes.data ?? []).filter(
+      (s) => s.status !== "canceled" && s.status !== "incomplete_expired",
+    ).length;
 
     return {
       displayName,
@@ -417,13 +421,16 @@ router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
   const accountCtx = await loadAccountContext(
-    db,
     customerId,
     req.shopCustomerDisplayName ?? null,
   );
   const systemPrompt = buildCustomerChatSystemPrompt(accountCtx);
+
+  // The shared chat-tool dispatcher (CustomerChatToolContext) takes a
+  // NodePgDatabase. Keep one Drizzle handle here until those tool
+  // helpers migrate; the ported route reads above use Supabase JS.
+  const db = drizzle(getDbPool());
 
   const { messages: initial, redactionCounts } = buildInitialMessages(
     systemPrompt,
