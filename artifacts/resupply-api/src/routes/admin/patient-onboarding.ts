@@ -22,10 +22,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
 import { logger } from "../../lib/logger";
@@ -299,7 +296,6 @@ router.post(
   adminSendDueLimiter,
   async (req, res) => {
     const summary = await dispatchDueCheckins({
-      pool: getDbPool(),
       actor: {
         kind: "admin",
         email: req.adminEmail ?? null,

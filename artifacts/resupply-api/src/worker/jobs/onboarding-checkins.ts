@@ -20,8 +20,6 @@
 
 import type PgBoss from "pg-boss";
 
-import { getDbPool } from "@workspace/resupply-db";
-
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
@@ -41,7 +39,6 @@ export async function registerOnboardingCheckinJobs(
   await boss.work(DISPATCH_JOB, async () => {
     try {
       const summary = await dispatchDueCheckins({
-        pool: getDbPool(),
         actor: { kind: "system" },
       });
       logger.info({ summary }, "onboarding-checkins.dispatch: completed");
