@@ -26,11 +26,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { Router, type IRouter } from "express";
-import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool, shopOrders } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -318,22 +316,34 @@ router.post(
       return;
     }
 
-    // Mirror the session into shop_orders. Use ON CONFLICT so a retried
-    // request that landed on the same Stripe session (via Stripe's
-    // idempotency) doesn't duplicate the row.
-    const db = drizzle(getDbPool());
-    await db
-      .insert(shopOrders)
-      .values({
-        stripeSessionId: session.id,
-        status: "pending",
-        cartHash,
-        ...(req.userCustomerId ? { customerId: req.userCustomerId } : {}),
-      })
-      .onConflictDoUpdate({
-        target: shopOrders.stripeSessionId,
-        set: { updatedAt: sql`now()` },
-      });
+    // Mirror the session into shop_orders. The original Drizzle path
+    // used INSERT … ON CONFLICT (stripe_session_id) DO UPDATE SET
+    // updated_at = now() — supabase-js's `.upsert()` with
+    // `onConflict: "stripe_session_id"` is the equivalent. We pass an
+    // explicit JS-side `updated_at` because PostgREST won't run the
+    // Drizzle $onUpdateFn for us.
+    const supabase = getSupabaseServiceRoleClient();
+    const { error: upsertErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .upsert(
+        {
+          stripe_session_id: session.id,
+          status: "pending",
+          cart_hash: cartHash,
+          ...(req.userCustomerId ? { customer_id: req.userCustomerId } : {}),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "stripe_session_id" },
+      );
+    if (upsertErr) {
+      req.log?.error(
+        { err: upsertErr, sessionId: session.id },
+        "shop checkout: shop_orders upsert failed",
+      );
+      res.status(500).json({ error: "shop_order_persist_failed" });
+      return;
+    }
 
     res.json({
       sessionId: session.id,
