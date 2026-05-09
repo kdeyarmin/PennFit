@@ -18,15 +18,12 @@
 // itself only lives in `messages.body`.
 
 import { Router, type IRouter } from "express";
-import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
-  conversations,
   DEFAULT_COMMUNICATION_PREFERENCES,
   getDbPool,
-  shopCustomers,
+  getSupabaseServiceRoleClient,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
@@ -103,13 +100,15 @@ router.post(
     // do try to send a notification email afterwards (best-effort),
     // but a missing SENDGRID_API_KEY is not fatal for in-app — the
     // customer will see the message next time they sign in.
-    const earlyDb = drizzle(getDbPool());
-    const channelRows = await earlyDb
-      .select({ channel: conversations.channel })
-      .from(conversations)
-      .where(eq(conversations.id, conversationId))
-      .limit(1);
-    const channelRow = channelRows[0];
+    const earlySupabase = getSupabaseServiceRoleClient();
+    const { data: channelRow, error: channelErr } = await earlySupabase
+      .schema("resupply")
+      .from("conversations")
+      .select("channel")
+      .eq("id", conversationId)
+      .limit(1)
+      .maybeSingle();
+    if (channelErr) throw channelErr;
     if (!channelRow) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -365,27 +364,43 @@ async function tryNotifyCustomerOfReply(input: {
   bodyLength: number;
 }): Promise<void> {
   // Resolve the customer record from the conversation → shop_customers
-  // join. Push notifications fire unconditionally (gated only on the
+  // join. PostgREST has no JOIN, so we fetch the conversation first
+  // then bulk-look up the matching shop_customers row by customer_id.
+  // Push notifications fire unconditionally (gated only on the
   // customer having an active subscription); email notifications require
   // a non-null email address and opt-in via communicationPreferences.
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      customerId: shopCustomers.customerId,
-      email: shopCustomers.emailLower,
-      displayName: shopCustomers.displayName,
-      prefs: shopCustomers.communicationPreferences,
-      lastNotifiedAt: conversations.lastInAppNotificationAt,
-    })
-    .from(conversations)
-    .innerJoin(
-      shopCustomers,
-      eq(shopCustomers.customerId, conversations.customerId),
-    )
-    .where(eq(conversations.id, input.conversationId))
-    .limit(1);
-  const row = rows[0];
-  if (!row) return;
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: convRow, error: convErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("customer_id, last_in_app_notification_at")
+    .eq("id", input.conversationId)
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
+  if (!convRow || !convRow.customer_id) return;
+
+  const { data: customerRow, error: customerErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id, email_lower, display_name, communication_preferences")
+    .eq("customer_id", convRow.customer_id)
+    .limit(1)
+    .maybeSingle();
+  if (customerErr) throw customerErr;
+  if (!customerRow) return;
+  const row = {
+    customerId: customerRow.customer_id,
+    email: customerRow.email_lower,
+    displayName: customerRow.display_name,
+    prefs:
+      (customerRow.communication_preferences as
+        | Partial<CommunicationPreferences>
+        | null) ?? null,
+    lastNotifiedAt: convRow.last_in_app_notification_at
+      ? new Date(convRow.last_in_app_notification_at)
+      : null,
+  };
 
   // Push fan-out runs independently of the email opt-in — push is
   // its own channel that the customer enables explicitly via the
@@ -502,14 +517,14 @@ async function tryNotifyCustomerOfReply(input: {
   // Best effort only: if the email was already accepted by SendGrid but
   // this DB update fails, do not rethrow and let callers misclassify the
   // outcome as an email-send failure.
-  try {
-    await db
-      .update(conversations)
-      .set({ lastInAppNotificationAt: sql`now()` })
-      .where(eq(conversations.id, input.conversationId));
-  } catch (err) {
+  const { error: stampErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({ last_in_app_notification_at: new Date().toISOString() })
+    .eq("id", input.conversationId);
+  if (stampErr) {
     logger.error(
-      { err, conversationId: input.conversationId },
+      { err: stampErr, conversationId: input.conversationId },
       "Failed to stamp in-app reply notification throttle timestamp after successful email send",
     );
   }
