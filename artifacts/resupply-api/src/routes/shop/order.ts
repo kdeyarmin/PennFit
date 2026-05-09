@@ -43,13 +43,21 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
   // unrelated Stripe accounts (Stripe would 404 those, but we'd
   // rather not even ask).
   const supabase = getSupabaseServiceRoleClient();
-  const { data: local } = await supabase
+  const { data: local, error: localError } = await supabase
     .schema("resupply")
     .from("shop_orders")
     .select("status")
     .eq("stripe_session_id", sessionId)
     .limit(1)
     .maybeSingle();
+  if (localError) {
+    req.log?.error(
+      { err: localError.message, sessionId },
+      "shop order lookup failed",
+    );
+    res.status(500).json({ error: "order_lookup_failed" });
+    return;
+  }
   if (!local) {
     res.status(404).json({ error: "order_not_found" });
     return;
