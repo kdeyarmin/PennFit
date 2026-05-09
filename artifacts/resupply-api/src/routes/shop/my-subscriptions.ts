@@ -52,11 +52,25 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
-import { getDbPool, shopSubscriptions } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type ResupplySupabaseClient,
+} from "@workspace/resupply-db";
+
+interface SubscriptionItemSnapshot {
+  priceId?: string;
+  productId?: string | null;
+}
+
+interface OwnedSubscription {
+  id: string;
+  stripeSubscriptionId: string;
+  status: string;
+  cancelAtPeriodEnd: boolean;
+  items: SubscriptionItemSnapshot[];
+}
 
 import {
   getStripeClient,
@@ -68,33 +82,33 @@ import { requireSignedIn } from "../../middlewares/requireSignedIn";
 const router: IRouter = Router();
 
 // Shared owner-lookup. Returns the subscription row matched on BOTH
-// (id, customerId) so a leaked id from another patient can't be
+// (id, customer_id) so a leaked id from another patient can't be
 // targeted. Returns null if not found OR not owned — caller maps to
-// 404 to avoid leaking ownership. Drizzle infers `items` from the
-// schema's `$type<ShopSubscriptionItemSnapshot[]>()` annotation, so
-// no explicit return type is needed here.
+// 404 to avoid leaking ownership.
 async function findOwnedSubscription(
-  db: ReturnType<typeof drizzle>,
+  supabase: ResupplySupabaseClient,
   localId: string,
   customerId: string,
-) {
-  const rows = await db
-    .select({
-      id: shopSubscriptions.id,
-      stripeSubscriptionId: shopSubscriptions.stripeSubscriptionId,
-      status: shopSubscriptions.status,
-      cancelAtPeriodEnd: shopSubscriptions.cancelAtPeriodEnd,
-      items: shopSubscriptions.items,
-    })
-    .from(shopSubscriptions)
-    .where(
-      and(
-        eq(shopSubscriptions.id, localId),
-        eq(shopSubscriptions.customerId, customerId),
-      ),
+): Promise<OwnedSubscription | null> {
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("shop_subscriptions")
+    .select(
+      "id, stripe_subscription_id, status, cancel_at_period_end, items",
     )
-    .limit(1);
-  return rows[0] ?? null;
+    .eq("id", localId)
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    stripeSubscriptionId: data.stripe_subscription_id,
+    status: data.status,
+    cancelAtPeriodEnd: data.cancel_at_period_end,
+    items: ((data.items ?? []) as unknown as SubscriptionItemSnapshot[]) ?? [],
+  };
 }
 
 // Read-only list. No rate limit required — same shape and cost as
@@ -109,33 +123,29 @@ router.get("/me/subscriptions", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: shopSubscriptions.id,
-      stripeSubscriptionId: shopSubscriptions.stripeSubscriptionId,
-      status: shopSubscriptions.status,
-      items: shopSubscriptions.items,
-      currentPeriodEnd: shopSubscriptions.currentPeriodEnd,
-      cancelAtPeriodEnd: shopSubscriptions.cancelAtPeriodEnd,
-      canceledAt: shopSubscriptions.canceledAt,
-      createdAt: shopSubscriptions.createdAt,
-    })
-    .from(shopSubscriptions)
-    .where(eq(shopSubscriptions.customerId, customerId))
-    .orderBy(desc(shopSubscriptions.createdAt))
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("shop_subscriptions")
+    .select(
+      "id, stripe_subscription_id, status, items, current_period_end, cancel_at_period_end, canceled_at, created_at",
+    )
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false })
     .limit(50);
+  if (error) throw error;
 
   res.json({
-    subscriptions: rows.map((r) => ({
+    subscriptions: (rows ?? []).map((r) => ({
       id: r.id,
-      stripeSubscriptionId: r.stripeSubscriptionId,
+      stripeSubscriptionId: r.stripe_subscription_id,
       status: r.status,
       items: r.items,
-      currentPeriodEnd: r.currentPeriodEnd?.toISOString() ?? null,
-      cancelAtPeriodEnd: r.cancelAtPeriodEnd,
-      canceledAt: r.canceledAt?.toISOString() ?? null,
-      createdAt: r.createdAt.toISOString(),
+      // PostgREST returns timestamptz as ISO string already.
+      currentPeriodEnd: r.current_period_end,
+      cancelAtPeriodEnd: r.cancel_at_period_end,
+      canceledAt: r.canceled_at,
+      createdAt: r.created_at,
     })),
   });
 });
@@ -160,28 +170,13 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     // Look up the row by our local id AND owner — never by stripe
     // subscription id directly, to make IDOR via guessing
     // sub_xxx values impossible. Belt-and-suspenders: also gate on
     // customer_id match, so a stolen id from one patient can't
     // cancel another's auto-ship.
-    const rows = await db
-      .select({
-        id: shopSubscriptions.id,
-        stripeSubscriptionId: shopSubscriptions.stripeSubscriptionId,
-        status: shopSubscriptions.status,
-        cancelAtPeriodEnd: shopSubscriptions.cancelAtPeriodEnd,
-      })
-      .from(shopSubscriptions)
-      .where(
-        and(
-          eq(shopSubscriptions.id, localId),
-          eq(shopSubscriptions.customerId, customerId),
-        ),
-      )
-      .limit(1);
-    const sub = rows[0];
+    const sub = await findOwnedSubscription(supabase, localId, customerId);
     if (!sub) {
       // 404 — don't leak whether the id exists for a different
       // owner. The frontend never calls this endpoint with a foreign
@@ -222,10 +217,12 @@ router.post(
     // Optimistic local flip — the webhook will mirror this back, but
     // the immediate next page render shouldn't show "active" with
     // no cancel flag.
-    await db
-      .update(shopSubscriptions)
-      .set({ cancelAtPeriodEnd: true })
-      .where(eq(shopSubscriptions.id, sub.id));
+    const { error: flipErr } = await supabase
+      .schema("resupply")
+      .from("shop_subscriptions")
+      .update({ cancel_at_period_end: true })
+      .eq("id", sub.id);
+    if (flipErr) throw flipErr;
 
     res.json({ ok: true });
   },
@@ -262,8 +259,8 @@ router.get(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const sub = await findOwnedSubscription(db, localId, customerId);
+    const supabase = getSupabaseServiceRoleClient();
+    const sub = await findOwnedSubscription(supabase, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });
       return;
@@ -373,8 +370,8 @@ async function handlePauseOrResume(
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const sub = await findOwnedSubscription(db, localId, customerId);
+  const supabase = getSupabaseServiceRoleClient();
+  const sub = await findOwnedSubscription(supabase, localId, customerId);
   if (!sub) {
     res.status(404).json({ error: "subscription_not_found" });
     return;
@@ -480,8 +477,8 @@ router.post(
     }
     const { priceId: newPriceId } = parsed.data;
 
-    const db = drizzle(getDbPool());
-    const sub = await findOwnedSubscription(db, localId, customerId);
+    const supabase = getSupabaseServiceRoleClient();
+    const sub = await findOwnedSubscription(supabase, localId, customerId);
     if (!sub) {
       res.status(404).json({ error: "subscription_not_found" });
       return;

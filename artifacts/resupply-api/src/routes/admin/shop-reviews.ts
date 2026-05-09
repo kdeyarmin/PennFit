@@ -18,11 +18,9 @@
 // Logs in this file emit only the review id, never the email or body.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool, shopReviews } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
@@ -46,7 +44,7 @@ const statusFilter = z
   .enum(["pending", "approved", "rejected", "all"])
   .default("pending");
 
-const listQuery = z
+const reviewListQuery = z
   .object({
     status: statusFilter,
     cursor: z.string().min(1).max(120).optional(),
@@ -81,7 +79,7 @@ const noteBody = z
   .strict();
 
 router.get("/admin/shop/reviews", requireAdmin, async (req, res) => {
-  const parse = listQuery.safeParse(req.query);
+  const parse = reviewListQuery.safeParse(req.query);
   if (!parse.success) {
     res.status(400).json({ error: "invalid_query" });
     return;
@@ -93,91 +91,57 @@ router.get("/admin/shop/reviews", requireAdmin, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const statusFilterClause =
-    status === "all" ? undefined : eq(shopReviews.status, status);
-  // Strict-less composite predicate matching `ORDER BY created_at
-  // DESC, id DESC` — see lib/cursor.ts for why a timestamp-only
-  // cursor is unsafe at page boundaries when reviews share a
-  // createdAt.
-  const cursorClause =
-    parsedCursor.date && parsedCursor.id
-      ? or(
-          lt(shopReviews.createdAt, parsedCursor.date),
-          and(
-            eq(shopReviews.createdAt, parsedCursor.date),
-            lt(shopReviews.id, parsedCursor.id),
-          ),
-        )
-      : undefined;
-
-  // Compose the WHERE clause; `and()` with undefineds is awkward so
-  // we filter before passing.
-  const clauses = [statusFilterClause, cursorClause].filter(
-    (c): c is NonNullable<typeof c> => c != null,
-  );
-  const whereClause =
-    clauses.length === 0
-      ? undefined
-      : clauses.length === 1
-        ? clauses[0]
-        : and(...clauses);
-
-  const rows = await db
-    .select({
-      id: shopReviews.id,
-      productId: shopReviews.productId,
-      rating: shopReviews.rating,
-      title: shopReviews.title,
-      body: shopReviews.body,
-      authorDisplayName: shopReviews.authorDisplayName,
-      authorEmail: shopReviews.authorEmail,
-      status: shopReviews.status,
-      moderationNote: shopReviews.moderationNote,
-      moderatedAt: shopReviews.moderatedAt,
-      createdAt: shopReviews.createdAt,
-      updatedAt: shopReviews.updatedAt,
-    })
-    .from(shopReviews)
-    .where(whereClause)
-    .orderBy(desc(shopReviews.createdAt), desc(shopReviews.id))
+  const supabase = getSupabaseServiceRoleClient();
+  let listQuery = supabase
+    .schema("resupply")
+    .from("shop_reviews")
+    .select(
+      "id, product_id, rating, title, body, author_display_name, author_email, status, moderation_note, moderated_at, created_at, updated_at",
+    )
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(limit + 1);
+  if (status !== "all") listQuery = listQuery.eq("status", status);
+  // Composite cursor predicate: `created_at < ts OR (created_at = ts
+  // AND id < cursorId)` — see lib/cursor.ts for why a timestamp-only
+  // cursor is unsafe at page boundaries when reviews share a created_at.
+  if (parsedCursor.date && parsedCursor.id) {
+    const cursorIso = parsedCursor.date.toISOString();
+    listQuery = listQuery.or(
+      `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${parsedCursor.id})`,
+    );
+  }
+  const { data: rows, error } = await listQuery;
+  if (error) throw error;
 
-  const hasMore = rows.length > limit;
-  const trimmed = hasMore ? rows.slice(0, limit) : rows;
+  const all = rows ?? [];
+  const hasMore = all.length > limit;
+  const trimmed = hasMore ? all.slice(0, limit) : all;
   const lastRow = trimmed[trimmed.length - 1];
   const nextCursor =
     hasMore && lastRow
-      ? encodeCompositeCursor(lastRow.createdAt, lastRow.id)
+      ? encodeCompositeCursor(new Date(lastRow.created_at), lastRow.id)
       : null;
 
   res.json({
     items: trimmed.map((r) => ({
       id: r.id,
-      productId: r.productId,
+      productId: r.product_id,
       rating: r.rating,
       title: r.title,
       body: r.body,
-      authorDisplayName: r.authorDisplayName,
-      authorEmail: r.authorEmail,
+      authorDisplayName: r.author_display_name,
+      authorEmail: r.author_email,
       status: r.status,
-      moderationNote: r.moderationNote,
-      moderatedAt: r.moderatedAt ? r.moderatedAt.toISOString() : null,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
+      moderationNote: r.moderation_note,
+      // PostgREST returns timestamptz as ISO string already.
+      moderatedAt: r.moderated_at,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
     })),
     nextCursor,
   });
-
-  // Touch unused imports — `or`, `sql` may be useful in a future
-  // multi-status filter but aren't needed now. Keeping the imports
-  // would be wasteful; we removed them.
 });
-
-// Throwaway suppression: imports `or`/`sql` aren't used. ESLint will
-// flag them otherwise, so reference them as `void`.
-void or;
-void sql;
 
 router.post(
   "/admin/shop/reviews/:id/approve",
@@ -189,25 +153,24 @@ router.post(
       return;
     }
     const adminId = req.adminUserId ?? null;
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(shopReviews)
-      .set({
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .update({
         status: "approved",
-        moderationNote: null,
-        moderatedAt: new Date(),
-        moderatedBy: adminId,
-        updatedAt: new Date(),
+        moderation_note: null,
+        moderated_at: nowIso,
+        moderated_by: adminId,
+        updated_at: nowIso,
       })
-      .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "pending")))
-      .returning({
-        id: shopReviews.id,
-        status: shopReviews.status,
-        moderatedAt: shopReviews.moderatedAt,
-        productId: shopReviews.productId,
-        authorEmail: shopReviews.authorEmail,
-      });
-    const row = updated[0];
+      .eq("id", id)
+      .eq("status", "pending")
+      .select("id, status, moderated_at, product_id, author_email")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       res.status(404).json({ error: "not_found_or_not_pending" });
       return;
@@ -219,10 +182,10 @@ router.post(
     // FAIL-SOFT: never block the moderation 200 on email infra. The
     // helper wraps every error path; we only log the outcome.
     try {
-      const productName = await resolveProductDisplayName(row.productId);
-      const productUrl = buildProductUrl(req, row.productId);
+      const productName = await resolveProductDisplayName(row.product_id);
+      const productUrl = buildProductUrl(req, row.product_id);
       const result = await sendReviewApprovedEmail({
-        to: row.authorEmail,
+        to: row.author_email,
         productName,
         productUrl,
       });
@@ -244,7 +207,7 @@ router.post(
     res.json({
       id: row.id,
       status: row.status,
-      moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
+      moderatedAt: row.moderated_at,
     });
   },
 );
@@ -264,26 +227,26 @@ router.post(
       return;
     }
     const adminId = req.adminUserId ?? null;
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(shopReviews)
-      .set({
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .update({
         status: "rejected",
-        moderationNote: parse.data.note ?? null,
-        moderatedAt: new Date(),
-        moderatedBy: adminId,
-        updatedAt: new Date(),
+        moderation_note: parse.data.note ?? null,
+        moderated_at: nowIso,
+        moderated_by: adminId,
+        updated_at: nowIso,
       })
-      .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "pending")))
-      .returning({
-        id: shopReviews.id,
-        status: shopReviews.status,
-        moderatedAt: shopReviews.moderatedAt,
-        moderationNote: shopReviews.moderationNote,
-        productId: shopReviews.productId,
-        authorEmail: shopReviews.authorEmail,
-      });
-    const row = updated[0];
+      .eq("id", id)
+      .eq("status", "pending")
+      .select(
+        "id, status, moderated_at, moderation_note, product_id, author_email",
+      )
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       res.status(404).json({ error: "not_found_or_not_pending" });
       return;
@@ -294,12 +257,12 @@ router.post(
     );
     // FAIL-SOFT: rejection notice. Same contract as the approve path.
     try {
-      const productName = await resolveProductDisplayName(row.productId);
-      const editUrl = buildProductUrl(req, row.productId);
+      const productName = await resolveProductDisplayName(row.product_id);
+      const editUrl = buildProductUrl(req, row.product_id);
       const result = await sendReviewRejectedEmail({
-        to: row.authorEmail,
+        to: row.author_email,
         productName,
-        moderationNote: row.moderationNote,
+        moderationNote: row.moderation_note,
         editUrl,
       });
       if (!result.sent) {
@@ -320,7 +283,7 @@ router.post(
     res.json({
       id: row.id,
       status: row.status,
-      moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
+      moderatedAt: row.moderated_at,
     });
   },
 );
@@ -345,26 +308,26 @@ router.post(
       return;
     }
     const adminId = req.adminUserId ?? null;
-    const db = drizzle(getDbPool());
-    // Guard: only `rejected` rows are eligible. We use a WHERE filter
-    // on status so concurrent moderation actions can't accidentally
-    // race a rejected→approved transition into a pending state.
-    const updated = await db
-      .update(shopReviews)
-      .set({
+    const supabase = getSupabaseServiceRoleClient();
+    // Guard: only `rejected` rows are eligible. The status filter on
+    // the UPDATE keeps a concurrent rejected→approved transition from
+    // racing into a pending state.
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .update({
         status: "pending",
-        moderationNote: null,
-        moderatedAt: null,
-        moderatedBy: adminId,
-        updatedAt: new Date(),
+        moderation_note: null,
+        moderated_at: null,
+        moderated_by: adminId,
+        updated_at: new Date().toISOString(),
       })
-      .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "rejected")))
-      .returning({
-        id: shopReviews.id,
-        status: shopReviews.status,
-        moderatedAt: shopReviews.moderatedAt,
-      });
-    const row = updated[0];
+      .eq("id", id)
+      .eq("status", "rejected")
+      .select("id, status, moderated_at")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       // Either the row doesn't exist OR it isn't currently rejected.
       // We don't disambiguate to avoid leaking review existence info
@@ -380,7 +343,7 @@ router.post(
     res.json({
       id: row.id,
       status: row.status,
-      moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
+      moderatedAt: row.moderated_at,
     });
   },
 );
@@ -410,23 +373,22 @@ router.patch("/admin/shop/reviews/:id/note", requireAdmin, async (req, res) => {
     typeof parse.data.note === "string" && parse.data.note.trim() !== ""
       ? parse.data.note.trim()
       : null;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   // Same guard as unreject: only `rejected` rows can have their
   // note edited. Approved + pending rows have no public note slot.
-  const updated = await db
-    .update(shopReviews)
-    .set({
-      moderationNote: note,
-      updatedAt: new Date(),
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("shop_reviews")
+    .update({
+      moderation_note: note,
+      updated_at: new Date().toISOString(),
     })
-    .where(and(eq(shopReviews.id, id), eq(shopReviews.status, "rejected")))
-    .returning({
-      id: shopReviews.id,
-      status: shopReviews.status,
-      moderationNote: shopReviews.moderationNote,
-      moderatedAt: shopReviews.moderatedAt,
-    });
-  const row = updated[0];
+    .eq("id", id)
+    .eq("status", "rejected")
+    .select("id, status, moderation_note, moderated_at")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
   if (!row) {
     res.status(404).json({ error: "not_found_or_not_rejected" });
     return;
@@ -438,8 +400,8 @@ router.patch("/admin/shop/reviews/:id/note", requireAdmin, async (req, res) => {
   res.json({
     id: row.id,
     status: row.status,
-    moderationNote: row.moderationNote,
-    moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
+    moderationNote: row.moderation_note,
+    moderatedAt: row.moderated_at,
   });
 });
 

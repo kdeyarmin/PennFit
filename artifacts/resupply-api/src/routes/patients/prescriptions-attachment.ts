@@ -50,14 +50,12 @@
 // built yet because finalize fires immediately after PUT in the
 // dashboard flow and expected volume is single-digits/week.
 
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, prescriptions } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -126,20 +124,25 @@ async function findPrescriptionForPatient(
   attachmentFilename: string | null;
   attachmentContentType: string | null;
 } | null> {
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: prescriptions.id,
-      attachmentObjectKey: prescriptions.attachmentObjectKey,
-      attachmentFilename: prescriptions.attachmentFilename,
-      attachmentContentType: prescriptions.attachmentContentType,
-    })
-    .from(prescriptions)
-    .where(
-      and(eq(prescriptions.id, rxId), eq(prescriptions.patientId, patientId)),
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("prescriptions")
+    .select(
+      "id, attachment_object_key, attachment_filename, attachment_content_type",
     )
-    .limit(1);
-  return rows[0] ?? null;
+    .eq("id", rxId)
+    .eq("patient_id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    attachmentObjectKey: data.attachment_object_key,
+    attachmentFilename: data.attachment_filename,
+    attachmentContentType: data.attachment_content_type,
+  };
 }
 
 router.post(
@@ -358,23 +361,25 @@ router.post(
     // because nothing in this handler has mutated the row yet.
     const previousObjectKey = rx.attachmentObjectKey;
 
-    const db = drizzle(getDbPool());
-    const now = new Date();
-    await db
-      .update(prescriptions)
-      .set({
-        attachmentObjectKey: normalizedPath,
-        attachmentFilename: body.data.filename,
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .update({
+        attachment_object_key: normalizedPath,
+        attachment_filename: body.data.filename,
         // Persist the GCS-CONFIRMED content-type and size, not the
         // client-declared values. If those agree (the normal case)
         // this is a no-op; if they disagree, the database is the
         // source of truth for what's actually in the bucket.
-        attachmentContentType: actualContentType,
-        attachmentSizeBytes: actualSize,
-        attachmentUploadedAt: now,
-        updatedAt: now,
+        attachment_content_type: actualContentType,
+        attachment_size_bytes: actualSize,
+        attachment_uploaded_at: nowIso,
+        updated_at: nowIso,
       })
-      .where(eq(prescriptions.id, rx.id));
+      .eq("id", rx.id);
+    if (updateErr) throw updateErr;
 
     // Replacement cleanup: the row now points at the NEW object, so
     // delete the bytes of the OLD object. Best-effort — if GCS is
@@ -589,19 +594,21 @@ router.delete(
       }
     }
 
-    const db = drizzle(getDbPool());
-    const now = new Date();
-    await db
-      .update(prescriptions)
-      .set({
-        attachmentObjectKey: null,
-        attachmentFilename: null,
-        attachmentContentType: null,
-        attachmentSizeBytes: null,
-        attachmentUploadedAt: null,
-        updatedAt: now,
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const { error: clearErr } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .update({
+        attachment_object_key: null,
+        attachment_filename: null,
+        attachment_content_type: null,
+        attachment_size_bytes: null,
+        attachment_uploaded_at: null,
+        updated_at: nowIso,
       })
-      .where(eq(prescriptions.id, rx.id));
+      .eq("id", rx.id);
+    if (clearErr) throw clearErr;
 
     await logAudit({
       action: "patient.prescription.attachment.remove",

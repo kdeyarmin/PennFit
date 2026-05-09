@@ -325,7 +325,14 @@ export interface Database {
           customer_id: string;
           product_id: string;
           rating: number;
+          title: string | null;
+          body: string | null;
+          author_display_name: string | null;
+          author_email: string;
           status: string;
+          moderation_note: string | null;
+          moderated_at: string | null;
+          moderated_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -486,6 +493,26 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
+        Relationships: [];
+      };
+      shop_customer_message_template_overrides: {
+        Row: {
+          id: string;
+          customer_id: string;
+          template_key: string;
+          channel: string;
+          subject: string | null;
+          body_html: string | null;
+          body_text: string | null;
+          is_active: boolean;
+          note: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]>;
         Relationships: [];
       };
       message_templates: {
