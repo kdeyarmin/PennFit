@@ -295,10 +295,8 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
       "patient_onboarding_journeys",
       "update",
     ) as Record<string, unknown>[];
-    // Same camelCase quirk as the day-7 case — see comment there.
-    const stampUpdate = updates.find(
-      (u) => "day90SentAt" in u || "day90_sent_at" in u,
-    );
+    // Stamp uses the snake_case column name PostgREST expects.
+    const stampUpdate = updates.find((u) => "day90_sent_at" in u);
     expect(stampUpdate).toBeDefined();
     expect(stampUpdate?.status).toBe("completed");
 
