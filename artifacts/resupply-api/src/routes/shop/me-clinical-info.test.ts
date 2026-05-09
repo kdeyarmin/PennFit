@@ -9,16 +9,19 @@
 //   * PUT no-op (empty body) does not write
 //   * PUT with cpapDevice writes the row + audits
 //   * PUT with `null` clears the corresponding field
-//
-// We mock the DB at the drizzle layer (no live pool) and stub the
-// audit helper so we can assert it was called with the expected
-// non-PHI metadata envelope.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
 import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as string | null },
@@ -43,46 +46,6 @@ vi.mock("../../lib/stripe/customer", () => ({
   ensureShopCustomerRow: ensureShopCustomerRowMock,
 }));
 
-// Drizzle stub. The route does:
-//   GET → SELECT cpapDevice/physicianInfo FROM shop_customers WHERE … LIMIT 1
-//   PUT → UPDATE shop_customers SET … WHERE … RETURNING cpapDevice/physicianInfo
-// (and a SELECT in the no-op path)
-// We push the result for each query into the queues in order.
-const selectQueue: unknown[][] = [];
-const updateQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const result = updateQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
-// Imported AFTER the vi.mock calls above so the route picks up the
-// stubbed modules.
 import meClinicalInfoRouter from "./me-clinical-info";
 
 function makeApp(): Express {
@@ -94,12 +57,9 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockSignedIn.current = null;
-  selectQueue.length = 0;
-  updateQueue.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
   ensureShopCustomerRowMock.mockClear();
-  dbStub.select.mockClear();
-  dbStub.update.mockClear();
 });
 
 describe("GET /shop/me/clinical-info", () => {
@@ -110,7 +70,7 @@ describe("GET /shop/me/clinical-info", () => {
 
   it("returns nulls for a customer with no info on file", async () => {
     mockSignedIn.current = "cust_1";
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_customers", "select", { data: null });
     const res = await request(makeApp()).get("/shop/me/clinical-info");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -122,9 +82,9 @@ describe("GET /shop/me/clinical-info", () => {
 
   it("returns the persisted device + physician shape", async () => {
     mockSignedIn.current = "cust_1";
-    selectQueue.push([
-      {
-        cpapDevice: {
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        cpap_device_json: {
           manufacturer: "ResMed",
           model: "AirSense 11",
           serialNumber: null,
@@ -132,7 +92,7 @@ describe("GET /shop/me/clinical-info", () => {
           humidifierSetting: null,
           notes: null,
         },
-        physicianInfo: {
+        physician_info_json: {
           name: "Dr. Anna Singh",
           practice: null,
           phone: null,
@@ -145,8 +105,9 @@ describe("GET /shop/me/clinical-info", () => {
           postalCode: null,
           npi: null,
         },
+        facial_measurements_json: null,
       },
-    ]);
+    });
     const res = await request(makeApp()).get("/shop/me/clinical-info");
     expect(res.status).toBe(200);
     expect(res.body.cpapDevice.manufacturer).toBe("ResMed");
@@ -192,9 +153,13 @@ describe("PUT /shop/me/clinical-info", () => {
 
   it("no-op PUT (empty body) returns current values without an audit", async () => {
     mockSignedIn.current = "cust_1";
-    selectQueue.push([
-      { cpapDevice: null, physicianInfo: null, facialMeasurements: null },
-    ]);
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        cpap_device_json: null,
+        physician_info_json: null,
+        facial_measurements_json: null,
+      },
+    });
     const res = await request(makeApp()).put("/shop/me/clinical-info").send({});
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -203,7 +168,7 @@ describe("PUT /shop/me/clinical-info", () => {
       facialMeasurements: null,
     });
     expect(logAuditMock).not.toHaveBeenCalled();
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customers", "update")).toBe(0);
   });
 
   it("writes the device, returns it, and audits with non-PHI metadata", async () => {
@@ -216,7 +181,13 @@ describe("PUT /shop/me/clinical-info", () => {
       humidifierSetting: null,
       notes: null,
     };
-    updateQueue.push([{ cpapDevice: stored, physicianInfo: null }]);
+    stageSupabaseResponse("shop_customers", "update", {
+      data: {
+        cpap_device_json: stored,
+        physician_info_json: null,
+        facial_measurements_json: null,
+      },
+    });
     const res = await request(makeApp())
       .put("/shop/me/clinical-info")
       .send({
@@ -242,7 +213,13 @@ describe("PUT /shop/me/clinical-info", () => {
 
   it("clears a field when given null", async () => {
     mockSignedIn.current = "cust_1";
-    updateQueue.push([{ cpapDevice: null, physicianInfo: null }]);
+    stageSupabaseResponse("shop_customers", "update", {
+      data: {
+        cpap_device_json: null,
+        physician_info_json: null,
+        facial_measurements_json: null,
+      },
+    });
     const res = await request(makeApp())
       .put("/shop/me/clinical-info")
       .send({ cpapDevice: null });

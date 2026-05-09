@@ -15,6 +15,14 @@ import {
   makeRequireSignedInMock,
   type MockSignedInRef,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as MockSignedInRef["current"] },
@@ -22,54 +30,6 @@ const { mockSignedIn } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
-
-const insertedValues: Record<string, unknown>[] = [];
-const onConflictSets: Record<string, unknown>[] = [];
-const deleteCalls: number[] = [];
-const selectQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      values: (vals: Record<string, unknown>) => {
-        insertedValues.push(vals);
-        return obj;
-      },
-      onConflictDoUpdate: (cfg: { set: Record<string, unknown> }) => {
-        onConflictSets.push(cfg.set);
-        return Promise.resolve();
-      },
-    };
-    return obj;
-  }),
-  delete: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      where: () => {
-        deleteCalls.push(1);
-        return Promise.resolve();
-      },
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import mePushSubscriptionsRouter from "./me-push-subscriptions";
 
@@ -86,10 +46,7 @@ function makeApp(): Express {
 const originalEnv = { ...process.env };
 beforeEach(() => {
   mockSignedIn.current = null;
-  selectQueue.length = 0;
-  insertedValues.length = 0;
-  onConflictSets.length = 0;
-  deleteCalls.length = 0;
+  supabaseMock.reset();
 });
 afterEach(() => {
   // Restore env so a test that sets WEB_PUSH_VAPID_PUBLIC_KEY doesn't
@@ -166,6 +123,9 @@ describe("POST /shop/me/push-subscriptions", () => {
 
   it("upserts on endpoint with auth + p256dh", async () => {
     mockSignedIn.current = USER_ID;
+    stageSupabaseResponse("shop_customer_push_subscriptions", "upsert", {
+      error: null,
+    });
     const res = await request(makeApp())
       .post("/shop/me/push-subscriptions")
       .send({
@@ -174,42 +134,54 @@ describe("POST /shop/me/push-subscriptions", () => {
         expirationTime: null,
       });
     expect(res.status).toBe(204);
-    expect(insertedValues).toHaveLength(1);
-    expect(insertedValues[0]).toMatchObject({
-      customerId: USER_ID,
+    const upserts = getSupabaseWritePayloads(
+      "shop_customer_push_subscriptions",
+      "upsert",
+    ) as Record<string, unknown>[];
+    expect(upserts).toHaveLength(1);
+    // PostgREST upsert merges insert + on-conflict-update into a
+    // single payload — both halves of the legacy test (insert
+    // values + onConflict.set) collapse to one assertion now. The
+    // expired_at clear lives in the same payload.
+    expect(upserts[0]).toMatchObject({
+      customer_id: USER_ID,
       endpoint: VALID_ENDPOINT,
-      authB64: "AUTH_B64",
-      p256dhB64: "P256_B64",
+      auth_b64: "AUTH_B64",
+      p256dh_b64: "P256_B64",
+      expired_at: null,
     });
-    // The upsert path also sets the expired_at-clear + key rotation.
-    expect(onConflictSets).toHaveLength(1);
-    expect(onConflictSets[0]?.expiredAt).toBeNull();
-    expect(onConflictSets[0]?.authB64).toBe("AUTH_B64");
   });
 });
 
 describe("DELETE /shop/me/push-subscriptions", () => {
   it("204s + scopes the delete to the caller's customer", async () => {
     mockSignedIn.current = USER_ID;
+    stageSupabaseResponse("shop_customer_push_subscriptions", "delete", {
+      error: null,
+    });
     const res = await request(makeApp())
       .delete("/shop/me/push-subscriptions")
       .send({ endpoint: VALID_ENDPOINT });
     expect(res.status).toBe(204);
-    expect(deleteCalls).toHaveLength(1);
+    expect(
+      getSupabaseCallCount("shop_customer_push_subscriptions", "delete"),
+    ).toBe(1);
   });
 });
 
 describe("GET /shop/me/push-subscriptions", () => {
   it("never returns the endpoint URL (capability token)", async () => {
     mockSignedIn.current = USER_ID;
-    selectQueue.push([
-      {
-        id: "ps_1",
-        endpoint: VALID_ENDPOINT,
-        userAgent: "Mozilla/5.0",
-        createdAt: new Date("2026-05-04T12:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [
+        {
+          id: "ps_1",
+          endpoint: VALID_ENDPOINT,
+          user_agent: "Mozilla/5.0",
+          created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+        },
+      ],
+    });
     const res = await request(makeApp()).get("/shop/me/push-subscriptions");
     expect(res.status).toBe(200);
     expect(res.body.subscriptions).toHaveLength(1);

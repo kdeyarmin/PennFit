@@ -14,6 +14,14 @@ import {
   makeRequireSignedInMock,
   type MockSignedInRef,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as MockSignedInRef["current"] },
@@ -21,43 +29,6 @@ const { mockSignedIn } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
-
-const selectQueue: unknown[][] = [];
-const insertQueue: unknown[][] = [];
-const insertedValues: Record<string, unknown>[] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const result = insertQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      values: (vals: Record<string, unknown>) => {
-        insertedValues.push(vals);
-        return obj;
-      },
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import productQuestionsRouter from "./product-questions";
 
@@ -72,11 +43,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockSignedIn.current = null;
-  selectQueue.length = 0;
-  insertQueue.length = 0;
-  insertedValues.length = 0;
-  dbStub.select.mockClear();
-  dbStub.insert.mockClear();
+  supabaseMock.reset();
 });
 
 describe("GET /shop/products/:productId/questions", () => {
@@ -88,7 +55,7 @@ describe("GET /shop/products/:productId/questions", () => {
   });
 
   it("returns an empty list when nothing is answered", async () => {
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_product_questions", "select", { data: [] });
     const res = await request(makeApp()).get(
       `/shop/products/${PRODUCT_ID}/questions`,
     );
@@ -115,7 +82,7 @@ describe("POST /shop/products/:productId/questions", () => {
       .post(`/shop/products/${PRODUCT_ID}/questions`)
       .send({ questionBody: "fits?" });
     expect(res.status).toBe(400);
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_product_questions", "insert")).toBe(0);
   });
 
   it("inserts with formatted display name + lowercased email", async () => {
@@ -124,13 +91,13 @@ describe("POST /shop/products/:productId/questions", () => {
       email: "Shopper@Example.COM",
       displayName: "Anna Singh",
     };
-    insertQueue.push([
-      {
+    stageSupabaseResponse("shop_product_questions", "insert", {
+      data: {
         id: "q_1",
         status: "pending",
-        createdAt: new Date("2026-05-04T12:00:00Z"),
+        created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
       },
-    ]);
+    });
 
     const res = await request(makeApp())
       .post(`/shop/products/${PRODUCT_ID}/questions`)
@@ -140,13 +107,17 @@ describe("POST /shop/products/:productId/questions", () => {
     expect(res.body.id).toBe("q_1");
     expect(res.body.status).toBe("pending");
 
-    expect(insertedValues).toHaveLength(1);
-    const v = insertedValues[0]!;
+    const inserts = getSupabaseWritePayloads(
+      "shop_product_questions",
+      "insert",
+    ) as Record<string, unknown>[];
+    expect(inserts).toHaveLength(1);
+    const v = inserts[0]!;
     // FirstName L. format mirrors shop_reviews.
-    expect(v.askerDisplayName).toBe("Anna S.");
+    expect(v.asker_display_name).toBe("Anna S.");
     // Email lowercased so admin moderation queues match consistently.
-    expect(v.askerEmail).toBe("shopper@example.com");
-    expect(v.productId).toBe(PRODUCT_ID);
-    expect(v.customerId).toBe("user_1");
+    expect(v.asker_email).toBe("shopper@example.com");
+    expect(v.product_id).toBe(PRODUCT_ID);
+    expect(v.customer_id).toBe("user_1");
   });
 });
