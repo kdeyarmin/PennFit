@@ -1,20 +1,9 @@
 // Route tests for GET /dashboard/summary.
 //
-// Two parallel stubs:
-//
-// 1. drizzle `db.select()` (fluent stub from sms/inbound.test.ts) —
-//    feeds the five COUNT(*) tile queries. We queue one
-//    `[{ count }]` result per invocation in handler order:
-//      activeConversations · awaitingAdmin · overdueEpisodes ·
-//      fulfillmentsThisWeek · pausedPatients
-//
-// 2. `pool.query` (mock fn returned by `getDbPool().query`) — feeds
-//    the `prescription.attachment.sweep` audit-row read in
-//    `sweep-status.ts`. The helper uses raw SQL via `pool.query()`
-//    rather than a drizzle `auditLog` import (architecture Rule 8 —
-//    see the header in `sweep-status.ts`), so it bypasses the
-//    drizzle stub entirely. Tests stage a single
-//    `{ rows: [{ occurred_at, metadata }] }` shape per call.
+// Five `head: true` count probes (conversations × 2, episodes,
+// fulfillments, patients) plus the sweep-status helper which reads
+// the latest `prescription.attachment.sweep` audit row from
+// resupply.audit_log via the Supabase service-role client.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -24,6 +13,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -31,38 +26,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    leftJoin: () => obj,
-    orderBy: () => obj,
-    limit: () => obj,
-    offset: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-const poolQuery = vi.fn();
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({ query: poolQuery }) as never,
-  };
-});
 
 import summaryRouter from "./summary";
 
@@ -86,6 +49,44 @@ const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
+// Stage the five count probes the route runs in parallel. Their
+// order in `Promise.all` is:
+//   1. conversations (active)
+//   2. conversations (awaiting_admin)
+//   3. episodes
+//   4. fulfillments
+//   5. patients
+// `conversations` is queried twice — same table, same op, so the
+// per-(table, op) FIFO queue consumes them in array order.
+function stageCounts(counts: {
+  activeConversations: number;
+  awaitingAdmin: number;
+  overdueEpisodes: number;
+  fulfillmentsThisWeek: number;
+  pausedPatients: number;
+}): void {
+  stageSupabaseResponse("conversations", "select", {
+    data: null,
+    count: counts.activeConversations,
+  });
+  stageSupabaseResponse("conversations", "select", {
+    data: null,
+    count: counts.awaitingAdmin,
+  });
+  stageSupabaseResponse("episodes", "select", {
+    data: null,
+    count: counts.overdueEpisodes,
+  });
+  stageSupabaseResponse("fulfillments", "select", {
+    data: null,
+    count: counts.fulfillmentsThisWeek,
+  });
+  stageSupabaseResponse("patients", "select", {
+    data: null,
+    count: counts.pausedPatients,
+  });
+}
+
 describe("GET /dashboard/summary", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
@@ -93,13 +94,8 @@ describe("GET /dashboard/summary", () => {
 
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
-    poolQuery.mockReset();
-    // Default: no sweep audit row. Tests that care about the sweep
-    // slot override this with `poolQuery.mockResolvedValueOnce(...)`.
-    poolQuery.mockResolvedValue({ rows: [] });
+    supabaseMock.reset();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -115,12 +111,16 @@ describe("GET /dashboard/summary", () => {
 
   it("returns the five COUNT(*) values in the response body", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 7 }]); // activeConversations
-    selectQueue.push([{ count: 3 }]); // awaitingAdmin
-    selectQueue.push([{ count: 12 }]); // overdueEpisodes
-    selectQueue.push([{ count: 41 }]); // fulfillmentsThisWeek
-    selectQueue.push([{ count: 2 }]); // pausedPatients
-    // poolQuery default ({ rows: [] }) → no sweep row → null
+    stageCounts({
+      activeConversations: 7,
+      awaitingAdmin: 3,
+      overdueEpisodes: 12,
+      fulfillmentsThisWeek: 41,
+      pausedPatients: 2,
+    });
+    // Sweep-status helper fetches from audit_log via .maybeSingle();
+    // empty data → null sweep status.
+    stageSupabaseResponse("audit_log", "select", { data: null });
 
     const res = await request(makeApp()).get("/resupply-api/dashboard/summary");
     expect(res.status).toBe(200);
@@ -136,11 +136,29 @@ describe("GET /dashboard/summary", () => {
 
   it("defaults a missing count row to 0", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([]);
-    selectQueue.push([{ count: 1 }]);
-    selectQueue.push([]);
-    selectQueue.push([]);
-    selectQueue.push([]);
+    // PostgREST can return `count: null` if the count header was
+    // dropped; the route's `?? 0` coerces.
+    stageSupabaseResponse("conversations", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: null,
+      count: 1,
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("audit_log", "select", { data: null });
 
     const res = await request(makeApp()).get("/resupply-api/dashboard/summary");
     expect(res.status).toBe(200);
@@ -155,14 +173,6 @@ describe("GET /dashboard/summary", () => {
   });
 
   describe("prescriptionAttachmentSweep field", () => {
-    // These tests focus on the sweep-status slot. The five COUNT(*)
-    // tiles aren't the subject — queue five empty `select()` results
-    // up front so the handler runs cleanly through them, then stage
-    // the sweep `pool.query()` result via `mockResolvedValueOnce`.
-    function queueZeroCounts(): void {
-      for (let i = 0; i < 5; i += 1) selectQueue.push([]);
-    }
-
     const ALL_ZERO_METADATA = {
       objects_scanned: 0,
       references_loaded: 0,
@@ -176,46 +186,35 @@ describe("GET /dashboard/summary", () => {
       non_attachment_skipped: 0,
     } as const;
 
-    it("issues a parameterised SELECT against resupply.audit_log", async () => {
-      // Lock the SQL shape: anything else (raw substitution, missing
-      // ORDER BY, missing LIMIT) would let us silently surface a stale
-      // row or, worse, all sweep rows ever.
-      stubVerifiedAdmin();
-      queueZeroCounts();
-      poolQuery.mockResolvedValueOnce({ rows: [] });
-
-      await request(makeApp()).get("/resupply-api/dashboard/summary");
-
-      expect(poolQuery).toHaveBeenCalledTimes(1);
-      const [sql, params] = poolQuery.mock.calls[0] as [string, unknown[]];
-      expect(sql).toMatch(/FROM\s+resupply\.audit_log/);
-      expect(sql).toMatch(/WHERE\s+action\s*=\s*\$1/);
-      expect(sql).toMatch(/ORDER BY\s+occurred_at\s+DESC/);
-      expect(sql).toMatch(/LIMIT 1/);
-      expect(params).toEqual(["prescription.attachment.sweep"]);
-    });
+    function stageZeroCounts(): void {
+      stageCounts({
+        activeConversations: 0,
+        awaitingAdmin: 0,
+        overdueEpisodes: 0,
+        fulfillmentsThisWeek: 0,
+        pausedPatients: 0,
+      });
+    }
 
     it("surfaces the latest sweep row with snake→camel mapping", async () => {
       stubVerifiedAdmin();
-      queueZeroCounts();
-      poolQuery.mockResolvedValueOnce({
-        rows: [
-          {
-            occurred_at: new Date("2026-04-26T03:13:42.000Z"),
-            metadata: {
-              objects_scanned: 1234,
-              references_loaded: 1100,
-              orphans_deleted: 7,
-              bytes_reclaimed: 12_345_678,
-              orphans_too_young: 3,
-              orphans_no_time_created: 0,
-              delete_errors: 0,
-              delete_404_idempotent: 1,
-              recheck_saved: 2,
-              non_attachment_skipped: 5,
-            },
+      stageZeroCounts();
+      stageSupabaseResponse("audit_log", "select", {
+        data: {
+          occurred_at: "2026-04-26T03:13:42.000Z",
+          metadata: {
+            objects_scanned: 1234,
+            references_loaded: 1100,
+            orphans_deleted: 7,
+            bytes_reclaimed: 12_345_678,
+            orphans_too_young: 3,
+            orphans_no_time_created: 0,
+            delete_errors: 0,
+            delete_404_idempotent: 1,
+            recheck_saved: 2,
+            non_attachment_skipped: 5,
           },
-        ],
+        },
       });
 
       const res = await request(makeApp()).get(
@@ -243,14 +242,12 @@ describe("GET /dashboard/summary", () => {
       // Missing several required fields + one negative — strict
       // schema must reject and the route must NOT 500.
       stubVerifiedAdmin();
-      queueZeroCounts();
-      poolQuery.mockResolvedValueOnce({
-        rows: [
-          {
-            occurred_at: new Date("2026-04-26T03:13:42.000Z"),
-            metadata: { objects_scanned: -1, garbage: "yes" },
-          },
-        ],
+      stageZeroCounts();
+      stageSupabaseResponse("audit_log", "select", {
+        data: {
+          occurred_at: "2026-04-26T03:13:42.000Z",
+          metadata: { objects_scanned: -1, garbage: "yes" },
+        },
       });
 
       const res = await request(makeApp()).get(
@@ -265,9 +262,9 @@ describe("GET /dashboard/summary", () => {
       // unparseable occurred_at must not let "Invalid Date" leak
       // into the response.
       stubVerifiedAdmin();
-      queueZeroCounts();
-      poolQuery.mockResolvedValueOnce({
-        rows: [{ occurred_at: null, metadata: ALL_ZERO_METADATA }],
+      stageZeroCounts();
+      stageSupabaseResponse("audit_log", "select", {
+        data: { occurred_at: null, metadata: ALL_ZERO_METADATA },
       });
 
       const res = await request(makeApp()).get(
@@ -277,19 +274,16 @@ describe("GET /dashboard/summary", () => {
       expect(res.body.prescriptionAttachmentSweep).toBeNull();
     });
 
-    it("coerces a string occurred_at into an ISO date-time", async () => {
-      // The pg driver normally hands timestamptz back as a Date, but
-      // some pool configurations / mocks return it as a string. The
-      // helper must produce a stable ISO string either way.
+    it("normalises occurred_at to a stable ISO string", async () => {
+      // PostgREST returns timestamptz as an ISO string; the helper
+      // round-trips through Date to normalise the format.
       stubVerifiedAdmin();
-      queueZeroCounts();
-      poolQuery.mockResolvedValueOnce({
-        rows: [
-          {
-            occurred_at: "2026-04-26T03:13:42.000Z",
-            metadata: ALL_ZERO_METADATA,
-          },
-        ],
+      stageZeroCounts();
+      stageSupabaseResponse("audit_log", "select", {
+        data: {
+          occurred_at: "2026-04-26T03:13:42.000Z",
+          metadata: ALL_ZERO_METADATA,
+        },
       });
 
       const res = await request(makeApp()).get(

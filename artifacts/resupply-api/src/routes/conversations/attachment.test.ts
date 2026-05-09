@@ -17,6 +17,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -24,29 +30,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// drizzle stub — single SELECT with INNER JOINs.
-const selectQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      innerJoin: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve(selectQueue.shift() ?? []),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 const logAuditMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -107,9 +90,8 @@ describe("GET /conversations/:id/messages/:messageId/attachments/:attachmentId",
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
+    supabaseMock.reset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
     getObjectEntityFileMock.mockReset();
     downloadObjectMock.mockReset();
@@ -130,7 +112,8 @@ describe("GET /conversations/:id/messages/:messageId/attachments/:attachmentId",
 
   it("returns 404 when the predicate doesn't match a row", async () => {
     stubAdmin();
-    selectQueue.push([]);
+    // Attachment not found.
+    stageSupabaseResponse("message_attachments", "select", { data: null });
     const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}/messages/${MSG_ID}/attachments/${ATT_ID}`,
     );
@@ -141,13 +124,17 @@ describe("GET /conversations/:id/messages/:messageId/attachments/:attachmentId",
 
   it("streams bytes, sets inline content-disposition, and writes audit", async () => {
     stubAdmin();
-    selectQueue.push([
-      {
-        objectKey: "/objects/uploads/abc",
+    stageSupabaseResponse("message_attachments", "select", {
+      data: {
+        object_key: "/objects/uploads/abc",
         filename: "mms-MEdef.png",
-        contentType: "image/png",
+        content_type: "image/png",
+        message_id: MSG_ID,
       },
-    ]);
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: { conversation_id: CONV_ID },
+    });
     const fakeFile = { name: "abc" };
     getObjectEntityFileMock.mockResolvedValue(fakeFile);
     // Hand-build a Web Response with a small body — the handler
@@ -185,13 +172,17 @@ describe("GET /conversations/:id/messages/:messageId/attachments/:attachmentId",
 
   it("returns 404 when GCS reports the object missing", async () => {
     stubAdmin();
-    selectQueue.push([
-      {
-        objectKey: "/objects/uploads/gone",
+    stageSupabaseResponse("message_attachments", "select", {
+      data: {
+        object_key: "/objects/uploads/gone",
         filename: "mms.png",
-        contentType: "image/png",
+        content_type: "image/png",
+        message_id: MSG_ID,
       },
-    ]);
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: { conversation_id: CONV_ID },
+    });
     getObjectEntityFileMock.mockRejectedValue(new StubObjectNotFoundError());
     const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}/messages/${MSG_ID}/attachments/${ATT_ID}`,
