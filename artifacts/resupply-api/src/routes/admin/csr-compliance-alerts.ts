@@ -18,7 +18,6 @@ import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getDbPool,
   getSupabaseServiceRoleClient,
   type CsrComplianceAlertStatus,
   type Database,
@@ -177,7 +176,7 @@ router.post(
   requireAdmin,
   adminScanLimiter,
   async (req, res) => {
-    const summary = await scanCompliance({ pool: getDbPool() });
+    const summary = await scanCompliance();
     await logAudit({
       action: "csr.compliance_scan.run",
       adminEmail: req.adminEmail ?? null,

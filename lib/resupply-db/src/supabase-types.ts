@@ -112,6 +112,27 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      patient_checkin_attempts: {
+        Row: {
+          id: string;
+          journey_id: string;
+          patient_id: string;
+          day_label: string;
+          channel: "email" | "sms" | "voice";
+          outcome:
+            | "sent"
+            | "skipped_no_contact"
+            | "skipped_not_configured"
+            | "vendor_error";
+          vendor_ref: string | null;
+          error_code: string | null;
+          attempted_at: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]>;
+        Relationships: [];
+      };
       idempotency_keys: {
         Row: {
           user_id: string;

@@ -42,10 +42,8 @@
 
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
-import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
-  getDbPool,
   getSupabaseServiceRoleClient,
   type CpapDeviceInfo,
   type SavedShippingAddress,
@@ -427,10 +425,7 @@ router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
   );
   const systemPrompt = buildCustomerChatSystemPrompt(accountCtx);
 
-  // The shared chat-tool dispatcher (CustomerChatToolContext) takes a
-  // NodePgDatabase. Keep one Drizzle handle here until those tool
-  // helpers migrate; the ported route reads above use Supabase JS.
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   const { messages: initial, redactionCounts } = buildInitialMessages(
     systemPrompt,
@@ -443,7 +438,7 @@ router.post("/shop/me/chat", requireSignedIn, async (req, res) => {
     );
   }
 
-  const toolCtx: CustomerChatToolContext = { db, customerId };
+  const toolCtx: CustomerChatToolContext = { supabase, customerId };
 
   return streaming
     ? handleStreaming(res, initial, apiKey, toolCtx, messages.length)

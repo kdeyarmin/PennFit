@@ -61,7 +61,7 @@ export async function registerOnboardingCheckinJobs(
 
   await boss.work(SCAN_JOB, async () => {
     try {
-      const summary = await scanCompliance({ pool: getDbPool() });
+      const summary = await scanCompliance();
       logger.info({ summary }, "onboarding-checkins.scan: completed");
     } catch (err) {
       logger.error(
