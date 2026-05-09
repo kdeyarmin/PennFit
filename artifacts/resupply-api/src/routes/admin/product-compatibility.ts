@@ -140,13 +140,14 @@ router.delete(
     const entryId = entryParsed.data;
 
     const supabase = getSupabaseServiceRoleClient();
-    const { data: row } = await supabase
+    const { data: row, error: rowErr } = await supabase
       .schema("resupply")
       .from("shop_product_compatibility")
       .select("id, product_id, machine_manufacturer, machine_model")
       .eq("id", entryId)
       .limit(1)
       .maybeSingle();
+    if (rowErr) throw rowErr;
     if (!row || row.product_id !== productId) {
       // Defense-in-depth: the URL contract is "this entry belongs
       // to this product". A mismatch could be a CSR clicking a
