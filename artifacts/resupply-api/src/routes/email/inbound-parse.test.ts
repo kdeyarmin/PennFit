@@ -9,108 +9,19 @@
 //   * Happy path with one PNG attachment — message row inserted,
 //     attachment row inserted via persistInboundAttachment, conversation
 //     flipped to awaiting_admin, audit emitted.
-//
-// We mock the drizzle chain comprehensively because this route walks
-// several distinct queries (patient lookup, conversation lookup,
-// message insert, conversation update). Mocks are keyed by the table
-// reference so the test can simulate "patient found vs. not found"
-// without re-implementing SQL.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
 import {
-  conversations,
-  episodes,
-  messages,
-  patients,
-} from "@workspace/resupply-db";
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
 
-// ---------------------------------------------------------------------------
-// Drizzle stub. The route uses select/insert/update fluent chains.
-// We dispatch on the first table the chain references so each test
-// can tailor its responses (patient match, conversation match, etc).
-// ---------------------------------------------------------------------------
-type Row = Record<string, unknown>;
-const selectScripts: Array<{ table: unknown; rows: Row[] }> = [];
-const insertCalls: Array<{ table: unknown; values: Row }> = [];
-const updateCalls: Array<{ table: unknown; set: Row }> = [];
-const insertReturning: Map<unknown, Row> = new Map();
-
-function makeSelect(table: unknown) {
-  // Chain: .from(t).where(...).orderBy(...).limit(n) → Promise<Row[]>
-  // Find the next scripted response targeting this table.
-  const idx = selectScripts.findIndex((s) => s.table === table);
-  const rows = idx >= 0 ? selectScripts.splice(idx, 1)[0]!.rows : [];
-  const chain: Record<string, (...a: unknown[]) => unknown> = {};
-  const thenable: PromiseLike<Row[]> = {
-    then: (resolve, reject) =>
-      Promise.resolve(rows).then(resolve as never, reject as never),
-  };
-  chain.from = () => chain;
-  chain.where = () => chain;
-  chain.orderBy = () => chain;
-  chain.limit = () => thenable;
-  return chain;
-}
-
-function makeInsert(table: unknown) {
-  return {
-    values: (vals: Row) => {
-      insertCalls.push({ table, values: vals });
-      const returnedRow = insertReturning.get(table) ?? { id: "test-id" };
-      const result: PromiseLike<Row[]> = {
-        then: (resolve, reject) =>
-          Promise.resolve([returnedRow]).then(
-            resolve as never,
-            reject as never,
-          ),
-      };
-      return {
-        returning: () => result,
-        // Also support bare-await (no .returning()), used by the
-        // attachment insert.
-        then: (resolve: (v: unknown) => unknown, reject?: unknown) =>
-          Promise.resolve(undefined).then(resolve as never, reject as never),
-      };
-    },
-  };
-}
-
-function makeUpdate(table: unknown) {
-  return {
-    set: (vals: Row) => {
-      updateCalls.push({ table, set: vals });
-      return {
-        where: () => Promise.resolve(undefined),
-      };
-    },
-  };
-}
-
-const dbStub = {
-  select: () => ({
-    from: (table: unknown) => makeSelect(table),
-  }),
-  insert: (table: unknown) => makeInsert(table),
-  update: (table: unknown) => makeUpdate(table),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-    tryUpsertPatientLatestMessageSb: vi.fn(async () => true),
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 // Mock the email config gate to "configured".
 vi.mock("../../lib/messaging/messaging-config", () => ({
@@ -172,10 +83,7 @@ function buildApp(): Express {
 }
 
 beforeEach(() => {
-  selectScripts.length = 0;
-  insertCalls.length = 0;
-  updateCalls.length = 0;
-  insertReturning.clear();
+  supabaseMock.reset();
   safeAuditMock.mockClear();
   persistMock.mockClear();
   process.env.SENDGRID_INBOUND_PARSE_BASIC_AUTH = BASIC_AUTH_VALUE;
@@ -247,7 +155,7 @@ describe("POST /email/inbound-parse", () => {
       .field("text", "hi");
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ error: "inbound_parse_not_configured" });
-    expect(insertCalls).toHaveLength(0);
+    expect(getSupabaseCallCount("messages", "insert")).toBe(0);
   });
 
   it("returns 401 when basic auth is wrong", async () => {
@@ -257,12 +165,14 @@ describe("POST /email/inbound-parse", () => {
       .field("from", "patient@example.com")
       .field("text", "hi");
     expect(res.status).toBe(401);
-    expect(insertCalls).toHaveLength(0);
+    expect(getSupabaseCallCount("messages", "insert")).toBe(0);
   });
 
   it("audits unknown_email and returns 200 when no patient matches", async () => {
-    // Patient lookup → empty.
-    selectScripts.push({ table: patients, rows: [] });
+    // Patient lookup returns []. The route reads `lookupRows ?? []`
+    // and computes `lookupRows[0]?.id` so an empty array is the
+    // "unknown sender" branch.
+    stageSupabaseResponse("patients", "select", { data: [] });
 
     const res = await request(buildApp())
       .post("/email/inbound-parse")
@@ -270,27 +180,31 @@ describe("POST /email/inbound-parse", () => {
       .field("from", "Unknown <stranger@example.com>")
       .field("text", "hi");
     expect(res.status).toBe(200);
-    expect(insertCalls).toHaveLength(0);
+    expect(getSupabaseCallCount("messages", "insert")).toBe(0);
     expect(safeAuditMock).toHaveBeenCalledTimes(1);
-    const auditMeta = (safeAuditMock.mock.calls[0]![0] as { metadata: Row })
-      .metadata;
+    const auditMeta = (safeAuditMock.mock.calls[0]![0] as {
+      metadata: Record<string, unknown>;
+    }).metadata;
     expect(auditMeta.channel).toBe("email");
     expect(auditMeta.outcome).toBe("unknown_email");
   });
 
   it("ingests a PNG attachment on the happy path", async () => {
     // Scripted query responses, in order:
-    //   1) patient lookup → one match
-    //   2) open conversation lookup → one match
-    selectScripts.push({
-      table: patients,
-      rows: [{ patientId: "patient-1" }],
+    //   1) patient lookup — one match
+    //   2) open conversation lookup — one match
+    //   3) message insert — returns the new id
+    //   4) conversation last_message_at update — touches conversations
+    //   5) status flip → awaiting_admin — touches conversations
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient-1" }],
     });
-    selectScripts.push({
-      table: conversations,
-      rows: [{ id: "conv-1" }],
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: "conv-1" },
     });
-    insertReturning.set(messages, { id: "msg-1" });
+    stageSupabaseResponse("messages", "insert", { data: { id: "msg-1" } });
+    stageSupabaseResponse("conversations", "update", { error: null });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -308,20 +222,25 @@ describe("POST /email/inbound-parse", () => {
 
     expect(res.status).toBe(200);
 
-    // Message row inserted into messages table with email-shaped fields.
-    const msgInsert = insertCalls.find((c) => c.table === messages);
-    expect(msgInsert).toBeDefined();
-    expect(msgInsert!.values.direction).toBe("inbound");
-    expect(msgInsert!.values.senderRole).toBe("patient");
-    expect(msgInsert!.values.body).toBe("Here is my insurance card");
-    const meta = msgInsert!.values.vendorMetadata as Row;
+    // Message row inserted with email-shaped fields. The route uses
+    // snake_case columns; the mock captures the payload verbatim.
+    const msgInserts = getSupabaseWritePayloads("messages", "insert");
+    expect(msgInserts).toHaveLength(1);
+    const msgVals = msgInserts[0] as Record<string, unknown>;
+    expect(msgVals.direction).toBe("inbound");
+    expect(msgVals.sender_role).toBe("patient");
+    expect(msgVals.body).toBe("Here is my insurance card");
+    const meta = msgVals.vendor_metadata as Record<string, unknown>;
     expect(meta.sendgrid_inbound).toBe(true);
     expect(meta.subject).toBe("Re: Your refill");
     expect(meta.sendgrid_message_id).toBe("unique-id-1@mail.example");
 
     // persistInboundAttachment was called with the attachment bytes.
     expect(persistMock).toHaveBeenCalledTimes(1);
-    const persistArg = persistMock.mock.calls[0]![0] as Row;
+    const persistArg = persistMock.mock.calls[0]![0] as Record<
+      string,
+      unknown
+    >;
     expect(persistArg.messageId).toBe("msg-1");
     expect(persistArg.contentType).toBe("image/png");
     expect(persistArg.filename).toBe("card.png");
@@ -330,10 +249,13 @@ describe("POST /email/inbound-parse", () => {
     expect((persistArg.bytes as Uint8Array).byteLength).toBe(png.byteLength);
 
     // Conversation flipped to awaiting_admin.
-    const statusUpdate = updateCalls.find(
-      (u) => u.table === conversations && u.set.status === "awaiting_admin",
-    );
-    expect(statusUpdate).toBeDefined();
+    const updates = getSupabaseWritePayloads(
+      "conversations",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(
+      updates.some((u) => u.status === "awaiting_admin"),
+    ).toBe(true);
 
     // Inbound + media-ingested audits both fired.
     const actions = safeAuditMock.mock.calls.map(
@@ -344,16 +266,22 @@ describe("POST /email/inbound-parse", () => {
   });
 
   it("opens a fresh conversation when the patient has no open email thread", async () => {
-    selectScripts.push({
-      table: patients,
-      rows: [{ patientId: "patient-2" }],
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient-2" }],
     });
     // No open conversation.
-    selectScripts.push({ table: conversations, rows: [] });
+    stageSupabaseResponse("conversations", "select", { data: null });
     // Most recent episode → present.
-    selectScripts.push({ table: episodes, rows: [{ id: "ep-99" }] });
-    insertReturning.set(conversations, { id: "conv-new" });
-    insertReturning.set(messages, { id: "msg-2" });
+    stageSupabaseResponse("episodes", "select", { data: { id: "ep-99" } });
+    // INSERT new conversation row.
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: "conv-new" },
+    });
+    // INSERT inbound message.
+    stageSupabaseResponse("messages", "insert", { data: { id: "msg-2" } });
+    // Two trailing UPDATEs on conversations (last_message_at + status).
+    stageSupabaseResponse("conversations", "update", { error: null });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(buildApp())
       .post("/email/inbound-parse")
@@ -361,11 +289,12 @@ describe("POST /email/inbound-parse", () => {
       .field("from", "patient2@example.com")
       .field("text", "Hello");
     expect(res.status).toBe(200);
-    const convInsert = insertCalls.find((c) => c.table === conversations);
-    expect(convInsert).toBeDefined();
-    expect(convInsert!.values.patientId).toBe("patient-2");
-    expect(convInsert!.values.episodeId).toBe("ep-99");
-    expect(convInsert!.values.channel).toBe("email");
-    expect(convInsert!.values.status).toBe("open");
+    const convInserts = getSupabaseWritePayloads("conversations", "insert");
+    expect(convInserts).toHaveLength(1);
+    const convVals = convInserts[0] as Record<string, unknown>;
+    expect(convVals.patient_id).toBe("patient-2");
+    expect(convVals.episode_id).toBe("ep-99");
+    expect(convVals.channel).toBe("email");
+    expect(convVals.status).toBe("open");
   });
 });
