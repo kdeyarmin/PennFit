@@ -58,13 +58,14 @@ router.patch("/prescriptions/:rxId", requireAdmin, async (req, res) => {
 
   const supabase = getSupabaseServiceRoleClient();
 
-  const { data: rx } = await supabase
+  const { data: rx, error: rxError } = await supabase
     .schema("resupply")
     .from("prescriptions")
     .select("id, patient_id, item_sku, status")
     .eq("id", rxId)
     .limit(1)
     .maybeSingle();
+  if (rxError) throw rxError;
   if (!rx) {
     res.status(404).json({ error: "not_found" });
     return;
