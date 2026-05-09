@@ -143,6 +143,29 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Wait for the postgres service container to actually accept
+      # TCP connections. The `services.postgres.options` healthcheck
+      # above gates the *job* on `pg_isready` returning 0, but in
+      # practice we have seen the very first connection from the
+      # `lib/resupply-db/scripts/migrate.test.ts` integration test
+      # fail with `ECONNREFUSED 127.0.0.1:5432` — most plausibly a
+      # narrow window between the healthcheck succeeding and the
+      # container's published port becoming reachable from the job's
+      # network namespace. A 30 s busy-wait closes that race without
+      # making the job appreciably slower (the loop exits as soon as
+      # postgres responds — typically on the very first iteration).
+      - name: Wait for postgres
+        run: |
+          for i in {1..30}; do
+            if nc -z localhost 5432; then
+              echo "postgres up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "postgres did not become reachable on 127.0.0.1:5432 within 30s" >&2
+          exit 1
+
       - run: pnpm -r --if-present run test
 
   a11y:
