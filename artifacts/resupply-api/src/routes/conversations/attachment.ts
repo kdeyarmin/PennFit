@@ -64,24 +64,44 @@ router.get(
     // then fetch the message and assert conversation_id matches.
     // A mismatch in any dimension → 404, indistinguishable from
     // "doesn't exist" so we don't leak structure to enumeration.
-    const { data: attachment } = await supabase
+    const { data: attachment, error: attachmentError } = await supabase
       .schema("resupply")
       .from("message_attachments")
       .select("object_key, filename, content_type, message_id")
       .eq("id", ids.data.attachmentId)
       .limit(1)
       .maybeSingle();
+    if (attachmentError) {
+      req.log.error(
+        { err: attachmentError, attachment_id: ids.data.attachmentId },
+        "message_attachment_query_failed",
+      );
+      res.status(500).json({ error: "download_failed" });
+      return;
+    }
     if (!attachment || attachment.message_id !== ids.data.messageId) {
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const { data: message } = await supabase
+    const { data: message, error: messageError } = await supabase
       .schema("resupply")
       .from("messages")
       .select("conversation_id")
       .eq("id", ids.data.messageId)
       .limit(1)
       .maybeSingle();
+    if (messageError) {
+      req.log.error(
+        {
+          err: messageError,
+          conversation_id: ids.data.id,
+          message_id: ids.data.messageId,
+        },
+        "message_query_failed",
+      );
+      res.status(500).json({ error: "download_failed" });
+      return;
+    }
     if (!message || message.conversation_id !== ids.data.id) {
       res.status(404).json({ error: "not_found" });
       return;
