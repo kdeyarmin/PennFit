@@ -5,50 +5,48 @@
 // Database read/write paths are covered by the readiness integration
 // suite that runs against a live Postgres in CI.
 //
-// We mock the Drizzle handle with a minimal chainable thenable so that
-// `db.select(...).from(...).where(...).limit(1)` resolves to a stubbed
-// row and `db.update(...).set(...).where(...)` resolves to undefined.
-// That's enough to exercise verify_patient_identity, the lockout
-// guard, and the post-lockout allowlist (request_human_handoff /
-// end_call).
+// We hand the dispatcher a stub Supabase client whose `.maybeSingle()`
+// resolves to a stubbed row and whose `.update(...)` resolves to a
+// no-error envelope. That's enough to exercise verify_patient_identity,
+// the lockout guard, and the post-lockout allowlist
+// (request_human_handoff / end_call).
 
 import { describe, it, expect } from "vitest";
-import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import { createVoiceToolDispatcher } from "./tools-impl";
 
 interface StubRow {
-  dob: string | null;
-  firstName: string | null;
+  date_of_birth: string | null;
+  legal_first_name: string | null;
 }
 
-function buildStubSupabase(row: StubRow | null): NodePgDatabase {
-  // The chain we need to satisfy:
-  //   db.select(...).from(...).where(...).limit(1)  → Promise<rows>
-  //   db.update(...).set(...).where(...)            → Promise<void>
-  const selectChain = {
-    from() {
-      return this;
-    },
-    where() {
-      return this;
-    },
-    limit() {
-      return Promise.resolve(row ? [row] : []);
-    },
-  };
-  const updateChain = {
-    set() {
-      return this;
-    },
-    where() {
-      return Promise.resolve(undefined);
-    },
+// Minimal supabase-js shape: `.schema(...).from(...).select(...)
+// .eq(...).limit(1).maybeSingle()` for reads, plus the
+// `.update(...).eq(...)` shape for writes.
+function buildStubSupabase(row: StubRow | null) {
+  const builder: Record<string, unknown> = {
+    select: () => builder,
+    update: () => builder,
+    eq: () => builder,
+    limit: () => builder,
+    maybeSingle: () =>
+      Promise.resolve({ data: row, error: null }),
+    single: () =>
+      Promise.resolve({ data: row, error: null }),
+    then: (
+      onfulfilled: (v: unknown) => unknown,
+      onrejected?: (e: unknown) => unknown,
+    ) =>
+      Promise.resolve({ data: null, error: null }).then(
+        onfulfilled,
+        onrejected,
+      ),
   };
   return {
-    select: () => selectChain,
-    update: () => updateChain,
-  } as unknown as NodePgDatabase;
+    schema: () => ({
+      from: () => builder,
+    }),
+  } as unknown as never;
 }
 
 const baseDeps = {
@@ -61,7 +59,10 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("counts down attempts_remaining on each failed verify", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
+      supabase: buildStubSupabase({
+        date_of_birth: "1980-01-01",
+        legal_first_name: "Alex",
+      }),
     });
 
     const r1 = await dispatcher.dispatch({
@@ -88,35 +89,40 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
 
   it("hard-locks after 3 failed attempts: a 4th verify is refused without hitting the DB", async () => {
     let dbCalls = 0;
-    const stubRow: StubRow = { dob: "1980-01-01", firstName: "Alex" };
+    const stubRow: StubRow = {
+      date_of_birth: "1980-01-01",
+      legal_first_name: "Alex",
+    };
     const recordingDb = {
-      select: () => {
-        dbCalls += 1;
-        return {
-          from() {
-            return this;
-          },
-          where() {
-            return this;
-          },
-          limit() {
-            return Promise.resolve([stubRow]);
-          },
-        };
-      },
-      update: () => ({
-        set() {
-          return this;
-        },
-        where() {
-          return Promise.resolve(undefined);
+      schema: () => ({
+        from: () => {
+          const builder: Record<string, unknown> = {
+            select: () => {
+              dbCalls += 1;
+              return builder;
+            },
+            update: () => builder,
+            eq: () => builder,
+            limit: () => builder,
+            maybeSingle: () =>
+              Promise.resolve({ data: stubRow, error: null }),
+            then: (
+              onfulfilled: (v: unknown) => unknown,
+              onrejected?: (e: unknown) => unknown,
+            ) =>
+              Promise.resolve({ data: null, error: null }).then(
+                onfulfilled,
+                onrejected,
+              ),
+          };
+          return builder;
         },
       }),
-    } as unknown as NodePgDatabase;
+    } as unknown as never;
 
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase: recordingDb as unknown as never,
+      supabase: recordingDb,
     });
 
     for (let i = 0; i < 3; i += 1) {
@@ -130,9 +136,7 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
 
     // 4th attempt — must be refused by the lockout gate, must NOT
     // hit the db, must NOT mutate the verified flag, and must report
-    // attempts_remaining=0 with matched=false. The
-    // identityRequiredResultFor stub for verify_patient_identity
-    // surfaces 0 to give the model a stable exhausted-state signal.
+    // attempts_remaining=0 with matched=false.
     const r4 = await dispatcher.dispatch({
       callId: "c4",
       name: "verify_patient_identity",
@@ -158,7 +162,10 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("blocks all side-effect tools after lockout (forces handoff/end_call only)", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
+      supabase: buildStubSupabase({
+        date_of_birth: "1980-01-01",
+        legal_first_name: "Alex",
+      }),
     });
 
     // Burn the cap.
@@ -213,7 +220,10 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("permits request_human_handoff and end_call after lockout", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
+      supabase: buildStubSupabase({
+        date_of_birth: "1980-01-01",
+        legal_first_name: "Alex",
+      }),
     });
 
     for (let i = 0; i < 3; i += 1) {
@@ -243,7 +253,10 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("verifies identity on a matching DOB before lockout and unlocks side-effects", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
+      supabase: buildStubSupabase({
+        date_of_birth: "1980-01-01",
+        legal_first_name: "Alex",
+      }),
     });
 
     // First attempt fails.
