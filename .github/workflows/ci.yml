@@ -155,18 +155,26 @@ jobs:
       # making the job appreciably slower (the loop exits as soon as
       # postgres responds — typically on the very first iteration).
       - name: Wait for postgres
+        shell: bash
         run: |
+          set -x
+          ss -tlnp 2>&1 | head -20 || true
           for i in {1..30}; do
-            if nc -z localhost 5432; then
+            if (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; then
               echo "postgres up after ${i}s"
               exit 0
             fi
             sleep 1
           done
           echo "postgres did not become reachable on 127.0.0.1:5432 within 30s" >&2
+          ss -tlnp 2>&1 | head -20 || true
           exit 1
 
-      - run: pnpm -r --if-present run test
+      # Run the test suite. Show vitest output verbosely so a single
+      # failing test name is searchable in the CI logs without having
+      # to re-trigger with extra flags.
+      - name: Run tests
+        run: pnpm -r --if-present run test
 
   a11y:
     name: A11y (Playwright + axe)
