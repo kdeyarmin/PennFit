@@ -12,14 +12,7 @@
 // can mock just this helper (alongside the SendGrid one) without
 // pulling in a real DB pool.
 
-import { drizzle } from "drizzle-orm/node-postgres";
-import { eq } from "drizzle-orm";
-
-import {
-  getDbPool,
-  insuranceLeads,
-  type NewInsuranceLead,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
@@ -54,28 +47,30 @@ export async function recordInsuranceLead(
   input: RecordInsuranceLeadInput,
 ): Promise<RecordInsuranceLeadResult> {
   try {
-    const db = drizzle(getDbPool());
-    const row: NewInsuranceLead = {
-      fullName: input.fullName,
-      email: input.email,
-      phone: input.phone,
-      dateOfBirth: input.dateOfBirth,
-      insuranceCarrier: input.insuranceCarrier,
-      memberId: input.memberId,
-      groupNumber: input.groupNumber,
-      prescribingPhysician: input.prescribingPhysician,
-      notes: input.notes,
-      submitterIp: input.submitterIp,
-      userAgent: input.userAgent,
-      // status, notification/confirmation flags, timestamps all
-      // default at the DB layer.
-    };
-    const inserted = await db
-      .insert(insuranceLeads)
-      .values(row)
-      .returning({ id: insuranceLeads.id });
-    const id = inserted[0]?.id ?? null;
-    return { id };
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: inserted, error } = await supabase
+      .schema("resupply")
+      .from("insurance_leads")
+      .insert({
+        full_name: input.fullName,
+        email: input.email,
+        phone: input.phone,
+        date_of_birth: input.dateOfBirth,
+        insurance_carrier: input.insuranceCarrier,
+        member_id: input.memberId,
+        group_number: input.groupNumber,
+        prescribing_physician: input.prescribingPhysician,
+        notes: input.notes,
+        submitter_ip: input.submitterIp,
+        user_agent: input.userAgent,
+        // status, notification/confirmation flags, timestamps all
+        // default at the DB layer.
+      })
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return { id: inserted?.id ?? null };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.warn(
@@ -102,14 +97,16 @@ export async function stampInsuranceLeadDelivery(
 ): Promise<void> {
   if (!id) return;
   try {
-    const db = drizzle(getDbPool());
-    await db
-      .update(insuranceLeads)
-      .set({
-        notificationEmailDelivered: flags.notificationDelivered,
-        confirmationEmailDelivered: flags.confirmationDelivered,
+    const supabase = getSupabaseServiceRoleClient();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("insurance_leads")
+      .update({
+        notification_email_delivered: flags.notificationDelivered,
+        confirmation_email_delivered: flags.confirmationDelivered,
       })
-      .where(eq(insuranceLeads.id, id));
+      .eq("id", id);
+    if (error) throw error;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.warn(

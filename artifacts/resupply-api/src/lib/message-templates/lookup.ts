@@ -1,9 +1,9 @@
 // Render-path lookup function for the customer-message template
 // library. This is the API-side bridge between
 // `@workspace/resupply-templates`'s `renderMessage(req, fallback,
-// lookup)` and the actual Drizzle queries.
+// lookup)` and the actual Supabase queries.
 //
-// Two tables, queried in order:
+// Two tables, queried in parallel:
 //
 //   1. shop_customer_message_template_overrides (Phase 3) — the
 //      sparse per-customer override table. Override fields are
@@ -24,15 +24,9 @@
 // makes the migrations forward-deploy-safe even before they're
 // journaled.
 
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-
 import {
-  getDbPool,
-  messageTemplates,
-  shopCustomerMessageTemplateOverrides,
-  type MessageTemplateRow,
-  type ShopCustomerMessageTemplateOverrideRow,
+  getSupabaseServiceRoleClient,
+  type Database,
 } from "@workspace/resupply-db";
 import {
   type Channel,
@@ -41,6 +35,11 @@ import {
 } from "@workspace/resupply-templates";
 
 import { logger } from "../logger";
+
+type MessageTemplateRow =
+  Database["resupply"]["Tables"]["message_templates"]["Row"];
+type OverrideRow =
+  Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"];
 
 /** Validate channel values that come back from raw SQL. */
 function asChannel(s: string): Channel | null {
@@ -56,7 +55,7 @@ function asChannel(s: string): Channel | null {
  */
 function applyOverride(
   global: MessageTemplateRow | null,
-  override: ShopCustomerMessageTemplateOverrideRow | null,
+  override: OverrideRow | null,
 ): MessageTemplate | null {
   if (!override && !global) return null;
 
@@ -67,14 +66,14 @@ function applyOverride(
   // empty-body template. Allowed-variables list comes from the
   // global if there is one (so the editor + render path keep their
   // contract); empty array if there's no global yet.
-  if (override && !override.isActive) {
+  if (override && !override.is_active) {
     return {
-      templateKey: override.templateKey,
+      templateKey: override.template_key,
       channel,
       subject: null,
       bodyHtml: null,
       bodyText: "",
-      allowedVariables: global?.allowedVariables ?? [],
+      allowedVariables: global?.allowed_variables ?? [],
     };
   }
 
@@ -83,37 +82,37 @@ function applyOverride(
   // but the schema doesn't enforce it, so we behave correctly.)
   if (!global) {
     return {
-      templateKey: override!.templateKey,
+      templateKey: override!.template_key,
       channel,
       subject: override!.subject,
-      bodyHtml: override!.bodyHtml,
-      bodyText: override!.bodyText ?? "",
+      bodyHtml: override!.body_html,
+      bodyText: override!.body_text ?? "",
       allowedVariables: [],
     };
   }
 
   // Global is disabled → treat as missing (fallback path will run).
-  if (!global.isActive) return null;
+  if (!global.is_active) return null;
 
   if (!override) {
     return {
-      templateKey: global.templateKey,
+      templateKey: global.template_key,
       channel,
       subject: global.subject,
-      bodyHtml: global.bodyHtml,
-      bodyText: global.bodyText,
-      allowedVariables: global.allowedVariables ?? [],
+      bodyHtml: global.body_html,
+      bodyText: global.body_text,
+      allowedVariables: global.allowed_variables ?? [],
     };
   }
 
   // Both exist + override active: layer per-field.
   return {
-    templateKey: global.templateKey,
+    templateKey: global.template_key,
     channel,
     subject: override.subject ?? global.subject,
-    bodyHtml: override.bodyHtml ?? global.bodyHtml,
-    bodyText: override.bodyText ?? global.bodyText,
-    allowedVariables: global.allowedVariables ?? [],
+    bodyHtml: override.body_html ?? global.body_html,
+    bodyText: override.body_text ?? global.body_text,
+    allowedVariables: global.allowed_variables ?? [],
   };
 }
 
@@ -130,47 +129,40 @@ export const messageTemplateLookup: TemplateLookup = async (
   customerId,
 ) => {
   try {
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
     // Two queries (override + global) issued in parallel. Both are
-    // small unique-index hits; joining them server-side would
-    // marginally win on round-trips but lose on readability.
-    const [overrideRows, globalRows] = await Promise.all([
+    // small unique-index hits; PostgREST has no JOIN, so we resolve
+    // each side separately and merge JS-side via applyOverride.
+    const [overrideRes, globalRes] = await Promise.all([
       customerId
-        ? db
-            .select()
-            .from(shopCustomerMessageTemplateOverrides)
-            .where(
-              and(
-                eq(
-                  shopCustomerMessageTemplateOverrides.customerId,
-                  customerId,
-                ),
-                eq(
-                  shopCustomerMessageTemplateOverrides.templateKey,
-                  templateKey,
-                ),
-                eq(
-                  shopCustomerMessageTemplateOverrides.channel,
-                  channel,
-                ),
-              ),
+        ? supabase
+            .schema("resupply")
+            .from("shop_customer_message_template_overrides")
+            .select(
+              "id, customer_id, template_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at",
             )
+            .eq("customer_id", customerId)
+            .eq("template_key", templateKey)
+            .eq("channel", channel)
             .limit(1)
-        : Promise.resolve([] as ShopCustomerMessageTemplateOverrideRow[]),
-      db
-        .select()
-        .from(messageTemplates)
-        .where(
-          and(
-            eq(messageTemplates.templateKey, templateKey),
-            eq(messageTemplates.channel, channel),
-          ),
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null as null }),
+      supabase
+        .schema("resupply")
+        .from("message_templates")
+        .select(
+          "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
         )
-        .limit(1),
+        .eq("template_key", templateKey)
+        .eq("channel", channel)
+        .limit(1)
+        .maybeSingle(),
     ]);
+    if (overrideRes.error) throw overrideRes.error;
+    if (globalRes.error) throw globalRes.error;
 
-    return applyOverride(globalRows[0] ?? null, overrideRows[0] ?? null);
+    return applyOverride(globalRes.data ?? null, overrideRes.data ?? null);
   } catch (err) {
     // DB outage, missing tables (migrations not applied yet),
     // network blip. Log once at debug so we know it's happening

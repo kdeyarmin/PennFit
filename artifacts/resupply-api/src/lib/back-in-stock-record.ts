@@ -9,15 +9,7 @@
 // regardless of delivery outcome (we don't want a transient SendGrid
 // blip to re-fire on the next admin save).
 
-import { drizzle } from "drizzle-orm/node-postgres";
-import { and, eq, isNull, sql } from "drizzle-orm";
-
-import {
-  getDbPool,
-  resupplySchema,
-  shopBackInStockNotifications,
-  type NewShopBackInStockNotification,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 import {
@@ -42,30 +34,34 @@ export async function recordBackInStockSignup(
   input: RecordBackInStockSignupInput,
 ): Promise<RecordBackInStockSignupResult> {
   try {
-    const db = drizzle(getDbPool());
-    const row: NewShopBackInStockNotification = {
-      productId: input.productId,
-      email: input.email,
-      submitterIp: input.submitterIp,
-      userAgent: input.userAgent,
-    };
-    // ON CONFLICT DO NOTHING against the partial unique index — if a
-    // row already exists for (product_id, email) where notified_at
-    // IS NULL we treat it as success (caller-visible "we have you on
-    // the list" messaging is identical for both branches).
-    const inserted = await db
-      .insert(shopBackInStockNotifications)
-      .values(row)
-      .onConflictDoNothing({
-        target: [
-          shopBackInStockNotifications.productId,
-          shopBackInStockNotifications.email,
-        ],
-        where: sql`${shopBackInStockNotifications.notifiedAt} IS NULL`,
+    const supabase = getSupabaseServiceRoleClient();
+    // The original Drizzle path used ON CONFLICT (product_id, email)
+    // WHERE notified_at IS NULL DO NOTHING against a partial unique
+    // index. PostgREST has no `DO NOTHING WHERE`, so we INSERT and
+    // catch the 23505 unique-violation as the "duplicate" branch.
+    const { data: inserted, error } = await supabase
+      .schema("resupply")
+      .from("shop_back_in_stock_notifications")
+      .insert({
+        product_id: input.productId,
+        email: input.email,
+        submitter_ip: input.submitterIp,
+        user_agent: input.userAgent,
       })
-      .returning({ id: shopBackInStockNotifications.id });
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        // Partial unique on (product_id, email) WHERE notified_at IS
+        // NULL fired — caller-visible "we have you on the list"
+        // messaging is identical to the inserted branch.
+        return { status: "duplicate" };
+      }
+      throw error;
+    }
     return {
-      status: inserted.length > 0 ? "inserted" : "duplicate",
+      status: inserted ? "inserted" : "duplicate",
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -100,6 +96,16 @@ export interface DispatchBackInStockResult {
  * notified_at on each. Best-effort — never throws. Caller is expected
  * to run this fire-and-forget (`void dispatchBackInStockForProduct(...)`)
  * so an admin save returns immediately.
+ *
+ * Concurrency posture: the original Drizzle path used a single SQL
+ * `WITH … FOR UPDATE SKIP LOCKED` claim so two concurrent dispatches
+ * (two admins saving stock at the same time) each took a disjoint
+ * slice of the queue and never double-emailed. PostgREST has no
+ * SKIP LOCKED, so we approximate with SELECT-then-UPDATE-with-null-
+ * guard. Postgres serialises the UPDATEs; the loser sees zero rows
+ * match and simply does no work — correctness preserved, parallel
+ * throughput lost. Same posture as the abandoned-cart and review-
+ * request dispatchers in artifacts/resupply-api/src/routes/admin/.
  */
 export async function dispatchBackInStockForProduct(
   input: DispatchBackInStockInput,
@@ -111,32 +117,46 @@ export async function dispatchBackInStockForProduct(
     failed: 0,
   };
   try {
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const max = Math.max(1, Math.min(input.maxFanout ?? 200, 500));
-    // Atomic claim: stamp notified_at on up to `max` pending rows for
-    // this product in a single UPDATE … RETURNING, using
-    // FOR UPDATE SKIP LOCKED on the inner SELECT so two concurrent
-    // dispatches (e.g. two admins saving stock at the same time)
-    // each take a disjoint slice of the queue and never double-email.
-    // The tradeoff: if the process crashes after claim but before
-    // SendGrid succeeds, the row stays stamped with delivered=false
-    // and ops sees it via delivery_error / delivered=false rather
-    // than a duplicate retry. We deliberately prefer "missed once"
-    // over "re-emailed every restock" — the patient can re-sign up
-    // on their next visit; the inverse failure mode is spam.
-    const claimed = (await db.execute(sql`
-      UPDATE ${resupplySchema}.shop_back_in_stock_notifications
-      SET notified_at = now(), delivered = false, delivery_error = NULL
-      WHERE id IN (
-        SELECT id FROM ${resupplySchema}.shop_back_in_stock_notifications
-        WHERE product_id = ${input.productId} AND notified_at IS NULL
-        ORDER BY created_at
-        LIMIT ${max}
-        FOR UPDATE SKIP LOCKED
-      )
-      RETURNING id, email
-    `)) as unknown as { rows: Array<{ id: string; email: string }> };
-    const claimedRows = Array.isArray(claimed.rows) ? claimed.rows : [];
+
+    // Step 1 — pick the eligible candidate ids, oldest-first so a
+    // backlog drains fairly.
+    const { data: candidates, error: candidatesErr } = await supabase
+      .schema("resupply")
+      .from("shop_back_in_stock_notifications")
+      .select("id, email")
+      .eq("product_id", input.productId)
+      .is("notified_at", null)
+      .order("created_at", { ascending: true })
+      .limit(max);
+    if (candidatesErr) throw candidatesErr;
+    const candidateIds = (candidates ?? []).map((c) => c.id);
+    if (candidateIds.length === 0) return result;
+
+    // Step 2 — atomic stamp. The .is("notified_at", null) guard
+    // makes this idempotent under parallel calls. The tradeoff: if
+    // the process crashes after claim but before SendGrid succeeds,
+    // the row stays stamped with delivered=false and ops sees it via
+    // delivery_error / delivered=false rather than a duplicate retry.
+    // We deliberately prefer "missed once" over "re-emailed every
+    // restock" — the patient can re-sign up on their next visit; the
+    // inverse failure mode is spam.
+    const nowIso = new Date().toISOString();
+    const { data: claimed, error: claimErr } = await supabase
+      .schema("resupply")
+      .from("shop_back_in_stock_notifications")
+      .update({
+        notified_at: nowIso,
+        delivered: false,
+        delivery_error: null,
+      })
+      .in("id", candidateIds)
+      .is("notified_at", null)
+      .select("id, email");
+    if (claimErr) throw claimErr;
+
+    const claimedRows = claimed ?? [];
     result.pending = claimedRows.length;
     if (claimedRows.length === 0) return result;
 
@@ -151,18 +171,18 @@ export async function dispatchBackInStockForProduct(
         priceLabel: input.priceLabel ?? null,
       };
       const send = await sendBackInStockEmail(payload);
-      try {
-        await db
-          .update(shopBackInStockNotifications)
-          .set({
-            delivered: send.delivered,
-            deliveryError: send.error ?? null,
-          })
-          .where(eq(shopBackInStockNotifications.id, row.id));
-      } catch (err) {
+      const { error: stampErr } = await supabase
+        .schema("resupply")
+        .from("shop_back_in_stock_notifications")
+        .update({
+          delivered: send.delivered,
+          delivery_error: send.error ?? null,
+        })
+        .eq("id", row.id);
+      if (stampErr) {
         logger.warn(
           {
-            err: err instanceof Error ? err.message : String(err),
+            err: stampErr,
             id: row.id,
           },
           "back-in-stock-record: delivery flag stamp failed",
@@ -200,17 +220,15 @@ export async function countPendingBackInStock(
   productId: string,
 ): Promise<number> {
   try {
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(shopBackInStockNotifications)
-      .where(
-        and(
-          eq(shopBackInStockNotifications.productId, productId),
-          isNull(shopBackInStockNotifications.notifiedAt),
-        ),
-      );
-    return rows[0]?.count ?? 0;
+    const supabase = getSupabaseServiceRoleClient();
+    const { count, error } = await supabase
+      .schema("resupply")
+      .from("shop_back_in_stock_notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("product_id", productId)
+      .is("notified_at", null);
+    if (error) throw error;
+    return count ?? 0;
   } catch (err) {
     logger.warn(
       {
