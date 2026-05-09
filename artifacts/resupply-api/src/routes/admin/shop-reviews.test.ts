@@ -1,6 +1,5 @@
 // Route tests for the admin moderation endpoints in
-// routes/admin/shop-reviews.ts. Mirrors the fluent-stub pattern used
-// by abandoned-carts.test.ts. Coverage:
+// routes/admin/shop-reviews.ts. Coverage:
 //   * non-admin → 403 (admin gate is real)
 //   * approve sets status='approved' and stamps moderation metadata
 //   * reject sets status='rejected' with the optional note
@@ -14,6 +13,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -21,38 +27,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-const updateQueue: unknown[] = [];
-let lastUpdateSet: Record<string, unknown> | null = null;
-
-const dbStub = {
-  select: vi.fn(() => ({
-    from: () => ({
-      where: () => ({ orderBy: () => ({ limit: () => Promise.resolve([]) }) }),
-    }),
-  })),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: (v: Record<string, unknown>) => {
-        lastUpdateSet = v;
-        return obj;
-      },
-      where: () => obj,
-      returning: () => Promise.resolve(updateQueue.shift() ?? []),
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import shopReviewsAdminRouter from "./shop-reviews";
 
@@ -83,10 +57,8 @@ beforeEach(() => {
 
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-  updateQueue.length = 0;
-  lastUpdateSet = null;
   mockAdmin.current = null;
-  dbStub.update.mockClear();
+  supabaseMock.reset();
 });
 
 afterEach(() => {
@@ -106,25 +78,30 @@ describe("POST /admin/shop/reviews/:id/approve", () => {
 
   it("flips status to approved and stamps moderation metadata", async () => {
     stubVerifiedAdmin();
-    const moderatedAt = new Date("2026-04-29T13:00:00Z");
-    updateQueue.push([
-      {
+    const moderatedAtIso = "2026-04-29T13:00:00.000Z";
+    stageSupabaseResponse("shop_reviews", "update", {
+      data: {
         id: "rev_1",
         status: "approved",
-        moderatedAt,
-        productId: "prod_AirFitP10",
-        authorEmail: "alice@example.com",
+        moderated_at: moderatedAtIso,
+        product_id: "prod_AirFitP10",
+        author_email: "alice@example.com",
       },
-    ]);
+    });
     const res = await request(makeApp()).post(
       "/resupply-api/admin/shop/reviews/rev_1/approve",
     );
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("approved");
-    expect(lastUpdateSet?.status).toBe("approved");
-    expect(lastUpdateSet?.moderatedBy).toBe("user_admin");
-    expect(lastUpdateSet?.moderationNote).toBeNull();
-    expect(lastUpdateSet?.moderatedAt).toBeInstanceOf(Date);
+    const updates = getSupabaseWritePayloads(
+      "shop_reviews",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates[0]?.status).toBe("approved");
+    expect(updates[0]?.moderated_by).toBe("user_admin");
+    expect(updates[0]?.moderation_note).toBeNull();
+    // PostgREST patches use ISO strings, not Date instances.
+    expect(typeof updates[0]?.moderated_at).toBe("string");
   });
 
   it("returns 200 even when the moderation email cannot be sent (fail-soft)", async () => {
@@ -132,15 +109,15 @@ describe("POST /admin/shop/reviews/:id/approve", () => {
     // the `email_not_configured` no-op path. The handler must not
     // surface that as an error to the admin.
     stubVerifiedAdmin();
-    updateQueue.push([
-      {
+    stageSupabaseResponse("shop_reviews", "update", {
+      data: {
         id: "rev_5",
         status: "approved",
-        moderatedAt: new Date(),
-        productId: "prod_x",
-        authorEmail: "noone@example.com",
+        moderated_at: new Date().toISOString(),
+        product_id: "prod_x",
+        author_email: "noone@example.com",
       },
-    ]);
+    });
     const res = await request(makeApp()).post(
       "/resupply-api/admin/shop/reviews/rev_5/approve",
     );
@@ -150,7 +127,7 @@ describe("POST /admin/shop/reviews/:id/approve", () => {
 
   it("returns 404 when the row id doesn't match", async () => {
     stubVerifiedAdmin();
-    updateQueue.push([]);
+    stageSupabaseResponse("shop_reviews", "update", { data: null });
     const res = await request(makeApp()).post(
       "/resupply-api/admin/shop/reviews/rev_missing/approve",
     );
@@ -161,50 +138,58 @@ describe("POST /admin/shop/reviews/:id/approve", () => {
 describe("POST /admin/shop/reviews/:id/reject", () => {
   it("flips status to rejected and persists the moderator note", async () => {
     stubVerifiedAdmin();
-    updateQueue.push([
-      {
+    stageSupabaseResponse("shop_reviews", "update", {
+      data: {
         id: "rev_2",
         status: "rejected",
-        moderatedAt: new Date(),
-        moderationNote: "Off-topic; not about the product.",
-        productId: "prod_x",
-        authorEmail: "alice@example.com",
+        moderated_at: new Date().toISOString(),
+        moderation_note: "Off-topic; not about the product.",
+        product_id: "prod_x",
+        author_email: "alice@example.com",
       },
-    ]);
+    });
     const res = await request(makeApp())
       .post("/resupply-api/admin/shop/reviews/rev_2/reject")
       .send({ note: "Off-topic; not about the product." });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("rejected");
-    expect(lastUpdateSet?.status).toBe("rejected");
-    expect(lastUpdateSet?.moderationNote).toBe(
+    const updates = getSupabaseWritePayloads(
+      "shop_reviews",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates[0]?.status).toBe("rejected");
+    expect(updates[0]?.moderation_note).toBe(
       "Off-topic; not about the product.",
     );
-    expect(lastUpdateSet?.moderatedBy).toBe("user_admin");
+    expect(updates[0]?.moderated_by).toBe("user_admin");
   });
 
   it("accepts an empty body (no note required)", async () => {
     stubVerifiedAdmin();
-    updateQueue.push([
-      {
+    stageSupabaseResponse("shop_reviews", "update", {
+      data: {
         id: "rev_3",
         status: "rejected",
-        moderatedAt: new Date(),
-        moderationNote: null,
-        productId: "prod_x",
-        authorEmail: "alice@example.com",
+        moderated_at: new Date().toISOString(),
+        moderation_note: null,
+        product_id: "prod_x",
+        author_email: "alice@example.com",
       },
-    ]);
+    });
     const res = await request(makeApp())
       .post("/resupply-api/admin/shop/reviews/rev_3/reject")
       .send({});
     expect(res.status).toBe(200);
-    expect(lastUpdateSet?.moderationNote).toBeNull();
+    const updates = getSupabaseWritePayloads(
+      "shop_reviews",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates[0]?.moderation_note).toBeNull();
   });
 
   it("returns 404 when the row id doesn't match", async () => {
     stubVerifiedAdmin();
-    updateQueue.push([]);
+    stageSupabaseResponse("shop_reviews", "update", { data: null });
     const res = await request(makeApp()).post(
       "/resupply-api/admin/shop/reviews/rev_missing/reject",
     );
