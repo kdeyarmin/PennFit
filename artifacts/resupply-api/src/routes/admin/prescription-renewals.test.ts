@@ -5,7 +5,7 @@
 //   * 503 when SendGrid is not configured
 //   * Sends + stamps + audits with non-PHI envelope
 //   * Skips rows with no email; counts increment correctly
-//   * SendGrid throw → counted as failed; row remains eligible
+//   * SendGrid throw → counted as failed; row unclaimed for retry
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -15,6 +15,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -91,51 +98,13 @@ vi.mock("@workspace/resupply-telecom", async () => {
   };
 });
 
-const selectQueue: unknown[][] = [];
-const updateSets: Record<string, unknown>[] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      innerJoin: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: (vals: Record<string, unknown>) => {
-        updateSets.push(vals);
-        return obj;
-      },
-      where: () => ({
-        returning: () => Promise.resolve([{ id: "rx_claim" }]),
-        then: (
-          onfulfilled: (v: undefined) => unknown,
-          onrejected?: (r: unknown) => unknown,
-        ) => Promise.resolve(undefined as undefined).then(onfulfilled, onrejected),
-        catch: (onrejected?: (r: unknown) => unknown) =>
-          Promise.resolve(undefined as undefined).catch(onrejected),
-      }),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import prescriptionRenewalsRouter from "./prescription-renewals";
+
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
 
 function makeApp(): Express {
   const app = express();
@@ -146,8 +115,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  updateSets.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
   sendEmailMock.mockClear();
   sendEmailMock.mockResolvedValue({ messageId: "sg_1" });
@@ -167,13 +135,12 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
   });
 
   it("503s when SendGrid is not configured", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     sendgridConfigured.current = false;
-    selectQueue.push([]);
+    // The dispatcher reads candidates + patients first, then tries
+    // to construct the SendGrid client. Stage both upfront so the
+    // chain reaches the gate.
+    stageSupabaseResponse("prescriptions", "select", { data: [] });
     const res = await request(makeApp()).post(
       "/admin/prescriptions/send-renewal-due",
     );
@@ -182,21 +149,33 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
   });
 
   it("sends + stamps + audits with non-PHI envelope", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    const inFiveDays = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-    selectQueue.push([
-      {
-        prescriptionId: "rx_1",
-        patientId: "p_1",
-        validUntil: inFiveDays,
-        firstName: "Anna",
-        email: "anna@example.com",
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    const inFiveDaysIso = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [
+        {
+          id: "rx_1",
+          patient_id: "p_1",
+          valid_until: inFiveDaysIso,
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: "anna@example.com",
+          phone_e164: null,
+        },
+      ],
+    });
+    // Atomic claim — UPDATE … RETURNING returns the claimed row.
+    stageSupabaseResponse("prescriptions", "update", {
+      data: { id: "rx_1" },
+    });
 
     const res = await request(makeApp()).post(
       "/admin/prescriptions/send-renewal-due",
@@ -222,8 +201,12 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
       prescription_id: "rx_1",
     });
 
-    expect(updateSets).toHaveLength(1);
-    expect(updateSets[0]?.renewalRequestedAt).toBeInstanceOf(Date);
+    const updates = getSupabaseWritePayloads(
+      "prescriptions",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates).toHaveLength(1);
+    expect(typeof updates[0]?.renewal_requested_at).toBe("string");
 
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0]?.[0] as {
@@ -233,7 +216,6 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
     expect(audit.action).toBe("prescription.renewal_requested");
     expect(audit.metadata.patient_id).toBe("p_1");
     expect(audit.metadata.channel).toBe("email");
-    // Days-until-expiry is structural; clamped to >=0.
     expect(typeof audit.metadata.days_until_expiry).toBe("number");
     expect(audit.metadata.days_until_expiry).toBeGreaterThanOrEqual(4);
     expect(audit.metadata.days_until_expiry).toBeLessThanOrEqual(5);
@@ -251,20 +233,29 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
   });
 
   it("skips rows without an email + does not stamp", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
-        prescriptionId: "rx_1",
-        patientId: "p_1",
-        validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-        firstName: "Anna",
-        email: null,
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [
+        {
+          id: "rx_1",
+          patient_id: "p_1",
+          valid_until: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .slice(0, 10),
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: null,
+          phone_e164: null,
+        },
+      ],
+    });
+
     const res = await request(makeApp()).post(
       "/admin/prescriptions/send-renewal-due",
     );
@@ -275,24 +266,38 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
       skippedNoEmail: 1,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
-    expect(updateSets).toEqual([]);
+    expect(getSupabaseWritePayloads("prescriptions", "update")).toEqual([]);
   });
 
-  it("counts SendGrid throws as failed without stamping", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
-        prescriptionId: "rx_1",
-        patientId: "p_1",
-        validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-        firstName: "Anna",
-        email: "anna@example.com",
-      },
-    ]);
+  it("counts SendGrid throws as failed and unclaims for retry", async () => {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [
+        {
+          id: "rx_1",
+          patient_id: "p_1",
+          valid_until: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .slice(0, 10),
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: "anna@example.com",
+          phone_e164: null,
+        },
+      ],
+    });
+    // Atomic claim succeeds.
+    stageSupabaseResponse("prescriptions", "update", {
+      data: { id: "rx_1" },
+    });
+    // Unclaim after the SendGrid failure.
+    stageSupabaseResponse("prescriptions", "update", { error: null });
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid down"));
 
     const res = await request(makeApp()).post(
@@ -305,11 +310,15 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
       sent: 0,
       failed: 1,
     });
-    // Row stays eligible: the claim (renewalRequestedAt=now) is undone
-    // (renewalRequestedAt=null) so the next cron tick picks it up again.
-    expect(updateSets).toHaveLength(2);
-    expect(updateSets[0]?.renewalRequestedAt).toBeInstanceOf(Date);
-    expect(updateSets[1]?.renewalRequestedAt).toBeNull();
+    // Two updates: the claim and the unclaim. Row stays eligible
+    // for the next cron tick.
+    const updates = getSupabaseWritePayloads(
+      "prescriptions",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates).toHaveLength(2);
+    expect(typeof updates[0]?.renewal_requested_at).toBe("string");
+    expect(updates[1]?.renewal_requested_at).toBeNull();
     // Audit only logs successful sends.
     expect(logAuditMock).not.toHaveBeenCalled();
   });
@@ -317,28 +326,19 @@ describe("POST /admin/prescriptions/send-renewal-due", () => {
 
 describe("POST /admin/prescriptions/send-renewal-due?channel=sms (Phase G.3)", () => {
   it("503s with sms_not_configured when Twilio is missing", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     twilioConfigured.current = false;
-    selectQueue.push([]);
+    stageSupabaseResponse("prescriptions", "select", { data: [] });
     const res = await request(makeApp()).post(
       "/admin/prescriptions/send-renewal-due?channel=sms",
     );
     expect(res.status).toBe(503);
     expect(res.body.error).toBe("sms_not_configured");
-    // Email path is untouched on the SMS run.
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
   it("400s on invalid channel value", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp()).post(
       "/admin/prescriptions/send-renewal-due?channel=carrier-pigeon",
     );
@@ -347,21 +347,31 @@ describe("POST /admin/prescriptions/send-renewal-due?channel=sms (Phase G.3)", (
   });
 
   it("sends SMS + stamps + audits with channel=sms; never logs the body", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
-        prescriptionId: "rx_1",
-        patientId: "p_1",
-        validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-        firstName: "Anna",
-        email: null,
-        phoneE164: "+12155551212",
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [
+        {
+          id: "rx_1",
+          patient_id: "p_1",
+          valid_until: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .slice(0, 10),
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: null,
+          phone_e164: "+12155551212",
+        },
+      ],
+    });
+    stageSupabaseResponse("prescriptions", "update", {
+      data: { id: "rx_1" },
+    });
 
     const res = await request(makeApp()).post(
       "/admin/prescriptions/send-renewal-due?channel=sms",
@@ -385,7 +395,8 @@ describe("POST /admin/prescriptions/send-renewal-due?channel=sms (Phase G.3)", (
     expect(smsCall.body).toContain("CPAP Rx");
     expect(smsCall.body).toContain("STOP");
 
-    expect(updateSets).toHaveLength(1);
+    const updates = getSupabaseWritePayloads("prescriptions", "update");
+    expect(updates).toHaveLength(1);
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0]?.[0] as {
       metadata: Record<string, unknown>;
@@ -399,21 +410,28 @@ describe("POST /admin/prescriptions/send-renewal-due?channel=sms (Phase G.3)", (
   });
 
   it("skips rows without a phone number on the SMS channel", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
-        prescriptionId: "rx_1",
-        patientId: "p_1",
-        validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-        firstName: "Anna",
-        email: "anna@example.com",
-        phoneE164: null,
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [
+        {
+          id: "rx_1",
+          patient_id: "p_1",
+          valid_until: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .slice(0, 10),
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: "anna@example.com",
+          phone_e164: null,
+        },
+      ],
+    });
     const res = await request(makeApp()).post(
       "/admin/prescriptions/send-renewal-due?channel=sms",
     );
@@ -427,6 +445,6 @@ describe("POST /admin/prescriptions/send-renewal-due?channel=sms (Phase G.3)", (
     // Email channel is intentionally untouched even though email is set.
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(sendSmsMock).not.toHaveBeenCalled();
-    expect(updateSets).toEqual([]);
+    expect(getSupabaseWritePayloads("prescriptions", "update")).toEqual([]);
   });
 });
