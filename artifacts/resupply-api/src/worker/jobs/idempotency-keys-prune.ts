@@ -25,10 +25,8 @@
 //   both correct outcomes.
 
 import type PgBoss from "pg-boss";
-import { lte } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool, idempotencyKeys } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 
@@ -41,13 +39,19 @@ export async function registerIdempotencyKeysPruneJob(
   await boss.createQueue(PRUNE_JOB);
 
   await boss.work(PRUNE_JOB, async () => {
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     try {
-      const result = await db
-        .delete(idempotencyKeys)
-        .where(lte(idempotencyKeys.expiresAt, new Date()));
-      const deleted =
-        typeof result.rowCount === "number" ? result.rowCount : 0;
+      // PostgREST returns the deleted rows when we ask for `.select()`,
+      // so we ask for just the composite-PK fields and count them.
+      // Cheaper than a head=true count followed by a delete.
+      const { data: deletedRows, error } = await supabase
+        .schema("resupply")
+        .from("idempotency_keys")
+        .delete()
+        .lte("expires_at", new Date().toISOString())
+        .select("user_id");
+      if (error) throw error;
+      const deleted = (deletedRows ?? []).length;
       logger.info({ deleted }, "idempotency-keys.prune: completed");
     } catch (err) {
       logger.error(

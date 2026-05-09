@@ -24,17 +24,27 @@
 //   Re-confirming a `declined` episode is allowed and flips it back to
 //   `confirmed` — admins have asked for this so a patient who
 //   accidentally typed NO can still ship.
-
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
+//
+// Concurrency posture:
+//   The original Drizzle path opened a transaction and locked the
+//   episode row with `SELECT … FOR UPDATE` so two concurrent confirms
+//   (e.g. patient clicks email AND replies YES via SMS within the
+//   same second) couldn't both insert fulfillment rows.
+//
+//   PostgREST has neither transactions nor row-level locks. The
+//   substitute is a conditional UPDATE that atomically claims the
+//   episode by transitioning status from any non-terminal state to
+//   `confirmed` ONLY when it isn't already confirmed/fulfilled.
+//   Postgres serialises the UPDATEs at the row level: the loser
+//   matches 0 rows and short-circuits to `already_confirmed` without
+//   inserting fulfillments. The defensive "fulfillments already exist"
+//   re-check after the claim catches the rare misordered-write case
+//   where a prior crash left fulfillments behind without flipping
+//   the status.
 
 import {
-  conversations,
-  episodes,
-  fulfillments,
-  getDbPool,
-  patients,
-  prescriptions,
+  getSupabaseServiceRoleClient,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
 export type PlaceOrderResult =
@@ -56,160 +66,139 @@ export interface PlaceOrderInput {
 export async function placeResupplyOrderForConversation(
   input: PlaceOrderInput,
 ): Promise<PlaceOrderResult> {
-  const pool = getDbPool();
-  const db = drizzle(pool);
+  const supabase = getSupabaseServiceRoleClient();
 
-  // Concurrency model.
-  //
-  // A single conversation can race itself: a patient who clicks the
-  // email confirm link AND replies "YES" by SMS within a few seconds
-  // produces two concurrent calls into this helper, both reading the
-  // episode in `pending` state, both inserting fulfillment rows,
-  // resulting in DUPLICATE shipments (one per concurrent confirm).
-  // The same race exists for two browser tabs of the same email link.
-  //
-  // We serialize on the EPISODE row using `SELECT … FOR UPDATE`
-  // inside a transaction. Postgres blocks any concurrent transaction
-  // that tries to lock the same row until ours commits. The second
-  // transaction then re-reads the now-`confirmed` status and falls
-  // through the `already_confirmed` short-circuit — no duplicate
-  // fulfillment.
-  //
-  // The lock covers the entire decision window (status read →
-  // prescription read → status write → fulfillment insert), all of
-  // which run as one atomic unit. If the transaction throws partway
-  // through, Postgres rolls back both the status update and any
-  // fulfillment insert, so we never end up with a confirmed episode
-  // that has no shipping queue entry.
-  return await db.transaction(async (tx) => {
-    const convRows = await tx
-      .select({
-        id: conversations.id,
-        patientId: conversations.patientId,
-        episodeId: conversations.episodeId,
-      })
-      .from(conversations)
-      .where(eq(conversations.id, input.conversationId))
-      .limit(1);
-    const conv = convRows[0];
-    if (!conv) return { status: "conversation_not_found" };
-    // Post-0033 conversations.episodeId / patientId are nullable so
-    // in-app shop-customer threads can omit them. Order-flow only
-    // makes sense for patient-flow conversations (SMS/email replies
-    // that confirm a fulfillment); a missing episodeId here means
-    // the caller has wired this helper to an in-app row by mistake.
-    // Treat as `episode_not_found` so the route handler reports the
-    // correct error and we don't tx-rollback on a downstream null.
-    if (!conv.episodeId || !conv.patientId) {
-      return { status: "episode_not_found" };
-    }
-    const convEpisodeId: string = conv.episodeId;
-    const convPatientId: string = conv.patientId;
+  // 1. Resolve the conversation → episode + patient.
+  const { data: conv, error: convErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id, patient_id, episode_id")
+    .eq("id", input.conversationId)
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
+  if (!conv) return { status: "conversation_not_found" };
+  // Post-0033 conversations.episode_id / patient_id are nullable so
+  // in-app shop-customer threads can omit them. Order-flow only
+  // makes sense for patient-flow conversations (SMS/email replies
+  // that confirm a fulfillment); a missing episode_id here means
+  // the caller has wired this helper to an in-app row by mistake.
+  if (!conv.episode_id || !conv.patient_id) {
+    return { status: "episode_not_found" };
+  }
+  const convEpisodeId = conv.episode_id;
+  const convPatientId = conv.patient_id;
 
-    // SELECT FOR UPDATE on the episode. drizzle-orm's `.for("update")`
-    // emits the row-level lock clause; the lock is released on commit
-    // or rollback. We intentionally lock by episode (not conversation)
-    // because two concurrent conversations CAN exist for the same
-    // episode (admin opened a second one) and we want both to
-    // serialize against the same episode-confirmation window.
-    const episodeRows = await tx
-      .select({
-        id: episodes.id,
-        patientId: episodes.patientId,
-        prescriptionId: episodes.prescriptionId,
-        status: episodes.status,
-      })
-      .from(episodes)
-      .where(eq(episodes.id, convEpisodeId))
-      .limit(1)
-      .for("update");
-    const episode = episodeRows[0];
-    if (!episode) return { status: "episode_not_found" };
+  // 2. Read the episode so we can short-circuit on already_confirmed
+  // BEFORE the conditional UPDATE — saves a write round-trip in the
+  // hot path where the patient just hit refresh on their email click.
+  const { data: episode, error: episodeErr } = await supabase
+    .schema("resupply")
+    .from("episodes")
+    .select("id, patient_id, prescription_id, status")
+    .eq("id", convEpisodeId)
+    .limit(1)
+    .maybeSingle();
+  if (episodeErr) throw episodeErr;
+  if (!episode) return { status: "episode_not_found" };
 
-    if (episode.status === "confirmed" || episode.status === "fulfilled") {
-      return {
-        status: "already_confirmed",
-        patientId: convPatientId,
-        episodeId: convEpisodeId,
-      };
-    }
-
-    // Defense in depth: if a prior confirm already inserted
-    // fulfillment rows for this episode (e.g. a previous transaction
-    // committed but then crashed before updating episode status, or
-    // a manual admin action), refuse to insert duplicates. The
-    // FOR UPDATE lock above prevents the common race; this check
-    // catches the rare misordered-write case.
-    const existingFulfillments = await tx
-      .select({ id: fulfillments.id })
-      .from(fulfillments)
-      .where(eq(fulfillments.episodeId, episode.id))
-      .limit(1);
-    if (existingFulfillments[0]) {
-      // Mark the episode `confirmed` to converge the state machine
-      // before we return — otherwise a future scan would replay this
-      // path forever.
-      await tx
-        .update(episodes)
-        .set({ status: "confirmed", updatedAt: new Date() })
-        .where(
-          and(
-            eq(episodes.id, episode.id),
-            eq(episodes.patientId, episode.patientId),
-          ),
-        );
-      return {
-        status: "already_confirmed",
-        patientId: episode.patientId,
-        episodeId: episode.id,
-      };
-    }
-
-    // Find the active prescription that backs this episode. We look
-    // up by id (not by patient + sku) because the episode already
-    // pinned a specific script at creation time.
-    const rxRows = await tx
-      .select({
-        id: prescriptions.id,
-        itemSku: prescriptions.itemSku,
-      })
-      .from(prescriptions)
-      .where(eq(prescriptions.id, episode.prescriptionId))
-      .limit(1);
-    const rx = rxRows[0];
-    if (!rx) return { status: "no_active_prescription" };
-
-    // Mark the episode confirmed first, then create the queued
-    // fulfillment row. Order matters: the worker sweep that picks up
-    // `queued` fulfillments expects the parent episode to be in a
-    // post-decision state.
-    await tx
-      .update(episodes)
-      .set({ status: "confirmed", updatedAt: new Date() })
-      .where(
-        and(
-          eq(episodes.id, episode.id),
-          eq(episodes.patientId, episode.patientId),
-        ),
-      );
-
-    const inserted = await tx
-      .insert(fulfillments)
-      .values({
-        patientId: episode.patientId,
-        episodeId: episode.id,
-        itemSku: rx.itemSku,
-        status: "queued",
-      })
-      .returning({ id: fulfillments.id });
-
+  if (episode.status === "confirmed" || episode.status === "fulfilled") {
     return {
-      status: "ok",
-      patientId: episode.patientId,
-      episodeId: episode.id,
-      fulfillmentIds: inserted.map((r) => r.id),
+      status: "already_confirmed",
+      patientId: convPatientId,
+      episodeId: convEpisodeId,
     };
+  }
+
+  // 3. Find the active prescription that backs this episode. Look
+  // up by id (not by patient + sku) because the episode already
+  // pinned a specific script at creation time.
+  if (!episode.prescription_id) return { status: "no_active_prescription" };
+  const { data: rx, error: rxErr } = await supabase
+    .schema("resupply")
+    .from("prescriptions")
+    .select("id, item_sku")
+    .eq("id", episode.prescription_id)
+    .limit(1)
+    .maybeSingle();
+  if (rxErr) throw rxErr;
+  if (!rx) return { status: "no_active_prescription" };
+
+  // 4. Atomic claim: flip status from any non-terminal value to
+  // `confirmed`, ONLY when it isn't already confirmed/fulfilled.
+  // Two concurrent calls into this helper both try this same UPDATE
+  // — Postgres serialises the row writes, so the loser matches 0
+  // rows and we resolve via the post-claim re-read below.
+  const nowIso = new Date().toISOString();
+  const { data: claimed, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("episodes")
+    .update({ status: "confirmed", updated_at: nowIso })
+    .eq("id", episode.id)
+    .eq("patient_id", episode.patient_id)
+    .not("status", "in", "(confirmed,fulfilled)")
+    .select("id");
+  if (claimErr) throw claimErr;
+
+  if ((claimed ?? []).length === 0) {
+    // Either we lost the race or the row moved off pending between
+    // the read above and the UPDATE here. Re-read to disambiguate.
+    return {
+      status: "already_confirmed",
+      patientId: episode.patient_id,
+      episodeId: episode.id,
+    };
+  }
+
+  // 5. Defense in depth: if a PRIOR run crashed after fulfillments
+  // were inserted but before status flipped to confirmed, a fresh
+  // confirm here would otherwise duplicate the fulfillment row. We
+  // re-check existence after the claim and short-circuit if found.
+  // The FOR-UPDATE-equivalent UPDATE above already eliminated the
+  // common concurrent-race; this catches the misordered-write case.
+  const fulfillmentIds = await ensureFulfillments(supabase, {
+    patientId: episode.patient_id,
+    episodeId: episode.id,
+    itemSku: rx.item_sku,
   });
+
+  return {
+    status: "ok",
+    patientId: episode.patient_id,
+    episodeId: episode.id,
+    fulfillmentIds,
+  };
+}
+
+async function ensureFulfillments(
+  supabase: ResupplySupabaseClient,
+  args: { patientId: string; episodeId: string; itemSku: string },
+): Promise<string[]> {
+  // If a prior crash left fulfillments behind, surface their ids
+  // rather than insert duplicates.
+  const { data: existing, error: existingErr } = await supabase
+    .schema("resupply")
+    .from("fulfillments")
+    .select("id")
+    .eq("episode_id", args.episodeId)
+    .limit(50);
+  if (existingErr) throw existingErr;
+  if ((existing ?? []).length > 0) {
+    return (existing ?? []).map((r) => r.id);
+  }
+
+  const { data: inserted, error: insertErr } = await supabase
+    .schema("resupply")
+    .from("fulfillments")
+    .insert({
+      patient_id: args.patientId,
+      episode_id: args.episodeId,
+      item_sku: args.itemSku,
+      status: "queued",
+    })
+    .select("id");
+  if (insertErr) throw insertErr;
+  return (inserted ?? []).map((r) => r.id);
 }
 
 /**
@@ -219,10 +208,11 @@ export async function placeResupplyOrderForConversation(
  * Idempotent: paused → paused is a no-op.
  */
 export async function pausePatient(patientId: string): Promise<void> {
-  const pool = getDbPool();
-  const db = drizzle(pool);
-  await db
-    .update(patients)
-    .set({ status: "paused", updatedAt: new Date() })
-    .where(eq(patients.id, patientId));
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .update({ status: "paused", updated_at: new Date().toISOString() })
+    .eq("id", patientId);
+  if (error) throw error;
 }

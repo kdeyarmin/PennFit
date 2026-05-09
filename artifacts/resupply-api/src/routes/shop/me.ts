@@ -68,10 +68,10 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
   res.json({
     signedIn: true,
     profile: {
-      customerId: row.customerId,
-      email: row.emailLower,
-      displayName: row.displayName,
-      shippingAddress: row.shippingAddress ?? null,
+      customerId: row.customer_id,
+      email: row.email_lower,
+      displayName: row.display_name,
+      shippingAddress: row.shipping_address_json ?? null,
       // Clinical info added in 0032 — both nullable, both freshly
       // null on a brand-new account. The dedicated
       // GET /shop/me/clinical-info endpoint returns the same shape
@@ -79,15 +79,15 @@ router.get("/shop/me", attachSignedIn, async (req, res) => {
       // means callers that already fetch /shop/me (e.g. the cart
       // for a future "ship to my CPAP" handoff) don't need a
       // second round-trip to read the device.
-      cpapDevice: row.cpapDevice ?? null,
-      physicianInfo: row.physicianInfo ?? null,
+      cpapDevice: row.cpap_device_json ?? null,
+      physicianInfo: row.physician_info_json ?? null,
     },
-    savedCard: row.defaultPaymentMethodId
+    savedCard: row.default_payment_method_id
       ? {
-          brand: row.defaultPaymentMethodBrand,
-          last4: row.defaultPaymentMethodLast4,
-          expMonth: row.defaultPaymentMethodExpMonth,
-          expYear: row.defaultPaymentMethodExpYear,
+          brand: row.default_payment_method_brand,
+          last4: row.default_payment_method_last4,
+          expMonth: row.default_payment_method_exp_month,
+          expYear: row.default_payment_method_exp_year,
         }
       : null,
     recentOrders: (recent ?? []).map((r) => ({

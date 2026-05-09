@@ -112,6 +112,21 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      idempotency_keys: {
+        Row: {
+          user_id: string;
+          endpoint: string;
+          key: string;
+          request_hash: string;
+          response_status: number;
+          response_body: Json;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
+        Relationships: [];
+      };
       admin_users: {
         Row: {
           id: string;

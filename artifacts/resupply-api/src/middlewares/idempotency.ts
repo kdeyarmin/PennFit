@@ -47,10 +47,15 @@
 import crypto from "node:crypto";
 
 import type { NextFunction, Request, Response } from "express";
-import { and, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool, idempotencyKeys } from "@workspace/resupply-db";
+import {
+  bufferToHexBytea,
+  hexByteaToBuffer,
+} from "@workspace/resupply-auth";
+import {
+  getSupabaseServiceRoleClient,
+  type Json,
+} from "@workspace/resupply-db";
 
 import { logger } from "../lib/logger";
 
@@ -131,22 +136,36 @@ export function withIdempotency(endpoint: string) {
     }
 
     const requestHash = hashBody(req.body);
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    let existing: typeof idempotencyKeys.$inferSelect | undefined;
+    // Lookup the existing replay row. Composite PK on
+    // (user_id, endpoint, key); the .eq triplet hits the same index.
+    let existing: {
+      requestHash: Buffer;
+      responseStatus: number;
+      responseBody: Json;
+      expiresAt: Date;
+    } | null = null;
     try {
-      const rows = await db
-        .select()
-        .from(idempotencyKeys)
-        .where(
-          and(
-            eq(idempotencyKeys.userId, userId),
-            eq(idempotencyKeys.endpoint, endpoint),
-            eq(idempotencyKeys.key, trimmed),
-          ),
-        )
-        .limit(1);
-      existing = rows[0];
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("idempotency_keys")
+        .select("request_hash, response_status, response_body, expires_at")
+        .eq("user_id", userId)
+        .eq("endpoint", endpoint)
+        .eq("key", trimmed)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        existing = {
+          // bytea round-trips as `\x<hex>` JSON strings via PostgREST.
+          requestHash: hexByteaToBuffer(data.request_hash),
+          responseStatus: data.response_status,
+          responseBody: data.response_body,
+          expiresAt: new Date(data.expires_at),
+        };
+      }
     } catch (err) {
       logger.error(
         {
@@ -168,10 +187,7 @@ export function withIdempotency(endpoint: string) {
     if (existing) {
       const isLive = existing.expiresAt.getTime() > Date.now();
       if (isLive) {
-        const storedHash = Buffer.isBuffer(existing.requestHash)
-          ? existing.requestHash
-          : Buffer.from(existing.requestHash as Uint8Array);
-        if (!timingSafeBufferEqual(storedHash, requestHash)) {
+        if (!timingSafeBufferEqual(existing.requestHash, requestHash)) {
           res.status(422).json({
             error: "idempotency_key_reused",
             message:
@@ -262,38 +278,31 @@ export function withIdempotency(endpoint: string) {
       // Only persist successful responses. See file header rationale.
       if (captured.status < 200 || captured.status >= 300) return;
 
-      const expiresAt = new Date(Date.now() + TTL_MS);
-      const persistDb = drizzle(getDbPool());
-      // Wrap in async IIFE so .catch lives on a true Promise; the
-      // drizzle query builder is a thenable, not a Promise, and only
-      // exposes `.then(...)`.
+      const expiresAtIso = new Date(Date.now() + TTL_MS).toISOString();
+      const nowIso = new Date().toISOString();
+      const requestHashHex = bufferToHexBytea(requestHash);
       void (async () => {
         try {
-          await persistDb
-            .insert(idempotencyKeys)
-            .values({
-              userId,
-              endpoint,
-              key: trimmed,
-              requestHash,
-              responseStatus: captured!.status,
-              responseBody: captured!.body as never,
-              expiresAt,
-            })
-            .onConflictDoUpdate({
-              target: [
-                idempotencyKeys.userId,
-                idempotencyKeys.endpoint,
-                idempotencyKeys.key,
-              ],
-              set: {
-                requestHash,
-                responseStatus: captured!.status,
-                responseBody: captured!.body as never,
-                createdAt: sql`now()`,
-                expiresAt,
+          // Composite-PK upsert preserves the ON CONFLICT DO UPDATE
+          // semantics: a fresh row replaces an expired stale one
+          // without per-write SELECT.
+          const { error } = await supabase
+            .schema("resupply")
+            .from("idempotency_keys")
+            .upsert(
+              {
+                user_id: userId,
+                endpoint,
+                key: trimmed,
+                request_hash: requestHashHex,
+                response_status: captured!.status,
+                response_body: captured!.body as Json,
+                created_at: nowIso,
+                expires_at: expiresAtIso,
               },
-            });
+              { onConflict: "user_id,endpoint,key" },
+            );
+          if (error) throw error;
         } catch (err: unknown) {
           // Persistence failure is non-fatal: the caller already saw
           // a success and the side-effect is committed. We just
