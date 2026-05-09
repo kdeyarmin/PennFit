@@ -8,6 +8,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -15,57 +21,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// Drizzle stubs: the route only issues an UPDATE...RETURNING and
-// (via the audit module) writes audit rows. We don't exercise the
-// audit module here — it has its own coverage.
-const updateReturning = vi.fn();
-const dbStub = {
-  // The idempotency middleware also calls .select(); since these
-  // tests don't send Idempotency-Key headers, that path is never
-  // reached, but we provide a no-op anyway to be safe.
-  select: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => obj,
-      then: (resolve: (v: unknown) => unknown) =>
-        Promise.resolve([]).then(resolve),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => obj,
-      returning: () => updateReturning(),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      onConflictDoUpdate: () => obj,
-      returning: () => Promise.resolve([]),
-      then: (resolve: (v: unknown) => unknown) =>
-        Promise.resolve(undefined).then(resolve),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
 
 const logAuditMock = vi.fn(async (..._a: unknown[]) => undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -104,9 +59,8 @@ describe("POST /patients/bulk-status", () => {
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     process.env.NODE_ENV = "test";
     mockAdmin.current = null;
-    updateReturning.mockReset();
+    supabaseMock.reset();
     logAuditMock.mockClear();
-    dbStub.update.mockClear();
     stubVerifiedAdmin();
   });
 
@@ -118,11 +72,13 @@ describe("POST /patients/bulk-status", () => {
   });
 
   it("updates all matched ids and returns updated[] with new status", async () => {
-    const now = new Date("2026-04-28T12:00:00Z");
-    updateReturning.mockResolvedValueOnce([
-      { id: PATIENT_A, updatedAt: now },
-      { id: PATIENT_B, updatedAt: now },
-    ]);
+    const nowIso = "2026-04-28T12:00:00.000Z";
+    stageSupabaseResponse("patients", "update", {
+      data: [
+        { id: PATIENT_A, updated_at: nowIso },
+        { id: PATIENT_B, updated_at: nowIso },
+      ],
+    });
 
     const res = await request(makeApp())
       .post("/resupply-api/patients/bulk-status")
@@ -133,7 +89,7 @@ describe("POST /patients/bulk-status", () => {
     expect(res.body.updated[0]).toEqual({
       id: PATIENT_A,
       status: "paused",
-      updatedAt: now.toISOString(),
+      updatedAt: nowIso,
     });
     expect(res.body.failed).toEqual([]);
     // Per-row audit + summary audit = 3 calls total.
@@ -149,12 +105,14 @@ describe("POST /patients/bulk-status", () => {
   });
 
   it("reports ids that didn't match as failed: not_found, partial success", async () => {
-    const now = new Date("2026-04-28T12:00:00Z");
+    const nowIso = "2026-04-28T12:00:00.000Z";
     // DB only returns 2 of the 3 ids — the missing one is the failure.
-    updateReturning.mockResolvedValueOnce([
-      { id: PATIENT_A, updatedAt: now },
-      { id: PATIENT_C, updatedAt: now },
-    ]);
+    stageSupabaseResponse("patients", "update", {
+      data: [
+        { id: PATIENT_A, updated_at: nowIso },
+        { id: PATIENT_C, updated_at: nowIso },
+      ],
+    });
 
     const res = await request(makeApp())
       .post("/resupply-api/patients/bulk-status")
@@ -166,8 +124,10 @@ describe("POST /patients/bulk-status", () => {
   });
 
   it("dedupes repeated ids before counting failures", async () => {
-    const now = new Date("2026-04-28T12:00:00Z");
-    updateReturning.mockResolvedValueOnce([{ id: PATIENT_A, updatedAt: now }]);
+    const nowIso = "2026-04-28T12:00:00.000Z";
+    stageSupabaseResponse("patients", "update", {
+      data: [{ id: PATIENT_A, updated_at: nowIso }],
+    });
 
     const res = await request(makeApp())
       .post("/resupply-api/patients/bulk-status")
