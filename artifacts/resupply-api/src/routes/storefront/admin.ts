@@ -17,14 +17,9 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import {
-  db,
-  ordersTable,
-  adminAuditLogTable,
-  usageEventsTable,
-  reminderSubscriptionsTable,
-} from "../../lib/storefront/db.js";
-import { desc, eq, ilike, or, and, sql, count, lte } from "drizzle-orm";
+
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 import { logger } from "../../lib/logger.js";
 import {
@@ -68,43 +63,56 @@ router.get("/admin/orders", async (req, res) => {
   }
   const { q, status, page, pageSize } = parsed.data;
 
-  const conditions = [];
-  if (q) {
-    const like = `%${q}%`;
-    conditions.push(
-      or(
-        ilike(ordersTable.patientFirstName, like),
-        ilike(ordersTable.patientLastName, like),
-        ilike(ordersTable.patientEmail, like),
-        ilike(ordersTable.orderReference, like),
-      )!,
-    );
-  }
-  if (status) conditions.push(eq(ordersTable.emailStatus, status));
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const supabase = getSupabaseServiceRoleClient();
+  const offset = (page - 1) * pageSize;
 
-  const [rows, totalRow] = await Promise.all([
-    db
-      .select({
-        id: ordersTable.id,
-        orderReference: ordersTable.orderReference,
-        patientFirstName: ordersTable.patientFirstName,
-        patientLastName: ordersTable.patientLastName,
-        patientEmail: ordersTable.patientEmail,
-        maskName: ordersTable.maskName,
-        maskManufacturer: ordersTable.maskManufacturer,
-        shippingCity: ordersTable.shippingCity,
-        shippingState: ordersTable.shippingState,
-        emailStatus: ordersTable.emailStatus,
-        createdAt: ordersTable.createdAt,
-      })
-      .from(ordersTable)
-      .where(where)
-      .orderBy(desc(ordersTable.createdAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize),
-    db.select({ value: count() }).from(ordersTable).where(where),
-  ]);
+  // Build the rows query and the count query side-by-side. PostgREST
+  // can return both rows and an exact count from a single response
+  // header, but supabase-js's typings make a parallel two-query
+  // pattern cleaner here.
+  const buildQuery = <T>(
+    base: { select: (s: string, opts?: object) => T },
+    select: string,
+    opts?: { count: "exact"; head: true },
+  ) => base.select(select, opts);
+  void buildQuery;
+
+  let rowsQuery = supabase
+    .schema("public")
+    .from("orders")
+    .select(
+      "id, order_reference, patient_first_name, patient_last_name, patient_email, mask_name, mask_manufacturer, shipping_city, shipping_state, email_status, created_at",
+    )
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+  let countQuery = supabase
+    .schema("public")
+    .from("orders")
+    .select("*", { count: "exact", head: true });
+
+  if (q) {
+    // Escape LIKE metacharacters then run a 4-column ilike via .or().
+    // PostgREST treats `*` as the LIKE wildcard so we substitute back
+    // to `%` after escaping the user's literal `%`/`_`.
+    const pattern = `*${q.replace(/[\\%_*]/g, (c) => `\\${c}`)}*`;
+    const orFilter = [
+      `patient_first_name.ilike.${pattern}`,
+      `patient_last_name.ilike.${pattern}`,
+      `patient_email.ilike.${pattern}`,
+      `order_reference.ilike.${pattern}`,
+    ].join(",");
+    rowsQuery = rowsQuery.or(orFilter);
+    countQuery = countQuery.or(orFilter);
+  }
+  if (status) {
+    rowsQuery = rowsQuery.eq("email_status", status);
+    countQuery = countQuery.eq("email_status", status);
+  }
+  const [rowsRes, countRes] = await Promise.all([rowsQuery, countQuery]);
+  if (rowsRes.error) throw rowsRes.error;
+  if (countRes.error) throw countRes.error;
+  const rows = rowsRes.data ?? [];
+  const total = countRes.count ?? 0;
 
   // Every list-orders access is audited, not just searches. Even the
   // "redacted" summary view exposes patient first/last name and email,
@@ -117,21 +125,40 @@ router.get("/admin/orders", async (req, res) => {
     if (status) filterParts.push(`status=${status}`);
     filterParts.push(`page=${page}`);
     const action = `list_orders${filterParts.length ? `:${filterParts.join("&")}` : ""}`;
-    try {
-      await db.insert(adminAuditLogTable).values({
-        adminEmail: req.adminEmail,
-        adminUserId: req.adminUserId,
+    const { error: auditErr } = await supabase
+      .schema("public")
+      .from("admin_audit_log")
+      .insert({
+        admin_email: req.adminEmail,
+        admin_user_id: req.adminUserId,
         action,
         ip: req.ip ?? null,
       });
-    } catch (err) {
-      logger.error({ err }, "Failed to write audit log for list_orders");
+    if (auditErr) {
+      logger.error(
+        { err: auditErr },
+        "Failed to write audit log for list_orders",
+      );
     }
   }
 
+  // Map snake_case row shape back to the camelCase contract the SPA
+  // expects (matches the prior Drizzle alias-set output).
   res.json({
-    orders: rows,
-    total: totalRow[0]?.value ?? 0,
+    orders: rows.map((r) => ({
+      id: r.id,
+      orderReference: r.order_reference,
+      patientFirstName: r.patient_first_name,
+      patientLastName: r.patient_last_name,
+      patientEmail: r.patient_email,
+      maskName: r.mask_name,
+      maskManufacturer: r.mask_manufacturer,
+      shippingCity: r.shipping_city,
+      shippingState: r.shipping_state,
+      emailStatus: r.email_status,
+      createdAt: r.created_at,
+    })),
+    total,
     page,
     pageSize,
   });
@@ -141,8 +168,8 @@ router.get("/admin/orders", async (req, res) => {
 
 router.get("/admin/orders/:id", async (req, res) => {
   const id = req.params.id;
-  // Defensive uuid check (Drizzle would throw on a malformed id, surfacing
-  // a less friendly 500 to the admin).
+  // Defensive uuid check (a malformed id would round-trip as a 400
+  // from PostgREST anyway, but we surface a friendlier shape).
   if (
     !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
       id,
@@ -151,11 +178,15 @@ router.get("/admin/orders/:id", async (req, res) => {
     res.status(400).json({ error: "Invalid order id" });
     return;
   }
-  const [row] = await db
-    .select()
-    .from(ordersTable)
-    .where(eq(ordersTable.id, id))
-    .limit(1);
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("public")
+    .from("orders")
+    .select("*")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
   if (!row) {
     res.status(404).json({ error: "Order not found" });
     return;
@@ -165,72 +196,156 @@ router.get("/admin/orders/:id", async (req, res) => {
   // request (the admin shouldn't be locked out due to logging trouble),
   // but we surface it via server logs.
   if (req.adminEmail && req.adminUserId) {
-    try {
-      await db.insert(adminAuditLogTable).values({
-        adminEmail: req.adminEmail,
-        adminUserId: req.adminUserId,
+    const { error: auditErr } = await supabase
+      .schema("public")
+      .from("admin_audit_log")
+      .insert({
+        admin_email: req.adminEmail,
+        admin_user_id: req.adminUserId,
         action: "view_order_detail",
-        targetOrderId: row.id,
+        target_order_id: row.id,
         ip: req.ip ?? null,
       });
-    } catch (err) {
+    if (auditErr) {
       logger.error(
-        { err, orderId: row.id },
+        { err: auditErr, orderId: row.id },
         "Failed to write audit log for order view",
       );
     }
   }
 
-  res.json({ order: row });
+  // Re-shape to the camelCase contract.
+  res.json({
+    order: {
+      id: row.id,
+      orderReference: row.order_reference,
+      patientFirstName: row.patient_first_name,
+      patientLastName: row.patient_last_name,
+      patientEmail: row.patient_email,
+      patientPhone: row.patient_phone,
+      patientDateOfBirth: row.patient_date_of_birth,
+      maskId: row.mask_id,
+      maskName: row.mask_name,
+      maskManufacturer: row.mask_manufacturer,
+      maskModelNumber: row.mask_model_number,
+      shippingCity: row.shipping_city,
+      shippingState: row.shipping_state,
+      shippingZip: row.shipping_zip,
+      payload: row.payload,
+      emailStatus: row.email_status,
+      emailError: row.email_error,
+      emailDeliveredAt: row.email_delivered_at,
+      createdAt: row.created_at,
+    },
+  });
 });
 
 // ---------- GET /admin/analytics ----------
 
 router.get("/admin/analytics", async (_req, res) => {
-  const [
-    totalOrdersRow,
-    statusBreakdown,
-    maskBreakdown,
-    funnelBreakdown,
-    recentByDay,
-  ] = await Promise.all([
-    db.select({ value: count() }).from(ordersTable),
-    db
-      .select({ status: ordersTable.emailStatus, count: count() })
-      .from(ordersTable)
-      .groupBy(ordersTable.emailStatus),
-    db
-      .select({
-        maskName: ordersTable.maskName,
-        maskManufacturer: ordersTable.maskManufacturer,
-        count: count(),
-      })
-      .from(ordersTable)
-      .groupBy(ordersTable.maskName, ordersTable.maskManufacturer)
-      .orderBy(desc(count()))
-      .limit(10),
-    db
-      .select({ step: usageEventsTable.step, count: count() })
-      .from(usageEventsTable)
-      .groupBy(usageEventsTable.step),
-    // Recent orders (last 30 days, by day) for a sparkline.
-    db.execute(sql`
-      SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::int AS count
-      FROM orders
-      WHERE created_at > now() - interval '30 days'
-      GROUP BY 1
-      ORDER BY 1
-    `),
-  ]);
+  const supabase = getSupabaseServiceRoleClient();
+  const sinceIso = new Date(
+    Date.now() - 30 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  // PostgREST has no GROUP BY. We fetch the aggregation inputs and
+  // reduce JS-side. The dataset is admin-internal and bounded
+  // (low-thousands of orders / events at our scale); when this grows
+  // these become RPC functions exposing pre-aggregated views.
+  const [totalRes, statusRes, masksRes, funnelRes, recentRes] =
+    await Promise.all([
+      supabase
+        .schema("public")
+        .from("orders")
+        .select("*", { count: "exact", head: true }),
+      supabase
+        .schema("public")
+        .from("orders")
+        .select("email_status"),
+      supabase
+        .schema("public")
+        .from("orders")
+        .select("mask_name, mask_manufacturer"),
+      supabase
+        .schema("public")
+        .from("usage_events")
+        .select("step"),
+      supabase
+        .schema("public")
+        .from("orders")
+        .select("created_at")
+        .gte("created_at", sinceIso),
+    ]);
+  if (totalRes.error) throw totalRes.error;
+  if (statusRes.error) throw statusRes.error;
+  if (masksRes.error) throw masksRes.error;
+  if (funnelRes.error) throw funnelRes.error;
+  if (recentRes.error) throw recentRes.error;
+
+  // GROUP BY status COUNT(*).
+  const statusBreakdown = countBy(
+    statusRes.data ?? [],
+    (r) => r.email_status,
+  ).map(([status, count]) => ({ status, count }));
+
+  // GROUP BY (mask_name, mask_manufacturer) COUNT(*) ORDER BY count DESC LIMIT 10.
+  // Use a Map so we can preserve both grouping columns in the result
+  // rather than encoding them as a delimiter-collidable string.
+  const maskCounts = new Map<
+    string,
+    { maskName: string; maskManufacturer: string; count: number }
+  >();
+  for (const r of masksRes.data ?? []) {
+    const k = JSON.stringify([r.mask_name, r.mask_manufacturer]);
+    const existing = maskCounts.get(k);
+    if (existing) {
+      existing.count++;
+    } else {
+      maskCounts.set(k, {
+        maskName: r.mask_name,
+        maskManufacturer: r.mask_manufacturer,
+        count: 1,
+      });
+    }
+  }
+  const topMasks = Array.from(maskCounts.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // GROUP BY step COUNT(*).
+  const funnel = countBy(funnelRes.data ?? [], (r) => r.step).map(
+    ([step, count]) => ({ step, count }),
+  );
+
+  // date_trunc('day', created_at)::date GROUP BY day ORDER BY day.
+  // Truncate to YYYY-MM-DD by slicing the ISO string.
+  const ordersByDay = countBy(recentRes.data ?? [], (r) =>
+    r.created_at.slice(0, 10),
+  )
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([day, count]) => ({ day, count }));
 
   res.json({
-    totalOrders: totalOrdersRow[0]?.value ?? 0,
+    totalOrders: totalRes.count ?? 0,
     statusBreakdown,
-    topMasks: maskBreakdown,
-    funnel: funnelBreakdown,
-    ordersByDay: recentByDay.rows,
+    topMasks,
+    funnel,
+    ordersByDay,
   });
 });
+
+function countBy<T, K extends string>(
+  rows: ReadonlyArray<T>,
+  key: (r: T) => K | null | undefined,
+): Array<[K, number]> {
+  const m = new Map<K, number>();
+  for (const r of rows) {
+    const k = key(r);
+    if (k == null) continue;
+    m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return Array.from(m.entries());
+}
 
 // ---------- GET /admin/audit-log ----------
 
@@ -246,18 +361,40 @@ router.get("/admin/audit-log", async (req, res) => {
     return;
   }
   const { page, pageSize } = parsed.data;
+  const offset = (page - 1) * pageSize;
 
-  const [rows, totalRow] = await Promise.all([
-    db
-      .select()
-      .from(adminAuditLogTable)
-      .orderBy(desc(adminAuditLogTable.occurredAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize),
-    db.select({ value: count() }).from(adminAuditLogTable),
+  const supabase = getSupabaseServiceRoleClient();
+  const [rowsRes, countRes] = await Promise.all([
+    supabase
+      .schema("public")
+      .from("admin_audit_log")
+      .select(
+        "id, admin_email, admin_user_id, action, target_order_id, ip, occurred_at",
+      )
+      .order("occurred_at", { ascending: false })
+      .range(offset, offset + pageSize - 1),
+    supabase
+      .schema("public")
+      .from("admin_audit_log")
+      .select("*", { count: "exact", head: true }),
   ]);
+  if (rowsRes.error) throw rowsRes.error;
+  if (countRes.error) throw countRes.error;
 
-  res.json({ events: rows, total: totalRow[0]?.value ?? 0, page, pageSize });
+  res.json({
+    events: (rowsRes.data ?? []).map((r) => ({
+      id: r.id,
+      adminEmail: r.admin_email,
+      adminUserId: r.admin_user_id,
+      action: r.action,
+      targetOrderId: r.target_order_id,
+      ip: r.ip,
+      occurredAt: r.occurred_at,
+    })),
+    total: countRes.count ?? 0,
+    page,
+    pageSize,
+  });
 });
 
 // ---------- GET /admin/me ----------
@@ -281,20 +418,26 @@ router.get("/admin/me", (req, res) => {
 // nextDueAt so the admin can see who's coming up. Not paginated yet — this
 // is a small opt-in list, hundreds at most. Add pagination if it grows.
 router.get("/admin/reminders", async (_req, res) => {
-  const rows = await db
-    .select()
-    .from(reminderSubscriptionsTable)
-    .orderBy(desc(reminderSubscriptionsTable.createdAt))
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("public")
+    .from("reminder_subscriptions")
+    .select(
+      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+    )
+    .order("created_at", { ascending: false })
     .limit(2000);
+  if (error) throw error;
+
   const today = new Date().toISOString().slice(0, 10);
   res.json({
-    subscribers: rows.map((r) => {
-      const items = (r.items ?? []) as Array<{
+    subscribers: (rows ?? []).map((r) => {
+      const items = ((r.items ?? []) as unknown as Array<{
         sku: string;
         lastReplacedAt: string;
         intervalDays: number;
         nextDueAt: string;
-      }>;
+      }>);
       const dueItems = items.filter((i) => i.nextDueAt <= today);
       return {
         id: r.id,
@@ -303,11 +446,11 @@ router.get("/admin/reminders", async (_req, res) => {
         items,
         itemCount: items.length,
         dueCount: dueItems.length,
-        lastSentAt: r.lastSentAt?.toISOString() ?? null,
-        createdAt: r.createdAt.toISOString(),
+        lastSentAt: r.last_sent_at,
+        createdAt: r.created_at,
       };
     }),
-    total: rows.length,
+    total: (rows ?? []).length,
   });
 });
 
@@ -331,10 +474,13 @@ router.post("/admin/reminders/send-due", async (req, res) => {
     Date.now() - QUIET_PERIOD_DAYS * 24 * 60 * 60 * 1000,
   );
 
-  const candidates = await db
-    .select()
-    .from(reminderSubscriptionsTable)
-    .where(eq(reminderSubscriptionsTable.status, "active"));
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: candidates, error } = await supabase
+    .schema("public")
+    .from("reminder_subscriptions")
+    .select("id, email, manage_token, items, last_sent_at")
+    .eq("status", "active");
+  if (error) throw error;
 
   let sent = 0;
   let skippedQuiet = 0;
@@ -343,8 +489,8 @@ router.post("/admin/reminders/send-due", async (req, res) => {
   let failed = 0;
   const errors: Array<{ id: string; error: string }> = [];
 
-  for (const row of candidates) {
-    const items = (row.items ?? []) as ReminderItemForEmail[];
+  for (const row of candidates ?? []) {
+    const items = ((row.items ?? []) as unknown as ReminderItemForEmail[]);
     const dueItems = items.filter((i) => i.nextDueAt <= today);
 
     if (dueItems.length === 0) {
@@ -352,14 +498,14 @@ router.post("/admin/reminders/send-due", async (req, res) => {
       continue;
     }
 
-    if (row.lastSentAt && row.lastSentAt > quietCutoff) {
+    if (row.last_sent_at && new Date(row.last_sent_at) > quietCutoff) {
       skippedQuiet++;
       continue;
     }
 
     const result = await sendReminderDue({
       toEmail: row.email,
-      manageToken: row.manageToken,
+      manageToken: row.manage_token,
       dueItems,
     });
 
@@ -373,10 +519,18 @@ router.post("/admin/reminders/send-due", async (req, res) => {
       continue;
     }
 
-    await db
-      .update(reminderSubscriptionsTable)
-      .set({ lastSentAt: new Date(), updatedAt: new Date() })
-      .where(eq(reminderSubscriptionsTable.id, row.id));
+    const nowIso = new Date().toISOString();
+    const { error: stampErr } = await supabase
+      .schema("public")
+      .from("reminder_subscriptions")
+      .update({ last_sent_at: nowIso, updated_at: nowIso })
+      .eq("id", row.id);
+    if (stampErr) {
+      logger.warn(
+        { err: stampErr, id: row.id },
+        "Failed to stamp last_sent_at on reminder subscription",
+      );
+    }
     sent++;
   }
 
@@ -385,15 +539,20 @@ router.post("/admin/reminders/send-due", async (req, res) => {
   // The action label is enough to find these in the audit feed; specific
   // email recipients aren't logged because we don't log PHI/PII to audit.
   if (sent > 0 || failed > 0) {
-    try {
-      await db.insert(adminAuditLogTable).values({
-        adminEmail: req.adminEmail ?? "system",
-        adminUserId: req.adminUserId ?? "system",
+    const { error: auditErr } = await supabase
+      .schema("public")
+      .from("admin_audit_log")
+      .insert({
+        admin_email: req.adminEmail ?? "system",
+        admin_user_id: req.adminUserId ?? "system",
         action: `reminder.send_batch sent=${sent} failed=${failed}`,
         ip: req.ip ?? null,
       });
-    } catch (err) {
-      logger.warn({ err }, "Failed to write reminder batch audit row");
+    if (auditErr) {
+      logger.warn(
+        { err: auditErr },
+        "Failed to write reminder batch audit row",
+      );
     }
   }
 
@@ -404,7 +563,7 @@ router.post("/admin/reminders/send-due", async (req, res) => {
     skippedNotConfigured,
     failed,
     errors,
-    candidateCount: candidates.length,
+    candidateCount: (candidates ?? []).length,
     // Surface this so the admin UI can warn "configure SendGrid to actually
     // send" instead of silently reporting `sent: 0`.
     // Read the same env vars the shared SendGrid integration reads, so
@@ -416,8 +575,6 @@ router.post("/admin/reminders/send-due", async (req, res) => {
       process.env.SENDGRID_API_KEY && process.env.SENDGRID_FROM_EMAIL,
     ),
   });
-  // lte unused-import guard — referenced for future range queries
-  void lte;
 });
 
 export default router;

@@ -49,6 +49,35 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["usage_events"]["Insert"]>;
         Relationships: [];
       };
+      admin_audit_log: {
+        Row: {
+          id: string;
+          admin_email: string;
+          admin_user_id: string;
+          action: string;
+          target_order_id: string | null;
+          ip: string | null;
+          occurred_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["admin_audit_log"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["admin_audit_log"]["Row"]>;
+        Relationships: [];
+      };
+      reminder_subscriptions: {
+        Row: {
+          id: string;
+          email: string;
+          manage_token: string;
+          status: "active" | "unsubscribed";
+          items: Json;
+          last_sent_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["reminder_subscriptions"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["reminder_subscriptions"]["Row"]>;
+        Relationships: [];
+      };
       orders: {
         Row: {
           id: string;

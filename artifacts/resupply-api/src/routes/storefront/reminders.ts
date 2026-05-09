@@ -37,15 +37,17 @@ import {
   type ReminderItem,
 } from "../../lib/api-zod/index.js";
 import {
-  db,
-  reminderSubscriptionsTable,
-  type ReminderSubscriptionRow,
-} from "../../lib/storefront/db.js";
-import { eq } from "drizzle-orm";
+  getSupabaseServiceRoleClient,
+  type Database,
+  type Json,
+} from "@workspace/resupply-db";
 import {
   sendReminderConfirmation,
   sendReminderManageLink,
 } from "../../lib/storefront/reminderEmail.js";
+
+type ReminderSubscriptionRow =
+  Database["public"]["Tables"]["reminder_subscriptions"]["Row"];
 
 const router = Router();
 
@@ -123,8 +125,9 @@ function toView(row: ReminderSubscriptionRow): {
   return {
     email: row.email,
     status: row.status,
-    items: row.items as Array<ReminderItem & { nextDueAt: string }>,
-    createdAt: row.createdAt.toISOString(),
+    items: row.items as unknown as Array<ReminderItem & { nextDueAt: string }>,
+    // PostgREST returns timestamptz as ISO string already.
+    createdAt: row.created_at,
   };
 }
 
@@ -167,32 +170,32 @@ router.post("/reminders", async (req, res) => {
   const email = parsed.data.email.trim().toLowerCase();
   const items = parsed.data.items;
   const itemsWithDue = withNextDue(items);
-  const now = new Date();
+
+  const supabase = getSupabaseServiceRoleClient();
 
   // Look up by email. We branch hard here: existing rows DO NOT receive
   // the new items in the response and DO NOT have their token disclosed.
   // This closes a takeover hole where an attacker could submit a victim's
   // email and read back the capability token.
-  const existing = await db
-    .select()
-    .from(reminderSubscriptionsTable)
-    .where(eq(reminderSubscriptionsTable.email, email))
-    .limit(1);
+  const { data: existing, error: existingErr } = await supabase
+    .schema("public")
+    .from("reminder_subscriptions")
+    .select("email, manage_token")
+    .eq("email", email)
+    .limit(1)
+    .maybeSingle();
+  if (existingErr) throw existingErr;
 
-  if (existing.length > 0) {
+  if (existing) {
     // Email the EXISTING manage link to the registered owner only. The
     // response is intentionally identical to the new-subscription response
     // so callers cannot determine whether the email was already on file
     // (preventing email-enumeration of health-adjacent subscriber data).
-    //
-    // `emailStatus` is assigned in every branch below (try success path
-    // OR catch handler), so we declare it without an initializer to
-    // satisfy `no-useless-assignment` while keeping the union type.
     let emailStatus: "sent" | "skipped" | "failed";
     try {
       const result = await sendReminderManageLink({
-        toEmail: existing[0]!.email,
-        manageToken: existing[0]!.manageToken,
+        toEmail: existing.email,
+        manageToken: existing.manage_token,
       });
       emailStatus = !result.configured
         ? "skipped"
@@ -217,30 +220,29 @@ router.post("/reminders", async (req, res) => {
   // only via email; it is never returned in the API response so that
   // unauthenticated callers cannot mint and retain tokens for arbitrary
   // email addresses without proving inbox ownership.
-  let row: ReminderSubscriptionRow;
-  try {
-    const [inserted] = await db
-      .insert(reminderSubscriptionsTable)
-      .values({
-        email,
-        manageToken: generateManageToken(),
-        items: itemsWithDue,
-        status: "active",
-        updatedAt: now,
-      })
-      .returning();
-    row = inserted!;
-  } catch (err) {
+  const { data: row, error: insertErr } = await supabase
+    .schema("public")
+    .from("reminder_subscriptions")
+    .insert({
+      email,
+      manage_token: generateManageToken(),
+      // The strongly-typed item array doesn't satisfy PostgREST's `Json`
+      // type without a cast at the boundary.
+      items: itemsWithDue as unknown as Json,
+      status: "active",
+      updated_at: new Date().toISOString(),
+    })
+    .select(
+      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+    )
+    .limit(1)
+    .maybeSingle();
+  if (insertErr) {
     // Two concurrent POSTs with the same email can both pass the SELECT
     // check above and race to INSERT. The unique index on email makes
     // exactly one win; the loser gets a 23505. Return the same success
     // shape as the existing-row branch so the user experience is identical.
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: string }).code === "23505"
-    ) {
+    if ((insertErr as { code?: string }).code === "23505") {
       res.json({
         success: true,
         emailStatus: "skipped",
@@ -249,16 +251,17 @@ router.post("/reminders", async (req, res) => {
       });
       return;
     }
-    throw err;
+    throw insertErr;
+  }
+  if (!row) {
+    throw new Error("INSERT returned no rows");
   }
 
-  // Same rationale as the existing-row branch above — assigned in every
-  // path below, so declared without an initializer.
   let emailStatus: "sent" | "skipped" | "failed";
   try {
     const result = await sendReminderConfirmation({
       toEmail: row.email,
-      manageToken: row.manageToken,
+      manageToken: row.manage_token,
       items: itemsWithDue,
     });
     emailStatus = !result.configured
@@ -288,16 +291,22 @@ router.get("/reminders/manage", async (req, res) => {
       .json({ error: "Invalid query", details: ["token: required"] });
     return;
   }
-  const row = await db
-    .select()
-    .from(reminderSubscriptionsTable)
-    .where(eq(reminderSubscriptionsTable.manageToken, parsed.data.token))
-    .limit(1);
-  if (row.length === 0) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("public")
+    .from("reminder_subscriptions")
+    .select(
+      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+    )
+    .eq("manage_token", parsed.data.token)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!row) {
     res.status(404).json({ error: "Subscription not found" });
     return;
   }
-  res.json(toView(row[0]!));
+  res.json(toView(row));
 });
 
 // ---------- PATCH /reminders/manage?token=... ----------
@@ -330,17 +339,27 @@ router.patch("/reminders/manage", async (req, res) => {
 
   const itemsWithDue = withNextDue(bodyParsed.data.items);
 
-  const updated = await db
-    .update(reminderSubscriptionsTable)
-    .set({ items: itemsWithDue, status: "active", updatedAt: new Date() })
-    .where(eq(reminderSubscriptionsTable.manageToken, queryParsed.data.token))
-    .returning();
-
-  if (updated.length === 0) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: updated, error } = await supabase
+    .schema("public")
+    .from("reminder_subscriptions")
+    .update({
+      items: itemsWithDue as unknown as Json,
+      status: "active",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("manage_token", queryParsed.data.token)
+    .select(
+      "id, email, manage_token, status, items, last_sent_at, created_at, updated_at",
+    )
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) {
     res.status(404).json({ error: "Subscription not found" });
     return;
   }
-  res.json(toView(updated[0]!));
+  res.json(toView(updated));
 });
 
 // ---------- POST /reminders/manage/unsubscribe?token=... ----------
@@ -352,12 +371,20 @@ router.post("/reminders/manage/unsubscribe", async (req, res) => {
       .json({ error: "Invalid query", details: ["token: required"] });
     return;
   }
-  const updated = await db
-    .update(reminderSubscriptionsTable)
-    .set({ status: "unsubscribed", updatedAt: new Date() })
-    .where(eq(reminderSubscriptionsTable.manageToken, parsed.data.token))
-    .returning({ id: reminderSubscriptionsTable.id });
-  if (updated.length === 0) {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: updated, error } = await supabase
+    .schema("public")
+    .from("reminder_subscriptions")
+    .update({
+      status: "unsubscribed",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("manage_token", parsed.data.token)
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) {
     res.status(404).json({ error: "Subscription not found" });
     return;
   }
