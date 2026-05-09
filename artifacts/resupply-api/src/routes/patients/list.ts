@@ -27,22 +27,12 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  escapePostgRESTFilterValue,
+} from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
-
-// Escape a value for use in PostgREST `.or()` filter expressions.
-// PostgREST uses commas to separate clauses and parentheses for
-// grouping, so we need to wrap values containing these characters
-// in double-quotes and escape any embedded double-quotes.
-function escapePostgRESTFilterValue(value: string): string {
-  // If the value contains comma, parenthesis, or double-quote,
-  // wrap it in double-quotes and escape embedded quotes
-  if (/[,()"]/.test(value)) {
-    return `"${value.replace(/"/g, '\\"')}"`;
-  }
-  return value;
-}
 
 const listQuery = z
   .object({

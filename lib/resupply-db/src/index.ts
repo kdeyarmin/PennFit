@@ -34,3 +34,4 @@ export {
   type ProjectionLogger,
   type UpsertPatientLatestMessageInput,
 } from "./projections/patient-latest-message";
+export { escapePostgRESTFilterValue } from "./postgrest-utils";

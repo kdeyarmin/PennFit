@@ -52,7 +52,7 @@ router.get("/shop/orders/:sessionId", async (req, res) => {
     .maybeSingle();
   if (localError) {
     req.log?.error(
-      { err: localError.message, sessionId },
+      { err: localError, sessionId },
       "shop order lookup failed",
     );
     res.status(500).json({ error: "order_lookup_failed" });
