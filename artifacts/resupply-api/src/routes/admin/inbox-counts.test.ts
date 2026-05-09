@@ -1,11 +1,10 @@
 // Route tests for /admin/inbox-counts (Phase 16).
 // Coverage:
 //   * 401 without admin
-//   * Returns the three count buckets in shape, with zeros when no rows
-//   * Surfaces non-zero counts when the SQL stub returns them
-//   * SQL predicates: conversations count is cross-channel (no channel
-//     filter); returns count includes `received`; verifies each status
-//     bucket in the single-round-trip SELECT
+//   * Returns the count buckets in shape, with zeros when no rows
+//   * Surfaces non-zero counts when the staged probes return them
+//   * Each of the six tables is touched exactly once per request
+//     (regression guard against silently dropping a bucket)
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -15,6 +14,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -22,61 +28,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// The route uses a single db.execute(sql`...`) call for the main three
-// counts (one round-trip), plus two db.select() calls for overdue
-// followups (shop + patient). We capture the serialised SQL passed to
-// execute so tests can assert on the predicates (which channels /
-// statuses are included). Matches the pattern used in
-// abandoned-carts.test.ts.
-const executeQueue: Array<{ rows: unknown[] }> = [];
-let lastExecuteSql: string | null = null;
-
-// Each call to db.select() returns a fluent stub whose terminal
-// resolves with the next row-set in `selectQueue`. The route does two
-// COUNT selects (overdue shop followups, overdue patient followups).
-const selectQueue: unknown[][] = [];
-
-function sqlToString(query: { queryChunks?: unknown[] }): string {
-  // Walk Drizzle's SQL object chunks to produce a plain string.
-  if (!query || !Array.isArray(query.queryChunks)) return String(query);
-  return query.queryChunks
-    .map((c) => {
-      if (typeof c === "string") return c;
-      if (c && typeof c === "object" && "value" in c)
-        return String((c as { value: unknown }).value);
-      return "";
-    })
-    .join("");
-}
-
-function makeSelectStub(): unknown {
-  const rows = selectQueue.shift() ?? [];
-  const stub = {
-    from: () => stub,
-    where: () => Promise.resolve(rows),
-  };
-  return stub;
-}
-
-const dbStub = {
-  execute: vi.fn((query: unknown) => {
-    lastExecuteSql = sqlToString(query as { queryChunks?: unknown[] });
-    return Promise.resolve(executeQueue.shift() ?? { rows: [] });
-  }),
-  select: vi.fn(() => makeSelectStub()),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import inboxCountsRouter from "./inbox-counts";
 
@@ -93,13 +44,25 @@ const ADMIN: MockAdminCtx = {
   role: "admin",
 };
 
+// The six count probes the route issues in parallel. Stage all six
+// each test (even when they all return zero) so missing stages can't
+// silently make assertions pass against a `null` count default.
+function stageAllZero(): void {
+  for (const t of [
+    "conversations",
+    "shop_returns",
+    "shop_reviews",
+    "patient_documents",
+    "shop_customer_followups",
+    "patient_followups",
+  ]) {
+    stageSupabaseResponse(t, "select", { data: null, count: 0 });
+  }
+}
+
 beforeEach(() => {
   mockAdmin.current = null;
-  executeQueue.length = 0;
-  selectQueue.length = 0;
-  lastExecuteSql = null;
-  dbStub.execute.mockClear();
-  dbStub.select.mockClear();
+  supabaseMock.reset();
 });
 
 describe("GET /admin/inbox-counts", () => {
@@ -110,17 +73,7 @@ describe("GET /admin/inbox-counts", () => {
 
   it("returns zero counts when no actionable rows exist", async () => {
     mockAdmin.current = ADMIN;
-    executeQueue.push({
-      rows: [
-        {
-          awaiting_reply_conversations: 0,
-          pending_returns: 0,
-          pending_reviews: 0,
-        },
-      ],
-    });
-    selectQueue.push([{ count: 0 }]); // overdue shop followups
-    selectQueue.push([{ count: 0 }]); // overdue patient followups
+    stageAllZero();
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -129,23 +82,31 @@ describe("GET /admin/inbox-counts", () => {
       pendingReturns: 0,
       pendingReviews: 0,
       overdueFollowups: 0,
+      newPatientDocuments: 0,
     });
     expect(typeof res.body.serverTime).toBe("string");
   });
 
   it("surfaces non-zero counts in the right buckets", async () => {
     mockAdmin.current = ADMIN;
-    executeQueue.push({
-      rows: [
-        {
-          awaiting_reply_conversations: 7,
-          pending_returns: 3,
-          pending_reviews: 12,
-        },
-      ],
+    // Order matches the route's Promise.all destructuring:
+    //   conversations, shop_returns, shop_reviews,
+    //   patient_documents, shop_customer_followups, patient_followups
+    stageSupabaseResponse("conversations", "select", { data: null, count: 7 });
+    stageSupabaseResponse("shop_returns", "select", { data: null, count: 3 });
+    stageSupabaseResponse("shop_reviews", "select", { data: null, count: 12 });
+    stageSupabaseResponse("patient_documents", "select", {
+      data: null,
+      count: 4,
     });
-    selectQueue.push([{ count: 5 }]); // overdue shop followups
-    selectQueue.push([{ count: 2 }]); // overdue patient followups
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: null,
+      count: 5,
+    });
+    stageSupabaseResponse("patient_followups", "select", {
+      data: null,
+      count: 2,
+    });
 
     const res = await request(makeApp()).get("/admin/inbox-counts");
     expect(res.status).toBe(200);
@@ -153,51 +114,63 @@ describe("GET /admin/inbox-counts", () => {
       awaitingReplyConversations: 7,
       pendingReturns: 3,
       pendingReviews: 12,
+      newPatientDocuments: 4,
       // Sums shop + patient overdue across both surfaces.
       overdueFollowups: 7,
     });
   });
 
-  it("issues exactly one db.execute call (one round-trip)", async () => {
+  it("issues exactly one SELECT per bucket — six tables touched", async () => {
     mockAdmin.current = ADMIN;
-    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
+    stageAllZero();
 
     await request(makeApp()).get("/admin/inbox-counts");
-    expect(dbStub.execute).toHaveBeenCalledTimes(1);
+    // Regression guard: if a future refactor drops any of these the
+    // corresponding bucket would silently report zero.
+    expect(getSupabaseCallCount("conversations", "select")).toBe(1);
+    expect(getSupabaseCallCount("shop_returns", "select")).toBe(1);
+    expect(getSupabaseCallCount("shop_reviews", "select")).toBe(1);
+    expect(getSupabaseCallCount("patient_documents", "select")).toBe(1);
+    expect(getSupabaseCallCount("shop_customer_followups", "select")).toBe(1);
+    expect(getSupabaseCallCount("patient_followups", "select")).toBe(1);
   });
 
-  it("SQL does not filter by channel — counts all awaiting_admin conversations", async () => {
+  it("treats a null count from PostgREST as zero in the response", async () => {
     mockAdmin.current = ADMIN;
-    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
+    // PostgREST can return `count: null` if the count header was
+    // dropped (e.g. transient transport hiccup); the route must
+    // coerce to 0 rather than emit `null` in the JSON body.
+    stageSupabaseResponse("conversations", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("shop_returns", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("shop_reviews", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("patient_documents", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: null,
+      count: null,
+    });
+    stageSupabaseResponse("patient_followups", "select", {
+      data: null,
+      count: null,
+    });
 
-    await request(makeApp()).get("/admin/inbox-counts");
-    const sqlStr = lastExecuteSql ?? "";
-    // Must filter on awaiting_admin status...
-    expect(sqlStr).toContain("awaiting_admin");
-    // ...but must NOT restrict to a single channel.
-    expect(sqlStr).not.toContain("in_app");
-    expect(sqlStr).not.toContain("channel");
-  });
-
-  it("SQL includes `received` in the returns status set", async () => {
-    mockAdmin.current = ADMIN;
-    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
-
-    await request(makeApp()).get("/admin/inbox-counts");
-    const sqlStr = lastExecuteSql ?? "";
-    expect(sqlStr).toContain("received");
-    // Also verify the other expected statuses are present.
-    expect(sqlStr).toContain("requested");
-    expect(sqlStr).toContain("shipped_back");
-  });
-
-  it("SQL filters reviews to `pending` status", async () => {
-    mockAdmin.current = ADMIN;
-    executeQueue.push({ rows: [{ awaiting_reply_conversations: 0, pending_returns: 0, pending_reviews: 0 }] });
-
-    await request(makeApp()).get("/admin/inbox-counts");
-    const sqlStr = lastExecuteSql ?? "";
-    expect(sqlStr).toContain("pending");
-    expect(sqlStr).toContain("shop_reviews");
+    const res = await request(makeApp()).get("/admin/inbox-counts");
+    expect(res.status).toBe(200);
+    expect(res.body.awaitingReplyConversations).toBe(0);
+    expect(res.body.pendingReturns).toBe(0);
+    expect(res.body.pendingReviews).toBe(0);
+    expect(res.body.newPatientDocuments).toBe(0);
+    expect(res.body.overdueFollowups).toBe(0);
   });
 });

@@ -49,6 +49,11 @@ export interface StagedSupabaseResponse {
 
 const queues = new Map<string, StagedSupabaseResponse[]>();
 const callCounts = new Map<string, number>();
+// Per-(table, op) log of the payloads passed to write verbs
+// (`.insert(payload)`, `.update(payload)`, `.upsert(payload)`,
+// `.delete()` records `undefined`). Order is preserved so a test that
+// makes N writes can read them off in order.
+const writePayloads = new Map<string, unknown[]>();
 
 function key(table: string, op: SupabaseOp): string {
   return `${table}.${op}`;
@@ -156,25 +161,36 @@ function makeTableBuilder(table: string): TableBuilder {
     return Promise.resolve(popResponse(table, op ?? "select"));
   };
 
+  const recordPayload = (writeOp: SupabaseOp, payload: unknown): void => {
+    const k = key(table, writeOp);
+    const list = writePayloads.get(k) ?? [];
+    list.push(payload);
+    writePayloads.set(k, list);
+  };
+
   const builder: TableBuilder = {
     select: () => {
       setOp("select");
       return builder;
     },
-    insert: () => {
+    insert: (payload?: unknown) => {
       setOp("insert");
+      recordPayload("insert", payload);
       return builder;
     },
-    update: () => {
+    update: (payload?: unknown) => {
       setOp("update");
+      recordPayload("update", payload);
       return builder;
     },
-    upsert: () => {
+    upsert: (payload?: unknown) => {
       setOp("upsert");
+      recordPayload("upsert", payload);
       return builder;
     },
     delete: () => {
       setOp("delete");
+      recordPayload("delete", undefined);
       return builder;
     },
     eq: () => builder,
@@ -214,6 +230,14 @@ export interface SupabaseMockHandle {
    * RETURNING chain counts once under "insert", not twice.
    */
   callCount(table: string, op: SupabaseOp): number;
+  /**
+   * Payloads passed to each call of a write verb on this table since
+   * the last `reset()`. Equivalent to capturing `vals` from
+   * `dbStub.insert(vals)` / `dbStub.update(vals)` in the legacy
+   * Drizzle stub. Returns `[]` if the table+op combination was never
+   * exercised. `delete` records `undefined`.
+   */
+  writePayloads(table: string, op: SupabaseOp): unknown[];
 }
 
 /**
@@ -253,12 +277,16 @@ export function installSupabaseMock(): SupabaseMockHandle {
     reset() {
       queues.clear();
       callCounts.clear();
+      writePayloads.clear();
     },
     stage(table, op, result) {
       stageSupabaseResponse(table, op, result);
     },
     callCount(table, op) {
       return callCounts.get(key(table, op)) ?? 0;
+    },
+    writePayloads(table, op) {
+      return writePayloads.get(key(table, op)) ?? [];
     },
   };
 }
@@ -269,4 +297,12 @@ export function getSupabaseCallCount(
   op: SupabaseOp,
 ): number {
   return callCounts.get(key(table, op)) ?? 0;
+}
+
+/** Standalone alias for `installSupabaseMock().writePayloads(...)`. */
+export function getSupabaseWritePayloads(
+  table: string,
+  op: SupabaseOp,
+): unknown[] {
+  return writePayloads.get(key(table, op)) ?? [];
 }

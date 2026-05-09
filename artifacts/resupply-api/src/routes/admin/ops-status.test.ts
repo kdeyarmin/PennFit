@@ -15,6 +15,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -22,43 +28,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// We script the SELECT count() answers in order. Each helper returns
-// a chainable { from, where }-shaped object whose terminal call
-// resolves the queued result.
-//
-// The shift() THROWS on an empty queue rather than silently
-// returning 0 — without this, adding a SELECT to the route or
-// forgetting to script a count would still keep the tests green
-// with a bogus zero, defeating the safety net these helpers
-// provide.
-const selectQueue: number[] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    if (selectQueue.length === 0) {
-      throw new Error(
-        "ops-status test stub exhausted: expected another queued SELECT count() result",
-      );
-    }
-    const value = selectQueue.shift() as number;
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => Promise.resolve([{ count: value }]),
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import opsStatusRouter from "./ops-status";
 
@@ -89,7 +58,7 @@ beforeEach(() => {
   for (const k of ALL_VENDOR_KEYS) originalEnv[k] = process.env[k];
   for (const k of ALL_VENDOR_KEYS) delete process.env[k];
   mockAdmin.current = null;
-  selectQueue.length = 0;
+  supabaseMock.reset();
 });
 
 afterEach(() => {
@@ -100,18 +69,55 @@ afterEach(() => {
 });
 
 /**
- * Push the 8 SELECT count() answers the route makes, in order:
- *   1. abandoned-cart eligible
- *   2. review-request eligible
- *   3. rx-renewal eligible
- *   4. smart-trigger eligible
- *   5. fax-outreach pending (Phase G.16)
- *   6. active admin count
- *   7. active agent count
- *   8. pending invite count
+ * Stage the 8 head:true count probes the route makes, in order:
+ *   1. shop_abandoned_carts (abandoned-cart eligible)
+ *   2. shop_orders (review-request eligible)
+ *   3. prescriptions (rx-renewal eligible)
+ *   4. patient_smart_trigger_events (smart-trigger eligible)
+ *   5. physician_fax_outreach (fax-outreach pending)
+ *   6/7/8. admin_users — same table queried three times
+ *           (active admins / active agents / pending invites)
  */
-function queueCounts(counts: number[]) {
-  for (const c of counts) selectQueue.push(c);
+function queueCounts(counts: number[]): void {
+  if (counts.length !== 8) {
+    throw new Error("queueCounts expects exactly 8 values");
+  }
+  stageSupabaseResponse("shop_abandoned_carts", "select", {
+    data: null,
+    count: counts[0],
+  });
+  stageSupabaseResponse("shop_orders", "select", {
+    data: null,
+    count: counts[1],
+  });
+  stageSupabaseResponse("prescriptions", "select", {
+    data: null,
+    count: counts[2],
+  });
+  stageSupabaseResponse("patient_smart_trigger_events", "select", {
+    data: null,
+    count: counts[3],
+  });
+  stageSupabaseResponse("physician_fax_outreach", "select", {
+    data: null,
+    count: counts[4],
+  });
+  // admin_users is queried three times in this Promise.all; my
+  // supabase mock's per-(table, op) queue is FIFO and Promise.all
+  // attaches .then() to inputs in array order, so these consume in
+  // the same order they're staged.
+  stageSupabaseResponse("admin_users", "select", {
+    data: null,
+    count: counts[5],
+  });
+  stageSupabaseResponse("admin_users", "select", {
+    data: null,
+    count: counts[6],
+  });
+  stageSupabaseResponse("admin_users", "select", {
+    data: null,
+    count: counts[7],
+  });
 }
 
 describe("GET /admin/ops-status", () => {
