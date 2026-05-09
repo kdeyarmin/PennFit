@@ -21,38 +21,13 @@ vi.mock("@workspace/resupply-telecom", async () => {
   };
 });
 
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    set: () => obj,
-    values: () => obj,
-    limit: () => Promise.resolve(result),
-    returning: () => Promise.resolve(result),
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const updateQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent([])),
-  insert: vi.fn(() => fluent([])),
-  update: vi.fn(() => fluent(updateQueue.shift() ?? undefined)),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
 
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 const logAuditMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -70,9 +45,7 @@ function makeApp(): Express {
 
 describe("POST /voice/status-callback", () => {
   beforeEach(() => {
-    updateQueue.length = 0;
-    dbStub.select.mockClear();
-    dbStub.update.mockClear();
+    supabaseMock.reset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
   });
   afterEach(() => {
@@ -95,18 +68,18 @@ describe("POST /voice/status-callback", () => {
       .type("form")
       .send({ CallSid: "CA1", CallStatus: "ringing" });
     expect(res.status).toBe(200);
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("closes conversation + audits voice.call.completed on terminal status", async () => {
-    updateQueue.push(undefined);
+    stageSupabaseResponse("conversations", "update", { error: null });
     const res = await request(makeApp())
       .post("/resupply-api/voice/status-callback?conversationId=c1")
       .type("form")
       .send({ CallSid: "CA1", CallStatus: "completed" });
     expect(res.status).toBe(200);
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
+    expect(getSupabaseCallCount("conversations", "update")).toBe(1);
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("voice.call.completed");
@@ -122,13 +95,13 @@ describe("POST /voice/status-callback", () => {
   it.each(["failed", "busy", "no-answer", "canceled"])(
     "treats %s as terminal",
     async (status) => {
-      updateQueue.push(undefined);
+      stageSupabaseResponse("conversations", "update", { error: null });
       const res = await request(makeApp())
         .post("/resupply-api/voice/status-callback?conversationId=c1")
         .type("form")
         .send({ CallSid: "CA1", CallStatus: status });
       expect(res.status).toBe(200);
-      expect(dbStub.update).toHaveBeenCalledTimes(1);
+      expect(getSupabaseCallCount("conversations", "update")).toBe(1);
       expect(logAuditMock).toHaveBeenCalledTimes(1);
       expect(logAuditMock.mock.calls[0][0].metadata.twilio_status).toBe(status);
     },

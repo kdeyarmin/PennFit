@@ -15,6 +15,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -22,61 +28,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-const selectQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    if (selectQueue.length === 0) {
-      throw new Error(
-        "smart-triggers-list test: selectQueue exhausted — the route made " +
-          "more SELECT calls than the test scripted answers for. " +
-          "Add a selectQueue.push() entry for the new query.",
-      );
-    }
-    const result = selectQueue.shift()!;
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  selectDistinct: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve([]),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      onConflictDoNothing: () => obj,
-      returning: () => Promise.resolve([]),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => Promise.resolve(),
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import smartTriggersRouter from "./smart-triggers";
 
@@ -92,7 +43,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
+  supabaseMock.reset();
 });
 
 describe("GET /admin/patients/:id/smart-triggers", () => {
@@ -114,7 +65,9 @@ describe("GET /admin/patients/:id/smart-triggers", () => {
 
   it("returns empty array when patient has no triggers", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([]);
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [],
+    });
     const res = await request(makeApp()).get(
       `/admin/patients/${PATIENT_ID}/smart-triggers`,
     );
@@ -124,32 +77,34 @@ describe("GET /admin/patients/:id/smart-triggers", () => {
 
   it("projects rows with ISO timestamps + lifecycle fields", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([
-      {
-        id: "evt_sent",
-        kind: "leak_rising",
-        detectedAt: new Date("2026-04-30T12:00:00Z"),
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-30",
-        sentAt: new Date("2026-04-30T13:00:00Z"),
-        dismissedAt: null,
-        dismissedByEmail: null,
-        dismissedReason: null,
-        createdAt: new Date("2026-04-30T12:00:00Z"),
-      },
-      {
-        id: "evt_dismissed",
-        kind: "cushion_wear",
-        detectedAt: new Date("2026-04-29T12:00:00Z"),
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-29",
-        sentAt: null,
-        dismissedAt: new Date("2026-04-29T15:00:00Z"),
-        dismissedByEmail: "csr@x",
-        dismissedReason: "patient called and resolved on call",
-        createdAt: new Date("2026-04-29T12:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [
+        {
+          id: "evt_sent",
+          kind: "leak_rising",
+          detected_at: new Date("2026-04-30T12:00:00Z").toISOString(),
+          window_start_date: "2026-04-15",
+          window_end_date: "2026-04-30",
+          sent_at: new Date("2026-04-30T13:00:00Z").toISOString(),
+          dismissed_at: null,
+          dismissed_by_email: null,
+          dismissed_reason: null,
+          created_at: new Date("2026-04-30T12:00:00Z").toISOString(),
+        },
+        {
+          id: "evt_dismissed",
+          kind: "cushion_wear",
+          detected_at: new Date("2026-04-29T12:00:00Z").toISOString(),
+          window_start_date: "2026-04-15",
+          window_end_date: "2026-04-29",
+          sent_at: null,
+          dismissed_at: new Date("2026-04-29T15:00:00Z").toISOString(),
+          dismissed_by_email: "csr@x",
+          dismissed_reason: "patient called and resolved on call",
+          created_at: new Date("2026-04-29T12:00:00Z").toISOString(),
+        },
+      ],
+    });
     const res = await request(makeApp()).get(
       `/admin/patients/${PATIENT_ID}/smart-triggers`,
     );
@@ -173,20 +128,22 @@ describe("GET /admin/patients/:id/smart-triggers", () => {
 
   it("PHI invariant — therapy values never appear in the response", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([
-      {
-        id: "evt_phi",
-        kind: "leak_rising",
-        detectedAt: new Date("2026-04-30T12:00:00Z"),
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-30",
-        sentAt: null,
-        dismissedAt: null,
-        dismissedByEmail: null,
-        dismissedReason: null,
-        createdAt: new Date("2026-04-30T12:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [
+        {
+          id: "evt_phi",
+          kind: "leak_rising",
+          detected_at: new Date("2026-04-30T12:00:00Z").toISOString(),
+          window_start_date: "2026-04-15",
+          window_end_date: "2026-04-30",
+          sent_at: null,
+          dismissed_at: null,
+          dismissed_by_email: null,
+          dismissed_reason: null,
+          created_at: new Date("2026-04-30T12:00:00Z").toISOString(),
+        },
+      ],
+    });
     const res = await request(makeApp()).get(
       `/admin/patients/${PATIENT_ID}/smart-triggers`,
     );

@@ -15,6 +15,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -57,44 +64,14 @@ vi.mock("../../lib/therapy-cloud", () => ({
   }),
 }));
 
-const selectQueue: unknown[][] = [];
-const insertedValues: Record<string, unknown>[] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      values: (vals: Record<string, unknown>) => {
-        insertedValues.push(vals);
-        return obj;
-      },
-      onConflictDoUpdate: () => Promise.resolve(),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import patientTherapySyncRouter from "./patient-therapy-sync";
 
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
 
 function makeApp(): Express {
   const app = express();
@@ -105,8 +82,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  insertedValues.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
   adapterState.configured = true;
   adapterState.fetch = async () => ({ nights: [], hasMore: false });
@@ -121,31 +97,29 @@ describe("GET /admin/patients/:id/therapy-nights", () => {
   });
 
   it("coerces numerics to JS numbers and returns DESC by night_date", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
-        id: "n_2",
-        nightDate: "2026-05-04",
-        source: "resmed_airview",
-        usageMinutes: 415,
-        ahi: "1.20",
-        leakRateLMin: "12.40",
-        pressureP95Cmh2o: "10.50",
-      },
-      {
-        id: "n_1",
-        nightDate: "2026-05-03",
-        source: "resmed_airview",
-        usageMinutes: 390,
-        ahi: null,
-        leakRateLMin: null,
-        pressureP95Cmh2o: null,
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [
+        {
+          id: "n_2",
+          night_date: "2026-05-04",
+          source: "resmed_airview",
+          usage_minutes: 415,
+          ahi: "1.20",
+          leak_rate_l_min: "12.40",
+          pressure_p95_cmh2o: "10.50",
+        },
+        {
+          id: "n_1",
+          night_date: "2026-05-03",
+          source: "resmed_airview",
+          usage_minutes: 390,
+          ahi: null,
+          leak_rate_l_min: null,
+          pressure_p95_cmh2o: null,
+        },
+      ],
+    });
     const res = await request(makeApp()).get(
       `/admin/patients/${PATIENT_ID}/therapy-nights`,
     );
@@ -168,12 +142,8 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
   });
 
   it("503s when the adapter is unconfigured", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: PATIENT_ID }]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
     adapterState.configured = false;
     const res = await request(makeApp())
       .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
@@ -183,12 +153,8 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
   });
 
   it("502s on adapter throw, no partial writes", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: PATIENT_ID }]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
     adapterState.fetch = async () => {
       throw new Error("upstream-down");
     };
@@ -196,16 +162,13 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
       .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
       .send({ source: "resmed_airview", partnerPatientId: "abc" });
     expect(res.status).toBe(502);
-    expect(insertedValues).toEqual([]);
+    expect(getSupabaseWritePayloads("patient_therapy_nights", "upsert"))
+      .toEqual([]);
   });
 
   it("imports + audits with non-PHI envelope", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: PATIENT_ID }]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
     adapterState.fetch = async () => ({
       nights: [
         {
@@ -227,6 +190,7 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
       ],
       hasMore: false,
     });
+    stageSupabaseResponse("patient_therapy_nights", "upsert", { error: null });
 
     const res = await request(makeApp())
       .post(`/admin/patients/${PATIENT_ID}/therapy-nights/sync`)
@@ -240,17 +204,26 @@ describe("POST /admin/patients/:id/therapy-nights/sync", () => {
     expect(res.body.imported).toBe(2);
     expect(res.body.source).toBe("resmed_airview");
 
-    expect(insertedValues).toHaveLength(2);
-    expect(insertedValues[0]).toMatchObject({
-      patientId: PATIENT_ID,
-      nightDate: "2026-05-04",
+    // The route uses bulk upsert: a SINGLE call passing the whole
+    // array, not one call per row. That's why writePayloads returns
+    // length 1 with an array payload.
+    const upserts = getSupabaseWritePayloads(
+      "patient_therapy_nights",
+      "upsert",
+    );
+    expect(upserts).toHaveLength(1);
+    const rows = upserts[0] as Record<string, unknown>[];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      patient_id: PATIENT_ID,
+      night_date: "2026-05-04",
       source: "resmed_airview",
-      sourceEventId: "evt_1",
-      usageMinutes: 415,
+      source_event_id: "evt_1",
+      usage_minutes: 415,
       // numeric columns serialized as strings; the adapter contract
       // lets the route translate.
       ahi: "1.2",
-      leakRateLMin: "12.4",
+      leak_rate_l_min: "12.4",
     });
 
     expect(logAuditMock).toHaveBeenCalledTimes(1);
