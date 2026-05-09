@@ -119,13 +119,14 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
     // have to special-case "user clicked save without changing
     // anything". We still need to return a current `updatedAt` so
     // the client's optimistic-concurrency token stays usable.
-    const { data: current } = await supabase
+    const { data: current, error } = await supabase
       .schema("resupply")
       .from("patients")
       .select("id, updated_at")
       .eq("id", id)
       .limit(1)
       .maybeSingle();
+    if (error) throw error;
     if (!current) {
       res.status(404).json({ error: "not_found" });
       return;
