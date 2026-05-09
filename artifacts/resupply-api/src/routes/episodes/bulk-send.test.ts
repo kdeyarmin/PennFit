@@ -4,7 +4,7 @@
 // rather than the deep telecom/email/db stack, because bulk-send's
 // responsibility is ORCHESTRATION only:
 //   - parse + dedupe the id slate
-//   - look up patient_id per id in one round-trip
+//   - look up patient_id per id in one round-trip (Supabase)
 //   - serial fan-out to the helpers
 //   - aggregate per-id outcomes into summary + results[]
 //   - short-circuit on vendor config errors
@@ -20,7 +20,6 @@ import {
   vi,
   beforeEach,
   afterEach,
-  type Mock,
 } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
@@ -29,6 +28,10 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -37,16 +40,7 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-const queryMock: Mock = vi.fn();
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({ query: queryMock }) as never,
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 const sendReminderSmsMock = vi.fn();
 const sendReminderEmailMock = vi.fn();
@@ -126,6 +120,7 @@ const ORIGINAL_ADMIN_EMAILS = process.env.RESUPPLY_ADMIN_EMAILS;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  supabaseMock.reset();
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   readMessagingConfigMock.mockReturnValue(BASE_CFG);
 });
@@ -138,17 +133,7 @@ afterEach(() => {
   }
 });
 
-// TODO(migration:drizzle-to-supabase): this suite mocks
-// `drizzle-orm/node-postgres` and exercises a fluent stub that the
-// reminders package no longer touches — bulk-send fans out through
-// `sendReminderSms`/`sendReminderEmail`, both of which now read and
-// write through the Supabase service-role client. Rewrite the
-// per-test stubs against `getSupabaseServiceRoleClient()` (mock the
-// `.schema().from().select/insert/update()...` chain returning the
-// same staged rows) before re-enabling. The unit-level safe-audit
-// + sanitize coverage in lib/resupply-{reminders,audit} stays green
-// in the meantime.
-describe.skip("POST /episodes/bulk-send", () => {
+describe("POST /episodes/bulk-send", () => {
   it("requires admin auth", async () => {
     const res = await request(makeApp())
       .post("/resupply-api/episodes/bulk-send")
@@ -199,8 +184,8 @@ describe.skip("POST /episodes/bulk-send", () => {
 
   it("happy path — three SMS sends all succeed", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    stageSupabaseResponse("episodes", "select", {
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
         { id: EP3, patient_id: PT3 },
@@ -230,8 +215,8 @@ describe.skip("POST /episodes/bulk-send", () => {
 
   it("partial failure — mixed outcomes are reported per-id", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    stageSupabaseResponse("episodes", "select", {
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
         { id: EP3, patient_id: PT3 },
@@ -272,8 +257,8 @@ describe.skip("POST /episodes/bulk-send", () => {
 
   it("reports episode_not_found for ids missing from the lookup", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [{ id: EP1, patient_id: PT1 }],
+    stageSupabaseResponse("episodes", "select", {
+      data: [{ id: EP1, patient_id: PT1 }],
     });
     sendReminderSmsMock.mockResolvedValue({
       status: "ok",
@@ -298,8 +283,8 @@ describe.skip("POST /episodes/bulk-send", () => {
 
   it("short-circuits on TwilioConfigError, marking remainder as twilio_config_error", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    stageSupabaseResponse("episodes", "select", {
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
         { id: EP3, patient_id: PT3 },
@@ -339,8 +324,8 @@ describe.skip("POST /episodes/bulk-send", () => {
 
   it("short-circuits on EmailConfigError when channel=email", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    stageSupabaseResponse("episodes", "select", {
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
       ],
@@ -363,8 +348,8 @@ describe.skip("POST /episodes/bulk-send", () => {
 
   it("de-duplicates input ids while preserving first-seen order", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    stageSupabaseResponse("episodes", "select", {
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
       ],
@@ -389,8 +374,8 @@ describe.skip("POST /episodes/bulk-send", () => {
 
   it("routes to email helper when channel=email", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [{ id: EP1, patient_id: PT1 }],
+    stageSupabaseResponse("episodes", "select", {
+      data: [{ id: EP1, patient_id: PT1 }],
     });
     sendReminderEmailMock.mockResolvedValue({
       status: "ok",

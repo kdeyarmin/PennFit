@@ -8,6 +8,10 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -16,45 +20,7 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    set: () => obj,
-    values: () => obj,
-    orderBy: () => obj,
-    leftJoin: () => obj,
-    innerJoin: () => obj,
-    onConflictDoUpdate: () => Promise.resolve(undefined),
-    onConflictDoNothing: () => Promise.resolve(undefined),
-    limit: () => Promise.resolve(result),
-    returning: () => Promise.resolve(result),
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const insertQueue: unknown[] = [];
-const updateQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-  insert: vi.fn(() => fluent(insertQueue.shift() ?? [])),
-  update: vi.fn(() => fluent(updateQueue.shift() ?? undefined)),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 const sendEmailMock = vi.fn();
 vi.mock("@workspace/resupply-email", async () => {
@@ -76,6 +42,7 @@ import sendEmailRouter from "./send-reminder";
 
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const EPISODE_ID = "22222222-2222-4222-8222-222222222222";
+const PRESCRIPTION_ID = "44444444-4444-4444-8444-444444444444";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
 const ALLOWED_EMAIL = "ops@penn.example.com";
 
@@ -125,29 +92,22 @@ function setMessagingEnv(): void {
   process.env.NODE_ENV = "test";
 }
 
-// TODO(migration:drizzle-to-supabase): this suite mocks
-// `drizzle-orm/node-postgres` and exercises a fluent stub that the
-// reminders package no longer touches — `sendReminderEmail` now reads
-// and writes through the Supabase service-role client. Rewrite the
-// per-test stubs against `getSupabaseServiceRoleClient()` (mock the
-// `.schema().from().select/insert/update()...` chain returning the
-// same staged rows) before re-enabling. The unit-level safe-audit
-// + sanitize coverage in lib/resupply-{reminders,audit} stays green
-// in the meantime.
-describe.skip("POST /email/send-reminder", () => {
+const ACTIVE_PATIENT = {
+  id: PATIENT_ID,
+  status: "active",
+  email: "joan@example.com",
+  legal_first_name: "Joan",
+};
+
+describe("POST /email/send-reminder", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    selectQueue.length = 0;
-    insertQueue.length = 0;
-    updateQueue.length = 0;
+    supabaseMock.reset();
     mockAdmin.current = null;
     sendEmailMock.mockReset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
-    dbStub.select.mockClear();
-    dbStub.insert.mockClear();
-    dbStub.update.mockClear();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -179,14 +139,9 @@ describe.skip("POST /email/send-reminder", () => {
   it("returns 422 when patient has no email", async () => {
     setMessagingEnv();
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
-        id: PATIENT_ID,
-        status: "active",
-        email: null,
-        legalFirstName: "Joan",
-      },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: { ...ACTIVE_PATIENT, email: null },
+    });
     const res = await request(makeApp())
       .post("/resupply-api/email/send-reminder")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
@@ -197,17 +152,27 @@ describe.skip("POST /email/send-reminder", () => {
   it("sends, opens conversation, audits, returns 201, scrubs email PHI", async () => {
     setMessagingEnv();
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
-        id: PATIENT_ID,
-        status: "active",
-        email: "joan@example.com",
-        legalFirstName: "Joan",
+    // Step 1: patient lookup.
+    stageSupabaseResponse("patients", "select", { data: ACTIVE_PATIENT });
+    // Step 2: episode lookup by id (caller passed episodeId).
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        prescription_id: PRESCRIPTION_ID,
       },
-    ]);
-    selectQueue.push([{ id: EPISODE_ID, patientId: PATIENT_ID }]);
-    insertQueue.push([{ id: CONVERSATION_ID }]);
-    updateQueue.push(undefined);
+    });
+    // Step 3: prescription lookup for items[].
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { item_sku: "PAP-CUSHION-S" },
+    });
+    // Step 4: open conversation (insert ... returning).
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
+    // Step 5: persist message + stamp conversation.
+    stageSupabaseResponse("messages", "insert", { error: null });
+    stageSupabaseResponse("conversations", "update", { error: null });
     sendEmailMock.mockResolvedValue({ messageId: "SG_TEST_999" });
 
     const res = await request(makeApp())
