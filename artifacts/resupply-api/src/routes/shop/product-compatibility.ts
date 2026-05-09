@@ -83,18 +83,21 @@ router.get("/shop/products/compatibility", async (req, res) => {
   // PostgREST's `.ilike(col, value)` with no wildcards is exact
   // case-insensitive equality. Two ilikes are AND'd; the model
   // disjunction goes through `.or(...)`.
+  const quotePostgrestFilterValue = (value: string) =>
+    `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
   let matchQuery = supabase
     .schema("resupply")
     .from("shop_product_compatibility")
     .select("product_id")
     .ilike("machine_manufacturer", manufacturer);
   if (model) {
-    // ilike pattern is value-controlled here; both the column name and
-    // the operator are literal. PostgREST escapes `,` inside `.or()`
-    // values via `*` so we restrict the param value to the validated
-    // shape (model went through Zod above).
+    // `.or(...)` takes a PostgREST filter expression string, so user
+    // input must be quoted/escaped as a literal value before
+    // interpolation to prevent commas/parentheses/etc. from changing
+    // the expression's structure.
     matchQuery = matchQuery.or(
-      `machine_model.is.null,machine_model.ilike.${model}`,
+      `machine_model.is.null,machine_model.ilike.${quotePostgrestFilterValue(model)}`,
     );
   }
   const { data: matched, error: matchedErr } = await matchQuery;
