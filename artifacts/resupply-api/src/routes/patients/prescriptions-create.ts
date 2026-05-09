@@ -115,13 +115,14 @@ router.post("/patients/:id/prescriptions", requireAdmin, async (req, res) => {
 
   const supabase = getSupabaseServiceRoleClient();
 
-  const { data: patient } = await supabase
+  const { data: patient, error: patientError } = await supabase
     .schema("resupply")
     .from("patients")
     .select("id")
     .eq("id", patientId)
     .limit(1)
     .maybeSingle();
+  if (patientError) throw patientError;
   if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
