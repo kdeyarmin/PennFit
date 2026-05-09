@@ -21,17 +21,13 @@
 // snapshot id + patient id + source + status only. Logger never
 // sees the payload or the partner response body.
 
-import { and, asc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getDbPool,
-  patients,
-  patientIntegrationSnapshots,
-  patientTherapyLinks,
+  getSupabaseServiceRoleClient,
+  type Json,
 } from "@workspace/resupply-db";
 import {
   INTEGRATION_SOURCES,
@@ -54,6 +50,14 @@ const refreshBody = z
   })
   .strict();
 
+interface SnapshotRow {
+  id: string;
+  payload: unknown;
+  fetch_status: string;
+  fetch_error: string | null;
+  fetched_at: string;
+}
+
 interface UnifiedSourceView {
   source: IntegrationSource;
   availability: AdapterAvailability;
@@ -75,13 +79,7 @@ interface UnifiedSourceView {
   } | null;
 }
 
-function snapshotRowToView(row: {
-  id: string;
-  payload: unknown;
-  fetchStatus: string;
-  fetchError: string | null;
-  fetchedAt: Date;
-}): UnifiedSourceView["snapshot"] {
+function snapshotRowToView(row: SnapshotRow): UnifiedSourceView["snapshot"] {
   // Re-validate at the boundary: a payload written by an older
   // adapter version may not match the current schema, in which case
   // we treat it as missing rather than crash the route.
@@ -90,9 +88,10 @@ function snapshotRowToView(row: {
   return {
     id: row.id,
     payload: parsed.data,
-    fetchStatus: row.fetchStatus,
-    fetchError: row.fetchError,
-    fetchedAt: row.fetchedAt.toISOString(),
+    fetchStatus: row.fetch_status,
+    fetchError: row.fetch_error,
+    // PostgREST already returns timestamptz as ISO string.
+    fetchedAt: row.fetched_at,
   };
 }
 
@@ -107,32 +106,44 @@ router.get(
     }
     const patientId = idCheck.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const exists = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(eq(patients.id, patientId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: existsRow, error: existsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) throw existsErr;
+    if (!existsRow) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
 
-    const [linkRows, snapshotRows] = await Promise.all([
-      db
-        .select()
-        .from(patientTherapyLinks)
-        .where(eq(patientTherapyLinks.patientId, patientId))
-        .orderBy(
-          asc(patientTherapyLinks.status),
-          asc(patientTherapyLinks.source),
-        ),
-      db
-        .select()
-        .from(patientIntegrationSnapshots)
-        .where(eq(patientIntegrationSnapshots.patientId, patientId)),
+    const [linksRes, snapshotsRes] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("patient_therapy_links")
+        .select(
+          "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error",
+        )
+        .eq("patient_id", patientId)
+        .order("status", { ascending: true })
+        .order("source", { ascending: true }),
+      supabase
+        .schema("resupply")
+        .from("patient_integration_snapshots")
+        .select(
+          "id, source, payload, fetch_status, fetch_error, fetched_at",
+        )
+        .eq("patient_id", patientId),
     ]);
+    if (linksRes.error) throw linksRes.error;
+    if (snapshotsRes.error) throw snapshotsRes.error;
+
+    const linkRows = linksRes.data ?? [];
+    const snapshotRows = snapshotsRes.data ?? [];
 
     const adapters = getIntegrationAdapters();
     const linkBySource = new Map<string, (typeof linkRows)[number]>();
@@ -161,14 +172,12 @@ router.get(
         link: link
           ? {
               id: link.id,
-              partnerPatientId: link.partnerPatientId,
-              deviceSerial: link.deviceSerial,
+              partnerPatientId: link.partner_patient_id,
+              deviceSerial: link.device_serial,
               status: link.status,
-              lastSyncedAt: link.lastSyncedAt
-                ? link.lastSyncedAt.toISOString()
-                : null,
-              lastSyncStatus: link.lastSyncStatus,
-              lastSyncError: link.lastSyncError,
+              lastSyncedAt: link.last_synced_at,
+              lastSyncStatus: link.last_sync_status,
+              lastSyncError: link.last_sync_error,
             }
           : null,
         snapshot: snap ? snapshotRowToView(snap) : null,
@@ -203,7 +212,7 @@ router.post(
     }
     const { source } = bodyParsed.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
     // Look up the active link for this (patient, source). For
     // health_connect there is no link row — the partner-side id
@@ -211,29 +220,30 @@ router.post(
     // as the patient, not via a separate partner account).
     let partnerPatientId: string;
     if (source === "health_connect") {
-      const exists = await db
-        .select({ id: patients.id })
-        .from(patients)
-        .where(eq(patients.id, patientId))
-        .limit(1);
-      if (exists.length === 0) {
+      const { data: existsRow, error: existsErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id")
+        .eq("id", patientId)
+        .limit(1)
+        .maybeSingle();
+      if (existsErr) throw existsErr;
+      if (!existsRow) {
         res.status(404).json({ error: "patient_not_found" });
         return;
       }
       partnerPatientId = patientId;
     } else {
-      const linkRows = await db
-        .select()
-        .from(patientTherapyLinks)
-        .where(
-          and(
-            eq(patientTherapyLinks.patientId, patientId),
-            eq(patientTherapyLinks.source, source),
-            eq(patientTherapyLinks.status, "active"),
-          ),
-        )
-        .limit(1);
-      const link = linkRows[0];
+      const { data: link, error: linkErr } = await supabase
+        .schema("resupply")
+        .from("patient_therapy_links")
+        .select("partner_patient_id")
+        .eq("patient_id", patientId)
+        .eq("source", source)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle();
+      if (linkErr) throw linkErr;
       if (!link) {
         res.status(409).json({
           error: "no_active_link",
@@ -241,7 +251,7 @@ router.post(
         });
         return;
       }
-      partnerPatientId = link.partnerPatientId;
+      partnerPatientId = link.partner_patient_id;
     }
 
     const adapter = getIntegrationAdapters().get(source);
@@ -289,33 +299,31 @@ router.post(
       };
     }
 
-    // UPSERT — there's a unique on (patient_id, source).
-    const rows = await db
-      .insert(patientIntegrationSnapshots)
-      .values({
-        patientId,
-        source,
-        partnerPatientId,
-        payload,
-        fetchStatus,
-        fetchError,
-        fetchedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [
-          patientIntegrationSnapshots.patientId,
-          patientIntegrationSnapshots.source,
-        ],
-        set: {
-          partnerPatientId,
-          payload,
-          fetchStatus,
-          fetchError,
-          fetchedAt: new Date(),
+    // UPSERT — there's a unique on (patient_id, source). The
+    // IntegrationSnapshot shape doesn't carry an index signature so
+    // PostgREST's `Json` type rejects it without a cast.
+    const fetchedAtIso = new Date().toISOString();
+    const { data: row, error: upsertErr } = await supabase
+      .schema("resupply")
+      .from("patient_integration_snapshots")
+      .upsert(
+        {
+          patient_id: patientId,
+          source,
+          partner_patient_id: partnerPatientId,
+          payload: payload as unknown as Json,
+          fetch_status: fetchStatus,
+          fetch_error: fetchError,
+          fetched_at: fetchedAtIso,
         },
-      })
-      .returning();
-    const row = rows[0];
+        { onConflict: "patient_id,source" },
+      )
+      .select(
+        "id, source, payload, fetch_status, fetch_error, fetched_at",
+      )
+      .limit(1)
+      .maybeSingle();
+    if (upsertErr) throw upsertErr;
     if (!row) {
       logger.warn(
         { patient_id: patientId, source },

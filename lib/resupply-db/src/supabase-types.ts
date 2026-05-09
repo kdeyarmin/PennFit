@@ -452,6 +452,59 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["message_templates"]["Row"]>;
         Relationships: [];
       };
+      patient_integration_snapshots: {
+        Row: {
+          id: string;
+          patient_id: string;
+          source: string;
+          partner_patient_id: string;
+          payload: unknown;
+          fetch_status: string;
+          fetch_error: string | null;
+          fetched_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]>;
+        Relationships: [];
+      };
+      patient_therapy_links: {
+        Row: {
+          id: string;
+          patient_id: string;
+          source: string;
+          partner_patient_id: string;
+          device_serial: string | null;
+          status: string;
+          last_synced_at: string | null;
+          last_sync_status: string | null;
+          last_sync_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]>;
+        Relationships: [];
+      };
+      patient_therapy_nights: {
+        Row: {
+          id: string;
+          patient_id: string;
+          night_date: string;
+          source: string;
+          source_event_id: string | null;
+          usage_minutes: number | null;
+          ahi: string | null;
+          leak_rate_l_min: string | null;
+          pressure_p95_cmh2o: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]>;
+        Relationships: [];
+      };
       patient_smart_trigger_events: {
         Row: {
           id: string;
