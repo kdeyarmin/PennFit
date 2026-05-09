@@ -43,17 +43,15 @@
 //   twilio_message_sid.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  conversations,
-  episodes,
   getDbPool,
-  messages,
-  patients,
+  getSupabaseServiceRoleClient,
   tryUpsertPatientLatestMessage,
+  type Json,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
   parseInboundSmsParams,
@@ -234,18 +232,20 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
     res.status(200).type("text/xml").send("<Response/>");
     return;
   }
-  const pool = getDbPool();
-  const db = drizzle(pool);
+  const supabase = getSupabaseServiceRoleClient();
 
   // Direct phone lookup. We pull up to 2 rows so we can detect
   // ambiguous matches — multiple patients sharing one phone (a
   // family plan) can't be safely auto-routed; we audit and bail.
-  const lookupRows = await db
-    .select({ patientId: patients.id })
-    .from(patients)
-    .where(eq(patients.phoneE164, normalizedFrom))
+  const { data: lookupRows, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("phone_e164", normalizedFrom)
     .limit(2);
-  if (lookupRows.length > 1) {
+  if (lookupErr) throw lookupErr;
+  const lookupMatches = lookupRows ?? [];
+  if (lookupMatches.length > 1) {
     await safeAudit({
       action: "messaging.inbound.received",
       adminEmail: null,
@@ -256,7 +256,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
         channel: "sms",
         outcome: "ambiguous_phone",
         twilio_message_sid: parsed.MessageSid,
-        match_count: lookupRows.length,
+        match_count: lookupMatches.length,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -271,7 +271,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
       );
     return;
   }
-  const patientId = lookupRows[0]?.patientId;
+  const patientId = lookupMatches[0]?.id;
 
   if (!patientId) {
     // Unknown phone — but if the body is STOP or HELP we still honor
@@ -348,17 +348,20 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   // so the uniqueness is enforced at the storage layer too, but this
   // pre-check lets us return a clean 200 (no error) to Twilio rather
   // than a 500 on a duplicate-key violation.
-  const existingSid = await db
-    .select({ id: messages.id })
-    .from(messages)
-    .where(
-      and(
-        eq(messages.direction, "inbound"),
-        sql`(${messages.vendorMetadata}->>'twilio_message_sid') = ${parsed.MessageSid}`,
-      ),
+  const { data: existingSid, error: sidErr } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .select("id")
+    .eq("direction", "inbound")
+    .filter(
+      "vendor_metadata->>twilio_message_sid",
+      "eq",
+      parsed.MessageSid,
     )
-    .limit(1);
-  if (existingSid[0]) {
+    .limit(1)
+    .maybeSingle();
+  if (sidErr) throw sidErr;
+  if (existingSid) {
     logger.info(
       {
         event: "sms_inbound_duplicate_sid",
@@ -378,35 +381,31 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   // If no open conversation exists, we open a new one bound to the
   // most recent episode. (Inbound SMS without an open conversation is
   // possible — a patient texts back days after the admin closed theirs.)
-  // `conversationId` is assigned in EVERY branch below before the
-  // first read at line ~273 (the if-then sets it from openConv, the
-  // else-then sets it from the new `conversations` insert). Declared
-  // without an initial value so eslint's `no-useless-assignment` does
-  // not flag a dead `= null`; TS narrowing keeps the read-time check
-  // honest because the type still includes `string | null`.
   let conversationId: string | null;
-  const openConv = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.patientId, patientId),
-        eq(conversations.channel, "sms"),
-        eq(conversations.status, "open"),
-      ),
-    )
-    .orderBy(desc(conversations.lastMessageAt))
-    .limit(1);
-  if (openConv[0] && openConv[0].id) {
-    conversationId = openConv[0].id;
+  const { data: openConv, error: openConvErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id")
+    .eq("patient_id", patientId)
+    .eq("channel", "sms")
+    .eq("status", "open")
+    .order("last_message_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (openConvErr) throw openConvErr;
+  if (openConv?.id) {
+    conversationId = openConv.id;
   } else {
-    const recentEp = await db
-      .select({ id: episodes.id })
-      .from(episodes)
-      .where(eq(episodes.patientId, patientId))
-      .orderBy(desc(episodes.dueAt))
-      .limit(1);
-    const episodeId = recentEp[0]?.id;
+    const { data: recentEp, error: epErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id")
+      .eq("patient_id", patientId)
+      .order("due_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (epErr) throw epErr;
+    const episodeId = recentEp?.id;
     if (!episodeId) {
       // No episode at all — patient is in our system but has nothing
       // to confirm. Audit + reply with help boilerplate.
@@ -434,17 +433,22 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
         );
       return;
     }
-    const inserted = await db
-      .insert(conversations)
-      .values({
-        patientId,
-        episodeId,
+    const inboundIso = new Date().toISOString();
+    const { data: insertedConv, error: insertConvErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .insert({
+        patient_id: patientId,
+        episode_id: episodeId,
         channel: "sms",
         status: "open",
-        lastMessageAt: new Date(),
+        last_message_at: inboundIso,
       })
-      .returning({ id: conversations.id });
-    conversationId = inserted[0]?.id ?? null;
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertConvErr) throw insertConvErr;
+    conversationId = insertedConv?.id ?? null;
   }
   if (!conversationId) {
     res.status(200).type("text/xml").send("<Response/>");
@@ -454,23 +458,30 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   // Persist inbound message row before any decision logic — we want
   // the transcript even if dispatch crashes.
   const inboundAt = new Date();
-  const insertedMsg = await db
-    .insert(messages)
-    .values({
-      conversationId,
+  const inboundIso = inboundAt.toISOString();
+  const { data: insertedMsg, error: insertMsgErr } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
       direction: "inbound",
-      senderRole: "patient",
+      sender_role: "patient",
       body: parsed.Body,
-      deliveryStatus: "received",
-      vendorMetadata: { twilio_message_sid: parsed.MessageSid },
-      sentAt: inboundAt,
+      delivery_status: "received",
+      vendor_metadata: { twilio_message_sid: parsed.MessageSid } as unknown as Json,
+      sent_at: inboundIso,
     })
-    .returning({ id: messages.id });
-  const inboundMessageId = insertedMsg[0]?.id ?? null;
-  await db
-    .update(conversations)
-    .set({ lastMessageAt: inboundAt, updatedAt: inboundAt })
-    .where(eq(conversations.id, conversationId));
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertMsgErr) throw insertMsgErr;
+  const inboundMessageId = insertedMsg?.id ?? null;
+  const { error: stampConvErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({ last_message_at: inboundIso, updated_at: inboundIso })
+    .eq("id", conversationId);
+  if (stampConvErr) throw stampConvErr;
 
   // MMS media ingestion — Twilio sets NumMedia to a string ("0".."10").
   // We fan out to our private GCS so the dashboard can render
@@ -534,9 +545,13 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
     }
   }
 
-  // Refresh latest-message projection (best-effort).
+  // Refresh latest-message projection (best-effort). The shared
+  // helper still takes a NodePgDatabase across every messaging
+  // entry-point, so we keep ONE Drizzle handle here until the
+  // projection migrates. Same hold as email/inbound-parse.
+  const projectionDb = drizzle(getDbPool());
   await tryUpsertPatientLatestMessage(
-    db,
+    projectionDb,
     {
       conversationId,
       body: parsed.Body,
@@ -575,18 +590,16 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
     const adapter = getAiAdapter();
     if (adapter) {
       // Pull the last 6 messages as context.
-      const recent = await db
-        .select({
-          direction: messages.direction,
-          senderRole: messages.senderRole,
-          body: messages.body,
-          createdAt: messages.createdAt,
-        })
-        .from(messages)
-        .where(eq(messages.conversationId, conversationId))
-        .orderBy(desc(messages.createdAt))
+      const { data: recent, error: recentErr } = await supabase
+        .schema("resupply")
+        .from("messages")
+        .select("direction, sender_role, body, created_at")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
         .limit(6);
-      const thread = recent
+      if (recentErr) throw recentErr;
+      const thread = (recent ?? [])
+        .slice()
         .reverse()
         .filter((m) => m.body !== null)
         .map((m) => ({
@@ -626,6 +639,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   let twimlBody: string;
   try {
     twimlBody = await dispatchIntent({
+      supabase,
       intent,
       conversationId,
       patientId,
@@ -650,19 +664,24 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
 
   // Persist the outbound reply we're about to send.
   const replyAt = new Date();
-  await db.insert(messages).values({
-    conversationId,
-    direction: "outbound",
-    senderRole: "agent",
-    body: twimlBody,
-    deliveryStatus: "queued",
-    vendorMetadata: { twiml_inline: true },
-    sentAt: replyAt,
-  });
+  const replyIso = replyAt.toISOString();
+  const { error: replyInsertErr } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender_role: "agent",
+      body: twimlBody,
+      delivery_status: "queued",
+      vendor_metadata: { twiml_inline: true } as unknown as Json,
+      sent_at: replyIso,
+    });
+  if (replyInsertErr) throw replyInsertErr;
 
   // Refresh latest-message projection (best-effort).
   await tryUpsertPatientLatestMessage(
-    db,
+    projectionDb,
     {
       conversationId,
       body: twimlBody,
@@ -679,6 +698,7 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
 });
 
 interface DispatchInput {
+  supabase: ResupplySupabaseClient;
   intent: Intent;
   conversationId: string;
   patientId: string;
@@ -689,18 +709,20 @@ interface DispatchInput {
 }
 
 async function dispatchIntent(input: DispatchInput): Promise<string> {
-  const pool = getDbPool();
-  const db = drizzle(pool);
+  const { supabase } = input;
+  const nowIso = new Date().toISOString();
   switch (input.intent) {
     case "confirm": {
       const result = await placeResupplyOrderForConversation({
         conversationId: input.conversationId,
       });
       if (result.status === "ok") {
-        await db
-          .update(conversations)
-          .set({ status: "closed", updatedAt: new Date() })
-          .where(eq(conversations.id, input.conversationId));
+        const { error: closeErr } = await supabase
+          .schema("resupply")
+          .from("conversations")
+          .update({ status: "closed", updated_at: nowIso })
+          .eq("id", input.conversationId);
+        if (closeErr) throw closeErr;
         await safeAudit({
           action: "messaging.order.confirmed",
           adminEmail: null,
@@ -729,20 +751,24 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       return "Thanks — we'll review and follow up shortly.";
     }
     case "decline": {
-      await db
-        .update(conversations)
-        .set({ status: "closed", updatedAt: new Date() })
-        .where(eq(conversations.id, input.conversationId));
+      const { error: declineErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .update({ status: "closed", updated_at: nowIso })
+        .eq("id", input.conversationId);
+      if (declineErr) throw declineErr;
       return (
         input.aiReply ??
         "No problem — we won't ship anything right now. Reply HELP if you need us."
       );
     }
     case "edit_address": {
-      await db
-        .update(conversations)
-        .set({ status: "awaiting_admin", updatedAt: new Date() })
-        .where(eq(conversations.id, input.conversationId));
+      const { error: editErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .update({ status: "awaiting_admin", updated_at: nowIso })
+        .eq("id", input.conversationId);
+      if (editErr) throw editErr;
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
@@ -766,10 +792,12 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
     case "stop": {
       // Carrier-mandated. No conditions, no exceptions.
       await pausePatient(input.patientId);
-      await db
-        .update(conversations)
-        .set({ status: "closed", updatedAt: new Date() })
-        .where(eq(conversations.id, input.conversationId));
+      const { error: stopErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .update({ status: "closed", updated_at: nowIso })
+        .eq("id", input.conversationId);
+      if (stopErr) throw stopErr;
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
@@ -796,10 +824,12 @@ async function dispatchIntent(input: DispatchInput): Promise<string> {
       );
     }
     case "unknown": {
-      await db
-        .update(conversations)
-        .set({ status: "awaiting_admin", updatedAt: new Date() })
-        .where(eq(conversations.id, input.conversationId));
+      const { error: unkErr } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .update({ status: "awaiting_admin", updated_at: nowIso })
+        .eq("id", input.conversationId);
+      if (unkErr) throw unkErr;
       await safeAudit({
         action: "messaging.handoff.escalated",
         adminEmail: null,
