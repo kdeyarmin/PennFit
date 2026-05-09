@@ -9,19 +9,10 @@
 // content). PHI does not enter the audit metadata.
 
 import { Router, type IRouter } from "express";
-import { asc, eq, inArray } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  conversations,
-  getDbPool,
-  messageAttachments,
-  messages,
-  patients,
-  shopCustomers,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -38,90 +29,80 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
   }
   const { id } = parsed.data;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Header + messages are independent reads (both keyed on the same
   // conversation id). Run them concurrently; on a 404 we waste one
   // bounded message scan, which is far cheaper than an extra
   // round-trip on every successful read.
-  const [headerRows, messageRows] = await Promise.all([
-    db
-      .select({
-        id: conversations.id,
-        patientId: conversations.patientId,
-        patientFirstName: patients.legalFirstName,
-        patientLastName: patients.legalLastName,
-        // Shop-customer subject — null for patient-flow rows, set for
-        // in_app rows. Joined nullable so the existing patient-flow
-        // queries don't change shape.
-        customerId: conversations.customerId,
-        customerDisplayName: shopCustomers.displayName,
-        customerEmail: shopCustomers.emailLower,
-        episodeId: conversations.episodeId,
-        channel: conversations.channel,
-        status: conversations.status,
-        lastMessageAt: conversations.lastMessageAt,
-        createdAt: conversations.createdAt,
-        assignedAdminUserId: conversations.assignedAdminUserId,
-        assignedAt: conversations.assignedAt,
-        priority: conversations.priority,
-        slaDueAt: conversations.slaDueAt,
-        escalatedAt: conversations.escalatedAt,
-        escalatedTo: conversations.escalatedTo,
-        escalationReason: conversations.escalationReason,
-      })
-      .from(conversations)
-      .leftJoin(patients, eq(patients.id, conversations.patientId))
-      .leftJoin(
-        shopCustomers,
-        eq(shopCustomers.customerId, conversations.customerId),
+  const [headerRes, messagesRes] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("conversations")
+      .select(
+        "id, patient_id, customer_id, episode_id, channel, status, last_message_at, created_at, assigned_admin_user_id, assigned_at, priority, sla_due_at, escalated_at, escalated_to, escalation_reason",
       )
-      .where(eq(conversations.id, id))
-      .limit(1),
-    db
-      .select({
-        id: messages.id,
-        direction: messages.direction,
-        senderRole: messages.senderRole,
-        body: messages.body,
-        deliveryStatus: messages.deliveryStatus,
-        sentAt: messages.sentAt,
-        deliveredAt: messages.deliveredAt,
-        createdAt: messages.createdAt,
-      })
-      .from(messages)
-      .where(eq(messages.conversationId, id))
-      .orderBy(asc(messages.createdAt), asc(messages.id))
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("messages")
+      .select(
+        "id, direction, sender_role, body, delivery_status, sent_at, delivered_at, created_at",
+      )
+      .eq("conversation_id", id)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .limit(500),
   ]);
+  if (headerRes.error) throw headerRes.error;
+  if (messagesRes.error) throw messagesRes.error;
 
-  const header = headerRows[0];
+  const header = headerRes.data;
   if (!header) {
     res.status(404).json({ error: "not_found" });
     return;
   }
+  const messageRows = messagesRes.data ?? [];
 
-  // Pull attachments for the loaded messages in a single follow-up
-  // query, then group in memory. Two-step rather than a join because
-  // a message with N attachments would otherwise duplicate the
-  // message row N times and force a manual collapse — a flat IN
-  // query is simpler and uses the message_attachments_message_idx
-  // index. Empty when no messages have attachments (the common case).
+  // Bulk-fetch the joined identity rows + message attachments in
+  // parallel. The original Drizzle path LEFT JOINed patients +
+  // shop_customers; PostgREST has no JOIN, so we do `.eq().maybeSingle()`
+  // (or `.in()` for one-to-many) keyed on the relevant id.
   const messageIds = messageRows.map((m) => m.id);
-  const attachmentRows = messageIds.length
-    ? await db
-        .select({
-          id: messageAttachments.id,
-          messageId: messageAttachments.messageId,
-          filename: messageAttachments.filename,
-          contentType: messageAttachments.contentType,
-          sizeBytes: messageAttachments.sizeBytes,
-          createdAt: messageAttachments.createdAt,
-        })
-        .from(messageAttachments)
-        .where(inArray(messageAttachments.messageId, messageIds))
-        .orderBy(asc(messageAttachments.createdAt), asc(messageAttachments.id))
-    : [];
+  const [patientRes, customerRes, attachmentsRes] = await Promise.all([
+    header.patient_id
+      ? supabase
+          .schema("resupply")
+          .from("patients")
+          .select("legal_first_name, legal_last_name")
+          .eq("id", header.patient_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null } as const),
+    header.customer_id
+      ? supabase
+          .schema("resupply")
+          .from("shop_customers")
+          .select("display_name, email_lower")
+          .eq("customer_id", header.customer_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null } as const),
+    messageIds.length > 0
+      ? supabase
+          .schema("resupply")
+          .from("message_attachments")
+          .select("id, message_id, filename, content_type, size_bytes, created_at")
+          .in("message_id", messageIds)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+      : Promise.resolve({ data: [], error: null } as const),
+  ]);
+  if (patientRes.error) throw patientRes.error;
+  if (customerRes.error) throw customerRes.error;
+  if (attachmentsRes.error) throw attachmentsRes.error;
 
   const attachmentsByMessage = new Map<
     string,
@@ -133,28 +114,17 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
       createdAt: string;
     }>
   >();
-  for (const a of attachmentRows) {
-    const arr = attachmentsByMessage.get(a.messageId) ?? [];
+  for (const a of attachmentsRes.data ?? []) {
+    const arr = attachmentsByMessage.get(a.message_id) ?? [];
     arr.push({
       id: a.id,
       filename: a.filename ?? null,
-      contentType: a.contentType,
-      sizeBytes: a.sizeBytes,
-      createdAt:
-        a.createdAt instanceof Date
-          ? a.createdAt.toISOString()
-          : String(a.createdAt ?? new Date(0).toISOString()),
+      contentType: a.content_type,
+      sizeBytes: a.size_bytes,
+      createdAt: a.created_at,
     });
-    attachmentsByMessage.set(a.messageId, arr);
+    attachmentsByMessage.set(a.message_id, arr);
   }
-
-  const toIso = (v: unknown): string | null => {
-    if (v == null) return null;
-    if (v instanceof Date) return v.toISOString();
-    return String(v);
-  };
-  const toIsoRequired = (v: unknown): string =>
-    toIso(v) ?? new Date(0).toISOString();
 
   try {
     await logAudit({
@@ -184,39 +154,33 @@ router.get("/conversations/:id", requireAdmin, async (req, res) => {
 
   res.status(200).json({
     id: header.id,
-    // Patient-flow subject — null for in_app rows.
-    patientId: header.patientId,
-    patientFirstName: header.patientFirstName ?? "",
-    patientLastName: header.patientLastName ?? "",
-    episodeId: header.episodeId,
-    // Shop-customer subject — null for patient-flow rows. The UI
-    // branches on these for in_app channel rendering.
-    customerId: header.customerId,
-    customerDisplayName: header.customerDisplayName ?? null,
-    customerEmail: header.customerEmail ?? null,
+    patientId: header.patient_id,
+    patientFirstName: patientRes.data?.legal_first_name ?? "",
+    patientLastName: patientRes.data?.legal_last_name ?? "",
+    episodeId: header.episode_id,
+    customerId: header.customer_id,
+    customerDisplayName: customerRes.data?.display_name ?? null,
+    customerEmail: customerRes.data?.email_lower ?? null,
     channel: header.channel,
     status: header.status,
-    lastMessageAt: toIso(header.lastMessageAt),
-    createdAt: toIsoRequired(header.createdAt),
-    assignedAdminUserId: header.assignedAdminUserId ?? null,
-    assignedAt: toIso(header.assignedAt),
+    lastMessageAt: header.last_message_at,
+    createdAt: header.created_at,
+    assignedAdminUserId: header.assigned_admin_user_id ?? null,
+    assignedAt: header.assigned_at,
     priority: header.priority ?? "normal",
-    slaDueAt: toIso(header.slaDueAt),
-    escalatedAt: toIso(header.escalatedAt),
-    escalatedTo: header.escalatedTo ?? null,
-    escalationReason: header.escalationReason ?? null,
+    slaDueAt: header.sla_due_at,
+    escalatedAt: header.escalated_at,
+    escalatedTo: header.escalated_to ?? null,
+    escalationReason: header.escalation_reason ?? null,
     messages: messageRows.map((m) => ({
       id: m.id,
       direction: m.direction,
-      senderRole: m.senderRole,
+      senderRole: m.sender_role,
       body: m.body ?? "",
-      deliveryStatus: m.deliveryStatus,
-      sentAt: toIso(m.sentAt),
-      deliveredAt: toIso(m.deliveredAt),
-      createdAt: toIsoRequired(m.createdAt),
-      // Always present (empty array when no media). Keeps the client
-      // contract uniform and lets the UI render a single .map without
-      // a null guard.
+      deliveryStatus: m.delivery_status,
+      sentAt: m.sent_at,
+      deliveredAt: m.delivered_at,
+      createdAt: m.created_at,
       attachments: attachmentsByMessage.get(m.id) ?? [],
     })),
   });
