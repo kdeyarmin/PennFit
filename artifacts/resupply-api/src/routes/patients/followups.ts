@@ -15,13 +15,11 @@
 // summary, family context). Audit envelopes record patient_id +
 // body_length + due_at — never the body. Same posture as patient_notes.
 
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patientFollowups, patients } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -53,48 +51,37 @@ router.get("/patients/:id/followups", requireAdmin, async (req, res) => {
   const patientId = parsed.data;
   const includeCompleted = req.query.include === "completed";
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const exists = await db
-    .select({ id: patients.id })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  if (exists.length === 0) {
+  const { data: patient } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
-  const rows = await db
-    .select({
-      id: patientFollowups.id,
-      body: patientFollowups.body,
-      dueAt: patientFollowups.dueAt,
-      completedAt: patientFollowups.completedAt,
-      completedByEmail: patientFollowups.completedByEmail,
-      createdByEmail: patientFollowups.createdByEmail,
-      createdAt: patientFollowups.createdAt,
-    })
-    .from(patientFollowups)
-    .where(
-      includeCompleted
-        ? eq(patientFollowups.patientId, patientId)
-        : and(
-            eq(patientFollowups.patientId, patientId),
-            isNull(patientFollowups.completedAt),
-          ),
+  let listQuery = supabase
+    .schema("resupply")
+    .from("patient_followups")
+    .select(
+      "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
     )
-    .orderBy(
-      includeCompleted
-        ? desc(patientFollowups.dueAt)
-        : asc(patientFollowups.dueAt),
-    )
+    .eq("patient_id", patientId)
+    .order("due_at", { ascending: !includeCompleted })
     .limit(100);
+  if (!includeCompleted) listQuery = listQuery.is("completed_at", null);
+  const { data: rows, error } = await listQuery;
+  if (error) throw error;
 
   req.log?.info(
     {
       patientId,
-      count: rows.length,
+      count: rows?.length ?? 0,
       includeCompleted,
       adminEmail: req.adminEmail,
     },
@@ -102,14 +89,14 @@ router.get("/patients/:id/followups", requireAdmin, async (req, res) => {
   );
 
   res.json({
-    followups: rows.map((r) => ({
+    followups: (rows ?? []).map((r) => ({
       id: r.id,
       body: r.body,
-      dueAt: r.dueAt.toISOString(),
-      completedAt: r.completedAt ? r.completedAt.toISOString() : null,
-      completedByEmail: r.completedByEmail,
-      createdByEmail: r.createdByEmail,
-      createdAt: r.createdAt.toISOString(),
+      dueAt: r.due_at,
+      completedAt: r.completed_at,
+      completedByEmail: r.completed_by_email,
+      createdByEmail: r.created_by_email,
+      createdAt: r.created_at,
     })),
   });
 });
@@ -135,36 +122,33 @@ router.post("/patients/:id/followups", requireAdmin, async (req, res) => {
   }
   const { body, dueAt } = bodyParsed.data;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const exists = await db
-    .select({ id: patients.id })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  if (exists.length === 0) {
+  const { data: patient } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
-  const inserted = await db
-    .insert(patientFollowups)
-    .values({
-      patientId,
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("patient_followups")
+    .insert({
+      patient_id: patientId,
       body,
-      dueAt: new Date(dueAt),
-      createdByEmail: req.adminEmail ?? "<unknown>",
-      createdByUserId: req.adminUserId ?? null,
+      due_at: new Date(dueAt).toISOString(),
+      created_by_email: req.adminEmail ?? "<unknown>",
+      created_by_user_id: req.adminUserId ?? null,
     })
-    .returning({
-      id: patientFollowups.id,
-      createdAt: patientFollowups.createdAt,
-      dueAt: patientFollowups.dueAt,
-    });
-  const row = inserted[0];
-  if (!row) {
-    throw new Error("INSERT returned no rows");
-  }
+    .select("id, created_at, due_at")
+    .single();
+  if (error) throw error;
 
   await logAudit({
     action: "patient.followup.create",
@@ -175,7 +159,7 @@ router.post("/patients/:id/followups", requireAdmin, async (req, res) => {
     metadata: {
       patient_id: patientId,
       body_length: body.length,
-      due_at: row.dueAt.toISOString(),
+      due_at: row.due_at,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -185,8 +169,8 @@ router.post("/patients/:id/followups", requireAdmin, async (req, res) => {
 
   res.status(201).json({
     id: row.id,
-    dueAt: row.dueAt.toISOString(),
-    createdAt: row.createdAt.toISOString(),
+    dueAt: row.due_at,
+    createdAt: row.created_at,
   });
 });
 
@@ -208,29 +192,24 @@ router.patch(
     }
     const followupId = fIdCheck.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const existing = await db
-      .select({
-        id: patientFollowups.id,
-        patientId: patientFollowups.patientId,
-        completedAt: patientFollowups.completedAt,
-        body: patientFollowups.body,
-        dueAt: patientFollowups.dueAt,
-      })
-      .from(patientFollowups)
-      .where(eq(patientFollowups.id, followupId))
-      .limit(1);
-    const row = existing[0];
+    const { data: row } = await supabase
+      .schema("resupply")
+      .from("patient_followups")
+      .select("id, patient_id, completed_at, body, due_at")
+      .eq("id", followupId)
+      .limit(1)
+      .maybeSingle();
     if (!row) {
       res.status(404).json({ error: "followup_not_found" });
       return;
     }
-    if (row.patientId !== patientId) {
+    if (row.patient_id !== patientId) {
       res.status(404).json({ error: "followup_not_found" });
       return;
     }
-    if (row.completedAt !== null) {
+    if (row.completed_at !== null) {
       res.status(409).json({
         error: "already_completed",
         message: "This followup is already marked complete.",
@@ -238,25 +217,20 @@ router.patch(
       return;
     }
 
-    const updated = await db
-      .update(patientFollowups)
-      .set({
-        completedAt: new Date(),
-        completedByEmail: req.adminEmail ?? "<unknown>",
-        completedByUserId: req.adminUserId ?? null,
+    const { data: updatedRow, error } = await supabase
+      .schema("resupply")
+      .from("patient_followups")
+      .update({
+        completed_at: new Date().toISOString(),
+        completed_by_email: req.adminEmail ?? "<unknown>",
+        completed_by_user_id: req.adminUserId ?? null,
       })
-      .where(
-        and(
-          eq(patientFollowups.id, followupId),
-          eq(patientFollowups.patientId, patientId),
-          isNull(patientFollowups.completedAt),
-        ),
-      )
-      .returning({
-        id: patientFollowups.id,
-        completedAt: patientFollowups.completedAt,
-      });
-    const updatedRow = updated[0];
+      .eq("id", followupId)
+      .eq("patient_id", patientId)
+      .is("completed_at", null)
+      .select("id, completed_at")
+      .maybeSingle();
+    if (error) throw error;
     if (!updatedRow) {
       res.status(409).json({
         error: "already_completed",
@@ -274,7 +248,7 @@ router.patch(
       metadata: {
         patient_id: patientId,
         body_length: row.body.length,
-        due_at: row.dueAt.toISOString(),
+        due_at: row.due_at,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -284,9 +258,7 @@ router.patch(
 
     res.json({
       id: updatedRow.id,
-      completedAt: updatedRow.completedAt
-        ? updatedRow.completedAt.toISOString()
-        : null,
+      completedAt: updatedRow.completed_at,
     });
   },
 );
