@@ -177,8 +177,8 @@ export async function startWorker(): Promise<void> {
   await registerIdempotencyKeysPruneJob(boss);
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
-  // CSR alerts for at-risk patients. Both crons share `getDbPool()`
-  // and are idempotent on re-run.
+  // CSR alerts for at-risk patients. Both crons share the Supabase
+  // service-role client and are idempotent on re-run.
   await registerOnboardingCheckinJobs(boss);
 
   workerReady = true;

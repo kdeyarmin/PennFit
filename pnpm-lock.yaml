@@ -494,9 +494,6 @@ importers:
       '@workspace/resupply-db':
         specifier: workspace:*
         version: link:../resupply-db
-      drizzle-orm:
-        specifier: 'catalog:'
-        version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
       zod:
         specifier: 'catalog:'
         version: 3.25.76
@@ -736,19 +733,10 @@ importers:
       '@workspace/resupply-telecom':
         specifier: workspace:*
         version: link:../resupply-telecom
-      drizzle-orm:
-        specifier: 'catalog:'
-        version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
-      pg:
-        specifier: ^8.20.0
-        version: 8.20.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
-      '@types/pg':
-        specifier: ^8.18.0
-        version: 8.18.0
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@25.3.5)(jiti@2.6.1)(jsdom@25.0.1)(lightningcss@1.32.0)(tsx@4.21.0)
@@ -795,12 +783,12 @@ importers:
       '@workspace/resupply-auth':
         specifier: workspace:*
         version: link:../lib/resupply-auth
+      '@workspace/resupply-db':
+        specifier: workspace:*
+        version: link:../lib/resupply-db
       '@workspace/resupply-email':
         specifier: workspace:*
         version: link:../lib/resupply-email
-      pg:
-        specifier: ^8.20.0
-        version: 8.20.0
       stripe:
         specifier: ^22.1.0
         version: 22.1.0(@types/node@25.3.5)
@@ -808,9 +796,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
-      '@types/pg':
-        specifier: ^8.18.0
-        version: 8.18.0
       tsx:
         specifier: 'catalog:'
         version: 4.21.0

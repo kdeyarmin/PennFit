@@ -70,10 +70,7 @@ import {
   type OutreachPrescription,
   type OutreachRule,
 } from "@workspace/resupply-domain";
-import {
-  getDbPool,
-  getSupabaseServiceRoleClient,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   sendReminderEmail,
   sendReminderSms,
@@ -623,7 +620,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     }
     const actor: SendActor = { kind: "system", jobId: j.id };
     const outcome = await sendReminderSms({
-      pool: getDbPool(),
+      supabase: getSupabaseServiceRoleClient(),
       cfg: cfg.sms,
       patientId: j.data.patientId,
       episodeId: j.data.episodeId,
@@ -663,7 +660,7 @@ export async function registerReminderJobs(boss: PgBoss): Promise<void> {
     }
     const actor: SendActor = { kind: "system", jobId: j.id };
     const outcome = await sendReminderEmail({
-      pool: getDbPool(),
+      supabase: getSupabaseServiceRoleClient(),
       cfg: cfg.email,
       patientId: j.data.patientId,
       episodeId: j.data.episodeId,

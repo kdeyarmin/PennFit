@@ -11,7 +11,7 @@
 // script is it.
 //
 // Usage:
-//   DATABASE_URL=postgres://... \
+//   SUPABASE_URL=https://... SUPABASE_SERVICE_ROLE_KEY=... \
 //   pnpm --filter @workspace/scripts auth:bootstrap-admin \
 //     --email=alice@example.com --role=admin
 //
@@ -31,17 +31,16 @@
 // Exit codes:
 //   0 — success
 //   1 — invalid args / db error / unexpected
-//   2 — DATABASE_URL not set
+//   2 — SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set
 
-import pg from "pg";
-
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   hashToken,
   issueToken,
   normalizeEmail,
-  pgAuthRepository,
   readAuthEnv,
   renderPasswordResetEmail,
+  supabaseAuthRepository,
 } from "@workspace/resupply-auth";
 import {
   createSendgridClient,
@@ -107,8 +106,15 @@ function parseArgs(argv: string[]): ParsedArgs {
 async function main(): Promise<void> {
   const argsParsed = parseArgs(process.argv);
 
-  if (!process.env.DATABASE_URL) {
-    fail("DATABASE_URL is not set.", 2);
+  // Supabase service-role access is the production data path; the
+  // service-role JWT covers every schema this script touches.
+  // SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are validated by
+  // `getSupabaseServiceRoleClient()` itself with a clear error.
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    fail(
+      "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.",
+      2,
+    );
   }
 
   // The previous version of this script forced the env reader
@@ -125,113 +131,112 @@ async function main(): Promise<void> {
     fail(`Not a valid email address: ${argsParsed.email}`);
   }
 
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-  const repo = pgAuthRepository(pool);
+  const supabase = getSupabaseServiceRoleClient();
+  const repo = supabaseAuthRepository(supabase);
 
-  try {
-    const existing = await repo.findUserByEmail(emailLower);
-    let userId: string;
-    if (existing) {
-      userId = existing.id;
-      if (existing.role !== argsParsed.role) {
-        if (!argsParsed.force) {
-          fail(
-            `User ${emailLower} already exists with role=${existing.role}. ` +
-              `Re-run with --force to change the role to '${argsParsed.role}'.`,
-          );
-        }
-        // updateUserStatus repurposed via the repo's update path:
-        // a tiny direct SQL is clearer than rolling a generic
-        // updateUserRole helper for one caller. Keep this script
-        // dependent on raw pg only for these one-off ops.
-        await pool.query(
-          `UPDATE resupply_auth.users SET role = $2, updated_at = NOW() WHERE id = $1`,
-          [userId, argsParsed.role],
+  const existing = await repo.findUserByEmail(emailLower);
+  let userId: string;
+  if (existing) {
+    userId = existing.id;
+    if (existing.role !== argsParsed.role) {
+      if (!argsParsed.force) {
+        fail(
+          `User ${emailLower} already exists with role=${existing.role}. ` +
+            `Re-run with --force to change the role to '${argsParsed.role}'.`,
         );
       }
-      if (existing.status === "revoked") {
-        if (!argsParsed.force) {
-          fail(
-            `User ${emailLower} is revoked. Re-run with --force to reactivate.`,
-          );
-        }
-        await repo.updateUserStatus(userId, "invited");
-      }
-    } else {
-      const inserted = await repo.insertUser({
-        emailLower,
-        displayName: null,
-        role: argsParsed.role,
-        status: "invited",
-      });
-      userId = inserted.id;
+      // The repo doesn't expose a generic updateUserRole; a one-off
+      // PostgREST UPDATE is clearer than adding a one-caller helper.
+      const { error } = await supabase
+        .schema("resupply_auth")
+        .from("users")
+        .update({
+          role: argsParsed.role,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+      if (error) throw error;
     }
-
-    // Issue a password_reset token (1 hour TTL — same as the
-    // forgot-password flow, since the UX is identical from the
-    // user's perspective).
-    const token = issueToken();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    await repo.insertEmailToken({
-      tokenHash: token.hash,
-      userId,
-      purpose: "password_reset",
-      expiresAt,
+    if (existing.status === "revoked") {
+      if (!argsParsed.force) {
+        fail(
+          `User ${emailLower} is revoked. Re-run with --force to reactivate.`,
+        );
+      }
+      await repo.updateUserStatus(userId, "invited");
+    }
+  } else {
+    const inserted = await repo.insertUser({
+      emailLower,
+      displayName: null,
+      role: argsParsed.role,
+      status: "invited",
     });
+    userId = inserted.id;
+  }
 
-    const link = `${argsParsed.publicBaseUrl}${argsParsed.uiPathPrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
+  // Issue a password_reset token (1 hour TTL — same as the
+  // forgot-password flow, since the UX is identical from the
+  // user's perspective).
+  const token = issueToken();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  await repo.insertEmailToken({
+    tokenHash: token.hash,
+    userId,
+    purpose: "password_reset",
+    expiresAt,
+  });
 
-    process.stdout.write(
-      `\n[auth:bootstrap-admin] Bootstrap link (valid 1 hour):\n  ${link}\n\n`,
-    );
+  const link = `${argsParsed.publicBaseUrl}${argsParsed.uiPathPrefix}/reset-password?token=${encodeURIComponent(token.raw)}`;
 
-    if (argsParsed.sendEmail) {
-      const ctx = {
-        productName: argsParsed.productName,
-        publicBaseUrl: argsParsed.publicBaseUrl,
-        uiPathPrefix: argsParsed.uiPathPrefix,
-      };
-      const rendered = renderPasswordResetEmail(ctx, token.raw);
-      try {
-        const client = createSendgridClient();
-        await client.sendEmail({
-          to: argsParsed.email,
-          subject: rendered.subject,
-          html: rendered.html,
-          text: rendered.text,
-        });
+  process.stdout.write(
+    `\n[auth:bootstrap-admin] Bootstrap link (valid 1 hour):\n  ${link}\n\n`,
+  );
+
+  if (argsParsed.sendEmail) {
+    const ctx = {
+      productName: argsParsed.productName,
+      publicBaseUrl: argsParsed.publicBaseUrl,
+      uiPathPrefix: argsParsed.uiPathPrefix,
+    };
+    const rendered = renderPasswordResetEmail(ctx, token.raw);
+    try {
+      const client = createSendgridClient();
+      await client.sendEmail({
+        to: argsParsed.email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+      });
+      process.stdout.write(
+        `[auth:bootstrap-admin] Email sent to ${argsParsed.email}.\n`,
+      );
+    } catch (err) {
+      if (err instanceof EmailConfigError) {
         process.stdout.write(
-          `[auth:bootstrap-admin] Email sent to ${argsParsed.email}.\n`,
+          `[auth:bootstrap-admin] SendGrid not configured (${err.message}). Use the link above.\n`,
         );
-      } catch (err) {
-        if (err instanceof EmailConfigError) {
-          process.stdout.write(
-            `[auth:bootstrap-admin] SendGrid not configured (${err.message}). Use the link above.\n`,
-          );
-        } else {
-          process.stderr.write(
-            `[auth:bootstrap-admin] Email send failed: ${err instanceof Error ? err.message : "unknown"}\n` +
-              "Use the link above to complete bootstrap.\n",
-          );
-        }
+      } else {
+        process.stderr.write(
+          `[auth:bootstrap-admin] Email send failed: ${err instanceof Error ? err.message : "unknown"}\n` +
+            "Use the link above to complete bootstrap.\n",
+        );
       }
     }
-
-    // Sanity-check at the very end: re-read by hash to confirm the
-    // token round-trips. This catches a misconfigured DB column
-    // (e.g. token_hash dimension drift) before the operator clicks
-    // a broken link.
-    const recheck = hashToken(token.raw);
-    if (!recheck) fail("internal: re-hash failed");
-
-    process.stdout.write(
-      `[auth:bootstrap-admin] Done. user=${userId} role=${argsParsed.role} status=invited\n`,
-    );
-    // Avoid unused-var lint without changing the semantic
-    void env;
-  } finally {
-    await pool.end();
   }
+
+  // Sanity-check at the very end: re-read by hash to confirm the
+  // token round-trips. This catches a misconfigured DB column
+  // (e.g. token_hash dimension drift) before the operator clicks
+  // a broken link.
+  const recheck = hashToken(token.raw);
+  if (!recheck) fail("internal: re-hash failed");
+
+  process.stdout.write(
+    `[auth:bootstrap-admin] Done. user=${userId} role=${argsParsed.role} status=invited\n`,
+  );
+  // Avoid unused-var lint without changing the semantic
+  void env;
 }
 
 main().catch((err: unknown) => {

@@ -14,17 +14,10 @@
 //   - SendGrid customArgs carries conversation_id so the event-webhook
 //     can correlate bounces/deliveries back to our row.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-
 import {
-  conversations,
-  episodes,
-  messages,
-  patients,
-  prescriptions,
-  tryUpsertPatientLatestMessage,
+  tryUpsertPatientLatestMessageSb,
+  type Json,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -40,7 +33,7 @@ import { safeAuditFromActor } from "./safe-audit";
 import type { EmailSendConfig, SendActor, SendReminderOutcome } from "./types";
 
 export interface SendReminderEmailInput {
-  pool: Pool;
+  supabase: ResupplySupabaseClient;
   cfg: EmailSendConfig;
   patientId: string;
   episodeId?: string;
@@ -52,20 +45,16 @@ const LINK_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export async function sendReminderEmail(
   input: SendReminderEmailInput,
 ): Promise<SendReminderOutcome> {
-  const { pool, cfg, patientId, actor } = input;
-  const db = drizzle(pool);
+  const { supabase, cfg, patientId, actor } = input;
 
-  const patientRows = await db
-    .select({
-      id: patients.id,
-      status: patients.status,
-      email: patients.email,
-      legalFirstName: patients.legalFirstName,
-    })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  const patient = patientRows[0];
+  const { data: patient, error: patientErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id, status, email, legal_first_name")
+    .eq("id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (patientErr) throw patientErr;
   if (!patient) return { status: "patient_not_found" };
   if (patient.status !== "active") {
     return { status: "patient_not_active", patientStatus: patient.status };
@@ -74,50 +63,58 @@ export async function sendReminderEmail(
 
   let episodeId = input.episodeId;
   if (!episodeId) {
-    const recent = await db
-      .select({ id: episodes.id })
-      .from(episodes)
-      .where(eq(episodes.patientId, patientId))
-      .orderBy(desc(episodes.dueAt))
-      .limit(1);
-    episodeId = recent[0]?.id;
+    const { data: recent, error: recentErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id")
+      .eq("patient_id", patientId)
+      .order("due_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentErr) throw recentErr;
+    episodeId = recent?.id;
     if (!episodeId) return { status: "no_episode_for_patient" };
   }
 
-  const epRows = await db
-    .select({
-      id: episodes.id,
-      patientId: episodes.patientId,
-      prescriptionId: episodes.prescriptionId,
-    })
-    .from(episodes)
-    .where(eq(episodes.id, episodeId))
-    .limit(1);
-  const ep = epRows[0];
+  const { data: ep, error: epErr } = await supabase
+    .schema("resupply")
+    .from("episodes")
+    .select("id, patient_id, prescription_id")
+    .eq("id", episodeId)
+    .limit(1)
+    .maybeSingle();
+  if (epErr) throw epErr;
   if (!ep) return { status: "episode_not_found" };
-  if (ep.patientId !== patientId) return { status: "episode_patient_mismatch" };
+  if (ep.patient_id !== patientId) return { status: "episode_patient_mismatch" };
 
-  const rxRows = await db
-    .select({ itemSku: prescriptions.itemSku })
-    .from(prescriptions)
-    .where(eq(prescriptions.id, ep.prescriptionId))
-    .limit(1);
-  const itemSku = rxRows[0]?.itemSku;
+  const { data: rxRow, error: rxErr } = await supabase
+    .schema("resupply")
+    .from("prescriptions")
+    .select("item_sku")
+    .eq("id", ep.prescription_id)
+    .limit(1)
+    .maybeSingle();
+  if (rxErr) throw rxErr;
+  const itemSku = rxRow?.item_sku;
   const items: Array<{ name: string; quantity: number }> = itemSku
     ? [{ name: itemSku, quantity: 1 }]
     : [];
 
-  const insertedConv = await db
-    .insert(conversations)
-    .values({
-      patientId,
-      episodeId,
+  const { data: insertedConv, error: insertConvErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .insert({
+      patient_id: patientId,
+      episode_id: episodeId,
       channel: "email",
       status: "open",
-      lastMessageAt: new Date(),
+      last_message_at: new Date().toISOString(),
     })
-    .returning({ id: conversations.id });
-  const conversationId = insertedConv[0]?.id;
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertConvErr) throw insertConvErr;
+  const conversationId = insertedConv?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
 
   const expiresAt = Date.now() + LINK_TOKEN_TTL_MS;
@@ -134,7 +131,7 @@ export async function sendReminderEmail(
 
   const rendered = renderResupplyReminder({
     practiceName: cfg.practiceName,
-    firstName: patient.legalFirstName ?? "there",
+    firstName: patient.legal_first_name ?? "there",
     items,
     confirmUrl,
     editUrl,
@@ -191,27 +188,34 @@ export async function sendReminderEmail(
   }
 
   const sentAt = new Date();
+  const sentAtIso = sentAt.toISOString();
   // SendGrid accepted the email. Wrap subsequent DB writes so a transient
   // DB error does NOT propagate — a propagated error causes the worker to
   // retry, which would re-call this function and send a duplicate email.
   // The vendorRef in the log is sufficient for ops to manually reconcile.
   try {
-    await db.insert(messages).values({
-      conversationId,
-      direction: "outbound",
-      senderRole: "agent",
-      body: rendered.text,
-      deliveryStatus: "queued",
-      vendorMetadata: {
-        sendgrid_message_id: messageId,
-        subject: rendered.subject,
-      },
-      sentAt,
-    });
-    await db
-      .update(conversations)
-      .set({ externalRef: messageId, updatedAt: new Date() })
-      .where(eq(conversations.id, conversationId));
+    const { error: insertMsgErr } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        direction: "outbound",
+        sender_role: "agent",
+        body: rendered.text,
+        delivery_status: "queued",
+        vendor_metadata: {
+          sendgrid_message_id: messageId,
+          subject: rendered.subject,
+        } as unknown as Json,
+        sent_at: sentAtIso,
+      });
+    if (insertMsgErr) throw insertMsgErr;
+    const { error: stampConvErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .update({ external_ref: messageId, updated_at: new Date().toISOString() })
+      .eq("id", conversationId);
+    if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
     console.error(
       "[send-email] DB write failed after SendGrid accept — email sent but unrecorded. Manual reconciliation required.",
@@ -220,7 +224,7 @@ export async function sendReminderEmail(
   }
 
   // Refresh latest-message projection (best-effort).
-  await tryUpsertPatientLatestMessage(db, {
+  await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
     body: rendered.text,
     direction: "outbound",

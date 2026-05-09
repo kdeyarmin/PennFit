@@ -1,57 +1,56 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the SHARED pool exported from `@workspace/resupply-db` so we
-// never hit a real database from this unit test, AND so this test
-// doubles as a guard that readiness.ts goes through the shared pool
-// (not its own private one — see Task #7). Every other resupply-db
-// export is preserved so unrelated imports keep working.
-const queryMock = vi.fn();
+// Mock the Supabase service-role client so the db check never hits a
+// real database. The queue check is in-memory now (`isWorkerReady()`),
+// so we mock the worker module too.
+const builderMock = vi.fn();
 vi.mock("@workspace/resupply-db", async () => {
   const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
     "@workspace/resupply-db",
   );
   return {
     ...actual,
-    getDbPool: () => ({ query: queryMock }),
+    getSupabaseServiceRoleClient: () => ({
+      schema: () => ({
+        from: () => ({
+          select: () => ({
+            limit: () => builderMock(),
+          }),
+        }),
+      }),
+    }),
   };
 });
+
+const isWorkerReadyMock = vi.fn();
+vi.mock("../worker/index.js", () => ({
+  isWorkerReady: () => isWorkerReadyMock(),
+}));
 
 import { checkReadiness } from "./readiness";
 
 describe("checkReadiness()", () => {
   beforeEach(() => {
-    queryMock.mockReset();
+    builderMock.mockReset();
+    isWorkerReadyMock.mockReset();
   });
 
-  // The queue-check SQL also contains "SELECT 1" (inside its
-  // `SELECT EXISTS (SELECT 1 FROM information_schema...)`), so we
-  // distinguish the two checks by looking for `information_schema`
-  // — only the queue check probes that catalog.
-  const isQueueCheck = (sql: string): boolean =>
-    sql.includes("information_schema");
-
   it("returns status=ready when both checks succeed", async () => {
-    queryMock.mockImplementation((sql: string) => {
-      if (isQueueCheck(sql))
-        return Promise.resolve({ rows: [{ exists: true }] });
-      return Promise.resolve({ rows: [{}] });
-    });
+    builderMock.mockResolvedValue({ error: null });
+    isWorkerReadyMock.mockReturnValue(true);
     const result = await checkReadiness();
     expect(result.status).toBe("ready");
     expect(result.checks).toEqual({ db: "ok", queue: "ok" });
     expect(result.errors).toBeUndefined();
   });
 
-  it("returns status=not_ready with categorized db error when SELECT 1 fails with ECONNREFUSED", async () => {
-    queryMock.mockImplementation((sql: string) => {
-      if (isQueueCheck(sql))
-        return Promise.resolve({ rows: [{ exists: true }] });
-      const err = Object.assign(
-        new Error("connect ECONNREFUSED 127.0.0.1:5432"),
-        { code: "ECONNREFUSED" },
-      );
-      return Promise.reject(err);
-    });
+  it("returns status=not_ready with categorized db error when the PostgREST request fails with ECONNREFUSED", async () => {
+    isWorkerReadyMock.mockReturnValue(true);
+    builderMock.mockRejectedValue(
+      Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
+        code: "ECONNREFUSED",
+      }),
+    );
     const result = await checkReadiness();
     expect(result.status).toBe("not_ready");
     expect(result.checks.db).toBe("failed");
@@ -59,12 +58,9 @@ describe("checkReadiness()", () => {
     expect(result.errors).toEqual({ db: "connection_refused" });
   });
 
-  it("flags queue as schema_not_initialized when the pg-boss schema is absent", async () => {
-    queryMock.mockImplementation((sql: string) => {
-      if (isQueueCheck(sql))
-        return Promise.resolve({ rows: [{ exists: false }] });
-      return Promise.resolve({ rows: [{}] });
-    });
+  it("flags queue as schema_not_initialized when the worker has not booted yet", async () => {
+    builderMock.mockResolvedValue({ error: null });
+    isWorkerReadyMock.mockReturnValue(false);
     const result = await checkReadiness();
     expect(result.status).toBe("not_ready");
     expect(result.checks.queue).toBe("failed");
@@ -73,13 +69,13 @@ describe("checkReadiness()", () => {
     expect(result.errors?.db).toBeUndefined();
   });
 
-  it("collapses unknown errors to the safe 'unavailable' bucket", async () => {
-    queryMock.mockImplementation(() =>
-      Promise.reject(new Error("some unexpected driver string")),
-    );
+  it("collapses unknown db errors to the safe 'unavailable' bucket", async () => {
+    isWorkerReadyMock.mockReturnValue(true);
+    builderMock.mockRejectedValue(new Error("some unexpected driver string"));
     const result = await checkReadiness();
     expect(result.status).toBe("not_ready");
     expect(result.errors?.db).toBe("unavailable");
-    expect(result.errors?.queue).toBe("unavailable");
+    // queue is up in this scenario.
+    expect(result.errors?.queue).toBeUndefined();
   });
 });

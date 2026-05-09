@@ -22,7 +22,6 @@ import { z } from "zod";
 
 import {
   DEFAULT_COMMUNICATION_PREFERENCES,
-  getDbPool,
   getSupabaseServiceRoleClient,
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
@@ -142,7 +141,7 @@ router.post(
     let outcome: ReplyInConversationOutcome;
     try {
       outcome = await replyInConversation({
-        pool: getDbPool(),
+        supabase: getSupabaseServiceRoleClient(),
         smsCfg: { ...cfg.sms, practiceName: cfg.practiceName },
         emailCfg: { ...cfg.email, practiceName: cfg.practiceName },
         conversationId,

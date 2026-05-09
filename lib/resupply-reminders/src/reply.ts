@@ -20,16 +20,11 @@
 //     reviewing the audit log can spot suspiciously empty / long
 //     replies without exposing PHI.
 
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  conversations,
-  messages,
-  patients,
-  tryUpsertPatientLatestMessage,
+  tryUpsertPatientLatestMessageSb,
+  type Json,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
   createSendgridClient,
@@ -46,7 +41,7 @@ import { safeAuditFromActor } from "./safe-audit";
 import type { EmailSendConfig, SendActor, SmsSendConfig } from "./types";
 
 export interface ReplyInConversationInput {
-  pool: Pool;
+  supabase: ResupplySupabaseClient;
   /**
    * Both configs are required because the conversation's channel
    * decides which one we'll use, and the API route can't know which
@@ -89,21 +84,16 @@ export type ReplyInConversationOutcome =
 export async function replyInConversation(
   input: ReplyInConversationInput,
 ): Promise<ReplyInConversationOutcome> {
-  const { pool, conversationId, body, actor } = input;
-  const db = drizzle(pool);
+  const { supabase, conversationId, body, actor } = input;
 
-  const convRows = await db
-    .select({
-      id: conversations.id,
-      patientId: conversations.patientId,
-      episodeId: conversations.episodeId,
-      channel: conversations.channel,
-      status: conversations.status,
-    })
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .limit(1);
-  const conv = convRows[0];
+  const { data: conv, error: convErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id, patient_id, episode_id, channel, status")
+    .eq("id", conversationId)
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
   if (!conv) return { status: "conversation_not_found" };
   if (conv.status === "closed") return { status: "conversation_closed" };
 
@@ -129,35 +119,33 @@ export async function replyInConversation(
   // returned above; in_app was returned above; we're SMS or email
   // here. The defensive null check below catches a corrupted row
   // (CHECK should prevent this from being reachable).
-  if (!conv.patientId) {
+  if (!conv.patient_id) {
     return { status: "conversation_not_found" };
   }
-  const patientId: string = conv.patientId;
-  const episodeId: string | null = conv.episodeId ?? null;
+  const patientId: string = conv.patient_id;
+  const episodeId: string | null = conv.episode_id ?? null;
 
-  const patientRows = await db
-    .select({
-      id: patients.id,
-      phoneE164: patients.phoneE164,
-      email: patients.email,
-    })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  const patient = patientRows[0];
+  const { data: patient, error: patientErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id, phone_e164, email")
+    .eq("id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (patientErr) throw patientErr;
   if (!patient) {
     // Conversation is FK-cascaded to the patient, so a missing
     // patient here means the row was deleted between our read and
     // the helper call. Treat as missing contact.
-    return { status: "patient_missing_contact", channel: conv.channel };
+    return { status: "patient_missing_contact", channel: conv.channel as "sms" | "email" };
   }
 
   let vendorRef: string;
   if (conv.channel === "sms") {
-    if (!patient.phoneE164) {
+    if (!patient.phone_e164) {
       return { status: "patient_missing_contact", channel: "sms" };
     }
-    const normalizedPhone = normalizeE164(patient.phoneE164);
+    const normalizedPhone = normalizeE164(patient.phone_e164);
     if (!normalizedPhone) return { status: "patient_phone_unnormalizable" };
 
     const statusCallbackUrl = `${input.smsCfg.publicBaseUrl}/resupply-api/sms/status-callback?conversationId=${encodeURIComponent(
@@ -269,35 +257,42 @@ export async function replyInConversation(
   // can render "sent" rather than "error". vendorRef in the log lets ops
   // manually reconcile the missing row.
   const sentAt = new Date();
+  const sentAtIso = sentAt.toISOString();
   let messageId: string | undefined;
   try {
-    const inserted = await db
-      .insert(messages)
-      .values({
-        conversationId,
+    const { data: inserted, error: insertMsgErr } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
         direction: "outbound",
-        senderRole: "admin",
+        sender_role: "admin",
         body,
-        deliveryStatus: "queued",
-        vendorMetadata:
-          conv.channel === "sms"
+        delivery_status: "queued",
+        vendor_metadata:
+          (conv.channel === "sms"
             ? { twilio_message_sid: vendorRef }
-            : { sendgrid_message_id: vendorRef },
-        sentAt,
+            : { sendgrid_message_id: vendorRef }) as unknown as Json,
+        sent_at: sentAtIso,
       })
-      .returning({ id: messages.id });
-    messageId = inserted[0]?.id;
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertMsgErr) throw insertMsgErr;
+    messageId = inserted?.id;
 
-    await db
-      .update(conversations)
-      .set({
-        lastMessageAt: sentAt,
+    const { error: stampConvErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .update({
+        last_message_at: sentAtIso,
         // Admin replied — the ball is back in the patient's court.
         // We don't transition closed→ here; that's gated above.
         status: "awaiting_patient",
-        updatedAt: sentAt,
+        updated_at: sentAtIso,
       })
-      .where(eq(conversations.id, conversationId));
+      .eq("id", conversationId);
+    if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
     console.error(
       "[reply] DB write failed after vendor accept — message sent but unrecorded. Manual reconciliation required.",
@@ -306,7 +301,7 @@ export async function replyInConversation(
   }
 
   // Refresh latest-message projection (best-effort).
-  await tryUpsertPatientLatestMessage(db, {
+  await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
     body,
     direction: "outbound",

@@ -1,37 +1,47 @@
 // Unit tests for logAuditBestEffort.
 //
-// We mock getDbPool so the helper can run in three scenarios:
+// We mock the Supabase service-role client so the helper can run in
+// three scenarios:
 //   1. Happy path: returns true.
 //   2. Programmer error (PHI metadata): re-throws — these MUST NOT
 //      be swallowed because the sanitizer gate is what protects us
 //      from leaking PHI into a plaintext jsonb column.
-//   3. Transient DB error: swallowed, onWriteFailure called once
-//      with the categorized envelope, returns false.
+//   3. Transient DB error (PostgREST returns `{ error }`): swallowed,
+//      onWriteFailure called once with the categorized envelope,
+//      returns false.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@workspace/resupply-db", () => ({
-  getDbPool: vi.fn(),
+  getSupabaseServiceRoleClient: vi.fn(),
 }));
 
-const { getDbPool } = await import("@workspace/resupply-db");
+const { getSupabaseServiceRoleClient } = await import("@workspace/resupply-db");
 const { logAuditBestEffort } = await import("./index");
 
-function makePoolStub(query: () => Promise<unknown>) {
-  return { query } as unknown as ReturnType<typeof getDbPool>;
+type InsertResult = { error: unknown };
+
+function makeSupabaseStub(insert: () => Promise<InsertResult>) {
+  return {
+    schema: () => ({
+      from: () => ({
+        insert,
+      }),
+    }),
+  } as unknown as ReturnType<typeof getSupabaseServiceRoleClient>;
 }
 
 describe("logAuditBestEffort", () => {
   beforeEach(() => {
-    vi.mocked(getDbPool).mockReset();
+    vi.mocked(getSupabaseServiceRoleClient).mockReset();
   });
   afterEach(() => {
     vi.clearAllMocks();
   });
 
   it("returns true on a successful write", async () => {
-    vi.mocked(getDbPool).mockReturnValue(
-      makePoolStub(async () => ({ rowCount: 1 })),
+    vi.mocked(getSupabaseServiceRoleClient).mockReturnValue(
+      makeSupabaseStub(async () => ({ error: null })),
     );
     const onWriteFailure = vi.fn();
     const ok = await logAuditBestEffort(
@@ -48,10 +58,10 @@ describe("logAuditBestEffort", () => {
   });
 
   it("re-throws sanitizer errors (PHI metadata is a programmer bug)", async () => {
-    // We don't even need a working pool here — the sanitizer rejects
-    // before the DB query is issued.
-    vi.mocked(getDbPool).mockReturnValue(
-      makePoolStub(async () => ({ rowCount: 1 })),
+    // We don't even need a working client here — the sanitizer rejects
+    // before the insert is issued.
+    vi.mocked(getSupabaseServiceRoleClient).mockReturnValue(
+      makeSupabaseStub(async () => ({ error: null })),
     );
     const onWriteFailure = vi.fn();
     await expect(
@@ -71,10 +81,8 @@ describe("logAuditBestEffort", () => {
 
   it("swallows DB failures and invokes onWriteFailure with the envelope", async () => {
     const dbErr = new Error("connection terminated");
-    vi.mocked(getDbPool).mockReturnValue(
-      makePoolStub(async () => {
-        throw dbErr;
-      }),
+    vi.mocked(getSupabaseServiceRoleClient).mockReturnValue(
+      makeSupabaseStub(async () => ({ error: dbErr })),
     );
     const onWriteFailure = vi.fn();
     const ok = await logAuditBestEffort(
@@ -92,10 +100,8 @@ describe("logAuditBestEffort", () => {
   });
 
   it("works without an onWriteFailure callback", async () => {
-    vi.mocked(getDbPool).mockReturnValue(
-      makePoolStub(async () => {
-        throw new Error("transient");
-      }),
+    vi.mocked(getSupabaseServiceRoleClient).mockReturnValue(
+      makeSupabaseStub(async () => ({ error: new Error("transient") })),
     );
     const ok = await logAuditBestEffort(
       { action: "test.audit" },

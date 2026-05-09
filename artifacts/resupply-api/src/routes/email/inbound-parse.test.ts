@@ -108,7 +108,7 @@ vi.mock("@workspace/resupply-db", async () => {
   return {
     ...actual,
     getDbPool: () => ({}) as never,
-    tryUpsertPatientLatestMessage: vi.fn(async () => undefined),
+    tryUpsertPatientLatestMessageSb: vi.fn(async () => undefined),
   };
 });
 

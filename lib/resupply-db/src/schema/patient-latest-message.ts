@@ -21,7 +21,7 @@ import { resupplySchema } from "./_schema";
  *
  * Reads/writes:
  *   `last_message_preview` is plaintext text, capped at
- *   `PREVIEW_MAX_CHARS` characters by `upsertPatientLatestMessage()`
+ *   `PREVIEW_MAX_CHARS` characters by `upsertPatientLatestMessageSb()`
  *   (lib/resupply-db/src/projections). Always go through that helper
  *   for writes — it does the conversation→patient lookup and applies
  *   the out-of-order guard.
