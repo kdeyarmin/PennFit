@@ -31,6 +31,19 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
+// Escape a value for use in PostgREST `.or()` filter expressions.
+// PostgREST uses commas to separate clauses and parentheses for
+// grouping, so we need to wrap values containing these characters
+// in double-quotes and escape any embedded double-quotes.
+function escapePostgRESTFilterValue(value: string): string {
+  // If the value contains comma, parenthesis, or double-quote,
+  // wrap it in double-quotes and escape embedded quotes
+  if (/[,()"]/.test(value)) {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
 const listQuery = z
   .object({
     status: z.enum(["active", "paused", "closed"]).optional(),
@@ -79,11 +92,11 @@ router.get("/patients", requireAdmin, async (req, res) => {
     if (normalizedPhone) {
       query = query.eq("phone_e164", normalizedPhone);
     } else {
-      const needle = `%${search}%`;
-      // PostgREST `.or()` takes a comma-separated list of
-      // `<col>.<op>.<value>` clauses; commas inside the value need
-      // to be escaped (Zod caps `search` at 64 chars, no metachar
-      // smuggling possible here).
+      // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
+      // Escape commas/parentheses/quotes in the search value to
+      // prevent breaking the filter expression.
+      const escaped = escapePostgRESTFilterValue(search);
+      const needle = `*${escaped}*`;
       query = query.or(
         `pacware_id.ilike.${needle},legal_first_name.ilike.${needle},legal_last_name.ilike.${needle},email.ilike.${needle}`,
       );

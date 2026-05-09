@@ -53,7 +53,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   }
 
   const supabase = getSupabaseServiceRoleClient();
-  const { data: row } = await supabase
+  const { data: row, error } = await supabase
     .schema("resupply")
     .from("physician_fax_outreach")
     .select("physician_name, cover_letter_text")
@@ -61,6 +61,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     .limit(1)
     .maybeSingle();
 
+  if (error) throw error;
   if (!row) {
     res.status(404).json({ error: "not_found" });
     return;

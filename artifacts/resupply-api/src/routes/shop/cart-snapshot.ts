@@ -216,13 +216,14 @@ router.get("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
-  const { data: row } = await supabase
+  const { data: row, error } = await supabase
     .schema("resupply")
     .from("shop_abandoned_carts")
     .select("items, subtotal_cents, currency, updated_at")
     .eq("customer_id", customerId)
     .limit(1)
     .maybeSingle();
+  if (error) throw error;
   if (!row) {
     res.json({ items: [], subtotalCents: 0, currency: "usd", updatedAt: null });
     return;

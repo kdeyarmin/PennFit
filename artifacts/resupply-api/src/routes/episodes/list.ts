@@ -20,6 +20,19 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Escape a value for use in PostgREST `.or()` filter expressions.
+// PostgREST uses commas to separate clauses and parentheses for
+// grouping, so we need to wrap values containing these characters
+// in double-quotes and escape any embedded double-quotes.
+function escapePostgRESTFilterValue(value: string): string {
+  // If the value contains comma, parenthesis, or double-quote,
+  // wrap it in double-quotes and escape embedded quotes
+  if (/[,()"]/.test(value)) {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
 const listQuery = z
   .object({
     status: z
@@ -69,7 +82,11 @@ export async function resolveEpisodesSearch(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   needle: string,
 ): Promise<string[]> {
-  const pattern = `%${needle}%`;
+  // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
+  // Escape commas/parentheses/quotes in the search value to
+  // prevent breaking the filter expression.
+  const escaped = escapePostgRESTFilterValue(needle);
+  const pattern = `*${escaped}*`;
   const isUuid = UUID_RE.test(needle);
 
   const { data: matchedPatients, error: patientErr } = await supabase

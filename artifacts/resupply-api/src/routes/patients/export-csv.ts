@@ -38,6 +38,19 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const MAX_ROWS = 5000;
 
+// Escape a value for use in PostgREST `.or()` filter expressions.
+// PostgREST uses commas to separate clauses and parentheses for
+// grouping, so we need to wrap values containing these characters
+// in double-quotes and escape any embedded double-quotes.
+function escapePostgRESTFilterValue(value: string): string {
+  // If the value contains comma, parenthesis, or double-quote,
+  // wrap it in double-quotes and escape embedded quotes
+  if (/[,()"]/.test(value)) {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
 const querySchema = z
   .object({
     status: z.enum(["active", "paused", "closed"]).optional(),
@@ -112,7 +125,11 @@ router.get("/patients/export.csv", requireAdmin, async (req, res) => {
     .limit(MAX_ROWS + 1);
   if (status) query = query.eq("status", status);
   if (search) {
-    const pattern = `*${search}*`;
+    // PostgREST `.or()` uses `*` wildcards (not `%`) for ILIKE.
+    // Escape commas/parentheses/quotes in the search value to
+    // prevent breaking the filter expression.
+    const escaped = escapePostgRESTFilterValue(search);
+    const pattern = `*${escaped}*`;
     query = query.or(
       `pacware_id.ilike.${pattern},legal_first_name.ilike.${pattern},legal_last_name.ilike.${pattern}`,
     );
