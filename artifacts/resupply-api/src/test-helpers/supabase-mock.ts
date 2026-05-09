@@ -48,6 +48,7 @@ export interface StagedSupabaseResponse {
 }
 
 const queues = new Map<string, StagedSupabaseResponse[]>();
+const callCounts = new Map<string, number>();
 
 function key(table: string, op: SupabaseOp): string {
   return `${table}.${op}`;
@@ -120,6 +121,11 @@ interface TableBuilder {
   ) => Promise<TResult1 | TResult2>;
 }
 
+function bumpCallCount(table: string, op: SupabaseOp): void {
+  const k = key(table, op);
+  callCounts.set(k, (callCounts.get(k) ?? 0) + 1);
+}
+
 function makeTableBuilder(table: string): TableBuilder {
   let op: SupabaseOp | null = null;
   const setOp = (next: SupabaseOp): void => {
@@ -127,8 +133,22 @@ function makeTableBuilder(table: string): TableBuilder {
     // shouldn't happen in our codebase, but we lock in the FIRST verb
     // because PostgREST's RETURNING shape is `insert(...).select(...)`
     // — the trailing `.select(...)` is decoration, not a new query.
-    if (op === null || (op === "select" && next !== "select")) {
+    // The call-count side table is bumped at the FIRST verb that
+    // pins an op (or, for verb-promotion `select -> insert/update/...`,
+    // at the moment of promotion). This gives tests a per-(table, op)
+    // counter equivalent to `expect(dbStub.update).toHaveBeenCalled(N)`
+    // from the legacy Drizzle stub.
+    if (op === null) {
       op = next;
+      bumpCallCount(table, op);
+    } else if (op === "select" && next !== "select") {
+      // The leading `.select()` was decoration on a write — recategorize.
+      // Subtract the prior `select` bump and add the actual op's bump.
+      const selKey = key(table, "select");
+      const prev = callCounts.get(selKey) ?? 0;
+      if (prev > 0) callCounts.set(selKey, prev - 1);
+      op = next;
+      bumpCallCount(table, op);
     }
   };
 
@@ -178,7 +198,7 @@ function makeTableBuilder(table: string): TableBuilder {
 }
 
 export interface SupabaseMockHandle {
-  /** Reset all staged responses. Call from `beforeEach`. */
+  /** Reset all staged responses + call counts. Call from `beforeEach`. */
   reset(): void;
   /** Stage a response. Equivalent to calling `stageSupabaseResponse`. */
   stage(
@@ -186,6 +206,14 @@ export interface SupabaseMockHandle {
     op: SupabaseOp,
     result: StagedSupabaseResponse,
   ): void;
+  /**
+   * How many times the route invoked `(table, op)` since the last
+   * `reset()`. Useful for testing call-count invariants the legacy
+   * Drizzle stub exposed via `expect(dbStub.update).toHaveBeenCalledTimes`.
+   * The op is locked at the FIRST verb, so an `insert(...).select(...)`
+   * RETURNING chain counts once under "insert", not twice.
+   */
+  callCount(table: string, op: SupabaseOp): number;
 }
 
 /**
@@ -224,9 +252,21 @@ export function installSupabaseMock(): SupabaseMockHandle {
   return {
     reset() {
       queues.clear();
+      callCounts.clear();
     },
     stage(table, op, result) {
       stageSupabaseResponse(table, op, result);
     },
+    callCount(table, op) {
+      return callCounts.get(key(table, op)) ?? 0;
+    },
   };
+}
+
+/** Standalone alias for `installSupabaseMock().callCount(...)`. */
+export function getSupabaseCallCount(
+  table: string,
+  op: SupabaseOp,
+): number {
+  return callCounts.get(key(table, op)) ?? 0;
 }

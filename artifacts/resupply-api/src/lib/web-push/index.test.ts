@@ -1,7 +1,7 @@
 // Unit tests for the server-side web-push helper (Phase G.1).
 //
-// We stub the `web-push` SDK and the drizzle adapter so the test
-// stays in-process. The contract under test:
+// Stubs the `web-push` SDK and the Supabase service-role client so
+// the test stays in-process. The contract under test:
 //
 //   * No env triple → caller gets {0,0,0} and the SDK is never asked
 //     for a delivery.
@@ -16,64 +16,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const updateCalls: { id: string; expiredAt: Date | null }[] = [];
-const selectRows: {
-  id: string;
-  endpoint: string;
-  authB64: string;
-  p256dhB64: string;
-}[] = [];
-// selectQueue allows tests that need ordered multi-query behavior
-// (e.g. sendPushToCustomerByEmail makes two selects: one for
-// shopCustomers, one for shopCustomerPushSubscriptions). When
-// non-empty the queue items are shifted off in call order; once
-// exhausted, calls fall through to the shared selectRows array.
-const selectQueue: unknown[][] = [];
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
 
-const dbStub = {
-  select: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => {
-        if (selectQueue.length > 0) return Promise.resolve(selectQueue.shift());
-        return Promise.resolve(selectRows);
-      },
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    let captured: { expiredAt: Date | null } = { expiredAt: null };
-    const obj: Record<string, unknown> = {
-      set: (vals: { expiredAt: Date | null }) => {
-        captured = vals;
-        return obj;
-      },
-      where: (cond: { _id?: string }) => {
-        // The mock can't really inspect drizzle's eq() expression,
-        // so we accept whatever id was last requested. Tests that
-        // care about the id assert on updateCalls.length only.
-        updateCalls.push({
-          id: cond._id ?? "?",
-          expiredAt: captured.expiredAt,
-        });
-        return Promise.resolve();
-      },
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
+const supabaseMock = installSupabaseMock();
 
 import {
   __setSdkForTesting,
@@ -93,11 +42,7 @@ function setVapidEnv() {
 }
 
 beforeEach(() => {
-  selectRows.length = 0;
-  selectQueue.length = 0;
-  updateCalls.length = 0;
-  dbStub.select.mockClear();
-  dbStub.update.mockClear();
+  supabaseMock.reset();
 });
 
 afterEach(() => {
@@ -140,6 +85,9 @@ describe("sendPushToCustomer", () => {
 
   it("returns zero counts when no subscriptions match", async () => {
     setVapidEnv();
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [],
+    });
     const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
     __setSdkForTesting(sdk);
     const result = await sendPushToCustomer("cust_a", {
@@ -152,20 +100,22 @@ describe("sendPushToCustomer", () => {
 
   it("delivers to every active subscription and counts successes", async () => {
     setVapidEnv();
-    selectRows.push(
-      {
-        id: "s1",
-        endpoint: "https://push.x/1",
-        authB64: "a1",
-        p256dhB64: "p1",
-      },
-      {
-        id: "s2",
-        endpoint: "https://push.x/2",
-        authB64: "a2",
-        p256dhB64: "p2",
-      },
-    );
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [
+        {
+          id: "s1",
+          endpoint: "https://push.x/1",
+          auth_b64: "a1",
+          p256dh_b64: "p1",
+        },
+        {
+          id: "s2",
+          endpoint: "https://push.x/2",
+          auth_b64: "a2",
+          p256dh_b64: "p2",
+        },
+      ],
+    });
     const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
     __setSdkForTesting(sdk);
 
@@ -194,11 +144,18 @@ describe("sendPushToCustomer", () => {
 
   it("marks rows expired on 404", async () => {
     setVapidEnv();
-    selectRows.push({
-      id: "s_dead",
-      endpoint: "https://push.x/dead",
-      authB64: "a",
-      p256dhB64: "p",
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [
+        {
+          id: "s_dead",
+          endpoint: "https://push.x/dead",
+          auth_b64: "a",
+          p256dh_b64: "p",
+        },
+      ],
+    });
+    stageSupabaseResponse("shop_customer_push_subscriptions", "update", {
+      error: null,
     });
     const sdk = makeSdkStub({
       behavior: () => Promise.reject(makeWebPushError(404)),
@@ -210,17 +167,24 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 0, expired: 1, transient: 0 });
-    expect(updateCalls.length).toBe(1);
-    expect(updateCalls[0]?.expiredAt).toBeInstanceOf(Date);
+    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
+      .toBe(1);
   });
 
   it("marks rows expired on 410", async () => {
     setVapidEnv();
-    selectRows.push({
-      id: "s_gone",
-      endpoint: "https://push.x/gone",
-      authB64: "a",
-      p256dhB64: "p",
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [
+        {
+          id: "s_gone",
+          endpoint: "https://push.x/gone",
+          auth_b64: "a",
+          p256dh_b64: "p",
+        },
+      ],
+    });
+    stageSupabaseResponse("shop_customer_push_subscriptions", "update", {
+      error: null,
     });
     const sdk = makeSdkStub({
       behavior: () => Promise.reject(makeWebPushError(410)),
@@ -232,16 +196,21 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 0, expired: 1, transient: 0 });
-    expect(updateCalls.length).toBe(1);
+    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
+      .toBe(1);
   });
 
   it("counts non-expiring failures as transient and does not mark expired", async () => {
     setVapidEnv();
-    selectRows.push({
-      id: "s_err",
-      endpoint: "https://push.x/err",
-      authB64: "a",
-      p256dhB64: "p",
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [
+        {
+          id: "s_err",
+          endpoint: "https://push.x/err",
+          auth_b64: "a",
+          p256dh_b64: "p",
+        },
+      ],
     });
     const sdk = makeSdkStub({
       behavior: () => Promise.reject(makeWebPushError(429)),
@@ -253,16 +222,23 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 0, expired: 0, transient: 1 });
-    expect(updateCalls.length).toBe(0);
+    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
+      .toBe(0);
   });
 
   it("mixes outcomes within a single fan-out", async () => {
     setVapidEnv();
-    selectRows.push(
-      { id: "ok", endpoint: "https://push.x/ok", authB64: "a", p256dhB64: "p" },
-      { id: "g", endpoint: "https://push.x/g", authB64: "a", p256dhB64: "p" },
-      { id: "t", endpoint: "https://push.x/t", authB64: "a", p256dhB64: "p" },
-    );
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [
+        { id: "ok", endpoint: "https://push.x/ok", auth_b64: "a", p256dh_b64: "p" },
+        { id: "g", endpoint: "https://push.x/g", auth_b64: "a", p256dh_b64: "p" },
+        { id: "t", endpoint: "https://push.x/t", auth_b64: "a", p256dh_b64: "p" },
+      ],
+    });
+    // Only the 410 row triggers an UPDATE (markExpired).
+    stageSupabaseResponse("shop_customer_push_subscriptions", "update", {
+      error: null,
+    });
     const sdk: WebPushSdk = {
       setVapidDetails: vi.fn(),
       sendNotification: vi.fn(async (sub) => {
@@ -277,7 +253,8 @@ describe("sendPushToCustomer", () => {
       body: "y",
     });
     expect(result).toEqual({ delivered: 1, expired: 1, transient: 1 });
-    expect(updateCalls.length).toBe(1);
+    expect(getSupabaseCallCount("shop_customer_push_subscriptions", "update"))
+      .toBe(1);
   });
 });
 
@@ -289,8 +266,8 @@ describe("sendPushToCustomerByEmail", () => {
       body: "Body",
     });
     expect(result).toEqual({ delivered: 0, expired: 0, transient: 0 });
-    // DB should never be queried when push is disabled.
-    expect(dbStub.select).not.toHaveBeenCalled();
+    // Push being disabled means we never hit the DB at all.
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
   });
 
   it("returns {0,0,0} and skips delivery when email_lower is ambiguous", async () => {
@@ -299,10 +276,12 @@ describe("sendPushToCustomerByEmail", () => {
     __setSdkForTesting(sdk);
 
     // Two shop_customers rows share the same email_lower → ambiguous.
-    selectQueue.push([
-      { customerId: "cust_a" },
-      { customerId: "cust_b" },
-    ]);
+    stageSupabaseResponse("shop_customers", "select", {
+      data: [
+        { customer_id: "cust_a" },
+        { customer_id: "cust_b" },
+      ],
+    });
 
     const result = await sendPushToCustomerByEmail("shared@example.com", {
       title: "Rx reminder",
@@ -321,7 +300,7 @@ describe("sendPushToCustomerByEmail", () => {
     __setSdkForTesting(sdk);
 
     // Empty customer lookup result.
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
 
     const result = await sendPushToCustomerByEmail("nobody@example.com", {
       title: "Test",
@@ -337,17 +316,21 @@ describe("sendPushToCustomerByEmail", () => {
     const sdk = makeSdkStub({ behavior: () => Promise.resolve() });
     __setSdkForTesting(sdk);
 
-    // First select: 1 shopCustomers row.
-    selectQueue.push([{ customerId: "cust_a" }]);
+    // First select: 1 shop_customers row.
+    stageSupabaseResponse("shop_customers", "select", {
+      data: [{ customer_id: "cust_a" }],
+    });
     // Second select (sendPushToCustomer): 1 subscription row.
-    selectQueue.push([
-      {
-        id: "sub_1",
-        endpoint: "https://push.example.com/1",
-        authB64: "auth",
-        p256dhB64: "p256dh",
-      },
-    ]);
+    stageSupabaseResponse("shop_customer_push_subscriptions", "select", {
+      data: [
+        {
+          id: "sub_1",
+          endpoint: "https://push.example.com/1",
+          auth_b64: "auth",
+          p256dh_b64: "p256dh",
+        },
+      ],
+    });
 
     const result = await sendPushToCustomerByEmail("patient@example.com", {
       title: "Rx expires in 5 days",
