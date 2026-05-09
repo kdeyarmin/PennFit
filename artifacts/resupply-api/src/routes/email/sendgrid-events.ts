@@ -15,10 +15,11 @@
 //   ourselves after validating.
 
 import { Router, raw, type IRouter, type RequestHandler } from "express";
-import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Database,
+} from "@workspace/resupply-db";
 import {
   parseSendgridEventBatch,
   requireSendgridSignature,
@@ -27,6 +28,8 @@ import {
 import { logger } from "../../lib/logger";
 import { readEmailConfigOrNull } from "../../lib/messaging/messaging-config";
 import { safeAudit } from "../../lib/messaging/safe-audit";
+
+type MessageUpdate = Database["resupply"]["Tables"]["messages"]["Update"];
 
 const router: IRouter = Router();
 
@@ -81,8 +84,7 @@ router.post(
       return;
     }
 
-    const pool = getDbPool();
-    const db = drizzle(pool);
+    const supabase = getSupabaseServiceRoleClient();
 
     // SendGrid posts up to ~30 events per batch and we'd like the
     // webhook to ack quickly so SendGrid doesn't queue retries. The
@@ -101,14 +103,32 @@ router.post(
           // Map SendGrid event names to our delivery_status taxonomy.
           const statusUpdate = mapEventToStatus(ev.event);
           if (statusUpdate && sgMessageId) {
-            await db.execute(sql`
-              update resupply.messages
-              set
-                delivery_status = ${statusUpdate.deliveryStatus},
-                delivery_error = ${statusUpdate.deliveryError ?? null},
-                delivered_at = case when ${statusUpdate.deliveryStatus} = 'delivered' then now() else delivered_at end
-              where vendor_metadata->>'sendgrid_message_id' = ${sgMessageId}
-            `);
+            // The original Drizzle path used `case when status='delivered'
+            // then now() else delivered_at end` to conditionally bump the
+            // delivered_at timestamp. PostgREST has no SQL CASE, so we
+            // compute the column JS-side: include `delivered_at` only
+            // when the new status is 'delivered'; otherwise omit it
+            // entirely so the existing value is left intact.
+            // JSONB predicate on `vendor_metadata->>sendgrid_message_id`
+            // becomes `.filter('vendor_metadata->>sendgrid_message_id',
+            // 'eq', X)` — PostgREST's JSON-path operator support.
+            const update: MessageUpdate = {
+              delivery_status: statusUpdate.deliveryStatus,
+              delivery_error: statusUpdate.deliveryError ?? null,
+            };
+            if (statusUpdate.deliveryStatus === "delivered") {
+              update.delivered_at = new Date().toISOString();
+            }
+            const { error: updateErr } = await supabase
+              .schema("resupply")
+              .from("messages")
+              .update(update)
+              .filter(
+                "vendor_metadata->>sendgrid_message_id",
+                "eq",
+                sgMessageId,
+              );
+            if (updateErr) throw updateErr;
           }
         } catch (err) {
           logger.warn(

@@ -24,12 +24,14 @@
 //   names like "phoneE164" alongside the bad value, and that bad
 //   value may itself be PHI.
 
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patients } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Json,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { withIdempotency } from "../../middlewares/idempotency";
@@ -98,8 +100,8 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const now = new Date();
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
 
     let created = 0;
     let skippedDuplicates = 0;
@@ -148,49 +150,62 @@ router.post(
           }
         : null;
 
-      try {
-        const inserted = await db
-          .insert(patients)
-          .values({
-            pacwareId: row.pacwareId,
-            legalFirstName: row.legalFirstName,
-            legalLastName: row.legalLastName,
-            dateOfBirth: row.dateOfBirth,
-            phoneE164: row.phoneE164 ?? null,
-            email: row.email ?? null,
-            address,
-            status: "active",
-            insurancePayer: row.insurancePayer ?? null,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning({ id: patients.id });
-        const newId = inserted[0]?.id;
-        if (newId) {
-          created += 1;
-          createdIds.push(newId);
-        }
-      } catch (err) {
+      const { data: inserted, error: insertErr } = await supabase
+        .schema("resupply")
+        .from("patients")
+        .insert({
+          pacware_id: row.pacwareId,
+          legal_first_name: row.legalFirstName,
+          legal_last_name: row.legalLastName,
+          date_of_birth: row.dateOfBirth,
+          phone_e164: row.phoneE164 ?? null,
+          email: row.email ?? null,
+          // The structured address JSON has no index signature so
+          // PostgREST's `Json` type rejects it without a cast.
+          address: address as unknown as Json,
+          status: "active",
+          insurance_payer: row.insurancePayer ?? null,
+          created_at: nowIso,
+          updated_at: nowIso,
+        })
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+      if (insertErr) {
         // Mirror the create.ts duplicate-detection: 23505 + the
         // pacware_id unique constraint name = duplicate. Anything
         // else is logged and surfaced as a generic row error.
-        const e = err as { code?: unknown; constraint?: unknown };
-        if (
-          e &&
+        // PostgREST surfaces the constraint name inconsistently —
+        // check `constraint`, then `message`/`details`.
+        const e = insertErr as {
+          code?: string;
+          constraint?: string;
+          message?: string;
+          details?: string;
+        };
+        const isPacwareDuplicate =
           e.code === "23505" &&
-          e.constraint === "patients_pacware_id_unique"
-        ) {
+          (e.constraint === "patients_pacware_id_unique" ||
+            e.message?.includes("patients_pacware_id_unique") ||
+            e.details?.includes("patients_pacware_id_unique"));
+        if (isPacwareDuplicate) {
           skippedDuplicates += 1;
           continue;
         }
         logger.warn(
-          { err, row_index: i, pacware_id: row.pacwareId },
+          { err: insertErr, row_index: i, pacware_id: row.pacwareId },
           "patients/import-csv: row insert failed",
         );
         errors.push({
           rowIndex: i,
           message: "database write failed for this row",
         });
+        continue;
+      }
+      const newId = inserted?.id;
+      if (newId) {
+        created += 1;
+        createdIds.push(newId);
       }
     }
 

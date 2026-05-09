@@ -25,15 +25,10 @@
 // Logging is structural: customerId + count.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
-
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
-  getDbPool,
-  patientSmartTriggerEvents,
-  patients,
+  getSupabaseServiceRoleClient,
   type SmartTriggerKind,
 } from "@workspace/resupply-db";
 
@@ -65,6 +60,38 @@ interface CustomerInsight {
   cta: { label: string; url: string };
 }
 
+/**
+ * Resolve the patient row whose `email` matches `customerEmail`
+ * case-insensitively, but only if the match is unambiguous.
+ *
+ *   * 0 hits  → null (no match)
+ *   * 1 hit   → patient id
+ *   * 2+ hits → null (ambiguous — same as the inbound-parse / inbound-SMS
+ *                     strategy: refuse to mis-route PHI)
+ *
+ * PostgREST has no `lower(col) = $1`. We approximate via `.ilike()`
+ * on the escaped literal — `_` and `%` would otherwise act as LIKE
+ * wildcards. A non-malicious email may legitimately contain `_` in
+ * the local part, so the escape isn't optional.
+ */
+async function resolveSinglePatientByEmail(
+  customerEmail: string,
+): Promise<string | null> {
+  const supabase = getSupabaseServiceRoleClient();
+  // Escape LIKE metacharacters so e.g. "alice_smith@…" doesn't match
+  // "aliceXsmith@…".
+  const escaped = customerEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .ilike("email", escaped)
+    .limit(2);
+  if (error) throw error;
+  if (!rows || rows.length !== 1) return null;
+  return rows[0]!.id;
+}
+
 router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId;
   const customerEmail = req.shopCustomerEmail;
@@ -80,50 +107,32 @@ router.get("/shop/me/insights", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-
-  // Email-match: look up at most 2 patient rows so we can detect an
-  // ambiguous match (one address shared between two accounts) and bail
-  // rather than mis-routing PHI — same pattern as inbound-parse.ts.
-  const patientRows = await db
-    .select({ patientId: patients.id })
-    .from(patients)
-    .where(sql`lower(${patients.email}) = ${customerEmail.toLowerCase()}`)
-    .limit(2);
-
-  // No match → no data to surface. >1 match → ambiguous email; return
-  // empty rather than risk exposing one patient's data to another.
-  if (patientRows.length !== 1) {
+  // No match → no data to surface. Ambiguous email → empty rather
+  // than risk exposing one patient's data to another.
+  const patientId = await resolveSinglePatientByEmail(customerEmail);
+  if (!patientId) {
     res.json({ insights: [] });
     return;
   }
 
-  const patientId = patientRows[0].patientId;
-
-  const events = await db
-    .select({
-      id: patientSmartTriggerEvents.id,
-      kind: patientSmartTriggerEvents.kind,
-      detectedAt: patientSmartTriggerEvents.detectedAt,
-      windowStartDate: patientSmartTriggerEvents.windowStartDate,
-      windowEndDate: patientSmartTriggerEvents.windowEndDate,
-      sentAt: patientSmartTriggerEvents.sentAt,
-    })
-    .from(patientSmartTriggerEvents)
-    .where(
-      and(
-        eq(patientSmartTriggerEvents.patientId, patientId),
-        isNull(patientSmartTriggerEvents.dismissedAt),
-      ),
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: events, error } = await supabase
+    .schema("resupply")
+    .from("patient_smart_trigger_events")
+    .select(
+      "id, kind, detected_at, window_start_date, window_end_date, sent_at",
     )
-    .orderBy(desc(patientSmartTriggerEvents.detectedAt))
+    .eq("patient_id", patientId)
+    .is("dismissed_at", null)
+    .order("detected_at", { ascending: false })
     .limit(RESPONSE_LIMIT);
+  if (error) throw error;
 
-  const insights: CustomerInsight[] = events.map((e) =>
-    project(e.id, e.kind as SmartTriggerKind, e.detectedAt, {
-      windowStartDate: e.windowStartDate,
-      windowEndDate: e.windowEndDate,
-      notified: e.sentAt !== null,
+  const insights: CustomerInsight[] = (events ?? []).map((e) =>
+    project(e.id, e.kind as SmartTriggerKind, e.detected_at, {
+      windowStartDate: e.window_start_date,
+      windowEndDate: e.window_end_date,
+      notified: e.sent_at !== null,
     }),
   );
 
@@ -172,46 +181,35 @@ router.post(
       return;
     }
     const id = idParse.data;
-    const db = drizzle(getDbPool());
 
-    // Two-step auth guard: first resolve the patient row. We pull up
-    // to 2 rows so that a shared email (two patients, same address)
-    // is detected as ambiguous and we bail — exactly the same
-    // strategy used by the inbound-email and inbound-SMS routes.
-    // 0 rows → no match; >1 → ambiguous. Both collapse into a 404.
-    const patientRows = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(sql`lower(${patients.email}) = ${customerEmail.toLowerCase()}`)
-      .limit(2);
-
-    if (patientRows.length !== 1) {
+    const patientId = await resolveSinglePatientByEmail(customerEmail);
+    if (!patientId) {
       res.status(404).json({ error: "insight_not_found" });
       return;
     }
 
-    const patientId = patientRows[0].id;
+    const supabase = getSupabaseServiceRoleClient();
 
-    // Only now update — scoped to the single unambiguous patient row.
-    // RETURNING the row id lets us tell hit-vs-miss without a
-    // second SELECT.
-    const updated = await db
-      .update(patientSmartTriggerEvents)
-      .set({
-        dismissedAt: new Date(),
-        dismissedByEmail: customerEmail.toLowerCase(),
-        updatedAt: new Date(),
+    // Atomic dismiss — scoped to the single unambiguous patient row.
+    // The .is("dismissed_at", null) guard mirrors the original
+    // RETURNING-on-WHERE-NULL pattern: 0 rows back → already dismissed
+    // or wrong patient_id, both of which collapse to a 404.
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("patient_smart_trigger_events")
+      .update({
+        dismissed_at: nowIso,
+        dismissed_by_email: customerEmail.toLowerCase(),
+        updated_at: nowIso,
       })
-      .where(
-        and(
-          eq(patientSmartTriggerEvents.id, id),
-          isNull(patientSmartTriggerEvents.dismissedAt),
-          eq(patientSmartTriggerEvents.patientId, patientId),
-        ),
-      )
-      .returning({ id: patientSmartTriggerEvents.id });
+      .eq("id", id)
+      .eq("patient_id", patientId)
+      .is("dismissed_at", null)
+      .select("id");
+    if (error) throw error;
 
-    if (updated.length === 0) {
+    if (!updated || updated.length === 0) {
       res.status(404).json({ error: "insight_not_found" });
       return;
     }
@@ -226,14 +224,15 @@ router.post(
 function project(
   id: string,
   kind: SmartTriggerKind,
-  detectedAt: Date,
+  detectedAt: string,
   rest: { windowStartDate: string; windowEndDate: string; notified: boolean },
 ): CustomerInsight {
   const copy = COPY[kind];
   return {
     id,
     kind,
-    detectedAt: detectedAt.toISOString(),
+    // PostgREST already returns timestamptz as ISO string.
+    detectedAt,
     windowStartDate: rest.windowStartDate,
     windowEndDate: rest.windowEndDate,
     notified: rest.notified,

@@ -49,6 +49,32 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["usage_events"]["Insert"]>;
         Relationships: [];
       };
+      orders: {
+        Row: {
+          id: string;
+          order_reference: string;
+          patient_first_name: string;
+          patient_last_name: string;
+          patient_email: string;
+          patient_phone: string;
+          patient_date_of_birth: string;
+          mask_id: string;
+          mask_name: string;
+          mask_manufacturer: string;
+          mask_model_number: string;
+          shipping_city: string;
+          shipping_state: string;
+          shipping_zip: string;
+          payload: Json;
+          email_status: "pending" | "sent" | "failed" | "skipped";
+          email_error: string | null;
+          email_delivered_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["orders"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["orders"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };
