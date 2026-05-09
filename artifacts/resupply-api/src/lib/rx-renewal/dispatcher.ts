@@ -8,11 +8,8 @@
 // gate the other. Returns a tagged-union outcome so the route can
 // 503 on "not_configured" while the cron logs+skips.
 
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patients, prescriptions } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailConfigError,
@@ -66,33 +63,71 @@ export async function runRxRenewalSendDue(
   channel: "email" | "sms",
   actor: RxRenewalActor,
 ): Promise<RxRenewalOutcome> {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   const now = new Date();
-  const cutoff = new Date(
+  const cutoffIso = new Date(
     now.getTime() + RENEWAL_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-  );
+  )
+    .toISOString()
+    .slice(0, 10);
 
-  const rows = await db
-    .select({
-      prescriptionId: prescriptions.id,
-      patientId: prescriptions.patientId,
-      validUntil: prescriptions.validUntil,
-      firstName: patients.legalFirstName,
-      email: patients.email,
-      phoneE164: patients.phoneE164,
-    })
-    .from(prescriptions)
-    .innerJoin(patients, eq(patients.id, prescriptions.patientId))
-    .where(
-      and(
-        eq(prescriptions.status, "active"),
-        isNull(prescriptions.renewalRequestedAt),
-        sql`${prescriptions.validUntil} IS NOT NULL`,
-        sql`${prescriptions.validUntil}::timestamptz <= ${cutoff.toISOString()}::timestamptz`,
-      ),
-    )
-    .orderBy(asc(prescriptions.validUntil))
+  // Original Drizzle path INNER-JOINed prescriptions → patients to
+  // pull contact info in one round-trip. PostgREST has no JOIN, so
+  // we fetch eligible prescription ids first then bulk-resolve
+  // their patients via .in().
+  const { data: rxRows, error: rxErr } = await supabase
+    .schema("resupply")
+    .from("prescriptions")
+    .select("id, patient_id, valid_until")
+    .eq("status", "active")
+    .is("renewal_requested_at", null)
+    .not("valid_until", "is", null)
+    .lte("valid_until", cutoffIso)
+    .order("valid_until", { ascending: true })
     .limit(PER_RUN_CAP * 4);
+  if (rxErr) throw rxErr;
+
+  const patientIds = Array.from(
+    new Set(
+      (rxRows ?? [])
+        .map((r) => r.patient_id)
+        .filter((v): v is string => v !== null),
+    ),
+  );
+  const patientById = new Map<
+    string,
+    { firstName: string | null; email: string | null; phoneE164: string | null }
+  >();
+  if (patientIds.length > 0) {
+    const { data: patientRows, error: patientsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, legal_first_name, email, phone_e164")
+      .in("id", patientIds);
+    if (patientsErr) throw patientsErr;
+    for (const p of patientRows ?? []) {
+      patientById.set(p.id, {
+        firstName: p.legal_first_name,
+        email: p.email,
+        phoneE164: p.phone_e164,
+      });
+    }
+  }
+
+  const rows = (rxRows ?? [])
+    .map((r) => {
+      const patient = patientById.get(r.patient_id);
+      if (!patient) return null;
+      return {
+        prescriptionId: r.id,
+        patientId: r.patient_id,
+        validUntil: r.valid_until,
+        firstName: patient.firstName,
+        email: patient.email,
+        phoneE164: patient.phoneE164,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
@@ -144,23 +179,26 @@ export async function runRxRenewalSendDue(
       : "";
     const greeting = firstName ? `Hi ${firstName}` : "Hi";
 
-    // Claim the row atomically BEFORE calling the vendor. Two concurrent
-    // workers selecting the same batch would both see renewalRequestedAt IS
-    // NULL; without this guard, both would send and only one would win the
-    // post-send mark — the comment that was here acknowledged "a duplicate
-    // send". Claiming first eliminates that window. On vendor failure we
-    // attempt to undo the claim so the next cron tick can retry.
-    const claimed = await db
-      .update(prescriptions)
-      .set({ renewalRequestedAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(prescriptions.id, row.prescriptionId),
-          isNull(prescriptions.renewalRequestedAt),
-        ),
-      )
-      .returning({ id: prescriptions.id });
-    if (!claimed[0]) {
+    // Claim the row atomically BEFORE calling the vendor. Two
+    // concurrent workers selecting the same batch would both see
+    // renewalRequestedAt IS NULL; without this guard, both would
+    // send and only one would win the post-send mark — a duplicate
+    // send. The .is("renewal_requested_at", null) guard collapses
+    // the race: the loser's UPDATE matches 0 rows. On vendor
+    // failure we attempt to undo the claim so the next cron tick
+    // can retry.
+    const nowIso = now.toISOString();
+    const { data: claimed, error: claimErr } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .update({ renewal_requested_at: nowIso, updated_at: nowIso })
+      .eq("id", row.prescriptionId)
+      .is("renewal_requested_at", null)
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claimed) {
       logger.info(
         { prescription_id: row.prescriptionId, channel },
         "rx-renewal: row already claimed by concurrent worker — skipping",
@@ -293,19 +331,20 @@ export async function runRxRenewalSendDue(
       // Undo the pre-send claim so the next cron tick can retry this row.
       // Best-effort: if the undo itself fails the row stays marked and won't
       // be retried, which ops can see in the audit log.
-      await db
-        .update(prescriptions)
-        .set({ renewalRequestedAt: null, updatedAt: now })
-        .where(eq(prescriptions.id, row.prescriptionId))
-        .catch((dbErr) => {
-          logger.warn(
-            {
-              prescription_id: row.prescriptionId,
-              err: dbErr instanceof Error ? dbErr.message : String(dbErr),
-            },
-            "rx-renewal: failed to undo claim after send error — row will not be retried automatically",
-          );
-        });
+      const { error: undoErr } = await supabase
+        .schema("resupply")
+        .from("prescriptions")
+        .update({ renewal_requested_at: null, updated_at: nowIso })
+        .eq("id", row.prescriptionId);
+      if (undoErr) {
+        logger.warn(
+          {
+            prescription_id: row.prescriptionId,
+            err: undoErr,
+          },
+          "rx-renewal: failed to undo claim after send error — row will not be retried automatically",
+        );
+      }
       failed++;
       logger.warn(
         {

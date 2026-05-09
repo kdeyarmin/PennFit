@@ -35,11 +35,9 @@
 // our scale, and a future redis upgrade is a one-line change.
 
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
-import { getDbPool, shopOrders } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import {
@@ -108,25 +106,20 @@ router.post(
     }
     const stripe = getStripeClient(stripeConfig);
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     // Combined ownership + status check so a single SELECT returns
     // either "yes you can re-send" or "treat as not found". We
     // intentionally don't differentiate "wrong owner" from "missing"
     // in the response — both leak information.
-    const [orderRow] = await db
-      .select({
-        id: shopOrders.id,
-        stripeSessionId: shopOrders.stripeSessionId,
-      })
-      .from(shopOrders)
-      .where(
-        and(
-          eq(shopOrders.stripeSessionId, sessionId),
-          eq(shopOrders.customerId, customerId),
-          eq(shopOrders.status, "paid"),
-        ),
-      )
-      .limit(1);
+    const { data: orderRow } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("id, stripe_session_id")
+      .eq("stripe_session_id", sessionId)
+      .eq("customer_id", customerId)
+      .eq("status", "paid")
+      .limit(1)
+      .maybeSingle();
 
     if (!orderRow) {
       res.status(404).json({ error: "not_found" });

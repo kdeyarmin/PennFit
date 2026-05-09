@@ -37,13 +37,11 @@
 //     records `requestedStatus`, `count`, `updatedCount`,
 //     `failedCount` — no PHI.
 
-import { inArray, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patients } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { withIdempotency } from "../../middlewares/idempotency";
@@ -97,26 +95,35 @@ router.post(
     const ids = Array.from(new Set(parsed.data.ids));
     const { status } = parsed.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    // Single UPDATE with id = ANY($::uuid[]) is the correct shape:
-    // the database does the row-by-row work atomically and we get
-    // back the rows that actually matched. Anything missing from
-    // the returning set is a "not_found" failure.
-    const updated = await db
-      .update(patients)
-      // Truncate to ms precision so subsequent PATCH calls (which
-      // gate on `updated_at = $expected` from the JS-Date round-trip)
-      // can match. See update.ts for the rationale.
-      .set({ status, updatedAt: sql`date_trunc('milliseconds', now())` })
-      .where(inArray(patients.id, ids))
-      .returning({ id: patients.id, updatedAt: patients.updatedAt });
+    // Single UPDATE with id IN (...) is the correct shape: the
+    // database does the row-by-row work atomically and we get back
+    // the rows that actually matched. Anything missing from the
+    // RETURNING set is a "not_found" failure.
+    //
+    // The original Drizzle path used `date_trunc('milliseconds',
+    // now())` to keep updated_at addressable by subsequent PATCH
+    // calls' optimistic-concurrency check (JS Date round-trip drops
+    // sub-ms precision). PostgREST doesn't take a SQL expression
+    // here, so we compute the same shape JS-side as a millisecond-
+    // precision ISO string before sending it; the response value
+    // matches what a follow-up PATCH would compare against.
+    const updatedAtIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .update({ status, updated_at: updatedAtIso })
+      .in("id", ids)
+      .select("id, updated_at");
+    if (error) throw error;
 
-    const updatedIds = new Set(updated.map((r) => r.id));
-    const updatedItems: UpdatedItem[] = updated.map((r) => ({
+    const updatedRows = updated ?? [];
+    const updatedIds = new Set(updatedRows.map((r) => r.id));
+    const updatedItems: UpdatedItem[] = updatedRows.map((r) => ({
       id: r.id,
       status,
-      updatedAt: r.updatedAt.toISOString(),
+      updatedAt: r.updated_at,
     }));
     const failedItems: FailedItem[] = ids
       .filter((id) => !updatedIds.has(id))

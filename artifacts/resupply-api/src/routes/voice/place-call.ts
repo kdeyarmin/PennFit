@@ -28,17 +28,10 @@
 // trail — exactly the wrong instinct for an admin-action audit.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  conversations,
-  episodes,
-  getDbPool,
-  patients,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   createTwilioClient,
   TwilioApiError,
@@ -93,21 +86,30 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
   }
   const { patientId, episodeId } = parsed.data;
 
-  const pool = getDbPool();
-  const db = drizzle(pool);
+  const supabase = getSupabaseServiceRoleClient();
 
-  // Single round-trip: confirm patient exists, read phone, confirm
-  // the episode belongs to the same patient.
-  const patientRows = await db
-    .select({
-      id: patients.id,
-      phoneE164: patients.phoneE164,
-      status: patients.status,
-    })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  const patient = patientRows[0];
+  // Patient existence + phone + status. PostgREST has no JOIN, so
+  // the patient and episode reads stay separate but can run in
+  // parallel.
+  const [patientRes, episodeRes] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, phone_e164, status")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, patient_id")
+      .eq("id", episodeId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (patientRes.error) throw patientRes.error;
+  if (episodeRes.error) throw episodeRes.error;
+  const patient = patientRes.data;
   if (!patient) {
     res.status(404).json({ error: "patient_not_found" });
     return;
@@ -119,7 +121,7 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
     });
     return;
   }
-  if (!patient.phoneE164) {
+  if (!patient.phone_e164) {
     res.status(422).json({
       error: "patient_missing_phone",
       message: "Patient row has no phone number on file.",
@@ -127,17 +129,12 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
     return;
   }
 
-  const episodeRows = await db
-    .select({ id: episodes.id, patientId: episodes.patientId })
-    .from(episodes)
-    .where(eq(episodes.id, episodeId))
-    .limit(1);
-  const episode = episodeRows[0];
+  const episode = episodeRes.data;
   if (!episode) {
     res.status(404).json({ error: "episode_not_found" });
     return;
   }
-  if (episode.patientId !== patientId) {
+  if (episode.patient_id !== patientId) {
     res.status(422).json({
       error: "episode_patient_mismatch",
       message: "Episode does not belong to the supplied patient.",
@@ -147,20 +144,22 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
 
   // Create the conversation row up front so the dashboard timeline
   // shows the attempt even if Twilio rejects the dial.
-  const insertedRows = await db
-    .insert(conversations)
-    .values({
-      patientId,
-      episodeId,
+  const { data: inserted, error: insertErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .insert({
+      patient_id: patientId,
+      episode_id: episodeId,
       channel: "voice",
       status: "open",
-      lastMessageAt: new Date(),
+      last_message_at: new Date().toISOString(),
     })
-    .returning({ id: conversations.id });
-  const conversationId = insertedRows[0]?.id;
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertErr) throw insertErr;
+  const conversationId = inserted?.id;
   if (!conversationId) {
-    // Drizzle returns no rows only on failed insert under postgres,
-    // and it would have thrown by now — this is paranoia.
     res.status(500).json({ error: "conversation_create_failed" });
     return;
   }
@@ -189,7 +188,7 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
       authToken: config.twilioAuthToken,
     });
     const result = await twilio.placeCall({
-      to: patient.phoneE164,
+      to: patient.phone_e164,
       from: config.twilioPhoneNumber,
       url: twimlUrl,
       statusCallbackUrl,
@@ -236,10 +235,15 @@ router.post("/voice/place-call", requireAdmin, async (req, res) => {
   }
 
   getPendingSessions().attachCallSid(conversationId, callSid);
-  await db
-    .update(conversations)
-    .set({ externalRef: callSid, updatedAt: new Date() })
-    .where(eq(conversations.id, conversationId));
+  const { error: updateErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
+      external_ref: callSid,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId);
+  if (updateErr) throw updateErr;
 
   await safeAudit({
     action: "voice.call.placed",

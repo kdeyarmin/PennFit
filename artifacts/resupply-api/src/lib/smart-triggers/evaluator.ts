@@ -15,15 +15,8 @@
 // system-actor identifier ("system:cron:smart-trigger-evaluator")
 // when called from the pg-boss worker.
 
-import { asc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  patientSmartTriggerEvents,
-  patientTherapyNights,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 import { evaluateAll } from "./index";
@@ -57,19 +50,33 @@ export interface EvaluatorResult {
 export async function runSmartTriggerEvaluator(
   actor: EvaluatorActor,
 ): Promise<EvaluatorResult> {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Recent therapy-night roster — patients with at least one night
-  // in the last 60 days are candidates. Per-patient night history
-  // comes inside the loop below.
-  const candidates = await db
-    .selectDistinct({ patientId: patientTherapyNights.patientId })
-    .from(patientTherapyNights)
-    .where(
-      sql`${patientTherapyNights.nightDate}::timestamptz >= now() - interval '60 days'`,
-    )
-    .orderBy(asc(patientTherapyNights.patientId))
-    .limit(PER_RUN_PATIENT_CAP);
+  // in the last 60 days are candidates. PostgREST has no
+  // selectDistinct + no `now() - interval`, so we compute the cutoff
+  // JS-side and de-dupe via a Set. Per-patient night history comes
+  // inside the loop below.
+  const cutoffIso = new Date(
+    Date.now() - 60 * 24 * 60 * 60 * 1000,
+  )
+    .toISOString()
+    .slice(0, 10);
+  const { data: recentRows, error: candidatesErr } = await supabase
+    .schema("resupply")
+    .from("patient_therapy_nights")
+    .select("patient_id")
+    .gte("night_date", cutoffIso)
+    .order("patient_id", { ascending: true });
+  if (candidatesErr) throw candidatesErr;
+  const candidateSet = new Set<string>();
+  for (const r of recentRows ?? []) {
+    if (r.patient_id) candidateSet.add(r.patient_id);
+    if (candidateSet.size >= PER_RUN_PATIENT_CAP) break;
+  }
+  const candidates = Array.from(candidateSet).map((patientId) => ({
+    patientId,
+  }));
 
   let scanned = 0;
   let proposed = 0;
@@ -79,27 +86,28 @@ export async function runSmartTriggerEvaluator(
   for (const c of candidates) {
     scanned++;
     try {
-      const nights = await db
-        .select({
-          date: patientTherapyNights.nightDate,
-          usageMinutes: patientTherapyNights.usageMinutes,
-          ahi: patientTherapyNights.ahi,
-          leakRateLMin: patientTherapyNights.leakRateLMin,
-          pressureP95Cmh2o: patientTherapyNights.pressureP95Cmh2o,
-        })
-        .from(patientTherapyNights)
-        .where(eq(patientTherapyNights.patientId, c.patientId))
-        .orderBy(asc(patientTherapyNights.nightDate))
+      const { data: nightRows, error: nightsErr } = await supabase
+        .schema("resupply")
+        .from("patient_therapy_nights")
+        .select(
+          "night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
+        )
+        .eq("patient_id", c.patientId)
+        .order("night_date", { ascending: true })
         .limit(60);
+      if (nightsErr) throw nightsErr;
+      const nights = nightRows ?? [];
 
       const proposals = evaluateAll(
         nights.map((n) => ({
-          date: n.date,
-          usageMinutes: n.usageMinutes,
+          date: n.night_date,
+          usageMinutes: n.usage_minutes,
+          // PostgREST returns numeric columns as strings (preserves
+          // precision). Convert to Number for the evaluator.
           ahi: n.ahi !== null ? Number(n.ahi) : null,
-          leakRateLMin: n.leakRateLMin !== null ? Number(n.leakRateLMin) : null,
+          leakRateLMin: n.leak_rate_l_min !== null ? Number(n.leak_rate_l_min) : null,
           pressureP95Cmh2o:
-            n.pressureP95Cmh2o !== null ? Number(n.pressureP95Cmh2o) : null,
+            n.pressure_p95_cmh2o !== null ? Number(n.pressure_p95_cmh2o) : null,
         })),
       );
 
@@ -107,27 +115,38 @@ export async function runSmartTriggerEvaluator(
         proposed++;
         // The partial-unique index on (patient, kind) WHERE
         // dismissed_at IS NULL ensures we don't double-fire while a
-        // prior event is still pending. ON CONFLICT DO NOTHING is
-        // the cleanest way to skip silently.
-        const result = await db
-          .insert(patientSmartTriggerEvents)
-          .values({
-            patientId: c.patientId,
+        // prior event is still pending. PostgREST has no DO NOTHING,
+        // so we INSERT and treat 23505 as the "skipped existing"
+        // path.
+        const { data: insertedRow, error: insertErr } = await supabase
+          .schema("resupply")
+          .from("patient_smart_trigger_events")
+          .insert({
+            patient_id: c.patientId,
             kind: p.kind,
-            windowStartDate: p.windowStartDate,
-            windowEndDate: p.windowEndDate,
+            window_start_date: p.windowStartDate,
+            window_end_date: p.windowEndDate,
           })
-          .onConflictDoNothing()
-          .returning({ id: patientSmartTriggerEvents.id });
+          .select("id")
+          .limit(1)
+          .maybeSingle();
 
-        if (result.length > 0) {
+        if (insertErr) {
+          if ((insertErr as { code?: string }).code === "23505") {
+            skippedExisting++;
+            continue;
+          }
+          throw insertErr;
+        }
+
+        if (insertedRow) {
           inserted++;
           await logAudit({
             action: "patient.smart_trigger.detected",
             adminEmail: actor.adminEmail,
             adminUserId: actor.adminUserId,
             targetTable: "patient_smart_trigger_events",
-            targetId: result[0]!.id,
+            targetId: insertedRow.id,
             metadata: {
               patient_id: c.patientId,
               kind: p.kind,

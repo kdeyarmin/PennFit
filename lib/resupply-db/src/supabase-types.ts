@@ -49,6 +49,61 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["usage_events"]["Insert"]>;
         Relationships: [];
       };
+      admin_audit_log: {
+        Row: {
+          id: string;
+          admin_email: string;
+          admin_user_id: string;
+          action: string;
+          target_order_id: string | null;
+          ip: string | null;
+          occurred_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["admin_audit_log"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["admin_audit_log"]["Row"]>;
+        Relationships: [];
+      };
+      reminder_subscriptions: {
+        Row: {
+          id: string;
+          email: string;
+          manage_token: string;
+          status: "active" | "unsubscribed";
+          items: Json;
+          last_sent_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["reminder_subscriptions"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["reminder_subscriptions"]["Row"]>;
+        Relationships: [];
+      };
+      orders: {
+        Row: {
+          id: string;
+          order_reference: string;
+          patient_first_name: string;
+          patient_last_name: string;
+          patient_email: string;
+          patient_phone: string;
+          patient_date_of_birth: string;
+          mask_id: string;
+          mask_name: string;
+          mask_manufacturer: string;
+          mask_model_number: string;
+          shipping_city: string;
+          shipping_state: string;
+          shipping_zip: string;
+          payload: Json;
+          email_status: "pending" | "sent" | "failed" | "skipped";
+          email_error: string | null;
+          email_delivered_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["orders"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["orders"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };
@@ -57,6 +112,42 @@ export interface Database {
   };
   resupply: {
     Tables: {
+      patient_checkin_attempts: {
+        Row: {
+          id: string;
+          journey_id: string;
+          patient_id: string;
+          day_label: string;
+          channel: "email" | "sms" | "voice";
+          outcome:
+            | "sent"
+            | "skipped_no_contact"
+            | "skipped_not_configured"
+            | "vendor_error";
+          vendor_ref: string | null;
+          error_code: string | null;
+          attempted_at: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_checkin_attempts"]["Row"]>;
+        Relationships: [];
+      };
+      idempotency_keys: {
+        Row: {
+          user_id: string;
+          endpoint: string;
+          key: string;
+          request_hash: string;
+          response_status: number;
+          response_body: Json;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["idempotency_keys"]["Row"]>;
+        Relationships: [];
+      };
       admin_users: {
         Row: {
           id: string;
@@ -236,9 +327,29 @@ export interface Database {
           id: string;
           customer_id: string;
           order_id: string;
+          stripe_session_id: string;
           status: string;
+          reason: string;
+          reason_note: string | null;
+          resolution: string | null;
+          refund_cents: number | null;
+          stripe_refund_id: string | null;
+          exchange_product_id: string | null;
+          exchange_price_id: string | null;
+          exchange_order_id: string | null;
+          return_label_url: string | null;
+          return_carrier: string | null;
+          return_tracking_number: string | null;
+          admin_note: string | null;
+          admin_user_id: string | null;
           created_at: string;
           updated_at: string;
+          approved_at: string | null;
+          rejected_at: string | null;
+          shipped_back_at: string | null;
+          received_at: string | null;
+          resolved_at: string | null;
+          closed_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_returns"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_returns"]["Row"]>;
@@ -250,7 +361,14 @@ export interface Database {
           customer_id: string;
           product_id: string;
           rating: number;
+          title: string | null;
+          body: string | null;
+          author_display_name: string | null;
+          author_email: string;
           status: string;
+          moderation_note: string | null;
+          moderated_at: string | null;
+          moderated_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -264,6 +382,9 @@ export interface Database {
           patient_id: string;
           object_key: string;
           document_type: string;
+          filename: string | null;
+          content_type: string;
+          size_bytes: number;
           reviewed_at: string | null;
           reviewed_by_admin_id: string | null;
           review_note: string | null;
@@ -281,10 +402,288 @@ export interface Database {
           body: string;
           due_at: string;
           completed_at: string | null;
+          completed_by_email: string | null;
+          completed_by_user_id: string | null;
+          created_by_email: string;
+          created_by_user_id: string | null;
           created_at: string;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_followups"]["Row"]>;
+        Relationships: [];
+      };
+      insurance_leads: {
+        Row: {
+          id: string;
+          full_name: string;
+          email: string;
+          phone: string;
+          date_of_birth: string;
+          insurance_carrier: string;
+          member_id: string;
+          group_number: string | null;
+          prescribing_physician: string | null;
+          notes: string | null;
+          status: string;
+          csr_note: string | null;
+          notification_email_delivered: boolean;
+          confirmation_email_delivered: boolean;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          moderated_at: string | null;
+          moderated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["insurance_leads"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["insurance_leads"]["Row"]>;
+        Relationships: [];
+      };
+      shop_product_questions: {
+        Row: {
+          id: string;
+          product_id: string;
+          customer_id: string;
+          asker_display_name: string;
+          asker_email: string;
+          question_body: string;
+          status: string;
+          answer_body: string | null;
+          answered_by_email: string | null;
+          answered_by_user_id: string | null;
+          answered_at: string | null;
+          moderation_note: string | null;
+          moderated_at: string | null;
+          moderated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_product_questions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_product_questions"]["Row"]>;
+        Relationships: [];
+      };
+      shop_back_in_stock_notifications: {
+        Row: {
+          id: string;
+          product_id: string;
+          email: string;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          notified_at: string | null;
+          delivered: boolean;
+          delivery_error: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]>;
+        Relationships: [];
+      };
+      message_attachments: {
+        Row: {
+          id: string;
+          message_id: string;
+          object_key: string;
+          filename: string | null;
+          content_type: string;
+          size_bytes: number;
+          twilio_media_sid: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["message_attachments"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["message_attachments"]["Row"]>;
+        Relationships: [];
+      };
+      shop_customer_push_subscriptions: {
+        Row: {
+          id: string;
+          customer_id: string;
+          endpoint: string;
+          auth_b64: string;
+          p256dh_b64: string;
+          user_agent: string | null;
+          expired_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
+        Relationships: [];
+      };
+      csr_compliance_alerts: {
+        Row: {
+          id: string;
+          patient_id: string;
+          journey_id: string | null;
+          alert_type: "low_usage" | "no_response" | "send_failure" | "manual";
+          severity: "info" | "warning" | "critical";
+          summary: string;
+          metric_snapshot: Record<string, unknown> | null;
+          status: "open" | "snoozed" | "resolved";
+          snoozed_until: string | null;
+          resolved_at: string | null;
+          resolved_by_email: string | null;
+          resolved_by_user_id: string | null;
+          resolution_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
+        Relationships: [];
+      };
+      shop_customer_message_template_overrides: {
+        Row: {
+          id: string;
+          customer_id: string;
+          template_key: string;
+          channel: string;
+          subject: string | null;
+          body_html: string | null;
+          body_text: string | null;
+          is_active: boolean;
+          note: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"]>;
+        Relationships: [];
+      };
+      message_templates: {
+        Row: {
+          id: string;
+          template_key: string;
+          channel: string;
+          subject: string | null;
+          body_html: string | null;
+          body_text: string;
+          allowed_variables: string[];
+          is_active: boolean;
+          updated_at: string;
+          updated_by: string | null;
+          created_at: string;
+          created_by: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["message_templates"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["message_templates"]["Row"]>;
+        Relationships: [];
+      };
+      patient_integration_snapshots: {
+        Row: {
+          id: string;
+          patient_id: string;
+          source: string;
+          partner_patient_id: string;
+          payload: unknown;
+          fetch_status: string;
+          fetch_error: string | null;
+          fetched_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_integration_snapshots"]["Row"]>;
+        Relationships: [];
+      };
+      patient_therapy_links: {
+        Row: {
+          id: string;
+          patient_id: string;
+          source: string;
+          partner_patient_id: string;
+          device_serial: string | null;
+          status: string;
+          last_synced_at: string | null;
+          last_sync_status: string | null;
+          last_sync_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_therapy_links"]["Row"]>;
+        Relationships: [];
+      };
+      patient_therapy_nights: {
+        Row: {
+          id: string;
+          patient_id: string;
+          night_date: string;
+          source: string;
+          source_event_id: string | null;
+          usage_minutes: number | null;
+          ahi: string | null;
+          leak_rate_l_min: string | null;
+          pressure_p95_cmh2o: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]>;
+        Relationships: [];
+      };
+      patient_onboarding_journeys: {
+        Row: {
+          id: string;
+          patient_id: string;
+          started_at: string;
+          day1_sent_at: string | null;
+          day3_sent_at: string | null;
+          day7_sent_at: string | null;
+          day30_sent_at: string | null;
+          day60_sent_at: string | null;
+          day90_sent_at: string | null;
+          status: "active" | "completed" | "paused";
+          enrolled_by_email: string;
+          enrolled_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]>;
+        Relationships: [];
+      };
+      patient_smart_trigger_events: {
+        Row: {
+          id: string;
+          patient_id: string;
+          kind: string;
+          detected_at: string;
+          window_start_date: string;
+          window_end_date: string;
+          sent_at: string | null;
+          dismissed_at: string | null;
+          dismissed_by_email: string | null;
+          dismissed_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_smart_trigger_events"]["Row"]>;
+        Relationships: [];
+      };
+      physician_fax_outreach: {
+        Row: {
+          id: string;
+          patient_id: string;
+          prescription_id: string | null;
+          physician_name: string;
+          physician_fax_e164: string;
+          cover_letter_text: string;
+          status: string;
+          vendor_ref: string | null;
+          vendor_name: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+          failed_at: string | null;
+          failure_reason: string | null;
+          created_by_email: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["physician_fax_outreach"]["Row"]>;
         Relationships: [];
       };
       patient_followups: {
@@ -294,10 +693,68 @@ export interface Database {
           body: string;
           due_at: string;
           completed_at: string | null;
+          completed_by_email: string | null;
+          completed_by_user_id: string | null;
+          created_by_email: string;
+          created_by_user_id: string | null;
           created_at: string;
         };
         Insert: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["patient_followups"]["Row"]>;
+        Relationships: [];
+      };
+      prescriptions: {
+        Row: {
+          id: string;
+          patient_id: string;
+          item_sku: string;
+          cadence_days: number;
+          valid_from: string;
+          valid_until: string | null;
+          details: Json | null;
+          status: string;
+          attachment_object_key: string | null;
+          attachment_filename: string | null;
+          attachment_content_type: string | null;
+          attachment_size_bytes: number | null;
+          attachment_uploaded_at: string | null;
+          renewal_requested_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["prescriptions"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["prescriptions"]["Row"]>;
+        Relationships: [];
+      };
+      messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          direction: string;
+          sender_role: string;
+          body: string;
+          delivery_status: string | null;
+          delivery_error: string | null;
+          vendor_metadata: Json;
+          sent_at: string | null;
+          delivered_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["messages"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["messages"]["Row"]>;
+        Relationships: [];
+      };
+      patient_latest_message: {
+        Row: {
+          patient_id: string;
+          last_message_at: string;
+          last_message_direction: string;
+          last_message_preview: string;
+          last_message_conversation_id: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_latest_message"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_latest_message"]["Row"]>;
         Relationships: [];
       };
       patient_notes: {
@@ -357,6 +814,42 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_customers"]["Row"]>;
         Relationships: [];
       };
+      shop_order_items: {
+        Row: {
+          id: string;
+          order_id: string;
+          stripe_session_id: string;
+          customer_id: string | null;
+          product_id: string;
+          price_id: string;
+          quantity: number;
+          unit_amount_cents: number | null;
+          currency: string | null;
+          paid_at: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_order_items"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_order_items"]["Row"]>;
+        Relationships: [];
+      };
+      shop_abandoned_carts: {
+        Row: {
+          id: string;
+          customer_id: string;
+          email: string | null;
+          items: Json;
+          subtotal_cents: number;
+          currency: string;
+          updated_at: string;
+          reminded_at: string | null;
+          recovered_at: string | null;
+          cleared_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_abandoned_carts"]["Row"]>;
+        Relationships: [];
+      };
       shop_orders: {
         Row: {
           id: string;
@@ -408,6 +901,20 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_notes"]["Row"]>;
+        Relationships: [];
+      };
+      shop_product_compatibility: {
+        Row: {
+          id: string;
+          product_id: string;
+          machine_manufacturer: string;
+          machine_model: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_product_compatibility"]["Row"]>;
         Relationships: [];
       };
       csr_macros: {

@@ -32,21 +32,11 @@
 // a created-then-message-at-same-instant sequence doesn't flicker
 // between renders.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  conversations,
-  episodes,
-  fulfillments,
-  getDbPool,
-  messages,
-  patients,
-  prescriptions,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -89,16 +79,18 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
   }
   const { id } = parsed.data;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Confirm the patient exists (and grab the createdAt for the
   // patient_created marker).
-  const patientRows = await db
-    .select({ id: patients.id, createdAt: patients.createdAt })
-    .from(patients)
-    .where(eq(patients.id, id))
-    .limit(1);
-  const patient = patientRows[0];
+  const { data: patient, error: patientErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id, created_at")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (patientErr) throw patientErr;
   if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
@@ -106,76 +98,95 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
 
   // Run the four child reads in parallel — none depend on each
   // other and the connection pool can handle them concurrently.
-  const [prescriptionRows, episodeRows, messageRows, fulfillmentRows] =
-    await Promise.all([
-      db
-        .select({
-          id: prescriptions.id,
-          itemSku: prescriptions.itemSku,
-          cadenceDays: prescriptions.cadenceDays,
-          createdAt: prescriptions.createdAt,
-        })
-        .from(prescriptions)
-        .where(eq(prescriptions.patientId, id))
-        .orderBy(desc(prescriptions.createdAt))
-        .limit(200),
-      db
-        .select({
-          id: episodes.id,
-          prescriptionId: episodes.prescriptionId,
-          itemSku: prescriptions.itemSku,
-          status: episodes.status,
-          dueAt: episodes.dueAt,
-          createdAt: episodes.createdAt,
-        })
-        .from(episodes)
-        .leftJoin(prescriptions, eq(prescriptions.id, episodes.prescriptionId))
-        .where(eq(episodes.patientId, id))
-        .orderBy(desc(episodes.createdAt))
-        .limit(200),
-      // Messages join conversations to filter by patient. We only
-      // need the metadata, not the encrypted body.
-      db
-        .select({
-          id: messages.id,
-          conversationId: messages.conversationId,
-          episodeId: conversations.episodeId,
-          channel: conversations.channel,
-          direction: messages.direction,
-          senderRole: messages.senderRole,
-          deliveryStatus: messages.deliveryStatus,
-          sentAt: messages.sentAt,
-          createdAt: messages.createdAt,
-        })
-        .from(messages)
-        .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-        .where(eq(conversations.patientId, id))
-        .orderBy(desc(messages.createdAt))
-        .limit(500),
-      db
-        .select({
-          id: fulfillments.id,
-          episodeId: fulfillments.episodeId,
-          itemSku: fulfillments.itemSku,
-          quantity: fulfillments.quantity,
-          status: fulfillments.status,
-          submittedAt: fulfillments.submittedAt,
-          shippedAt: fulfillments.shippedAt,
-          deliveredAt: fulfillments.deliveredAt,
-          createdAt: fulfillments.createdAt,
-        })
-        .from(fulfillments)
-        .where(eq(fulfillments.patientId, id))
-        .orderBy(desc(fulfillments.createdAt))
-        .limit(200),
-    ]);
+  // Note: the original Drizzle path JOINed messages → conversations
+  // (to filter messages by patient) and episodes → prescriptions (for
+  // itemSku display). PostgREST has no JOIN, so we fetch the parent
+  // collections first and resolve the join via JS Maps below.
+  const [
+    prescriptionsRes,
+    episodesRes,
+    conversationsRes,
+    fulfillmentsRes,
+  ] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select("id, item_sku, cadence_days, created_at")
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, prescription_id, status, due_at, created_at")
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("id, episode_id, channel")
+      .eq("patient_id", id),
+    supabase
+      .schema("resupply")
+      .from("fulfillments")
+      .select(
+        "id, episode_id, item_sku, quantity, status, submitted_at, shipped_at, delivered_at, created_at",
+      )
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ]);
+  if (prescriptionsRes.error) throw prescriptionsRes.error;
+  if (episodesRes.error) throw episodesRes.error;
+  if (conversationsRes.error) throw conversationsRes.error;
+  if (fulfillmentsRes.error) throw fulfillmentsRes.error;
+
+  const prescriptionRows = prescriptionsRes.data ?? [];
+  const episodeRows = episodesRes.data ?? [];
+  const conversationRows = conversationsRes.data ?? [];
+  const fulfillmentRows = fulfillmentsRes.data ?? [];
+
+  // Resolve the LEFT JOIN equivalents. Both maps are 1-to-1 so a flat
+  // key→value Map is the simplest form.
+  const itemSkuByRxId = new Map<string, string>();
+  for (const p of prescriptionRows) itemSkuByRxId.set(p.id, p.item_sku);
+  const conversationMeta = new Map<
+    string,
+    { episodeId: string | null; channel: string }
+  >();
+  for (const c of conversationRows) {
+    conversationMeta.set(c.id, { episodeId: c.episode_id, channel: c.channel });
+  }
+
+  // Messages used to be JOINed to conversations and filtered by
+  // conversations.patient_id. Now we fetch the patient's conversation
+  // ids first (above) and use `.in()` here. If the patient has no
+  // conversations there's nothing to fetch — skip the round-trip.
+  const conversationIds = conversationRows.map((c) => c.id);
+  const messageRows =
+    conversationIds.length > 0
+      ? await (async () => {
+          const { data, error } = await supabase
+            .schema("resupply")
+            .from("messages")
+            .select(
+              "id, conversation_id, direction, sender_role, delivery_status, sent_at, created_at",
+            )
+            .in("conversation_id", conversationIds)
+            .order("created_at", { ascending: false })
+            .limit(500);
+          if (error) throw error;
+          return data ?? [];
+        })()
+      : [];
 
   const events: TimelineEvent[] = [];
 
   // patient_created — anchor of the timeline.
   events.push({
     kind: "patient_created",
-    at: toIso(patient.createdAt) ?? new Date(0).toISOString(),
+    at: toIso(patient.created_at) ?? new Date(0).toISOString(),
     title: "Customer added",
     detail: null,
     episodeId: null,
@@ -187,9 +198,9 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
   for (const p of prescriptionRows) {
     events.push({
       kind: "prescription_created",
-      at: toIso(p.createdAt) ?? new Date(0).toISOString(),
-      title: `Prescription added: ${p.itemSku}`,
-      detail: `Cadence ${p.cadenceDays} days`,
+      at: toIso(p.created_at) ?? new Date(0).toISOString(),
+      title: `Prescription added: ${p.item_sku}`,
+      detail: `Cadence ${p.cadence_days} days`,
       episodeId: null,
       conversationId: null,
       prescriptionId: p.id,
@@ -198,15 +209,18 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
   }
 
   for (const e of episodeRows) {
-    const due = toIso(e.dueAt);
+    const due = toIso(e.due_at);
+    const itemSku = e.prescription_id
+      ? itemSkuByRxId.get(e.prescription_id)
+      : null;
     events.push({
       kind: "episode_created",
-      at: toIso(e.createdAt) ?? new Date(0).toISOString(),
-      title: `Resupply episode opened${e.itemSku ? ` (${e.itemSku})` : ""}`,
+      at: toIso(e.created_at) ?? new Date(0).toISOString(),
+      title: `Resupply episode opened${itemSku ? ` (${itemSku})` : ""}`,
       detail: `Status: ${e.status}${due ? ` · Due ${due.slice(0, 10)}` : ""}`,
       episodeId: e.id,
       conversationId: null,
-      prescriptionId: e.prescriptionId,
+      prescriptionId: e.prescription_id,
       fulfillmentId: null,
     });
   }
@@ -216,17 +230,19 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
     // outbound messages they will match, for inbound messages
     // sentAt is the vendor-reported send-time (more accurate).
     const at =
-      toIso(m.sentAt) ?? toIso(m.createdAt) ?? new Date(0).toISOString();
+      toIso(m.sent_at) ?? toIso(m.created_at) ?? new Date(0).toISOString();
+    const meta = conversationMeta.get(m.conversation_id);
+    const channel = meta?.channel ?? "";
     const dirVerb = m.direction === "inbound" ? "received" : "sent";
     const channelLabel =
-      m.channel === "sms" ? "SMS" : m.channel === "email" ? "Email" : "Voice";
+      channel === "sms" ? "SMS" : channel === "email" ? "Email" : "Voice";
     events.push({
       kind: "message",
       at,
       title: `${channelLabel} message ${dirVerb}`,
-      detail: `From ${m.senderRole}${m.deliveryStatus ? ` · ${m.deliveryStatus}` : ""}`,
-      episodeId: m.episodeId,
-      conversationId: m.conversationId,
+      detail: `From ${m.sender_role}${m.delivery_status ? ` · ${m.delivery_status}` : ""}`,
+      episodeId: meta?.episodeId ?? null,
+      conversationId: m.conversation_id,
       prescriptionId: null,
       fulfillmentId: null,
     });
@@ -236,48 +252,48 @@ router.get("/patients/:id/timeline", requireAdmin, async (req, res) => {
   // so the chart shows the lifecycle (queued → submitted → shipped →
   // delivered) instead of a single "fulfillment exists" row.
   for (const f of fulfillmentRows) {
-    const item = `${f.itemSku} × ${f.quantity}`;
+    const item = `${f.item_sku} × ${f.quantity}`;
     events.push({
       kind: "fulfillment_queued",
-      at: toIso(f.createdAt) ?? new Date(0).toISOString(),
+      at: toIso(f.created_at) ?? new Date(0).toISOString(),
       title: `Fulfillment queued: ${item}`,
       detail: `Status: ${f.status}`,
-      episodeId: f.episodeId,
+      episodeId: f.episode_id,
       conversationId: null,
       prescriptionId: null,
       fulfillmentId: f.id,
     });
-    if (f.submittedAt) {
+    if (f.submitted_at) {
       events.push({
         kind: "fulfillment_submitted",
-        at: toIso(f.submittedAt)!,
+        at: toIso(f.submitted_at)!,
         title: `Fulfillment submitted to Pacware: ${item}`,
         detail: null,
-        episodeId: f.episodeId,
+        episodeId: f.episode_id,
         conversationId: null,
         prescriptionId: null,
         fulfillmentId: f.id,
       });
     }
-    if (f.shippedAt) {
+    if (f.shipped_at) {
       events.push({
         kind: "fulfillment_shipped",
-        at: toIso(f.shippedAt)!,
+        at: toIso(f.shipped_at)!,
         title: `Fulfillment shipped: ${item}`,
         detail: null,
-        episodeId: f.episodeId,
+        episodeId: f.episode_id,
         conversationId: null,
         prescriptionId: null,
         fulfillmentId: f.id,
       });
     }
-    if (f.deliveredAt) {
+    if (f.delivered_at) {
       events.push({
         kind: "fulfillment_delivered",
-        at: toIso(f.deliveredAt)!,
+        at: toIso(f.delivered_at)!,
         title: `Fulfillment delivered: ${item}`,
         detail: null,
-        episodeId: f.episodeId,
+        episodeId: f.episode_id,
         conversationId: null,
         prescriptionId: null,
         fulfillmentId: f.id,

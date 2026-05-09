@@ -14,21 +14,23 @@
 // Audit envelopes record link id + patient id + source only — not
 // the partner id or device serial. Logger never sees them either.
 
-import { and, asc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getDbPool,
-  patients,
-  patientTherapyLinks,
+  getSupabaseServiceRoleClient,
+  type Database,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+
+type TherapyLinkRow =
+  Database["resupply"]["Tables"]["patient_therapy_links"]["Row"];
+type TherapyLinkUpdate =
+  Database["resupply"]["Tables"]["patient_therapy_links"]["Update"];
 
 const router: IRouter = Router();
 
@@ -85,6 +87,8 @@ interface LinkResponse {
 interface PgConstraintError {
   code?: string;
   constraint?: string;
+  message?: string;
+  details?: string;
 }
 
 function parsePgConstraintError(err: unknown): PgConstraintError {
@@ -95,34 +99,34 @@ function parsePgConstraintError(err: unknown): PgConstraintError {
   return {
     code: candidate.code,
     constraint: candidate.constraint,
+    message: candidate.message,
+    details: candidate.details,
   };
 }
 
-function toResponse(row: {
-  id: string;
-  patientId: string;
-  source: string;
-  partnerPatientId: string;
-  deviceSerial: string | null;
-  status: string;
-  lastSyncedAt: Date | null;
-  lastSyncStatus: string | null;
-  lastSyncError: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): LinkResponse {
+function matchesConstraint(err: PgConstraintError, name: string): boolean {
+  // PostgREST exposes the constraint name in the explicit `constraint`
+  // field on supabase-js v2.105+, but older releases may only stuff it
+  // into the message / details strings — match either to be safe.
+  if (err.constraint === name) return true;
+  if (err.message?.includes(name)) return true;
+  if (err.details?.includes(name)) return true;
+  return false;
+}
+
+function toResponse(row: TherapyLinkRow): LinkResponse {
   return {
     id: row.id,
-    patientId: row.patientId,
+    patientId: row.patient_id,
     source: row.source,
-    partnerPatientId: row.partnerPatientId,
-    deviceSerial: row.deviceSerial,
+    partnerPatientId: row.partner_patient_id,
+    deviceSerial: row.device_serial,
     status: row.status,
-    lastSyncedAt: row.lastSyncedAt ? row.lastSyncedAt.toISOString() : null,
-    lastSyncStatus: row.lastSyncStatus,
-    lastSyncError: row.lastSyncError,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    lastSyncedAt: row.last_synced_at,
+    lastSyncStatus: row.last_sync_status,
+    lastSyncError: row.last_sync_error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -137,15 +141,20 @@ router.get(
     }
     const patientId = idCheck.data;
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select()
-      .from(patientTherapyLinks)
-      .where(eq(patientTherapyLinks.patientId, patientId))
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_links")
+      .select(
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
+      )
+      .eq("patient_id", patientId)
       // Active first, then by source for stable display.
-      .orderBy(asc(patientTherapyLinks.status), asc(patientTherapyLinks.source));
+      .order("status", { ascending: true })
+      .order("source", { ascending: true });
+    if (error) throw error;
 
-    res.json({ links: rows.map(toResponse) });
+    res.json({ links: (rows ?? []).map(toResponse) });
   },
 );
 
@@ -174,52 +183,51 @@ router.post(
     }
     const { source, partnerPatientId, deviceSerial } = bodyParsed.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const exists = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(eq(patients.id, patientId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: existsRow, error: existsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) throw existsErr;
+    if (!existsRow) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
 
-    let inserted: typeof patientTherapyLinks.$inferSelect;
-    try {
-      const rows = await db
-        .insert(patientTherapyLinks)
-        .values({
-          patientId,
-          source,
-          partnerPatientId,
-          deviceSerial: deviceSerial ?? null,
-          status: "active",
-        })
-        .returning();
-      const row = rows[0];
-      if (!row) {
-        // Should be impossible — INSERT … RETURNING * always returns
-        // the row on success.
-        throw new Error("insert returned no rows");
-      }
-      inserted = row;
-    } catch (err) {
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_links")
+      .insert({
+        patient_id: patientId,
+        source,
+        partner_patient_id: partnerPatientId,
+        device_serial: deviceSerial ?? null,
+        status: "active",
+      })
+      .select(
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
+      )
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) {
       // Partial unique on (patient_id, source) WHERE status='active'
       // and the (source, partner_patient_id) global unique both
       // surface as 23505. Distinguish by constraint name so the SPA
       // can show a useful message; default to a generic 409.
-      const pgErr = parsePgConstraintError(err);
-      if (pgErr?.code === "23505") {
-        if (pgErr.constraint === "patient_therapy_links_active_unique") {
+      const pgErr = parsePgConstraintError(insertErr);
+      if (pgErr.code === "23505") {
+        if (matchesConstraint(pgErr, "patient_therapy_links_active_unique")) {
           res.status(409).json({
             error: "active_link_exists",
             message: `Patient already has an active ${source} link. Pause or revoke it first.`,
           });
           return;
         }
-        if (pgErr.constraint === "patient_therapy_links_partner_unique") {
+        if (matchesConstraint(pgErr, "patient_therapy_links_partner_unique")) {
           res.status(409).json({
             error: "partner_id_in_use",
             message: `Another patient is already linked to this ${source} account.`,
@@ -235,6 +243,9 @@ router.post(
       );
       res.status(500).json({ error: "internal_error" });
       return;
+    }
+    if (!inserted) {
+      throw new Error("insert returned no rows");
     }
 
     await logAudit({
@@ -286,34 +297,32 @@ router.patch(
       return;
     }
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const patch: Partial<typeof patientTherapyLinks.$inferInsert> = {};
+    const patch: TherapyLinkUpdate = {};
     if (bodyParsed.data.status !== undefined) {
       patch.status = bodyParsed.data.status;
     }
     if (bodyParsed.data.deviceSerial !== undefined) {
-      patch.deviceSerial = bodyParsed.data.deviceSerial;
+      patch.device_serial = bodyParsed.data.deviceSerial;
     }
 
-    let updated: typeof patientTherapyLinks.$inferSelect | undefined;
-    try {
-      const rows = await db
-        .update(patientTherapyLinks)
-        .set(patch)
-        .where(
-          and(
-            eq(patientTherapyLinks.id, linkId),
-            eq(patientTherapyLinks.patientId, patientId),
-          ),
-        )
-        .returning();
-      updated = rows[0];
-    } catch (err) {
-      const pgErr = parsePgConstraintError(err);
+    const { data: updated, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_links")
+      .update(patch)
+      .eq("id", linkId)
+      .eq("patient_id", patientId)
+      .select(
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
+      )
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) {
+      const pgErr = parsePgConstraintError(updateErr);
       if (
-        pgErr?.code === "23505" &&
-        pgErr.constraint === "patient_therapy_links_active_unique"
+        pgErr.code === "23505" &&
+        matchesConstraint(pgErr, "patient_therapy_links_active_unique")
       ) {
         // Trying to flip a paused/revoked row back to active when an
         // active row already exists.
@@ -378,19 +387,20 @@ router.delete(
     const patientId = idCheck.data;
     const linkId = linkCheck.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const rows = await db
-      .update(patientTherapyLinks)
-      .set({ status: "revoked" })
-      .where(
-        and(
-          eq(patientTherapyLinks.id, linkId),
-          eq(patientTherapyLinks.patientId, patientId),
-        ),
+    const { data: updated, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_links")
+      .update({ status: "revoked" })
+      .eq("id", linkId)
+      .eq("patient_id", patientId)
+      .select(
+        "id, patient_id, source, partner_patient_id, device_serial, status, last_synced_at, last_sync_status, last_sync_error, created_at, updated_at",
       )
-      .returning();
-    const updated = rows[0];
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
 
     if (!updated) {
       res.status(404).json({ error: "link_not_found" });

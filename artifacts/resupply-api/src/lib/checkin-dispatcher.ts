@@ -22,21 +22,19 @@
 // patient_id, day_label, channel, outcome, vendor_ref. No message
 // bodies, no phone/email plaintext.
 
-import { and, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getDbPool,
+  getSupabaseServiceRoleClient,
   ONBOARDING_DAYS,
-  patientCheckinAttempts,
-  patientOnboardingJourneys,
-  patients,
   type CheckinAttemptChannel,
+  type Database,
   type OnboardingDayLabel,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
-type DbPool = ReturnType<typeof getDbPool>;
+type JourneyUpdate =
+  Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Update"];
+
 import {
   createSendgridClient,
   EmailConfigError,
@@ -59,7 +57,8 @@ export interface CheckinActor {
 }
 
 export interface DispatchOptions {
-  pool: DbPool;
+  /** Optional Supabase client. Defaults to the shared singleton. */
+  supabase?: ResupplySupabaseClient;
   /** Defaults to `new Date()`. Tests pass a fixed clock. */
   asOf?: Date;
   /** Cap per-run sends to bound the cron's work. Default 50. */
@@ -105,28 +104,84 @@ export async function dispatchDueCheckins(
 ): Promise<DispatchSummary> {
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
-  const db = drizzle(opts.pool);
+  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
 
-  const rows = (await db
-    .select({
-      journeyId: patientOnboardingJourneys.id,
-      patientId: patientOnboardingJourneys.patientId,
-      startedAt: patientOnboardingJourneys.startedAt,
-      day1SentAt: patientOnboardingJourneys.day1SentAt,
-      day3SentAt: patientOnboardingJourneys.day3SentAt,
-      day7SentAt: patientOnboardingJourneys.day7SentAt,
-      day30SentAt: patientOnboardingJourneys.day30SentAt,
-      day60SentAt: patientOnboardingJourneys.day60SentAt,
-      day90SentAt: patientOnboardingJourneys.day90SentAt,
-      firstName: patients.legalFirstName,
-      email: patients.email,
-      phoneE164: patients.phoneE164,
-      channelPreference: patients.channelPreference,
-    })
-    .from(patientOnboardingJourneys)
-    .innerJoin(patients, eq(patients.id, patientOnboardingJourneys.patientId))
-    .where(eq(patientOnboardingJourneys.status, "active"))
-    .limit(500)) as JourneyRow[];
+  // PostgREST has no JOIN. Fetch active journeys + every patient we
+  // need in two passes and stitch in JS.
+  const { data: journeyRows, error: journeyErr } = await supabase
+    .schema("resupply")
+    .from("patient_onboarding_journeys")
+    .select(
+      "id, patient_id, started_at, day1_sent_at, day3_sent_at, day7_sent_at, day30_sent_at, day60_sent_at, day90_sent_at",
+    )
+    .eq("status", "active")
+    .limit(500);
+  if (journeyErr) throw journeyErr;
+  const journeys = journeyRows ?? [];
+  if (journeys.length === 0) {
+    return {
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      completedJourneys: 0,
+      remaining: 0,
+    };
+  }
+
+  // .in() the patient_ids in chunks (URL-length safety).
+  const patientIds = Array.from(new Set(journeys.map((j) => j.patient_id)));
+  const patientById = new Map<
+    string,
+    {
+      legal_first_name: string | null;
+      email: string | null;
+      phone_e164: string | null;
+      channel_preference: string | null;
+    }
+  >();
+  for (let i = 0; i < patientIds.length; i += 200) {
+    const batch = patientIds.slice(i, i + 200);
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, legal_first_name, email, phone_e164, channel_preference")
+      .in("id", batch);
+    if (error) throw error;
+    for (const p of data ?? []) {
+      patientById.set(p.id, {
+        legal_first_name: p.legal_first_name,
+        email: p.email,
+        phone_e164: p.phone_e164,
+        channel_preference: p.channel_preference,
+      });
+    }
+  }
+
+  const rows: JourneyRow[] = [];
+  for (const j of journeys) {
+    const p = patientById.get(j.patient_id);
+    if (!p) continue;
+    const channelPref = p.channel_preference;
+    rows.push({
+      journeyId: j.id,
+      patientId: j.patient_id,
+      startedAt: new Date(j.started_at),
+      day1SentAt: j.day1_sent_at ? new Date(j.day1_sent_at) : null,
+      day3SentAt: j.day3_sent_at ? new Date(j.day3_sent_at) : null,
+      day7SentAt: j.day7_sent_at ? new Date(j.day7_sent_at) : null,
+      day30SentAt: j.day30_sent_at ? new Date(j.day30_sent_at) : null,
+      day60SentAt: j.day60_sent_at ? new Date(j.day60_sent_at) : null,
+      day90SentAt: j.day90_sent_at ? new Date(j.day90_sent_at) : null,
+      firstName: p.legal_first_name,
+      email: p.email,
+      phoneE164: p.phone_e164,
+      channelPreference:
+        channelPref === "sms" || channelPref === "email" || channelPref === "voice"
+          ? channelPref
+          : null,
+    });
+  }
 
   // Build clients lazily — a missing vendor secret should NOT block
   // attempts on other channels. We track availability so the per-row
@@ -163,7 +218,7 @@ export async function dispatchDueCheckins(
 
     for (const channel of channelOrder) {
       const result = await attemptChannel({
-        db,
+        supabase,
         clients,
         row,
         day: due,
@@ -186,25 +241,30 @@ export async function dispatchDueCheckins(
 
     if (succeeded) {
       const stampField = stampFieldForDay(due);
+      const nowIso = now.toISOString();
+      const update: JourneyUpdate = {
+        [stampField]: nowIso,
+        updated_at: nowIso,
+      };
+      if (due === "day90") update.status = "completed";
       // Conditional stamp: only writes if the column is still null,
       // so a concurrent dispatcher run can't re-stamp.
-      await db
-        .update(patientOnboardingJourneys)
-        .set({
-          [stampField]: now,
-          updatedAt: now,
-          ...(due === "day90" ? { status: "completed" } : {}),
-        })
-        .where(
-          and(
-            eq(patientOnboardingJourneys.id, row.journeyId),
-            isNull(
-              patientOnboardingJourneys[
-                stampField as keyof typeof patientOnboardingJourneys
-              ] as never,
-            ),
-          ),
+      const { error: updateErr } = await supabase
+        .schema("resupply")
+        .from("patient_onboarding_journeys")
+        .update(update)
+        .eq("id", row.journeyId)
+        .is(stampField, null);
+      if (updateErr) {
+        logger.warn(
+          {
+            err: updateErr,
+            journey_id: row.journeyId,
+            day_label: due,
+          },
+          "patient_onboarding_journeys update failed",
         );
+      }
       if (due === "day90") {
         completed.push(row.journeyId);
         await safeAudit(opts.actor, {
@@ -237,7 +297,7 @@ export async function dispatchDueCheckins(
 // ───────────────────────────────────────────────────────────────────
 
 interface AttemptInput {
-  db: ReturnType<typeof drizzle>;
+  supabase: ResupplySupabaseClient;
   clients: BuiltClients;
   row: JourneyRow;
   day: OnboardingDayLabel;
@@ -249,7 +309,7 @@ interface AttemptInput {
 type AttemptResult = "ok" | "no_contact" | "not_configured" | "vendor_error";
 
 async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
-  const { db, clients, row, day, channel, actor, asOf } = input;
+  const { supabase, clients, row, day, channel, actor, asOf } = input;
 
   let outcome: AttemptResult;
   let vendorRef: string | null;
@@ -287,23 +347,38 @@ async function attemptChannel(input: AttemptInput): Promise<AttemptResult> {
   // Persist attempt row. Best-effort — failure here MUST NOT abort the
   // run (if it did, a transient DB blip would silently skip a day's
   // worth of patients).
+  const persistedOutcome =
+    outcome === "ok"
+      ? "sent"
+      : outcome === "no_contact"
+        ? "skipped_no_contact"
+        : outcome === "not_configured"
+          ? "skipped_not_configured"
+          : "vendor_error";
   try {
-    await db.insert(patientCheckinAttempts).values({
-      journeyId: row.journeyId,
-      patientId: row.patientId,
-      dayLabel: day,
-      channel,
-      outcome:
-        outcome === "ok"
-          ? "sent"
-          : outcome === "no_contact"
-            ? "skipped_no_contact"
-            : outcome === "not_configured"
-              ? "skipped_not_configured"
-              : "vendor_error",
-      vendorRef,
-      errorCode,
-    });
+    const { error: insertErr } = await supabase
+      .schema("resupply")
+      .from("patient_checkin_attempts")
+      .insert({
+        journey_id: row.journeyId,
+        patient_id: row.patientId,
+        day_label: day,
+        channel,
+        outcome: persistedOutcome,
+        vendor_ref: vendorRef,
+        error_code: errorCode,
+      });
+    if (insertErr) {
+      logger.warn(
+        {
+          err: insertErr,
+          journey_id: row.journeyId,
+          day_label: day,
+          channel,
+        },
+        "patient_checkin_attempts insert failed",
+      );
+    }
   } catch (err) {
     logger.warn(
       { err, journey_id: row.journeyId, day_label: day, channel },

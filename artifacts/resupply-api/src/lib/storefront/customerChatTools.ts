@@ -27,14 +27,11 @@
  */
 
 import { z } from "zod";
-import { and, desc, eq, inArray } from "drizzle-orm";
-import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
-import {
-  shopCustomers,
-  shopOrderItems,
-  shopOrders,
-  shopSubscriptions,
+import type {
+  CpapDeviceInfo,
+  ResupplySupabaseClient,
+  SavedShippingAddress,
 } from "@workspace/resupply-db";
 
 /** Maximum tool-execution rounds per user turn — defense vs runaway. */
@@ -245,12 +242,20 @@ const RECENT_ORDERS_DEFAULT_LIMIT = 5;
 
 /**
  * Parameters every customer chat tool receives. The route owns the DB
- * handle and the auth-resolved customerId; tools never read those from
- * a global so unit tests can pass an in-memory db + spoofed id.
+ * client and the auth-resolved customerId; tools never read those from
+ * a global so unit tests can pass an in-memory client + spoofed id.
  */
 export interface CustomerChatToolContext {
-  db: NodePgDatabase;
+  supabase: ResupplySupabaseClient;
   customerId: string;
+}
+
+interface SubscriptionItemPayload {
+  name?: string | null;
+  quantity?: number | null;
+  unitAmountCents?: number | null;
+  currency?: string | null;
+  intervalLabel?: string | null;
 }
 
 async function executeGetRecentOrders(
@@ -268,67 +273,60 @@ async function executeGetRecentOrders(
   }
   const limit = parsed.data.limit ?? RECENT_ORDERS_DEFAULT_LIMIT;
 
-  const orderRows = await ctx.db
-    .select({
-      id: shopOrders.id,
-      stripeSessionId: shopOrders.stripeSessionId,
-      status: shopOrders.status,
-      amountTotalCents: shopOrders.amountTotalCents,
-      currency: shopOrders.currency,
-      paidAt: shopOrders.paidAt,
-      shippedAt: shopOrders.shippedAt,
-      deliveredAt: shopOrders.deliveredAt,
-      shippingAddress: shopOrders.shippingAddress,
-      trackingCarrier: shopOrders.trackingCarrier,
-      trackingNumber: shopOrders.trackingNumber,
-    })
-    .from(shopOrders)
-    .where(
-      and(
-        eq(shopOrders.customerId, ctx.customerId),
-        eq(shopOrders.status, "paid"),
-      ),
+  const { data: orderRows, error } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select(
+      "id, stripe_session_id, status, amount_total_cents, currency, paid_at, shipped_at, delivered_at, shipping_address_json, tracking_carrier, tracking_number",
     )
-    .orderBy(desc(shopOrders.paidAt), desc(shopOrders.id))
+    .eq("customer_id", ctx.customerId)
+    .eq("status", "paid")
+    .order("paid_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(limit);
+  if (error) throw error;
 
-  if (orderRows.length === 0) {
+  const rows = orderRows ?? [];
+  if (rows.length === 0) {
     return { ok: true, data: { orders: [] } };
   }
 
-  const orderIds = orderRows.map((o) => o.id);
-  const itemRows = await ctx.db
-    .select({
-      orderId: shopOrderItems.orderId,
-      quantity: shopOrderItems.quantity,
-    })
-    .from(shopOrderItems)
-    .where(inArray(shopOrderItems.orderId, orderIds));
+  const orderIds = rows.map((o) => o.id);
+  const { data: itemRows, error: itemErr } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_order_items")
+    .select("order_id, quantity")
+    .in("order_id", orderIds);
+  if (itemErr) throw itemErr;
 
   const itemCountByOrder = new Map<string, number>();
-  for (const row of itemRows) {
+  for (const row of itemRows ?? []) {
     itemCountByOrder.set(
-      row.orderId,
-      (itemCountByOrder.get(row.orderId) ?? 0) + row.quantity,
+      row.order_id,
+      (itemCountByOrder.get(row.order_id) ?? 0) + row.quantity,
     );
   }
 
-  const orders: RecentOrderEntry[] = orderRows.map((o) => ({
-    orderId: o.id,
-    sessionId: o.stripeSessionId,
-    status: o.status,
-    amountTotalCents: o.amountTotalCents,
-    currency: o.currency,
-    paidAt: o.paidAt ? o.paidAt.toISOString() : null,
-    shippedAt: o.shippedAt ? o.shippedAt.toISOString() : null,
-    deliveredAt: o.deliveredAt ? o.deliveredAt.toISOString() : null,
-    trackingCarrier: o.trackingCarrier,
-    trackingNumber: o.trackingNumber,
-    trackingUrl: computeTrackingUrl(o.trackingCarrier, o.trackingNumber),
-    shipCity: o.shippingAddress?.city ?? null,
-    shipState: o.shippingAddress?.state ?? null,
-    itemCount: itemCountByOrder.get(o.id) ?? 0,
-  }));
+  const orders: RecentOrderEntry[] = rows.map((o) => {
+    const shipAddr = (o.shipping_address_json ??
+      null) as SavedShippingAddress | null;
+    return {
+      orderId: o.id,
+      sessionId: o.stripe_session_id,
+      status: o.status,
+      amountTotalCents: o.amount_total_cents,
+      currency: o.currency,
+      paidAt: o.paid_at,
+      shippedAt: o.shipped_at,
+      deliveredAt: o.delivered_at,
+      trackingCarrier: o.tracking_carrier,
+      trackingNumber: o.tracking_number,
+      trackingUrl: computeTrackingUrl(o.tracking_carrier, o.tracking_number),
+      shipCity: shipAddr?.city ?? null,
+      shipState: shipAddr?.state ?? null,
+      itemCount: itemCountByOrder.get(o.id) ?? 0,
+    };
+  });
 
   return { ok: true, data: { orders } };
 }
@@ -347,64 +345,52 @@ async function executeGetOrderDetails(
     };
   }
 
-  const [order] = await ctx.db
-    .select({
-      id: shopOrders.id,
-      stripeSessionId: shopOrders.stripeSessionId,
-      status: shopOrders.status,
-      amountTotalCents: shopOrders.amountTotalCents,
-      currency: shopOrders.currency,
-      paidAt: shopOrders.paidAt,
-      shippedAt: shopOrders.shippedAt,
-      deliveredAt: shopOrders.deliveredAt,
-      shippingAddress: shopOrders.shippingAddress,
-      trackingCarrier: shopOrders.trackingCarrier,
-      trackingNumber: shopOrders.trackingNumber,
-    })
-    .from(shopOrders)
-    .where(
-      and(
-        eq(shopOrders.id, parsed.data.orderId),
-        eq(shopOrders.customerId, ctx.customerId),
-      ),
+  const { data: order, error } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select(
+      "id, stripe_session_id, status, amount_total_cents, currency, paid_at, shipped_at, delivered_at, shipping_address_json, tracking_carrier, tracking_number",
     )
-    .limit(1);
+    .eq("id", parsed.data.orderId)
+    .eq("customer_id", ctx.customerId)
+    .maybeSingle();
+  if (error) throw error;
 
   if (!order) {
     return { ok: true, data: { found: false, kind: "order" } };
   }
 
-  const itemRows = await ctx.db
-    .select({
-      productId: shopOrderItems.productId,
-      quantity: shopOrderItems.quantity,
-      unitAmountCents: shopOrderItems.unitAmountCents,
-      currency: shopOrderItems.currency,
-    })
-    .from(shopOrderItems)
-    .where(eq(shopOrderItems.orderId, order.id));
+  const { data: itemRows, error: itemErr } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_order_items")
+    .select("product_id, quantity, unit_amount_cents, currency")
+    .eq("order_id", order.id);
+  if (itemErr) throw itemErr;
+
+  const shipAddr = (order.shipping_address_json ??
+    null) as SavedShippingAddress | null;
 
   const details: OrderDetailsEntry = {
     orderId: order.id,
-    sessionId: order.stripeSessionId,
+    sessionId: order.stripe_session_id,
     status: order.status,
-    amountTotalCents: order.amountTotalCents,
+    amountTotalCents: order.amount_total_cents,
     currency: order.currency,
-    paidAt: order.paidAt ? order.paidAt.toISOString() : null,
-    shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
-    deliveredAt: order.deliveredAt ? order.deliveredAt.toISOString() : null,
-    trackingCarrier: order.trackingCarrier,
-    trackingNumber: order.trackingNumber,
+    paidAt: order.paid_at,
+    shippedAt: order.shipped_at,
+    deliveredAt: order.delivered_at,
+    trackingCarrier: order.tracking_carrier,
+    trackingNumber: order.tracking_number,
     trackingUrl: computeTrackingUrl(
-      order.trackingCarrier,
-      order.trackingNumber,
+      order.tracking_carrier,
+      order.tracking_number,
     ),
-    shipCity: order.shippingAddress?.city ?? null,
-    shipState: order.shippingAddress?.state ?? null,
-    items: itemRows.map((r) => ({
-      productId: r.productId,
+    shipCity: shipAddr?.city ?? null,
+    shipState: shipAddr?.state ?? null,
+    items: (itemRows ?? []).map((r) => ({
+      productId: r.product_id,
       quantity: r.quantity,
-      unitAmountCents: r.unitAmountCents,
+      unitAmountCents: r.unit_amount_cents,
       currency: r.currency,
     })),
   };
@@ -424,36 +410,36 @@ async function executeGetSubscriptions(
     };
   }
 
-  const rows = await ctx.db
-    .select({
-      id: shopSubscriptions.id,
-      status: shopSubscriptions.status,
-      items: shopSubscriptions.items,
-      currentPeriodEnd: shopSubscriptions.currentPeriodEnd,
-      cancelAtPeriodEnd: shopSubscriptions.cancelAtPeriodEnd,
-      canceledAt: shopSubscriptions.canceledAt,
-      createdAt: shopSubscriptions.createdAt,
-    })
-    .from(shopSubscriptions)
-    .where(eq(shopSubscriptions.customerId, ctx.customerId))
-    .orderBy(desc(shopSubscriptions.createdAt));
+  const { data: rows, error } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_subscriptions")
+    .select(
+      "id, status, items, current_period_end, cancel_at_period_end, canceled_at, created_at",
+    )
+    .eq("customer_id", ctx.customerId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
 
-  const subscriptions: SubscriptionEntry[] = rows.map((r) => ({
-    subscriptionId: r.id,
-    status: r.status,
-    currentPeriodEnd: r.currentPeriodEnd
-      ? r.currentPeriodEnd.toISOString()
-      : null,
-    cancelAtPeriodEnd: r.cancelAtPeriodEnd,
-    canceledAt: r.canceledAt ? r.canceledAt.toISOString() : null,
-    items: (r.items ?? []).map((it) => ({
-      name: it.name,
-      quantity: it.quantity,
-      unitAmountCents: it.unitAmountCents,
-      currency: it.currency,
-      intervalLabel: it.intervalLabel,
-    })),
-  }));
+  const subscriptions: SubscriptionEntry[] = (rows ?? []).map((r) => {
+    const items = (Array.isArray(r.items) ? r.items : []) as
+      | SubscriptionItemPayload[]
+      | [];
+    return {
+      subscriptionId: r.id,
+      status: r.status,
+      currentPeriodEnd: r.current_period_end,
+      cancelAtPeriodEnd: r.cancel_at_period_end,
+      canceledAt: r.canceled_at,
+      items: items.map((it) => ({
+        name: it.name ?? null,
+        quantity: typeof it.quantity === "number" ? it.quantity : 0,
+        unitAmountCents:
+          typeof it.unitAmountCents === "number" ? it.unitAmountCents : null,
+        currency: it.currency ?? null,
+        intervalLabel: it.intervalLabel ?? null,
+      })),
+    };
+  });
 
   return { ok: true, data: { subscriptions } };
 }
@@ -470,15 +456,15 @@ async function executeGetDevice(
     };
   }
 
-  const [row] = await ctx.db
-    .select({
-      cpapDevice: shopCustomers.cpapDevice,
-    })
-    .from(shopCustomers)
-    .where(eq(shopCustomers.customerId, ctx.customerId))
-    .limit(1);
+  const { data: row, error } = await ctx.supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("cpap_device_json")
+    .eq("customer_id", ctx.customerId)
+    .maybeSingle();
+  if (error) throw error;
 
-  const device = row?.cpapDevice;
+  const device = (row?.cpap_device_json ?? null) as CpapDeviceInfo | null;
   if (!device) {
     return { ok: true, data: { found: false, kind: "device" } };
   }

@@ -17,13 +17,8 @@
 // Auth: requireAdmin (same allowlist as every other /admin/*).
 
 import { Router, type IRouter } from "express";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { sql } from "drizzle-orm";
 
-import {
-  getDbPool,
-  shopBackInStockNotifications,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import {
@@ -51,38 +46,73 @@ router.get(
   "/admin/shop/back-in-stock-queue",
   requireAdmin,
   async (req, res) => {
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    // One round trip aggregating the queue. We cap at 200 distinct
-    // SKUs so the page stays bounded even if a long-running instance
-    // accumulates tens of thousands of historical notifications.
-    // 200 distinct out-of-stock SKUs in a single window is already a
-    // catastrophe-tier scenario — well past where ops would page in
-    // any case.
-    const aggRaw = await db.execute(sql`
-      SELECT
-        product_id            AS "productId",
-        COUNT(*) FILTER (WHERE notified_at IS NULL)::int AS "pendingCount",
-        COUNT(*) FILTER (WHERE notified_at IS NOT NULL)::int AS "notifiedCount",
-        COUNT(*) FILTER (WHERE delivered = true)::int AS "deliveredCount",
-        MIN(created_at) FILTER (WHERE notified_at IS NULL) AS "oldestPendingAt",
-        MAX(notified_at)      AS "lastNotifiedAt"
-      FROM ${shopBackInStockNotifications}
-      GROUP BY product_id
-      ORDER BY
-        COUNT(*) FILTER (WHERE notified_at IS NULL) DESC,
-        MIN(created_at) FILTER (WHERE notified_at IS NULL) ASC NULLS LAST
-      LIMIT 200
-    `);
+    // The original SQL used `COUNT(*) FILTER (WHERE …)` per product,
+    // ordered by pending desc + oldest pending asc, limited to 200
+    // distinct SKUs. PostgREST has no FILTER aggregate, so we fetch
+    // the underlying rows (capped at 10000 — well above the
+    // catastrophe-tier "ops paging anyway" threshold) and group in
+    // JS. Each row carries created_at + notified_at + delivered, all
+    // we need for the per-product aggregates.
+    const { data: notifications, error: notifErr } = await supabase
+      .schema("resupply")
+      .from("shop_back_in_stock_notifications")
+      .select("product_id, notified_at, delivered, created_at")
+      .limit(10000);
+    if (notifErr) throw notifErr;
 
-    const rows = (aggRaw.rows ?? []) as Array<{
+    interface Agg {
       productId: string;
       pendingCount: number;
       notifiedCount: number;
       deliveredCount: number;
-      oldestPendingAt: Date | string | null;
-      lastNotifiedAt: Date | string | null;
-    }>;
+      oldestPendingAt: string | null;
+      lastNotifiedAt: string | null;
+    }
+    const byProduct = new Map<string, Agg>();
+    for (const n of notifications ?? []) {
+      let agg = byProduct.get(n.product_id);
+      if (!agg) {
+        agg = {
+          productId: n.product_id,
+          pendingCount: 0,
+          notifiedCount: 0,
+          deliveredCount: 0,
+          oldestPendingAt: null,
+          lastNotifiedAt: null,
+        };
+        byProduct.set(n.product_id, agg);
+      }
+      if (n.notified_at) {
+        agg.notifiedCount += 1;
+        if (
+          agg.lastNotifiedAt === null ||
+          n.notified_at > agg.lastNotifiedAt
+        ) {
+          agg.lastNotifiedAt = n.notified_at;
+        }
+      } else {
+        agg.pendingCount += 1;
+        if (
+          agg.oldestPendingAt === null ||
+          n.created_at < agg.oldestPendingAt
+        ) {
+          agg.oldestPendingAt = n.created_at;
+        }
+      }
+      if (n.delivered) agg.deliveredCount += 1;
+    }
+    const rows = Array.from(byProduct.values())
+      .sort((a, b) => {
+        if (a.pendingCount !== b.pendingCount) {
+          return b.pendingCount - a.pendingCount;
+        }
+        if (a.oldestPendingAt === null) return 1;
+        if (b.oldestPendingAt === null) return -1;
+        return a.oldestPendingAt.localeCompare(b.oldestPendingAt);
+      })
+      .slice(0, 200);
 
     // Enrich with product name + image. We do ONE Stripe list call
     // (the catalog is small and shared with the storefront's 60s
@@ -147,17 +177,11 @@ router.get(
         productName: meta?.name ?? r.productId,
         productImageUrl: meta?.imageUrl ?? null,
         priceLabel,
-        pendingCount: Number(r.pendingCount ?? 0),
-        notifiedCount: Number(r.notifiedCount ?? 0),
-        deliveredCount: Number(r.deliveredCount ?? 0),
-        oldestPendingAt:
-          r.oldestPendingAt instanceof Date
-            ? r.oldestPendingAt.toISOString()
-            : (r.oldestPendingAt ?? null),
-        lastNotifiedAt:
-          r.lastNotifiedAt instanceof Date
-            ? r.lastNotifiedAt.toISOString()
-            : (r.lastNotifiedAt ?? null),
+        pendingCount: r.pendingCount,
+        notifiedCount: r.notifiedCount,
+        deliveredCount: r.deliveredCount,
+        oldestPendingAt: r.oldestPendingAt,
+        lastNotifiedAt: r.lastNotifiedAt,
       };
     });
 

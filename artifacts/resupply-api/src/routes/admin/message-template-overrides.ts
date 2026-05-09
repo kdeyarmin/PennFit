@@ -32,21 +32,23 @@
 // envelope — same posture as the global library's audit row.
 
 import { Router, type IRouter } from "express";
-import { and, asc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getDbPool,
-  messageTemplates,
-  shopCustomerMessageTemplateOverrides,
+  getSupabaseServiceRoleClient,
+  type Database,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+
+type OverrideRow =
+  Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Row"];
+type OverrideUpdate =
+  Database["resupply"]["Tables"]["shop_customer_message_template_overrides"]["Update"];
 
 const router: IRouter = Router();
 
@@ -119,25 +121,27 @@ interface OverrideView {
   updatedBy: string | null;
 }
 
-function serialize(
-  row: typeof shopCustomerMessageTemplateOverrides.$inferSelect,
-): OverrideView {
+function serialize(row: OverrideRow): OverrideView {
   return {
     id: row.id,
-    customerId: row.customerId,
-    templateKey: row.templateKey,
+    customerId: row.customer_id,
+    templateKey: row.template_key,
     channel: row.channel,
     subject: row.subject ?? null,
-    bodyHtml: row.bodyHtml ?? null,
-    bodyText: row.bodyText ?? null,
-    isActive: row.isActive,
+    bodyHtml: row.body_html ?? null,
+    bodyText: row.body_text ?? null,
+    isActive: row.is_active,
     note: row.note ?? null,
-    createdAt: row.createdAt.toISOString(),
-    createdBy: row.createdBy ?? null,
-    updatedAt: row.updatedAt.toISOString(),
-    updatedBy: row.updatedBy ?? null,
+    // PostgREST returns timestamptz as ISO string already.
+    createdAt: row.created_at,
+    createdBy: row.created_by ?? null,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by ?? null,
   };
 }
+
+const OVERRIDE_COLUMNS =
+  "id, customer_id, template_key, channel, subject, body_html, body_text, is_active, note, created_by, updated_by, created_at, updated_at";
 
 /** Mirror the global path's pre-flight check: any `{{var}}` in
  *  the new content that isn't in the linked global's allowedVariables
@@ -166,22 +170,17 @@ router.get(
       res.status(400).json({ error: "invalid_user_id" });
       return;
     }
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select()
-      .from(shopCustomerMessageTemplateOverrides)
-      .where(
-        eq(
-          shopCustomerMessageTemplateOverrides.customerId,
-          idCheck.data,
-        ),
-      )
-      .orderBy(
-        asc(shopCustomerMessageTemplateOverrides.templateKey),
-        asc(shopCustomerMessageTemplateOverrides.channel),
-      )
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("shop_customer_message_template_overrides")
+      .select(OVERRIDE_COLUMNS)
+      .eq("customer_id", idCheck.data)
+      .order("template_key", { ascending: true })
+      .order("channel", { ascending: true })
       .limit(200);
-    res.json({ overrides: rows.map(serialize) });
+    if (error) throw error;
+    res.json({ overrides: (rows ?? []).map(serialize) });
   },
 );
 
@@ -207,21 +206,20 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
     // Look up the global template (if any) to source the allowed-
     // variables list for the pre-flight check.
-    const globalRows = await db
-      .select()
-      .from(messageTemplates)
-      .where(
-        and(
-          eq(messageTemplates.templateKey, parsed.data.templateKey),
-          eq(messageTemplates.channel, parsed.data.channel),
-        ),
-      )
-      .limit(1);
-    const allowed = globalRows[0]?.allowedVariables ?? [];
+    const { data: globalRow, error: globalErr } = await supabase
+      .schema("resupply")
+      .from("message_templates")
+      .select("allowed_variables")
+      .eq("template_key", parsed.data.templateKey)
+      .eq("channel", parsed.data.channel)
+      .limit(1)
+      .maybeSingle();
+    if (globalErr) throw globalErr;
+    const allowed = globalRow?.allowed_variables ?? [];
 
     const offenders = [
       ...disallowedTokens(parsed.data.subject, allowed),
@@ -249,30 +247,33 @@ router.post(
     }
 
     const adminId = req.adminUserId ?? null;
-    let inserted;
-    try {
-      const rows = await db
-        .insert(shopCustomerMessageTemplateOverrides)
-        .values({
-          customerId: idCheck.data,
-          templateKey: parsed.data.templateKey,
-          channel: parsed.data.channel,
-          subject: parsed.data.subject ?? null,
-          bodyHtml: parsed.data.bodyHtml ?? null,
-          bodyText: parsed.data.bodyText ?? null,
-          isActive: parsed.data.isActive ?? true,
-          note: parsed.data.note,
-          createdBy: adminId,
-          updatedBy: adminId,
-        })
-        .returning();
-      inserted = rows[0]!;
-    } catch (err) {
-      if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_message_template_overrides")
+      .insert({
+        customer_id: idCheck.data,
+        template_key: parsed.data.templateKey,
+        channel: parsed.data.channel,
+        subject: parsed.data.subject ?? null,
+        body_html: parsed.data.bodyHtml ?? null,
+        body_text: parsed.data.bodyText ?? null,
+        is_active: parsed.data.isActive ?? true,
+        note: parsed.data.note,
+        created_by: adminId,
+        updated_by: adminId,
+      })
+      .select(OVERRIDE_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) {
+      if ((insertErr as { code?: string }).code === "23505") {
         res.status(409).json({ error: "override_already_exists" });
         return;
       }
-      throw err;
+      throw insertErr;
+    }
+    if (!inserted) {
+      throw new Error("override insert returned no rows");
     }
 
     void logAudit({
@@ -283,14 +284,14 @@ router.post(
       targetId: inserted.id,
       metadata: {
         customer_id: idCheck.data,
-        template_key: inserted.templateKey,
+        template_key: inserted.template_key,
         channel: inserted.channel,
         fields_set: [
           parsed.data.subject !== undefined ? "subject" : null,
           parsed.data.bodyHtml !== undefined ? "body_html" : null,
           parsed.data.bodyText !== undefined ? "body_text" : null,
         ].filter((s): s is string => s !== null),
-        is_active: inserted.isActive,
+        is_active: inserted.is_active,
         has_note: true,
       },
       ip: req.ip ?? null,
@@ -333,48 +334,42 @@ router.patch(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const existingRows = await db
-      .select()
-      .from(shopCustomerMessageTemplateOverrides)
-      .where(
-        and(
-          eq(shopCustomerMessageTemplateOverrides.id, idCheck.data),
-          eq(
-            shopCustomerMessageTemplateOverrides.customerId,
-            userIdCheck.data,
-          ),
-        ),
-      )
-      .limit(1);
-    const existing = existingRows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_message_template_overrides")
+      .select(OVERRIDE_COLUMNS)
+      .eq("id", idCheck.data)
+      .eq("customer_id", userIdCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!existing) {
       res.status(404).json({ error: "override_not_found" });
       return;
     }
 
     // Pre-flight allowed-variables check against the linked global.
-    const globalRows = await db
-      .select()
-      .from(messageTemplates)
-      .where(
-        and(
-          eq(messageTemplates.templateKey, existing.templateKey),
-          eq(messageTemplates.channel, existing.channel),
-        ),
-      )
-      .limit(1);
-    const allowed = globalRows[0]?.allowedVariables ?? [];
+    const { data: globalRow, error: globalErr } = await supabase
+      .schema("resupply")
+      .from("message_templates")
+      .select("allowed_variables")
+      .eq("template_key", existing.template_key)
+      .eq("channel", existing.channel)
+      .limit(1)
+      .maybeSingle();
+    if (globalErr) throw globalErr;
+    const allowed = globalRow?.allowed_variables ?? [];
     const nextSubject =
       parsed.data.subject !== undefined ? parsed.data.subject : existing.subject;
     const nextBodyHtml =
       parsed.data.bodyHtml !== undefined
         ? parsed.data.bodyHtml
-        : existing.bodyHtml;
+        : existing.body_html;
     const nextBodyText =
       parsed.data.bodyText !== undefined
         ? parsed.data.bodyText
-        : existing.bodyText;
+        : existing.body_text;
     const offenders = [
       ...disallowedTokens(nextSubject, allowed),
       ...disallowedTokens(nextBodyHtml, allowed),
@@ -401,26 +396,32 @@ router.patch(
     }
 
     const adminId = req.adminUserId ?? null;
-    const updateValues: Partial<
-      typeof shopCustomerMessageTemplateOverrides.$inferInsert
-    > = {
-      updatedBy: adminId,
+    const updateValues: OverrideUpdate = {
+      updated_by: adminId,
+      updated_at: new Date().toISOString(),
     };
     if (parsed.data.subject !== undefined)
       updateValues.subject = parsed.data.subject;
     if (parsed.data.bodyHtml !== undefined)
-      updateValues.bodyHtml = parsed.data.bodyHtml;
+      updateValues.body_html = parsed.data.bodyHtml;
     if (parsed.data.bodyText !== undefined)
-      updateValues.bodyText = parsed.data.bodyText;
+      updateValues.body_text = parsed.data.bodyText;
     if (parsed.data.isActive !== undefined)
-      updateValues.isActive = parsed.data.isActive;
+      updateValues.is_active = parsed.data.isActive;
     if (parsed.data.note !== undefined) updateValues.note = parsed.data.note;
 
-    const updated = await db
-      .update(shopCustomerMessageTemplateOverrides)
-      .set(updateValues)
-      .where(eq(shopCustomerMessageTemplateOverrides.id, idCheck.data))
-      .returning();
+    const { data: updated, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_message_template_overrides")
+      .update(updateValues)
+      .eq("id", idCheck.data)
+      .select(OVERRIDE_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
+    if (!updated) {
+      throw new Error("override update returned no rows");
+    }
 
     const fieldsChanged: string[] = [];
     for (const k of [
@@ -440,8 +441,8 @@ router.patch(
       targetTable: "shop_customer_message_template_overrides",
       targetId: existing.id,
       metadata: {
-        customer_id: existing.customerId,
-        template_key: existing.templateKey,
+        customer_id: existing.customer_id,
+        template_key: existing.template_key,
         channel: existing.channel,
         fields_changed: fieldsChanged,
       },
@@ -454,7 +455,7 @@ router.patch(
       );
     });
 
-    res.json({ override: serialize(updated[0]!) });
+    res.json({ override: serialize(updated) });
   },
 );
 
@@ -476,37 +477,43 @@ router.delete(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const existingRows = await db
-      .select()
-      .from(shopCustomerMessageTemplateOverrides)
-      .where(
-        and(
-          eq(shopCustomerMessageTemplateOverrides.id, idCheck.data),
-          eq(
-            shopCustomerMessageTemplateOverrides.customerId,
-            userIdCheck.data,
-          ),
-        ),
-      )
-      .limit(1);
-    const existing = existingRows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_message_template_overrides")
+      .select(OVERRIDE_COLUMNS)
+      .eq("id", idCheck.data)
+      .eq("customer_id", userIdCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!existing) {
       res.status(404).json({ error: "override_not_found" });
       return;
     }
-    if (!existing.isActive) {
+    if (!existing.is_active) {
       // Already soft-deleted. Idempotent.
       res.json({ override: serialize(existing) });
       return;
     }
 
     const adminId = req.adminUserId ?? null;
-    const updated = await db
-      .update(shopCustomerMessageTemplateOverrides)
-      .set({ isActive: false, updatedBy: adminId })
-      .where(eq(shopCustomerMessageTemplateOverrides.id, idCheck.data))
-      .returning();
+    const { data: updated, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_message_template_overrides")
+      .update({
+        is_active: false,
+        updated_by: adminId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", idCheck.data)
+      .select(OVERRIDE_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
+    if (!updated) {
+      throw new Error("override deactivate returned no rows");
+    }
 
     void logAudit({
       action: "message_template_override.update",
@@ -515,8 +522,8 @@ router.delete(
       targetTable: "shop_customer_message_template_overrides",
       targetId: existing.id,
       metadata: {
-        customer_id: existing.customerId,
-        template_key: existing.templateKey,
+        customer_id: existing.customer_id,
+        template_key: existing.template_key,
         channel: existing.channel,
         fields_changed: ["isActive"],
         deactivated: true,
@@ -530,7 +537,7 @@ router.delete(
       );
     });
 
-    res.json({ override: serialize(updated[0]!) });
+    res.json({ override: serialize(updated) });
   },
 );
 

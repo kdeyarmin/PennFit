@@ -25,17 +25,18 @@
 //   * The metadata link is the cross-system audit trail: if our DB
 //     row gets corrupted, ops can rebuild the mapping from Stripe.
 
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
 import {
-  getDbPool,
-  shopCustomers,
-  type ShopCustomerRow,
+  getSupabaseServiceRoleClient,
+  type Database,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
 import { getStripeClient, type StripeConfig } from "./config";
+
+type ShopCustomerRow =
+  Database["resupply"]["Tables"]["shop_customers"]["Row"];
 
 export interface CustomerMapping {
   stripeCustomerId: string;
@@ -55,22 +56,22 @@ export async function getOrCreateStripeCustomer(
     displayName?: string | null;
   },
 ): Promise<CustomerMapping> {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   const stripe = getStripeClient(config);
 
   // Step 1: ensure a local row exists. The PUT /shop/me path also
   // creates this; we re-create on demand so checkout flows that
   // skip the account page still work.
-  const existing = await readRow(db, args.customerId);
-  let row: ShopCustomerRow = existing ?? (await insertRow(db, args));
+  const existing = await readRow(supabase, args.customerId);
+  let row: ShopCustomerRow = existing ?? (await insertRow(supabase, args));
 
   // Refresh cached email if the auth provider's primary changed since row creation.
-  if (args.email && args.email.toLowerCase() !== row.emailLower) {
-    row = await updateEmail(db, args.customerId, args.email);
+  if (args.email && args.email.toLowerCase() !== row.email_lower) {
+    row = await updateEmail(supabase, args.customerId, args.email);
   }
 
-  if (row.stripeCustomerId) {
-    return { stripeCustomerId: row.stripeCustomerId, row };
+  if (row.stripe_customer_id) {
+    return { stripeCustomerId: row.stripe_customer_id, row };
   }
 
   // Step 2: create a Stripe Customer, idempotency-keyed on the
@@ -80,7 +81,7 @@ export async function getOrCreateStripeCustomer(
   const customer = await stripe.customers.create(
     {
       email: args.email ?? undefined,
-      name: args.displayName ?? row.displayName ?? undefined,
+      name: args.displayName ?? row.display_name ?? undefined,
       metadata: {
         customer_id: args.customerId,
         source: "pennpaps-shop",
@@ -94,23 +95,27 @@ export async function getOrCreateStripeCustomer(
   // both customers were idempotent-keyed to the same value, so
   // they're the same Stripe Customer anyway.
   try {
-    const updated = await db
-      .update(shopCustomers)
-      .set({
-        stripeCustomerId: customer.id,
-        updatedAt: new Date(),
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .update({
+        stripe_customer_id: customer.id,
+        updated_at: new Date().toISOString(),
       })
-      .where(eq(shopCustomers.customerId, args.customerId))
-      .returning();
-    if (updated[0]) {
-      return { stripeCustomerId: customer.id, row: updated[0] };
+      .eq("customer_id", args.customerId)
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (updated) {
+      return { stripeCustomerId: customer.id, row: updated };
     }
   } catch {
     /* fall through to re-read */
   }
-  const refreshed = await readRow(db, args.customerId);
-  if (refreshed?.stripeCustomerId) {
-    return { stripeCustomerId: refreshed.stripeCustomerId, row: refreshed };
+  const refreshed = await readRow(supabase, args.customerId);
+  if (refreshed?.stripe_customer_id) {
+    return { stripeCustomerId: refreshed.stripe_customer_id, row: refreshed };
   }
   // Should be unreachable: we just created the Stripe Customer and
   // either wrote it locally or saw a sibling write. Throw so the
@@ -124,8 +129,8 @@ export async function getOrCreateStripeCustomer(
 export async function readShopCustomer(
   customerId: string,
 ): Promise<ShopCustomerRow | null> {
-  const db = drizzle(getDbPool());
-  return readRow(db, customerId);
+  const supabase = getSupabaseServiceRoleClient();
+  return readRow(supabase, customerId);
 }
 
 /**
@@ -138,51 +143,65 @@ export async function ensureShopCustomerRow(args: {
   email: string | null;
   displayName?: string | null;
 }): Promise<ShopCustomerRow> {
-  const db = drizzle(getDbPool());
-  const existing = await readRow(db, args.customerId);
+  const supabase = getSupabaseServiceRoleClient();
+  const existing = await readRow(supabase, args.customerId);
   if (existing) {
-    if (args.email && args.email.toLowerCase() !== existing.emailLower) {
-      return updateEmail(db, args.customerId, args.email);
+    if (args.email && args.email.toLowerCase() !== existing.email_lower) {
+      return updateEmail(supabase, args.customerId, args.email);
     }
     return existing;
   }
-  return insertRow(db, args);
+  return insertRow(supabase, args);
 }
 
-type Db = ReturnType<typeof drizzle>;
-
 async function readRow(
-  db: Db,
+  supabase: ResupplySupabaseClient,
   customerId: string,
 ): Promise<ShopCustomerRow | null> {
-  const rows = await db
-    .select()
-    .from(shopCustomers)
-    .where(eq(shopCustomers.customerId, customerId))
-    .limit(1);
-  return rows[0] ?? null;
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("*")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
 }
 
 async function insertRow(
-  db: Db,
+  supabase: ResupplySupabaseClient,
   args: {
     customerId: string;
     email: string | null;
     displayName?: string | null;
   },
 ): Promise<ShopCustomerRow> {
-  const inserted = await db
-    .insert(shopCustomers)
-    .values({
-      customerId: args.customerId,
-      emailLower: args.email?.toLowerCase() ?? null,
-      displayName: args.displayName ?? null,
+  // The original Drizzle path used INSERT … ON CONFLICT
+  // (customer_id) DO NOTHING RETURNING. PostgREST has no DO
+  // NOTHING; we INSERT and treat 23505 as the "sibling beat us"
+  // path, then re-read.
+  const { data: inserted, error: insertErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .insert({
+      customer_id: args.customerId,
+      email_lower: args.email?.toLowerCase() ?? null,
+      display_name: args.displayName ?? null,
     })
-    .onConflictDoNothing({ target: shopCustomers.customerId })
-    .returning();
-  if (inserted[0]) return inserted[0];
-  // Conflict — sibling won the insert race. Re-read.
-  const refreshed = await readRow(db, args.customerId);
+    .select("*")
+    .limit(1)
+    .maybeSingle();
+  if (insertErr) {
+    if ((insertErr as { code?: string }).code === "23505") {
+      // Sibling already inserted the row — fall through to re-read.
+    } else {
+      throw insertErr;
+    }
+  } else if (inserted) {
+    return inserted;
+  }
+  const refreshed = await readRow(supabase, args.customerId);
   if (!refreshed) {
     throw new Error(
       `shop_customers row vanished after upsert for customer_id=${args.customerId}`,
@@ -192,21 +211,28 @@ async function insertRow(
 }
 
 async function updateEmail(
-  db: Db,
+  supabase: ResupplySupabaseClient,
   customerId: string,
   email: string,
 ): Promise<ShopCustomerRow> {
-  const updated = await db
-    .update(shopCustomers)
-    .set({ emailLower: email.toLowerCase(), updatedAt: new Date() })
-    .where(eq(shopCustomers.customerId, customerId))
-    .returning();
-  if (!updated[0]) {
+  const { data: updated, error } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update({
+      email_lower: email.toLowerCase(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("customer_id", customerId)
+    .select("*")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) {
     throw new Error(
       `shop_customers update returned no rows for customer_id=${customerId}`,
     );
   }
-  return updated[0];
+  return updated;
 }
 
 /**

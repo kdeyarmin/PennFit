@@ -29,26 +29,18 @@
 //   alert is the one who marks it 'resolved' with a note. That puts
 //   the human-in-the-loop at exactly the right place.
 
-import { and, eq, gte, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-
 import {
-  csrComplianceAlerts,
-  getDbPool,
-  patientCheckinAttempts,
-  patientLatestMessage,
-  patientOnboardingJourneys,
-  patientTherapyNights,
+  getSupabaseServiceRoleClient,
   type CsrComplianceAlertSeverity,
   type CsrComplianceAlertType,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
-
-type DbPool = ReturnType<typeof getDbPool>;
 
 import { logger } from "./logger";
 
 export interface ScanOptions {
-  pool: DbPool;
+  /** Optional Supabase client. Defaults to the shared singleton. */
+  supabase?: ResupplySupabaseClient;
   /** Defaults to `new Date()`. Tests pass a fixed clock. */
   asOf?: Date;
   /** Per-run cap on alerts processed. Default 200 — well above the
@@ -83,20 +75,25 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MIN_GOOD_NIGHT_MINUTES = 240; // 4 hours
 const DEFAULT_CAP = 200;
 
-export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
+export async function scanCompliance(
+  opts: ScanOptions = {},
+): Promise<ScanSummary> {
   const now = opts.asOf ?? new Date();
   const cap = opts.cap ?? DEFAULT_CAP;
-  const db = drizzle(opts.pool);
+  const supabase = opts.supabase ?? getSupabaseServiceRoleClient();
 
-  const journeys = (await db
-    .select({
-      journeyId: patientOnboardingJourneys.id,
-      patientId: patientOnboardingJourneys.patientId,
-      startedAt: patientOnboardingJourneys.startedAt,
-    })
-    .from(patientOnboardingJourneys)
-    .where(eq(patientOnboardingJourneys.status, "active"))
-    .limit(cap)) as JourneyScanRow[];
+  const { data: journeyRows, error: journeysErr } = await supabase
+    .schema("resupply")
+    .from("patient_onboarding_journeys")
+    .select("id, patient_id, started_at")
+    .eq("status", "active")
+    .limit(cap);
+  if (journeysErr) throw journeysErr;
+  const journeys: JourneyScanRow[] = (journeyRows ?? []).map((j) => ({
+    journeyId: j.id,
+    patientId: j.patient_id,
+    startedAt: new Date(j.started_at),
+  }));
 
   let scanned = 0;
   let alertsCreated = 0;
@@ -115,29 +112,34 @@ export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
       continue;
     }
 
-    // Pull good-night counts via aggregate to avoid streaming every
-    // therapy night row across the wire. The unique index on
-    // (patient_id, night_date, source) means we may have multiple
-    // partner sources per night; we collapse to "any source had >=4h"
+    // PostgREST has no GROUP BY / COUNT DISTINCT, so we fetch the
+    // patient's nights since journey start (bounded by elapsedDays;
+    // capped at 90 in practice) and reduce JS-side. The unique index
+    // on (patient_id, night_date, source) means we may have multiple
+    // partner sources per night; we collapse to "any source had ≥4h"
     // as a permissive interpretation (better to count a night good
-    // than to miss credit).
-    const nightAgg = await db
-      .select({
-        goodNights: sql<number>`COUNT(DISTINCT CASE WHEN ${patientTherapyNights.usageMinutes} >= ${MIN_GOOD_NIGHT_MINUTES} THEN ${patientTherapyNights.nightDate} END)`,
-        totalNights: sql<number>`COUNT(DISTINCT ${patientTherapyNights.nightDate})`,
-      })
-      .from(patientTherapyNights)
-      .where(
-        and(
-          eq(patientTherapyNights.patientId, j.patientId),
-          gte(
-            patientTherapyNights.nightDate,
-            j.startedAt.toISOString().slice(0, 10),
-          ),
-        ),
-      );
-    const goodNights = Number(nightAgg[0]?.goodNights ?? 0);
-    const totalNights = Number(nightAgg[0]?.totalNights ?? 0);
+    // than to miss credit) by de-duping on night_date.
+    const startedDate = j.startedAt.toISOString().slice(0, 10);
+    const { data: nightRows, error: nightsErr } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_nights")
+      .select("night_date, usage_minutes")
+      .eq("patient_id", j.patientId)
+      .gte("night_date", startedDate);
+    if (nightsErr) throw nightsErr;
+    const allNights = new Set<string>();
+    const goodNightDates = new Set<string>();
+    for (const n of nightRows ?? []) {
+      allNights.add(n.night_date);
+      if (
+        n.usage_minutes !== null &&
+        n.usage_minutes >= MIN_GOOD_NIGHT_MINUTES
+      ) {
+        goodNightDates.add(n.night_date);
+      }
+    }
+    const goodNights = goodNightDates.size;
+    const totalNights = allNights.size;
     // Adherence ratio uses elapsed-days (not totalNights) as the
     // denominator. Missing-data nights count against the patient,
     // matching how CMS scores adherence.
@@ -165,7 +167,7 @@ export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
       target_pct: Math.round(verdict.target * 100),
     };
 
-    const wasUpdated = await upsertOpenAlert(db, {
+    const wasUpdated = await upsertOpenAlert(supabase, {
       patientId: j.patientId,
       journeyId: j.journeyId,
       alertType: "low_usage",
@@ -184,9 +186,9 @@ export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
   // single batched query each, regardless of how many active journeys
   // exist. Both keyed on the same csr_compliance_alerts table — same
   // upsert helper, distinct alert_type values.
-  const sendFailures = await detectSendFailures(db, now);
+  const sendFailures = await detectSendFailures(supabase, now);
   for (const f of sendFailures) {
-    const wasUpdated = await upsertOpenAlert(db, {
+    const wasUpdated = await upsertOpenAlert(supabase, {
       patientId: f.patientId,
       journeyId: f.journeyId,
       alertType: "send_failure",
@@ -199,9 +201,9 @@ export async function scanCompliance(opts: ScanOptions): Promise<ScanSummary> {
     sendFailureFlagged++;
   }
 
-  const noResponse = await detectNoResponse(db, now);
+  const noResponse = await detectNoResponse(supabase, now);
   for (const r of noResponse) {
-    const wasUpdated = await upsertOpenAlert(db, {
+    const wasUpdated = await upsertOpenAlert(supabase, {
       patientId: r.patientId,
       journeyId: r.journeyId,
       alertType: "no_response",
@@ -249,54 +251,74 @@ interface SendFailureFinding {
 }
 
 async function detectSendFailures(
-  db: ReturnType<typeof drizzle>,
+  supabase: ResupplySupabaseClient,
   now: Date,
 ): Promise<SendFailureFinding[]> {
-  const since = new Date(now.getTime() - SEND_FAILURE_WINDOW_DAYS * MS_PER_DAY);
+  const sinceIso = new Date(
+    now.getTime() - SEND_FAILURE_WINDOW_DAYS * MS_PER_DAY,
+  ).toISOString();
 
-  // GROUP BY (patient, journey) to get per-patient totals. We don't
-  // group by channel because a patient with vendor errors across
-  // multiple channels is even MORE likely to have stale contact info,
-  // not less — collapse to a single alert per patient.
-  const rows = await db
-    .select({
-      patientId: patientCheckinAttempts.patientId,
-      journeyId: patientCheckinAttempts.journeyId,
-      failures: sql<number>`COUNT(*)`,
-      lastError: sql<string | null>`MAX(${patientCheckinAttempts.errorCode})`,
-      lastAttemptAt: sql<Date>`MAX(${patientCheckinAttempts.attemptedAt})`,
-    })
-    .from(patientCheckinAttempts)
-    .where(
-      and(
-        eq(patientCheckinAttempts.outcome, "vendor_error"),
-        gte(patientCheckinAttempts.attemptedAt, since),
-      ),
-    )
-    .groupBy(
-      patientCheckinAttempts.patientId,
-      patientCheckinAttempts.journeyId,
-    )
-    .having(sql`COUNT(*) >= ${SEND_FAILURE_THRESHOLD}`);
+  // PostgREST has neither GROUP BY nor HAVING. Fetch the
+  // vendor_error rows in the window (bounded — a healthy practice
+  // sends thousands per week, the failure subset is far smaller)
+  // and aggregate per-patient JS-side. We collapse to a single alert
+  // per patient even when failures span multiple channels — a
+  // patient with vendor errors across multiple channels is even MORE
+  // likely to have stale contact info, not less.
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("patient_checkin_attempts")
+    .select("patient_id, journey_id, error_code, attempted_at")
+    .eq("outcome", "vendor_error")
+    .gte("attempted_at", sinceIso);
+  if (error) throw error;
 
-  return rows.map((r) => {
-    const failures = Number(r.failures);
-    return {
-      patientId: r.patientId,
-      journeyId: r.journeyId,
-      severity:
-        failures >= SEND_FAILURE_THRESHOLD * 2 ? "critical" : "warning",
-      summary: `${failures} vendor errors in last ${SEND_FAILURE_WINDOW_DAYS} days — likely stale contact info`,
-      snapshot: {
-        failures,
-        window_days: SEND_FAILURE_WINDOW_DAYS,
-        last_error_code: r.lastError ?? null,
-        last_attempt_at: r.lastAttemptAt
-          ? new Date(r.lastAttemptAt).toISOString()
-          : null,
-      },
+  interface Bucket {
+    patientId: string;
+    journeyId: string | null;
+    failures: number;
+    lastError: string | null;
+    lastAttemptAt: string | null;
+  }
+  const buckets = new Map<string, Bucket>();
+  for (const r of rows ?? []) {
+    const key = `${r.patient_id}|${r.journey_id ?? ""}`;
+    const bucket = buckets.get(key) ?? {
+      patientId: r.patient_id,
+      journeyId: r.journey_id,
+      failures: 0,
+      lastError: null as string | null,
+      lastAttemptAt: null as string | null,
     };
-  });
+    bucket.failures += 1;
+    if (
+      r.attempted_at &&
+      (!bucket.lastAttemptAt || r.attempted_at > bucket.lastAttemptAt)
+    ) {
+      bucket.lastAttemptAt = r.attempted_at;
+      bucket.lastError = r.error_code;
+    }
+    buckets.set(key, bucket);
+  }
+
+  const findings: SendFailureFinding[] = [];
+  for (const b of buckets.values()) {
+    if (b.failures < SEND_FAILURE_THRESHOLD) continue;
+    findings.push({
+      patientId: b.patientId,
+      journeyId: b.journeyId,
+      severity:
+        b.failures >= SEND_FAILURE_THRESHOLD * 2 ? "critical" : "warning",
+      summary: `${b.failures} vendor errors in last ${SEND_FAILURE_WINDOW_DAYS} days — likely stale contact info`,
+      snapshot: {
+        failures: b.failures,
+        window_days: SEND_FAILURE_WINDOW_DAYS,
+        last_error_code: b.lastError ?? null,
+        last_attempt_at: b.lastAttemptAt,
+      },
+    });
+  }
+  return findings;
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -325,64 +347,69 @@ interface NoResponseFinding {
 }
 
 async function detectNoResponse(
-  db: ReturnType<typeof drizzle>,
+  supabase: ResupplySupabaseClient,
   now: Date,
 ): Promise<NoResponseFinding[]> {
-  const cutoff = new Date(now.getTime() - NO_RESPONSE_GAP_DAYS * MS_PER_DAY);
-  const minStartedAt = new Date(
+  const cutoffMs = now.getTime() - NO_RESPONSE_GAP_DAYS * MS_PER_DAY;
+  const minStartedAtIso = new Date(
     now.getTime() - NO_RESPONSE_MIN_DAYS_ELAPSED * MS_PER_DAY,
+  ).toISOString();
+
+  // The original Drizzle path LEFT JOINed
+  // patient_onboarding_journeys → patient_latest_message. PostgREST
+  // has no JOIN, so we fetch the journey set first then bulk-look
+  // up the latest-message rows by patient_id. Patients with no
+  // entry in the projection are exactly the population we want to
+  // flag.
+  const { data: journeyRows, error: journeysErr } = await supabase
+    .schema("resupply")
+    .from("patient_onboarding_journeys")
+    .select("id, patient_id, started_at")
+    .eq("status", "active")
+    .lte("started_at", minStartedAtIso);
+  if (journeysErr) throw journeysErr;
+  const journeys = journeyRows ?? [];
+  if (journeys.length === 0) return [];
+
+  const patientIds = Array.from(
+    new Set(journeys.map((r) => r.patient_id)),
+  );
+  const { data: latestRows, error: latestErr } = await supabase
+    .schema("resupply")
+    .from("patient_latest_message")
+    .select("patient_id, last_message_at, last_message_direction")
+    .in("patient_id", patientIds);
+  if (latestErr) throw latestErr;
+  const latestByPatient = new Map(
+    (latestRows ?? []).map((r) => [r.patient_id, r]),
   );
 
-  // LEFT JOIN against patient_latest_message — patients with zero
-  // messages have no row, and that's exactly the population we want
-  // to flag.
-  const rows = await db
-    .select({
-      patientId: patientOnboardingJourneys.patientId,
-      journeyId: patientOnboardingJourneys.id,
-      startedAt: patientOnboardingJourneys.startedAt,
-      lastMessageAt: patientLatestMessage.lastMessageAt,
-      lastMessageDirection: patientLatestMessage.lastMessageDirection,
-    })
-    .from(patientOnboardingJourneys)
-    .leftJoin(
-      patientLatestMessage,
-      eq(
-        patientLatestMessage.patientId,
-        patientOnboardingJourneys.patientId,
-      ),
-    )
-    .where(
-      and(
-        eq(patientOnboardingJourneys.status, "active"),
-        // Past the day-30 minimum elapsed window.
-        sql`${patientOnboardingJourneys.startedAt} <= ${minStartedAt}`,
-      ),
-    );
-
   const findings: NoResponseFinding[] = [];
-  for (const r of rows) {
+  for (const j of journeys) {
+    const latest = latestByPatient.get(j.patient_id);
     // Three fail-cases qualify:
-    //   - no inbound message at all (lastMessageAt null)
-    //   - last message is outbound (we sent something, no reply)
+    //   - no inbound message at all (no row OR last is outbound)
     //   - last inbound message is older than the gap window
-    const lastInbound =
-      r.lastMessageDirection === "inbound" ? r.lastMessageAt : null;
-    if (lastInbound && lastInbound > cutoff) continue;
-
+    const lastInboundIso =
+      latest?.last_message_direction === "inbound"
+        ? latest?.last_message_at ?? null
+        : null;
+    if (lastInboundIso && new Date(lastInboundIso).getTime() > cutoffMs) {
+      continue;
+    }
     const elapsedDays = Math.floor(
-      (now.getTime() - r.startedAt.getTime()) / MS_PER_DAY,
+      (now.getTime() - new Date(j.started_at).getTime()) / MS_PER_DAY,
     );
     findings.push({
-      patientId: r.patientId,
-      journeyId: r.journeyId,
-      summary: lastInbound
+      patientId: j.patient_id,
+      journeyId: j.id,
+      summary: lastInboundIso
         ? `No inbound reply in ${NO_RESPONSE_GAP_DAYS}+ days (day ${elapsedDays} of program)`
         : `No reply ever (day ${elapsedDays} of program)`,
       snapshot: {
         elapsed_days: elapsedDays,
         gap_days: NO_RESPONSE_GAP_DAYS,
-        last_inbound_at: lastInbound ? lastInbound.toISOString() : null,
+        last_inbound_at: lastInboundIso,
       },
     });
   }
@@ -439,7 +466,7 @@ function renderSummary(args: {
 }
 
 async function upsertOpenAlert(
-  db: ReturnType<typeof drizzle>,
+  supabase: ResupplySupabaseClient,
   input: {
     patientId: string;
     journeyId: string | null;
@@ -451,46 +478,55 @@ async function upsertOpenAlert(
 ): Promise<boolean> {
   // The partial unique index on (patient_id, alert_type) WHERE
   // status='open' guarantees at most one open alert per (patient,
-  // type). We try INSERT first; on conflict we UPDATE the existing
+  // type). We try INSERT first; on 23505 we UPDATE the existing
   // open row. Returns true if an existing row was refreshed.
-  try {
-    await db.insert(csrComplianceAlerts).values({
-      patientId: input.patientId,
-      journeyId: input.journeyId,
-      alertType: input.alertType,
+  const { error: insertErr } = await supabase
+    .schema("resupply")
+    .from("csr_compliance_alerts")
+    .insert({
+      patient_id: input.patientId,
+      journey_id: input.journeyId,
+      alert_type: input.alertType,
       severity: input.severity,
       summary: input.summary,
-      metricSnapshot: input.snapshot,
+      metric_snapshot: input.snapshot,
     });
-    return false;
-  } catch (err) {
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: string }).code === "23505"
-    ) {
-      await db
-        .update(csrComplianceAlerts)
-        .set({
-          severity: input.severity,
-          summary: input.summary,
-          metricSnapshot: input.snapshot,
-          journeyId: input.journeyId,
-        })
-        .where(
-          and(
-            eq(csrComplianceAlerts.patientId, input.patientId),
-            eq(csrComplianceAlerts.alertType, input.alertType),
-            eq(csrComplianceAlerts.status, "open"),
-          ),
-        );
-      return true;
-    }
-    logger.warn(
-      { err, patient_id: input.patientId, alert_type: input.alertType },
-      "csr_compliance_alerts upsert failed",
-    );
+  if (!insertErr) {
     return false;
   }
+  if ((insertErr as { code?: string }).code === "23505") {
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .update({
+        severity: input.severity,
+        summary: input.summary,
+        metric_snapshot: input.snapshot,
+        journey_id: input.journeyId,
+      })
+      .eq("patient_id", input.patientId)
+      .eq("alert_type", input.alertType)
+      .eq("status", "open");
+    if (updateErr) {
+      logger.warn(
+        {
+          err: updateErr,
+          patient_id: input.patientId,
+          alert_type: input.alertType,
+        },
+        "csr_compliance_alerts update failed",
+      );
+      return false;
+    }
+    return true;
+  }
+  logger.warn(
+    {
+      err: insertErr,
+      patient_id: input.patientId,
+      alert_type: input.alertType,
+    },
+    "csr_compliance_alerts upsert failed",
+  );
+  return false;
 }

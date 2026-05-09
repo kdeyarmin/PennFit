@@ -31,17 +31,10 @@
 //     cover letter text is fetched by Twilio from /fax/document/:token.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  patients,
-  physicianFaxOutreach,
-  prescriptions,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   createTwilioFaxClient,
   TwilioApiError,
@@ -134,7 +127,7 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
 
   // isFaxConfigured() already verified getFaxPublicBaseUrl() is non-null.
   const baseUrl = getFaxPublicBaseUrl()!;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   const faxClient = createTwilioFaxClient();
   const token = signFaxDocumentToken(outreachId);
@@ -160,15 +153,23 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
         ? `Twilio fax error: ${err.message}`
         : `Fax dispatch error: ${String(err)}`;
 
-    await db
-      .update(physicianFaxOutreach)
-      .set({
+    const nowIso = new Date().toISOString();
+    const { error: failErr } = await supabase
+      .schema("resupply")
+      .from("physician_fax_outreach")
+      .update({
         status: "failed",
-        failedAt: new Date(),
-        failureReason: msg,
-        updatedAt: new Date(),
+        failed_at: nowIso,
+        failure_reason: msg,
+        updated_at: nowIso,
       })
-      .where(eq(physicianFaxOutreach.id, outreachId));
+      .eq("id", outreachId);
+    if (failErr) {
+      logger.warn(
+        { event: "fax_failure_stamp_db_err", outreachId, err: failErr },
+        "physician_fax_outreach: failed to stamp failure",
+      );
+    }
 
     logger.warn(
       { event: "fax_dispatch_failed", outreachId },
@@ -181,23 +182,29 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
   // Twilio accepted the fax. Stamp the row outside the sendFax try/catch so
   // a DB hiccup doesn't trigger a retry. The Twilio status-callback will
   // also update the row when delivery completes, giving a second correction path.
-  try {
-    await db
-      .update(physicianFaxOutreach)
-      .set({
-        status: "sent",
-        vendorRef: result.sid,
-        vendorName: "twilio",
-        sentAt: new Date(),
-        failedAt: null,
-        failureReason: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(physicianFaxOutreach.id, outreachId));
-  } catch (dbErr) {
+  const sentIso = new Date().toISOString();
+  const { error: stampErr } = await supabase
+    .schema("resupply")
+    .from("physician_fax_outreach")
+    .update({
+      status: "sent",
+      vendor_ref: result.sid,
+      vendor_name: "twilio",
+      sent_at: sentIso,
+      failed_at: null,
+      failure_reason: null,
+      updated_at: sentIso,
+    })
+    .eq("id", outreachId);
+  if (stampErr) {
     // Log the vendorRef so ops can manually reconcile if needed.
     logger.warn(
-      { event: "fax_db_stamp_failed", outreachId, vendorRef: result.sid, err: dbErr },
+      {
+        event: "fax_db_stamp_failed",
+        outreachId,
+        vendorRef: result.sid,
+        err: stampErr,
+      },
       "physician_fax_outreach: fax accepted by Twilio but DB stamp failed",
     );
   }
@@ -222,41 +229,52 @@ router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
     return;
   }
   const data = parsed.data;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const [patient] = await db
-    .select({ id: patients.id })
-    .from(patients)
-    .where(eq(patients.id, data.patientId))
-    .limit(1);
+  const { data: patient, error: patientErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("id", data.patientId)
+    .limit(1)
+    .maybeSingle();
+  if (patientErr) throw patientErr;
   if (!patient) {
     res.status(404).json({ error: "patient_not_found" });
     return;
   }
   if (data.prescriptionId) {
-    const [rx] = await db
-      .select({ id: prescriptions.id, patientId: prescriptions.patientId })
-      .from(prescriptions)
-      .where(eq(prescriptions.id, data.prescriptionId))
-      .limit(1);
-    if (!rx || rx.patientId !== data.patientId) {
+    const { data: rx, error: rxErr } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select("id, patient_id")
+      .eq("id", data.prescriptionId)
+      .limit(1)
+      .maybeSingle();
+    if (rxErr) throw rxErr;
+    if (!rx || rx.patient_id !== data.patientId) {
       res.status(400).json({ error: "prescription_patient_mismatch" });
       return;
     }
   }
 
-  const inserted = await db
-    .insert(physicianFaxOutreach)
-    .values({
-      patientId: data.patientId,
-      prescriptionId: data.prescriptionId ?? null,
-      physicianName: data.physicianName,
-      physicianFaxE164: data.physicianFaxE164,
-      coverLetterText: data.coverLetterText,
-      createdByEmail: req.adminEmail ?? "",
+  const { data: inserted, error: insertErr } = await supabase
+    .schema("resupply")
+    .from("physician_fax_outreach")
+    .insert({
+      patient_id: data.patientId,
+      prescription_id: data.prescriptionId ?? null,
+      physician_name: data.physicianName,
+      physician_fax_e164: data.physicianFaxE164,
+      cover_letter_text: data.coverLetterText,
+      created_by_email: req.adminEmail ?? "",
     })
-    .returning({ id: physicianFaxOutreach.id });
-  const id = inserted[0]!.id;
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertErr) throw insertErr;
+  if (!inserted) throw new Error("physician_fax_outreach insert returned no rows");
+  const id = inserted.id;
 
   const dispatch = await dispatchFax(id, data.physicianFaxE164);
 
@@ -319,18 +337,15 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const [row] = await db
-      .select({
-        id: physicianFaxOutreach.id,
-        status: physicianFaxOutreach.status,
-        physicianFaxE164: physicianFaxOutreach.physicianFaxE164,
-        patientId: physicianFaxOutreach.patientId,
-        updatedAt: physicianFaxOutreach.updatedAt,
-      })
-      .from(physicianFaxOutreach)
-      .where(eq(physicianFaxOutreach.id, outreachId))
-      .limit(1);
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("physician_fax_outreach")
+      .select("id, status, physician_fax_e164, patient_id, updated_at")
+      .eq("id", outreachId)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
 
     if (!row) {
       res.status(404).json({ error: "outreach_not_found" });
@@ -349,24 +364,26 @@ router.post(
 
     // Optimistic-concurrency claim: two concurrent retry requests both
     // pass the status check above. Only one UPDATE matches (Postgres
-    // serialises row writes); the loser gets 0 rows and returns 409
-    // before either touches Twilio — preventing duplicate physician faxes.
-    const claimed = await db
-      .update(physicianFaxOutreach)
-      .set({ updatedAt: new Date() })
-      .where(
-        and(
-          eq(physicianFaxOutreach.id, outreachId),
-          eq(physicianFaxOutreach.updatedAt, row.updatedAt),
-        ),
-      )
-      .returning({ id: physicianFaxOutreach.id });
-    if (claimed.length === 0) {
+    // serialises row writes); the loser sees zero rows and returns 409
+    // before either touches Twilio — preventing duplicate physician
+    // faxes. PostgREST round-trips timestamptz losslessly so the
+    // updated_at equality is exact.
+    const { data: claimed, error: claimErr } = await supabase
+      .schema("resupply")
+      .from("physician_fax_outreach")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", outreachId)
+      .eq("updated_at", row.updated_at)
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claimed) {
       res.status(409).json({ error: "concurrent_retry" });
       return;
     }
 
-    const dispatch = await dispatchFax(row.id, row.physicianFaxE164);
+    const dispatch = await dispatchFax(row.id, row.physician_fax_e164);
 
     await logAudit({
       action: "physician_fax_outreach.retried",
@@ -375,7 +392,7 @@ router.post(
       targetTable: "physician_fax_outreach",
       targetId: outreachId,
       metadata: {
-        patient_id: row.patientId,
+        patient_id: row.patient_id,
         provider: dispatch.provider,
         status: dispatch.status,
       },
@@ -405,44 +422,34 @@ router.get("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "invalid_query" });
     return;
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: physicianFaxOutreach.id,
-      patientId: physicianFaxOutreach.patientId,
-      prescriptionId: physicianFaxOutreach.prescriptionId,
-      physicianName: physicianFaxOutreach.physicianName,
-      physicianFaxE164: physicianFaxOutreach.physicianFaxE164,
-      status: physicianFaxOutreach.status,
-      vendorRef: physicianFaxOutreach.vendorRef,
-      vendorName: physicianFaxOutreach.vendorName,
-      sentAt: physicianFaxOutreach.sentAt,
-      deliveredAt: physicianFaxOutreach.deliveredAt,
-      failedAt: physicianFaxOutreach.failedAt,
-      failureReason: physicianFaxOutreach.failureReason,
-      createdByEmail: physicianFaxOutreach.createdByEmail,
-      createdAt: physicianFaxOutreach.createdAt,
-    })
-    .from(physicianFaxOutreach)
-    .where(and(eq(physicianFaxOutreach.patientId, parsed.data.patientId)))
-    .orderBy(desc(physicianFaxOutreach.createdAt))
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("physician_fax_outreach")
+    .select(
+      "id, patient_id, prescription_id, physician_name, physician_fax_e164, status, vendor_ref, vendor_name, sent_at, delivered_at, failed_at, failure_reason, created_by_email, created_at",
+    )
+    .eq("patient_id", parsed.data.patientId)
+    .order("created_at", { ascending: false })
     .limit(50);
+  if (error) throw error;
   res.json({
-    outreach: rows.map((r) => ({
+    outreach: (rows ?? []).map((r) => ({
       id: r.id,
-      patientId: r.patientId,
-      prescriptionId: r.prescriptionId,
-      physicianName: r.physicianName,
-      physicianFaxE164: r.physicianFaxE164,
+      patientId: r.patient_id,
+      prescriptionId: r.prescription_id,
+      physicianName: r.physician_name,
+      physicianFaxE164: r.physician_fax_e164,
       status: r.status,
-      vendorRef: r.vendorRef,
-      vendorName: r.vendorName,
-      sentAt: r.sentAt ? r.sentAt.toISOString() : null,
-      deliveredAt: r.deliveredAt ? r.deliveredAt.toISOString() : null,
-      failedAt: r.failedAt ? r.failedAt.toISOString() : null,
-      failureReason: r.failureReason,
-      createdByEmail: r.createdByEmail,
-      createdAt: r.createdAt.toISOString(),
+      vendorRef: r.vendor_ref,
+      vendorName: r.vendor_name,
+      // PostgREST returns timestamptz as ISO string already.
+      sentAt: r.sent_at,
+      deliveredAt: r.delivered_at,
+      failedAt: r.failed_at,
+      failureReason: r.failure_reason,
+      createdByEmail: r.created_by_email,
+      createdAt: r.created_at,
     })),
     providerConfigured: isFaxConfigured(),
   });

@@ -43,27 +43,26 @@
 //     NEVER customer email, address, item names, or review bodies.
 //   * No image logging anywhere (per replit.md rule).
 //
-// Why no resupply.audit_log writes here:
-//   This module mirrors the local convention in
-//   artifacts/resupply-api/src/routes/admin/. shop-orders.ts,
-//   shop-reviews.ts, and abandoned-carts.ts also emit only
-//   req.log entries and do NOT write to resupply.audit_log. The
-//   audit_log table is reserved for patient-PHI operations (see
-//   /patients/*). Shop is not patient-PHI surface.
-//
 // Lifetime value:
 //   Sums shop_orders.amount_total_cents over rows where
 //   paid_at IS NOT NULL AND status <> 'refunded'. Pending orders
 //   are excluded (no money has changed hands yet). Refunded orders
 //   are excluded (money was returned). This matches what an admin
 //   intuitively means by "how much has this customer spent with us".
+//
+// PostgREST-specific notes:
+//   The original Drizzle path used a single SQL CTE per endpoint
+//   (CTEs + LEFT JOINs + GROUP BY + FILTER aggregates). PostgREST
+//   exposes none of those, so each call site does a few small
+//   parallel reads and aggregates JS-side. Datasets are bounded —
+//   this is admin-only — so a few-thousand-row scan is acceptable.
+//   When customer count grows past that, this becomes the natural
+//   first place to plant a stored-function RPC.
 
 import { Router, type IRouter } from "express";
-import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
   getStripeClient,
@@ -85,10 +84,6 @@ const PAGE_SIZE_MAX = 100;
  *   "a@x.io"               -> "a@x.io"
  *   ""                     -> null
  *   null/undefined         -> null
- *
- * Mirrors the helper in admin/abandoned-carts.ts on purpose; if we
- * ever extract a shared `lib/redact-email`, both call sites should
- * move together.
  */
 function redactEmail(e: string | null | undefined): string | null {
   if (!e) return null;
@@ -128,24 +123,6 @@ const listQuery = z.object({
     .transform((v) => v !== undefined),
 });
 
-interface ListRow {
-  user_id: string;
-  display_name: string | null;
-  email_lower: string | null;
-  stripe_customer_id: string | null;
-  created_at: string | Date;
-  orders_count: number;
-  lifetime_value_cents: number;
-  last_order_at: string | Date | null;
-  has_active_subscription: boolean;
-  /**
-   * Phase 9: true when the customer's in-app conversation is in
-   * `awaiting_admin` status. Drives the "Awaiting reply" badge on
-   * the directory + the new `?awaitingReply=1` filter.
-   */
-  in_app_needs_reply: boolean;
-}
-
 router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
@@ -157,136 +134,182 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
   }
   const { q, page, pageSize, sortBy, order, subscription, awaitingReply } =
     parsed.data;
-  const offset = (page - 1) * pageSize;
 
-  // ILIKE pattern is built from a trimmed/length-capped Zod-validated
-  // input; passed as a bound parameter (NOT interpolated into SQL).
-  const qPattern = q ? `%${q.toLowerCase()}%` : null;
-  const subFilter = subscription ?? null;
+  const supabase = getSupabaseServiceRoleClient();
 
-  // Dynamic ORDER BY built from a closed enum (Zod-validated above),
-  // so this cannot be hijacked by user input.
-  const orderClauseExpr = (() => {
+  // ── Phase 1: pull the candidate customer set ────────────────────
+  // PostgREST has neither CTEs nor GROUP BY, so the rollups
+  // (orders_count / lifetime_value / has_active_sub /
+  // in_app_needs_reply) are computed JS-side after small bulk
+  // fetches. The candidate set is bounded by q-ilike + the implicit
+  // filter "must have a shop_customers row" — admin-only path, so
+  // a full scan at PennPaps scale is acceptable.
+  let customersQuery = supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select(
+      "customer_id, display_name, email_lower, stripe_customer_id, created_at",
+    );
+  if (q) {
+    // Escape LIKE metacharacters (`_`, `%`, `\`) before composing
+    // the wildcard pattern. Then run as `*<escaped>*` with `*` as
+    // PostgREST's wildcard. Email local-parts can legitimately
+    // contain `_`.
+    const escaped = q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`);
+    customersQuery = customersQuery.ilike("email_lower", `*${escaped}*`);
+  }
+  const { data: customerRows, error: customersErr } = await customersQuery;
+  if (customersErr) throw customersErr;
+
+  const customerIds = (customerRows ?? []).map((c) => c.customer_id);
+
+  // ── Phase 2: rollup fetches in parallel, scoped to this page's
+  // candidate set. Each fan-out is a single PostgREST request. ────
+  const [ordersRollupRes, activeSubsRes, awaitingReplyRes] = await Promise.all([
+    customerIds.length > 0
+      ? supabase
+          .schema("resupply")
+          .from("shop_orders")
+          .select(
+            "customer_id, amount_total_cents, paid_at, status, created_at",
+          )
+          .in("customer_id", customerIds)
+      : Promise.resolve({ data: [], error: null as null }),
+    customerIds.length > 0
+      ? supabase
+          .schema("resupply")
+          .from("shop_subscriptions")
+          .select("customer_id")
+          .eq("status", "active")
+          .in("customer_id", customerIds)
+      : Promise.resolve({ data: [], error: null as null }),
+    customerIds.length > 0
+      ? supabase
+          .schema("resupply")
+          .from("conversations")
+          .select("customer_id")
+          .eq("channel", "in_app")
+          .eq("status", "awaiting_admin")
+          .in("customer_id", customerIds)
+      : Promise.resolve({ data: [], error: null as null }),
+  ]);
+  if (ordersRollupRes.error) throw ordersRollupRes.error;
+  if (activeSubsRes.error) throw activeSubsRes.error;
+  if (awaitingReplyRes.error) throw awaitingReplyRes.error;
+
+  // Bucket the per-customer rollups.
+  interface OrderRollup {
+    ordersCount: number;
+    lifetimeValueCents: number;
+    lastOrderAt: string | null;
+  }
+  const orderRollupByCustomer = new Map<string, OrderRollup>();
+  for (const o of ordersRollupRes.data ?? []) {
+    const cid = o.customer_id;
+    if (!cid) continue;
+    const bucket = orderRollupByCustomer.get(cid) ?? {
+      ordersCount: 0,
+      lifetimeValueCents: 0,
+      lastOrderAt: null,
+    };
+    bucket.ordersCount += 1;
+    if (o.paid_at && o.status !== "refunded") {
+      bucket.lifetimeValueCents += o.amount_total_cents ?? 0;
+    }
+    if (
+      o.created_at &&
+      (!bucket.lastOrderAt || o.created_at > bucket.lastOrderAt)
+    ) {
+      bucket.lastOrderAt = o.created_at;
+    }
+    orderRollupByCustomer.set(cid, bucket);
+  }
+  const activeSubCustomerIds = new Set<string>();
+  for (const r of activeSubsRes.data ?? []) {
+    if (r.customer_id) activeSubCustomerIds.add(r.customer_id);
+  }
+  const awaitingReplyCustomerIds = new Set<string>();
+  for (const r of awaitingReplyRes.data ?? []) {
+    if (r.customer_id) awaitingReplyCustomerIds.add(r.customer_id);
+  }
+
+  // ── Phase 3: enrich + filter + sort + page JS-side ──────────────
+  interface EnrichedRow {
+    userId: string;
+    displayName: string | null;
+    emailLower: string | null;
+    stripeCustomerId: string | null;
+    createdAt: string;
+    ordersCount: number;
+    lifetimeValueCents: number;
+    lastOrderAt: string | null;
+    hasActiveSubscription: boolean;
+    inAppNeedsReply: boolean;
+  }
+  const enriched: EnrichedRow[] = (customerRows ?? []).map((c) => {
+    const rollup = orderRollupByCustomer.get(c.customer_id) ?? {
+      ordersCount: 0,
+      lifetimeValueCents: 0,
+      lastOrderAt: null,
+    };
+    return {
+      userId: c.customer_id,
+      displayName: c.display_name,
+      emailLower: c.email_lower,
+      stripeCustomerId: c.stripe_customer_id,
+      createdAt: c.created_at,
+      ordersCount: rollup.ordersCount,
+      lifetimeValueCents: rollup.lifetimeValueCents,
+      lastOrderAt: rollup.lastOrderAt,
+      hasActiveSubscription: activeSubCustomerIds.has(c.customer_id),
+      inAppNeedsReply: awaitingReplyCustomerIds.has(c.customer_id),
+    };
+  });
+
+  // Subscription + awaitingReply filters fire AFTER enrichment.
+  const filtered = enriched.filter((r) => {
+    if (subscription === "active" && !r.hasActiveSubscription) return false;
+    if (subscription === "none" && r.hasActiveSubscription) return false;
+    if (awaitingReply && !r.inAppNeedsReply) return false;
+    return true;
+  });
+
+  // Sort. Tie-break by userId for stable pagination. NULLs always
+  // sort LAST regardless of ascending/descending, mirroring the
+  // SQL `NULLS LAST` clause.
+  const sortKey = (r: EnrichedRow): string | number | null => {
     switch (sortBy) {
       case "lifetime_value":
-        return sql`COALESCE(o.lifetime_cents, 0)`;
+        return r.lifetimeValueCents;
       case "created_at":
-        return sql`c.created_at`;
+        return r.createdAt;
       case "last_order":
       default:
-        return sql`o.last_order_at`;
+        return r.lastOrderAt;
     }
-  })();
-  const orderDirSql =
-    order === "asc" ? sql`ASC NULLS LAST` : sql`DESC NULLS LAST`;
+  };
+  const dir = order === "asc" ? 1 : -1;
+  const sorted = filtered.slice().sort((a, b) => {
+    const av = sortKey(a);
+    const bv = sortKey(b);
+    if (av === null && bv === null) {
+      // Stable tie-break.
+      return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0;
+    }
+    if (av === null) return 1; // NULLS LAST
+    if (bv === null) return -1;
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0;
+  });
 
-  const db = drizzle(getDbPool());
+  const total = sorted.length;
+  const offset = (page - 1) * pageSize;
+  const pageRows = sorted.slice(offset, offset + pageSize);
 
-  // Single round-trip aggregation using inline CTEs. shop_customers
-  // drives the FROM (registered customers only); the two LEFT JOINs
-  // bring in per-customer order rollup and an "any active sub" flag.
-  // Tie-break by customer_id for stable pagination across pages
-  // when the primary sort key has duplicates (e.g. lifetime=0).
-  const awaitingReplyFilterSql = awaitingReply ? sql`true` : sql`false`;
-
-  // The list page + the total-count read the same shop_customers /
-  // shop_subscriptions / conversations slice with the same WHERE
-  // clause; they only diverge on SELECT/ORDER/LIMIT. Run them in
-  // parallel so the listing endpoint pays max(query) latency rather
-  // than sum(query). The pagination UX still needs both results
-  // before responding.
-  const [listResult, totalResult] = await Promise.all([
-    db.execute(sql`
-    WITH order_agg AS (
-      SELECT
-        customer_id,
-        COUNT(*)::int AS orders_count,
-        COALESCE(SUM(amount_total_cents) FILTER (
-          WHERE paid_at IS NOT NULL AND status <> 'refunded'
-        ), 0)::int AS lifetime_cents,
-        MAX(created_at) AS last_order_at
-      FROM resupply.shop_orders
-      WHERE customer_id IS NOT NULL
-      GROUP BY customer_id
-    ),
-    sub_agg AS (
-      SELECT customer_id, true AS has_active
-      FROM resupply.shop_subscriptions
-      WHERE status = 'active'
-      GROUP BY customer_id
-    ),
-    -- Phase 9: which customers have an in-app conversation currently
-    -- in awaiting_admin? The partial index added in 0033 keeps this
-    -- LEFT JOIN cheap (one row per customer at most). DISTINCT in
-    -- case a future "multi-thread per customer" policy lands.
-    needs_reply_agg AS (
-      SELECT DISTINCT customer_id
-      FROM resupply.conversations
-      WHERE channel = 'in_app'
-        AND status = 'awaiting_admin'
-        AND customer_id IS NOT NULL
-    )
-    SELECT
-      c.customer_id              AS user_id,
-      c.display_name               AS display_name,
-      c.email_lower                AS email_lower,
-      c.stripe_customer_id         AS stripe_customer_id,
-      c.created_at                 AS created_at,
-      COALESCE(o.orders_count, 0)  AS orders_count,
-      COALESCE(o.lifetime_cents, 0) AS lifetime_value_cents,
-      o.last_order_at              AS last_order_at,
-      COALESCE(s.has_active, false) AS has_active_subscription,
-      (n.customer_id IS NOT NULL)  AS in_app_needs_reply
-    FROM resupply.shop_customers c
-    LEFT JOIN order_agg o ON o.customer_id = c.customer_id
-    LEFT JOIN sub_agg s   ON s.customer_id = c.customer_id
-    LEFT JOIN needs_reply_agg n ON n.customer_id = c.customer_id
-    WHERE (${qPattern}::text IS NULL OR c.email_lower ILIKE ${qPattern})
-      AND (
-        ${subFilter}::text IS NULL
-        OR (${subFilter}::text = 'active' AND s.has_active IS TRUE)
-        OR (${subFilter}::text = 'none' AND s.has_active IS NOT TRUE)
-      )
-      AND (${awaitingReplyFilterSql} = false OR n.customer_id IS NOT NULL)
-    ORDER BY ${orderClauseExpr} ${orderDirSql}, c.customer_id ASC
-    LIMIT ${Math.min(pageSize, 200)} OFFSET ${offset}
-  `) as unknown as Promise<{ rows: ListRow[] }>,
-    // Total count (same WHERE) — separate query because the LIMIT/OFFSET
-    // page would otherwise hide the true total for pagination UX.
-    db.execute(sql`
-    WITH sub_agg AS (
-      SELECT customer_id, true AS has_active
-      FROM resupply.shop_subscriptions
-      WHERE status = 'active'
-      GROUP BY customer_id
-    ),
-    needs_reply_agg AS (
-      SELECT DISTINCT customer_id
-      FROM resupply.conversations
-      WHERE channel = 'in_app'
-        AND status = 'awaiting_admin'
-        AND customer_id IS NOT NULL
-    )
-    SELECT COUNT(*)::int AS total
-    FROM resupply.shop_customers c
-    LEFT JOIN sub_agg s ON s.customer_id = c.customer_id
-    LEFT JOIN needs_reply_agg n ON n.customer_id = c.customer_id
-    WHERE (${qPattern}::text IS NULL OR c.email_lower ILIKE ${qPattern})
-      AND (
-        ${subFilter}::text IS NULL
-        OR (${subFilter}::text = 'active' AND s.has_active IS TRUE)
-        OR (${subFilter}::text = 'none' AND s.has_active IS NOT TRUE)
-      )
-      AND (${awaitingReplyFilterSql} = false OR n.customer_id IS NOT NULL)
-  `) as unknown as Promise<{ rows: Array<{ total: number }> }>,
-  ]);
-
-  const total = totalResult.rows[0]?.total ?? 0;
-
-  // Safe log: counts + flags + adminEmail. NO email, name, address.
   req.log?.info(
     {
-      count: listResult.rows.length,
+      count: pageRows.length,
       total,
       page,
       pageSize,
@@ -300,19 +323,17 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
   );
 
   res.json({
-    customers: listResult.rows.map((r) => ({
-      userId: r.user_id,
-      displayName: r.display_name,
-      emailRedacted: redactEmail(r.email_lower),
-      stripeCustomerId: r.stripe_customer_id,
-      ordersCount: r.orders_count,
-      lifetimeValueCents: r.lifetime_value_cents,
-      lastOrderAt: r.last_order_at
-        ? new Date(r.last_order_at).toISOString()
-        : null,
-      hasActiveSubscription: r.has_active_subscription,
-      inAppNeedsReply: r.in_app_needs_reply,
-      createdAt: new Date(r.created_at).toISOString(),
+    customers: pageRows.map((r) => ({
+      userId: r.userId,
+      displayName: r.displayName,
+      emailRedacted: redactEmail(r.emailLower),
+      stripeCustomerId: r.stripeCustomerId,
+      ordersCount: r.ordersCount,
+      lifetimeValueCents: r.lifetimeValueCents,
+      lastOrderAt: r.lastOrderAt,
+      hasActiveSubscription: r.hasActiveSubscription,
+      inAppNeedsReply: r.inAppNeedsReply,
+      createdAt: r.createdAt,
     })),
     total,
     page,
@@ -324,109 +345,6 @@ router.get("/admin/shop/customers", requireAdmin, async (req, res) => {
 // GET /admin/shop/customers/:userId — single customer profile.
 // =====================================================================
 
-interface CustomerRow {
-  user_id: string;
-  display_name: string | null;
-  email_lower: string | null;
-  stripe_customer_id: string | null;
-  shipping_address_json: unknown;
-  default_payment_method_brand: string | null;
-  default_payment_method_last4: string | null;
-  default_payment_method_exp_month: number | null;
-  default_payment_method_exp_year: number | null;
-  /**
-   * Clinical info added in migration 0032 (PR #52): the customer's
-   * CPAP machine + prescribing physician. Both nullable until the
-   * customer fills the form out on /account.
-   */
-  cpap_device_json: unknown;
-  physician_info_json: unknown;
-  facial_measurements_json: unknown;
-  created_at: string | Date;
-  updated_at: string | Date;
-}
-
-interface InAppConversationRow {
-  id: string;
-  status: string;
-  last_message_at: string | Date | null;
-  created_at: string | Date;
-  message_count: number;
-  /**
-   * Number of inbound messages from the customer that arrived AFTER
-   * the most-recent outbound CSR reply. Drives the "X new from
-   * customer" badge in the admin UI. When there's no CSR reply yet
-   * (a brand-new thread) this counts every inbound message.
-   */
-  unread_from_customer: number;
-  last_inbound_at: string | Date | null;
-  last_outbound_at: string | Date | null;
-}
-
-interface OrderRow {
-  id: string;
-  stripe_session_id: string;
-  stripe_payment_intent_id: string | null;
-  status: string;
-  amount_total_cents: number | null;
-  currency: string | null;
-  created_at: string | Date;
-  paid_at: string | Date | null;
-  shipped_at: string | Date | null;
-  delivered_at: string | Date | null;
-  tracking_carrier: string | null;
-  tracking_number: string | null;
-  shipping_address_json: unknown;
-  item_count: number;
-}
-
-interface SubscriptionRow {
-  id: string;
-  stripe_subscription_id: string;
-  stripe_customer_id: string | null;
-  status: string;
-  items: unknown;
-  current_period_end: string | Date | null;
-  cancel_at_period_end: boolean;
-  canceled_at: string | Date | null;
-  initial_amount_total_cents: number | null;
-  created_at: string | Date;
-  updated_at: string | Date;
-}
-
-interface AbandonedCartRow {
-  id: string;
-  items: unknown;
-  subtotal_cents: number;
-  currency: string;
-  updated_at: string | Date;
-  reminded_at: string | Date | null;
-  recovered_at: string | Date | null;
-  cleared_at: string | Date | null;
-  created_at: string | Date;
-}
-
-interface ReviewRow {
-  id: string;
-  product_id: string;
-  rating: number;
-  title: string | null;
-  body: string;
-  status: string;
-  moderation_note: string | null;
-  moderated_at: string | Date | null;
-  created_at: string | Date;
-  updated_at: string | Date;
-}
-
-interface StatsRow {
-  orders_count: number;
-  lifetime_value_cents: number;
-  first_order_at: string | Date | null;
-  last_order_at: string | Date | null;
-  pending_reviews_count: number;
-}
-
 const userIdParam = z
   .string()
   .trim()
@@ -434,7 +352,6 @@ const userIdParam = z
   .max(200)
   // Auth-provider user ids are opaque; keep the gate loose but
   // reject anything that looks shaped like a SQL injection probe.
-  // The query itself uses parameter binding, this is belt-and-braces.
   .regex(/^[A-Za-z0-9_-]+$/);
 
 router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
@@ -444,205 +361,112 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
     return;
   }
   const userId = parsed.data;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  // The seven sub-queries below are independent (each is keyed only on
-  // userId; none consumes another's result). Run them concurrently so
-  // the Customer-360 detail endpoint pays max(query) latency rather
-  // than sum(query). The early-404 check that consults rows from #1 +
-  // #2 happens AFTER all queries settle, which is fine — the queries
-  // themselves are read-only and parallelizing them never produces a
-  // semantically-different page.
+  // Six independent reads (the seventh stat-rollup is computed
+  // JS-side from the orders/reviews data we already pull).
   const [
-    customerResult,
-    ordersResult,
-    subsResult,
-    cartResult,
-    reviewsResult,
-    inAppResult,
-    statsResult,
+    customerRes,
+    ordersRes,
+    subsRes,
+    cartRes,
+    reviewsRes,
+    inAppConvRes,
+    statsOrdersRes,
+    statsPendingReviewsRes,
   ] = await Promise.all([
     // 1. Customer mirror row (may be missing for guest-only users).
-    db.execute(sql`
-      SELECT
-        customer_id                     AS user_id,
-        display_name                      AS display_name,
-        email_lower                       AS email_lower,
-        stripe_customer_id                AS stripe_customer_id,
-        shipping_address_json             AS shipping_address_json,
-        default_payment_method_brand      AS default_payment_method_brand,
-        default_payment_method_last4      AS default_payment_method_last4,
-        default_payment_method_exp_month  AS default_payment_method_exp_month,
-        default_payment_method_exp_year   AS default_payment_method_exp_year,
-        cpap_device_json                  AS cpap_device_json,
-        physician_info_json               AS physician_info_json,
-        facial_measurements_json          AS facial_measurements_json,
-        created_at                        AS created_at,
-        updated_at                        AS updated_at
-      FROM resupply.shop_customers
-      WHERE customer_id = ${userId}
-      LIMIT 1
-    `) as unknown as Promise<{ rows: CustomerRow[] }>,
-    // 2. Recent orders (cap 25). Item count is computed by a
-    //    correlated subquery so we don't need a second round-trip.
-    db.execute(sql`
-      SELECT
-        o.id                       AS id,
-        o.stripe_session_id        AS stripe_session_id,
-        o.stripe_payment_intent_id AS stripe_payment_intent_id,
-        o.status                   AS status,
-        o.amount_total_cents       AS amount_total_cents,
-        o.currency                 AS currency,
-        o.created_at               AS created_at,
-        o.paid_at                  AS paid_at,
-        o.shipped_at               AS shipped_at,
-        o.delivered_at             AS delivered_at,
-        o.tracking_carrier         AS tracking_carrier,
-        o.tracking_number          AS tracking_number,
-        o.shipping_address_json    AS shipping_address_json,
-        COALESCE((
-          SELECT SUM(i.quantity)::int
-          FROM resupply.shop_order_items i
-          WHERE i.order_id = o.id
-        ), 0)                      AS item_count
-      FROM resupply.shop_orders o
-      WHERE o.customer_id = ${userId}
-      ORDER BY o.created_at DESC
-      LIMIT 25
-    `) as unknown as Promise<{ rows: OrderRow[] }>,
+    supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select(
+        "customer_id, display_name, email_lower, stripe_customer_id, shipping_address_json, default_payment_method_brand, default_payment_method_last4, default_payment_method_exp_month, default_payment_method_exp_year, cpap_device_json, physician_info_json, facial_measurements_json, created_at, updated_at",
+      )
+      .eq("customer_id", userId)
+      .limit(1)
+      .maybeSingle(),
+    // 2. Recent orders (cap 25). Item count is computed below from a
+    //    bulk shop_order_items fetch keyed on the page's order ids.
+    supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select(
+        "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, created_at, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, shipping_address_json",
+      )
+      .eq("customer_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(25),
     // 3. Subscriptions (typically 0–2 per customer; no LIMIT needed).
-    db.execute(sql`
-      SELECT
-        id                          AS id,
-        stripe_subscription_id      AS stripe_subscription_id,
-        stripe_customer_id          AS stripe_customer_id,
-        status                      AS status,
-        items                       AS items,
-        current_period_end          AS current_period_end,
-        cancel_at_period_end        AS cancel_at_period_end,
-        canceled_at                 AS canceled_at,
-        initial_amount_total_cents  AS initial_amount_total_cents,
-        created_at                  AS created_at,
-        updated_at                  AS updated_at
-      FROM resupply.shop_subscriptions
-      WHERE customer_id = ${userId}
-      ORDER BY created_at DESC
-    `) as unknown as Promise<{ rows: SubscriptionRow[] }>,
+    supabase
+      .schema("resupply")
+      .from("shop_subscriptions")
+      .select(
+        "id, stripe_subscription_id, stripe_customer_id, status, items, current_period_end, cancel_at_period_end, canceled_at, initial_amount_total_cents, created_at, updated_at",
+      )
+      .eq("customer_id", userId)
+      .order("created_at", { ascending: false }),
     // 4. Abandoned cart (UNIQUE(customer_id) — at most 1).
-    db.execute(sql`
-      SELECT
-        id              AS id,
-        items           AS items,
-        subtotal_cents  AS subtotal_cents,
-        currency        AS currency,
-        updated_at      AS updated_at,
-        reminded_at     AS reminded_at,
-        recovered_at    AS recovered_at,
-        cleared_at      AS cleared_at,
-        created_at      AS created_at
-      FROM resupply.shop_abandoned_carts
-      WHERE customer_id = ${userId}
-      LIMIT 1
-    `) as unknown as Promise<{ rows: AbandonedCartRow[] }>,
+    supabase
+      .schema("resupply")
+      .from("shop_abandoned_carts")
+      .select(
+        "id, items, subtotal_cents, currency, updated_at, reminded_at, recovered_at, cleared_at, created_at",
+      )
+      .eq("customer_id", userId)
+      .limit(1)
+      .maybeSingle(),
     // 5. Reviews (typically a handful; cap at 100 for safety).
-    db.execute(sql`
-      SELECT
-        id              AS id,
-        product_id      AS product_id,
-        rating          AS rating,
-        title           AS title,
-        body            AS body,
-        status          AS status,
-        moderation_note AS moderation_note,
-        moderated_at    AS moderated_at,
-        created_at      AS created_at,
-        updated_at      AS updated_at
-      FROM resupply.shop_reviews
-      WHERE customer_id = ${userId}
-      ORDER BY created_at DESC
-      LIMIT 100
-    `) as unknown as Promise<{ rows: ReviewRow[] }>,
-    // 6a. In-app conversation thread (added in PR #53 / migration 0033).
-    //     At most one row per customer (single-thread-per-customer
-    //     policy enforced by appendCustomerMessage). The message_count
-    //     and unread_from_customer crumbs let the admin UI render
-    //     "5 messages · 2 new from customer" without a second
-    //     round-trip. unread_from_customer counts inbound messages
-    //     that landed AFTER the most-recent CSR reply (or every
-    //     inbound message when there's no CSR reply yet).
-    db.execute(sql`
-      WITH conv AS (
-        SELECT id, status, last_message_at, created_at
-        FROM resupply.conversations
-        WHERE customer_id = ${userId}
-          AND channel = 'in_app'
-        ORDER BY created_at ASC
-        LIMIT 1
-      ),
-      max_outbound AS (
-        SELECT m.conversation_id, MAX(m.created_at) AS max_at
-        FROM resupply.messages m
-        JOIN conv c ON c.id = m.conversation_id
-        WHERE m.direction = 'outbound'
-        GROUP BY m.conversation_id
-      ),
-      msg_stats AS (
-        SELECT
-          c.id AS conversation_id,
-          COUNT(m.id)::int AS message_count,
-          MAX(m.created_at) FILTER (WHERE m.direction = 'inbound')
-            AS last_inbound_at,
-          MAX(m.created_at) FILTER (WHERE m.direction = 'outbound')
-            AS last_outbound_at,
-          COUNT(m.id) FILTER (
-            WHERE m.direction = 'inbound'
-              AND m.created_at > COALESCE(mo.max_at, '-infinity'::timestamptz)
-          )::int AS unread_from_customer
-        FROM conv c
-        LEFT JOIN resupply.messages m ON m.conversation_id = c.id
-        LEFT JOIN max_outbound mo ON mo.conversation_id = c.id
-        GROUP BY c.id, mo.max_at
+    supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .select(
+        "id, product_id, rating, title, body, status, moderation_note, moderated_at, created_at, updated_at",
       )
-      SELECT
-        c.id                       AS id,
-        c.status                   AS status,
-        c.last_message_at          AS last_message_at,
-        c.created_at               AS created_at,
-        COALESCE(s.message_count, 0)        AS message_count,
-        COALESCE(s.unread_from_customer, 0) AS unread_from_customer,
-        s.last_inbound_at          AS last_inbound_at,
-        s.last_outbound_at         AS last_outbound_at
-      FROM conv c
-      LEFT JOIN msg_stats s ON s.conversation_id = c.id
-    `) as unknown as Promise<{ rows: InAppConversationRow[] }>,
-    // 6. Lifetime stats — over ALL orders (not just the recent 25
-    //    we returned), so the headline numbers are honest.
-    db.execute(sql`
-      WITH paid AS (
-        SELECT amount_total_cents, created_at
-        FROM resupply.shop_orders
-        WHERE customer_id = ${userId}
-          AND paid_at IS NOT NULL
-          AND status <> 'refunded'
-      )
-      SELECT
-        (SELECT COUNT(*)::int FROM resupply.shop_orders
-         WHERE customer_id = ${userId})                    AS orders_count,
-        COALESCE((SELECT SUM(amount_total_cents)::int FROM paid), 0)
-                                                              AS lifetime_value_cents,
-        (SELECT MIN(created_at) FROM paid)                    AS first_order_at,
-        (SELECT MAX(created_at) FROM paid)                    AS last_order_at,
-        (SELECT COUNT(*)::int FROM resupply.shop_reviews
-         WHERE customer_id = ${userId}
-           AND status = 'pending')                            AS pending_reviews_count
-    `) as unknown as Promise<{ rows: StatsRow[] }>,
+      .eq("customer_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    // 6. In-app conversation (single-thread-per-customer). The full
+    //    message stats are computed JS-side from a follow-up
+    //    messages fetch keyed on the conversation id below.
+    supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("id, status, last_message_at, created_at")
+      .eq("customer_id", userId)
+      .eq("channel", "in_app")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    // 7a. Lifetime stats — every paid+non-refunded order's
+    //     amount_total_cents and created_at, plus a head-only
+    //     count of all orders.
+    supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("amount_total_cents, paid_at, status, created_at")
+      .eq("customer_id", userId),
+    // 7b. Pending reviews count (single head-only query).
+    supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .select("*", { count: "exact", head: true })
+      .eq("customer_id", userId)
+      .eq("status", "pending"),
   ]);
+  if (customerRes.error) throw customerRes.error;
+  if (ordersRes.error) throw ordersRes.error;
+  if (subsRes.error) throw subsRes.error;
+  if (cartRes.error) throw cartRes.error;
+  if (reviewsRes.error) throw reviewsRes.error;
+  if (inAppConvRes.error) throw inAppConvRes.error;
+  if (statsOrdersRes.error) throw statsOrdersRes.error;
+  if (statsPendingReviewsRes.error) throw statsPendingReviewsRes.error;
 
-  const customerRow = customerResult.rows[0] ?? null;
-  const inAppRow = inAppResult.rows[0] ?? null;
+  const customerRow = customerRes.data ?? null;
+  const orderRows = ordersRes.data ?? [];
 
   // True 404 — neither a customer record nor any orders.
-  if (!customerRow && ordersResult.rows.length === 0) {
+  if (!customerRow && orderRows.length === 0) {
     req.log?.info(
       { userId, adminEmail: req.adminEmail },
       "admin.shop.customers.detail.not_found",
@@ -651,22 +475,100 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
     return;
   }
 
-  const statsRow = statsResult.rows[0] ?? {
-    orders_count: 0,
-    lifetime_value_cents: 0,
-    first_order_at: null,
-    last_order_at: null,
-    pending_reviews_count: 0,
-  };
+  // Item-count rollup — one bulk fetch instead of N correlated
+  // sub-queries.
+  const orderIds = orderRows.map((o) => o.id);
+  const itemCountByOrder = new Map<string, number>();
+  if (orderIds.length > 0) {
+    const { data: itemRows, error: itemsErr } = await supabase
+      .schema("resupply")
+      .from("shop_order_items")
+      .select("order_id, quantity")
+      .in("order_id", orderIds);
+    if (itemsErr) throw itemsErr;
+    for (const i of itemRows ?? []) {
+      itemCountByOrder.set(
+        i.order_id,
+        (itemCountByOrder.get(i.order_id) ?? 0) + (i.quantity ?? 0),
+      );
+    }
+  }
+
+  // In-app conversation message stats — fetch the messages and
+  // compute counts JS-side. The thread is bounded (single thread
+  // per customer; admin-only surface).
+  const inAppRow = inAppConvRes.data ?? null;
+  let inAppStats: {
+    messageCount: number;
+    unreadFromCustomer: number;
+    lastInboundAt: string | null;
+    lastOutboundAt: string | null;
+  } | null = null;
+  if (inAppRow) {
+    const { data: msgRows, error: msgErr } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .select("direction, created_at")
+      .eq("conversation_id", inAppRow.id);
+    if (msgErr) throw msgErr;
+    let messageCount = 0;
+    let lastInboundAt: string | null = null;
+    let lastOutboundAt: string | null = null;
+    for (const m of msgRows ?? []) {
+      messageCount++;
+      if (m.direction === "inbound") {
+        if (!lastInboundAt || m.created_at > lastInboundAt) {
+          lastInboundAt = m.created_at;
+        }
+      } else if (m.direction === "outbound") {
+        if (!lastOutboundAt || m.created_at > lastOutboundAt) {
+          lastOutboundAt = m.created_at;
+        }
+      }
+    }
+    // unread = inbound messages strictly after the most-recent
+    // outbound (or every inbound when there's no outbound yet).
+    const unreadCutoff = lastOutboundAt ?? "";
+    let unreadFromCustomer = 0;
+    for (const m of msgRows ?? []) {
+      if (m.direction === "inbound" && m.created_at > unreadCutoff) {
+        unreadFromCustomer++;
+      }
+    }
+    inAppStats = {
+      messageCount,
+      unreadFromCustomer,
+      lastInboundAt,
+      lastOutboundAt,
+    };
+  }
+
+  // Lifetime-stats rollup over EVERY order (not just the recent 25).
+  const allOrders = statsOrdersRes.data ?? [];
+  let lifetimeValueCents = 0;
+  let firstOrderAt: string | null = null;
+  let lastOrderAt: string | null = null;
+  for (const o of allOrders) {
+    if (o.paid_at && o.status !== "refunded") {
+      lifetimeValueCents += o.amount_total_cents ?? 0;
+      if (!firstOrderAt || o.created_at < firstOrderAt) {
+        firstOrderAt = o.created_at;
+      }
+      if (!lastOrderAt || o.created_at > lastOrderAt) {
+        lastOrderAt = o.created_at;
+      }
+    }
+  }
+  const ordersCount = allOrders.length;
+  const pendingReviewsCount = statsPendingReviewsRes.count ?? 0;
+  const avgOrderValueCents =
+    ordersCount > 0 ? Math.round(lifetimeValueCents / ordersCount) : 0;
 
   // Synthesize a minimal customer object for guest-only userIds.
-  // Pull the most-recent order's shipping address as a best-guess
-  // contact display so the admin doesn't see "Unknown customer"
-  // when there's clear order history to act on.
-  const guestSynth = !customerRow && ordersResult.rows.length > 0;
+  const guestSynth = !customerRow && orderRows.length > 0;
   const customer = customerRow
     ? {
-        userId: customerRow.user_id,
+        userId: customerRow.customer_id,
         displayName: customerRow.display_name,
         email: customerRow.email_lower,
         stripeCustomerId: customerRow.stripe_customer_id,
@@ -679,20 +581,13 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
               expYear: customerRow.default_payment_method_exp_year,
             }
           : null,
-        // Clinical info — added in PR #52, surfaced here so the CSR
-        // can answer "what device does this customer have?" and
-        // "who's their prescriber?" without bouncing to another
-        // page. Both nullable until the customer fills the form
-        // out on /account.
         clinicalInfo: {
           cpapDevice: customerRow.cpap_device_json ?? null,
           physicianInfo: customerRow.physician_info_json ?? null,
-          // Latest on-device fitter scan (PR #66). Null until the
-          // customer completes a fitter order while signed in.
           facialMeasurements: customerRow.facial_measurements_json ?? null,
         },
-        createdAt: new Date(customerRow.created_at).toISOString(),
-        updatedAt: new Date(customerRow.updated_at).toISOString(),
+        createdAt: customerRow.created_at,
+        updatedAt: customerRow.updated_at,
         isGuest: false as const,
       }
     : {
@@ -700,101 +595,81 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
         displayName: null,
         email: null,
         stripeCustomerId: null,
-        shippingAddress: ordersResult.rows[0]?.shipping_address_json ?? null,
+        shippingAddress: orderRows[0]?.shipping_address_json ?? null,
         defaultPaymentMethod: null,
-        // Guest checkouts have no shop_customers row, so they
-        // can't have stored clinical info. Surface explicit nulls
-        // so the UI doesn't have to special-case `clinicalInfo`
-        // being undefined.
         clinicalInfo: {
           cpapDevice: null,
           physicianInfo: null,
           facialMeasurements: null,
         },
-        createdAt: ordersResult.rows[ordersResult.rows.length - 1]
-          ? new Date(
-              ordersResult.rows[ordersResult.rows.length - 1]!.created_at,
-            ).toISOString()
-          : new Date().toISOString(),
-        updatedAt: ordersResult.rows[0]
-          ? new Date(ordersResult.rows[0]!.created_at).toISOString()
-          : new Date().toISOString(),
+        createdAt:
+          orderRows[orderRows.length - 1]?.created_at ??
+          new Date().toISOString(),
+        updatedAt: orderRows[0]?.created_at ?? new Date().toISOString(),
         isGuest: true as const,
       };
-
-  const ordersCount = statsRow.orders_count;
-  const lifetimeValueCents = statsRow.lifetime_value_cents;
-  const avgOrderValueCents =
-    ordersCount > 0 ? Math.round(lifetimeValueCents / ordersCount) : 0;
 
   req.log?.info(
     {
       userId,
       ordersCount,
-      subscriptionsCount: subsResult.rows.length,
-      reviewsCount: reviewsResult.rows.length,
-      hasAbandonedCart: cartResult.rows.length > 0,
+      subscriptionsCount: subsRes.data?.length ?? 0,
+      reviewsCount: reviewsRes.data?.length ?? 0,
+      hasAbandonedCart: !!cartRes.data,
       guestSynth,
       adminEmail: req.adminEmail,
     },
     "admin.shop.customers.detail",
   );
 
+  const cart = cartRes.data;
+
   res.json({
     customer,
-    orders: ordersResult.rows.map((o) => ({
+    orders: orderRows.map((o) => ({
       id: o.id,
       stripeSessionId: o.stripe_session_id,
       stripePaymentIntentId: o.stripe_payment_intent_id,
       status: o.status,
       amountTotalCents: o.amount_total_cents,
       currency: o.currency,
-      createdAt: new Date(o.created_at).toISOString(),
-      paidAt: o.paid_at ? new Date(o.paid_at).toISOString() : null,
-      shippedAt: o.shipped_at ? new Date(o.shipped_at).toISOString() : null,
-      deliveredAt: o.delivered_at
-        ? new Date(o.delivered_at).toISOString()
-        : null,
+      // PostgREST returns timestamptz as ISO string already.
+      createdAt: o.created_at,
+      paidAt: o.paid_at,
+      shippedAt: o.shipped_at,
+      deliveredAt: o.delivered_at,
       trackingCarrier: o.tracking_carrier,
       trackingNumber: o.tracking_number,
       shippingAddress: o.shipping_address_json ?? null,
-      itemCount: o.item_count,
+      itemCount: itemCountByOrder.get(o.id) ?? 0,
     })),
-    subscriptions: subsResult.rows.map((s) => ({
+    subscriptions: (subsRes.data ?? []).map((s) => ({
       id: s.id,
       stripeSubscriptionId: s.stripe_subscription_id,
       stripeCustomerId: s.stripe_customer_id,
       status: s.status,
       items: s.items ?? [],
-      currentPeriodEnd: s.current_period_end
-        ? new Date(s.current_period_end).toISOString()
-        : null,
+      currentPeriodEnd: s.current_period_end,
       cancelAtPeriodEnd: s.cancel_at_period_end,
-      canceledAt: s.canceled_at ? new Date(s.canceled_at).toISOString() : null,
+      canceledAt: s.canceled_at,
       initialAmountTotalCents: s.initial_amount_total_cents,
-      createdAt: new Date(s.created_at).toISOString(),
-      updatedAt: new Date(s.updated_at).toISOString(),
+      createdAt: s.created_at,
+      updatedAt: s.updated_at,
     })),
-    abandonedCart: cartResult.rows[0]
+    abandonedCart: cart
       ? {
-          id: cartResult.rows[0].id,
-          items: cartResult.rows[0].items ?? [],
-          subtotalCents: cartResult.rows[0].subtotal_cents,
-          currency: cartResult.rows[0].currency,
-          updatedAt: new Date(cartResult.rows[0].updated_at).toISOString(),
-          remindedAt: cartResult.rows[0].reminded_at
-            ? new Date(cartResult.rows[0].reminded_at).toISOString()
-            : null,
-          recoveredAt: cartResult.rows[0].recovered_at
-            ? new Date(cartResult.rows[0].recovered_at).toISOString()
-            : null,
-          clearedAt: cartResult.rows[0].cleared_at
-            ? new Date(cartResult.rows[0].cleared_at).toISOString()
-            : null,
-          createdAt: new Date(cartResult.rows[0].created_at).toISOString(),
+          id: cart.id,
+          items: cart.items ?? [],
+          subtotalCents: cart.subtotal_cents,
+          currency: cart.currency,
+          updatedAt: cart.updated_at,
+          remindedAt: cart.reminded_at,
+          recoveredAt: cart.recovered_at,
+          clearedAt: cart.cleared_at,
+          createdAt: cart.created_at,
         }
       : null,
-    reviews: reviewsResult.rows.map((r) => ({
+    reviews: (reviewsRes.data ?? []).map((r) => ({
       id: r.id,
       productId: r.product_id,
       rating: r.rating,
@@ -802,50 +677,31 @@ router.get("/admin/shop/customers/:userId", requireAdmin, async (req, res) => {
       body: r.body,
       status: r.status,
       moderationNote: r.moderation_note,
-      moderatedAt: r.moderated_at
-        ? new Date(r.moderated_at).toISOString()
-        : null,
-      createdAt: new Date(r.created_at).toISOString(),
-      updatedAt: new Date(r.updated_at).toISOString(),
+      moderatedAt: r.moderated_at,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
     })),
     stats: {
       ordersCount,
       lifetimeValueCents,
       avgOrderValueCents,
-      firstOrderAt: statsRow.first_order_at
-        ? new Date(statsRow.first_order_at).toISOString()
-        : null,
-      lastOrderAt: statsRow.last_order_at
-        ? new Date(statsRow.last_order_at).toISOString()
-        : null,
-      pendingReviewsCount: statsRow.pending_reviews_count,
+      firstOrderAt,
+      lastOrderAt,
+      pendingReviewsCount,
     },
-    /**
-     * In-app conversation summary — added in PR #54 (this PR).
-     * Null when the customer has never messaged customer service.
-     * The `id` field can be plugged into the existing
-     * /admin/conversations/:id detail page for the full thread +
-     * reply composer; the `unreadFromCustomer` count drives the
-     * "X new from customer" badge in the admin UI.
-     */
-    inAppConversation: inAppRow
-      ? {
-          id: inAppRow.id,
-          status: inAppRow.status,
-          messageCount: inAppRow.message_count,
-          unreadFromCustomer: inAppRow.unread_from_customer,
-          lastMessageAt: inAppRow.last_message_at
-            ? new Date(inAppRow.last_message_at).toISOString()
-            : null,
-          lastInboundAt: inAppRow.last_inbound_at
-            ? new Date(inAppRow.last_inbound_at).toISOString()
-            : null,
-          lastOutboundAt: inAppRow.last_outbound_at
-            ? new Date(inAppRow.last_outbound_at).toISOString()
-            : null,
-          createdAt: new Date(inAppRow.created_at).toISOString(),
-        }
-      : null,
+    inAppConversation:
+      inAppRow && inAppStats
+        ? {
+            id: inAppRow.id,
+            status: inAppRow.status,
+            messageCount: inAppStats.messageCount,
+            unreadFromCustomer: inAppStats.unreadFromCustomer,
+            lastMessageAt: inAppRow.last_message_at,
+            lastInboundAt: inAppStats.lastInboundAt,
+            lastOutboundAt: inAppStats.lastOutboundAt,
+            createdAt: inAppRow.created_at,
+          }
+        : null,
   });
 });
 
@@ -875,23 +731,6 @@ const reorderBody = z.object({
   sourceOrderId: z.string().trim().min(1).max(200),
 });
 
-interface SourceOrderRow {
-  id: string;
-  status: string;
-  paid_at: string | Date | null;
-  customer_id: string | null;
-}
-
-interface ItemRow {
-  price_id: string;
-  quantity: number;
-}
-
-interface CustomerLookupRow {
-  email_lower: string | null;
-  stripe_customer_id: string | null;
-}
-
 router.post(
   "/admin/shop/customers/:userId/reorder",
   requireAdmin,
@@ -916,18 +755,18 @@ router.post(
     }
     const { sourceOrderId } = bodyCheck.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
     // 1. Look up the source order. Must belong to this userId AND
     //    be paid AND not refunded.
-    const orderResult = (await db.execute(sql`
-      SELECT id, status, paid_at, customer_id
-      FROM resupply.shop_orders
-      WHERE id = ${sourceOrderId}
-      LIMIT 1
-    `)) as unknown as { rows: SourceOrderRow[] };
-
-    const order = orderResult.rows[0];
+    const { data: order, error: orderErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("id, status, paid_at, customer_id")
+      .eq("id", sourceOrderId)
+      .limit(1)
+      .maybeSingle();
+    if (orderErr) throw orderErr;
     if (!order) {
       res.status(404).json({ error: "source_order_not_found" });
       return;
@@ -946,17 +785,26 @@ router.post(
       return;
     }
 
-    // 2. Pull the source order's line items.
-    const itemsResult = (await db.execute(sql`
-      SELECT price_id, quantity
-      FROM resupply.shop_order_items
-      WHERE order_id = ${sourceOrderId}
-        AND price_id IS NOT NULL
-        AND price_id <> ''
-        AND quantity > 0
-    `)) as unknown as { rows: ItemRow[] };
+    // 2. Pull the source order's line items. The original raw SQL
+    //    rejected zero-quantity / null-price-id rows; PostgREST has
+    //    no `<>` operator on text other than `.neq()`, so we fetch
+    //    everything and filter JS-side (line-item count is bounded
+    //    per order).
+    const { data: rawItems, error: itemsErr } = await supabase
+      .schema("resupply")
+      .from("shop_order_items")
+      .select("price_id, quantity")
+      .eq("order_id", sourceOrderId);
+    if (itemsErr) throw itemsErr;
+    const items = (rawItems ?? []).filter(
+      (it): it is { price_id: string; quantity: number } =>
+        typeof it.price_id === "string" &&
+        it.price_id.length > 0 &&
+        typeof it.quantity === "number" &&
+        it.quantity > 0,
+    );
 
-    if (itemsResult.rows.length === 0) {
+    if (items.length === 0) {
       res.status(400).json({ error: "source_order_has_no_items" });
       return;
     }
@@ -964,13 +812,14 @@ router.post(
     // 3. Look up the customer mirror to decide between `customer`
     //    (preferred — keeps Stripe analytics linked) and
     //    `customer_email` (fallback for guest-checkout-only ids).
-    const customerResult = (await db.execute(sql`
-      SELECT email_lower, stripe_customer_id
-      FROM resupply.shop_customers
-      WHERE customer_id = ${userId}
-      LIMIT 1
-    `)) as unknown as { rows: CustomerLookupRow[] };
-    const customerLookup = customerResult.rows[0] ?? null;
+    const { data: customerLookup, error: customerLookupErr } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("email_lower, stripe_customer_id")
+      .eq("customer_id", userId)
+      .limit(1)
+      .maybeSingle();
+    if (customerLookupErr) throw customerLookupErr;
 
     // 4. Stripe is required from here down. In preview/dev (no
     //    secret + no public base url), surface a clean 503 the UI
@@ -1003,7 +852,7 @@ router.post(
       session = await stripe.checkout.sessions.create(
         {
           mode: "payment",
-          line_items: itemsResult.rows.map((it) => ({
+          line_items: items.map((it) => ({
             price: it.price_id,
             quantity: it.quantity,
           })),
@@ -1072,7 +921,7 @@ router.post(
         userId,
         sourceOrderId,
         sessionId: session.id,
-        lineItemCount: itemsResult.rows.length,
+        lineItemCount: items.length,
         adminEmail: req.adminEmail,
       },
       "admin.shop.customers.reorder",

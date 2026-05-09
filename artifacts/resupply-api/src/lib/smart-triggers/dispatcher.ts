@@ -11,29 +11,23 @@
 //
 // Concurrency / double-send prevention
 // -------------------------------------
-// Uses an atomic claim pattern (identical to the abandoned-carts and
-// review-requests dispatchers). A single CTE UPDATE stamps sent_at =
-// now() for up to PER_RUN_SEND_CAP eligible rows in one statement and
-// RETURNS the claimed rows. Two concurrent dispatchers observe
-// non-overlapping sets because FOR UPDATE SKIP LOCKED skips rows held
-// by another connection. A row whose send subsequently fails is
-// unclaimed (sent_at → NULL) so the next cron tick can retry it;
-// the only way sent_at stays stamped is when delivery succeeded.
+// The original Drizzle path used a single `WITH … FOR UPDATE SKIP
+// LOCKED` CTE so two concurrent dispatchers picked up disjoint
+// slices of the queue. PostgREST has no SKIP LOCKED, so we
+// approximate with the SELECT-then-UPDATE-with-null-guard pattern
+// the abandoned-cart and review-request dispatchers use:
 //
-// Audit posture matches the route: every successful send writes
-// `patient.smart_trigger.sent` with channel + patient_id + kind in
-// metadata. Push fan-out runs after the audit on a best-effort
-// basis (Phase G.8) and never rolls back the canonical email/SMS.
-
-import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
+//   1. SELECT eligible event ids (sent_at IS NULL, dismissed_at
+//      IS NULL, capped at PER_RUN_SEND_CAP*4 and JS-filtered by
+//      patient status + contact channel).
+//   2. UPDATE WHERE id IN (...) AND sent_at IS NULL — Postgres
+//      serialises the row writes, so a parallel dispatcher's
+//      UPDATE matches zero rows and does no work.
+//   3. On send failure unclaim (sent_at → NULL) so the next cron
+//      tick can retry the row.
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  patientSmartTriggerEvents,
-  patients,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   createSendgridClient,
   EmailApiError,
@@ -92,7 +86,7 @@ export async function runSmartTriggerSendDue(
   actor: DispatcherActor,
   renderers: SmartTriggerRenderers,
 ): Promise<DispatcherOutcome> {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   let sg: ReturnType<typeof createSendgridClient> | null = null;
   let sms: ReturnType<typeof createTwilioSmsClient> | null = null;
@@ -116,55 +110,22 @@ export async function runSmartTriggerSendDue(
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // Atomic claim. One CTE UPDATE stamps sent_at = now() for up to
-  // PER_RUN_SEND_CAP eligible rows and RETURNs their ids. Two
-  // concurrent dispatchers (cron + admin "Run now") observe
-  // non-overlapping sets because FOR UPDATE OF <events-table>
-  // SKIP LOCKED skips rows already held by another connection.
-  //
-  // The channel-specific contact filter (email / phone_e164 IS NOT
-  // NULL) and the patients.status = 'active' guard are applied inside
-  // the CTE so we never claim a row we cannot actually dispatch.
-  //
-  // On send failure the row is unclaimed (sent_at → NULL) so the next
-  // cron tick can retry. The only way a row stays stamped is when the
-  // delivery actually succeeded.
-  // ──────────────────────────────────────────────────────────────────
-  const contactFilter =
-    channel === "email"
-      ? sql`${patients.email} IS NOT NULL`
-      : sql`${patients.phoneE164} IS NOT NULL`;
+  // Step 1 — pick eligible events. We over-fetch by 4x the send cap
+  // because the channel-specific contact filter (email / phone_e164
+  // present) and the patient-active filter run JS-side in step 2; a
+  // batch with many ineligible rows would otherwise short-deliver.
+  const { data: eventCandidates, error: candidatesErr } = await supabase
+    .schema("resupply")
+    .from("patient_smart_trigger_events")
+    .select("id, patient_id, kind")
+    .is("sent_at", null)
+    .is("dismissed_at", null)
+    .order("detected_at", { ascending: true })
+    .limit(PER_RUN_SEND_CAP * 4);
+  if (candidatesErr) throw candidatesErr;
+  const events = eventCandidates ?? [];
 
-  const claimedRaw = await db.execute(sql`
-    WITH eligible AS (
-      SELECT ${patientSmartTriggerEvents.id}
-      FROM   ${patientSmartTriggerEvents}
-      INNER JOIN ${patients}
-             ON ${patients.id} = ${patientSmartTriggerEvents.patientId}
-      WHERE  ${patientSmartTriggerEvents.sentAt} IS NULL
-        AND  ${patientSmartTriggerEvents.dismissedAt} IS NULL
-        AND  ${patients.status} = 'active'
-        AND  ${contactFilter}
-      ORDER BY ${patientSmartTriggerEvents.detectedAt} ASC
-      LIMIT    ${PER_RUN_SEND_CAP}
-      FOR UPDATE OF ${patientSmartTriggerEvents} SKIP LOCKED
-    )
-    UPDATE ${patientSmartTriggerEvents}
-       SET sent_at    = now(),
-           updated_at = now()
-     WHERE id IN (SELECT ${patientSmartTriggerEvents.id} FROM eligible)
-    RETURNING id         AS "eventId",
-              patient_id AS "patientId",
-              kind
-  `);
-  const claimed = (claimedRaw.rows ?? []) as Array<{
-    eventId: string;
-    patientId: string;
-    kind: string;
-  }>;
-
-  if (claimed.length === 0) {
+  if (events.length === 0) {
     return {
       status: "ok",
       channel,
@@ -176,23 +137,86 @@ export async function runSmartTriggerSendDue(
     };
   }
 
-  // Batch-fetch patient contact info for all claimed events.
-  // Single query — never N+1.
-  const patientIds = [...new Set(claimed.map((r) => r.patientId))];
-  const patientRows = await db
-    .select({
-      id: patients.id,
-      firstName: patients.legalFirstName,
-      email: patients.email,
-      phoneE164: patients.phoneE164,
+  // Step 2 — bulk-fetch the patient contact records and filter
+  // JS-side. Patient list is bounded by event count so the
+  // round-trip is cheap.
+  const patientIds = Array.from(new Set(events.map((e) => e.patient_id)));
+  const { data: patientRows, error: patientsErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id, legal_first_name, email, phone_e164, status")
+    .in("id", patientIds);
+  if (patientsErr) throw patientsErr;
+  const patientMap = new Map(
+    (patientRows ?? []).map((p) => [
+      p.id,
+      {
+        firstName: p.legal_first_name,
+        email: p.email,
+        phoneE164: p.phone_e164,
+        status: p.status,
+      },
+    ]),
+  );
+
+  // Filter to only events whose patient is active AND has the right
+  // contact channel populated. Then truncate to the per-run cap.
+  const eligible = events
+    .filter((e) => {
+      const p = patientMap.get(e.patient_id);
+      if (!p || p.status !== "active") return false;
+      const contact = channel === "email" ? p.email : p.phoneE164;
+      return contact !== null && contact !== "";
     })
-    .from(patients)
-    .where(sql`${patients.id} = ANY(${patientIds})`);
-  const patientMap = new Map(patientRows.map((p) => [p.id, p]));
+    .slice(0, PER_RUN_SEND_CAP);
+  if (eligible.length === 0) {
+    return {
+      status: "ok",
+      channel,
+      attempted: 0,
+      sent: 0,
+      failed: 0,
+      skippedNoContact: 0,
+      remaining: events.length > 0 ? 1 : 0,
+    };
+  }
+
+  // Step 3 — atomic claim. The .is("sent_at", null) guard makes
+  // this idempotent under parallel dispatchers; the loser sees
+  // zero rows match and does no work.
+  const nowIso = new Date().toISOString();
+  const eligibleIds = eligible.map((e) => e.id);
+  const { data: claimedRows, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("patient_smart_trigger_events")
+    .update({ sent_at: nowIso, updated_at: nowIso })
+    .in("id", eligibleIds)
+    .is("sent_at", null)
+    .select("id, patient_id, kind");
+  if (claimErr) throw claimErr;
+  const claimed = (claimedRows ?? []).map((r) => ({
+    eventId: r.id,
+    patientId: r.patient_id,
+    kind: r.kind,
+  }));
 
   let attempted = 0;
   let sent = 0;
   let failed = 0;
+
+  const unclaim = async (eventId: string): Promise<void> => {
+    const { error } = await supabase
+      .schema("resupply")
+      .from("patient_smart_trigger_events")
+      .update({ sent_at: null, updated_at: new Date().toISOString() })
+      .eq("id", eventId);
+    if (error) {
+      logger.warn(
+        { event_id: eventId, err: error },
+        "smart-trigger unclaim failed",
+      );
+    }
+  };
 
   for (const row of claimed) {
     attempted++;
@@ -202,12 +226,7 @@ export async function runSmartTriggerSendDue(
     if (!contact) {
       // Defensive: contact removed between claim and dispatch. Unclaim
       // so the next run re-evaluates (patient may add contact later).
-      await db.execute(sql`
-        UPDATE ${patientSmartTriggerEvents}
-           SET sent_at    = NULL,
-               updated_at = now()
-         WHERE id = ${row.eventId}
-      `);
+      await unclaim(row.eventId);
       failed++;
       logger.warn(
         { event_id: row.eventId, channel },
@@ -319,12 +338,7 @@ export async function runSmartTriggerSendDue(
       sent++;
     } catch (err) {
       // Unclaim so the next cron tick can retry.
-      await db.execute(sql`
-        UPDATE ${patientSmartTriggerEvents}
-           SET sent_at    = NULL,
-               updated_at = now()
-         WHERE id = ${row.eventId}
-      `);
+      await unclaim(row.eventId);
       failed++;
       logger.warn(
         { err, event_id: row.eventId, channel },
@@ -339,7 +353,7 @@ export async function runSmartTriggerSendDue(
     attempted,
     sent,
     failed,
-    skippedNoContact: 0, // contact filter is applied inside the claim CTE
-    remaining: claimed.length >= PER_RUN_SEND_CAP ? 1 : 0,
+    skippedNoContact: 0, // contact filter is applied during candidate-eligibility
+    remaining: events.length > eligible.length || claimed.length >= PER_RUN_SEND_CAP ? 1 : 0,
   };
 }

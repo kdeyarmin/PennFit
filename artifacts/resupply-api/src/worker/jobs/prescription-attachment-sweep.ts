@@ -124,16 +124,10 @@
 //                                 something else is writing to the
 //                                 bucket.
 
-import { eq, isNotNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import type PgBoss from "pg-boss";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  messageAttachments,
-  prescriptions,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import {
@@ -338,8 +332,7 @@ export function buildProductionSweepDeps(
   asOf: Date,
   graceMs: number,
 ): SweepDeps {
-  const pool = getDbPool();
-  const db = drizzle(pool);
+  const supabase = getSupabaseServiceRoleClient();
   return {
     asOf,
     graceMs,
@@ -347,48 +340,53 @@ export function buildProductionSweepDeps(
     attachmentKeyOf: (n) => attachmentKeyForObjectName(n),
     loadReferencedKeys: async () => {
       // Two SELECTs (one per writer) instead of a single UNION SQL —
-      // schema lives in one place (drizzle), the result Set is built
-      // in one place (here), and the queries fan out cleanly to
-      // whichever pool replica is available. Cost is identical in
+      // PostgREST has no UNION, the result Set is built in one place
+      // (here), and the queries fan out cleanly. Cost is identical in
       // practice: both columns are hit by their primary lookup paths
       // and row counts are O(thousands) per table at production
       // scale. A key present in BOTH tables is correctly counted
       // once thanks to Set semantics.
       const set = new Set<string>();
-      const [presRows, msgRows] = await Promise.all([
-        db
-          .select({ key: prescriptions.attachmentObjectKey })
-          .from(prescriptions)
-          .where(isNotNull(prescriptions.attachmentObjectKey)),
-        db
-          .select({ key: messageAttachments.objectKey })
-          .from(messageAttachments),
+      const [presRes, msgRes] = await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("prescriptions")
+          .select("attachment_object_key")
+          .not("attachment_object_key", "is", null),
+        supabase
+          .schema("resupply")
+          .from("message_attachments")
+          .select("object_key"),
       ]);
-      for (const r of presRows) {
-        if (r.key) set.add(r.key);
+      if (presRes.error) throw presRes.error;
+      if (msgRes.error) throw msgRes.error;
+      for (const r of presRes.data ?? []) {
+        if (r.attachment_object_key) set.add(r.attachment_object_key);
       }
-      for (const r of msgRows) {
-        if (r.key) set.add(r.key);
+      for (const r of msgRes.data ?? []) {
+        if (r.object_key) set.add(r.object_key);
       }
       return set;
     },
     isStillReferenced: async (attachmentKey) => {
       // Pre-delete recheck — same widening as loadReferencedKeys:
       // either writer claiming the key counts as "still referenced".
-      // Two LIMIT 1 SELECTs in parallel.
-      const [presRows, msgRows] = await Promise.all([
-        db
-          .select({ id: prescriptions.id })
-          .from(prescriptions)
-          .where(eq(prescriptions.attachmentObjectKey, attachmentKey))
-          .limit(1),
-        db
-          .select({ id: messageAttachments.id })
-          .from(messageAttachments)
-          .where(eq(messageAttachments.objectKey, attachmentKey))
-          .limit(1),
+      // Two head:true count probes in parallel.
+      const [presRes, msgRes] = await Promise.all([
+        supabase
+          .schema("resupply")
+          .from("prescriptions")
+          .select("*", { count: "exact", head: true })
+          .eq("attachment_object_key", attachmentKey),
+        supabase
+          .schema("resupply")
+          .from("message_attachments")
+          .select("*", { count: "exact", head: true })
+          .eq("object_key", attachmentKey),
       ]);
-      return presRows.length > 0 || msgRows.length > 0;
+      if (presRes.error) throw presRes.error;
+      if (msgRes.error) throw msgRes.error;
+      return (presRes.count ?? 0) > 0 || (msgRes.count ?? 0) > 0;
     },
     deleteObject: async (bucketName, objectName) => {
       try {

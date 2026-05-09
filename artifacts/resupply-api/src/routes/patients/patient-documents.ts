@@ -22,14 +22,15 @@
 //   DELETE /patients/:id/documents/:docId
 //     Best-effort deletes GCS bytes, then removes the DB row.
 
-import { and, desc, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patientDocuments } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Database,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -37,6 +38,9 @@ import {
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+type PatientDocumentUpdate =
+  Database["resupply"]["Tables"]["patient_documents"]["Update"];
 
 const idsParam = z.object({
   id: z.string().uuid(),
@@ -67,41 +71,39 @@ async function markReviewedIfNeeded(
   adminUserId: string | null,
   note?: string,
 ): Promise<{ found: boolean; updated: boolean }> {
-  const db = drizzle(getDbPool());
-  const now = new Date();
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
 
-  const touched = await db
-    .update(patientDocuments)
-    .set({
-      reviewedAt: now,
-      reviewedByAdminId: adminUserId ?? null,
-      ...(note !== undefined ? { reviewNote: note } : {}),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(patientDocuments.id, docId),
-        eq(patientDocuments.patientId, patientId),
-        isNull(patientDocuments.reviewedAt),
-      ),
-    )
-    .returning({ id: patientDocuments.id });
+  const updates: PatientDocumentUpdate = {
+    reviewed_at: nowIso,
+    reviewed_by_admin_id: adminUserId ?? null,
+    updated_at: nowIso,
+  };
+  if (note !== undefined) updates.review_note = note;
 
-  if (touched.length > 0) return { found: true, updated: true };
+  const { data: touched, error: updateErr } = await supabase
+    .schema("resupply")
+    .from("patient_documents")
+    .update(updates)
+    .eq("id", docId)
+    .eq("patient_id", patientId)
+    .is("reviewed_at", null)
+    .select("id");
+  if (updateErr) throw updateErr;
+  if ((touched ?? []).length > 0) return { found: true, updated: true };
 
   // 0 rows updated — either already reviewed or doesn't exist.
-  const exists = await db
-    .select({ id: patientDocuments.id })
-    .from(patientDocuments)
-    .where(
-      and(
-        eq(patientDocuments.id, docId),
-        eq(patientDocuments.patientId, patientId),
-      ),
-    )
-    .limit(1);
+  const { data: existing, error: existsErr } = await supabase
+    .schema("resupply")
+    .from("patient_documents")
+    .select("id")
+    .eq("id", docId)
+    .eq("patient_id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (existsErr) throw existsErr;
 
-  return { found: exists.length > 0, updated: false };
+  return { found: existing !== null, updated: false };
 }
 
 router.get("/patients/:id/documents", requireAdmin, async (req, res) => {
@@ -111,24 +113,30 @@ router.get("/patients/:id/documents", requireAdmin, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: patientDocuments.id,
-      documentType: patientDocuments.documentType,
-      filename: patientDocuments.filename,
-      contentType: patientDocuments.contentType,
-      sizeBytes: patientDocuments.sizeBytes,
-      createdAt: patientDocuments.createdAt,
-      reviewedAt: patientDocuments.reviewedAt,
-      reviewedByAdminId: patientDocuments.reviewedByAdminId,
-      reviewNote: patientDocuments.reviewNote,
-    })
-    .from(patientDocuments)
-    .where(eq(patientDocuments.patientId, param.data.id))
-    .orderBy(desc(patientDocuments.createdAt));
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("patient_documents")
+    .select(
+      "id, document_type, filename, content_type, size_bytes, created_at, reviewed_at, reviewed_by_admin_id, review_note",
+    )
+    .eq("patient_id", param.data.id)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
 
-  res.json({ documents: rows });
+  res.json({
+    documents: (rows ?? []).map((r) => ({
+      id: r.id,
+      documentType: r.document_type,
+      filename: r.filename,
+      contentType: r.content_type,
+      sizeBytes: r.size_bytes,
+      createdAt: r.created_at,
+      reviewedAt: r.reviewed_at,
+      reviewedByAdminId: r.reviewed_by_admin_id,
+      reviewNote: r.review_note,
+    })),
+  });
 });
 
 router.get(
@@ -141,24 +149,16 @@ router.get(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        id: patientDocuments.id,
-        objectKey: patientDocuments.objectKey,
-        filename: patientDocuments.filename,
-        reviewedAt: patientDocuments.reviewedAt,
-      })
-      .from(patientDocuments)
-      .where(
-        and(
-          eq(patientDocuments.id, ids.data.docId),
-          eq(patientDocuments.patientId, ids.data.id),
-        ),
-      )
-      .limit(1);
-
-    const doc = rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: doc, error } = await supabase
+      .schema("resupply")
+      .from("patient_documents")
+      .select("id, object_key, filename, reviewed_at")
+      .eq("id", ids.data.docId)
+      .eq("patient_id", ids.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!doc) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -166,7 +166,7 @@ router.get(
 
     let file;
     try {
-      file = await objectStorage.getObjectEntityFile(doc.objectKey);
+      file = await objectStorage.getObjectEntityFile(doc.object_key);
     } catch (err) {
       if (err instanceof ObjectNotFoundError) {
         res.status(404).json({ error: "not_found" });
@@ -297,22 +297,16 @@ router.delete(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        id: patientDocuments.id,
-        objectKey: patientDocuments.objectKey,
-      })
-      .from(patientDocuments)
-      .where(
-        and(
-          eq(patientDocuments.id, ids.data.docId),
-          eq(patientDocuments.patientId, ids.data.id),
-        ),
-      )
-      .limit(1);
-
-    const doc = rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: doc, error } = await supabase
+      .schema("resupply")
+      .from("patient_documents")
+      .select("id, object_key")
+      .eq("id", ids.data.docId)
+      .eq("patient_id", ids.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!doc) {
       res.status(200).json({ ok: true }); // idempotent
       return;
@@ -320,7 +314,7 @@ router.delete(
 
     let bytesDeleted: boolean | "errored";
     try {
-      const objectFile = await objectStorage.getObjectEntityFile(doc.objectKey);
+      const objectFile = await objectStorage.getObjectEntityFile(doc.object_key);
       await objectFile.delete();
       bytesDeleted = true;
     } catch (err) {
@@ -332,9 +326,12 @@ router.delete(
       }
     }
 
-    await db
-      .delete(patientDocuments)
-      .where(eq(patientDocuments.id, doc.id));
+    const { error: deleteErr } = await supabase
+      .schema("resupply")
+      .from("patient_documents")
+      .delete()
+      .eq("id", doc.id);
+    if (deleteErr) throw deleteErr;
 
     await logAudit({
       action: "patient.document.admin_remove",

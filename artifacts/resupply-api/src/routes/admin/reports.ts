@@ -13,10 +13,8 @@
 // reference cash-pay orders.
 
 import { Router, type IRouter } from "express";
-import { and, gte, lte, desc } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { getDbPool, shopOrders, shopReturns } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -63,26 +61,17 @@ function setCsvHeaders(res: import("express").Response, filename: string) {
 
 router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
   const { from, to } = parseRange(req);
-  const db = drizzle(getDbPool());
-  const orders = await db
-    .select({
-      id: shopOrders.id,
-      sessionId: shopOrders.stripeSessionId,
-      paymentIntentId: shopOrders.stripePaymentIntentId,
-      status: shopOrders.status,
-      amountTotalCents: shopOrders.amountTotalCents,
-      currency: shopOrders.currency,
-      customerId: shopOrders.customerId,
-      createdAt: shopOrders.createdAt,
-      paidAt: shopOrders.paidAt,
-      shippedAt: shopOrders.shippedAt,
-      deliveredAt: shopOrders.deliveredAt,
-      trackingCarrier: shopOrders.trackingCarrier,
-      trackingNumber: shopOrders.trackingNumber,
-    })
-    .from(shopOrders)
-    .where(and(gte(shopOrders.createdAt, from), lte(shopOrders.createdAt, to)))
-    .orderBy(desc(shopOrders.createdAt));
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: orders, error } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select(
+      "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number",
+    )
+    .gte("created_at", from.toISOString())
+    .lte("created_at", to.toISOString())
+    .order("created_at", { ascending: false });
+  if (error) throw error;
 
   // Line-item joining is intentionally not in the orders CSV — the
   // returns CSV below carries it via shop_returns.exchangeProductId.
@@ -111,21 +100,23 @@ router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
   ];
   res.write(headers.join(",") + "\n");
 
-  for (const o of orders) {
+  for (const o of orders ?? []) {
     const row = [
       o.id,
-      o.sessionId,
-      o.paymentIntentId,
+      o.stripe_session_id,
+      o.stripe_payment_intent_id,
       o.status,
-      o.amountTotalCents !== null ? (o.amountTotalCents / 100).toFixed(2) : "",
+      o.amount_total_cents !== null
+        ? (o.amount_total_cents / 100).toFixed(2)
+        : "",
       o.currency,
-      o.customerId,
-      o.createdAt.toISOString(),
-      o.paidAt?.toISOString(),
-      o.shippedAt?.toISOString(),
-      o.deliveredAt?.toISOString(),
-      o.trackingCarrier,
-      o.trackingNumber,
+      o.customer_id,
+      o.created_at,
+      o.paid_at,
+      o.shipped_at,
+      o.delivered_at,
+      o.tracking_carrier,
+      o.tracking_number,
     ];
     res.write(row.map(escapeCsv).join(",") + "\n");
   }
@@ -134,14 +125,15 @@ router.get("/admin/reports/orders.csv", requireAdmin, async (req, res) => {
 
 router.get("/admin/reports/returns.csv", requireAdmin, async (req, res) => {
   const { from, to } = parseRange(req);
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select()
-    .from(shopReturns)
-    .where(
-      and(gte(shopReturns.createdAt, from), lte(shopReturns.createdAt, to)),
-    )
-    .orderBy(desc(shopReturns.createdAt));
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("shop_returns")
+    .select("*")
+    .gte("created_at", from.toISOString())
+    .lte("created_at", to.toISOString())
+    .order("created_at", { ascending: false });
+  if (error) throw error;
 
   setCsvHeaders(
     res,
@@ -166,22 +158,22 @@ router.get("/admin/reports/returns.csv", requireAdmin, async (req, res) => {
   ];
   res.write(headers.join(",") + "\n");
 
-  for (const r of rows) {
+  for (const r of rows ?? []) {
     const row = [
       r.id,
-      r.orderId,
-      r.stripeSessionId,
+      r.order_id,
+      r.stripe_session_id,
       r.status,
       r.reason,
       r.resolution,
-      r.refundCents !== null ? (r.refundCents / 100).toFixed(2) : "",
-      r.stripeRefundId,
-      r.exchangeProductId,
-      r.createdAt.toISOString(),
-      r.approvedAt?.toISOString(),
-      r.receivedAt?.toISOString(),
-      r.resolvedAt?.toISOString(),
-      r.closedAt?.toISOString(),
+      r.refund_cents !== null ? (r.refund_cents / 100).toFixed(2) : "",
+      r.stripe_refund_id,
+      r.exchange_product_id,
+      r.created_at,
+      r.approved_at,
+      r.received_at,
+      r.resolved_at,
+      r.closed_at,
     ];
     res.write(row.map(escapeCsv).join(",") + "\n");
   }

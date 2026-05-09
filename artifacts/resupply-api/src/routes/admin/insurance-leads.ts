@@ -22,18 +22,18 @@
 //   the patients/conversations endpoints.
 
 import { Router, type IRouter } from "express";
-import { desc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
-  getDbPool,
+  type Database,
   INSURANCE_LEAD_STATUSES,
-  insuranceLeads,
   type InsuranceLeadStatus,
+  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
+
+type InsuranceLeadsUpdate = Database["resupply"]["Tables"]["insurance_leads"]["Update"];
 
 const router: IRouter = Router();
 
@@ -88,85 +88,82 @@ router.get("/admin/shop/insurance-leads", requireAdmin, async (req, res) => {
     return;
   }
   const { status, limit } = parsed.data;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const where =
-    status === "all" ? undefined : eq(insuranceLeads.status, status);
-
-  const rows = await db
-    .select({
-      id: insuranceLeads.id,
-      fullName: insuranceLeads.fullName,
-      email: insuranceLeads.email,
-      phone: insuranceLeads.phone,
-      dateOfBirth: insuranceLeads.dateOfBirth,
-      insuranceCarrier: insuranceLeads.insuranceCarrier,
-      memberId: insuranceLeads.memberId,
-      groupNumber: insuranceLeads.groupNumber,
-      prescribingPhysician: insuranceLeads.prescribingPhysician,
-      notes: insuranceLeads.notes,
-      status: insuranceLeads.status,
-      csrNote: insuranceLeads.csrNote,
-      notificationEmailDelivered: insuranceLeads.notificationEmailDelivered,
-      confirmationEmailDelivered: insuranceLeads.confirmationEmailDelivered,
-      moderatedAt: insuranceLeads.moderatedAt,
-      moderatedBy: insuranceLeads.moderatedBy,
-      createdAt: insuranceLeads.createdAt,
-      updatedAt: insuranceLeads.updatedAt,
-    })
-    .from(insuranceLeads)
-    .where(where)
-    .orderBy(desc(insuranceLeads.createdAt))
+  let leadsQuery = supabase
+    .schema("resupply")
+    .from("insurance_leads")
+    .select("*")
+    .order("created_at", { ascending: false })
     .limit(limit);
+  if (status !== "all") leadsQuery = leadsQuery.eq("status", status);
+  const { data: rows, error: listErr } = await leadsQuery;
+  if (listErr) throw listErr;
 
-  // Status counts for the small KPI strip above the table. One
-  // GROUP BY query rather than five separate counts. The strip is
-  // computed over the whole table (not the filtered list) so the
-  // admin can see "10 new" even while filtered to "verified".
-  const countRows = await db
-    .select({
-      status: insuranceLeads.status,
-      n: sql<number>`count(*)::int`,
-    })
-    .from(insuranceLeads)
-    .groupBy(insuranceLeads.status);
+  // Status counts for the KPI strip above the table. PostgREST has
+  // no GROUP BY, so we run four parallel count(head=true) queries.
+  // Each is index-backed by the (status, created_at) partial index.
+  const [newCount, contactedCount, verifiedCount, closedCount] =
+    await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("insurance_leads")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "new"),
+      supabase
+        .schema("resupply")
+        .from("insurance_leads")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "contacted"),
+      supabase
+        .schema("resupply")
+        .from("insurance_leads")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "verified"),
+      supabase
+        .schema("resupply")
+        .from("insurance_leads")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "closed"),
+    ]);
+
+  if (newCount.error) throw newCount.error;
+  if (contactedCount.error) throw contactedCount.error;
+  if (verifiedCount.error) throw verifiedCount.error;
+  if (closedCount.error) throw closedCount.error;
+
   const counts: Record<InsuranceLeadStatus, number> = {
-    new: 0,
-    contacted: 0,
-    verified: 0,
-    closed: 0,
+    new: newCount.count ?? 0,
+    contacted: contactedCount.count ?? 0,
+    verified: verifiedCount.count ?? 0,
+    closed: closedCount.count ?? 0,
   };
-  for (const r of countRows) {
-    if (r.status in counts) {
-      counts[r.status as InsuranceLeadStatus] = r.n;
-    }
-  }
 
   req.log?.info?.(
-    { rowCount: rows.length, filter: status, counts },
+    { rowCount: rows?.length ?? 0, filter: status, counts },
     "admin/shop/insurance-leads: list",
   );
 
   res.json({
-    rows: rows.map((r) => ({
+    rows: (rows ?? []).map((r) => ({
       id: r.id,
-      fullName: r.fullName,
+      fullName: r.full_name,
       email: r.email,
       phone: r.phone,
-      dateOfBirth: r.dateOfBirth,
-      insuranceCarrier: r.insuranceCarrier,
-      memberId: r.memberId,
-      groupNumber: r.groupNumber,
-      prescribingPhysician: r.prescribingPhysician,
+      dateOfBirth: r.date_of_birth,
+      insuranceCarrier: r.insurance_carrier,
+      memberId: r.member_id,
+      groupNumber: r.group_number,
+      prescribingPhysician: r.prescribing_physician,
       notes: r.notes,
       status: r.status,
-      csrNote: r.csrNote,
-      notificationEmailDelivered: r.notificationEmailDelivered,
-      confirmationEmailDelivered: r.confirmationEmailDelivered,
-      moderatedAt: r.moderatedAt ? r.moderatedAt.toISOString() : null,
-      moderatedBy: r.moderatedBy,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
+      csrNote: r.csr_note,
+      notificationEmailDelivered: r.notification_email_delivered,
+      confirmationEmailDelivered: r.confirmation_email_delivered,
+      moderatedAt: r.moderated_at,
+      moderatedBy: r.moderated_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
     })),
     counts,
   });
@@ -198,28 +195,26 @@ router.patch(
 
     // Build the partial update set explicitly so we never overwrite
     // fields the caller didn't intend to touch.
-    const update: Record<string, unknown> = {
-      updatedAt: sql`now()`,
-      moderatedAt: sql`now()`,
-      moderatedBy: req.adminEmail ?? null,
+    const nowIso = new Date().toISOString();
+    const update: InsuranceLeadsUpdate = {
+      updated_at: nowIso,
+      moderated_at: nowIso,
+      moderated_by: req.adminEmail ?? null,
     };
     if (parse.data.status !== undefined) update.status = parse.data.status;
-    if (parse.data.csrNote !== undefined) update.csrNote = parse.data.csrNote;
+    if (parse.data.csrNote !== undefined) update.csr_note = parse.data.csrNote;
 
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(insuranceLeads)
-      .set(update)
-      .where(eq(insuranceLeads.id, idParam))
-      .returning({
-        id: insuranceLeads.id,
-        status: insuranceLeads.status,
-        csrNote: insuranceLeads.csrNote,
-        moderatedAt: insuranceLeads.moderatedAt,
-        moderatedBy: insuranceLeads.moderatedBy,
-        updatedAt: insuranceLeads.updatedAt,
-      });
-    const row = updated[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("insurance_leads")
+      .update(update)
+      .eq("id", idParam)
+      .select(
+        "id, status, csr_note, moderated_at, moderated_by, updated_at",
+      )
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       res.status(404).json({ error: "not_found" });
       return;
@@ -238,10 +233,10 @@ router.patch(
     res.json({
       id: row.id,
       status: row.status,
-      csrNote: row.csrNote,
-      moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
-      moderatedBy: row.moderatedBy,
-      updatedAt: row.updatedAt.toISOString(),
+      csrNote: row.csr_note,
+      moderatedAt: row.moderated_at,
+      moderatedBy: row.moderated_by,
+      updatedAt: row.updated_at,
     });
   },
 );

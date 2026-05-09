@@ -29,24 +29,29 @@
 // sensitive. We log event id + type + amount only.
 
 import type { Request, RequestHandler, Response } from "express";
-import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { drizzle } from "drizzle-orm/node-postgres";
 import type Stripe from "stripe";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getDbPool,
-  shopCustomers,
-  shopAbandonedCarts,
-  shopOrders,
-  shopOrderItems,
-  shopSubscriptions,
-  type InsertShopOrderItemRow,
+  getSupabaseServiceRoleClient,
+  type Database,
+  type Json,
   type ShopSubscriptionItemSnapshot,
 } from "@workspace/resupply-db";
 
 import type { SavedShippingAddress } from "@workspace/resupply-db";
+
+type ShopOrderUpdate =
+  Database["resupply"]["Tables"]["shop_orders"]["Update"];
+type ShopOrderItemInsert =
+  Database["resupply"]["Tables"]["shop_order_items"]["Insert"];
+type ShopCustomerInsert =
+  Database["resupply"]["Tables"]["shop_customers"]["Insert"];
+type ShopCustomerUpdate =
+  Database["resupply"]["Tables"]["shop_customers"]["Update"];
+type ShopSubscriptionUpdate =
+  Database["resupply"]["Tables"]["shop_subscriptions"]["Update"];
 
 import {
   getStripeClient,
@@ -406,7 +411,7 @@ async function markPaid(
   session: Stripe.Checkout.Session,
   log: { info?: (...args: unknown[]) => void } | undefined,
 ): Promise<PaidOrderRow | null> {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   const paymentIntentId =
     typeof session.payment_intent === "string"
       ? session.payment_intent
@@ -435,42 +440,42 @@ async function markPaid(
   const sessionEmailRaw = session.customer_details?.email?.trim();
   const customerEmail = sessionEmailRaw ? sessionEmailRaw.toLowerCase() : null;
 
-  // Returning the row so the line-item upsert downstream can copy
-  // (orderId, customerId, paidAt) without a second SELECT.
-  const updated = await db
-    .update(shopOrders)
-    .set({
-      status: "paid",
-      stripePaymentIntentId: paymentIntentId,
-      amountTotalCents: session.amount_total ?? null,
-      currency: session.currency ?? null,
-      ...(customerId ? { customerId } : {}),
-      // Only write the snapshot if Stripe actually gave us one.
-      // Skipping the key on null preserves any later admin edit on
-      // a Stripe re-delivery (charge.refunded → no shipping_details).
-      ...(shippingAddress ? { shippingAddress } : {}),
-      // Same posture for customer_email: only write when present.
-      ...(customerEmail ? { customerEmail } : {}),
-      paidAt: sql`now()`,
-      updatedAt: sql`now()`,
-    })
-    .where(eq(shopOrders.stripeSessionId, session.id))
-    .returning({
-      id: shopOrders.id,
-      customerId: shopOrders.customerId,
-      paidAt: shopOrders.paidAt,
-    });
+  const nowIso = new Date().toISOString();
+  const update: ShopOrderUpdate = {
+    status: "paid",
+    stripe_payment_intent_id: paymentIntentId,
+    amount_total_cents: session.amount_total ?? null,
+    currency: session.currency ?? null,
+    paid_at: nowIso,
+    updated_at: nowIso,
+  };
+  if (customerId) update.customer_id = customerId;
+  // Only write the snapshot if Stripe actually gave us one. Skipping
+  // the key on null preserves any later admin edit on a Stripe
+  // re-delivery (charge.refunded → no shipping_details).
+  if (shippingAddress) {
+    update.shipping_address_json = shippingAddress as unknown as Json;
+  }
+  if (customerEmail) update.customer_email = customerEmail;
+
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .update(update)
+    .eq("stripe_session_id", session.id)
+    .select("id, customer_id, paid_at");
+  if (error) throw error;
 
   log?.info?.({ amountCents: session.amount_total }, "shop order marked paid");
 
-  const row = updated[0];
+  const row = rows?.[0];
   if (!row) return null;
   return {
     id: row.id,
-    customerId: row.customerId,
-    // paidAt was just set to now() above and is non-null on the
+    customerId: row.customer_id,
+    // paid_at was just set to nowIso above and is non-null on the
     // returned row.
-    paidAt: row.paidAt ?? new Date(),
+    paidAt: row.paid_at ? new Date(row.paid_at) : new Date(),
   };
 }
 
@@ -509,7 +514,7 @@ async function upsertOrderItemsFromSession(
     expand: ["data.price.product"],
   });
 
-  const rows: InsertShopOrderItemRow[] = [];
+  const rows: ShopOrderItemInsert[] = [];
   // Built alongside `rows` so the email can reuse the line items we
   // just paid Stripe a single round-trip to fetch — instead of
   // making the same expanded listLineItems call again from the email
@@ -517,6 +522,7 @@ async function upsertOrderItemsFromSession(
   // shop_order_items (see schema comment), so the email path picks
   // them up here from the live Stripe catalog rendering.
   const emailItems: OrderConfirmationLineItem[] = [];
+  const paidAtIso = order.paidAt.toISOString();
   for (const li of lineItems.data) {
     const price = li.price ?? null;
     const product = price?.product ?? null;
@@ -533,19 +539,19 @@ async function upsertOrderItemsFromSession(
       continue;
     }
     rows.push({
-      orderId: order.id,
-      stripeSessionId: session.id,
-      customerId: order.customerId,
-      productId,
+      order_id: order.id,
+      stripe_session_id: session.id,
+      customer_id: order.customerId,
+      product_id: productId,
       // Use '' (not null) so the (stripe_session_id, product_id,
       // price_id) UNIQUE actually dedupes redeliveries — Postgres
       // UNIQUE treats NULLs as distinct. Schema enforces NOT NULL
       // with default '' (migration 0011).
-      priceId: price?.id ?? "",
+      price_id: price?.id ?? "",
       quantity: li.quantity ?? 1,
-      unitAmountCents: price?.unit_amount ?? null,
+      unit_amount_cents: price?.unit_amount ?? null,
       currency: price?.currency ?? null,
-      paidAt: order.paidAt,
+      paid_at: paidAtIso,
     });
 
     // Stripe gives us a description on the LineItem itself (matches
@@ -572,20 +578,18 @@ async function upsertOrderItemsFromSession(
     return emailItems;
   }
 
-  const db = drizzle(getDbPool());
-  await db
-    .insert(shopOrderItems)
-    .values(rows)
-    .onConflictDoNothing({
-      // Match the UNIQUE we declared in the migration. We name the
-      // target columns rather than the index so a future index rename
-      // doesn't silently disable the dedupe.
-      target: [
-        shopOrderItems.stripeSessionId,
-        shopOrderItems.productId,
-        shopOrderItems.priceId,
-      ],
+  const supabase = getSupabaseServiceRoleClient();
+  // ON CONFLICT DO NOTHING for the (stripe_session_id, product_id,
+  // price_id) UNIQUE — supabase-js exposes this as upsert with
+  // ignoreDuplicates: true.
+  const { error } = await supabase
+    .schema("resupply")
+    .from("shop_order_items")
+    .upsert(rows, {
+      onConflict: "stripe_session_id,product_id,price_id",
+      ignoreDuplicates: true,
     });
+  if (error) throw error;
 
   log?.info?.(
     { sessionId: session.id, count: rows.length },
@@ -625,64 +629,74 @@ async function syncCustomerAfterCheckout(
       : (session.customer?.id ?? null);
   if (!customerId || !stripeCustomerId) return;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   const dpm = await readDefaultPaymentMethod(config, stripeCustomerId);
   const shippingAddress = extractShippingAddressFromSession(session);
 
   // Read existing row to decide whether to backfill the shipping
   // address (only when empty — never overwrite a deliberate edit).
-  const existingRows = await db
-    .select({
-      shippingAddress: shopCustomers.shippingAddress,
-      stripeCustomerId: shopCustomers.stripeCustomerId,
-    })
-    .from(shopCustomers)
-    .where(eq(shopCustomers.customerId, customerId))
-    .limit(1);
-  const existing = existingRows[0];
+  const { data: existing, error: selectErr } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("shipping_address_json, stripe_customer_id")
+    .eq("customer_id", customerId)
+    .maybeSingle();
+  if (selectErr) throw selectErr;
 
   const shouldSetShipping =
-    shippingAddress !== null && (existing?.shippingAddress ?? null) === null;
+    shippingAddress !== null &&
+    (existing?.shipping_address_json ?? null) === null;
 
-  const updates: Partial<typeof shopCustomers.$inferInsert> & {
-    updatedAt: Date;
-  } = { updatedAt: new Date() };
+  const nowIso = new Date().toISOString();
 
-  if (!existing?.stripeCustomerId) {
-    updates.stripeCustomerId = stripeCustomerId;
+  if (!existing) {
+    // First-time row — INSERT with the full snapshot. Use upsert with
+    // onConflict: customer_id so a concurrent inserter (e.g. another
+    // webhook redelivery) folds into UPDATE rather than 23505-throwing.
+    const insertRow: ShopCustomerInsert = {
+      customer_id: customerId,
+      stripe_customer_id: stripeCustomerId,
+      default_payment_method_id: dpm?.id ?? null,
+      default_payment_method_brand: dpm?.brand ?? null,
+      default_payment_method_last4: dpm?.last4 ?? null,
+      default_payment_method_exp_month: dpm?.expMonth ?? null,
+      default_payment_method_exp_year: dpm?.expYear ?? null,
+      shipping_address_json: shippingAddress
+        ? (shippingAddress as unknown as Json)
+        : null,
+      updated_at: nowIso,
+    };
+    const { error: insertErr } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .upsert(insertRow, { onConflict: "customer_id" });
+    if (insertErr) throw insertErr;
+  } else {
+    // Existing row — partial UPDATE. Only set keys we have values for,
+    // and only set shipping_address_json when the existing one is null
+    // (preserves explicit /shop/me edits).
+    const updates: ShopCustomerUpdate = { updated_at: nowIso };
+    if (!existing.stripe_customer_id) {
+      updates.stripe_customer_id = stripeCustomerId;
+    }
+    if (dpm) {
+      updates.default_payment_method_id = dpm.id;
+      updates.default_payment_method_brand = dpm.brand;
+      updates.default_payment_method_last4 = dpm.last4;
+      updates.default_payment_method_exp_month = dpm.expMonth;
+      updates.default_payment_method_exp_year = dpm.expYear;
+    }
+    if (shouldSetShipping && shippingAddress) {
+      updates.shipping_address_json = shippingAddress as unknown as Json;
+    }
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .update(updates)
+      .eq("customer_id", customerId);
+    if (updateErr) throw updateErr;
   }
-  if (dpm) {
-    updates.defaultPaymentMethodId = dpm.id;
-    updates.defaultPaymentMethodBrand = dpm.brand;
-    updates.defaultPaymentMethodLast4 = dpm.last4;
-    updates.defaultPaymentMethodExpMonth = dpm.expMonth;
-    updates.defaultPaymentMethodExpYear = dpm.expYear;
-  }
-  if (shouldSetShipping && shippingAddress) {
-    updates.shippingAddress = shippingAddress;
-  }
-
-  // Upsert: handle the (rare) case where the row doesn't exist yet
-  // because this user is checking out for the first time without
-  // ever having loaded /shop/me.
-  await db
-    .insert(shopCustomers)
-    .values({
-      customerId,
-      stripeCustomerId,
-      defaultPaymentMethodId: updates.defaultPaymentMethodId ?? null,
-      defaultPaymentMethodBrand: updates.defaultPaymentMethodBrand ?? null,
-      defaultPaymentMethodLast4: updates.defaultPaymentMethodLast4 ?? null,
-      defaultPaymentMethodExpMonth:
-        updates.defaultPaymentMethodExpMonth ?? null,
-      defaultPaymentMethodExpYear: updates.defaultPaymentMethodExpYear ?? null,
-      shippingAddress: updates.shippingAddress ?? null,
-    })
-    .onConflictDoUpdate({
-      target: shopCustomers.customerId,
-      set: updates,
-    });
 
   log?.info?.(
     {
@@ -721,20 +735,22 @@ export async function markCartRecovered(
 ): Promise<void> {
   const customerId = readCustomerIdFromMetadata(session.metadata);
   if (!customerId) return;
-  const db = drizzle(getDbPool());
-  const updated = await db
-    .update(shopAbandonedCarts)
-    .set({
-      recoveredAt: new Date(),
-      items: [],
-      subtotalCents: 0,
-      updatedAt: new Date(),
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
+  const { data: updated, error } = await supabase
+    .schema("resupply")
+    .from("shop_abandoned_carts")
+    .update({
+      recovered_at: nowIso,
+      items: [] as unknown as Json,
+      subtotal_cents: 0,
+      updated_at: nowIso,
     })
-    .where(
-      sql`${shopAbandonedCarts.customerId} = ${customerId} AND ${shopAbandonedCarts.recoveredAt} IS NULL`,
-    )
-    .returning({ id: shopAbandonedCarts.id });
-  if (updated.length > 0) {
+    .eq("customer_id", customerId)
+    .is("recovered_at", null)
+    .select("id");
+  if (error) throw error;
+  if (updated && updated.length > 0) {
     log?.info?.(
       { customerId, rowId: updated[0]!.id },
       "abandoned cart marked recovered",
@@ -747,11 +763,13 @@ async function markStatus(
   status: "expired" | "failed",
   log: { info?: (...args: unknown[]) => void } | undefined,
 ): Promise<void> {
-  const db = drizzle(getDbPool());
-  await db
-    .update(shopOrders)
-    .set({ status, updatedAt: sql`now()` })
-    .where(eq(shopOrders.stripeSessionId, sessionId));
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("stripe_session_id", sessionId);
+  if (error) throw error;
   log?.info?.({ status }, "shop order status updated");
 }
 
@@ -777,7 +795,7 @@ async function upsertSubscription(
       }
     | undefined,
 ): Promise<void> {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   const customerId = readCustomerIdFromMetadata(subscription.metadata);
   if (!customerId) {
@@ -855,46 +873,78 @@ async function upsertSubscription(
   // We compare on `event.created` (seconds-resolution Unix time);
   // ties allow the write through so a same-second cluster updates
   // monotonically.
-  const result = await db
-    .insert(shopSubscriptions)
-    .values({
-      customerId: customerId ?? "__unknown",
-      stripeSubscriptionId: subscription.id,
-      stripeCustomerId,
-      status: subscription.status,
-      items,
-      currentPeriodEnd,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-      canceledAt,
-      initialAmountTotalCents: null,
-      lastStripeEventAt: eventCreatedAt,
-    })
-    .onConflictDoUpdate({
-      target: shopSubscriptions.stripeSubscriptionId,
-      set: {
-        // Don't overwrite a known customer_id with __unknown — the
-        // creation event always carries it; later updates may come
-        // from system events (e.g. invoice retry) that may not.
-        ...(customerId ? { customerId } : {}),
-        stripeCustomerId,
-        status: subscription.status,
-        items,
-        currentPeriodEnd,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-        canceledAt,
-        lastStripeEventAt: eventCreatedAt,
-        updatedAt: sql`now()`,
-      },
-      where: sql`${shopSubscriptions.lastStripeEventAt} IS NULL OR ${shopSubscriptions.lastStripeEventAt} <= ${eventCreatedAt}`,
-    })
-    .returning({ id: shopSubscriptions.id });
+  //
+  // PostgREST has no `ON CONFLICT DO UPDATE WHERE`, so we attempt the
+  // INSERT first; on 23505 we fall back to a conditional UPDATE
+  // guarded by `last_stripe_event_at IS NULL OR <= eventCreatedAt`.
+  const eventCreatedAtIso = eventCreatedAt.toISOString();
+  const periodEndIso = currentPeriodEnd
+    ? currentPeriodEnd.toISOString()
+    : null;
+  const canceledAtIso = canceledAt ? canceledAt.toISOString() : null;
+  const itemsJson = items as unknown as Json;
 
-  if (result.length === 0) {
+  const { error: insertErr } = await supabase
+    .schema("resupply")
+    .from("shop_subscriptions")
+    .insert({
+      customer_id: customerId ?? "__unknown",
+      stripe_subscription_id: subscription.id,
+      stripe_customer_id: stripeCustomerId,
+      status: subscription.status,
+      items: itemsJson,
+      current_period_end: periodEndIso,
+      cancel_at_period_end: subscription.cancel_at_period_end ?? false,
+      canceled_at: canceledAtIso,
+      initial_amount_total_cents: null,
+      last_stripe_event_at: eventCreatedAtIso,
+    });
+  if (!insertErr) {
+    log?.info?.(
+      {
+        subscriptionId: subscription.id,
+        status: subscription.status,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      },
+      "shop_subscriptions upserted",
+    );
+    return;
+  }
+  if ((insertErr as { code?: string }).code !== "23505") {
+    throw insertErr;
+  }
+
+  // Conflict — conditional UPDATE with the ordering guard.
+  const update: ShopSubscriptionUpdate = {
+    stripe_customer_id: stripeCustomerId,
+    status: subscription.status,
+    items: itemsJson,
+    current_period_end: periodEndIso,
+    cancel_at_period_end: subscription.cancel_at_period_end ?? false,
+    canceled_at: canceledAtIso,
+    last_stripe_event_at: eventCreatedAtIso,
+    updated_at: new Date().toISOString(),
+  };
+  // Don't overwrite a known customer_id with __unknown — the creation
+  // event always carries it; later updates may come from system
+  // events (e.g. invoice retry) that may not.
+  if (customerId) update.customer_id = customerId;
+
+  const { data: updated, error: updateErr } = await supabase
+    .schema("resupply")
+    .from("shop_subscriptions")
+    .update(update)
+    .eq("stripe_subscription_id", subscription.id)
+    .or(`last_stripe_event_at.is.null,last_stripe_event_at.lte.${eventCreatedAtIso}`)
+    .select("id");
+  if (updateErr) throw updateErr;
+
+  if (!updated || updated.length === 0) {
     log?.warn?.(
       {
         subscriptionId: subscription.id,
         status: subscription.status,
-        eventCreatedAt: eventCreatedAt.toISOString(),
+        eventCreatedAt: eventCreatedAtIso,
       },
       "shop_subscriptions upsert skipped — stale or replayed event",
     );
@@ -924,20 +974,22 @@ async function markStatusByPaymentIntent(
     log: { info?: (...args: unknown[]) => void } | undefined;
   },
 ): Promise<void> {
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   // RETURNING the affected row so we can stamp the audit with the
   // local order id and short-circuit the audit write if the update
   // matched nothing (Stripe re-deliveries on a missing row, etc.).
-  const updated = await db
-    .update(shopOrders)
-    .set({ status, updatedAt: sql`now()` })
-    .where(eq(shopOrders.stripePaymentIntentId, paymentIntentId))
-    .returning({ id: shopOrders.id, customerId: shopOrders.customerId });
+  const { data: updated, error } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .select("id, customer_id");
+  if (error) throw error;
   ctx.log?.info?.(
-    { status, matched: updated.length },
+    { status, matched: updated?.length ?? 0 },
     "shop order marked refunded",
   );
-  if (updated.length === 0) return;
+  if (!updated || updated.length === 0) return;
 
   // Audit row carries the structured "why" so admins can later answer
   // questions like "how many refunds last month were customer-
@@ -961,7 +1013,7 @@ async function markStatusByPaymentIntent(
           amount_refunded_cents: ctx.amountRefundedCents,
           currency: ctx.currency,
           refund_reason: ctx.refundReason,
-          customer_id: row.customerId,
+          customer_id: row.customer_id,
         },
       });
     } catch (err) {
@@ -1031,32 +1083,28 @@ export async function sendOrderConfirmationIfFirst(args: {
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
   const { session, paidOrderId, items, log } = args;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Atomic claim: stamp the timestamp ONLY if it is currently NULL.
   // The RETURNING gives back the canonical row fields the email needs
   // (avoiding a separate SELECT). If `claimed` is undefined either
   // (a) the row doesn't exist or (b) another worker already stamped.
   // Both are "skip" outcomes for this send.
-  const claimedRows = await db
-    .update(shopOrders)
-    .set({ confirmationEmailSentAt: sql`now()`, updatedAt: sql`now()` })
-    .where(
-      and(
-        eq(shopOrders.id, paidOrderId),
-        isNull(shopOrders.confirmationEmailSentAt),
-      ),
-    )
-    .returning({
-      id: shopOrders.id,
-      stripeSessionId: shopOrders.stripeSessionId,
-      customerId: shopOrders.customerId,
-      amountTotalCents: shopOrders.amountTotalCents,
-      currency: shopOrders.currency,
-      shippingAddress: shopOrders.shippingAddress,
-      customerEmail: shopOrders.customerEmail,
-    });
-  const claimed = claimedRows[0];
+  const nowIso = new Date().toISOString();
+  const { data: claimedRows, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .update({
+      confirmation_email_sent_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq("id", paidOrderId)
+    .is("confirmation_email_sent_at", null)
+    .select(
+      "id, stripe_session_id, customer_id, amount_total_cents, currency, shipping_address_json, customer_email",
+    );
+  if (claimErr) throw claimErr;
+  const claimed = claimedRows?.[0];
 
   if (!claimed) {
     log?.info?.(
@@ -1075,10 +1123,15 @@ export async function sendOrderConfirmationIfFirst(args: {
   // permanently lock out the email.
   const releaseClaim = async (): Promise<void> => {
     try {
-      await db
-        .update(shopOrders)
-        .set({ confirmationEmailSentAt: null, updatedAt: sql`now()` })
-        .where(eq(shopOrders.id, claimed.id));
+      const { error: releaseErr } = await supabase
+        .schema("resupply")
+        .from("shop_orders")
+        .update({
+          confirmation_email_sent_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", claimed.id);
+      if (releaseErr) throw releaseErr;
     } catch (releaseErr) {
       log?.warn?.(
         {
@@ -1098,16 +1151,18 @@ export async function sendOrderConfirmationIfFirst(args: {
     // `customer_email` (captured at paid-time) next, Stripe Session
     // fallback last. We never log any of these values.
     let toEmail: string | null = null;
-    if (claimed.customerId) {
-      const [cust] = await db
-        .select({ email: shopCustomers.emailLower })
-        .from(shopCustomers)
-        .where(eq(shopCustomers.customerId, claimed.customerId))
-        .limit(1);
-      if (cust?.email) toEmail = cust.email;
+    if (claimed.customer_id) {
+      const { data: cust, error: custErr } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select("email_lower")
+        .eq("customer_id", claimed.customer_id)
+        .maybeSingle();
+      if (custErr) throw custErr;
+      if (cust?.email_lower) toEmail = cust.email_lower;
     }
-    if (!toEmail && claimed.customerEmail) {
-      toEmail = claimed.customerEmail;
+    if (!toEmail && claimed.customer_email) {
+      toEmail = claimed.customer_email;
     }
     if (!toEmail) {
       const sessionEmail = session.customer_details?.email?.trim();
@@ -1124,11 +1179,14 @@ export async function sendOrderConfirmationIfFirst(args: {
 
     const result = await sendOrderConfirmationEmail({
       toEmail,
-      stripeSessionId: claimed.stripeSessionId,
+      stripeSessionId: claimed.stripe_session_id,
       items,
-      amountTotalCents: claimed.amountTotalCents ?? session.amount_total ?? 0,
+      amountTotalCents:
+        claimed.amount_total_cents ?? session.amount_total ?? 0,
       currency: claimed.currency ?? session.currency ?? "usd",
-      shippingAddress: claimed.shippingAddress ?? null,
+      shippingAddress:
+        (claimed.shipping_address_json as unknown as SavedShippingAddress | null) ??
+        null,
     });
 
     if (!result.configured) {

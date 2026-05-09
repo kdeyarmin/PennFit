@@ -24,7 +24,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 import {
   createSendgridClient,
@@ -63,7 +63,7 @@ router.get("/shop/me/messages", requireSignedIn, async (req, res) => {
   // on a fresh account that has only ever messaged.
   await ensureShopCustomerRow({ customerId, email: null });
   const result = await fetchInAppThread({
-    pool: getDbPool(),
+    supabase: getSupabaseServiceRoleClient(),
     customerId,
   });
   res.json(result);
@@ -79,7 +79,7 @@ router.get(
     const customerId = req.userCustomerId!;
     await ensureShopCustomerRow({ customerId, email: null });
     const count = await fetchInAppUnreadCount({
-      pool: getDbPool(),
+      supabase: getSupabaseServiceRoleClient(),
       customerId,
     });
     res.json({ unreadFromCsr: count });
@@ -98,7 +98,7 @@ router.post(
     const customerId = req.userCustomerId!;
     await ensureShopCustomerRow({ customerId, email: null });
     const updated = await markInAppThreadRead({
-      pool: getDbPool(),
+      supabase: getSupabaseServiceRoleClient(),
       customerId,
     });
     res.json({ ok: true, threadUpdated: updated });
@@ -121,7 +121,7 @@ router.post("/shop/me/messages", requireSignedIn, async (req, res) => {
   await ensureShopCustomerRow({ customerId, email: null });
 
   const result = await appendCustomerMessage({
-    pool: getDbPool(),
+    supabase: getSupabaseServiceRoleClient(),
     customerId,
     body: parsed.data.body,
   });

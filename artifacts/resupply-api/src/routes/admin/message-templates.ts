@@ -37,17 +37,23 @@
 //   even though the Zod schema rules out actual PHI).
 
 import { Router, type IRouter } from "express";
-import { and, asc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, messageTemplates } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Database,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { isAsciiOnly } from "../../lib/message-templates/sms";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+
+type MessageTemplateRow =
+  Database["resupply"]["Tables"]["message_templates"]["Row"];
+type MessageTemplateUpdate =
+  Database["resupply"]["Tables"]["message_templates"]["Update"];
 
 const router: IRouter = Router();
 
@@ -103,20 +109,21 @@ interface MessageTemplateView {
   createdBy: string | null;
 }
 
-function serialize(row: typeof messageTemplates.$inferSelect): MessageTemplateView {
+function serialize(row: MessageTemplateRow): MessageTemplateView {
   return {
     id: row.id,
-    templateKey: row.templateKey,
+    templateKey: row.template_key,
     channel: row.channel,
     subject: row.subject ?? null,
-    bodyHtml: row.bodyHtml ?? null,
-    bodyText: row.bodyText,
-    allowedVariables: row.allowedVariables ?? [],
-    isActive: row.isActive,
-    updatedAt: row.updatedAt.toISOString(),
-    updatedBy: row.updatedBy ?? null,
-    createdAt: row.createdAt.toISOString(),
-    createdBy: row.createdBy ?? null,
+    bodyHtml: row.body_html ?? null,
+    bodyText: row.body_text,
+    allowedVariables: row.allowed_variables ?? [],
+    isActive: row.is_active,
+    // PostgREST returns timestamptz as ISO string already.
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by ?? null,
+    createdAt: row.created_at,
+    createdBy: row.created_by ?? null,
   };
 }
 
@@ -153,24 +160,29 @@ router.get("/admin/message-templates", requireAdmin, async (req, res) => {
     return;
   }
   const includeInactive = parsed.data.includeInactive === "1";
-  const filters = [
-    parsed.data.templateKey
-      ? eq(messageTemplates.templateKey, parsed.data.templateKey)
-      : undefined,
-    parsed.data.channel
-      ? eq(messageTemplates.channel, parsed.data.channel)
-      : undefined,
-    includeInactive ? undefined : eq(messageTemplates.isActive, true),
-  ].filter((c): c is NonNullable<typeof c> => c !== undefined);
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select()
-    .from(messageTemplates)
-    .where(filters.length === 0 ? undefined : and(...filters))
-    .orderBy(asc(messageTemplates.templateKey), asc(messageTemplates.channel))
+  const supabase = getSupabaseServiceRoleClient();
+  let templatesQuery = supabase
+    .schema("resupply")
+    .from("message_templates")
+    .select(
+      "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+    )
+    .order("template_key", { ascending: true })
+    .order("channel", { ascending: true })
     .limit(500);
-  res.json({ templates: rows.map(serialize) });
+  if (parsed.data.templateKey) {
+    templatesQuery = templatesQuery.eq("template_key", parsed.data.templateKey);
+  }
+  if (parsed.data.channel) {
+    templatesQuery = templatesQuery.eq("channel", parsed.data.channel);
+  }
+  if (!includeInactive) {
+    templatesQuery = templatesQuery.eq("is_active", true);
+  }
+  const { data: rows, error } = await templatesQuery;
+  if (error) throw error;
+  res.json({ templates: (rows ?? []).map(serialize) });
 });
 
 router.get(
@@ -182,13 +194,17 @@ router.get(
       res.status(400).json({ error: "invalid_id" });
       return;
     }
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select()
-      .from(messageTemplates)
-      .where(eq(messageTemplates.id, idCheck.data))
-      .limit(1);
-    const row = rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("message_templates")
+      .select(
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+      )
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       res.status(404).json({ error: "template_not_found" });
       return;
@@ -219,13 +235,17 @@ router.patch(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const existingRows = await db
-      .select()
-      .from(messageTemplates)
-      .where(eq(messageTemplates.id, idCheck.data))
-      .limit(1);
-    const existing = existingRows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: existingErr } = await supabase
+      .schema("resupply")
+      .from("message_templates")
+      .select(
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+      )
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
     if (!existing) {
       res.status(404).json({ error: "template_not_found" });
       return;
@@ -240,12 +260,12 @@ router.patch(
     const nextBodyHtml =
       parsed.data.bodyHtml !== undefined
         ? parsed.data.bodyHtml
-        : existing.bodyHtml;
+        : existing.body_html;
     const nextBodyText =
       parsed.data.bodyText !== undefined
         ? parsed.data.bodyText
-        : existing.bodyText;
-    const allowed = existing.allowedVariables ?? [];
+        : existing.body_text;
+    const allowed = existing.allowed_variables ?? [];
     const offenders = [
       ...disallowedTokens(nextSubject, allowed),
       ...disallowedTokens(nextBodyHtml, allowed),
@@ -273,19 +293,37 @@ router.patch(
     }
 
     const adminId = req.adminUserId ?? null;
-    const updateValues: Partial<typeof messageTemplates.$inferInsert> = {
-      updatedBy: adminId,
+    // Snake-case columns at the write boundary; the Drizzle path's
+    // $onUpdateFn that bumped updated_at becomes an explicit JS-side
+    // timestamp here since PostgREST won't run it for us.
+    const updateValues: MessageTemplateUpdate = {
+      updated_by: adminId,
+      updated_at: new Date().toISOString(),
     };
-    if (parsed.data.subject !== undefined) updateValues.subject = parsed.data.subject;
-    if (parsed.data.bodyHtml !== undefined) updateValues.bodyHtml = parsed.data.bodyHtml;
-    if (parsed.data.bodyText !== undefined) updateValues.bodyText = parsed.data.bodyText;
-    if (parsed.data.isActive !== undefined) updateValues.isActive = parsed.data.isActive;
+    if (parsed.data.subject !== undefined)
+      updateValues.subject = parsed.data.subject;
+    if (parsed.data.bodyHtml !== undefined)
+      updateValues.body_html = parsed.data.bodyHtml;
+    if (parsed.data.bodyText !== undefined)
+      updateValues.body_text = parsed.data.bodyText;
+    if (parsed.data.isActive !== undefined)
+      updateValues.is_active = parsed.data.isActive;
 
-    const updated = await db
-      .update(messageTemplates)
-      .set(updateValues)
-      .where(eq(messageTemplates.id, idCheck.data))
-      .returning();
+    const { data: updated, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("message_templates")
+      .update(updateValues)
+      .eq("id", idCheck.data)
+      .select(
+        "id, template_key, channel, subject, body_html, body_text, allowed_variables, is_active, updated_at, updated_by, created_at, created_by",
+      )
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
+    if (!updated) {
+      res.status(404).json({ error: "template_not_found" });
+      return;
+    }
 
     const fieldsChanged: string[] = [];
     for (const k of ["subject", "bodyHtml", "bodyText", "isActive"] as const) {
@@ -303,13 +341,13 @@ router.patch(
       // the editor disallows it). Lengths give ops enough signal to
       // spot a content-blanking edit without leaking the body.
       metadata: {
-        template_key: existing.templateKey,
+        template_key: existing.template_key,
         channel: existing.channel,
         fields_changed: fieldsChanged,
         old_lengths: {
           subject: existing.subject?.length ?? null,
-          body_html: existing.bodyHtml?.length ?? null,
-          body_text: existing.bodyText.length,
+          body_html: existing.body_html?.length ?? null,
+          body_text: existing.body_text.length,
         },
         new_lengths: {
           subject: nextSubject?.length ?? null,
@@ -326,7 +364,7 @@ router.patch(
       );
     });
 
-    res.json({ template: serialize(updated[0]!) });
+    res.json({ template: serialize(updated) });
   },
 );
 

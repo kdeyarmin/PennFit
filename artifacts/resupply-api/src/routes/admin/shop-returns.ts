@@ -32,13 +32,11 @@
 // `stripeRefundId: null` so they know to issue the refund manually.
 
 import { Router, type IRouter } from "express";
-import { and, eq, desc, lt, or, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
-  getDbPool,
-  shopReturns,
+  getSupabaseServiceRoleClient,
+  type Database,
   type ShopReturnStatus,
 } from "@workspace/resupply-db";
 
@@ -49,6 +47,8 @@ import {
   getStripeClient,
   readStripeConfigOrNull,
 } from "../../lib/stripe/config";
+
+type ShopReturnRow = Database["resupply"]["Tables"]["shop_returns"]["Row"];
 
 const router: IRouter = Router();
 
@@ -89,6 +89,9 @@ const STATUS_FILTER = new Set<string>([...STATUS_VALUES, "all", "open"]);
 const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
 
+const RETURN_COLUMNS =
+  "id, customer_id, order_id, stripe_session_id, status, reason, reason_note, resolution, refund_cents, stripe_refund_id, exchange_product_id, exchange_price_id, exchange_order_id, return_label_url, return_carrier, return_tracking_number, admin_note, admin_user_id, created_at, updated_at, approved_at, rejected_at, shipped_back_at, received_at, resolved_at, closed_at";
+
 router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
   const status = String(req.query.status ?? "open");
   if (!STATUS_FILTER.has(status)) {
@@ -101,7 +104,7 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
   );
   const cursor = typeof req.query.cursor === "string" ? req.query.cursor : null;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Cursor format: "<ISO timestamp>__<id>" (composite — same pattern as
   // shop-reviews so paginating across rows that share createdAt is
@@ -120,35 +123,38 @@ router.get("/admin/shop/returns", requireAdmin, async (req, res) => {
     }
   }
 
-  const conds = [];
+  let listQuery = supabase
+    .schema("resupply")
+    .from("shop_returns")
+    .select(RETURN_COLUMNS)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit + 1);
   if (status === "open") {
-    conds.push(
-      sql`${shopReturns.status} IN ('requested','approved','shipped_back','received')`,
-    );
+    listQuery = listQuery.in("status", [
+      "requested",
+      "approved",
+      "shipped_back",
+      "received",
+    ]);
   } else if (status !== "all") {
-    conds.push(eq(shopReturns.status, status as ShopReturnStatus));
+    listQuery = listQuery.eq("status", status);
   }
   if (cursorTs && cursorId) {
-    conds.push(
-      or(
-        lt(shopReturns.createdAt, cursorTs),
-        and(eq(shopReturns.createdAt, cursorTs), lt(shopReturns.id, cursorId)),
-      ),
+    const cursorIso = cursorTs.toISOString();
+    listQuery = listQuery.or(
+      `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${cursorId})`,
     );
   }
+  const { data: rows, error } = await listQuery;
+  if (error) throw error;
 
-  const rows = await db
-    .select()
-    .from(shopReturns)
-    .where(conds.length > 0 ? and(...conds) : undefined)
-    .orderBy(desc(shopReturns.createdAt), desc(shopReturns.id))
-    .limit(limit + 1);
-
-  const hasMore = rows.length > limit;
-  const page = rows.slice(0, limit);
+  const all = rows ?? [];
+  const hasMore = all.length > limit;
+  const page = all.slice(0, limit);
   const last = page[page.length - 1];
   const nextCursor =
-    hasMore && last ? `${last.createdAt.toISOString()}__${last.id}` : null;
+    hasMore && last ? `${last.created_at}__${last.id}` : null;
 
   res.json({
     returns: page.map(serializeReturnRow),
@@ -162,13 +168,15 @@ router.get("/admin/shop/returns/:id", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "missing_id" });
     return;
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select()
-    .from(shopReturns)
-    .where(eq(shopReturns.id, id))
-    .limit(1);
-  const row = rows[0];
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("shop_returns")
+    .select(RETURN_COLUMNS)
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
   if (!row) {
     res.status(404).json({ error: "return_not_found" });
     return;
@@ -206,28 +214,33 @@ router.post(
       });
       return;
     }
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const adminId = req.adminUserId ?? null;
-    const now = new Date();
-    const updated = await db
-      .update(shopReturns)
-      .set({
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .update({
         status: "approved",
-        approvedAt: now,
-        updatedAt: now,
-        adminUserId: adminId,
-        adminNote: appendNote(parsed.data.note, adminId, "Approved"),
-        returnLabelUrl: parsed.data.returnLabelUrl ?? null,
-        returnCarrier: parsed.data.returnCarrier ?? null,
-        returnTrackingNumber: parsed.data.returnTrackingNumber ?? null,
+        approved_at: nowIso,
+        updated_at: nowIso,
+        admin_user_id: adminId,
+        admin_note: appendNote(parsed.data.note, adminId, "Approved"),
+        return_label_url: parsed.data.returnLabelUrl ?? null,
+        return_carrier: parsed.data.returnCarrier ?? null,
+        return_tracking_number: parsed.data.returnTrackingNumber ?? null,
       })
-      .where(and(eq(shopReturns.id, id), eq(shopReturns.status, "requested")))
-      .returning();
-    if (updated.length === 0) {
+      .eq("id", id)
+      .eq("status", "requested")
+      .select(RETURN_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) {
       res.status(409).json({ error: "not_in_requested_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated[0]!) });
+    res.json({ return: serializeReturnRow(updated) });
   },
 );
 
@@ -250,26 +263,31 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const adminId = req.adminUserId ?? null;
-    const now = new Date();
-    const updated = await db
-      .update(shopReturns)
-      .set({
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .update({
         status: "rejected",
-        rejectedAt: now,
-        closedAt: now,
-        updatedAt: now,
-        adminUserId: adminId,
-        adminNote: appendNote(parsed.data.note, adminId, "Rejected"),
+        rejected_at: nowIso,
+        closed_at: nowIso,
+        updated_at: nowIso,
+        admin_user_id: adminId,
+        admin_note: appendNote(parsed.data.note, adminId, "Rejected"),
       })
-      .where(and(eq(shopReturns.id, id), eq(shopReturns.status, "requested")))
-      .returning();
-    if (updated.length === 0) {
+      .eq("id", id)
+      .eq("status", "requested")
+      .select(RETURN_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) {
       res.status(409).json({ error: "not_in_requested_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated[0]!) });
+    res.json({ return: serializeReturnRow(updated) });
   },
 );
 
@@ -288,25 +306,30 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const adminId = req.adminUserId ?? null;
-    const now = new Date();
-    const updated = await db
-      .update(shopReturns)
-      .set({
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .update({
         status: "shipped_back",
-        shippedBackAt: now,
-        updatedAt: now,
-        adminUserId: adminId,
-        adminNote: appendNote(parsed.data.note, adminId, "Marked shipped back"),
+        shipped_back_at: nowIso,
+        updated_at: nowIso,
+        admin_user_id: adminId,
+        admin_note: appendNote(parsed.data.note, adminId, "Marked shipped back"),
       })
-      .where(and(eq(shopReturns.id, id), eq(shopReturns.status, "approved")))
-      .returning();
-    if (updated.length === 0) {
+      .eq("id", id)
+      .eq("status", "approved")
+      .select(RETURN_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) {
       res.status(409).json({ error: "not_in_approved_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated[0]!) });
+    res.json({ return: serializeReturnRow(updated) });
   },
 );
 
@@ -325,37 +348,34 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const adminId = req.adminUserId ?? null;
-    const now = new Date();
+    const nowIso = new Date().toISOString();
     // Allow received from either shipped_back (normal flow) or
     // approved (admin received before flipping shipped_back —
     // happens when ops scans the inbound parcel without first
     // marking it dispatched).
-    const updated = await db
-      .update(shopReturns)
-      .set({
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .update({
         status: "received",
-        receivedAt: now,
-        updatedAt: now,
-        adminUserId: adminId,
-        adminNote: appendNote(parsed.data.note, adminId, "Marked received"),
+        received_at: nowIso,
+        updated_at: nowIso,
+        admin_user_id: adminId,
+        admin_note: appendNote(parsed.data.note, adminId, "Marked received"),
       })
-      .where(
-        and(
-          eq(shopReturns.id, id),
-          or(
-            eq(shopReturns.status, "shipped_back"),
-            eq(shopReturns.status, "approved"),
-          ),
-        ),
-      )
-      .returning();
-    if (updated.length === 0) {
+      .eq("id", id)
+      .in("status", ["shipped_back", "approved"])
+      .select(RETURN_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) {
       res.status(409).json({ error: "not_in_shipped_or_approved_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated[0]!) });
+    res.json({ return: serializeReturnRow(updated) });
   },
 );
 
@@ -382,13 +402,15 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select()
-      .from(shopReturns)
-      .where(eq(shopReturns.id, id))
-      .limit(1);
-    const ret = rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: ret, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select(RETURN_COLUMNS)
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!ret) {
       res.status(404).json({ error: "return_not_found" });
       return;
@@ -399,19 +421,21 @@ router.post(
     }
 
     // Look up the order to grab the payment intent ID for Stripe.
-    const ordersRows = await db.execute<{
-      stripe_payment_intent_id: string | null;
-      amount_total_cents: number | null;
-    }>(
-      sql`select stripe_payment_intent_id, amount_total_cents from resupply.shop_orders where id = ${ret.orderId} limit 1`,
-    );
-    const orderRow = ordersRows.rows[0];
+    const { data: orderRow, error: orderErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("stripe_payment_intent_id, amount_total_cents")
+      .eq("id", ret.order_id)
+      .limit(1)
+      .maybeSingle();
+    if (orderErr) throw orderErr;
     if (!orderRow) {
       res.status(409).json({ error: "order_not_found" });
       return;
     }
 
-    const refundCents = parsed.data.amountCents ?? orderRow.amount_total_cents;
+    const refundCents =
+      parsed.data.amountCents ?? orderRow.amount_total_cents ?? 0;
     if (!refundCents || refundCents <= 0) {
       res.status(400).json({ error: "missing_refund_amount" });
       return;
@@ -446,7 +470,7 @@ router.post(
                 reason: "requested_by_customer",
                 metadata: {
                   shop_return_id: ret.id,
-                  shop_order_id: ret.orderId,
+                  shop_order_id: ret.order_id,
                 },
               },
               { idempotencyKey },
@@ -471,19 +495,20 @@ router.post(
     }
 
     const adminId = req.adminUserId ?? null;
-    const now = new Date();
-    const updated = await db
-      .update(shopReturns)
-      .set({
+    const nowIso = new Date().toISOString();
+    const { data: updated, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .update({
         status: "refunded",
         resolution: "refund",
-        resolvedAt: now,
-        closedAt: now,
-        updatedAt: now,
-        refundCents,
-        stripeRefundId,
-        adminUserId: adminId,
-        adminNote: appendNote(
+        resolved_at: nowIso,
+        closed_at: nowIso,
+        updated_at: nowIso,
+        refund_cents: refundCents,
+        stripe_refund_id: stripeRefundId,
+        admin_user_id: adminId,
+        admin_note: appendNote(
           parsed.data.note,
           adminId,
           stripeRefundId
@@ -491,13 +516,17 @@ router.post(
             : `Refund of ${formatCents(refundCents)} recorded; issue manually in Stripe (no SDK key configured).`,
         ),
       })
-      .where(and(eq(shopReturns.id, ret.id), eq(shopReturns.status, "received")))
-      .returning();
-    if (updated.length === 0) {
+      .eq("id", ret.id)
+      .eq("status", "received")
+      .select(RETURN_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
+    if (!updated) {
       res.status(409).json({ error: "not_in_received_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated[0]!) });
+    res.json({ return: serializeReturnRow(updated) });
   },
 );
 
@@ -529,34 +558,39 @@ router.post(
       res.status(400).json({ error: "invalid_body" });
       return;
     }
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const adminId = req.adminUserId ?? null;
-    const now = new Date();
-    const updated = await db
-      .update(shopReturns)
-      .set({
+    const nowIso = new Date().toISOString();
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .update({
         status: "replaced",
         resolution: "exchange",
-        resolvedAt: now,
-        closedAt: now,
-        updatedAt: now,
-        exchangeProductId: parsed.data.exchangeProductId,
-        exchangePriceId: parsed.data.exchangePriceId,
-        exchangeOrderId: parsed.data.exchangeOrderId ?? null,
-        adminUserId: adminId,
-        adminNote: appendNote(
+        resolved_at: nowIso,
+        closed_at: nowIso,
+        updated_at: nowIso,
+        exchange_product_id: parsed.data.exchangeProductId,
+        exchange_price_id: parsed.data.exchangePriceId,
+        exchange_order_id: parsed.data.exchangeOrderId ?? null,
+        admin_user_id: adminId,
+        admin_note: appendNote(
           parsed.data.note,
           adminId,
           `Replacement issued (${parsed.data.exchangeProductId})`,
         ),
       })
-      .where(and(eq(shopReturns.id, id), eq(shopReturns.status, "received")))
-      .returning();
-    if (updated.length === 0) {
+      .eq("id", id)
+      .eq("status", "received")
+      .select(RETURN_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) {
       res.status(409).json({ error: "not_in_received_state" });
       return;
     }
-    res.json({ return: serializeReturnRow(updated[0]!) });
+    res.json({ return: serializeReturnRow(updated) });
   },
 );
 
@@ -571,33 +605,43 @@ router.post("/admin/shop/returns/:id/note", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "missing_note" });
     return;
   }
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   const adminId = req.adminUserId ?? null;
-  const rows = await db
-    .select()
-    .from(shopReturns)
-    .where(eq(shopReturns.id, id))
-    .limit(1);
-  const ret = rows[0];
+  const { data: ret, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("shop_returns")
+    .select(RETURN_COLUMNS)
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
   if (!ret) {
     res.status(404).json({ error: "return_not_found" });
     return;
   }
-  const updated = await db
-    .update(shopReturns)
-    .set({
-      adminNote: appendNote(
+  const { data: updated, error: updateErr } = await supabase
+    .schema("resupply")
+    .from("shop_returns")
+    .update({
+      admin_note: appendNote(
         parsed.data.note,
         adminId,
         "Note added",
-        ret.adminNote,
+        ret.admin_note,
       ),
-      adminUserId: adminId,
-      updatedAt: new Date(),
+      admin_user_id: adminId,
+      updated_at: new Date().toISOString(),
     })
-    .where(eq(shopReturns.id, id))
-    .returning();
-  res.json({ return: serializeReturnRow(updated[0]!) });
+    .eq("id", id)
+    .select(RETURN_COLUMNS)
+    .limit(1)
+    .maybeSingle();
+  if (updateErr) throw updateErr;
+  if (!updated) {
+    res.status(404).json({ error: "return_not_found" });
+    return;
+  }
+  res.json({ return: serializeReturnRow(updated) });
 });
 
 function appendNote(
@@ -619,34 +663,35 @@ function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function serializeReturnRow(r: typeof shopReturns.$inferSelect) {
+function serializeReturnRow(r: ShopReturnRow) {
   return {
     id: r.id,
-    customerId: r.customerId,
-    orderId: r.orderId,
-    sessionId: r.stripeSessionId,
+    customerId: r.customer_id,
+    orderId: r.order_id,
+    sessionId: r.stripe_session_id,
     status: r.status,
     reason: r.reason,
-    reasonNote: r.reasonNote,
+    reasonNote: r.reason_note,
     resolution: r.resolution,
-    refundCents: r.refundCents,
-    stripeRefundId: r.stripeRefundId,
-    exchangeProductId: r.exchangeProductId,
-    exchangePriceId: r.exchangePriceId,
-    exchangeOrderId: r.exchangeOrderId,
-    returnLabelUrl: r.returnLabelUrl,
-    returnCarrier: r.returnCarrier,
-    returnTrackingNumber: r.returnTrackingNumber,
-    adminNote: r.adminNote,
-    adminUserId: r.adminUserId,
-    createdAt: r.createdAt.toISOString(),
-    updatedAt: r.updatedAt.toISOString(),
-    approvedAt: r.approvedAt?.toISOString() ?? null,
-    rejectedAt: r.rejectedAt?.toISOString() ?? null,
-    shippedBackAt: r.shippedBackAt?.toISOString() ?? null,
-    receivedAt: r.receivedAt?.toISOString() ?? null,
-    resolvedAt: r.resolvedAt?.toISOString() ?? null,
-    closedAt: r.closedAt?.toISOString() ?? null,
+    refundCents: r.refund_cents,
+    stripeRefundId: r.stripe_refund_id,
+    exchangeProductId: r.exchange_product_id,
+    exchangePriceId: r.exchange_price_id,
+    exchangeOrderId: r.exchange_order_id,
+    returnLabelUrl: r.return_label_url,
+    returnCarrier: r.return_carrier,
+    returnTrackingNumber: r.return_tracking_number,
+    adminNote: r.admin_note,
+    adminUserId: r.admin_user_id,
+    // PostgREST returns timestamptz as ISO string already.
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    approvedAt: r.approved_at,
+    rejectedAt: r.rejected_at,
+    shippedBackAt: r.shipped_back_at,
+    receivedAt: r.received_at,
+    resolvedAt: r.resolved_at,
+    closedAt: r.closed_at,
   };
 }
 

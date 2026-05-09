@@ -17,15 +17,12 @@
 //     `end_call` — a panicking caller MUST be able to escape to a
 //     human or hang up without first proving their date of birth.
 
-import { eq } from "drizzle-orm";
-import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { timingSafeEqual, randomUUID } from "node:crypto";
 
 import {
-  conversations,
-  episodes,
-  patients,
-  prescriptions,
+  getSupabaseServiceRoleClient,
+  type Json,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
 import type {
@@ -113,11 +110,9 @@ const IDENTITY_EXEMPT: ReadonlySet<ToolName> = new Set([
 ]);
 
 export interface VoiceToolDispatcherDeps {
-  // Drizzle handle bound to the resupply pool. The dispatcher does not
-  // construct its own Pool/db handle so this lib never has to import
-  // the `pg` package directly (architecture rule 7) and tests can
-  // inject a mock db.
-  db: NodePgDatabase;
+  /** Optional Supabase client. Tests inject a stub; production callers
+   *  pass nothing and the dispatcher resolves the singleton at construct. */
+  supabase?: ResupplySupabaseClient;
   patientId: string;
   conversationId: string;
   episodeId: string;
@@ -136,10 +131,10 @@ export function createVoiceToolDispatcher(
 class Impl implements VoiceToolDispatcher {
   private verified = false;
   private verifyAttempts = 0;
-  private readonly db: NodePgDatabase;
+  private readonly supabase: ResupplySupabaseClient;
 
   constructor(private readonly deps: VoiceToolDispatcherDeps) {
-    this.db = deps.db;
+    this.supabase = deps.supabase ?? getSupabaseServiceRoleClient();
   }
 
   isIdentityVerified(): boolean {
@@ -219,17 +214,16 @@ class Impl implements VoiceToolDispatcher {
     // Read DOB + first name. The plaintext DOB is compared in Node
     // with `timingSafeEqual` so we don't leak match duration via the
     // SQL planner.
-    const rows = await this.db
-      .select({
-        dob: patients.dateOfBirth,
-        firstName: patients.legalFirstName,
-      })
-      .from(patients)
-      .where(eq(patients.id, this.deps.patientId))
-      .limit(1);
+    const { data: row, error } = await this.supabase
+      .schema("resupply")
+      .from("patients")
+      .select("date_of_birth, legal_first_name")
+      .eq("id", this.deps.patientId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
 
-    const row = rows[0];
-    if (!row || !row.dob) {
+    if (!row || !row.date_of_birth) {
       return {
         callId: call.callId,
         name: call.name,
@@ -237,7 +231,10 @@ class Impl implements VoiceToolDispatcher {
       };
     }
 
-    const matched = constantTimeStringEquals(call.args.date_of_birth, row.dob);
+    const matched = constantTimeStringEquals(
+      call.args.date_of_birth,
+      row.date_of_birth,
+    );
     if (matched) {
       this.verified = true;
       return {
@@ -245,7 +242,7 @@ class Impl implements VoiceToolDispatcher {
         name: call.name,
         result: {
           matched: true,
-          first_name: row.firstName ?? undefined,
+          first_name: row.legal_first_name ?? undefined,
           attempts_remaining: attemptsRemaining,
         },
       };
@@ -260,26 +257,25 @@ class Impl implements VoiceToolDispatcher {
   private async lookupInventory(
     call: DispatchToolCall<"lookup_resupply_inventory">,
   ): Promise<DispatchToolResult<"lookup_resupply_inventory">> {
-    const rows = await this.db
-      .select({
-        sku: prescriptions.itemSku,
-        cadenceDays: prescriptions.cadenceDays,
-      })
-      .from(prescriptions)
-      .where(eq(prescriptions.patientId, this.deps.patientId));
+    const { data: rows, error } = await this.supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select("item_sku, cadence_days")
+      .eq("patient_id", this.deps.patientId);
+    if (error) throw error;
 
-    const items = rows
-      .filter((r) => r.sku)
+    const items = (rows ?? [])
+      .filter((r) => r.item_sku)
       .map((r) => ({
-        sku: r.sku,
+        sku: r.item_sku,
         // We don't carry SKU descriptions in our schema yet — the
         // Pacware product catalogue lives outside this DB. The model's
         // prompt tells it the description is the SKU's product
         // description in plain English; for now we hand it the SKU
         // itself so it can still read it back to the patient.
-        description: r.sku,
+        description: r.item_sku,
         quantity: 1,
-        due_reason: `every ${r.cadenceDays} days`,
+        due_reason: `every ${r.cadence_days} days`,
       }));
 
     return {
@@ -292,15 +288,16 @@ class Impl implements VoiceToolDispatcher {
   private async getShippingAddress(
     call: DispatchToolCall<"get_shipping_address">,
   ): Promise<DispatchToolResult<"get_shipping_address">> {
-    const rows = await this.db
-      .select({
-        address: patients.address,
-      })
-      .from(patients)
-      .where(eq(patients.id, this.deps.patientId))
-      .limit(1);
+    const { data: row, error } = await this.supabase
+      .schema("resupply")
+      .from("patients")
+      .select("address")
+      .eq("id", this.deps.patientId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
 
-    const addr = (rows[0]?.address ?? null) as {
+    const addr = (row?.address ?? null) as {
       line1: string;
       line2?: string;
       city: string;
@@ -344,10 +341,12 @@ class Impl implements VoiceToolDispatcher {
       postalCode: a.postal_code,
       country: "US",
     };
-    await this.db
-      .update(patients)
-      .set({ address: newAddress })
-      .where(eq(patients.id, this.deps.patientId));
+    const { error } = await this.supabase
+      .schema("resupply")
+      .from("patients")
+      .update({ address: newAddress as unknown as Json })
+      .eq("id", this.deps.patientId);
+    if (error) throw error;
 
     return {
       callId: call.callId,
@@ -376,10 +375,13 @@ class Impl implements VoiceToolDispatcher {
     // Pacware is a downstream worker job; the admin dashboard will
     // pick this episode up in the "ready to fulfil" queue.
     const orderId = randomUUID();
-    await this.db
-      .update(episodes)
-      .set({ status: "confirmed", updatedAt: new Date() })
-      .where(eq(episodes.id, this.deps.episodeId));
+    const nowIso = new Date().toISOString();
+    const { error } = await this.supabase
+      .schema("resupply")
+      .from("episodes")
+      .update({ status: "confirmed", updated_at: nowIso })
+      .eq("id", this.deps.episodeId);
+    if (error) throw error;
 
     return {
       callId: call.callId,
@@ -400,10 +402,13 @@ class Impl implements VoiceToolDispatcher {
     // surfaces it immediately. We do NOT close the conversation here
     // — the human admin will close it once they've handled the
     // escalation.
-    await this.db
-      .update(conversations)
-      .set({ status: "awaiting_admin", updatedAt: new Date() })
-      .where(eq(conversations.id, this.deps.conversationId));
+    const nowIso = new Date().toISOString();
+    const { error } = await this.supabase
+      .schema("resupply")
+      .from("conversations")
+      .update({ status: "awaiting_admin", updated_at: nowIso })
+      .eq("id", this.deps.conversationId);
+    if (error) throw error;
 
     return {
       callId: call.callId,

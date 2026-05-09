@@ -30,13 +30,11 @@
 import { randomUUID } from "node:crypto";
 
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { readCustomerProfile } from "../../lib/customer-profile";
 import type Stripe from "stripe";
 import { z } from "zod";
 
-import { getDbPool, shopOrders } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
   SHOP_UNAVAILABLE_BODY,
@@ -148,28 +146,27 @@ router.post(
       basket = items;
     } else {
       // Validate the user owns the order they're trying to reorder.
-      const db = drizzle(getDbPool());
       // requireSignedIn is upstream but we guard explicitly here so a
       // future weakening of that middleware can't silently pass
-      // undefined to Drizzle's eq() — which matches IS NULL rows and
-      // would expose every guest-checkout order.
+      // undefined into the .eq() filter — that would match IS NULL
+      // rows and expose every guest-checkout order.
       const customerId = req.userCustomerId;
       if (!customerId) {
         res.status(401).json({ error: "unauthorized" });
         return;
       }
 
-      const owned = await db
-        .select({ stripeSessionId: shopOrders.stripeSessionId })
-        .from(shopOrders)
-        .where(
-          and(
-            eq(shopOrders.stripeSessionId, reorderSessionId!),
-            eq(shopOrders.customerId, customerId),
-          ),
-        )
-        .limit(1);
-      if (owned.length === 0) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: owned, error: ownedErr } = await supabase
+        .schema("resupply")
+        .from("shop_orders")
+        .select("stripe_session_id")
+        .eq("stripe_session_id", reorderSessionId!)
+        .eq("customer_id", customerId)
+        .limit(1)
+        .maybeSingle();
+      if (ownedErr) throw ownedErr;
+      if (!owned) {
         res.status(404).json({ error: "order_not_found" });
         return;
       }
@@ -390,19 +387,31 @@ router.post(
       return;
     }
 
-    // Mirror to shop_orders with customer_id pre-stamped.
-    const db = drizzle(getDbPool());
-    await db
-      .insert(shopOrders)
-      .values({
-        stripeSessionId: session.id,
-        status: "pending",
-        customerId: customerId,
-      })
-      .onConflictDoUpdate({
-        target: shopOrders.stripeSessionId,
-        set: { updatedAt: new Date() },
-      });
+    // Mirror to shop_orders with customer_id pre-stamped. INSERT …
+    // ON CONFLICT (stripe_session_id) DO UPDATE SET updated_at =
+    // now() → `.upsert(row, { onConflict: "stripe_session_id" })`
+    // with explicit JS-side timestamp.
+    const supabase = getSupabaseServiceRoleClient();
+    const { error: upsertErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .upsert(
+        {
+          stripe_session_id: session.id,
+          status: "pending",
+          customer_id: customerId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "stripe_session_id" },
+      );
+    if (upsertErr) {
+      req.log?.error(
+        { err: upsertErr, sessionId: session.id },
+        "shop quick-checkout: shop_orders upsert failed",
+      );
+      res.status(500).json({ error: "shop_order_persist_failed" });
+      return;
+    }
 
     res.json({
       sessionId: session.id,

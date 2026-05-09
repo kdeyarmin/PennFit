@@ -27,17 +27,14 @@
 // fields are non-null.
 
 import { Router, type IRouter } from "express";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import {
-  getDbPool,
-  shopAbandonedCarts,
-  shopOrders,
-  shopSubscriptions,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
+
+interface SubscriptionItem {
+  name?: string;
+}
 
 const router: IRouter = Router();
 
@@ -48,37 +45,70 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
   const now = new Date();
+  const nowIso = now.toISOString();
+
+  // All four reads run concurrently — they're independent and indexed
+  // on customer_id.
+  const [subsRes, latestOrderRes, pendingOrdersRes, cartRes] = await Promise.all(
+    [
+      supabase
+        .schema("resupply")
+        .from("shop_subscriptions")
+        .select("id, status, current_period_end, cancel_at_period_end, items")
+        .eq("customer_id", customerId),
+      supabase
+        .schema("resupply")
+        .from("shop_orders")
+        .select(
+          "id, stripe_session_id, status, paid_at, shipped_at, delivered_at, tracking_carrier, tracking_number, created_at",
+        )
+        .eq("customer_id", customerId)
+        .eq("status", "paid")
+        .order("paid_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .schema("resupply")
+        .from("shop_orders")
+        .select("*", { count: "exact", head: true })
+        .eq("customer_id", customerId)
+        .eq("status", "paid")
+        .is("shipped_at", null),
+      supabase
+        .schema("resupply")
+        .from("shop_abandoned_carts")
+        .select("items, updated_at, recovered_at, cleared_at")
+        .eq("customer_id", customerId)
+        .limit(1)
+        .maybeSingle(),
+    ],
+  );
+  if (subsRes.error) throw subsRes.error;
+  if (latestOrderRes.error) throw latestOrderRes.error;
+  if (pendingOrdersRes.error) throw pendingOrdersRes.error;
+  if (cartRes.error) throw cartRes.error;
 
   // Soonest upcoming shipment — pick the nearest `currentPeriodEnd`
   // across the user's active/trialing subscriptions. We don't need
   // the full row, just the date + a representative item label.
-  const subRows = await db
-    .select({
-      id: shopSubscriptions.id,
-      status: shopSubscriptions.status,
-      currentPeriodEnd: shopSubscriptions.currentPeriodEnd,
-      cancelAtPeriodEnd: shopSubscriptions.cancelAtPeriodEnd,
-      items: shopSubscriptions.items,
-    })
-    .from(shopSubscriptions)
-    .where(eq(shopSubscriptions.customerId, customerId));
-
   const liveStatuses = new Set(["active", "trialing", "past_due"]);
-  const liveSubs = subRows.filter((r) => liveStatuses.has(r.status));
+  const liveSubs = (subsRes.data ?? []).filter((r) =>
+    liveStatuses.has(r.status),
+  );
+  const itemsOf = (raw: unknown): SubscriptionItem[] =>
+    Array.isArray(raw) ? (raw as SubscriptionItem[]) : [];
   const upcoming = liveSubs
-    .filter((r) => r.currentPeriodEnd && r.currentPeriodEnd > now)
-    .sort(
-      (a, b) =>
-        (a.currentPeriodEnd?.getTime() ?? Infinity) -
-        (b.currentPeriodEnd?.getTime() ?? Infinity),
+    .filter((r) => r.current_period_end && r.current_period_end > nowIso)
+    .sort((a, b) =>
+      (a.current_period_end ?? "").localeCompare(b.current_period_end ?? ""),
     )[0];
 
   const nextShipment = upcoming
     ? {
         subscriptionId: upcoming.id,
-        date: upcoming.currentPeriodEnd!.toISOString(),
+        date: upcoming.current_period_end!,
         // Phase A.1 — countdown to the next eligible date. Always >= 0;
         // computed against the same `now` used for the cycle filter
         // above so the two fields agree on "today" within a single
@@ -86,26 +116,21 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
         daysUntil: Math.max(
           0,
           Math.ceil(
-            (upcoming.currentPeriodEnd!.getTime() - now.getTime()) /
+            (new Date(upcoming.current_period_end!).getTime() - now.getTime()) /
               (24 * 60 * 60 * 1000),
           ),
         ),
-        firstItemName: upcoming.items?.[0]?.name ?? null,
-        cancelAtPeriodEnd: upcoming.cancelAtPeriodEnd ?? false,
+        firstItemName: itemsOf(upcoming.items)[0]?.name ?? null,
+        cancelAtPeriodEnd: upcoming.cancel_at_period_end ?? false,
       }
     : null;
 
-  // Phase A.1 — eligibility-claim payload. "eligibleNow" surfaces
-  // items the customer can already reorder (period rolled past); the
-  // banner uses this to flip from "eligible in N days" to "ready now".
-  // We bundle item names for renderer convenience but DO NOT include
-  // PHI — names are catalog labels not patient data.
   const eligibleNow = liveSubs
-    .filter((r) => !r.cancelAtPeriodEnd)
-    .filter((r) => r.currentPeriodEnd && r.currentPeriodEnd <= now)
+    .filter((r) => !r.cancel_at_period_end)
+    .filter((r) => r.current_period_end && r.current_period_end <= nowIso)
     .map((r) => ({
       subscriptionId: r.id,
-      firstItemName: r.items?.[0]?.name ?? null,
+      firstItemName: itemsOf(r.items)[0]?.name ?? null,
     }));
   const eligibility = {
     eligibleNow,
@@ -117,82 +142,37 @@ router.get("/shop/me/dashboard", requireSignedIn, async (req, res) => {
       : null,
   };
 
-  // Latest paid order — gives the home banner enough to say
-  // "Order shipped Apr 22 · UPS 1Z…" or "Awaiting tracking".
-  const orderRows = await db
-    .select({
-      id: shopOrders.id,
-      sessionId: shopOrders.stripeSessionId,
-      status: shopOrders.status,
-      paidAt: shopOrders.paidAt,
-      shippedAt: shopOrders.shippedAt,
-      deliveredAt: shopOrders.deliveredAt,
-      trackingCarrier: shopOrders.trackingCarrier,
-      trackingNumber: shopOrders.trackingNumber,
-      createdAt: shopOrders.createdAt,
-    })
-    .from(shopOrders)
-    .where(
-      and(eq(shopOrders.customerId, customerId), eq(shopOrders.status, "paid")),
-    )
-    .orderBy(desc(shopOrders.paidAt))
-    .limit(1);
-
-  const latestOrder = orderRows[0]
+  const latestOrderRow = latestOrderRes.data;
+  const latestOrder = latestOrderRow
     ? {
-        id: orderRows[0].id,
-        sessionId: orderRows[0].sessionId,
-        paidAt: orderRows[0].paidAt?.toISOString() ?? null,
-        shippedAt: orderRows[0].shippedAt?.toISOString() ?? null,
-        deliveredAt: orderRows[0].deliveredAt?.toISOString() ?? null,
-        trackingCarrier: orderRows[0].trackingCarrier,
-        trackingNumber: orderRows[0].trackingNumber,
+        id: latestOrderRow.id,
+        sessionId: latestOrderRow.stripe_session_id,
+        paidAt: latestOrderRow.paid_at,
+        shippedAt: latestOrderRow.shipped_at,
+        deliveredAt: latestOrderRow.delivered_at,
+        trackingCarrier: latestOrderRow.tracking_carrier,
+        trackingNumber: latestOrderRow.tracking_number,
       }
     : null;
 
-  // Pending shipments count — orders that are paid but not yet
-  // shipped. Drives the "1 order awaiting shipment" pill.
-  const [pendingRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(shopOrders)
-    .where(
-      and(
-        eq(shopOrders.customerId, customerId),
-        eq(shopOrders.status, "paid"),
-        isNull(shopOrders.shippedAt),
-      ),
-    );
-
-  // Stale cart on another device.
-  const cartRows = await db
-    .select({
-      items: shopAbandonedCarts.items,
-      updatedAt: shopAbandonedCarts.updatedAt,
-      recoveredAt: shopAbandonedCarts.recoveredAt,
-      clearedAt: shopAbandonedCarts.clearedAt,
-    })
-    .from(shopAbandonedCarts)
-    .where(eq(shopAbandonedCarts.customerId, customerId))
-    .limit(1);
-
-  const cartRow = cartRows[0];
+  const cartRow = cartRes.data;
+  const cartItems = cartRow ? itemsOf(cartRow.items) : [];
   const stillAbandoned =
     cartRow &&
-    !cartRow.recoveredAt &&
-    !cartRow.clearedAt &&
-    Array.isArray(cartRow.items) &&
-    cartRow.items.length > 0;
+    !cartRow.recovered_at &&
+    !cartRow.cleared_at &&
+    cartItems.length > 0;
 
   res.json({
     nextShipment,
     eligibility,
     latestOrder,
     activeSubscriptions: liveSubs.length,
-    pendingOrders: pendingRow?.count ?? 0,
+    pendingOrders: pendingOrdersRes.count ?? 0,
     abandonedCart: stillAbandoned
       ? {
-          itemCount: cartRow!.items.length,
-          updatedAt: cartRow!.updatedAt.toISOString(),
+          itemCount: cartItems.length,
+          updatedAt: cartRow!.updated_at,
         }
       : null,
   });

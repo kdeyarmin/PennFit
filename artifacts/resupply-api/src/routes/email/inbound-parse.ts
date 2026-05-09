@@ -42,16 +42,11 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import busboy from "busboy";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
-  conversations,
-  episodes,
-  getDbPool,
-  messages,
-  patients,
-  tryUpsertPatientLatestMessage,
+  getSupabaseServiceRoleClient,
+  tryUpsertPatientLatestMessageSb,
+  type Json,
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
@@ -152,19 +147,22 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     return;
   }
 
-  const pool = getDbPool();
-  const db = drizzle(pool);
+  const supabase = getSupabaseServiceRoleClient();
 
   // Case-insensitive email match. Patients' emails aren't normalized
-  // at insert time, so compare via lower(). Pull up to 2 rows so we
-  // can detect ambiguous matches (one address shared between
-  // accounts) and bail rather than mis-routing PHI.
-  const lookupRows = await db
-    .select({ patientId: patients.id })
-    .from(patients)
-    .where(sql`lower(${patients.email}) = ${fromEmail}`)
+  // at insert time, so compare via .ilike() with LIKE-metachar
+  // escapes (`_` could legitimately appear in a local part). Pull up
+  // to 2 rows so we can detect ambiguous matches (one address shared
+  // between accounts) and bail rather than mis-routing PHI.
+  const escapedEmail = fromEmail.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const { data: lookupRows, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .ilike("email", escapedEmail)
     .limit(2);
-  if (lookupRows.length > 1) {
+  if (lookupErr) throw lookupErr;
+  if ((lookupRows ?? []).length > 1) {
     await safeAudit({
       action: "messaging.inbound.received",
       adminEmail: null,
@@ -174,7 +172,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       metadata: {
         channel: "email",
         outcome: "ambiguous_email",
-        match_count: lookupRows.length,
+        match_count: (lookupRows ?? []).length,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -182,7 +180,7 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     res.status(200).json({ ok: true });
     return;
   }
-  const patientId = lookupRows[0]?.patientId;
+  const patientId = lookupRows?.[0]?.id;
   if (!patientId) {
     await safeAudit({
       action: "messaging.inbound.received",
@@ -205,28 +203,30 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // SMS path — prefer the most recent OPEN email thread; if none, open
   // a new one bound to the patient's most recent episode.
   let conversationId: string | null;
-  const openConv = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.patientId, patientId),
-        eq(conversations.channel, "email"),
-        eq(conversations.status, "open"),
-      ),
-    )
-    .orderBy(desc(conversations.lastMessageAt))
-    .limit(1);
-  if (openConv[0]?.id) {
-    conversationId = openConv[0].id;
+  const { data: openConv, error: openConvErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id")
+    .eq("patient_id", patientId)
+    .eq("channel", "email")
+    .eq("status", "open")
+    .order("last_message_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (openConvErr) throw openConvErr;
+  if (openConv?.id) {
+    conversationId = openConv.id;
   } else {
-    const recentEp = await db
-      .select({ id: episodes.id })
-      .from(episodes)
-      .where(eq(episodes.patientId, patientId))
-      .orderBy(desc(episodes.dueAt))
-      .limit(1);
-    const episodeId = recentEp[0]?.id;
+    const { data: recentEp, error: epErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id")
+      .eq("patient_id", patientId)
+      .order("due_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (epErr) throw epErr;
+    const episodeId = recentEp?.id;
     if (!episodeId) {
       await safeAudit({
         action: "messaging.inbound.received",
@@ -245,17 +245,21 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
       res.status(200).json({ ok: true });
       return;
     }
-    const inserted = await db
-      .insert(conversations)
-      .values({
-        patientId,
-        episodeId,
+    const { data: inserted, error: insertConvErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .insert({
+        patient_id: patientId,
+        episode_id: episodeId,
         channel: "email",
         status: "open",
-        lastMessageAt: new Date(),
+        last_message_at: new Date().toISOString(),
       })
-      .returning({ id: conversations.id });
-    conversationId = inserted[0]?.id ?? null;
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertConvErr) throw insertConvErr;
+    conversationId = inserted?.id ?? null;
   }
   if (!conversationId) {
     res.status(200).json({ ok: true });
@@ -271,27 +275,34 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   const subject = parsed.fields.subject ?? null;
   const sendgridMessageId = extractMessageIdHeader(parsed.fields.headers);
 
-  const insertedMsg = await db
-    .insert(messages)
-    .values({
-      conversationId,
+  const inboundIso = inboundAt.toISOString();
+  const { data: insertedMsg, error: insertMsgErr } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
       direction: "inbound",
-      senderRole: "patient",
+      sender_role: "patient",
       body,
-      deliveryStatus: "received",
-      vendorMetadata: {
+      delivery_status: "received",
+      vendor_metadata: {
         sendgrid_inbound: true,
         subject,
         sendgrid_message_id: sendgridMessageId,
-      },
-      sentAt: inboundAt,
+      } as unknown as Json,
+      sent_at: inboundIso,
     })
-    .returning({ id: messages.id });
-  const inboundMessageId = insertedMsg[0]?.id ?? null;
-  await db
-    .update(conversations)
-    .set({ lastMessageAt: inboundAt, updatedAt: inboundAt })
-    .where(eq(conversations.id, conversationId));
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertMsgErr) throw insertMsgErr;
+  const inboundMessageId = insertedMsg?.id ?? null;
+  const { error: stampConvErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({ last_message_at: inboundIso, updated_at: inboundIso })
+    .eq("id", conversationId);
+  if (stampConvErr) throw stampConvErr;
 
   // 7. Ingest attachments through the shared validate→upload→insert
   // helper (same allowlist + 5MB cap + private-GCS ACL as MMS).
@@ -352,8 +363,8 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
   // 8. Refresh latest-message projection (best-effort) + flip the
   // conversation to awaiting_admin so a teammate sees the reply in
   // the inbox.
-  await tryUpsertPatientLatestMessage(
-    db,
+  await tryUpsertPatientLatestMessageSb(
+    supabase,
     {
       conversationId,
       body,
@@ -362,10 +373,12 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
     },
     req.log,
   );
-  await db
-    .update(conversations)
-    .set({ status: "awaiting_admin", updatedAt: inboundAt })
-    .where(eq(conversations.id, conversationId));
+  const { error: awaitingErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({ status: "awaiting_admin", updated_at: inboundIso })
+    .eq("id", conversationId);
+  if (awaitingErr) throw awaitingErr;
 
   await safeAudit({
     action: "messaging.inbound.received",

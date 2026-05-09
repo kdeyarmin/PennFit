@@ -15,15 +15,19 @@
 // handlers and the migration policy stay aligned.
 
 import { Router, type IRouter } from "express";
-import { and, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { conversations, getDbPool } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Database,
+} from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin, requireAdminOnly } from "../../middlewares/requireAdmin";
+
+type ConversationUpdate =
+  Database["resupply"]["Tables"]["conversations"]["Update"];
 
 const router: IRouter = Router();
 
@@ -57,6 +61,13 @@ const PRIORITY_VALUES: ConversationPriority[] = [
   "urgent",
 ];
 
+const PRIORITY_RANK: Record<ConversationPriority, number> = {
+  low: 0,
+  normal: 1,
+  high: 2,
+  urgent: 3,
+};
+
 function parseId(req: import("express").Request): string | null {
   const id = req.params.id;
   return typeof id === "string" && id.length > 0 ? id : null;
@@ -70,49 +81,52 @@ router.post("/conversations/:id/claim", requireAdmin, async (req, res) => {
   }
   const force = req.query.force === "1";
   const adminId = req.adminUserId!;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const rows = await db
-    .select({
-      id: conversations.id,
-      assignedAdminUserId: conversations.assignedAdminUserId,
-      status: conversations.status,
-      priority: conversations.priority,
-    })
-    .from(conversations)
-    .where(eq(conversations.id, id))
-    .limit(1);
-  const row = rows[0];
+  const { data: row, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id, assigned_admin_user_id, status, priority")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
   if (!row) {
     res.status(404).json({ error: "conversation_not_found" });
     return;
   }
   if (
-    row.assignedAdminUserId &&
-    row.assignedAdminUserId !== adminId &&
+    row.assigned_admin_user_id &&
+    row.assigned_admin_user_id !== adminId &&
     !force
   ) {
     res.status(409).json({
       error: "already_assigned",
       message:
         "Another team member already claimed this conversation. Pass ?force=1 to take over.",
-      assignedTo: row.assignedAdminUserId,
+      assignedTo: row.assigned_admin_user_id,
     });
     return;
   }
   const now = new Date();
+  const nowIso = now.toISOString();
   const priority = (row.priority as ConversationPriority) ?? "normal";
   const slaDueAt =
     row.status === "awaiting_admin"
       ? computeSlaDueAt(priority, row.status, now)
       : undefined;
-  const updates: Partial<typeof conversations.$inferInsert> = {
-    assignedAdminUserId: adminId,
-    assignedAt: now,
-    updatedAt: now,
+  const updates: ConversationUpdate = {
+    assigned_admin_user_id: adminId,
+    assigned_at: nowIso,
+    updated_at: nowIso,
   };
-  if (slaDueAt !== undefined) updates.slaDueAt = slaDueAt;
-  await db.update(conversations).set(updates).where(eq(conversations.id, id));
+  if (slaDueAt !== undefined) updates.sla_due_at = slaDueAt?.toISOString() ?? null;
+  const { error: updateErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update(updates)
+    .eq("id", id);
+  if (updateErr) throw updateErr;
   res.json({
     ok: true,
     assignedTo: adminId,
@@ -128,20 +142,22 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
   }
   const adminId = req.adminUserId!;
   const adminRole = req.adminRole;
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({ assignedAdminUserId: conversations.assignedAdminUserId })
-    .from(conversations)
-    .where(eq(conversations.id, id))
-    .limit(1);
-  const row = rows[0];
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("assigned_admin_user_id")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
   if (!row) {
     res.status(404).json({ error: "conversation_not_found" });
     return;
   }
   if (
-    row.assignedAdminUserId &&
-    row.assignedAdminUserId !== adminId &&
+    row.assigned_admin_user_id &&
+    row.assigned_admin_user_id !== adminId &&
     adminRole !== "admin"
   ) {
     res.status(403).json({
@@ -151,14 +167,16 @@ router.post("/conversations/:id/release", requireAdmin, async (req, res) => {
     });
     return;
   }
-  await db
-    .update(conversations)
-    .set({
-      assignedAdminUserId: null,
-      assignedAt: null,
-      updatedAt: new Date(),
+  const { error: updateErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
+      assigned_admin_user_id: null,
+      assigned_at: null,
+      updated_at: new Date().toISOString(),
     })
-    .where(eq(conversations.id, id));
+    .eq("id", id);
+  if (updateErr) throw updateErr;
   res.json({ ok: true });
 });
 
@@ -175,17 +193,20 @@ router.post("/conversations/:id/assign", requireAdminOnly, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const db = drizzle(getDbPool());
-  const updated = await db
-    .update(conversations)
-    .set({
-      assignedAdminUserId: parsed.data.userId,
-      assignedAt: new Date(),
-      updatedAt: new Date(),
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
+  const { data: updated, error } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
+      assigned_admin_user_id: parsed.data.userId,
+      assigned_at: nowIso,
+      updated_at: nowIso,
     })
-    .where(eq(conversations.id, id))
-    .returning({ id: conversations.id });
-  if (updated.length === 0) {
+    .eq("id", id)
+    .select("id");
+  if (error) throw error;
+  if (!updated || updated.length === 0) {
     res.status(404).json({ error: "conversation_not_found" });
     return;
   }
@@ -211,32 +232,33 @@ router.post("/conversations/:id/priority", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      status: conversations.status,
-      assignedAt: conversations.assignedAt,
-    })
-    .from(conversations)
-    .where(eq(conversations.id, id))
-    .limit(1);
-  const row = rows[0];
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("status, assigned_at")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
   if (!row) {
     res.status(404).json({ error: "conversation_not_found" });
     return;
   }
   // SLA recomputation baseline: assignedAt if available (so urgent
   // promotions don't unfairly extend an already-late thread), else now().
-  const baseline = row.assignedAt ?? new Date();
+  const baseline = row.assigned_at ? new Date(row.assigned_at) : new Date();
   const slaDueAt = computeSlaDueAt(parsed.data.priority, row.status, baseline);
-  await db
-    .update(conversations)
-    .set({
+  const { error: updateErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
       priority: parsed.data.priority,
-      slaDueAt: slaDueAt ?? null,
-      updatedAt: new Date(),
+      sla_due_at: slaDueAt?.toISOString() ?? null,
+      updated_at: new Date().toISOString(),
     })
-    .where(eq(conversations.id, id));
+    .eq("id", id);
+  if (updateErr) throw updateErr;
   res.json({ ok: true, slaDueAt: slaDueAt?.toISOString() ?? null });
 });
 
@@ -258,21 +280,43 @@ router.post("/conversations/:id/escalate", requireAdmin, async (req, res) => {
     res.status(400).json({ error: "invalid_body" });
     return;
   }
-  const db = drizzle(getDbPool());
-  // Bumps priority to high if currently low/normal — escalation should
-  // pull this up the queue. Don't downgrade urgent.
-  const updated = await db
-    .update(conversations)
-    .set({
-      escalatedAt: new Date(),
-      escalatedTo: parsed.data.escalateTo ?? null,
-      escalationReason: parsed.data.reason,
-      priority: sql`CASE WHEN priority IN ('low','normal') THEN 'high' ELSE priority END`,
-      updatedAt: new Date(),
+  const supabase = getSupabaseServiceRoleClient();
+  // The original used a raw `CASE WHEN priority IN ('low','normal') THEN
+  // 'high' ELSE priority END` to bump priority without downgrading
+  // urgent threads. PostgREST has no SQL CASE, so we read-then-write:
+  // fetch the current priority, decide JS-side, then update.
+  const { data: row, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("priority")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
+  if (!row) {
+    res.status(404).json({ error: "conversation_not_found" });
+    return;
+  }
+  const currentPriority = (row.priority as ConversationPriority) ?? "normal";
+  const nextPriority: ConversationPriority =
+    PRIORITY_RANK[currentPriority] < PRIORITY_RANK.high
+      ? "high"
+      : currentPriority;
+  const nowIso = new Date().toISOString();
+  const { data: updated, error: updateErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
+      escalated_at: nowIso,
+      escalated_to: parsed.data.escalateTo ?? null,
+      escalation_reason: parsed.data.reason,
+      priority: nextPriority,
+      updated_at: nowIso,
     })
-    .where(eq(conversations.id, id))
-    .returning({ id: conversations.id });
-  if (updated.length === 0) {
+    .eq("id", id)
+    .select("id");
+  if (updateErr) throw updateErr;
+  if (!updated || updated.length === 0) {
     res.status(404).json({ error: "conversation_not_found" });
     return;
   }
@@ -288,18 +332,20 @@ router.post(
       res.status(400).json({ error: "missing_id" });
       return;
     }
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(conversations)
-      .set({
-        escalatedAt: null,
-        escalatedTo: null,
-        escalationReason: null,
-        updatedAt: new Date(),
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: updated, error } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .update({
+        escalated_at: null,
+        escalated_to: null,
+        escalation_reason: null,
+        updated_at: new Date().toISOString(),
       })
-      .where(and(eq(conversations.id, id)))
-      .returning({ id: conversations.id });
-    if (updated.length === 0) {
+      .eq("id", id)
+      .select("id");
+    if (error) throw error;
+    if (!updated || updated.length === 0) {
       res.status(404).json({ error: "conversation_not_found" });
       return;
     }
@@ -353,16 +399,15 @@ router.post("/conversations/:id/status", requireAdmin, async (req, res) => {
     });
     return;
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      status: conversations.status,
-      channel: conversations.channel,
-    })
-    .from(conversations)
-    .where(eq(conversations.id, id))
-    .limit(1);
-  const row = rows[0];
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("status, channel")
+    .eq("id", id)
+    .limit(1)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
   if (!row) {
     res.status(404).json({ error: "conversation_not_found" });
     return;
@@ -388,20 +433,23 @@ router.post("/conversations/:id/status", requireAdmin, async (req, res) => {
     return;
   }
 
-  await db
-    .update(conversations)
-    .set({
+  const { error: updateErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
       status: nextStatus,
       // SLA only applies to active states. Reopen → recompute; close
       // → null out (the priority + assignment columns survive in
       // case the thread is reopened).
-      slaDueAt:
+      sla_due_at:
         nextStatus === "closed"
           ? null
-          : computeSlaDueAt("normal", nextStatus, new Date()),
-      updatedAt: new Date(),
+          : computeSlaDueAt("normal", nextStatus, new Date())?.toISOString() ??
+            null,
+      updated_at: new Date().toISOString(),
     })
-    .where(eq(conversations.id, id));
+    .eq("id", id);
+  if (updateErr) throw updateErr;
 
   // Audit envelope: structural only.
   await logAudit({

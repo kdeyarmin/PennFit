@@ -39,12 +39,16 @@
 //   502 stripe_refund_failed               — Stripe error proxied
 
 import { Router, type IRouter } from "express";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { getDbPool, shopCustomers, shopOrders } from "@workspace/resupply-db";
-import type { SavedShippingAddress } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Database,
+  type Json,
+  type SavedShippingAddress,
+} from "@workspace/resupply-db";
+
+type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { logAudit } from "@workspace/resupply-audit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -75,7 +79,7 @@ const adminOrderRefundLimiter = rateLimit({
 // ID validation: shop_orders.id is a text column whose values are
 // `gen_random_uuid()::text`. Accept the canonical UUID format so a
 // stray path param can't be smuggled into the WHERE clause as a
-// substring match. (Drizzle parameterises so this is belt-and-
+// substring match. (PostgREST parameterises so this is belt-and-
 // suspenders defence.)
 const ORDER_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -140,42 +144,70 @@ interface OrderRow {
   amountTotalCents: number | null;
   currency: string | null;
   customerId: string | null;
-  createdAt: Date;
-  paidAt: Date | null;
+  createdAt: string;
+  paidAt: string | null;
   shippingAddress: SavedShippingAddress | null;
   trackingCarrier: string | null;
   trackingNumber: string | null;
-  shippedAt: Date | null;
-  deliveredAt: Date | null;
-  shippingEmailSentAt: Date | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  shippingEmailSentAt: string | null;
   customerEmail: string | null;
 }
 
+const ORDER_COLUMNS =
+  "id, stripe_session_id, stripe_payment_intent_id, status, amount_total_cents, currency, customer_id, created_at, paid_at, shipping_address_json, tracking_carrier, tracking_number, shipped_at, delivered_at, shipping_email_sent_at, customer_email";
+
+function rowToOrderRow(row: {
+  id: string;
+  stripe_session_id: string;
+  stripe_payment_intent_id: string | null;
+  status: string;
+  amount_total_cents: number | null;
+  currency: string | null;
+  customer_id: string | null;
+  created_at: string;
+  paid_at: string | null;
+  shipping_address_json: Json | null;
+  tracking_carrier: string | null;
+  tracking_number: string | null;
+  shipped_at: string | null;
+  delivered_at: string | null;
+  shipping_email_sent_at: string | null;
+  customer_email: string | null;
+}): OrderRow {
+  return {
+    id: row.id,
+    stripeSessionId: row.stripe_session_id,
+    stripePaymentIntentId: row.stripe_payment_intent_id,
+    status: row.status,
+    amountTotalCents: row.amount_total_cents,
+    currency: row.currency,
+    customerId: row.customer_id,
+    createdAt: row.created_at,
+    paidAt: row.paid_at,
+    shippingAddress:
+      (row.shipping_address_json as SavedShippingAddress | null) ?? null,
+    trackingCarrier: row.tracking_carrier,
+    trackingNumber: row.tracking_number,
+    shippedAt: row.shipped_at,
+    deliveredAt: row.delivered_at,
+    shippingEmailSentAt: row.shipping_email_sent_at,
+    customerEmail: row.customer_email,
+  };
+}
+
 async function loadOrder(orderId: string): Promise<OrderRow | null> {
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: shopOrders.id,
-      stripeSessionId: shopOrders.stripeSessionId,
-      stripePaymentIntentId: shopOrders.stripePaymentIntentId,
-      status: shopOrders.status,
-      amountTotalCents: shopOrders.amountTotalCents,
-      currency: shopOrders.currency,
-      customerId: shopOrders.customerId,
-      createdAt: shopOrders.createdAt,
-      paidAt: shopOrders.paidAt,
-      shippingAddress: shopOrders.shippingAddress,
-      trackingCarrier: shopOrders.trackingCarrier,
-      trackingNumber: shopOrders.trackingNumber,
-      shippedAt: shopOrders.shippedAt,
-      deliveredAt: shopOrders.deliveredAt,
-      shippingEmailSentAt: shopOrders.shippingEmailSentAt,
-      customerEmail: shopOrders.customerEmail,
-    })
-    .from(shopOrders)
-    .where(eq(shopOrders.id, orderId))
-    .limit(1);
-  return rows[0] ?? null;
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .select(ORDER_COLUMNS)
+    .eq("id", orderId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? rowToOrderRow(data) : null;
 }
 
 /**
@@ -219,30 +251,30 @@ async function sendShippingNotificationIfNew(args: {
   { skipped: true; reason: string } | { skipped: false; delivered: boolean }
 > {
   const { orderId, log } = args;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Atomic claim — wins iff shipping_email_sent_at is currently NULL.
   // The route's prior UPDATE has either left the timestamp non-null
   // (re-entry of identical tracking → claim fails → skip) or NULL
   // (first send OR genuine re-ship → claim succeeds → send).
-  const claimedRows = await db
-    .update(shopOrders)
-    .set({ shippingEmailSentAt: sql`now()`, updatedAt: sql`now()` })
-    .where(
-      and(eq(shopOrders.id, orderId), isNull(shopOrders.shippingEmailSentAt)),
+  const claimIso = new Date().toISOString();
+  const { data: claimedRow, error: claimErr } = await supabase
+    .schema("resupply")
+    .from("shop_orders")
+    .update({
+      shipping_email_sent_at: claimIso,
+      updated_at: claimIso,
+    })
+    .eq("id", orderId)
+    .is("shipping_email_sent_at", null)
+    .select(
+      "id, stripe_session_id, customer_id, shipping_address_json, tracking_carrier, tracking_number, customer_email",
     )
-    .returning({
-      id: shopOrders.id,
-      stripeSessionId: shopOrders.stripeSessionId,
-      customerId: shopOrders.customerId,
-      shippingAddress: shopOrders.shippingAddress,
-      trackingCarrier: shopOrders.trackingCarrier,
-      trackingNumber: shopOrders.trackingNumber,
-      customerEmail: shopOrders.customerEmail,
-    });
-  const claimed = claimedRows[0];
+    .limit(1)
+    .maybeSingle();
+  if (claimErr) throw claimErr;
 
-  if (!claimed) {
+  if (!claimedRow) {
     log?.info?.(
       { orderId },
       "shipping notification email skipped — already sent or row missing",
@@ -257,19 +289,19 @@ async function sendShippingNotificationIfNew(args: {
   // including transient DB errors during the customer lookup — so a
   // transient failure can never permanently lock out the email.
   const releaseClaim = async (): Promise<void> => {
-    try {
-      await db
-        .update(shopOrders)
-        .set({ shippingEmailSentAt: null, updatedAt: sql`now()` })
-        .where(eq(shopOrders.id, claimed.id));
-    } catch (releaseErr) {
+    const { error: releaseErr } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update({
+        shipping_email_sent_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", claimedRow.id);
+    if (releaseErr) {
       log?.warn?.(
         {
-          orderId: claimed.id,
-          err:
-            releaseErr instanceof Error
-              ? releaseErr.message
-              : String(releaseErr),
+          orderId: claimedRow.id,
+          err: releaseErr,
         },
         "shipping notification email claim release failed",
       );
@@ -277,7 +309,7 @@ async function sendShippingNotificationIfNew(args: {
   };
 
   try {
-    if (!claimed.trackingCarrier || !claimed.trackingNumber) {
+    if (!claimedRow.tracking_carrier || !claimedRow.tracking_number) {
       // Defence in depth — schema enforces non-empty, but the email
       // body would render nonsense without these.
       await releaseClaim();
@@ -288,21 +320,24 @@ async function sendShippingNotificationIfNew(args: {
     // (captured from Stripe at paid-time) → skip. We never log the
     // recipient string.
     let toEmail: string | null = null;
-    if (claimed.customerId) {
-      const [cust] = await db
-        .select({ email: shopCustomers.emailLower })
-        .from(shopCustomers)
-        .where(eq(shopCustomers.customerId, claimed.customerId))
-        .limit(1);
-      if (cust?.email) toEmail = cust.email;
+    if (claimedRow.customer_id) {
+      const { data: cust, error: custErr } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .select("email_lower")
+        .eq("customer_id", claimedRow.customer_id)
+        .limit(1)
+        .maybeSingle();
+      if (custErr) throw custErr;
+      if (cust?.email_lower) toEmail = cust.email_lower;
     }
-    if (!toEmail && claimed.customerEmail) {
-      toEmail = claimed.customerEmail;
+    if (!toEmail && claimedRow.customer_email) {
+      toEmail = claimedRow.customer_email;
     }
     if (!toEmail) {
       await releaseClaim();
       log?.info?.(
-        { orderId: claimed.id },
+        { orderId: claimedRow.id },
         "shipping notification email skipped — no recipient on file",
       );
       return { skipped: true, reason: "no_email_on_file" };
@@ -310,16 +345,18 @@ async function sendShippingNotificationIfNew(args: {
 
     const result = await sendShippingNotificationEmail({
       toEmail,
-      stripeSessionId: claimed.stripeSessionId,
-      carrier: claimed.trackingCarrier,
-      trackingNumber: claimed.trackingNumber,
-      shippingAddress: claimed.shippingAddress ?? null,
+      stripeSessionId: claimedRow.stripe_session_id,
+      carrier: claimedRow.tracking_carrier,
+      trackingNumber: claimedRow.tracking_number,
+      shippingAddress:
+        (claimedRow.shipping_address_json as SavedShippingAddress | null) ??
+        null,
     });
 
     if (!result.configured) {
       await releaseClaim();
       log?.info?.(
-        { orderId: claimed.id },
+        { orderId: claimedRow.id },
         "shipping notification email skipped — sendgrid not configured",
       );
       return { skipped: true, reason: "not_configured" };
@@ -327,14 +364,14 @@ async function sendShippingNotificationIfNew(args: {
     if (!result.delivered) {
       await releaseClaim();
       log?.warn?.(
-        { orderId: claimed.id, error: result.error },
+        { orderId: claimedRow.id, error: result.error },
         "shipping notification email send failed (non-fatal, claim released)",
       );
       return { skipped: false, delivered: false };
     }
 
     log?.info?.(
-      { orderId: claimed.id, messageId: result.messageId ?? null },
+      { orderId: claimedRow.id, messageId: result.messageId ?? null },
       "shipping notification email delivered",
     );
 
@@ -342,17 +379,17 @@ async function sendShippingNotificationIfNew(args: {
     // after the email so a push misconfig can never block delivery
     // of the canonical notification. Logged with structural counts
     // only; the helper itself never logs the payload or endpoint URL.
-    if (claimed.customerId) {
+    if (claimedRow.customer_id) {
       try {
-        const counts = await sendPushToCustomer(claimed.customerId, {
+        const counts = await sendPushToCustomer(claimedRow.customer_id, {
           title: "Your PennPaps order shipped",
-          body: `${claimed.trackingCarrier} · ${claimed.trackingNumber}`,
+          body: `${claimedRow.tracking_carrier} · ${claimedRow.tracking_number}`,
           url: `/account/orders`,
-          tag: `shop_order_shipped:${claimed.id}`,
+          tag: `shop_order_shipped:${claimedRow.id}`,
         });
         if (counts.delivered + counts.expired + counts.transient > 0) {
           log?.info?.(
-            { orderId: claimed.id, ...counts },
+            { orderId: claimedRow.id, ...counts },
             "shipping notification push fan-out complete",
           );
         }
@@ -361,7 +398,7 @@ async function sendShippingNotificationIfNew(args: {
         // outcome. Log and move on.
         log?.warn?.(
           {
-            orderId: claimed.id,
+            orderId: claimedRow.id,
             err: err instanceof Error ? err.message : String(err),
           },
           "shipping notification push send threw (non-fatal)",
@@ -379,7 +416,7 @@ async function sendShippingNotificationIfNew(args: {
     await releaseClaim();
     log?.warn?.(
       {
-        orderId: claimed.id,
+        orderId: claimedRow.id,
         err: err instanceof Error ? err.message : String(err),
       },
       "shipping notification email post-claim threw (non-fatal, claim released)",
@@ -397,13 +434,14 @@ function projectOrder(row: OrderRow) {
     amountTotalCents: row.amountTotalCents,
     currency: row.currency,
     customerId: row.customerId,
-    createdAt: row.createdAt.toISOString(),
-    paidAt: row.paidAt ? row.paidAt.toISOString() : null,
+    // PostgREST returns timestamptz as ISO string already.
+    createdAt: row.createdAt,
+    paidAt: row.paidAt,
     shippingAddress: row.shippingAddress,
     trackingCarrier: row.trackingCarrier,
     trackingNumber: row.trackingNumber,
-    shippedAt: row.shippedAt ? row.shippedAt.toISOString() : null,
-    deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
+    shippedAt: row.shippedAt,
+    deliveredAt: row.deliveredAt,
   };
 }
 
@@ -454,29 +492,41 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    // Atomicity note: in the SAME UPDATE that stamps the new tracking,
-    // CLEAR `shipping_email_sent_at` if either the carrier or the
-    // number actually changed vs the row's PRE-UPDATE values. SET
-    // clauses in Postgres see the OLD row, so `tracking_carrier IS
-    // DISTINCT FROM $new` evaluates against the prior column value.
-    // This is what makes the helper's claim-then-send logic correct
-    // under concurrency: two admins racing identical re-saves both
-    // see the timestamp non-null (no clear) and neither claims; one
-    // admin updating tracking AND another racing to send a stale
-    // email both serialize through the row's atomic UPDATE.
-    const updated = await db
-      .update(shopOrders)
-      .set({
-        trackingCarrier: carrier,
-        trackingNumber: number,
-        shippedAt: sql`now()`,
-        updatedAt: sql`now()`,
-        shippingEmailSentAt: sql`CASE WHEN ${shopOrders.trackingCarrier} IS DISTINCT FROM ${carrier} OR ${shopOrders.trackingNumber} IS DISTINCT FROM ${number} THEN NULL ELSE ${shopOrders.shippingEmailSentAt} END`,
-      })
-      .where(and(eq(shopOrders.id, orderId), eq(shopOrders.status, "paid")))
-      .returning();
-    const row = updated[0];
+    const supabase = getSupabaseServiceRoleClient();
+    // Atomicity note: the original Drizzle path used a
+    //   `CASE WHEN tracking_carrier IS DISTINCT FROM $new
+    //         OR tracking_number IS DISTINCT FROM $new
+    //         THEN NULL ELSE shipping_email_sent_at END`
+    // expression in the same UPDATE that stamped the new tracking, so
+    // shipping_email_sent_at was conditionally cleared in one
+    // statement. PostgREST has no SQL CASE — we decide JS-side using
+    // the prior row values from `existing` and either include or omit
+    // the column from the update. Two admins racing identical re-
+    // saves both see existing == new → omit shipping_email_sent_at →
+    // no clear → no email re-send.
+    const trackingChanged =
+      existing.trackingCarrier !== carrier ||
+      existing.trackingNumber !== number;
+    const nowIso = new Date().toISOString();
+    const updatePayload: ShopOrderUpdate = {
+      tracking_carrier: carrier,
+      tracking_number: number,
+      shipped_at: nowIso,
+      updated_at: nowIso,
+    };
+    if (trackingChanged) {
+      updatePayload.shipping_email_sent_at = null;
+    }
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update(updatePayload)
+      .eq("id", orderId)
+      .eq("status", "paid")
+      .select(ORDER_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       // Race: order was deleted or its status changed between the
       // pre-check and this UPDATE (e.g. a concurrent refund webhook).
@@ -513,7 +563,7 @@ router.post(
       );
     }
 
-    res.json({ order: projectOrder(row as OrderRow) });
+    res.json({ order: projectOrder(rowToOrderRow(row)) });
   },
 );
 
@@ -548,19 +598,24 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(shopOrders)
-      .set({
-        deliveredAt: sql`now()`,
-        updatedAt: sql`now()`,
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update({
+        delivered_at: nowIso,
+        updated_at: nowIso,
       })
       // Guard idempotency at DB level: if two admins race, the second
-      // UPDATE matches 0 rows (deliveredAt already set) and we re-read
-      // the committed row below instead of double-stamping.
-      .where(and(eq(shopOrders.id, orderId), isNull(shopOrders.deliveredAt)))
-      .returning();
-    const row = updated[0];
+      // UPDATE matches 0 rows (delivered_at already set) and we
+      // re-read the committed row below instead of double-stamping.
+      .eq("id", orderId)
+      .is("delivered_at", null)
+      .select(ORDER_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       // Either deleted or already delivered by a concurrent request.
       // Re-load to distinguish and return the current state.
@@ -577,7 +632,7 @@ router.post(
       { orderId, adminEmail: req.adminEmail },
       "admin/shop/orders: marked delivered",
     );
-    res.json({ order: projectOrder(row as OrderRow) });
+    res.json({ order: projectOrder(rowToOrderRow(row)) });
   },
 );
 
@@ -626,16 +681,21 @@ router.patch(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const updated = await db
-      .update(shopOrders)
-      .set({
-        shippingAddress: address,
-        updatedAt: sql`now()`,
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .update({
+        // SavedShippingAddress isn't a Json index-signature shape; cast
+        // at the boundary.
+        shipping_address_json: address as unknown as Json,
+        updated_at: new Date().toISOString(),
       })
-      .where(eq(shopOrders.id, orderId))
-      .returning();
-    const row = updated[0];
+      .eq("id", orderId)
+      .select(ORDER_COLUMNS)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
     if (!row) {
       res.status(404).json({ error: "order_not_found" });
       return;
@@ -648,7 +708,7 @@ router.patch(
       },
       "admin/shop/orders: shipping address overwritten by admin",
     );
-    res.json({ order: projectOrder(row as OrderRow) });
+    res.json({ order: projectOrder(rowToOrderRow(row)) });
   },
 );
 

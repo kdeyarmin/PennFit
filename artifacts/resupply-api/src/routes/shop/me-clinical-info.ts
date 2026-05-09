@@ -29,21 +29,22 @@
 //   pre-filtered, structural metadata.
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import {
   type CpapDeviceInfo,
+  type Database,
+  type Json,
   type PhysicianInfo,
-  getDbPool,
-  shopCustomers,
+  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
 import { ensureShopCustomerRow } from "../../lib/stripe/customer";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { logger } from "../../lib/logger";
+
+type ShopCustomersUpdate = Database["resupply"]["Tables"]["shop_customers"]["Update"];
 
 const router: IRouter = Router();
 
@@ -126,21 +127,18 @@ const updateBody = z
 router.get("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
   await ensureShopCustomerRow({ customerId, email: null });
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      cpapDevice: shopCustomers.cpapDevice,
-      physicianInfo: shopCustomers.physicianInfo,
-      facialMeasurements: shopCustomers.facialMeasurements,
-    })
-    .from(shopCustomers)
-    .where(eq(shopCustomers.customerId, customerId))
-    .limit(1);
-  const row = rows[0];
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("cpap_device_json, physician_info_json, facial_measurements_json")
+    .eq("customer_id", customerId)
+    .limit(1)
+    .maybeSingle();
   res.json({
-    cpapDevice: row?.cpapDevice ?? null,
-    physicianInfo: row?.physicianInfo ?? null,
-    facialMeasurements: row?.facialMeasurements ?? null,
+    cpapDevice: row?.cpap_device_json ?? null,
+    physicianInfo: row?.physician_info_json ?? null,
+    facialMeasurements: row?.facial_measurements_json ?? null,
   });
 });
 
@@ -159,22 +157,23 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   const customerId = req.userCustomerId!;
   await ensureShopCustomerRow({ customerId, email: null });
 
-  const updates: {
-    cpapDevice?: CpapDeviceInfo | null;
-    physicianInfo?: PhysicianInfo | null;
-    updatedAt: Date;
-  } = { updatedAt: new Date() };
+  const supabase = getSupabaseServiceRoleClient();
+  const updates: ShopCustomersUpdate = {
+    updated_at: new Date().toISOString(),
+  };
 
   // Track which top-level objects actually changed for the audit
   // metadata. We compute this BEFORE writing so a no-op PUT (the
   // shopper hits Save without changing anything) doesn't waste an
   // audit row.
   const changed: string[] = [];
+  let cpapDeviceValue: CpapDeviceInfo | null = null;
+  let physicianInfoValue: PhysicianInfo | null = null;
 
   if (parsed.data.cpapDevice !== undefined) {
     // Normalize empty optional strings → null so the round-trip
     // shape is consistent regardless of how the form serialized.
-    const value: CpapDeviceInfo | null =
+    cpapDeviceValue =
       parsed.data.cpapDevice === null
         ? null
         : {
@@ -185,12 +184,12 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
             humidifierSetting: parsed.data.cpapDevice.humidifierSetting || null,
             notes: parsed.data.cpapDevice.notes || null,
           };
-    updates.cpapDevice = value;
+    updates.cpap_device_json = cpapDeviceValue as unknown as Json;
     changed.push("cpapDevice");
   }
 
   if (parsed.data.physicianInfo !== undefined) {
-    const value: PhysicianInfo | null =
+    physicianInfoValue =
       parsed.data.physicianInfo === null
         ? null
         : {
@@ -206,44 +205,37 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
             postalCode: parsed.data.physicianInfo.postalCode || null,
             npi: parsed.data.physicianInfo.npi || null,
           };
-    updates.physicianInfo = value;
+    updates.physician_info_json = physicianInfoValue as unknown as Json;
     changed.push("physicianInfo");
   }
 
   if (changed.length === 0) {
     // No-op PUT — return the current values without touching the
     // row or writing an audit line.
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        cpapDevice: shopCustomers.cpapDevice,
-        physicianInfo: shopCustomers.physicianInfo,
-        facialMeasurements: shopCustomers.facialMeasurements,
-      })
-      .from(shopCustomers)
-      .where(eq(shopCustomers.customerId, customerId))
-      .limit(1);
-    const row = rows[0];
+    const { data: row } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("cpap_device_json, physician_info_json, facial_measurements_json")
+      .eq("customer_id", customerId)
+      .limit(1)
+      .maybeSingle();
     res.json({
-      cpapDevice: row?.cpapDevice ?? null,
-      physicianInfo: row?.physicianInfo ?? null,
-      facialMeasurements: row?.facialMeasurements ?? null,
+      cpapDevice: row?.cpap_device_json ?? null,
+      physicianInfo: row?.physician_info_json ?? null,
+      facialMeasurements: row?.facial_measurements_json ?? null,
     });
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const [row] = await db
-    .update(shopCustomers)
-    .set(updates)
-    .where(eq(shopCustomers.customerId, customerId))
-    .returning({
-      cpapDevice: shopCustomers.cpapDevice,
-      physicianInfo: shopCustomers.physicianInfo,
-      facialMeasurements: shopCustomers.facialMeasurements,
-    });
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .update(updates)
+    .eq("customer_id", customerId)
+    .select("cpap_device_json, physician_info_json, facial_measurements_json")
+    .maybeSingle();
 
-  if (!row) {
+  if (error || !row) {
     res.status(500).json({ error: "update_failed" });
     return;
   }
@@ -264,19 +256,16 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
     targetId: customerId,
     metadata: {
       changed,
-      cpap_device_set:
-        updates.cpapDevice !== undefined ? updates.cpapDevice !== null : false,
-      physician_info_set:
-        updates.physicianInfo !== undefined
-          ? updates.physicianInfo !== null
-          : false,
+      cpap_device_set: changed.includes("cpapDevice")
+        ? cpapDeviceValue !== null
+        : false,
+      physician_info_set: changed.includes("physicianInfo")
+        ? physicianInfoValue !== null
+        : false,
       // Length crumb on the optional notes field — operators have
       // asked for this kind of "is someone pasting suspicious
       // content" signal in similar audit rows.
-      cpap_notes_length:
-        updates.cpapDevice && updates.cpapDevice !== null
-          ? (updates.cpapDevice.notes?.length ?? 0)
-          : 0,
+      cpap_notes_length: cpapDeviceValue?.notes?.length ?? 0,
     },
     ip: req.ip ?? null,
     userAgent: req.get("user-agent") ?? null,
@@ -288,9 +277,9 @@ router.put("/shop/me/clinical-info", requireSignedIn, async (req, res) => {
   });
 
   res.json({
-    cpapDevice: row.cpapDevice ?? null,
-    physicianInfo: row.physicianInfo ?? null,
-    facialMeasurements: row.facialMeasurements ?? null,
+    cpapDevice: row.cpap_device_json ?? null,
+    physicianInfo: row.physician_info_json ?? null,
+    facialMeasurements: row.facial_measurements_json ?? null,
   });
 });
 

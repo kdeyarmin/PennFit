@@ -15,11 +15,9 @@
 //     sides asynchronously).
 
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { conversations, getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { logger } from "../../lib/logger";
@@ -67,13 +65,14 @@ router.post("/voice/status-callback", signatureMiddleware, async (req, res) => {
   }
 
   if (TERMINAL_STATUSES.has(callStatus)) {
-    const pool = getDbPool();
-    const db = drizzle(pool);
     try {
-      await db
-        .update(conversations)
-        .set({ status: "closed", updatedAt: new Date() })
-        .where(eq(conversations.id, conversationId));
+      const supabase = getSupabaseServiceRoleClient();
+      const { error } = await supabase
+        .schema("resupply")
+        .from("conversations")
+        .update({ status: "closed", updated_at: new Date().toISOString() })
+        .eq("id", conversationId);
+      if (error) throw error;
     } catch (err) {
       logger.warn(
         {

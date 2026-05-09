@@ -29,19 +29,8 @@
 // Customer + scrubs local rows; out of scope for this slice).
 
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import {
-  getDbPool,
-  shopAbandonedCarts,
-  shopCustomers,
-  shopOrderItems,
-  shopOrders,
-  shopReturns,
-  shopReviews,
-  shopSubscriptions,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 import { rateLimit } from "../../middlewares/rate-limit";
@@ -62,50 +51,82 @@ const exportRateLimit = rateLimit({
 
 router.get("/shop/me/export", requireSignedIn, exportRateLimit, async (req, res) => {
   const customerId = req.userCustomerId!;
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const [customers, orders, items, subs, returns, reviews, carts] =
-    await Promise.all([
-      db
-        .select()
-        .from(shopCustomers)
-        .where(eq(shopCustomers.customerId, customerId))
-        .limit(1),
-      db
-        .select()
-        .from(shopOrders)
-        .where(eq(shopOrders.customerId, customerId))
-        .orderBy(desc(shopOrders.createdAt)),
-      db
-        .select()
-        .from(shopOrderItems)
-        .where(eq(shopOrderItems.customerId, customerId)),
-      db
-        .select()
-        .from(shopSubscriptions)
-        .where(eq(shopSubscriptions.customerId, customerId))
-        .orderBy(desc(shopSubscriptions.createdAt)),
-      db
-        .select()
-        .from(shopReturns)
-        .where(eq(shopReturns.customerId, customerId))
-        .orderBy(desc(shopReturns.createdAt)),
-      db
-        .select()
-        .from(shopReviews)
-        .where(eq(shopReviews.customerId, customerId)),
-      db
-        .select()
-        .from(shopAbandonedCarts)
-        .where(eq(shopAbandonedCarts.customerId, customerId))
-        .limit(1),
-    ]);
+  const [
+    customersRes,
+    ordersRes,
+    itemsRes,
+    subsRes,
+    returnsRes,
+    reviewsRes,
+    cartsRes,
+  ] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("*")
+      .eq("customer_id", customerId)
+      .limit(1),
+    supabase
+      .schema("resupply")
+      .from("shop_orders")
+      .select("*")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .schema("resupply")
+      .from("shop_order_items")
+      .select("*")
+      .eq("customer_id", customerId),
+    supabase
+      .schema("resupply")
+      .from("shop_subscriptions")
+      .select("*")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .schema("resupply")
+      .from("shop_returns")
+      .select("*")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .schema("resupply")
+      .from("shop_reviews")
+      .select("*")
+      .eq("customer_id", customerId),
+    supabase
+      .schema("resupply")
+      .from("shop_abandoned_carts")
+      .select("*")
+      .eq("customer_id", customerId)
+      .limit(1),
+  ]);
+  for (const r of [
+    customersRes,
+    ordersRes,
+    itemsRes,
+    subsRes,
+    returnsRes,
+    reviewsRes,
+    cartsRes,
+  ]) {
+    if (r.error) throw r.error;
+  }
+  const customers = customersRes.data ?? [];
+  const orders = ordersRes.data ?? [];
+  const items = itemsRes.data ?? [];
+  const subs = subsRes.data ?? [];
+  const returns = returnsRes.data ?? [];
+  const reviews = reviewsRes.data ?? [];
+  const carts = cartsRes.data ?? [];
 
   const itemsByOrder = new Map<string, typeof items>();
   for (const it of items) {
-    const list = itemsByOrder.get(it.orderId) ?? [];
+    const list = itemsByOrder.get(it.order_id) ?? [];
     list.push(it);
-    itemsByOrder.set(it.orderId, list);
+    itemsByOrder.set(it.order_id, list);
   }
 
   const exportedAt = new Date().toISOString();

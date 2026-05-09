@@ -18,21 +18,10 @@
 // explicit at the call site).
 
 import { Router, type IRouter } from "express";
-import { desc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  authUsers,
-  conversations,
-  episodes,
-  fulfillments,
-  getDbPool,
-  patientLatestMessage,
-  patients,
-  prescriptions,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -49,144 +38,117 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
   }
   const { id } = parsed.data;
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
   // Five independent reads (header + four child collections), each
   // keyed on the patient id. Run them concurrently so the detail
-  // page pays max(query) latency rather than sum(query). When the
-  // patient row is missing we still issue the four child reads —
-  // they return empty result sets cheaply and the wasted work is
-  // far smaller than a round-trip on the success path.
-  //
-  // The header LEFT JOINs the latest-message projection so the
-  // patient header strip can show "last contacted" without a
-  // separate /messages query, and LEFT JOINs auth.users so portal
-  // status (active / pending / not_invited) can be computed
-  // without a follow-up auth lookup.
+  // page pays max(query) latency rather than sum(query). The
+  // original Drizzle path's LEFT JOINs (header → patient_latest_message
+  // and patients → auth.users) become bulk-fetch + JS merges; both
+  // joins are 1-to-1, so a separate `.maybeSingle()` lookup keyed on
+  // the relevant id is the simplest equivalent.
   const [
-    patientRows,
-    prescriptionRows,
-    episodeRows,
-    conversationRows,
-    fulfillmentRows,
+    patientRes,
+    prescriptionsRes,
+    episodesRes,
+    conversationsRes,
+    fulfillmentsRes,
   ] = await Promise.all([
-    db
-      .select({
-        id: patients.id,
-        pacwareId: patients.pacwareId,
-        firstName: patients.legalFirstName,
-        lastName: patients.legalLastName,
-        status: patients.status,
-        hasPhone: sql<boolean>`(${patients.phoneE164} IS NOT NULL)`,
-        hasEmail: sql<boolean>`(${patients.email} IS NOT NULL)`,
-        // Admin-editable settings the dashboard panel reads/writes
-        // via PATCH /patients/:id. All three are nullable: NULL means
-        // "no override / fall back to global rules / fall back to legacy
-        // SMS-then-email selection".
-        insurancePayer: patients.insurancePayer,
-        cadenceOverrideDays: patients.cadenceOverrideDays,
-        channelPreference: patients.channelPreference,
-        createdAt: patients.createdAt,
-        updatedAt: patients.updatedAt,
-        lastMessageAt: patientLatestMessage.lastMessageAt,
-        lastMessageDirection: patientLatestMessage.lastMessageDirection,
-        lastMessagePreview: patientLatestMessage.lastMessagePreview,
-        // Portal invite fields
-        portalAuthUserId: patients.portalAuthUserId,
-        portalInvitedAt: patients.portalInvitedAt,
-        portalAuthVerifiedAt: authUsers.emailVerifiedAt,
-      })
-      .from(patients)
-      .leftJoin(
-        patientLatestMessage,
-        eq(patientLatestMessage.patientId, patients.id),
+    supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "id, pacware_id, legal_first_name, legal_last_name, status, phone_e164, email, insurance_payer, cadence_override_days, channel_preference, created_at, updated_at, portal_auth_user_id, portal_invited_at",
       )
-      .leftJoin(authUsers, eq(authUsers.id, patients.portalAuthUserId))
-      .where(eq(patients.id, id))
-      .limit(1),
-    db
-      .select({
-        id: prescriptions.id,
-        itemSku: prescriptions.itemSku,
-        cadenceDays: prescriptions.cadenceDays,
-        validFrom: prescriptions.validFrom,
-        validUntil: prescriptions.validUntil,
-        status: prescriptions.status,
-        createdAt: prescriptions.createdAt,
-        // Attachment metadata. We only forward the bounded technical
-        // fields the dashboard needs to render the "Document attached"
-        // chip + download link — the actual object key is intentionally
-        // NOT exposed here. Downloads go through the dedicated GET
-        // endpoint which is admin-gated and audit-logged on every hit.
-        attachmentFilename: prescriptions.attachmentFilename,
-        attachmentContentType: prescriptions.attachmentContentType,
-        attachmentSizeBytes: prescriptions.attachmentSizeBytes,
-        attachmentUploadedAt: prescriptions.attachmentUploadedAt,
-      })
-      .from(prescriptions)
-      .where(eq(prescriptions.patientId, id))
-      .orderBy(desc(prescriptions.createdAt)),
-    db
-      .select({
-        id: episodes.id,
-        prescriptionId: episodes.prescriptionId,
-        itemSku: prescriptions.itemSku,
-        status: episodes.status,
-        dueAt: episodes.dueAt,
-        expiresAt: episodes.expiresAt,
-        createdAt: episodes.createdAt,
-      })
-      .from(episodes)
-      .leftJoin(prescriptions, eq(prescriptions.id, episodes.prescriptionId))
-      .where(eq(episodes.patientId, id))
-      .orderBy(desc(episodes.createdAt)),
-    db
-      .select({
-        id: conversations.id,
-        episodeId: conversations.episodeId,
-        channel: conversations.channel,
-        status: conversations.status,
-        lastMessageAt: conversations.lastMessageAt,
-        createdAt: conversations.createdAt,
-      })
-      .from(conversations)
-      .where(eq(conversations.patientId, id))
-      .orderBy(desc(conversations.createdAt))
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select(
+        "id, item_sku, cadence_days, valid_from, valid_until, status, created_at, attachment_filename, attachment_content_type, attachment_size_bytes, attachment_uploaded_at",
+      )
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, prescription_id, status, due_at, expires_at, created_at")
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .schema("resupply")
+      .from("conversations")
+      .select("id, episode_id, channel, status, last_message_at, created_at")
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false })
       .limit(10),
-    db
-      .select({
-        id: fulfillments.id,
-        episodeId: fulfillments.episodeId,
-        itemSku: fulfillments.itemSku,
-        quantity: fulfillments.quantity,
-        status: fulfillments.status,
-        pacwareOrderRef: fulfillments.pacwareOrderRef,
-        submittedAt: fulfillments.submittedAt,
-        shippedAt: fulfillments.shippedAt,
-        deliveredAt: fulfillments.deliveredAt,
-        createdAt: fulfillments.createdAt,
-      })
-      .from(fulfillments)
-      .where(eq(fulfillments.patientId, id))
-      .orderBy(desc(fulfillments.createdAt))
+    supabase
+      .schema("resupply")
+      .from("fulfillments")
+      .select(
+        "id, episode_id, item_sku, quantity, status, pacware_order_ref, submitted_at, shipped_at, delivered_at, created_at",
+      )
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false })
       .limit(10),
   ]);
+  if (patientRes.error) throw patientRes.error;
+  if (prescriptionsRes.error) throw prescriptionsRes.error;
+  if (episodesRes.error) throw episodesRes.error;
+  if (conversationsRes.error) throw conversationsRes.error;
+  if (fulfillmentsRes.error) throw fulfillmentsRes.error;
 
-  const patient = patientRows[0];
+  const patient = patientRes.data;
   if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
-  const toIso = (v: unknown): string | null => {
-    if (v == null) return null;
-    if (v instanceof Date) return v.toISOString();
-    return String(v);
-  };
-  const toIsoRequired = (v: unknown): string => {
-    const out = toIso(v);
-    return out ?? new Date(0).toISOString();
-  };
+  // The header used to LEFT JOIN patient_latest_message + auth.users
+  // — fetch both small lookups now that we have the patient row.
+  // Episodes used to LEFT JOIN prescriptions for itemSku — bulk-fetch
+  // by the prescription_id list pulled from this page's episodes.
+  const episodePrescriptionIds = Array.from(
+    new Set(
+      (episodesRes.data ?? [])
+        .map((e) => e.prescription_id)
+        .filter((v): v is string => v !== null),
+    ),
+  );
+  const [latestMsgRes, authRes, episodeRxRes] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("patient_latest_message")
+      .select("last_message_at, last_message_direction, last_message_preview")
+      .eq("patient_id", id)
+      .limit(1)
+      .maybeSingle(),
+    patient.portal_auth_user_id
+      ? supabase
+          .schema("resupply_auth")
+          .from("users")
+          .select("email_verified_at")
+          .eq("id", patient.portal_auth_user_id)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null } as const),
+    episodePrescriptionIds.length > 0
+      ? supabase
+          .schema("resupply")
+          .from("prescriptions")
+          .select("id, item_sku")
+          .in("id", episodePrescriptionIds)
+      : Promise.resolve({ data: [], error: null } as const),
+  ]);
+  if (latestMsgRes.error) throw latestMsgRes.error;
+  if (authRes.error) throw authRes.error;
+  if (episodeRxRes.error) throw episodeRxRes.error;
+  const itemSkuByRxId = new Map<string, string>();
+  for (const rx of episodeRxRes.data ?? []) {
+    itemSkuByRxId.set(rx.id, rx.item_sku);
+  }
 
   try {
     await logAudit({
@@ -210,85 +172,77 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
   }
 
   // Compute portal status from linked auth row (no stored status column).
-  const portalStatus = !patient.portalAuthUserId
+  const portalStatus = !patient.portal_auth_user_id
     ? "not_invited"
-    : patient.portalAuthVerifiedAt
+    : authRes.data?.email_verified_at
       ? "active"
       : "pending";
 
   res.status(200).json({
     id: patient.id,
-    pacwareId: patient.pacwareId,
-    firstName: patient.firstName ?? "",
-    lastName: patient.lastName ?? "",
+    pacwareId: patient.pacware_id,
+    firstName: patient.legal_first_name ?? "",
+    lastName: patient.legal_last_name ?? "",
     status: patient.status,
-    hasPhone: Boolean(patient.hasPhone),
-    hasEmail: Boolean(patient.hasEmail),
-    insurancePayer: patient.insurancePayer,
-    cadenceOverrideDays: patient.cadenceOverrideDays,
-    channelPreference: patient.channelPreference,
-    createdAt: toIsoRequired(patient.createdAt),
-    updatedAt: toIsoRequired(patient.updatedAt),
-    lastMessageAt: toIso(patient.lastMessageAt),
-    lastMessageDirection: patient.lastMessageDirection ?? null,
-    lastMessagePreview: patient.lastMessagePreview ?? null,
+    hasPhone: patient.phone_e164 != null,
+    hasEmail: patient.email != null,
+    insurancePayer: patient.insurance_payer,
+    cadenceOverrideDays: patient.cadence_override_days,
+    channelPreference: patient.channel_preference,
+    createdAt: patient.created_at,
+    updatedAt: patient.updated_at,
+    lastMessageAt: latestMsgRes.data?.last_message_at ?? null,
+    lastMessageDirection: latestMsgRes.data?.last_message_direction ?? null,
+    lastMessagePreview: latestMsgRes.data?.last_message_preview ?? null,
     portalStatus,
-    portalInvitedAt: toIso(patient.portalInvitedAt),
-    prescriptions: prescriptionRows.map((p) => ({
+    portalInvitedAt: patient.portal_invited_at,
+    prescriptions: (prescriptionsRes.data ?? []).map((p) => ({
       id: p.id,
-      itemSku: p.itemSku,
-      cadenceDays: p.cadenceDays,
-      // drizzle's `date()` column returns the value as a
-      // `YYYY-MM-DD` string by default (no `mode: "date"`), so we
-      // forward it as-is. Defensive String() in case a future
-      // mode change yields a Date.
-      validFrom:
-        typeof p.validFrom === "string" ? p.validFrom : String(p.validFrom),
-      validUntil:
-        p.validUntil == null
-          ? null
-          : typeof p.validUntil === "string"
-            ? p.validUntil
-            : String(p.validUntil),
+      itemSku: p.item_sku,
+      cadenceDays: p.cadence_days,
+      // valid_from/valid_until are `date` columns; PostgREST returns
+      // them as `YYYY-MM-DD` strings, no Date conversion needed.
+      validFrom: p.valid_from,
+      validUntil: p.valid_until,
       status: p.status,
-      createdAt: toIsoRequired(p.createdAt),
+      createdAt: p.created_at,
       // Forward the bounded attachment metadata. The dashboard uses
       // `attachmentFilename` truthiness to switch between "Attach"
       // and "Download/Remove" UI states; the other three fields are
       // for display only. Object key is intentionally NOT forwarded.
-      attachmentFilename: p.attachmentFilename,
-      attachmentContentType: p.attachmentContentType,
-      attachmentSizeBytes: p.attachmentSizeBytes,
-      attachmentUploadedAt: toIso(p.attachmentUploadedAt),
+      attachmentFilename: p.attachment_filename,
+      attachmentContentType: p.attachment_content_type,
+      attachmentSizeBytes: p.attachment_size_bytes,
+      attachmentUploadedAt: p.attachment_uploaded_at,
     })),
-    episodes: episodeRows.map((e) => ({
+    episodes: (episodesRes.data ?? []).map((e) => ({
       id: e.id,
-      prescriptionId: e.prescriptionId,
-      itemSku: e.itemSku ?? "",
+      prescriptionId: e.prescription_id,
+      itemSku: itemSkuByRxId.get(e.prescription_id) ?? "",
       status: e.status,
-      dueAt: toIsoRequired(e.dueAt),
-      expiresAt: toIso(e.expiresAt),
-      createdAt: toIsoRequired(e.createdAt),
+      dueAt: e.due_at,
+      expiresAt: e.expires_at,
+      createdAt: e.created_at,
     })),
-    conversations: conversationRows.map((c) => ({
+    conversations: (conversationsRes.data ?? []).map((c) => ({
       id: c.id,
-      episodeId: c.episodeId,
+      episodeId: c.episode_id,
       channel: c.channel,
       status: c.status,
-      lastMessageAt: toIso(c.lastMessageAt),
-      createdAt: toIsoRequired(c.createdAt),
+      lastMessageAt: c.last_message_at,
+      createdAt: c.created_at,
     })),
-    fulfillments: fulfillmentRows.map((f) => ({
+    fulfillments: (fulfillmentsRes.data ?? []).map((f) => ({
       id: f.id,
-      episodeId: f.episodeId,
-      itemSku: f.itemSku,
+      episodeId: f.episode_id,
+      itemSku: f.item_sku,
       quantity: f.quantity,
       status: f.status,
-      pacwareOrderRef: f.pacwareOrderRef,
-      submittedAt: toIso(f.submittedAt),
-      shippedAt: toIso(f.shippedAt),
-      deliveredAt: toIso(f.deliveredAt),
-      createdAt: toIsoRequired(f.createdAt),
+      pacwareOrderRef: f.pacware_order_ref,
+      submittedAt: f.submitted_at,
+      shippedAt: f.shipped_at,
+      deliveredAt: f.delivered_at,
+      createdAt: f.created_at,
     })),
   });
 });

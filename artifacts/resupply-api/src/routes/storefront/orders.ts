@@ -25,11 +25,10 @@
 
 import { Router } from "express";
 import { SubmitOrderBody } from "../../lib/api-zod/index.js";
-import { db, ordersTable } from "../../lib/storefront/db.js";
-import { eq } from "drizzle-orm";
 import {
-  shopCustomers,
+  getSupabaseServiceRoleClient,
   type FacialMeasurementsInfo,
+  type Json,
 } from "@workspace/resupply-db";
 import {
   sendOrderToPenn,
@@ -92,28 +91,36 @@ router.post("/orders", attachSignedIn, async (req, res) => {
   // the same value.
   const orderReference = generateOrderReference();
 
+  const supabase = getSupabaseServiceRoleClient();
+
   let dbId: string | null = null;
   try {
-    const [inserted] = await db
-      .insert(ordersTable)
-      .values({
-        orderReference,
-        patientFirstName: order.patient.firstName,
-        patientLastName: order.patient.lastName,
-        patientEmail: order.patient.email,
-        patientPhone: order.patient.phone,
-        patientDateOfBirth: order.patient.dateOfBirth,
-        maskId: order.chosenMask.maskId,
-        maskName: order.chosenMask.name,
-        maskManufacturer: order.chosenMask.manufacturer,
-        maskModelNumber: order.chosenMask.modelNumber,
-        shippingCity: order.shippingAddress.city,
-        shippingState: order.shippingAddress.state,
-        shippingZip: order.shippingAddress.zip,
-        payload: order as unknown as Record<string, unknown>,
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("public")
+      .from("orders")
+      .insert({
+        order_reference: orderReference,
+        patient_first_name: order.patient.firstName,
+        patient_last_name: order.patient.lastName,
+        patient_email: order.patient.email,
+        patient_phone: order.patient.phone,
+        patient_date_of_birth: order.patient.dateOfBirth,
+        mask_id: order.chosenMask.maskId,
+        mask_name: order.chosenMask.name,
+        mask_manufacturer: order.chosenMask.manufacturer,
+        mask_model_number: order.chosenMask.modelNumber,
+        shipping_city: order.shippingAddress.city,
+        shipping_state: order.shippingAddress.state,
+        shipping_zip: order.shippingAddress.zip,
+        // SubmitOrderBody is a typed Zod object; PostgREST `Json` rejects
+        // it without a cast at the boundary.
+        payload: order as unknown as Json,
       })
-      .returning({ id: ordersTable.id });
-    dbId = inserted.id;
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) throw insertErr;
+    dbId = inserted?.id ?? null;
   } catch (err) {
     // We deliberately don't fail the whole request on a DB write error.
     // The patient's primary expectation is that Penn receives the order;
@@ -171,10 +178,15 @@ router.post("/orders", attachSignedIn, async (req, res) => {
             .filter(Boolean)
             .join(" ") || null,
       });
-      await db
-        .update(shopCustomers)
-        .set({ facialMeasurements: value, updatedAt: new Date() })
-        .where(eq(shopCustomers.customerId, req.userCustomerId));
+      const { error: updateErr } = await supabase
+        .schema("resupply")
+        .from("shop_customers")
+        .update({
+          facial_measurements_json: value as unknown as Json,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("customer_id", req.userCustomerId);
+      if (updateErr) throw updateErr;
     } catch (err) {
       // Audit-relevant but non-fatal. Log structurally only — no
       // measurement values, no customer id (treat logs as world-readable).
@@ -196,17 +208,17 @@ router.post("/orders", attachSignedIn, async (req, res) => {
         : result.delivered
           ? "sent"
           : "failed";
-      await db
-        .update(ordersTable)
-        .set({
-          emailStatus: status,
-          emailError: result.delivered ? null : (result.error ?? null),
-          emailDeliveredAt:
-            result.delivered && result.deliveredAt
-              ? new Date(result.deliveredAt)
-              : null,
+      const { error: updateErr } = await supabase
+        .schema("public")
+        .from("orders")
+        .update({
+          email_status: status,
+          email_error: result.delivered ? null : (result.error ?? null),
+          email_delivered_at:
+            result.delivered && result.deliveredAt ? result.deliveredAt : null,
         })
-        .where(eq(ordersTable.id, dbId));
+        .eq("id", dbId);
+      if (updateErr) throw updateErr;
     } catch (err) {
       logger.error({ err, dbId }, "Failed to update order email_status");
     }

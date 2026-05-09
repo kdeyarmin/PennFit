@@ -20,17 +20,11 @@
 // AHI / leak values. The audit envelope records patient_id +
 // source + import_count only.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  patientTherapyNights,
-  patients,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { adapterFor } from "../../lib/therapy-cloud";
 import { logger } from "../../lib/logger";
@@ -70,32 +64,31 @@ router.get(
     }
     const patientId = idCheck.data;
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        id: patientTherapyNights.id,
-        nightDate: patientTherapyNights.nightDate,
-        source: patientTherapyNights.source,
-        usageMinutes: patientTherapyNights.usageMinutes,
-        ahi: patientTherapyNights.ahi,
-        leakRateLMin: patientTherapyNights.leakRateLMin,
-        pressureP95Cmh2o: patientTherapyNights.pressureP95Cmh2o,
-      })
-      .from(patientTherapyNights)
-      .where(eq(patientTherapyNights.patientId, patientId))
-      .orderBy(desc(patientTherapyNights.nightDate))
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("patient_therapy_nights")
+      .select(
+        "id, night_date, source, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
+      )
+      .eq("patient_id", patientId)
+      .order("night_date", { ascending: false })
       .limit(60);
+    if (error) throw error;
 
     res.json({
-      nights: rows.map((r) => ({
+      // PostgREST returns numeric columns as strings (preserves
+      // precision); the original Drizzle path also returned strings
+      // and the route already coerced via Number(). Same here.
+      nights: (rows ?? []).map((r) => ({
         id: r.id,
-        nightDate: r.nightDate,
+        nightDate: r.night_date,
         source: r.source,
-        usageMinutes: r.usageMinutes,
+        usageMinutes: r.usage_minutes,
         ahi: r.ahi !== null ? Number(r.ahi) : null,
-        leakRateLMin: r.leakRateLMin !== null ? Number(r.leakRateLMin) : null,
+        leakRateLMin: r.leak_rate_l_min !== null ? Number(r.leak_rate_l_min) : null,
         pressureP95Cmh2o:
-          r.pressureP95Cmh2o !== null ? Number(r.pressureP95Cmh2o) : null,
+          r.pressure_p95_cmh2o !== null ? Number(r.pressure_p95_cmh2o) : null,
       })),
     });
   },
@@ -130,14 +123,17 @@ router.post(
         .toISOString()
         .slice(0, 10);
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const exists = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(eq(patients.id, patientId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: existsRow, error: existsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) throw existsErr;
+    if (!existsRow) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
@@ -160,41 +156,31 @@ router.post(
         limit: PER_SYNC_CAP,
       });
 
-      // Upsert per night. The unique (patient, night, source)
-      // constraint deduplicates re-imports.
-      for (const n of result.nights) {
-        await db
-          .insert(patientTherapyNights)
-          .values({
-            patientId,
-            nightDate: n.nightDate,
-            source,
-            sourceEventId: n.sourceEventId,
-            usageMinutes: n.usageMinutes,
-            ahi: n.ahi !== null ? String(n.ahi) : null,
-            leakRateLMin:
-              n.leakRateLMin !== null ? String(n.leakRateLMin) : null,
-            pressureP95Cmh2o:
-              n.pressureP95Cmh2o !== null ? String(n.pressureP95Cmh2o) : null,
-          })
-          .onConflictDoUpdate({
-            target: [
-              patientTherapyNights.patientId,
-              patientTherapyNights.nightDate,
-              patientTherapyNights.source,
-            ],
-            set: {
-              sourceEventId: n.sourceEventId,
-              usageMinutes: n.usageMinutes,
-              ahi: n.ahi !== null ? String(n.ahi) : null,
-              leakRateLMin:
-                n.leakRateLMin !== null ? String(n.leakRateLMin) : null,
-              pressureP95Cmh2o:
-                n.pressureP95Cmh2o !== null ? String(n.pressureP95Cmh2o) : null,
-              updatedAt: new Date(),
-            },
+      // Bulk upsert. The unique (patient, night, source) constraint
+      // dedupes re-imports — supabase-js's `.upsert()` supports
+      // explicit conflict columns via `onConflict`.
+      if (result.nights.length > 0) {
+        const rowsToUpsert = result.nights.map((n) => ({
+          patient_id: patientId,
+          night_date: n.nightDate,
+          source,
+          source_event_id: n.sourceEventId,
+          usage_minutes: n.usageMinutes,
+          ahi: n.ahi !== null ? String(n.ahi) : null,
+          leak_rate_l_min:
+            n.leakRateLMin !== null ? String(n.leakRateLMin) : null,
+          pressure_p95_cmh2o:
+            n.pressureP95Cmh2o !== null ? String(n.pressureP95Cmh2o) : null,
+          updated_at: new Date().toISOString(),
+        }));
+        const { error: upsertErr } = await supabase
+          .schema("resupply")
+          .from("patient_therapy_nights")
+          .upsert(rowsToUpsert, {
+            onConflict: "patient_id,night_date,source",
           });
-        imported++;
+        if (upsertErr) throw upsertErr;
+        imported = rowsToUpsert.length;
       }
     } catch (err) {
       logger.warn(

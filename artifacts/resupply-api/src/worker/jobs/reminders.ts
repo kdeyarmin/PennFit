@@ -61,8 +61,6 @@
 // scan window — admins get one ping per patient per cycle, not one
 // per SKU.
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import type PgBoss from "pg-boss";
 
 import {
@@ -73,13 +71,8 @@ import {
   type OutreachRule,
 } from "@workspace/resupply-domain";
 import {
-  conversations,
-  episodes,
-  frequencyRules,
-  fulfillments,
   getDbPool,
-  patients,
-  prescriptions,
+  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 import {
   sendReminderEmail,
@@ -238,107 +231,194 @@ export const __testing = {
 export async function scanForDueReminders(
   asOf: Date = new Date(),
 ): Promise<ScanRow[]> {
-  const pool = getDbPool();
-  const db = drizzle(pool);
+  const supabase = getSupabaseServiceRoleClient();
   const quietCutoff = new Date(asOf.getTime() - QUIET_PERIOD_MS);
+  const quietCutoffIso = quietCutoff.toISOString();
 
   // Step 1: load every active rule once. Rules are tiny (admin-
   // managed; expected count is in the tens) so we keep the whole list
   // in memory for the duration of the scan and let `resolveOutreachPlan`
-  // pick the right one per patient. Sorting in SQL matches what the
-  // domain helper does internally; doing it here lets us skip a
-  // re-sort per row.
-  const ruleRows = await db
-    .select({
-      id: frequencyRules.id,
-      priority: frequencyRules.priority,
-      createdAt: frequencyRules.createdAt,
-      active: frequencyRules.active,
-      matchItemSkuPrefix: frequencyRules.matchItemSkuPrefix,
-      matchInsurancePayer: frequencyRules.matchInsurancePayer,
-      minTenureDays: frequencyRules.minTenureDays,
-      maxTenureDays: frequencyRules.maxTenureDays,
-      cadenceDays: frequencyRules.cadenceDays,
-      defaultChannel: frequencyRules.defaultChannel,
-    })
-    .from(frequencyRules)
-    .where(eq(frequencyRules.active, true))
-    .orderBy(asc(frequencyRules.priority), asc(frequencyRules.createdAt));
-  const rules: OutreachRule[] = ruleRows.map((r) => ({
+  // pick the right one per patient.
+  const { data: ruleRows, error: rulesErr } = await supabase
+    .schema("resupply")
+    .from("frequency_rules")
+    .select(
+      "id, priority, created_at, active, match_item_sku_prefix, match_insurance_payer, min_tenure_days, max_tenure_days, cadence_days, default_channel",
+    )
+    .eq("active", true)
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (rulesErr) throw rulesErr;
+  const rules: OutreachRule[] = (ruleRows ?? []).map((r) => ({
     id: r.id,
     priority: r.priority,
-    createdAt: r.createdAt,
+    createdAt: new Date(r.created_at),
     active: r.active,
-    matchItemSkuPrefix: r.matchItemSkuPrefix,
-    matchInsurancePayer: r.matchInsurancePayer,
-    minTenureDays: r.minTenureDays,
-    maxTenureDays: r.maxTenureDays,
-    cadenceDays: r.cadenceDays,
-    defaultChannel: r.defaultChannel as OutreachChannel | null,
+    matchItemSkuPrefix: r.match_item_sku_prefix,
+    matchInsurancePayer: r.match_insurance_payer,
+    minTenureDays: r.min_tenure_days,
+    maxTenureDays: r.max_tenure_days,
+    cadenceDays: r.cadence_days,
+    defaultChannel: r.default_channel as OutreachChannel | null,
   }));
 
-  // Step 2: candidate (patient, prescription, episode) tuples. The
-  // SQL-side filter only enforces the cheap predicates — active
-  // patient + active prescription + no recent conversation. Cadence
-  // resolution happens in TypeScript so per-patient overrides and
-  // rules can SHORTEN the cadence below `prescriptions.cadence_days`.
-  // We surface the columns the domain helper needs (insurance payer,
-  // overrides, patient.created_at for tenure) plus the per-row
-  // lastFulfilledAt and prescription.created_at the eligibility
-  // check uses to compute "is this patient due RIGHT NOW".
+  // Step 2: PostgREST has no JOIN, so we fetch the three core tables
+  // in parallel and stitch them in JS. Cadence resolution happens
+  // after the join so per-patient overrides and rules can SHORTEN the
+  // cadence below `prescriptions.cadence_days`.
   //
-  // Channel resolution still needs phone + email reachability —
-  // we surface them as the actual values (no longer encrypted) and
-  // only persist booleans into the dedupe set so PHI doesn't leak
-  // into in-memory data structures unnecessarily.
-  const lastFulfilledAt = sql<Date | null>`(
-    SELECT MAX(${fulfillments.shippedAt})
-    FROM ${fulfillments}
-    WHERE ${fulfillments.patientId} = ${patients.id}
-      AND ${fulfillments.itemSku} = ${prescriptions.itemSku}
-  )`;
+  // The original SQL capped the JOIN result at 1000 ordered by
+  // `episodes.due_at DESC`. We replicate that ordering by sorting
+  // the joined rows in JS before truncating to 1000.
+  const [activePrescRes, episodesRes] = await Promise.all([
+    supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select("id, patient_id, item_sku, cadence_days, created_at")
+      .eq("status", "active"),
+    // Fetch every episode's (id, prescription_id, due_at) — we filter
+    // to only those whose prescription is active in JS. Episodes per
+    // active patient are small; the table is naturally bounded.
+    supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, prescription_id, due_at"),
+  ]);
+  if (activePrescRes.error) throw activePrescRes.error;
+  if (episodesRes.error) throw episodesRes.error;
 
-  const candidateRows = await db
-    .select({
-      patientId: patients.id,
-      patientCreatedAt: patients.createdAt,
-      insurancePayer: patients.insurancePayer,
-      cadenceOverrideDays: patients.cadenceOverrideDays,
-      channelPreference: patients.channelPreference,
-      phone: patients.phoneE164,
-      email: patients.email,
-      prescriptionItemSku: prescriptions.itemSku,
-      prescriptionCadenceDays: prescriptions.cadenceDays,
-      prescriptionCreatedAt: prescriptions.createdAt,
-      episodeId: episodes.id,
-      lastFulfilledAt,
-    })
-    .from(patients)
-    .innerJoin(prescriptions, eq(prescriptions.patientId, patients.id))
-    .innerJoin(episodes, eq(episodes.prescriptionId, prescriptions.id))
-    .where(
-      and(
-        eq(patients.status, "active"),
-        eq(prescriptions.status, "active"),
-        // Quiet-period: no conversation opened in the last 48h for
-        // this episode. Implemented as a NOT EXISTS so the row is
-        // dropped at the SQL layer.
-        sql`NOT EXISTS (
-          SELECT 1 FROM ${conversations}
-          WHERE ${conversations.episodeId} = ${episodes.id}
-            AND ${conversations.lastMessageAt} >= ${quietCutoff}
-        )`,
-      ),
-    )
-    .orderBy(desc(episodes.dueAt))
-    // Safety cap: each row is one patient-prescription-episode triple.
-    // A real scan visits far fewer (the comment above says "low thousands
-    // of patients"); this bound prevents a misconfigured data state from
-    // loading an unbounded result set into memory. Mirrors the 200-patient
-    // cap in smart-trigger evaluator.
-    .limit(1000);
+  const prescriptionsList = activePrescRes.data ?? [];
+  if (prescriptionsList.length === 0) return [];
 
-  // Step 3: per-row eligibility + channel resolution.
+  const prescriptionById = new Map(prescriptionsList.map((p) => [p.id, p]));
+  const patientIdsSet = new Set(prescriptionsList.map((p) => p.patient_id));
+  const itemSkuByPrescriptionId = new Map(
+    prescriptionsList.map((p) => [p.id, p.item_sku]),
+  );
+
+  // Filter episodes to only those tied to active prescriptions.
+  const allEpisodes = (episodesRes.data ?? []).filter((e) =>
+    prescriptionById.has(e.prescription_id),
+  );
+
+  // Step 3: load patients (active only) for the set of patient_ids we
+  // saw on active prescriptions. Chunk the .in() query — PostgREST
+  // limits URL length; the encoded list of UUIDs is ~36 bytes each, so
+  // we batch 200 at a time.
+  const patientIds = Array.from(patientIdsSet);
+  const patientById = new Map<
+    string,
+    {
+      id: string;
+      created_at: string;
+      insurance_payer: string | null;
+      cadence_override_days: number | null;
+      channel_preference: string | null;
+      phone_e164: string | null;
+      email: string | null;
+    }
+  >();
+  for (let i = 0; i < patientIds.length; i += 200) {
+    const batch = patientIds.slice(i, i + 200);
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "id, created_at, insurance_payer, cadence_override_days, channel_preference, phone_e164, email",
+      )
+      .eq("status", "active")
+      .in("id", batch);
+    if (error) throw error;
+    for (const row of data ?? []) patientById.set(row.id, row);
+  }
+
+  // Step 4: lastFulfilledAt is MAX(shipped_at) per (patient, item_sku).
+  // PostgREST has no GROUP BY, so we fetch all fulfillment shipped
+  // rows for the patients of interest and reduce in JS.
+  const lastFulfilledByKey = new Map<string, string>();
+  const activePatientIds = Array.from(patientById.keys());
+  for (let i = 0; i < activePatientIds.length; i += 200) {
+    const batch = activePatientIds.slice(i, i + 200);
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("fulfillments")
+      .select("patient_id, item_sku, shipped_at")
+      .in("patient_id", batch)
+      .not("shipped_at", "is", null);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      if (!row.shipped_at) continue;
+      const key = `${row.patient_id}\x00${row.item_sku}`;
+      const prev = lastFulfilledByKey.get(key);
+      if (!prev || row.shipped_at > prev) {
+        lastFulfilledByKey.set(key, row.shipped_at);
+      }
+    }
+  }
+
+  // Step 5: quiet-period — episodes that had a conversation with
+  // last_message_at >= quietCutoff. Pull those conversation rows and
+  // build an episode_id set to subtract.
+  const recentConvRes = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("episode_id")
+    .gte("last_message_at", quietCutoffIso)
+    .not("episode_id", "is", null);
+  if (recentConvRes.error) throw recentConvRes.error;
+  const quietEpisodeIds = new Set<string>();
+  for (const row of recentConvRes.data ?? []) {
+    if (row.episode_id) quietEpisodeIds.add(row.episode_id);
+  }
+
+  // Step 6: stitch the candidate (patient, prescription, episode)
+  // tuples in JS, drop quiet-period hits, sort by episode.due_at desc,
+  // and cap at 1000 — same shape the original SQL produced.
+  interface Candidate {
+    patientId: string;
+    patientCreatedAt: string;
+    insurancePayer: string | null;
+    cadenceOverrideDays: number | null;
+    channelPreference: string | null;
+    phone: string | null;
+    email: string | null;
+    prescriptionItemSku: string;
+    prescriptionCadenceDays: number;
+    prescriptionCreatedAt: string;
+    episodeId: string;
+    episodeDueAt: string;
+    lastFulfilledAt: string | null;
+  }
+  const candidates: Candidate[] = [];
+  for (const ep of allEpisodes) {
+    if (quietEpisodeIds.has(ep.id)) continue;
+    const presc = prescriptionById.get(ep.prescription_id);
+    if (!presc) continue;
+    const patient = patientById.get(presc.patient_id);
+    if (!patient) continue;
+    const itemSku = itemSkuByPrescriptionId.get(presc.id)!;
+    candidates.push({
+      patientId: patient.id,
+      patientCreatedAt: patient.created_at,
+      insurancePayer: patient.insurance_payer,
+      cadenceOverrideDays: patient.cadence_override_days,
+      channelPreference: patient.channel_preference,
+      phone: patient.phone_e164,
+      email: patient.email,
+      prescriptionItemSku: presc.item_sku,
+      prescriptionCadenceDays: presc.cadence_days,
+      prescriptionCreatedAt: presc.created_at,
+      episodeId: ep.id,
+      episodeDueAt: ep.due_at,
+      lastFulfilledAt:
+        lastFulfilledByKey.get(`${patient.id}\x00${itemSku}`) ?? null,
+    });
+  }
+  // due_at desc — same as the SQL order.
+  candidates.sort((a, b) => (a.episodeDueAt < b.episodeDueAt ? 1 : -1));
+  const candidateRows = candidates.slice(0, 1000);
+
+  // Step 7: per-row eligibility + channel resolution.
   const seenPatient = new Set<string>();
   const out: ScanRow[] = [];
   for (const row of candidateRows) {
@@ -346,7 +426,7 @@ export async function scanForDueReminders(
 
     const patient: OutreachPatient = {
       id: row.patientId,
-      createdAt: row.patientCreatedAt,
+      createdAt: new Date(row.patientCreatedAt),
       insurancePayer: row.insurancePayer,
       cadenceOverrideDays: row.cadenceOverrideDays,
       channelPreference: row.channelPreference as OutreachChannel | null,
@@ -367,20 +447,13 @@ export async function scanForDueReminders(
     // is at least `plan.cadenceDays` old.
     const baselineRaw = row.lastFulfilledAt ?? row.prescriptionCreatedAt;
     if (!baselineRaw) {
-      // Both dates missing — schema guarantees prescriptionCreatedAt is
-      // NOT NULL, but guard defensively so a NULL doesn't silently
-      // produce NaN math and flag the patient as immediately due.
       logger.warn(
         { patient_id: row.patientId, episode_id: row.episodeId },
         "reminders.scan: missing baseline date — skipping",
       );
       continue;
     }
-    // Defensive Date coercion — `lastFulfilledAt` comes from a raw
-    // SQL subquery and may surface as a string in some pg type
-    // configurations.
-    const baseline =
-      baselineRaw instanceof Date ? baselineRaw : new Date(baselineRaw);
+    const baseline = new Date(baselineRaw);
     if (isNaN(baseline.getTime())) {
       logger.warn(
         {

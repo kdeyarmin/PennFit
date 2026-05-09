@@ -23,16 +23,10 @@
 // without verification anyone with the URL could spam alert rows.
 
 import { Router, type IRouter, type Request } from "express";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  csrComplianceAlerts,
-  getDbPool,
-  patients,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { requireTwilioSignature } from "@workspace/resupply-telecom";
 
 import { voiceScriptForDay } from "../../lib/checkin-dispatcher";
@@ -154,17 +148,28 @@ router.post(
       ? dayRaw
       : null;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
     // Belt-and-braces: confirm the patient exists before we insert.
     // A malicious caller who somehow forged a Twilio signature still
     // can't use this endpoint to create alerts for arbitrary UUIDs.
-    const exists = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(eq(patients.id, patientId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: existsRow, error: existsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) {
+      logger.error(
+        { err: existsErr, patient_id: patientId },
+        "voice.checkin_press: patient lookup failed",
+      );
+      // Fall through with hangup — surfacing a 5xx to Twilio would
+      // queue retries and re-prompt the caller, which is worse for
+      // the customer than silently giving up on the alert.
+    }
+    if (!existsRow) {
       logger.warn(
         { patient_id: patientId },
         "voice.checkin_press: unknown patient",
@@ -181,34 +186,30 @@ router.post(
       return;
     }
 
-    try {
-      await db.insert(csrComplianceAlerts).values({
-        patientId,
-        journeyId,
-        alertType: "manual",
+    const { error: insertErr } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .insert({
+        patient_id: patientId,
+        journey_id: journeyId,
+        alert_type: "manual",
         severity: "warning",
         summary: day
           ? `Patient pressed 1 during ${day} automated check-in call — wants a callback`
           : "Patient pressed 1 during automated check-in call — wants a callback",
-        metricSnapshot: {
+        metric_snapshot: {
           triggered_by: "voice_checkin_press",
           day_label: day,
           call_sid: parsed.success ? (parsed.data.CallSid ?? null) : null,
         },
       });
-    } catch (err) {
+    if (insertErr) {
       // 23505 → an open manual alert already exists for this patient.
       // That's fine — the existing alert is the right thing to act on.
-      if (
-        !(
-          err &&
-          typeof err === "object" &&
-          "code" in err &&
-          (err as { code: string }).code === "23505"
-        )
-      ) {
+      const code = (insertErr as { code?: string }).code;
+      if (code !== "23505") {
         logger.error(
-          { err, patient_id: patientId },
+          { err: insertErr, patient_id: patientId },
           "voice.checkin_press: alert insert failed",
         );
       }

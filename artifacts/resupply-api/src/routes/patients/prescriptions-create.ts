@@ -18,13 +18,14 @@
 //     decision — the dashboard should never let one admin
 //     re-write another admin's reading of the doctor's order.
 
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patients, prescriptions } from "@workspace/resupply-db";
+import {
+  type Json,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -112,45 +113,46 @@ router.post("/patients/:id/prescriptions", requireAdmin, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const exists = await db
-    .select({ id: patients.id })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  if (exists.length === 0) {
+  const { data: patient, error: patientError } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (patientError) throw patientError;
+  if (!patient) {
     res.status(404).json({ error: "not_found" });
     return;
   }
 
-  const detailsBlob =
+  const detailsBlob: Json | null =
     body.prescriberName || body.prescriberNpi || body.diagnosis || body.notes
-      ? {
+      ? ({
           prescriberName: body.prescriberName ?? undefined,
           prescriberNpi: body.prescriberNpi ?? undefined,
           diagnosis: body.diagnosis ?? undefined,
           notes: body.notes ?? undefined,
-        }
+        } as unknown as Json)
       : null;
 
-  const inserted = await db
-    .insert(prescriptions)
-    .values({
-      patientId,
-      itemSku: body.itemSku,
-      cadenceDays: body.cadenceDays,
-      validFrom: body.validFrom,
-      validUntil: body.validUntil ?? null,
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("prescriptions")
+    .insert({
+      patient_id: patientId,
+      item_sku: body.itemSku,
+      cadence_days: body.cadenceDays,
+      valid_from: body.validFrom,
+      valid_until: body.validUntil ?? null,
       details: detailsBlob,
       status: "active",
     })
-    .returning({ id: prescriptions.id });
-
-  const row = inserted[0];
-  if (!row) {
-    throw new Error("INSERT returned no rows");
-  }
+    .select("id")
+    .single();
+  if (error) throw error;
 
   const populated = ["itemSku", "cadenceDays", "validFrom"];
   if (body.validUntil) populated.push("validUntil");

@@ -26,9 +26,12 @@ export {
   PREVIEW_MAX_CHARS,
   buildPreview,
   upsertPatientLatestMessage,
+  upsertPatientLatestMessageSb,
   tryUpsertPatientLatestMessage,
+  tryUpsertPatientLatestMessageSb,
   setProjectionLogger,
   type LatestMessageDirection,
   type ProjectionLogger,
   type UpsertPatientLatestMessageInput,
 } from "./projections/patient-latest-message";
+export { escapePostgRESTFilterValue } from "./postgrest-utils";

@@ -26,14 +26,9 @@
 // anything beyond customer_id + count in request logs.
 
 import { Router, type IRouter } from "express";
-import { and, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import {
-  getDbPool,
-  shopCustomerPushSubscriptions,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { isPushConfigured } from "../../lib/web-push";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
@@ -120,33 +115,28 @@ router.post(
     const { endpoint, keys } = parsed.data;
     const userAgent = req.get("user-agent")?.slice(0, 500) ?? null;
 
-    const db = drizzle(getDbPool());
-    const now = new Date();
+    const supabase = getSupabaseServiceRoleClient();
 
     // Upsert on endpoint. If the row exists we re-bind it to this
     // customer (browser permission grants don't carry identity, so a
     // new sign-in on the same browser legitimately rebinds the
     // subscription) and clear any prior expired_at marker.
-    await db
-      .insert(shopCustomerPushSubscriptions)
-      .values({
-        customerId,
-        endpoint,
-        authB64: keys.auth,
-        p256dhB64: keys.p256dh,
-        userAgent,
-      })
-      .onConflictDoUpdate({
-        target: shopCustomerPushSubscriptions.endpoint,
-        set: {
-          customerId,
-          authB64: keys.auth,
-          p256dhB64: keys.p256dh,
-          userAgent,
-          expiredAt: null,
-          updatedAt: now,
+    const { error } = await supabase
+      .schema("resupply")
+      .from("shop_customer_push_subscriptions")
+      .upsert(
+        {
+          customer_id: customerId,
+          endpoint,
+          auth_b64: keys.auth,
+          p256dh_b64: keys.p256dh,
+          user_agent: userAgent,
+          expired_at: null,
+          updated_at: new Date().toISOString(),
         },
-      });
+        { onConflict: "endpoint" },
+      );
+    if (error) throw error;
 
     res.status(204).send();
   },
@@ -174,18 +164,17 @@ router.delete(
       return;
     }
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     // Defense-in-depth: only delete rows that belong to the caller.
     // A malicious actor who learns another user's endpoint can't
     // unsubscribe them.
-    await db
-      .delete(shopCustomerPushSubscriptions)
-      .where(
-        and(
-          eq(shopCustomerPushSubscriptions.endpoint, parsed.data.endpoint),
-          eq(shopCustomerPushSubscriptions.customerId, customerId),
-        ),
-      );
+    const { error } = await supabase
+      .schema("resupply")
+      .from("shop_customer_push_subscriptions")
+      .delete()
+      .eq("endpoint", parsed.data.endpoint)
+      .eq("customer_id", customerId);
+    if (error) throw error;
 
     res.status(204).send();
   },
@@ -197,30 +186,23 @@ router.get("/shop/me/push-subscriptions", requireSignedIn, async (req, res) => {
     res.status(401).json({ error: "sign_in_required" });
     return;
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: shopCustomerPushSubscriptions.id,
-      endpoint: shopCustomerPushSubscriptions.endpoint,
-      userAgent: shopCustomerPushSubscriptions.userAgent,
-      createdAt: shopCustomerPushSubscriptions.createdAt,
-    })
-    .from(shopCustomerPushSubscriptions)
-    .where(
-      and(
-        eq(shopCustomerPushSubscriptions.customerId, customerId),
-        isNull(shopCustomerPushSubscriptions.expiredAt),
-      ),
-    )
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rows, error } = await supabase
+    .schema("resupply")
+    .from("shop_customer_push_subscriptions")
+    .select("id, user_agent, created_at")
+    .eq("customer_id", customerId)
+    .is("expired_at", null)
     .limit(50);
+  if (error) throw error;
   res.json({
-    subscriptions: rows.map((r) => ({
+    subscriptions: (rows ?? []).map((r) => ({
       id: r.id,
       // We deliberately DON'T return the endpoint URL on the SPA —
       // it's a capability token. The client only needs id +
       // user-agent for the "you have N devices subscribed" badge.
-      userAgent: r.userAgent,
-      createdAt: r.createdAt.toISOString(),
+      userAgent: r.user_agent,
+      createdAt: r.created_at,
     })),
   });
 });

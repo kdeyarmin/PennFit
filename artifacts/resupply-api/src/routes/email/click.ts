@@ -27,10 +27,8 @@
 
 import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 
-import { conversations, getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   renderClickConfirmation,
   renderClickError,
@@ -124,15 +122,17 @@ router.get("/email/click", emailClickLimiter, async (req, res) => {
   if (!verified) return;
 
   // Audit the link open (no state change — audit is informational only).
-  const pool = getDbPool();
-  const db = drizzle(pool);
-  const convRows = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(eq(conversations.id, verified.conversationId))
-    .limit(1);
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: convRow, error: convErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id")
+    .eq("id", verified.conversationId)
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
 
-  if (!convRows[0]) {
+  if (!convRow) {
     res
       .status(400)
       .type("text/html")
@@ -196,24 +196,21 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
 
   const { conversationId, action } = verified;
 
-  const pool = getDbPool();
-  const db = drizzle(pool);
-  const convRows = await db
-    .select({
-      id: conversations.id,
-      patientId: conversations.patientId,
-      episodeId: conversations.episodeId,
-    })
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .limit(1);
-  const conv = convRows[0];
-  // Post-0033 conversations.patientId is nullable so in-app shop-
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: conv, error: convErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id, patient_id, episode_id")
+    .eq("id", conversationId)
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
+  // Post-0033 conversations.patient_id is nullable so in-app shop-
   // customer threads can omit it. Email click links are minted only
   // for SMS/email patient-flow conversations, but defensively reject
-  // a null patientId here so the rest of the handler can treat the
+  // a null patient_id here so the rest of the handler can treat the
   // value as a string.
-  if (!conv || !conv.patientId) {
+  if (!conv || !conv.patient_id) {
     res
       .status(400)
       .type("text/html")
@@ -235,7 +232,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
     metadata: {
       channel: "email",
       conversation_id: conversationId,
-      patient_id: conv.patientId,
+      patient_id: conv.patient_id,
       link_action: action,
     },
     ip: req.ip ?? null,
@@ -249,10 +246,15 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           conversationId,
         });
         if (result.status === "ok" || result.status === "already_confirmed") {
-          await db
-            .update(conversations)
-            .set({ status: "closed", updatedAt: new Date() })
-            .where(eq(conversations.id, conversationId));
+          const { error: closeErr } = await supabase
+            .schema("resupply")
+            .from("conversations")
+            .update({
+              status: "closed",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId);
+          if (closeErr) throw closeErr;
           if (result.status === "ok") {
             await safeAudit({
               action: "messaging.order.confirmed",
@@ -313,10 +315,15 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
         return;
       }
       case "edit": {
-        await db
-          .update(conversations)
-          .set({ status: "awaiting_admin", updatedAt: new Date() })
-          .where(eq(conversations.id, conversationId));
+        const { error: editErr } = await supabase
+          .schema("resupply")
+          .from("conversations")
+          .update({
+            status: "awaiting_admin",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conversationId);
+        if (editErr) throw editErr;
         await safeAudit({
           action: "messaging.handoff.escalated",
           adminEmail: null,
@@ -326,7 +333,7 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
           metadata: {
             channel: "email",
             conversation_id: conversationId,
-            patient_id: conv.patientId,
+            patient_id: conv.patient_id,
             reason: "edit_address_link",
           },
           ip: req.ip ?? null,
@@ -344,21 +351,26 @@ router.post("/email/click", emailClickLimiter, async (req, res) => {
         return;
       }
       case "stop": {
-        await pausePatient(conv.patientId);
-        await db
-          .update(conversations)
-          .set({ status: "closed", updatedAt: new Date() })
-          .where(eq(conversations.id, conversationId));
+        await pausePatient(conv.patient_id);
+        const { error: stopErr } = await supabase
+          .schema("resupply")
+          .from("conversations")
+          .update({
+            status: "closed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", conversationId);
+        if (stopErr) throw stopErr;
         await safeAudit({
           action: "messaging.handoff.escalated",
           adminEmail: null,
           adminUserId: null,
           targetTable: "patients",
-          targetId: conv.patientId,
+          targetId: conv.patient_id,
           metadata: {
             channel: "email",
             conversation_id: conversationId,
-            patient_id: conv.patientId,
+            patient_id: conv.patient_id,
             reason: "stop_link",
             patient_status: "paused",
           },

@@ -15,11 +15,9 @@
 
 import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import PDFDocument from "pdfkit";
 
-import { getDbPool, physicianFaxOutreach } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { verifyFaxDocumentToken } from "../../lib/fax-document-token.js";
 
@@ -54,16 +52,16 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
-  const [row] = await db
-    .select({
-      physicianName: physicianFaxOutreach.physicianName,
-      coverLetterText: physicianFaxOutreach.coverLetterText,
-    })
-    .from(physicianFaxOutreach)
-    .where(eq(physicianFaxOutreach.id, verified.outreachId))
-    .limit(1);
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("physician_fax_outreach")
+    .select("physician_name, cover_letter_text")
+    .eq("id", verified.outreachId)
+    .limit(1)
+    .maybeSingle();
 
+  if (error) throw error;
   if (!row) {
     res.status(404).json({ error: "not_found" });
     return;
@@ -143,7 +141,7 @@ router.get("/fax/document/:token", faxDocumentLimiter, async (req, res) => {
   doc.moveDown(1);
 
   // ── Cover letter body ───────────────────────────────────────────────
-  doc.fontSize(11).font("Helvetica").text(row.coverLetterText, {
+  doc.fontSize(11).font("Helvetica").text(row.cover_letter_text, {
     align: "left",
     width: USABLE_WIDTH,
     lineGap: 4,
