@@ -172,13 +172,14 @@ router.patch("/patients/:id", requireAdmin, async (req, res) => {
       // (404). Without this disambiguation we'd punish a stale write
       // with the same response as a missing row, and the admin
       // would think the patient vanished.
-      const { data: exists } = await supabase
+      const { data: exists, error: existsErr } = await supabase
         .schema("resupply")
         .from("patients")
         .select("id")
         .eq("id", id)
         .limit(1)
         .maybeSingle();
+      if (existsErr) throw existsErr;
       if (exists) {
         res.status(409).json({
           error: "stale_patient",
