@@ -4,7 +4,7 @@
  * Escape a value for use in PostgREST `.or()` filter expressions.
  * PostgREST uses commas to separate clauses and parentheses for
  * grouping, so we need to wrap values containing these characters
- * in double-quotes and escape any embedded double-quotes.
+ * in double-quotes and escape any embedded double-quotes and backslashes.
  *
  * @param value - The value to escape
  * @returns The escaped value safe for use in PostgREST filter expressions
@@ -19,10 +19,11 @@
  * ```
  */
 export function escapePostgRESTFilterValue(value: string): string {
-  // If the value contains comma, parenthesis, or double-quote,
-  // wrap it in double-quotes and escape embedded quotes
-  if (/[,()"]/.test(value)) {
-    return `"${value.replace(/"/g, '\\"')}"`;
+  // If the value contains comma, parenthesis, double-quote, or backslash,
+  // wrap it in double-quotes and escape embedded backslashes and quotes
+  if (/[,()\\"]/.test(value)) {
+    // Escape backslashes first, then quotes
+    return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   }
   return value;
 }
