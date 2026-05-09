@@ -284,6 +284,9 @@ export interface Database {
           patient_id: string;
           object_key: string;
           document_type: string;
+          filename: string | null;
+          content_type: string;
+          size_bytes: number;
           reviewed_at: string | null;
           reviewed_by_admin_id: string | null;
           review_note: string | null;
@@ -406,6 +409,47 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_customer_push_subscriptions"]["Row"]>;
+        Relationships: [];
+      };
+      csr_compliance_alerts: {
+        Row: {
+          id: string;
+          patient_id: string;
+          journey_id: string | null;
+          alert_type: "low_usage" | "no_response" | "send_failure" | "manual";
+          severity: "info" | "warning" | "critical";
+          summary: string;
+          metric_snapshot: Record<string, unknown> | null;
+          status: "open" | "snoozed" | "resolved";
+          snoozed_until: string | null;
+          resolved_at: string | null;
+          resolved_by_email: string | null;
+          resolved_by_user_id: string | null;
+          resolution_note: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["csr_compliance_alerts"]["Row"]>;
+        Relationships: [];
+      };
+      message_templates: {
+        Row: {
+          id: string;
+          template_key: string;
+          channel: string;
+          subject: string | null;
+          body_html: string | null;
+          body_text: string;
+          allowed_variables: string[];
+          is_active: boolean;
+          updated_at: string;
+          updated_by: string | null;
+          created_at: string;
+          created_by: string | null;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["message_templates"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["message_templates"]["Row"]>;
         Relationships: [];
       };
       patient_smart_trigger_events: {

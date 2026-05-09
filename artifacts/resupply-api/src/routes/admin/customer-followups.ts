@@ -19,17 +19,11 @@
 // PHI / log posture: bodies are plain text. Audit envelopes record
 // customer_id + body_length + due_at — never the body.
 
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  getDbPool,
-  shopCustomerFollowups,
-  shopCustomers,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
@@ -88,53 +82,45 @@ router.get(
     // customer's history the slower it'd be to filter client-side.
     const includeCompleted = req.query.include === "completed";
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const exists = await db
-      .select({ id: shopCustomers.customerId })
-      .from(shopCustomers)
-      .where(eq(shopCustomers.customerId, userId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: existsRow, error: existsErr } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("customer_id")
+      .eq("customer_id", userId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) throw existsErr;
+    if (!existsRow) {
       res.status(404).json({ error: "customer_not_found" });
       return;
     }
 
-    const baseQuery = db
-      .select({
-        id: shopCustomerFollowups.id,
-        body: shopCustomerFollowups.body,
-        dueAt: shopCustomerFollowups.dueAt,
-        completedAt: shopCustomerFollowups.completedAt,
-        completedByEmail: shopCustomerFollowups.completedByEmail,
-        createdByEmail: shopCustomerFollowups.createdByEmail,
-        createdAt: shopCustomerFollowups.createdAt,
-      })
-      .from(shopCustomerFollowups)
-      .where(
-        includeCompleted
-          ? eq(shopCustomerFollowups.customerId, userId)
-          : and(
-              eq(shopCustomerFollowups.customerId, userId),
-              isNull(shopCustomerFollowups.completedAt),
-            ),
+    let followupsQuery = supabase
+      .schema("resupply")
+      .from("shop_customer_followups")
+      .select(
+        "id, body, due_at, completed_at, completed_by_email, created_by_email, created_at",
       )
-      .orderBy(
-        // Open queue: ascending due_at (most overdue first). Full
-        // history: descending due_at (most recent first).
-        includeCompleted
-          ? desc(shopCustomerFollowups.dueAt)
-          : asc(shopCustomerFollowups.dueAt),
-      );
-    // Open queue is always small; cap it cheaply. For full history
-    // we do NOT cap — the caller explicitly requested the complete
-    // audit trail and truncating it would break that contract.
-    const rows = await (includeCompleted ? baseQuery : baseQuery.limit(100));
+      .eq("customer_id", userId)
+      // Open queue: ascending due_at (most overdue first). Full
+      // history: descending due_at (most recent first).
+      .order("due_at", { ascending: !includeCompleted });
+    if (!includeCompleted) {
+      // Open queue is always small; cap it cheaply. For full history
+      // we do NOT cap — the caller explicitly requested the complete
+      // audit trail and truncating it would break that contract.
+      followupsQuery = followupsQuery.is("completed_at", null).limit(100);
+    }
+    const { data: rows, error: rowsErr } = await followupsQuery;
+    if (rowsErr) throw rowsErr;
 
+    const items = rows ?? [];
     req.log?.info(
       {
         userId,
-        count: rows.length,
+        count: items.length,
         includeCompleted,
         adminEmail: req.adminEmail,
       },
@@ -142,14 +128,14 @@ router.get(
     );
 
     res.json({
-      followups: rows.map((r) => ({
+      followups: items.map((r) => ({
         id: r.id,
         body: r.body,
-        dueAt: r.dueAt.toISOString(),
-        completedAt: r.completedAt ? r.completedAt.toISOString() : null,
-        completedByEmail: r.completedByEmail,
-        createdByEmail: r.createdByEmail,
-        createdAt: r.createdAt.toISOString(),
+        dueAt: r.due_at,
+        completedAt: r.completed_at,
+        completedByEmail: r.completed_by_email,
+        createdByEmail: r.created_by_email,
+        createdAt: r.created_at,
       })),
     });
   },
@@ -180,33 +166,35 @@ router.post(
     }
     const { body, dueAt } = bodyParsed.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const exists = await db
-      .select({ id: shopCustomers.customerId })
-      .from(shopCustomers)
-      .where(eq(shopCustomers.customerId, userId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: existsRow, error: existsErr } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("customer_id")
+      .eq("customer_id", userId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) throw existsErr;
+    if (!existsRow) {
       res.status(404).json({ error: "customer_not_found" });
       return;
     }
 
-    const inserted = await db
-      .insert(shopCustomerFollowups)
-      .values({
-        customerId: userId,
+    const { data: row, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_followups")
+      .insert({
+        customer_id: userId,
         body,
-        dueAt: new Date(dueAt),
-        createdByEmail: req.adminEmail ?? "<unknown>",
-        createdByUserId: req.adminUserId ?? null,
+        due_at: dueAt,
+        created_by_email: req.adminEmail ?? "<unknown>",
+        created_by_user_id: req.adminUserId ?? null,
       })
-      .returning({
-        id: shopCustomerFollowups.id,
-        createdAt: shopCustomerFollowups.createdAt,
-        dueAt: shopCustomerFollowups.dueAt,
-      });
-    const row = inserted[0];
+      .select("id, created_at, due_at")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) throw insertErr;
     if (!row) {
       throw new Error("INSERT returned no rows");
     }
@@ -220,7 +208,7 @@ router.post(
       metadata: {
         customer_id: userId,
         body_length: body.length,
-        due_at: row.dueAt.toISOString(),
+        due_at: row.due_at,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -230,8 +218,8 @@ router.post(
 
     res.status(201).json({
       id: row.id,
-      dueAt: row.dueAt.toISOString(),
-      createdAt: row.createdAt.toISOString(),
+      dueAt: row.due_at,
+      createdAt: row.created_at,
     });
   },
 );
@@ -255,20 +243,16 @@ router.patch(
     }
     const followupId = fIdCheck.data;
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const existing = await db
-      .select({
-        id: shopCustomerFollowups.id,
-        customerId: shopCustomerFollowups.customerId,
-        completedAt: shopCustomerFollowups.completedAt,
-        body: shopCustomerFollowups.body,
-        dueAt: shopCustomerFollowups.dueAt,
-      })
-      .from(shopCustomerFollowups)
-      .where(eq(shopCustomerFollowups.id, followupId))
-      .limit(1);
-    const row = existing[0];
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_followups")
+      .select("id, customer_id, completed_at, body, due_at")
+      .eq("id", followupId)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!row) {
       res.status(404).json({ error: "followup_not_found" });
       return;
@@ -277,11 +261,11 @@ router.patch(
     // userId in the path. A CSR with the followup UUID could otherwise
     // target it on any customer's URL; not exploitable today (admin
     // is admin) but the URL contract should hold.
-    if (row.customerId !== userId) {
+    if (row.customer_id !== userId) {
       res.status(404).json({ error: "followup_not_found" });
       return;
     }
-    if (row.completedAt !== null) {
+    if (row.completed_at !== null) {
       res.status(409).json({
         error: "already_completed",
         message: "This followup is already marked complete.",
@@ -289,25 +273,24 @@ router.patch(
       return;
     }
 
-    const now = new Date();
-    const updated = await db
-      .update(shopCustomerFollowups)
-      .set({
-        completedAt: now,
-        completedByEmail: req.adminEmail ?? "<unknown>",
-        completedByUserId: req.adminUserId ?? null,
+    const nowIso = new Date().toISOString();
+    // Atomic guard: only set completed_at when it's still null. If
+    // another CSR raced us the row was already updated and 0 rows
+    // come back — return 409 instead of 200.
+    const { data: updatedRow, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("shop_customer_followups")
+      .update({
+        completed_at: nowIso,
+        completed_by_email: req.adminEmail ?? "<unknown>",
+        completed_by_user_id: req.adminUserId ?? null,
       })
-      .where(
-        and(
-          eq(shopCustomerFollowups.id, followupId),
-          isNull(shopCustomerFollowups.completedAt),
-        ),
-      )
-      .returning({
-        id: shopCustomerFollowups.id,
-        completedAt: shopCustomerFollowups.completedAt,
-      });
-    const updatedRow = updated[0];
+      .eq("id", followupId)
+      .is("completed_at", null)
+      .select("id, completed_at")
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
     if (!updatedRow) {
       res.status(409).json({
         error: "already_completed",
@@ -325,7 +308,7 @@ router.patch(
       metadata: {
         customer_id: userId,
         body_length: row.body.length,
-        due_at: row.dueAt.toISOString(),
+        due_at: row.due_at,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -338,9 +321,7 @@ router.patch(
 
     res.json({
       id: updatedRow.id,
-      completedAt: updatedRow.completedAt
-        ? updatedRow.completedAt.toISOString()
-        : null,
+      completedAt: updatedRow.completed_at,
     });
   },
 );

@@ -13,23 +13,24 @@
 // plaintext. The list response includes patient first name so the
 // dashboard can render a useful row label.
 
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  csrComplianceAlerts,
   getDbPool,
-  patients,
+  getSupabaseServiceRoleClient,
   type CsrComplianceAlertStatus,
+  type Database,
 } from "@workspace/resupply-db";
 
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
+
+type CsrComplianceAlertUpdate =
+  Database["resupply"]["Tables"]["csr_compliance_alerts"]["Update"];
 
 const adminScanLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -64,6 +65,12 @@ const listQuery = z
   })
   .strict();
 
+const SEVERITY_ORDER: Record<string, number> = {
+  critical: 1,
+  warning: 2,
+  info: 3,
+};
+
 router.get(
   "/admin/csr-compliance-alerts",
   requireAdmin,
@@ -80,69 +87,86 @@ router.get(
       return;
     }
     const q = parsed.data;
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    const filters = [];
     const statuses: CsrComplianceAlertStatus[] = q.status
       ? Array.isArray(q.status)
         ? q.status
         : [q.status]
       : ["open"];
-    filters.push(inArray(csrComplianceAlerts.status, statuses));
-    if (q.severity) {
-      filters.push(eq(csrComplianceAlerts.severity, q.severity));
-    }
-    if (q.alertType) {
-      filters.push(eq(csrComplianceAlerts.alertType, q.alertType));
-    }
+
+    let alertsQuery = supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .select(
+        "id, patient_id, journey_id, alert_type, severity, summary, metric_snapshot, status, snoozed_until, resolved_at, resolved_by_email, resolution_note, created_at",
+      )
+      .in("status", statuses)
+      // The original SQL ordered by `CASE severity WHEN 'critical' THEN 1
+      // WHEN 'warning' THEN 2 ELSE 3 END, created_at DESC`. PostgREST
+      // doesn't support CASE in ORDER BY, so we fetch a slightly larger
+      // page (limit is bounded at 200) and re-sort JS-side.
+      .order("created_at", { ascending: false })
+      .limit(q.limit);
+    if (q.severity) alertsQuery = alertsQuery.eq("severity", q.severity);
+    if (q.alertType) alertsQuery = alertsQuery.eq("alert_type", q.alertType);
     if (q.sinceDays) {
-      const since = new Date(Date.now() - q.sinceDays * 24 * 60 * 60 * 1000);
-      filters.push(gte(csrComplianceAlerts.createdAt, since));
+      const sinceIso = new Date(
+        Date.now() - q.sinceDays * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      alertsQuery = alertsQuery.gte("created_at", sinceIso);
+    }
+    const { data: alertRows, error: alertErr } = await alertsQuery;
+    if (alertErr) throw alertErr;
+
+    // Bulk-fetch the joined patient.legal_first_name (was an INNER JOIN).
+    const patientIds = Array.from(
+      new Set((alertRows ?? []).map((r) => r.patient_id)),
+    );
+    const patientsRes =
+      patientIds.length > 0
+        ? await supabase
+            .schema("resupply")
+            .from("patients")
+            .select("id, legal_first_name")
+            .in("id", patientIds)
+        : { data: [], error: null as null };
+    if (patientsRes.error) throw patientsRes.error;
+    const firstNameByPatient = new Map<string, string | null>();
+    for (const p of patientsRes.data ?? []) {
+      firstNameByPatient.set(p.id, p.legal_first_name);
     }
 
-    const rows = await db
-      .select({
-        id: csrComplianceAlerts.id,
-        patientId: csrComplianceAlerts.patientId,
-        patientFirstName: patients.legalFirstName,
-        journeyId: csrComplianceAlerts.journeyId,
-        alertType: csrComplianceAlerts.alertType,
-        severity: csrComplianceAlerts.severity,
-        summary: csrComplianceAlerts.summary,
-        metricSnapshot: csrComplianceAlerts.metricSnapshot,
-        status: csrComplianceAlerts.status,
-        snoozedUntil: csrComplianceAlerts.snoozedUntil,
-        resolvedAt: csrComplianceAlerts.resolvedAt,
-        resolvedByEmail: csrComplianceAlerts.resolvedByEmail,
-        resolutionNote: csrComplianceAlerts.resolutionNote,
-        createdAt: csrComplianceAlerts.createdAt,
-      })
-      .from(csrComplianceAlerts)
-      .innerJoin(patients, eq(patients.id, csrComplianceAlerts.patientId))
-      .where(and(...filters))
-      .orderBy(
-        // Severity sort: critical (1) > warning (2) > info (3).
-        sql`CASE ${csrComplianceAlerts.severity} WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END`,
-        desc(csrComplianceAlerts.createdAt),
-      )
-      .limit(q.limit);
+    // Drop alerts whose patient id didn't resolve (was an INNER JOIN
+    // before, so a missing patient row should not appear). Then
+    // severity-then-created_at sort (critical > warning > info).
+    const merged = (alertRows ?? [])
+      .filter((r) => firstNameByPatient.has(r.patient_id))
+      .sort((a, b) => {
+        const sa = SEVERITY_ORDER[a.severity] ?? 99;
+        const sb = SEVERITY_ORDER[b.severity] ?? 99;
+        if (sa !== sb) return sa - sb;
+        if (a.created_at !== b.created_at)
+          return a.created_at < b.created_at ? 1 : -1;
+        return 0;
+      });
 
     res.json({
-      alerts: rows.map((r) => ({
+      alerts: merged.map((r) => ({
         id: r.id,
-        patientId: r.patientId,
-        patientFirstName: r.patientFirstName,
-        journeyId: r.journeyId,
-        alertType: r.alertType,
+        patientId: r.patient_id,
+        patientFirstName: firstNameByPatient.get(r.patient_id) ?? null,
+        journeyId: r.journey_id,
+        alertType: r.alert_type,
         severity: r.severity,
         summary: r.summary,
-        metricSnapshot: r.metricSnapshot ?? null,
+        metricSnapshot: r.metric_snapshot ?? null,
         status: r.status,
-        snoozedUntil: r.snoozedUntil?.toISOString() ?? null,
-        resolvedAt: r.resolvedAt?.toISOString() ?? null,
-        resolvedByEmail: r.resolvedByEmail ?? null,
-        resolutionNote: r.resolutionNote ?? null,
-        createdAt: r.createdAt.toISOString(),
+        snoozedUntil: r.snoozed_until,
+        resolvedAt: r.resolved_at,
+        resolvedByEmail: r.resolved_by_email ?? null,
+        resolutionNote: r.resolution_note ?? null,
+        createdAt: r.created_at,
       })),
     });
   },
@@ -208,71 +232,60 @@ router.patch(
     }
     const { action, snoozeUntil, note } = parsed.data;
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        id: csrComplianceAlerts.id,
-        patientId: csrComplianceAlerts.patientId,
-        status: csrComplianceAlerts.status,
-      })
-      .from(csrComplianceAlerts)
-      .where(eq(csrComplianceAlerts.id, alertId))
-      .limit(1);
-    const row = rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .select("id, patient_id, status")
+      .eq("id", alertId)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!row) {
       res.status(404).json({ error: "alert_not_found" });
       return;
     }
 
-    const now = new Date();
+    const nowIso = new Date().toISOString();
     let nextStatus: CsrComplianceAlertStatus;
-    let updates: Record<string, unknown> = { updatedAt: now };
+    const updates: CsrComplianceAlertUpdate = { updated_at: nowIso };
     if (action === "resolve") {
       nextStatus = "resolved";
-      updates = {
-        ...updates,
-        status: nextStatus,
-        resolvedAt: now,
-        resolvedByEmail: req.adminEmail ?? null,
-        resolvedByUserId: req.adminUserId ?? null,
-        resolutionNote: note ?? null,
-        snoozedUntil: null,
-      };
+      updates.status = nextStatus;
+      updates.resolved_at = nowIso;
+      updates.resolved_by_email = req.adminEmail ?? null;
+      updates.resolved_by_user_id = req.adminUserId ?? null;
+      updates.resolution_note = note ?? null;
+      updates.snoozed_until = null;
     } else if (action === "snooze") {
       nextStatus = "snoozed";
-      updates = {
-        ...updates,
-        status: nextStatus,
-        snoozedUntil: new Date(snoozeUntil!),
-      };
+      updates.status = nextStatus;
+      updates.snoozed_until = snoozeUntil!;
     } else {
       // reopen — clears resolved fields and the snooze window.
       nextStatus = "open";
-      updates = {
-        ...updates,
-        status: nextStatus,
-        resolvedAt: null,
-        resolvedByEmail: null,
-        resolvedByUserId: null,
-        resolutionNote: null,
-        snoozedUntil: null,
-      };
+      updates.status = nextStatus;
+      updates.resolved_at = null;
+      updates.resolved_by_email = null;
+      updates.resolved_by_user_id = null;
+      updates.resolution_note = null;
+      updates.snoozed_until = null;
     }
 
-    try {
-      await db
-        .update(csrComplianceAlerts)
-        .set(updates)
-        .where(eq(csrComplianceAlerts.id, alertId));
-    } catch (err) {
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .update(updates)
+      .eq("id", alertId);
+    if (updateErr) {
       // Reopening can collide with the partial unique index if a new
       // open alert for the same (patient, alert_type) was already
       // created after this one was resolved. Surface a clean 409.
       if (
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        (err as { code: string }).code === "23505"
+        updateErr &&
+        typeof updateErr === "object" &&
+        "code" in updateErr &&
+        (updateErr as { code: string }).code === "23505"
       ) {
         res.status(409).json({
           error: "another_open_alert_exists",
@@ -282,7 +295,7 @@ router.patch(
         });
         return;
       }
-      throw err;
+      throw updateErr;
     }
 
     await logAudit({
@@ -292,7 +305,7 @@ router.patch(
       targetTable: "csr_compliance_alerts",
       targetId: alertId,
       metadata: {
-        patient_id: row.patientId,
+        patient_id: row.patient_id,
         previous_status: row.status,
         new_status: nextStatus,
       },
@@ -334,47 +347,51 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const { patientId, severity, summary } = parsed.data;
 
     // Patient existence check — unknown UUIDs become a 404 instead of
     // an FK-violation 500.
-    const exists = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(eq(patients.id, patientId))
-      .limit(1);
-    if (exists.length === 0) {
+    const { data: existsRow, error: existsErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (existsErr) throw existsErr;
+    if (!existsRow) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
 
-    let inserted: { id: string }[];
-    try {
-      inserted = await db
-        .insert(csrComplianceAlerts)
-        .values({
-          patientId,
-          alertType: "manual",
-          severity,
-          summary,
-        })
-        .returning({ id: csrComplianceAlerts.id });
-    } catch (err) {
+    const { data: inserted, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("csr_compliance_alerts")
+      .insert({
+        patient_id: patientId,
+        alert_type: "manual",
+        severity,
+        summary,
+      })
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) {
       if (
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        (err as { code: string }).code === "23505"
+        insertErr &&
+        typeof insertErr === "object" &&
+        "code" in insertErr &&
+        (insertErr as { code: string }).code === "23505"
       ) {
         res
           .status(409)
           .json({ error: "another_open_manual_alert_exists" });
         return;
       }
-      throw err;
+      throw insertErr;
     }
-    const newId = inserted[0]?.id;
+    const newId = inserted?.id;
     if (!newId) throw new Error("insert returned no rows");
 
     await logAudit({
