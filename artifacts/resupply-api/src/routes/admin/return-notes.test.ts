@@ -9,6 +9,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -24,42 +31,14 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
-const selectQueue: unknown[][] = [];
-const insertQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const result = insertQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import returnNotesRouter from "./return-notes";
 
 const RETURN_ID = "11111111-1111-4111-8111-111111111111";
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
 
 function makeApp(): Express {
   const app = express();
@@ -70,11 +49,8 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  insertQueue.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
-  dbStub.select.mockClear();
-  dbStub.insert.mockClear();
 });
 
 describe("GET /admin/shop/returns/:returnId/notes", () => {
@@ -86,26 +62,18 @@ describe("GET /admin/shop/returns/:returnId/notes", () => {
   });
 
   it("400s with malformed returnId", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp()).get(
       `/admin/shop/returns/has spaces!/notes`,
     );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_return_id");
-    expect(dbStub.select).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_returns", "select")).toBe(0);
   });
 
   it("404s when the return doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_returns", "select", { data: null });
     const res = await request(makeApp()).get(
       `/admin/shop/returns/${RETURN_ID}/notes`,
     );
@@ -114,21 +82,21 @@ describe("GET /admin/shop/returns/:returnId/notes", () => {
   });
 
   it("returns the notes list", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: RETURN_ID }]);
-    selectQueue.push([
-      {
-        id: "note_1",
-        body: "Approved for replacement; vendor has stock.",
-        authorEmail: "ops@penn.example.com",
-        authorUserId: "u_admin",
-        createdAt: new Date("2026-05-03T15:00:00Z"),
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_returns", "select", {
+      data: { id: RETURN_ID },
+    });
+    stageSupabaseResponse("shop_return_notes", "select", {
+      data: [
+        {
+          id: "note_1",
+          body: "Approved for replacement; vendor has stock.",
+          author_email: "ops@penn.example.com",
+          author_user_id: "u_admin",
+          created_at: new Date("2026-05-03T15:00:00Z").toISOString(),
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       `/admin/shop/returns/${RETURN_ID}/notes`,
@@ -152,25 +120,17 @@ describe("POST /admin/shop/returns/:returnId/notes", () => {
   });
 
   it("400s with empty body", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/returns/${RETURN_ID}/notes`)
       .send({ body: "   " });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_return_notes", "insert")).toBe(0);
   });
 
   it("400s with over-limit body", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/returns/${RETURN_ID}/notes`)
       .send({ body: "x".repeat(4001) });
@@ -178,30 +138,27 @@ describe("POST /admin/shop/returns/:returnId/notes", () => {
   });
 
   it("404s when the return doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_returns", "select", { data: null });
     const res = await request(makeApp())
       .post(`/admin/shop/returns/${RETURN_ID}/notes`)
       .send({ body: "Vendor confirmed warranty replacement" });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("return_not_found");
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_return_notes", "insert")).toBe(0);
   });
 
   it("inserts + audits with non-PHI envelope", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: RETURN_ID }]);
-    insertQueue.push([
-      { id: "note_new", createdAt: new Date("2026-05-04T12:00:00Z") },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_returns", "select", {
+      data: { id: RETURN_ID },
+    });
+    stageSupabaseResponse("shop_return_notes", "insert", {
+      data: {
+        id: "note_new",
+        created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+      },
+    });
 
     const res = await request(makeApp())
       .post(`/admin/shop/returns/${RETURN_ID}/notes`)

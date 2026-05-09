@@ -8,6 +8,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -15,34 +21,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    leftJoin: () => obj,
-    orderBy: () => obj,
-    limit: () => obj,
-    offset: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import listRouter from "./list";
 
@@ -76,9 +54,8 @@ describe("GET /episodes", () => {
 
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
+    supabaseMock.reset();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -103,23 +80,41 @@ describe("GET /episodes", () => {
 
   it("returns paginated episodes joined with patient + prescription", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 1 }]);
-    selectQueue.push([
-      {
-        id: EP_ID,
-        patientId: PATIENT_ID,
-        patientFirstName: "Alice",
-        patientLastName: "Smith",
-        prescriptionId: RX_ID,
-        itemSku: "MASK-001",
-        cadenceDays: 90,
-        status: "outreach_pending",
-        dueAt: new Date("2025-04-01T00:00:00Z"),
-        daysOverdue: 27,
-        expiresAt: null,
-        createdAt: new Date("2025-04-01T00:00:00Z"),
-      },
-    ]);
+    // 1) Main episodes page (with `count`).
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        {
+          id: EP_ID,
+          patient_id: PATIENT_ID,
+          prescription_id: RX_ID,
+          status: "outreach_pending",
+          due_at: new Date("2025-04-01T00:00:00Z").toISOString(),
+          expires_at: null,
+          created_at: new Date("2025-04-01T00:00:00Z").toISOString(),
+        },
+      ],
+      count: 1,
+    });
+    // 2) Bulk patient lookup (PostgREST has no JOIN — second round-trip).
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: PATIENT_ID,
+          legal_first_name: "Alice",
+          legal_last_name: "Smith",
+        },
+      ],
+    });
+    // 3) Bulk prescription lookup (third round-trip).
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [
+        {
+          id: RX_ID,
+          item_sku: "MASK-001",
+          cadence_days: 90,
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       "/resupply-api/episodes?status=overdue&limit=25",
@@ -134,18 +129,25 @@ describe("GET /episodes", () => {
       itemSku: "MASK-001",
       cadenceDays: 90,
       status: "outreach_pending",
-      daysOverdue: 27,
     });
+    // daysOverdue is computed JS-side from due_at vs now() so the
+    // exact value depends on the test clock; just sanity check it's
+    // a non-negative integer.
+    expect(res.body.items[0].daysOverdue).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(res.body.items[0].daysOverdue)).toBe(true);
   });
 
   it("returns empty page on no results", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 0 }]);
-    selectQueue.push([]);
+    stageSupabaseResponse("episodes", "select", { data: [], count: 0 });
+    // No patient/prescription lookups when there are no rows on this
+    // page — the route's `patientIds.length > 0` guards skip the
+    // round-trips, so we don't stage them.
     const res = await request(makeApp()).get(
       "/resupply-api/episodes?status=confirmed",
     );
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([]);
+    expect(res.body.total).toBe(0);
   });
 });
