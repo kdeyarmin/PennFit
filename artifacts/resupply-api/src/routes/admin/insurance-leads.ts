@@ -126,6 +126,12 @@ router.get("/admin/shop/insurance-leads", requireAdmin, async (req, res) => {
         .select("*", { count: "exact", head: true })
         .eq("status", "closed"),
     ]);
+
+  if (newCount.error) throw newCount.error;
+  if (contactedCount.error) throw contactedCount.error;
+  if (verifiedCount.error) throw verifiedCount.error;
+  if (closedCount.error) throw closedCount.error;
+
   const counts: Record<InsuranceLeadStatus, number> = {
     new: newCount.count ?? 0,
     contacted: contactedCount.count ?? 0,
