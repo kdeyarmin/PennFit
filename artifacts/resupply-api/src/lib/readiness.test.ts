@@ -44,13 +44,17 @@ describe("checkReadiness()", () => {
     expect(result.errors).toBeUndefined();
   });
 
-  it("returns status=not_ready with categorized db error when the PostgREST request fails with ECONNREFUSED", async () => {
+  it("returns status=not_ready with categorized db error when PostgREST returns an ECONNREFUSED envelope", async () => {
+    // The supabase-js client surfaces transport-level failures on the
+    // `error` field of the resolved envelope rather than rejecting the
+    // promise — `checkDb()` destructures `{ error }` and re-throws.
+    // Test that production code path explicitly.
     isWorkerReadyMock.mockReturnValue(true);
-    builderMock.mockRejectedValue(
-      Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
+    builderMock.mockResolvedValue({
+      error: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
         code: "ECONNREFUSED",
       }),
-    );
+    });
     const result = await checkReadiness();
     expect(result.status).toBe("not_ready");
     expect(result.checks.db).toBe("failed");
@@ -71,11 +75,25 @@ describe("checkReadiness()", () => {
 
   it("collapses unknown db errors to the safe 'unavailable' bucket", async () => {
     isWorkerReadyMock.mockReturnValue(true);
-    builderMock.mockRejectedValue(new Error("some unexpected driver string"));
+    builderMock.mockResolvedValue({
+      error: new Error("some unexpected driver string"),
+    });
     const result = await checkReadiness();
     expect(result.status).toBe("not_ready");
     expect(result.errors?.db).toBe("unavailable");
     // queue is up in this scenario.
     expect(result.errors?.queue).toBeUndefined();
+  });
+
+  it("still surfaces a synchronous throw from the supabase builder as 'unavailable'", async () => {
+    // Defense in depth: if a future supabase-js change shifts a
+    // category of failures from the resolved envelope to a thrown
+    // promise, withTimeout's reject path still buckets the failure
+    // safely.
+    isWorkerReadyMock.mockReturnValue(true);
+    builderMock.mockRejectedValue(new Error("network down"));
+    const result = await checkReadiness();
+    expect(result.status).toBe("not_ready");
+    expect(result.errors?.db).toBe("unavailable");
   });
 });

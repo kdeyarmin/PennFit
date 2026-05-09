@@ -107,14 +107,13 @@ async function main(): Promise<void> {
   const argsParsed = parseArgs(process.argv);
 
   // Supabase service-role access is the production data path; the
-  // service-role JWT covers every schema this script touches.
-  // SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are validated by
-  // `getSupabaseServiceRoleClient()` itself with a clear error.
+  // service-role JWT covers every schema this script touches. We
+  // gate on both vars up front so the script exits with code 2 (the
+  // documented "env not set" code) rather than relying on the
+  // resupply-db client's own check, which surfaces a different
+  // error class.
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    fail(
-      "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.",
-      2,
-    );
+    fail("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.", 2);
   }
 
   // The previous version of this script forced the env reader
@@ -225,10 +224,13 @@ async function main(): Promise<void> {
     }
   }
 
-  // Sanity-check at the very end: re-read by hash to confirm the
-  // token round-trips. This catches a misconfigured DB column
-  // (e.g. token_hash dimension drift) before the operator clicks
-  // a broken link.
+  // Sanity-check that the token-hash derivation is reproducible
+  // before we hand the raw token to the operator. This is purely an
+  // in-memory check (`hashToken` is deterministic), so a real DB
+  // column-drift bug would NOT surface here — the failure would
+  // appear at consume time when the user clicks the link. The check
+  // catches the narrow case of `hashToken` itself being misbuilt
+  // (e.g. an empty buffer return), which has bitten us once before.
   const recheck = hashToken(token.raw);
   if (!recheck) fail("internal: re-hash failed");
 

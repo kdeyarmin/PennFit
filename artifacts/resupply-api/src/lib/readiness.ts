@@ -85,10 +85,13 @@ function categorize(err: unknown): string {
 }
 
 async function checkDb(): Promise<void> {
-  // `head: true` makes PostgREST emit a HEAD with no row payload; the
-  // total-count header is enough to confirm the database is responding
-  // and the service-role JWT still validates against it. We don't
-  // actually consume `count` — we just rely on the request succeeding.
+  // `head: true` makes PostgREST emit a HEAD with no row payload. We
+  // don't ask for `count: "exact"` — that would force PostgREST to
+  // run a `COUNT(*)` over `resupply.audit_log` regardless of the
+  // limit clause, and audit_log is append-only (it grows unbounded
+  // for the lifetime of the deploy). The bare `head + limit(1)` is
+  // enough to confirm the database is responding and the
+  // service-role JWT still validates against it.
   // The supabase-js PostgrestBuilder is a PromiseLike, so we lift it
   // into a real Promise via Promise.resolve before composing with the
   // withTimeout race wrapper.
@@ -98,7 +101,7 @@ async function checkDb(): Promise<void> {
       supabase
         .schema("resupply")
         .from("audit_log")
-        .select("id", { count: "exact", head: true })
+        .select("id", { head: true })
         .limit(1),
     ),
     "db check",

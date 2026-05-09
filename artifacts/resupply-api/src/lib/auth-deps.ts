@@ -139,21 +139,47 @@ function makeCustomerIdResolver(): CustomerIdResolver {
     // sign-ups). Mint the row keyed by auth.users.id; subsequent
     // requests find it via the auth_user_id index.
     //
-    // PostgREST upsert maps to ON CONFLICT (customer_id) DO UPDATE,
-    // mirroring the prior raw SQL.
-    const { error: upsertErr } = await supabase
+    // We explicitly model the original SQL's `ON CONFLICT (customer_id)
+    // DO UPDATE SET auth_user_id = EXCLUDED.auth_user_id, email_lower
+    // = COALESCE(EXCLUDED.email_lower, …)` semantics here. PostgREST's
+    // upsert helper would clobber `display_name` with the new payload
+    // (potentially null) on conflict, which can erase a curated name
+    // on a row whose `customer_id` happens to match `auth.users.id`
+    // (rare: a backfilled or re-bootstrapped shop_customers row). So
+    // we INSERT first and only fall back to a targeted UPDATE on a
+    // unique-violation, mirroring the prior behavior.
+    const { error: insertErr } = await supabase
       .schema("resupply")
       .from("shop_customers")
-      .upsert(
-        {
-          customer_id: input.authUserId,
+      .insert({
+        customer_id: input.authUserId,
+        auth_user_id: input.authUserId,
+        email_lower: input.emailLower,
+        display_name: input.displayName ?? null,
+      });
+    if (insertErr) {
+      if ((insertErr as { code?: string }).code === "23505") {
+        const updatePayload: {
+          auth_user_id: string;
+          updated_at: string;
+          email_lower?: string;
+        } = {
           auth_user_id: input.authUserId,
-          email_lower: input.emailLower,
-          display_name: input.displayName ?? null,
-        },
-        { onConflict: "customer_id" },
-      );
-    if (upsertErr) throw upsertErr;
+          updated_at: new Date().toISOString(),
+        };
+        // Mirror COALESCE(EXCLUDED.email_lower, …): only overwrite
+        // when the caller actually has a value.
+        if (input.emailLower) updatePayload.email_lower = input.emailLower;
+        const { error: updateErr } = await supabase
+          .schema("resupply")
+          .from("shop_customers")
+          .update(updatePayload)
+          .eq("customer_id", input.authUserId);
+        if (updateErr) throw updateErr;
+      } else {
+        throw insertErr;
+      }
+    }
     return {
       customerKey: input.authUserId,
       email: input.emailLower,
