@@ -42,12 +42,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import busboy from "busboy";
-import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
-  getDbPool,
   getSupabaseServiceRoleClient,
-  tryUpsertPatientLatestMessage,
+  tryUpsertPatientLatestMessageSb,
   type Json,
 } from "@workspace/resupply-db";
 
@@ -364,12 +362,9 @@ router.post("/email/inbound-parse", inboundParseLimiter, async (req, res) => {
 
   // 8. Refresh latest-message projection (best-effort) + flip the
   // conversation to awaiting_admin so a teammate sees the reply in
-  // the inbox. The projection helper still takes a Drizzle handle —
-  // shared infrastructure used by every messaging entry-point — so
-  // we keep that one Drizzle call until the projection is migrated.
-  const projectionDb = drizzle(getDbPool());
-  await tryUpsertPatientLatestMessage(
-    projectionDb,
+  // the inbox.
+  await tryUpsertPatientLatestMessageSb(
+    supabase,
     {
       conversationId,
       body,

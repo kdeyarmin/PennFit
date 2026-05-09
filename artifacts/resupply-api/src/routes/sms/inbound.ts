@@ -43,13 +43,11 @@
 //   twilio_message_sid.
 
 import { Router, type IRouter } from "express";
-import { drizzle } from "drizzle-orm/node-postgres";
 
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  getDbPool,
   getSupabaseServiceRoleClient,
-  tryUpsertPatientLatestMessage,
+  tryUpsertPatientLatestMessageSb,
   type Json,
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
@@ -545,13 +543,9 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
     }
   }
 
-  // Refresh latest-message projection (best-effort). The shared
-  // helper still takes a NodePgDatabase across every messaging
-  // entry-point, so we keep ONE Drizzle handle here until the
-  // projection migrates. Same hold as email/inbound-parse.
-  const projectionDb = drizzle(getDbPool());
-  await tryUpsertPatientLatestMessage(
-    projectionDb,
+  // Refresh latest-message projection (best-effort).
+  await tryUpsertPatientLatestMessageSb(
+    supabase,
     {
       conversationId,
       body: parsed.Body,
@@ -680,8 +674,8 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
   if (replyInsertErr) throw replyInsertErr;
 
   // Refresh latest-message projection (best-effort).
-  await tryUpsertPatientLatestMessage(
-    projectionDb,
+  await tryUpsertPatientLatestMessageSb(
+    supabase,
     {
       conversationId,
       body: twimlBody,
