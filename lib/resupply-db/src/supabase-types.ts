@@ -341,6 +341,37 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["shop_product_questions"]["Row"]>;
         Relationships: [];
       };
+      shop_back_in_stock_notifications: {
+        Row: {
+          id: string;
+          product_id: string;
+          email: string;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          notified_at: string | null;
+          delivered: boolean;
+          delivery_error: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_back_in_stock_notifications"]["Row"]>;
+        Relationships: [];
+      };
+      message_attachments: {
+        Row: {
+          id: string;
+          message_id: string;
+          object_key: string;
+          filename: string | null;
+          content_type: string;
+          size_bytes: number;
+          twilio_media_sid: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["message_attachments"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["message_attachments"]["Row"]>;
+        Relationships: [];
+      };
       shop_customer_push_subscriptions: {
         Row: {
           id: string;

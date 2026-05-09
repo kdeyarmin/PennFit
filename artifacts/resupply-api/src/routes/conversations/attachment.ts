@@ -23,19 +23,12 @@
 //       filename ("mms-<sid>.jpg") so "Save as…" works regardless
 //       of whether the dashboard fetches it inline or via a new tab.
 
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { Readable } from "node:stream";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import {
-  conversations,
-  getDbPool,
-  messageAttachments,
-  messages,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import {
@@ -63,36 +56,41 @@ router.get(
       return;
     }
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
 
-    // Single SQL with INNER joins enforces the full predicate:
-    // {conversation exists} ∧ {message belongs to that conversation}
-    // ∧ {attachment belongs to that message}. A mismatch in any
-    // dimension → no row → 404, indistinguishable from "doesn't
-    // exist" so we don't leak structure to enumeration.
-    const rows = await db
-      .select({
-        objectKey: messageAttachments.objectKey,
-        filename: messageAttachments.filename,
-        contentType: messageAttachments.contentType,
-      })
-      .from(messageAttachments)
-      .innerJoin(messages, eq(messages.id, messageAttachments.messageId))
-      .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-      .where(
-        and(
-          eq(conversations.id, ids.data.id),
-          eq(messages.id, ids.data.messageId),
-          eq(messageAttachments.id, ids.data.attachmentId),
-        ),
-      )
-      .limit(1);
-
-    const row = rows[0];
-    if (!row) {
+    // PostgREST has no JOIN, so we enforce the three-way predicate
+    // {conversation X has message Y has attachment Z} in two
+    // queries: fetch the attachment and assert message_id matches,
+    // then fetch the message and assert conversation_id matches.
+    // A mismatch in any dimension → 404, indistinguishable from
+    // "doesn't exist" so we don't leak structure to enumeration.
+    const { data: attachment } = await supabase
+      .schema("resupply")
+      .from("message_attachments")
+      .select("object_key, filename, content_type, message_id")
+      .eq("id", ids.data.attachmentId)
+      .limit(1)
+      .maybeSingle();
+    if (!attachment || attachment.message_id !== ids.data.messageId) {
       res.status(404).json({ error: "not_found" });
       return;
     }
+    const { data: message } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .select("conversation_id")
+      .eq("id", ids.data.messageId)
+      .limit(1)
+      .maybeSingle();
+    if (!message || message.conversation_id !== ids.data.id) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const row = {
+      objectKey: attachment.object_key,
+      filename: attachment.filename,
+      contentType: attachment.content_type,
+    };
 
     let file;
     try {

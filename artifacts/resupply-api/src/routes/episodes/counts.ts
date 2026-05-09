@@ -15,14 +15,12 @@
 // single-table.
 
 import { Router, type IRouter } from "express";
-import { and, eq, inArray, lte, sql, type SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { z } from "zod";
 
-import { episodes, getDbPool, patients } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { requireAdmin } from "../../middlewares/requireAdmin";
-import { episodesSearchClause } from "./list";
+import { resolveEpisodesSearch } from "./list";
 
 // The full set of episode statuses — kept as a literal union so the
 // `result` record below is exhaustively-typed without a runtime
@@ -66,57 +64,72 @@ router.get("/episodes/counts", requireAdmin, async (req, res) => {
   }
   const { q } = parsed.data;
 
-  const baseFilters: SQL[] = [];
-  if (q) baseFilters.push(episodesSearchClause(q));
-  const baseWhere = baseFilters.length ? and(...baseFilters) : undefined;
+  const supabase = getSupabaseServiceRoleClient();
+  const nowIso = new Date().toISOString();
 
-  const db = drizzle(getDbPool());
+  // Resolve the q-filter into a candidate episode-id set up front.
+  // Empty array short-circuits to an all-zeroes response.
+  let qEpisodeIds: string[] | null = null;
+  if (q) {
+    qEpisodeIds = await resolveEpisodesSearch(supabase, q);
+    if (qEpisodeIds.length === 0) {
+      res.status(200).json({
+        overdue: 0,
+        outreach_pending: 0,
+        awaiting_response: 0,
+        confirmed: 0,
+        declined: 0,
+        expired: 0,
+        fulfilled: 0,
+        canceled: 0,
+        all: 0,
+      });
+      return;
+    }
+  }
 
-  // Group-by on the real status column. Empty buckets need to
-  // appear as 0 (not absent) so the chip strip stays stable —
-  // we seed `result` with all known statuses, then merge.
-  const groupQuery = q
-    ? db
-        .select({
-          status: episodes.status,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(episodes)
-        .leftJoin(patients, eq(patients.id, episodes.patientId))
-        .where(baseWhere)
-        .groupBy(episodes.status)
-    : db
-        .select({
-          status: episodes.status,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(episodes)
-        .where(baseWhere)
-        .groupBy(episodes.status);
-  const groupRows = await groupQuery;
+  // PostgREST has no GROUP BY, so we fan the per-status counts out
+  // into N parallel head:true counts. The `episodes_status_idx`
+  // index makes each one cheap.
+  const STATUSES: readonly Status[] = [
+    "outreach_pending",
+    "awaiting_response",
+    "confirmed",
+    "declined",
+    "expired",
+    "fulfilled",
+    "canceled",
+  ] as const;
 
-  // Synthetic `overdue` bucket: outreach_pending|awaiting_response
-  // with dueAt <= now(). Re-uses the same q filter so it stays in
-  // sync with the chips.
-  const overdueFilters: SQL[] = [
-    inArray(episodes.status, ["outreach_pending", "awaiting_response"]),
-    lte(episodes.dueAt, sql`now()`),
-  ];
-  if (q) overdueFilters.push(episodesSearchClause(q));
-  const overdueQuery = q
-    ? db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(episodes)
-        .leftJoin(patients, eq(patients.id, episodes.patientId))
-        .where(and(...overdueFilters))
-    : db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(episodes)
-        .where(and(...overdueFilters));
-  const [overdueRow] = await overdueQuery;
+  const countQuery = (status: Status) => {
+    let q = supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("*", { count: "exact", head: true })
+      .eq("status", status);
+    if (qEpisodeIds) q = q.in("id", qEpisodeIds);
+    return q;
+  };
+  const overdueQuery = () => {
+    let q = supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["outreach_pending", "awaiting_response"])
+      .lte("due_at", nowIso);
+    if (qEpisodeIds) q = q.in("id", qEpisodeIds);
+    return q;
+  };
+
+  const [perStatus, overdueRes] = await Promise.all([
+    Promise.all(STATUSES.map((s) => countQuery(s))),
+    overdueQuery(),
+  ]);
+  for (const r of perStatus) if (r.error) throw r.error;
+  if (overdueRes.error) throw overdueRes.error;
 
   const result: Record<Status | "overdue" | "all", number> = {
-    overdue: overdueRow?.count ?? 0,
+    overdue: overdueRes.count ?? 0,
     outreach_pending: 0,
     awaiting_response: 0,
     confirmed: 0,
@@ -126,12 +139,10 @@ router.get("/episodes/counts", requireAdmin, async (req, res) => {
     canceled: 0,
     all: 0,
   };
-  for (const row of groupRows) {
-    const s = row.status as Status | undefined;
-    if (s && s in result) {
-      result[s] = row.count;
-    }
-    result.all += row.count;
+  for (let i = 0; i < STATUSES.length; i++) {
+    const c = perStatus[i]!.count ?? 0;
+    result[STATUSES[i]!] = c;
+    result.all += c;
   }
 
   res.status(200).json(result);
