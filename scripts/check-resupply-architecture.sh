@@ -168,11 +168,14 @@ done
 
 # Rule 7: only @workspace/resupply-db is allowed to construct a pg Pool
 # or import the `pg` package directly. Every other resupply package —
-# API, worker, dashboard, future query helpers — must consume the
-# shared pool via getDbPool(). This locks in the "exactly one Postgres
-# pool per process" invariant from ADR 003 (and Task #7). pg-boss
-# inside the worker stays untouched because it instantiates its pool
-# internally via `new PgBoss(...)`, never `new Pool(`.
+# API, worker, dashboard, future query helpers — must read/write
+# through the Supabase service-role client exported from
+# @workspace/resupply-db (`getSupabaseServiceRoleClient()`). The few
+# legacy callers that still consume `getDbPool()` are shrinking and
+# the rule below tolerates that for now; the goal is that `pg`
+# itself stays sequestered to lib/resupply-db. pg-boss inside the
+# worker stays untouched because it instantiates its pool internally
+# via `new PgBoss(...)`, never `new Pool(`.
 #
 # Two patterns are checked:
 #   (a) `new <maybe-namespace>.Pool(` / `new PgPool(` — catches the
@@ -198,7 +201,7 @@ for nopool in artifacts/resupply-api/src \
       "$nopool" 2>/dev/null \
       | rg -v '\.test\.' || true)"
     if [[ -n "$bad" ]]; then
-      fail "$nopool: must not construct its own Postgres pool or import 'pg' directly — import getDbPool from @workspace/resupply-db"
+      fail "$nopool: must not construct its own Postgres pool or import 'pg' directly — use getSupabaseServiceRoleClient() from @workspace/resupply-db (or, for legacy paths, getDbPool from the same package)"
       echo "$bad" | sed 's/^/    /' >&2
     fi
   fi

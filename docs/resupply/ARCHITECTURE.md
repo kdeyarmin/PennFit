@@ -102,8 +102,8 @@ which runs as part of the `resupply-check` validation step.
 | ------------------------------ | ------------------------------------------------------------------------------- |
 | `resupply-contracts`           | `zod` only                                                                      |
 | `resupply-domain`              | `resupply-contracts`, `zod`                                                     |
-| `resupply-db`                  | `resupply-contracts`, `resupply-domain`, `drizzle-orm`, `pg`, `zod`             |
-| `resupply-audit`               | `resupply-contracts`, `resupply-db`, `drizzle-orm`, `zod`                       |
+| `resupply-db`                  | `resupply-contracts`, `resupply-domain`, `@supabase/supabase-js`, `drizzle-orm`, `pg`, `zod` (drizzle-orm + pg are retained ONLY for the schema source-of-truth + `migrate.mjs`; runtime callers use `getSupabaseServiceRoleClient()`) |
+| `resupply-audit`               | `resupply-contracts`, `resupply-db`, `zod`                                      |
 | `resupply-telecom`             | `resupply-contracts`, `resupply-domain`, `zod` (vendor SDKs added in Phase 3)   |
 | `resupply-ai`                  | `resupply-contracts`, `resupply-domain`, `zod` (Anthropic SDK added in Phase 6) |
 | `resupply-testing`             | `resupply-contracts`, `resupply-domain`, faker, `zod` — **devDeps only**        |
