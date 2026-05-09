@@ -531,6 +531,27 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["patient_therapy_nights"]["Row"]>;
         Relationships: [];
       };
+      patient_onboarding_journeys: {
+        Row: {
+          id: string;
+          patient_id: string;
+          started_at: string;
+          day1_sent_at: string | null;
+          day3_sent_at: string | null;
+          day7_sent_at: string | null;
+          day30_sent_at: string | null;
+          day60_sent_at: string | null;
+          day90_sent_at: string | null;
+          status: "active" | "completed" | "paused";
+          enrolled_by_email: string;
+          enrolled_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["patient_onboarding_journeys"]["Row"]>;
+        Relationships: [];
+      };
       patient_smart_trigger_events: {
         Row: {
           id: string;

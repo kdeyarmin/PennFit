@@ -18,16 +18,13 @@
 // only patient_id + day_label + channel + outcome — never message
 // body, never phone/email plaintext.
 
-import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
   getDbPool,
-  patientOnboardingJourneys,
-  patients,
+  getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
 import { dispatchDueCheckins } from "../../lib/checkin-dispatcher";
@@ -77,26 +74,18 @@ router.get("/admin/patients/:id/onboarding", requireAdmin, async (req, res) => {
   }
   const patientId = idCheck.data;
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: patientOnboardingJourneys.id,
-      startedAt: patientOnboardingJourneys.startedAt,
-      day1SentAt: patientOnboardingJourneys.day1SentAt,
-      day3SentAt: patientOnboardingJourneys.day3SentAt,
-      day7SentAt: patientOnboardingJourneys.day7SentAt,
-      day30SentAt: patientOnboardingJourneys.day30SentAt,
-      day60SentAt: patientOnboardingJourneys.day60SentAt,
-      day90SentAt: patientOnboardingJourneys.day90SentAt,
-      status: patientOnboardingJourneys.status,
-      enrolledByEmail: patientOnboardingJourneys.enrolledByEmail,
-      createdAt: patientOnboardingJourneys.createdAt,
-    })
-    .from(patientOnboardingJourneys)
-    .where(eq(patientOnboardingJourneys.patientId, patientId))
-    .limit(1);
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: row, error } = await supabase
+    .schema("resupply")
+    .from("patient_onboarding_journeys")
+    .select(
+      "id, started_at, day1_sent_at, day3_sent_at, day7_sent_at, day30_sent_at, day60_sent_at, day90_sent_at, status, enrolled_by_email, created_at",
+    )
+    .eq("patient_id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
 
-  const row = rows[0];
   if (!row) {
     res.json({ journey: null });
     return;
@@ -104,16 +93,17 @@ router.get("/admin/patients/:id/onboarding", requireAdmin, async (req, res) => {
   res.json({
     journey: {
       id: row.id,
-      startedAt: row.startedAt.toISOString(),
-      day1SentAt: row.day1SentAt?.toISOString() ?? null,
-      day3SentAt: row.day3SentAt?.toISOString() ?? null,
-      day7SentAt: row.day7SentAt?.toISOString() ?? null,
-      day30SentAt: row.day30SentAt?.toISOString() ?? null,
-      day60SentAt: row.day60SentAt?.toISOString() ?? null,
-      day90SentAt: row.day90SentAt?.toISOString() ?? null,
+      // PostgREST returns timestamptz as ISO string already.
+      startedAt: row.started_at,
+      day1SentAt: row.day1_sent_at,
+      day3SentAt: row.day3_sent_at,
+      day7SentAt: row.day7_sent_at,
+      day30SentAt: row.day30_sent_at,
+      day60SentAt: row.day60_sent_at,
+      day90SentAt: row.day90_sent_at,
       status: row.status,
-      enrolledByEmail: row.enrolledByEmail,
-      createdAt: row.createdAt.toISOString(),
+      enrolledByEmail: row.enrolled_by_email,
+      createdAt: row.created_at,
     },
   });
 });
@@ -141,68 +131,70 @@ router.post(
       });
       return;
     }
-    const startedAt = bodyParsed.data.startedAt
-      ? new Date(bodyParsed.data.startedAt)
-      : new Date();
+    const startedAtIso = bodyParsed.data.startedAt
+      ? bodyParsed.data.startedAt
+      : new Date().toISOString();
 
-    const db = drizzle(getDbPool());
-    const exists = await db
-      .select({ id: patients.id })
-      .from(patients)
-      .where(eq(patients.id, patientId))
-      .limit(1);
-    if (exists.length === 0) {
+    const supabase = getSupabaseServiceRoleClient();
+
+    // Patient existence + open-journey precheck run in parallel.
+    const [existsRes, openRes] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("patients")
+        .select("id")
+        .eq("id", patientId)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .schema("resupply")
+        .from("patient_onboarding_journeys")
+        .select("id")
+        .eq("patient_id", patientId)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (existsRes.error) throw existsRes.error;
+    if (openRes.error) throw openRes.error;
+    if (!existsRes.data) {
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
 
     // Defense: refuse a second active row. The partial unique index
-    // would also catch this but a clean 409 reads better than a
-    // raw constraint violation surfacing from drizzle.
-    const open = await db
-      .select({ id: patientOnboardingJourneys.id })
-      .from(patientOnboardingJourneys)
-      .where(
-        and(
-          eq(patientOnboardingJourneys.patientId, patientId),
-          eq(patientOnboardingJourneys.status, "active"),
-        ),
-      )
-      .limit(1);
-    if (open[0]) {
+    // would also catch this but a clean 409 reads better than a raw
+    // constraint violation.
+    if (openRes.data) {
       res.status(409).json({
         error: "already_enrolled",
-        journeyId: open[0].id,
+        journeyId: openRes.data.id,
       });
       return;
     }
 
-    let inserted: { id: string; startedAt: Date }[];
-    try {
-      inserted = await db
-        .insert(patientOnboardingJourneys)
-        .values({
-          patientId,
-          startedAt,
-          enrolledByEmail: req.adminEmail ?? "<unknown>",
-          enrolledByUserId: req.adminUserId ?? null,
-        })
-        .returning({
-          id: patientOnboardingJourneys.id,
-          startedAt: patientOnboardingJourneys.startedAt,
-        });
-    } catch (err) {
+    const { data: row, error: insertErr } = await supabase
+      .schema("resupply")
+      .from("patient_onboarding_journeys")
+      .insert({
+        patient_id: patientId,
+        started_at: startedAtIso,
+        enrolled_by_email: req.adminEmail ?? "<unknown>",
+        enrolled_by_user_id: req.adminUserId ?? null,
+      })
+      .select("id, started_at")
+      .limit(1)
+      .maybeSingle();
+    if (insertErr) {
       // Concurrent request beat us to it — the partial unique index on
       // (patient_id) WHERE status='active' fired. Return the same 409
-      // the pre-check above would have returned rather than bubbling
-      // the raw constraint violation as a 500.
-      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23505") {
+      // the pre-check above would have returned.
+      if ((insertErr as { code?: string }).code === "23505") {
         res.status(409).json({ error: "already_enrolled" });
         return;
       }
-      throw err;
+      throw insertErr;
     }
-    const row = inserted[0];
     if (!row) {
       throw new Error("INSERT returned no rows");
     }
@@ -215,7 +207,7 @@ router.post(
       targetId: row.id,
       metadata: {
         patient_id: patientId,
-        started_at: row.startedAt.toISOString(),
+        started_at: row.started_at,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -225,7 +217,7 @@ router.post(
 
     res.status(201).json({
       id: row.id,
-      startedAt: row.startedAt.toISOString(),
+      startedAt: row.started_at,
     });
   },
 );
@@ -253,16 +245,15 @@ router.patch(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        id: patientOnboardingJourneys.id,
-        status: patientOnboardingJourneys.status,
-      })
-      .from(patientOnboardingJourneys)
-      .where(eq(patientOnboardingJourneys.patientId, patientId))
-      .limit(1);
-    const row = rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("patient_onboarding_journeys")
+      .select("id, status")
+      .eq("patient_id", patientId)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!row) {
       res.status(404).json({ error: "journey_not_found" });
       return;
@@ -272,11 +263,15 @@ router.patch(
       return;
     }
 
-    const now = new Date();
-    await db
-      .update(patientOnboardingJourneys)
-      .set({ status: bodyParsed.data.status, updatedAt: now })
-      .where(eq(patientOnboardingJourneys.id, row.id));
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("patient_onboarding_journeys")
+      .update({
+        status: bodyParsed.data.status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+    if (updateErr) throw updateErr;
 
     await logAudit({
       action:
