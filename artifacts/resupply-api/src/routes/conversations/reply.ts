@@ -265,7 +265,7 @@ async function handleInAppReply(input: {
   const { req, res, conversationId, body } = input;
 
   const outcome = await appendAdminInAppReply({
-    pool: getDbPool(),
+    supabase: getSupabaseServiceRoleClient(),
     conversationId,
     body,
   });

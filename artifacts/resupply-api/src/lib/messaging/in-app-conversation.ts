@@ -28,21 +28,13 @@
 //   v1 we simply flip status back to "awaiting_admin" on customer
 //   messages and never auto-archive — keeps the inbox simple.
 
-import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-
 import {
-  conversations,
-  messages,
-  type ConversationRow,
-  type getDbPool,
+  type Database,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
-// Pool type sourced from the workspace's pool helper. Architecture
-// rule (see scripts/check-resupply-architecture.sh) keeps direct
-// node-postgres imports inside @workspace/resupply-db; we only need
-// the type here, not the constructor.
-type WorkspacePool = ReturnType<typeof getDbPool>;
+type ConversationRow =
+  Database["resupply"]["Tables"]["conversations"]["Row"];
 
 /** Body length cap. Mirrors the existing SMS reply cap. */
 export const IN_APP_MESSAGE_BODY_MAX = 4000;
@@ -81,12 +73,6 @@ export interface FetchInAppThreadResult {
   unreadFromCsr: number;
 }
 
-function dbFromPool(
-  pool: WorkspacePool,
-): NodePgDatabase<Record<string, unknown>> {
-  return drizzle(pool);
-}
-
 /**
  * Read the customer's in-app thread plus its message history. Returns
  * `{ thread: null, messages: [] }` when the customer has never
@@ -94,55 +80,47 @@ function dbFromPool(
  * without a separate "does this exist" round-trip.
  *
  * We deliberately filter on `customerId AND channel=in_app` so a
- * future "second in-app thread" (we'd add a separate `customerEpisodeId`-
- * style scope later) doesn't leak into v1 callers.
+ * future "second in-app thread" (we'd add a separate
+ * `customerEpisodeId`-style scope later) doesn't leak into v1
+ * callers.
  */
 export async function fetchInAppThread(input: {
-  pool: WorkspacePool;
+  supabase: ResupplySupabaseClient;
   customerId: string;
 }): Promise<FetchInAppThreadResult> {
-  const db = dbFromPool(input.pool);
-  const convRows = await db
-    .select({
-      id: conversations.id,
-      status: conversations.status,
-      lastMessageAt: conversations.lastMessageAt,
-      createdAt: conversations.createdAt,
-      customerLastReadAt: conversations.customerLastReadAt,
-    })
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.customerId, input.customerId),
-        eq(conversations.channel, "in_app"),
-      ),
-    )
-    .orderBy(asc(conversations.createdAt))
-    .limit(1);
-  const conv = convRows[0];
+  const { data: conv, error: convErr } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id, status, last_message_at, created_at, customer_last_read_at")
+    .eq("customer_id", input.customerId)
+    .eq("channel", "in_app")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
   if (!conv) {
     return { thread: null, messages: [], unreadFromCsr: 0 };
   }
-  const msgRows = await db
-    .select({
-      id: messages.id,
-      direction: messages.direction,
-      senderRole: messages.senderRole,
-      body: messages.body,
-      createdAt: messages.createdAt,
-      deliveryStatus: messages.deliveryStatus,
-    })
-    .from(messages)
-    .where(eq(messages.conversationId, conv.id))
-    .orderBy(asc(messages.createdAt))
+  const { data: msgRows, error: msgErr } = await input.supabase
+    .schema("resupply")
+    .from("messages")
+    .select("id, direction, sender_role, body, created_at, delivery_status")
+    .eq("conversation_id", conv.id)
+    .order("created_at", { ascending: true })
     .limit(500);
+  if (msgErr) throw msgErr;
 
   // Compute unread-from-CSR. Walk the message list once; acceptable
   // because the fetch is capped at 500 rows above.
-  const lastReadMs = conv.customerLastReadAt?.getTime() ?? 0;
+  const lastReadMs = conv.customer_last_read_at
+    ? new Date(conv.customer_last_read_at).getTime()
+    : 0;
   let unreadFromCsr = 0;
-  for (const m of msgRows) {
-    if (m.direction === "outbound" && m.createdAt.getTime() > lastReadMs) {
+  for (const m of msgRows ?? []) {
+    if (
+      m.direction === "outbound" &&
+      new Date(m.created_at).getTime() > lastReadMs
+    ) {
       unreadFromCsr += 1;
     }
   }
@@ -151,22 +129,24 @@ export async function fetchInAppThread(input: {
     thread: {
       id: conv.id,
       status: conv.status,
-      lastMessageAt: conv.lastMessageAt?.toISOString() ?? null,
-      createdAt: conv.createdAt.toISOString(),
+      lastMessageAt: conv.last_message_at,
+      createdAt: conv.created_at,
     },
-    messages: msgRows.map((m) => ({
+    messages: (msgRows ?? []).map((m) => ({
       id: m.id,
-      direction: m.direction,
+      direction: m.direction as "inbound" | "outbound",
       // Type narrowing: senderRole on the schema is the full enum
       // (patient | customer | admin | agent | system). For in-app
       // threads the only roles that appear are customer / admin /
       // agent / system. We narrow to the in-app subset for the
       // public response. Patient-flow rows can't appear here because
       // we filtered conversations on channel=in_app + customer_id.
-      senderRole: m.senderRole === "patient" ? "customer" : m.senderRole,
-      body: m.body,
-      createdAt: m.createdAt.toISOString(),
-      deliveryStatus: m.deliveryStatus,
+      senderRole: (m.sender_role === "patient"
+        ? "customer"
+        : m.sender_role) as "customer" | "admin" | "agent" | "system",
+      body: m.body ?? "",
+      createdAt: m.created_at,
+      deliveryStatus: m.delivery_status,
     })),
     unreadFromCsr,
   };
@@ -184,37 +164,29 @@ export async function fetchInAppThread(input: {
  *   - or every outbound message arrived before customer_last_read_at.
  */
 export async function fetchInAppUnreadCount(input: {
-  pool: WorkspacePool;
+  supabase: ResupplySupabaseClient;
   customerId: string;
 }): Promise<number> {
-  const db = dbFromPool(input.pool);
-  const convRows = await db
-    .select({
-      id: conversations.id,
-      customerLastReadAt: conversations.customerLastReadAt,
-    })
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.customerId, input.customerId),
-        eq(conversations.channel, "in_app"),
-      ),
-    )
-    .limit(1);
-  const conv = convRows[0];
+  const { data: conv, error: convErr } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id, customer_last_read_at")
+    .eq("customer_id", input.customerId)
+    .eq("channel", "in_app")
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
   if (!conv) return 0;
-  const lastReadAt = conv.customerLastReadAt ?? new Date(0);
-  const countRows = await db
-    .select({ n: count() })
-    .from(messages)
-    .where(
-      and(
-        eq(messages.conversationId, conv.id),
-        eq(messages.direction, "outbound"),
-        gt(messages.createdAt, lastReadAt),
-      ),
-    );
-  return countRows[0]?.n ?? 0;
+  const lastReadAtIso = conv.customer_last_read_at ?? "1970-01-01T00:00:00Z";
+  const { count, error } = await input.supabase
+    .schema("resupply")
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("conversation_id", conv.id)
+    .eq("direction", "outbound")
+    .gt("created_at", lastReadAtIso);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /**
@@ -223,22 +195,19 @@ export async function fetchInAppUnreadCount(input: {
  * the customer has no thread (returns false).
  */
 export async function markInAppThreadRead(input: {
-  pool: WorkspacePool;
+  supabase: ResupplySupabaseClient;
   customerId: string;
 }): Promise<boolean> {
-  const db = dbFromPool(input.pool);
-  const now = new Date();
-  const result = await db
-    .update(conversations)
-    .set({ customerLastReadAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(conversations.customerId, input.customerId),
-        eq(conversations.channel, "in_app"),
-      ),
-    )
-    .returning({ id: conversations.id });
-  return result.length > 0;
+  const nowIso = new Date().toISOString();
+  const { data: updated, error } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({ customer_last_read_at: nowIso, updated_at: nowIso })
+    .eq("customer_id", input.customerId)
+    .eq("channel", "in_app")
+    .select("id");
+  if (error) throw error;
+  return (updated ?? []).length > 0;
 }
 
 export interface AppendCustomerMessageResult {
@@ -257,81 +226,85 @@ export interface AppendCustomerMessageResult {
  * this helper assumes the input has already been cleaned.
  */
 export async function appendCustomerMessage(input: {
-  pool: WorkspacePool;
+  supabase: ResupplySupabaseClient;
   customerId: string;
   body: string;
 }): Promise<AppendCustomerMessageResult> {
-  const db = dbFromPool(input.pool);
-  const now = new Date();
+  const nowIso = new Date().toISOString();
 
-  // Find existing OPEN thread first. We deliberately ignore closed
-  // threads here — a customer message after close starts a fresh
-  // row so the inbox surface treats it as a new request.
-  const existing = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.customerId, input.customerId),
-        eq(conversations.channel, "in_app"),
-        // Exclude closed; any other status (open / awaiting_*) is reusable.
-        // drizzle's `ne` would also work; using a not-equal via `eq` inversion
-        // would force a second round trip. Plain JS filter suffices since v1
-        // has at most one row.
-      ),
-    )
-    .limit(1);
+  // Find existing thread first. v1 has at most one row per customer
+  // on channel=in_app; closed threads ARE reusable per the policy
+  // comment at the top of this file (a fresh customer message flips
+  // status back to awaiting_admin, see the trailing UPDATE below).
+  const { data: existing, error: existingErr } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id")
+    .eq("customer_id", input.customerId)
+    .eq("channel", "in_app")
+    .limit(1)
+    .maybeSingle();
+  if (existingErr) throw existingErr;
 
   let threadId: string;
   let threadCreated = false;
-  const reusable = existing[0];
-  if (reusable) {
-    threadId = reusable.id;
+  if (existing) {
+    threadId = existing.id;
   } else {
     // First message — create the thread.
-    const created = await db
-      .insert(conversations)
-      .values({
-        customerId: input.customerId,
-        // patientId / episodeId stay null — the CHECK constraint
+    const { data: created, error: createErr } = await input.supabase
+      .schema("resupply")
+      .from("conversations")
+      .insert({
+        customer_id: input.customerId,
+        // patient_id / episode_id stay null — the CHECK constraint
         // requires customer_id-set rows to have both null.
-        patientId: null,
-        episodeId: null,
+        patient_id: null,
+        episode_id: null,
         channel: "in_app",
         status: "awaiting_admin",
-        lastMessageAt: now,
+        last_message_at: nowIso,
       })
-      .returning({ id: conversations.id });
-    threadId = created[0]!.id;
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (createErr) throw createErr;
+    if (!created) throw new Error("conversations insert returned no rows");
+    threadId = created.id;
     threadCreated = true;
   }
 
-  const inserted = await db
-    .insert(messages)
-    .values({
-      conversationId: threadId,
+  const { data: inserted, error: insertErr } = await input.supabase
+    .schema("resupply")
+    .from("messages")
+    .insert({
+      conversation_id: threadId,
       direction: "inbound",
-      senderRole: "customer",
+      sender_role: "customer",
       body: input.body,
       // No vendor side for in-app; deliveryStatus stays null.
-      sentAt: now,
+      sent_at: nowIso,
     })
-    .returning({ id: messages.id });
-  const messageId = inserted[0]!.id;
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertErr) throw insertErr;
+  if (!inserted) throw new Error("messages insert returned no rows");
 
-  // Bump the conversation forward — only update status if it isn't
-  // already a "the customer has the ball" status, since they may be
-  // following up on their own message before the CSR responds.
-  await db
-    .update(conversations)
-    .set({
-      lastMessageAt: now,
+  // Bump the conversation forward — flip to awaiting_admin in case a
+  // closed/awaiting_patient thread is being reopened by this message.
+  const { error: bumpErr } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
+      last_message_at: nowIso,
       status: "awaiting_admin",
-      updatedAt: now,
+      updated_at: nowIso,
     })
-    .where(eq(conversations.id, threadId));
+    .eq("id", threadId);
+  if (bumpErr) throw bumpErr;
 
-  return { threadId, messageId, threadCreated };
+  return { threadId, messageId: inserted.id, threadCreated };
 }
 
 export interface AppendAdminReplyResult {
@@ -354,56 +327,58 @@ export type AppendAdminInAppReplyOutcome =
  * — the caller should branch to `replyInConversation` for SMS/email.
  */
 export async function appendAdminInAppReply(input: {
-  pool: WorkspacePool;
+  supabase: ResupplySupabaseClient;
   conversationId: string;
   body: string;
   senderRole?: "admin" | "agent";
 }): Promise<AppendAdminInAppReplyOutcome> {
-  const db = dbFromPool(input.pool);
-  const convRows = await db
-    .select({
-      id: conversations.id,
-      channel: conversations.channel,
-      status: conversations.status,
-      customerId: conversations.customerId,
-    })
-    .from(conversations)
-    .where(eq(conversations.id, input.conversationId))
-    .limit(1);
-  const conv = convRows[0];
+  const { data: conv, error: convErr } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("id, channel, status, customer_id")
+    .eq("id", input.conversationId)
+    .limit(1)
+    .maybeSingle();
+  if (convErr) throw convErr;
   if (!conv) return { status: "conversation_not_found" };
   if (conv.channel !== "in_app") return { status: "wrong_channel" };
   if (conv.status === "closed") return { status: "conversation_closed" };
-  if (!conv.customerId) {
+  if (!conv.customer_id) {
     // CHECK constraint guarantees customer_id is set when channel=in_app,
     // but defensive null-check keeps downstream code (notification
     // email) safe to assume non-null.
     return { status: "missing_customer_id" };
   }
 
-  const now = new Date();
-  const inserted = await db
-    .insert(messages)
-    .values({
-      conversationId: conv.id,
+  const nowIso = new Date().toISOString();
+  const { data: inserted, error: insertErr } = await input.supabase
+    .schema("resupply")
+    .from("messages")
+    .insert({
+      conversation_id: conv.id,
       direction: "outbound",
-      senderRole: input.senderRole ?? "admin",
+      sender_role: input.senderRole ?? "admin",
       body: input.body,
-      sentAt: now,
+      sent_at: nowIso,
     })
-    .returning({ id: messages.id });
-  const messageId = inserted[0]!.id;
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertErr) throw insertErr;
+  if (!inserted) throw new Error("messages insert returned no rows");
 
-  await db
-    .update(conversations)
-    .set({
-      lastMessageAt: now,
+  const { error: bumpErr } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({
+      last_message_at: nowIso,
       status: "awaiting_patient",
-      updatedAt: now,
+      updated_at: nowIso,
     })
-    .where(eq(conversations.id, conv.id));
+    .eq("id", conv.id);
+  if (bumpErr) throw bumpErr;
 
-  return { status: "ok", result: { messageId } };
+  return { status: "ok", result: { messageId: inserted.id } };
 }
 
 /**
@@ -412,29 +387,17 @@ export async function appendAdminInAppReply(input: {
  * when the conversation isn't in-app or doesn't exist.
  */
 export async function getInAppConversationCustomerId(input: {
-  pool: WorkspacePool;
+  supabase: ResupplySupabaseClient;
   conversationId: string;
 }): Promise<string | null> {
-  const db = dbFromPool(input.pool);
-  const rows = await db
-    .select({
-      customerId: conversations.customerId,
-      channel: conversations.channel,
-    })
-    .from(conversations)
-    .where(
-      and(
-        eq(conversations.id, input.conversationId),
-        eq(conversations.channel, "in_app"),
-      ),
-    )
-    .limit(1);
-  return rows[0]?.customerId ?? null;
+  const { data, error } = await input.supabase
+    .schema("resupply")
+    .from("conversations")
+    .select("customer_id")
+    .eq("id", input.conversationId)
+    .eq("channel", "in_app")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.customer_id ?? null;
 }
-
-/**
- * Re-export `isNull` so consumers writing more nuanced filter
- * predicates against in-app threads can use the same drizzle
- * helper without re-importing it.
- */
-export { isNull };

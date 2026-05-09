@@ -28,14 +28,7 @@
 // need to remember the 404/410 mark-expired dance. Centralizing it
 // here keeps the dispatcher code straight-line and audit-correct.
 
-import { and, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-
-import {
-  getDbPool,
-  shopCustomerPushSubscriptions,
-  shopCustomers,
-} from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../logger";
 
@@ -159,22 +152,16 @@ export async function sendPushToCustomer(
   }
   sdk.setVapidDetails(config.subject, config.publicKey, config.privateKey);
 
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({
-      id: shopCustomerPushSubscriptions.id,
-      endpoint: shopCustomerPushSubscriptions.endpoint,
-      authB64: shopCustomerPushSubscriptions.authB64,
-      p256dhB64: shopCustomerPushSubscriptions.p256dhB64,
-    })
-    .from(shopCustomerPushSubscriptions)
-    .where(
-      and(
-        eq(shopCustomerPushSubscriptions.customerId, customerId),
-        isNull(shopCustomerPushSubscriptions.expiredAt),
-      ),
-    )
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rowsData, error: rowsErr } = await supabase
+    .schema("resupply")
+    .from("shop_customer_push_subscriptions")
+    .select("id, endpoint, auth_b64, p256dh_b64")
+    .eq("customer_id", customerId)
+    .is("expired_at", null)
     .limit(50);
+  if (rowsErr) throw rowsErr;
+  const rows = rowsData ?? [];
 
   if (rows.length === 0) {
     return { delivered: 0, expired: 0, transient: 0 };
@@ -197,7 +184,7 @@ export async function sendPushToCustomer(
         await sdk.sendNotification(
           {
             endpoint: row.endpoint,
-            keys: { auth: row.authB64, p256dh: row.p256dhB64 },
+            keys: { auth: row.auth_b64, p256dh: row.p256dh_b64 },
           },
           serialized,
         );
@@ -250,12 +237,15 @@ export async function sendPushToCustomerByEmail(
   if (!isPushConfigured()) {
     return { delivered: 0, expired: 0, transient: 0 };
   }
-  const db = drizzle(getDbPool());
-  const rows = await db
-    .select({ customerId: shopCustomers.customerId })
-    .from(shopCustomers)
-    .where(eq(shopCustomers.emailLower, lower))
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: rowsData, error } = await supabase
+    .schema("resupply")
+    .from("shop_customers")
+    .select("customer_id")
+    .eq("email_lower", lower)
     .limit(2);
+  if (error) throw error;
+  const rows = rowsData ?? [];
   if (rows.length === 0) {
     return { delivered: 0, expired: 0, transient: 0 };
   }
@@ -263,7 +253,7 @@ export async function sendPushToCustomerByEmail(
     logger.warn("web_push_customer_email_ambiguous");
     return { delivered: 0, expired: 0, transient: 0 };
   }
-  return sendPushToCustomer(rows[0].customerId, payload);
+  return sendPushToCustomer(rows[0]!.customer_id, payload);
 }
 
 /**
@@ -280,11 +270,14 @@ function pushErrorStatus(err: unknown): number | null {
 
 async function markExpired(subscriptionId: string): Promise<void> {
   try {
-    const db = drizzle(getDbPool());
-    await db
-      .update(shopCustomerPushSubscriptions)
-      .set({ expiredAt: new Date(), updatedAt: new Date() })
-      .where(eq(shopCustomerPushSubscriptions.id, subscriptionId));
+    const supabase = getSupabaseServiceRoleClient();
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase
+      .schema("resupply")
+      .from("shop_customer_push_subscriptions")
+      .update({ expired_at: nowIso, updated_at: nowIso })
+      .eq("id", subscriptionId);
+    if (error) throw error;
   } catch (err) {
     logger.warn(
       { subscriptionId, err: (err as Error).message },

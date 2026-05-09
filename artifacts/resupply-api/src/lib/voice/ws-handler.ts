@@ -21,16 +21,15 @@
 //   - HTTP routing (this is invoked from the upgrade handler in
 //     `index.ts`).
 
-import { eq } from "drizzle-orm";
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { WebSocket } from "ws";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  conversations,
   getDbPool,
-  messages,
-  tryUpsertPatientLatestMessage,
+  getSupabaseServiceRoleClient,
+  tryUpsertPatientLatestMessageSb,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
   buildSystemPrompt,
@@ -69,8 +68,11 @@ export async function handleVoiceWsConnection(
   pending: PendingSessionEntry,
 ): Promise<void> {
   const config = readVoiceConfigOrThrow();
-  const pool = getDbPool();
-  const db: NodePgDatabase = drizzle(pool);
+  const supabase = getSupabaseServiceRoleClient();
+  // The voice-tool dispatcher (createVoiceToolDispatcher) still takes
+  // a NodePgDatabase. Keep one Drizzle handle here until tools-impl
+  // migrates; every other DB call in this file is Supabase JS.
+  const toolsDb = drizzle(getDbPool());
 
   let streamSid: string | null = null;
   let twilioCallSid: string | null = pending.twilioCallSid ?? null;
@@ -108,7 +110,7 @@ export async function handleVoiceWsConnection(
   };
 
   const dispatcher = createVoiceToolDispatcher({
-    db,
+    db: toolsDb,
     patientId: pending.patientId,
     conversationId: pending.conversationId,
     episodeId: pending.episodeId,
@@ -136,7 +138,7 @@ export async function handleVoiceWsConnection(
   });
 
   bridge.on("transcript.turn", (turn) => {
-    void persistTranscript(db, pending.conversationId, turn).catch((err) => {
+    void persistTranscript(supabase, pending.conversationId, turn).catch((err) => {
       logger.error(
         {
           event: "voice_transcript_persist_failed",
@@ -194,7 +196,7 @@ export async function handleVoiceWsConnection(
       "voice session closed",
     );
     void finalizeConversation(
-      db,
+      supabase,
       pending.conversationId,
       twilioCallSid,
       info.reason,
@@ -263,24 +265,29 @@ export async function handleVoiceWsConnection(
 }
 
 async function persistTranscript(
-  db: NodePgDatabase,
+  supabase: ResupplySupabaseClient,
   conversationId: string,
   turn: TranscriptTurn,
 ): Promise<void> {
   const direction = turn.source === "input" ? "inbound" : "outbound";
   const sentAt = new Date();
-  await db.insert(messages).values({
-    conversationId,
-    direction,
-    senderRole: turn.source === "input" ? "patient" : "agent",
-    body: turn.text,
-    sentAt,
-  });
+  const sentIso = sentAt.toISOString();
+  const { error } = await supabase
+    .schema("resupply")
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      direction,
+      sender_role: turn.source === "input" ? "patient" : "agent",
+      body: turn.text,
+      sent_at: sentIso,
+    });
+  if (error) throw error;
 
   // Refresh latest-message projection (best-effort). Voice transcripts
   // can be long — `tryUpsert` truncates internally, so we don't need
   // to pre-truncate here.
-  await tryUpsertPatientLatestMessage(db, {
+  await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
     body: turn.text,
     direction,
@@ -289,15 +296,18 @@ async function persistTranscript(
 }
 
 async function finalizeConversation(
-  db: NodePgDatabase,
+  supabase: ResupplySupabaseClient,
   conversationId: string,
   twilioCallSid: string | null,
   reason: string,
 ): Promise<void> {
-  await db
-    .update(conversations)
-    .set({ status: "closed", updatedAt: new Date() })
-    .where(eq(conversations.id, conversationId));
+  const nowIso = new Date().toISOString();
+  const { error } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .update({ status: "closed", updated_at: nowIso })
+    .eq("id", conversationId);
+  if (error) throw error;
 
   await logAudit({
     action: "voice.call.completed",
