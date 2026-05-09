@@ -3,17 +3,13 @@
 // Mocking strategy:
 //   - Mock the auth-deps module so requireAdmin can be exercised
 //     without a real auth lookup.
-//   - Mock drizzle so we can stage row results per assertion.
+//   - Mock the Supabase service-role client via the shared helper so
+//     each test can stage the patient / episode / conversation
+//     responses the route fans out in parallel.
 //   - Mock @workspace/resupply-telecom's createTwilioClient so we
 //     never try to dial a real number.
 //   - Mock @workspace/resupply-audit so audit calls are observable
 //     without touching the audit_log table.
-//
-// We deliberately do NOT mock the full `@workspace/resupply-db`
-// surface — only `getDbPool()` — because the route still needs the
-// schema imports (patients/episodes/conversations) and the encrypt/
-// decrypt helpers to evaluate at module load time. Replacing only
-// `getDbPool` keeps the type contracts honest.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -23,6 +19,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -30,45 +32,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// Drizzle stub. Each terminal method (limit / returning / awaited
-// where) resolves with the value at the front of `selectResults` /
-// `insertResults` / `updateResults`.
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    set: () => obj,
-    values: () => obj,
-    leftJoin: () => obj,
-    limit: () => Promise.resolve(result),
-    returning: () => Promise.resolve(result),
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const insertQueue: unknown[] = [];
-const updateQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-  insert: vi.fn(() => fluent(insertQueue.shift() ?? [])),
-  update: vi.fn(() => fluent(updateQueue.shift() ?? undefined)),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
 
 const logAuditMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -139,15 +102,10 @@ describe("POST /voice/place-call", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    selectQueue.length = 0;
-    insertQueue.length = 0;
-    updateQueue.length = 0;
     mockAdmin.current = null;
+    supabaseMock.reset();
     placeCallMock.mockReset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
-    dbStub.select.mockClear();
-    dbStub.insert.mockClear();
-    dbStub.update.mockClear();
     __resetPendingSessionsForTests();
   });
   afterEach(() => {
@@ -189,7 +147,10 @@ describe("POST /voice/place-call", () => {
   it("returns 404 when patient does not exist", async () => {
     setVoiceEnv();
     stubVerifiedAdmin();
-    selectQueue.push([]); // patient lookup → empty
+    // Patient lookup returns null. Episode lookup also runs in
+    // parallel; stage it as well so the chain resolves cleanly.
+    stageSupabaseResponse("patients", "select", { data: null });
+    stageSupabaseResponse("episodes", "select", { data: null });
     const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
@@ -200,7 +161,12 @@ describe("POST /voice/place-call", () => {
   it("returns 422 when patient has no phone", async () => {
     setVoiceEnv();
     stubVerifiedAdmin();
-    selectQueue.push([{ id: PATIENT_ID, phoneE164: null, status: "active" }]);
+    stageSupabaseResponse("patients", "select", {
+      data: { id: PATIENT_ID, phone_e164: null, status: "active" },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: { id: EPISODE_ID, patient_id: PATIENT_ID },
+    });
     const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
@@ -211,12 +177,15 @@ describe("POST /voice/place-call", () => {
   it("returns 422 on episode/patient mismatch", async () => {
     setVoiceEnv();
     stubVerifiedAdmin();
-    selectQueue.push([
-      { id: PATIENT_ID, phoneE164: "+12155551212", status: "active" },
-    ]);
-    selectQueue.push([
-      { id: EPISODE_ID, patientId: "44444444-4444-4444-8444-444444444444" },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: {
+        id: EPISODE_ID,
+        patient_id: "44444444-4444-4444-8444-444444444444",
+      },
+    });
     const res = await request(makeApp())
       .post("/resupply-api/voice/place-call")
       .send({ patientId: PATIENT_ID, episodeId: EPISODE_ID });
@@ -227,12 +196,18 @@ describe("POST /voice/place-call", () => {
   it("dials Twilio, creates conversation, registers pending session, audits, returns 201", async () => {
     setVoiceEnv();
     stubVerifiedAdmin();
-    selectQueue.push([
-      { id: PATIENT_ID, phoneE164: "+12155551212", status: "active" },
-    ]);
-    selectQueue.push([{ id: EPISODE_ID, patientId: PATIENT_ID }]);
-    insertQueue.push([{ id: CONVERSATION_ID }]);
-    updateQueue.push(undefined);
+    stageSupabaseResponse("patients", "select", {
+      data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: { id: EPISODE_ID, patient_id: PATIENT_ID },
+    });
+    // INSERT … RETURNING with .maybeSingle() returns the row directly.
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
+    // Post-dial UPDATE that stamps twilio_call_sid.
+    stageSupabaseResponse("conversations", "update", { error: null });
     placeCallMock.mockResolvedValue({ sid: "CA_TEST_123" });
 
     const res = await request(makeApp())
@@ -278,11 +253,15 @@ describe("POST /voice/place-call", () => {
   it("returns 502 + audits twilio_error when Twilio API rejects", async () => {
     setVoiceEnv();
     stubVerifiedAdmin();
-    selectQueue.push([
-      { id: PATIENT_ID, phoneE164: "+12155551212", status: "active" },
-    ]);
-    selectQueue.push([{ id: EPISODE_ID, patientId: PATIENT_ID }]);
-    insertQueue.push([{ id: CONVERSATION_ID }]);
+    stageSupabaseResponse("patients", "select", {
+      data: { id: PATIENT_ID, phone_e164: "+12155551212", status: "active" },
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: { id: EPISODE_ID, patient_id: PATIENT_ID },
+    });
+    stageSupabaseResponse("conversations", "insert", {
+      data: { id: CONVERSATION_ID },
+    });
     const { TwilioApiError } = await import("@workspace/resupply-telecom");
     placeCallMock.mockRejectedValue(
       new TwilioApiError("rejected by upstream", 400, 21211),
