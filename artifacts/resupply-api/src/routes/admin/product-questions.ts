@@ -12,13 +12,11 @@
 // envelope still logs structurally — product_id + question_length +
 // answer_length — so we can spot anomalies without parsing prose.
 
-import { and, desc, eq, lt, or } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, shopProductQuestions } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 import { logger } from "../../lib/logger";
@@ -80,73 +78,55 @@ router.get("/admin/shop/product-questions", requireAdmin, async (req, res) => {
     return;
   }
 
-  const db = drizzle(getDbPool());
+  const supabase = getSupabaseServiceRoleClient();
 
-  const cursorClause =
-    parsedCursor.date && parsedCursor.id
-      ? or(
-          lt(shopProductQuestions.createdAt, parsedCursor.date),
-          and(
-            eq(shopProductQuestions.createdAt, parsedCursor.date),
-            lt(shopProductQuestions.id, parsedCursor.id),
-          ),
-        )
-      : undefined;
-
-  const clauses = [
-    eq(shopProductQuestions.status, status),
-    cursorClause,
-  ].filter((c): c is NonNullable<typeof c> => c != null);
-  // clauses always has at least the status filter, so the array is non-empty.
-  // When there's no cursor its length is 1 (no wrapping and()); with a cursor
-  // its length is 2 and we need and() to combine both predicates.
-  const whereClause =
-    clauses.length === 1
-      ? clauses[0]!
-      : and(clauses[0]!, clauses[1]!);
-
-  const rows = await db
-    .select({
-      id: shopProductQuestions.id,
-      productId: shopProductQuestions.productId,
-      askerDisplayName: shopProductQuestions.askerDisplayName,
-      askerEmail: shopProductQuestions.askerEmail,
-      questionBody: shopProductQuestions.questionBody,
-      answerBody: shopProductQuestions.answerBody,
-      answeredByEmail: shopProductQuestions.answeredByEmail,
-      answeredAt: shopProductQuestions.answeredAt,
-      moderationNote: shopProductQuestions.moderationNote,
-      moderatedAt: shopProductQuestions.moderatedAt,
-      status: shopProductQuestions.status,
-      createdAt: shopProductQuestions.createdAt,
-    })
-    .from(shopProductQuestions)
-    .where(whereClause)
-    .orderBy(desc(shopProductQuestions.createdAt), desc(shopProductQuestions.id))
+  // Cursor is composite (created_at, id) so we get strict ordering
+  // even when many rows share a created_at. PostgREST `.or()` supports
+  // this with `created_at.lt.<iso>,and(created_at.eq.<iso>,id.lt.<id>)`.
+  // The cursor values are already either UUIDs or PostgREST-safe ISO
+  // timestamps, so no metachar smuggling is possible.
+  let questionsQuery = supabase
+    .schema("resupply")
+    .from("shop_product_questions")
+    .select(
+      "id, product_id, asker_display_name, asker_email, question_body, answer_body, answered_by_email, answered_at, moderation_note, moderated_at, status, created_at",
+    )
+    .eq("status", status)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(limit + 1);
+  if (parsedCursor.date && parsedCursor.id) {
+    const cursorIso = parsedCursor.date.toISOString();
+    questionsQuery = questionsQuery.or(
+      `created_at.lt.${cursorIso},and(created_at.eq.${cursorIso},id.lt.${parsedCursor.id})`,
+    );
+  }
+  const { data: rows, error } = await questionsQuery;
+  if (error) throw error;
 
-  const hasMore = rows.length > limit;
-  const trimmed = hasMore ? rows.slice(0, limit) : rows;
+  const all = rows ?? [];
+  const hasMore = all.length > limit;
+  const trimmed = hasMore ? all.slice(0, limit) : all;
   const lastRow = trimmed[trimmed.length - 1];
   const nextCursor =
     hasMore && lastRow
-      ? encodeCompositeCursor(lastRow.createdAt, lastRow.id)
+      ? encodeCompositeCursor(new Date(lastRow.created_at), lastRow.id)
       : null;
 
   res.json({
     items: trimmed.map((r) => ({
       id: r.id,
-      productId: r.productId,
-      askerDisplayName: r.askerDisplayName,
-      askerEmail: r.askerEmail,
-      questionBody: r.questionBody,
-      answerBody: r.answerBody,
-      answeredByEmail: r.answeredByEmail,
-      answeredAt: r.answeredAt ? r.answeredAt.toISOString() : null,
-      moderationNote: r.moderationNote,
-      moderatedAt: r.moderatedAt ? r.moderatedAt.toISOString() : null,
+      productId: r.product_id,
+      askerDisplayName: r.asker_display_name,
+      askerEmail: r.asker_email,
+      questionBody: r.question_body,
+      answerBody: r.answer_body,
+      answeredByEmail: r.answered_by_email,
+      answeredAt: r.answered_at,
+      moderationNote: r.moderation_note,
+      moderatedAt: r.moderated_at,
       status: r.status,
-      createdAt: r.createdAt.toISOString(),
+      createdAt: r.created_at,
     })),
     nextCursor,
   });
@@ -175,54 +155,56 @@ router.patch(
       return;
     }
 
-    const db = drizzle(getDbPool());
+    const supabase = getSupabaseServiceRoleClient();
     const now = new Date();
+    const nowIso = now.toISOString();
 
     if (bodyParsed.data.action === "answer") {
       const { answerBody: answer } = bodyParsed.data;
-      // Atomic: only update when status is still 'pending'. If 0 rows are
+      // Atomic: only update when status is still 'pending'. If no row is
       // returned the question was already moderated by another CSR (race),
-      // or never existed.
-      const updated = await db
-        .update(shopProductQuestions)
-        .set({
+      // or never existed. PostgREST has no native UPDATE...RETURNING with
+      // an extra WHERE — but `.update().eq().eq("status","pending").select()`
+      // is the equivalent: PostgREST only updates rows matching all
+      // filters and returns just those rows.
+      const { data: updatedRow, error: updateErr } = await supabase
+        .schema("resupply")
+        .from("shop_product_questions")
+        .update({
           status: "answered",
-          answerBody: answer,
-          answeredByEmail: req.adminEmail ?? "<unknown>",
-          answeredByUserId: req.adminUserId ?? null,
-          answeredAt: now,
-          updatedAt: now,
+          answer_body: answer,
+          answered_by_email: req.adminEmail ?? "<unknown>",
+          answered_by_user_id: req.adminUserId ?? null,
+          answered_at: nowIso,
+          updated_at: nowIso,
         })
-        .where(
-          and(
-            eq(shopProductQuestions.id, id),
-            eq(shopProductQuestions.status, "pending"),
-          ),
-        )
-        .returning({
-          id: shopProductQuestions.id,
-          productId: shopProductQuestions.productId,
-          questionBody: shopProductQuestions.questionBody,
-        });
+        .eq("id", id)
+        .eq("status", "pending")
+        .select("id, product_id, question_body")
+        .limit(1)
+        .maybeSingle();
+      if (updateErr) throw updateErr;
 
-      if (updated.length === 0) {
-        const existing = await db
-          .select({ status: shopProductQuestions.status })
-          .from(shopProductQuestions)
-          .where(eq(shopProductQuestions.id, id))
-          .limit(1);
-        if (!existing[0]) {
+      if (!updatedRow) {
+        const { data: existing, error: existErr } = await supabase
+          .schema("resupply")
+          .from("shop_product_questions")
+          .select("status")
+          .eq("id", id)
+          .limit(1)
+          .maybeSingle();
+        if (existErr) throw existErr;
+        if (!existing) {
           res.status(404).json({ error: "not_found" });
           return;
         }
         res.status(409).json({
           error: "already_moderated",
-          message: `This question is already ${existing[0].status}.`,
+          message: `This question is already ${existing.status}.`,
         });
         return;
       }
 
-      const row = updated[0]!;
       await logAudit({
         action: "shop_product_question.answer",
         adminEmail: req.adminEmail ?? null,
@@ -230,8 +212,8 @@ router.patch(
         targetTable: "shop_product_questions",
         targetId: id,
         metadata: {
-          product_id: row.productId,
-          question_length: row.questionBody.length,
+          product_id: updatedRow.product_id,
+          question_length: updatedRow.question_body.length,
           answer_length: answer.length,
         },
         ip: req.ip ?? null,
@@ -240,51 +222,49 @@ router.patch(
         logger.warn({ err }, "shop_product_question.answer audit write failed");
       });
 
-      res.json({ id, status: "answered", answeredAt: now.toISOString() });
+      res.json({ id, status: "answered", answeredAt: nowIso });
       return;
     }
 
     // reject — same atomic guard
     const { moderationNote } = bodyParsed.data;
-    const updated = await db
-      .update(shopProductQuestions)
-      .set({
+    const { data: updatedRow, error: updateErr } = await supabase
+      .schema("resupply")
+      .from("shop_product_questions")
+      .update({
         status: "rejected",
-        moderationNote: moderationNote ?? null,
-        moderatedAt: now,
-        moderatedBy: req.adminUserId ?? null,
-        updatedAt: now,
+        moderation_note: moderationNote ?? null,
+        moderated_at: nowIso,
+        moderated_by: req.adminUserId ?? null,
+        updated_at: nowIso,
       })
-      .where(
-        and(
-          eq(shopProductQuestions.id, id),
-          eq(shopProductQuestions.status, "pending"),
-        ),
-      )
-      .returning({
-        id: shopProductQuestions.id,
-        productId: shopProductQuestions.productId,
-        questionBody: shopProductQuestions.questionBody,
-      });
+      .eq("id", id)
+      .eq("status", "pending")
+      .select("id, product_id, question_body")
+      .limit(1)
+      .maybeSingle();
+    if (updateErr) throw updateErr;
 
-    if (updated.length === 0) {
-      const existing = await db
-        .select({ status: shopProductQuestions.status })
-        .from(shopProductQuestions)
-        .where(eq(shopProductQuestions.id, id))
-        .limit(1);
-      if (!existing[0]) {
+    if (!updatedRow) {
+      const { data: existing, error: existErr } = await supabase
+        .schema("resupply")
+        .from("shop_product_questions")
+        .select("status")
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle();
+      if (existErr) throw existErr;
+      if (!existing) {
         res.status(404).json({ error: "not_found" });
         return;
       }
       res.status(409).json({
         error: "already_moderated",
-        message: `This question is already ${existing[0].status}.`,
+        message: `This question is already ${existing.status}.`,
       });
       return;
     }
 
-    const row = updated[0]!;
     await logAudit({
       action: "shop_product_question.reject",
       adminEmail: req.adminEmail ?? null,
@@ -292,8 +272,8 @@ router.patch(
       targetTable: "shop_product_questions",
       targetId: id,
       metadata: {
-        product_id: row.productId,
-        question_length: row.questionBody.length,
+        product_id: updatedRow.product_id,
+        question_length: updatedRow.question_body.length,
         // moderation_note length only — never the note content, so a
         // moderator's free-form comment doesn't end up in the audit
         // log searchable text.
@@ -305,7 +285,7 @@ router.patch(
       logger.warn({ err }, "shop_product_question.reject audit write failed");
     });
 
-    res.json({ id, status: "rejected", moderatedAt: now.toISOString() });
+    res.json({ id, status: "rejected", moderatedAt: nowIso });
   },
 );
 

@@ -27,13 +27,11 @@
 // envelope records patient_id + kind + window dates only — never
 // the leak rate / AHI / usage values that drove detection.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool, patientSmartTriggerEvents } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { runSmartTriggerEvaluator } from "../../lib/smart-triggers/evaluator";
 import { runSmartTriggerSendDue } from "../../lib/smart-triggers/dispatcher";
@@ -175,37 +173,37 @@ router.post(
       return;
     }
 
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        id: patientSmartTriggerEvents.id,
-        patientId: patientSmartTriggerEvents.patientId,
-        kind: patientSmartTriggerEvents.kind,
-        dismissedAt: patientSmartTriggerEvents.dismissedAt,
-      })
-      .from(patientSmartTriggerEvents)
-      .where(eq(patientSmartTriggerEvents.id, id))
-      .limit(1);
-    const row = rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("patient_smart_trigger_events")
+      .select("id, patient_id, kind, dismissed_at")
+      .eq("id", id)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
     if (!row) {
       res.status(404).json({ error: "trigger_not_found" });
       return;
     }
-    if (row.dismissedAt !== null) {
+    if (row.dismissed_at !== null) {
       res.status(409).json({ error: "already_dismissed" });
       return;
     }
 
     const now = new Date();
-    await db
-      .update(patientSmartTriggerEvents)
-      .set({
-        dismissedAt: now,
-        dismissedByEmail: req.adminEmail ?? null,
-        dismissedReason: bodyParsed.data.reason ?? null,
-        updatedAt: now,
+    const nowIso = now.toISOString();
+    const { error: updateErr } = await supabase
+      .schema("resupply")
+      .from("patient_smart_trigger_events")
+      .update({
+        dismissed_at: nowIso,
+        dismissed_by_email: req.adminEmail ?? null,
+        dismissed_reason: bodyParsed.data.reason ?? null,
+        updated_at: nowIso,
       })
-      .where(eq(patientSmartTriggerEvents.id, id));
+      .eq("id", id);
+    if (updateErr) throw updateErr;
 
     await logAudit({
       action: "patient.smart_trigger.dismissed",
@@ -214,7 +212,7 @@ router.post(
       targetTable: "patient_smart_trigger_events",
       targetId: id,
       metadata: {
-        patient_id: row.patientId,
+        patient_id: row.patient_id,
         kind: row.kind,
         // length-only — operator's free-form reason isn't logged
         // verbatim so audit-log search can't surface PHI-adjacent
@@ -230,7 +228,7 @@ router.post(
       );
     });
 
-    res.json({ id, dismissedAt: now.toISOString() });
+    res.json({ id, dismissedAt: nowIso });
   },
 );
 
@@ -262,36 +260,31 @@ router.get(
       res.status(404).json({ error: "patient_not_found" });
       return;
     }
-    const db = drizzle(getDbPool());
-    const rows = await db
-      .select({
-        id: patientSmartTriggerEvents.id,
-        kind: patientSmartTriggerEvents.kind,
-        detectedAt: patientSmartTriggerEvents.detectedAt,
-        windowStartDate: patientSmartTriggerEvents.windowStartDate,
-        windowEndDate: patientSmartTriggerEvents.windowEndDate,
-        sentAt: patientSmartTriggerEvents.sentAt,
-        dismissedAt: patientSmartTriggerEvents.dismissedAt,
-        dismissedByEmail: patientSmartTriggerEvents.dismissedByEmail,
-        dismissedReason: patientSmartTriggerEvents.dismissedReason,
-        createdAt: patientSmartTriggerEvents.createdAt,
-      })
-      .from(patientSmartTriggerEvents)
-      .where(eq(patientSmartTriggerEvents.patientId, idParsed.data))
-      .orderBy(desc(patientSmartTriggerEvents.detectedAt))
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("patient_smart_trigger_events")
+      .select(
+        "id, kind, detected_at, window_start_date, window_end_date, sent_at, dismissed_at, dismissed_by_email, dismissed_reason, created_at",
+      )
+      .eq("patient_id", idParsed.data)
+      .order("detected_at", { ascending: false })
       .limit(50);
+    if (error) throw error;
     res.json({
-      events: rows.map((r) => ({
+      events: (data ?? []).map((r) => ({
         id: r.id,
         kind: r.kind,
-        detectedAt: r.detectedAt.toISOString(),
-        windowStartDate: r.windowStartDate,
-        windowEndDate: r.windowEndDate,
-        sentAt: r.sentAt ? r.sentAt.toISOString() : null,
-        dismissedAt: r.dismissedAt ? r.dismissedAt.toISOString() : null,
-        dismissedByEmail: r.dismissedByEmail,
-        dismissedReason: r.dismissedReason,
-        createdAt: r.createdAt.toISOString(),
+        // PostgREST returns timestamps as ISO strings already, and date
+        // columns as YYYY-MM-DD — no Date conversion needed.
+        detectedAt: r.detected_at,
+        windowStartDate: r.window_start_date,
+        windowEndDate: r.window_end_date,
+        sentAt: r.sent_at,
+        dismissedAt: r.dismissed_at,
+        dismissedByEmail: r.dismissed_by_email,
+        dismissedReason: r.dismissed_reason,
+        createdAt: r.created_at,
       })),
     });
   },
