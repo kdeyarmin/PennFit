@@ -218,23 +218,15 @@ describe("POST /admin/onboarding/send-due (dispatcher)", () => {
     expect(sendCall.customArgs.kind).toBe("onboarding_checkin");
     expect(sendCall.customArgs.day).toBe("day7");
 
-    // Stamp lands on the journey row. NOTE: the dispatcher's
-    // `stampFieldForDay` helper currently returns the camelCase
-    // form (`day7SentAt`) — that's a separate production bug
-    // (PostgREST expects snake_case), but it's out of scope for
-    // this test rewrite. We pin to the observed behaviour so the
-    // test still flags any other regression.
+    // Stamp lands on the journey row using the snake_case column
+    // name PostgREST expects.
     const updates = getSupabaseWritePayloads(
       "patient_onboarding_journeys",
       "update",
     ) as Record<string, unknown>[];
-    const stampUpdate = updates.find(
-      (u) => "day7SentAt" in u || "day7_sent_at" in u,
-    );
+    const stampUpdate = updates.find((u) => "day7_sent_at" in u);
     expect(stampUpdate).toBeDefined();
-    expect(
-      typeof (stampUpdate?.day7SentAt ?? stampUpdate?.day7_sent_at),
-    ).toBe("string");
+    expect(typeof stampUpdate?.day7_sent_at).toBe("string");
     expect(stampUpdate?.status).toBeUndefined();
 
     // Audit envelope is structural only.
