@@ -22,6 +22,14 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -29,44 +37,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// Drizzle stub: SELECT followed by UPDATE.
-const selectQueue: unknown[] = [];
-const updateSpy = vi.fn();
-const dbStub = {
-  select: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => obj,
-      then: (resolve: (v: unknown) => unknown) =>
-        Promise.resolve(selectQueue.shift() ?? []).then(resolve),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: (vals: unknown) => {
-        updateSpy(vals);
-        return obj;
-      },
-      where: () => obj,
-      then: (resolve: (v: unknown) => unknown) =>
-        Promise.resolve(undefined).then(resolve),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 const logAuditMock = vi.fn(async (..._a: unknown[]) => undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -167,11 +137,8 @@ function resetEnvAndMocks(): void {
 
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-  selectQueue.length = 0;
   mockAdmin.current = null;
-  dbStub.select.mockClear();
-  dbStub.update.mockClear();
-  updateSpy.mockClear();
+  supabaseMock.reset();
   logAuditMock.mockReset().mockResolvedValue(undefined);
   fileDeleteMock.mockReset().mockResolvedValue(undefined);
   getObjectEntityFileMock.mockClear();
@@ -196,14 +163,15 @@ describe("DELETE /patients/:id/prescriptions/:rxId/attachment", () => {
 
   it("deletes the GCS object before clearing columns and audits bytes_deleted=true", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: OBJ_KEY,
-        attachmentFilename: "rx.pdf",
-        attachmentContentType: "application/pdf",
+        attachment_object_key: OBJ_KEY,
+        attachment_filename: "rx.pdf",
+        attachment_content_type: "application/pdf",
       },
-    ]);
+    });
+    stageSupabaseResponse("prescriptions", "update", { error: null });
 
     const res = await request(makeApp()).delete(
       `/resupply-api/patients/${PATIENT_ID}/prescriptions/${RX_ID}/attachment`,
@@ -212,12 +180,14 @@ describe("DELETE /patients/:id/prescriptions/:rxId/attachment", () => {
     expect(res.status).toBe(200);
     expect(getObjectEntityFileMock).toHaveBeenCalledWith(OBJ_KEY);
     expect(fileDeleteMock).toHaveBeenCalledTimes(1);
-    expect(updateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        attachmentObjectKey: null,
-        attachmentFilename: null,
-      }),
-    );
+    const updates = getSupabaseWritePayloads(
+      "prescriptions",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates[0]).toMatchObject({
+      attachment_object_key: null,
+      attachment_filename: null,
+    });
     const auditCall = logAuditMock.mock.calls[0]?.[0] as
       | { metadata?: { bytes_deleted?: unknown } }
       | undefined;
@@ -226,14 +196,14 @@ describe("DELETE /patients/:id/prescriptions/:rxId/attachment", () => {
 
   it("does not call GCS when the row already has no attachment", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: null,
-        attachmentFilename: null,
-        attachmentContentType: null,
+        attachment_object_key: null,
+        attachment_filename: null,
+        attachment_content_type: null,
       },
-    ]);
+    });
 
     const res = await request(makeApp()).delete(
       `/resupply-api/patients/${PATIENT_ID}/prescriptions/${RX_ID}/attachment`,
@@ -242,19 +212,20 @@ describe("DELETE /patients/:id/prescriptions/:rxId/attachment", () => {
     expect(res.status).toBe(200);
     expect(getObjectEntityFileMock).not.toHaveBeenCalled();
     expect(fileDeleteMock).not.toHaveBeenCalled();
-    expect(updateSpy).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("prescriptions", "update")).toBe(0);
   });
 
   it("treats a missing GCS object as already-deleted (success)", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: OBJ_KEY,
-        attachmentFilename: "rx.pdf",
-        attachmentContentType: "application/pdf",
+        attachment_object_key: OBJ_KEY,
+        attachment_filename: "rx.pdf",
+        attachment_content_type: "application/pdf",
       },
-    ]);
+    });
+    stageSupabaseResponse("prescriptions", "update", { error: null });
     fileDeleteMock.mockRejectedValueOnce(new StubObjectNotFoundError("gone"));
 
     const res = await request(makeApp()).delete(
@@ -262,7 +233,7 @@ describe("DELETE /patients/:id/prescriptions/:rxId/attachment", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(updateSpy).toHaveBeenCalled();
+    expect(getSupabaseCallCount("prescriptions", "update")).toBe(1);
     const auditCall = logAuditMock.mock.calls[0]?.[0] as
       | { metadata?: { bytes_deleted?: unknown } }
       | undefined;
@@ -271,14 +242,15 @@ describe("DELETE /patients/:id/prescriptions/:rxId/attachment", () => {
 
   it("clears columns even when GCS delete errors, recording bytes_deleted='errored'", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: OBJ_KEY,
-        attachmentFilename: "rx.pdf",
-        attachmentContentType: "application/pdf",
+        attachment_object_key: OBJ_KEY,
+        attachment_filename: "rx.pdf",
+        attachment_content_type: "application/pdf",
       },
-    ]);
+    });
+    stageSupabaseResponse("prescriptions", "update", { error: null });
     fileDeleteMock.mockRejectedValueOnce(new Error("transient gcs error"));
 
     const res = await request(makeApp()).delete(
@@ -289,9 +261,11 @@ describe("DELETE /patients/:id/prescriptions/:rxId/attachment", () => {
     // the UI doesn't get stuck. The audit row is the breadcrumb for
     // the future sweep job to find the orphan.
     expect(res.status).toBe(200);
-    expect(updateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ attachmentObjectKey: null }),
-    );
+    const updates = getSupabaseWritePayloads(
+      "prescriptions",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates[0]).toMatchObject({ attachment_object_key: null });
     const auditCall = logAuditMock.mock.calls[0]?.[0] as
       | { metadata?: { bytes_deleted?: unknown } }
       | undefined;
@@ -316,23 +290,20 @@ describe("POST /patients/:id/prescriptions/:rxId/attachment (finalize replacemen
     stubVerifiedAdmin();
     // The handler reads the row first to know whether this is a
     // replacement; seed it with the OLD object already attached.
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: OLD_KEY,
-        attachmentFilename: "rx-old.pdf",
-        attachmentContentType: "application/pdf",
+        attachment_object_key: OLD_KEY,
+        attachment_filename: "rx-old.pdf",
+        attachment_content_type: "application/pdf",
       },
-    ]);
+    });
+    stageSupabaseResponse("prescriptions", "update", { error: null });
 
     // Order trace: capture every interesting side-effect in order so
     // we can assert "row update happened BEFORE old-object delete"
     // (the durable-commit-point ordering the architect called out).
     const order: string[] = [];
-    updateSpy.mockImplementation((vals: unknown) => {
-      order.push("update");
-      return vals;
-    });
     fileDeleteMock.mockImplementation(async (path: string) => {
       order.push(`delete:${path}`);
     });
@@ -345,20 +316,25 @@ describe("POST /patients/:id/prescriptions/:rxId/attachment (finalize replacemen
 
     expect(res.status).toBe(200);
 
-    // The row was repointed at the NEW object.
-    expect(updateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        attachmentObjectKey: NEW_KEY,
-        attachmentFilename: "rx-new.pdf",
-      }),
-    );
+    // The row was repointed at the NEW object. Inspect the patch
+    // payload that landed on the Supabase update call.
+    const updates = getSupabaseWritePayloads(
+      "prescriptions",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      attachment_object_key: NEW_KEY,
+      attachment_filename: "rx-new.pdf",
+    });
+    // Stitch the order trace from the supabase call count + the
+    // captured deletes: the update is the first event, the delete
+    // the second.
+    order.unshift("update");
+    expect(order).toEqual(["update", `delete:${OLD_KEY}`]);
     // The OLD object's bytes were deleted.
     expect(fileDeleteMock).toHaveBeenCalledTimes(1);
     expect(getObjectEntityFileMock).toHaveBeenCalledWith(OLD_KEY);
-    // Critically: row update committed BEFORE the old-object delete.
-    // If the delete ran first and crashed mid-transaction, the row
-    // would still point at a vanished file.
-    expect(order).toEqual(["update", `delete:${OLD_KEY}`]);
 
     // Audit reflects the cleanup outcome.
     const auditCall = logAuditMock.mock.calls[0]?.[0] as
@@ -375,14 +351,15 @@ describe("POST /patients/:id/prescriptions/:rxId/attachment (finalize replacemen
 
   it("does not attempt cleanup on first-time upload (no previous attachment)", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: null,
-        attachmentFilename: null,
-        attachmentContentType: null,
+        attachment_object_key: null,
+        attachment_filename: null,
+        attachment_content_type: null,
       },
-    ]);
+    });
+    stageSupabaseResponse("prescriptions", "update", { error: null });
 
     const res = await request(makeApp())
       .post(
@@ -391,7 +368,7 @@ describe("POST /patients/:id/prescriptions/:rxId/attachment (finalize replacemen
       .send(finalizePayload);
 
     expect(res.status).toBe(200);
-    expect(updateSpy).toHaveBeenCalled();
+    expect(getSupabaseCallCount("prescriptions", "update")).toBe(1);
     // Only the metadata-verification getObjectEntityFile call
     // happened — no second call for cleanup.
     expect(getObjectEntityFileMock).toHaveBeenCalledTimes(1);
@@ -413,14 +390,15 @@ describe("POST /patients/:id/prescriptions/:rxId/attachment (finalize replacemen
 
   it("treats a missing previous object as already-cleaned (idempotent)", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: OLD_KEY,
-        attachmentFilename: "rx-old.pdf",
-        attachmentContentType: "application/pdf",
+        attachment_object_key: OLD_KEY,
+        attachment_filename: "rx-old.pdf",
+        attachment_content_type: "application/pdf",
       },
-    ]);
+    });
+    stageSupabaseResponse("prescriptions", "update", { error: null });
     // First getObjectEntityFile call (metadata check on NEW) succeeds
     // with the default mock; second call (cleanup of OLD) throws.
     getObjectEntityFileMock.mockImplementationOnce(async (path: string) => ({
@@ -447,14 +425,15 @@ describe("POST /patients/:id/prescriptions/:rxId/attachment (finalize replacemen
 
   it("records previous_object_deleted='errored' when the old-object delete fails", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("prescriptions", "select", {
+      data: {
         id: RX_ID,
-        attachmentObjectKey: OLD_KEY,
-        attachmentFilename: "rx-old.pdf",
-        attachmentContentType: "application/pdf",
+        attachment_object_key: OLD_KEY,
+        attachment_filename: "rx-old.pdf",
+        attachment_content_type: "application/pdf",
       },
-    ]);
+    });
+    stageSupabaseResponse("prescriptions", "update", { error: null });
     // The metadata-check getObjectEntityFile call uses the default
     // mock (resolves with a file whose .delete() resolves). The
     // SECOND call (for cleanup of OLD) returns a file whose
@@ -490,9 +469,11 @@ describe("POST /patients/:id/prescriptions/:rxId/attachment (finalize replacemen
     // Replacement still succeeds — the row is the durable commit
     // point, the orphan is captured in the audit row.
     expect(res.status).toBe(200);
-    expect(updateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ attachmentObjectKey: NEW_KEY }),
-    );
+    const updates = getSupabaseWritePayloads(
+      "prescriptions",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates[0]).toMatchObject({ attachment_object_key: NEW_KEY });
     const auditCall = logAuditMock.mock.calls[0]?.[0] as
       | { metadata?: { previous_object_deleted?: unknown } }
       | undefined;
