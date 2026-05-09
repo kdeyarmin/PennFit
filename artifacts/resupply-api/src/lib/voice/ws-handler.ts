@@ -21,12 +21,10 @@
 //   - HTTP routing (this is invoked from the upgrade handler in
 //     `index.ts`).
 
-import { drizzle } from "drizzle-orm/node-postgres";
 import type { WebSocket } from "ws";
 
 import { logAudit } from "@workspace/resupply-audit";
 import {
-  getDbPool,
   getSupabaseServiceRoleClient,
   tryUpsertPatientLatestMessageSb,
   type ResupplySupabaseClient,
@@ -69,10 +67,6 @@ export async function handleVoiceWsConnection(
 ): Promise<void> {
   const config = readVoiceConfigOrThrow();
   const supabase = getSupabaseServiceRoleClient();
-  // The voice-tool dispatcher (createVoiceToolDispatcher) still takes
-  // a NodePgDatabase. Keep one Drizzle handle here until tools-impl
-  // migrates; every other DB call in this file is Supabase JS.
-  const toolsDb = drizzle(getDbPool());
 
   let streamSid: string | null = null;
   let twilioCallSid: string | null = pending.twilioCallSid ?? null;
@@ -110,7 +104,7 @@ export async function handleVoiceWsConnection(
   };
 
   const dispatcher = createVoiceToolDispatcher({
-    db: toolsDb,
+    supabase,
     patientId: pending.patientId,
     conversationId: pending.conversationId,
     episodeId: pending.episodeId,

@@ -51,11 +51,10 @@
 //   - Total media count cap (MAX_MEDIA_PER_MESSAGE). Twilio's own
 //     cap is 10; we mirror that as a defense-in-depth backstop.
 
-import { drizzle } from "drizzle-orm/node-postgres";
 import type { Logger } from "pino";
 import { Readable } from "node:stream";
 
-import { getDbPool, messageAttachments } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { ObjectStorageService } from "../object-storage/objectStorage";
 
@@ -388,24 +387,25 @@ export async function persistInboundAttachment(
     input.twilioMediaSid ?? null,
   );
 
-  const db = drizzle(getDbPool());
-  try {
-    await db.insert(messageAttachments).values({
-      messageId: input.messageId,
-      objectKey,
+  const supabase = getSupabaseServiceRoleClient();
+  const { error: insertErr } = await supabase
+    .schema("resupply")
+    .from("message_attachments")
+    .insert({
+      message_id: input.messageId,
+      object_key: objectKey,
       filename,
-      contentType: declaredType,
-      sizeBytes: input.bytes.byteLength,
-      twilioMediaSid: input.twilioMediaSid ?? null,
+      content_type: declaredType,
+      size_bytes: input.bytes.byteLength,
+      twilio_media_sid: input.twilioMediaSid ?? null,
     });
-    return "succeeded";
-  } catch (err) {
+  if (insertErr) {
     // Most likely the partial-unique index on twilio_media_sid fired
     // (replayed MMS webhook). The GCS bytes we just uploaded are now
     // an orphan that the attachment sweep job will reap.
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err: insertErr,
         twilio_media_sid: input.twilioMediaSid ?? null,
         source: input.source ?? "unknown",
       },
@@ -413,6 +413,7 @@ export async function persistInboundAttachment(
     );
     return "errored";
   }
+  return "succeeded";
 }
 
 /**

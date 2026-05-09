@@ -22,7 +22,7 @@ interface StubRow {
   firstName: string | null;
 }
 
-function buildStubDb(row: StubRow | null): NodePgDatabase {
+function buildStubSupabase(row: StubRow | null): NodePgDatabase {
   // The chain we need to satisfy:
   //   db.select(...).from(...).where(...).limit(1)  → Promise<rows>
   //   db.update(...).set(...).where(...)            → Promise<void>
@@ -61,7 +61,7 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("counts down attempts_remaining on each failed verify", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      db: buildStubDb({ dob: "1980-01-01", firstName: "Alex" }),
+      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
     });
 
     const r1 = await dispatcher.dispatch({
@@ -116,7 +116,7 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
 
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      db: recordingDb,
+      supabase: recordingDb as unknown as never,
     });
 
     for (let i = 0; i < 3; i += 1) {
@@ -158,7 +158,7 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("blocks all side-effect tools after lockout (forces handoff/end_call only)", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      db: buildStubDb({ dob: "1980-01-01", firstName: "Alex" }),
+      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
     });
 
     // Burn the cap.
@@ -213,7 +213,7 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("permits request_human_handoff and end_call after lockout", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      db: buildStubDb({ dob: "1980-01-01", firstName: "Alex" }),
+      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
     });
 
     for (let i = 0; i < 3; i += 1) {
@@ -243,7 +243,7 @@ describe("VoiceToolDispatcher — identity attempt cap", () => {
   it("verifies identity on a matching DOB before lockout and unlocks side-effects", async () => {
     const dispatcher = createVoiceToolDispatcher({
       ...baseDeps,
-      db: buildStubDb({ dob: "1980-01-01", firstName: "Alex" }),
+      supabase: buildStubSupabase({ dob: "1980-01-01", firstName: "Alex" }) as unknown as never,
     });
 
     // First attempt fails.
