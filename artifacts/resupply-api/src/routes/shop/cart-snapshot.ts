@@ -134,13 +134,14 @@ router.put("/shop/me/cart-snapshot", requireSignedIn, async (req, res) => {
   // material enough to reset the suppression flags. A pure subtotal
   // re-tick (e.g. price metadata refresh) doesn't reset; a quantity
   // or composition change does.
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .schema("resupply")
     .from("shop_abandoned_carts")
     .select("items, email")
     .eq("customer_id", customerId)
     .limit(1)
     .maybeSingle();
+  if (existingError) throw existingError;
   const existingItems = (existing?.items ?? []) as unknown as ShopAbandonedCartItem[];
   const materiallyChanged =
     !existing || itemsSignature(existingItems) !== itemsSignature(items);
