@@ -162,9 +162,27 @@ export async function upsertPatientLatestMessageSb(
     });
   if (insertErr) {
     if ((insertErr as { code?: string }).code === "23505") {
-      // Concurrent writer (or a fresher existing row already wins on
-      // the timestamp guard above). No-op.
-      return false;
+      // A concurrent writer beat us to the INSERT, so the row exists
+      // now. Re-run the conditional UPDATE: if our timestamp is
+      // fresher than whichever writer won, the lt() guard lets us
+      // overwrite. Without this, two simultaneous writers can leave
+      // the older message in the projection (the writer that loses
+      // the INSERT race exits before checking timestamps).
+      const { data: retried, error: retryErr } = await supabase
+        .schema("resupply")
+        .from("patient_latest_message")
+        .update({
+          last_message_at: messageAtIso,
+          last_message_direction: input.direction,
+          last_message_preview: preview,
+          last_message_conversation_id: input.conversationId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("patient_id", patientId)
+        .lt("last_message_at", messageAtIso)
+        .select("patient_id");
+      if (retryErr) throw retryErr;
+      return (retried ?? []).length > 0;
     }
     throw insertErr;
   }

@@ -8,11 +8,12 @@ import { isWorkerReady } from "../worker/index.js";
 //   db    — Supabase PostgREST is reachable AND accepting queries from
 //           this process. Anything admin-facing fails if the DB is
 //           down, so this is a hard requirement. We probe by issuing a
-//           single 1-row count query against `resupply.audit_log`
-//           through the service-role client — that exercises the same
-//           PostgREST path every other request travels through, so a
-//           network/auth/schema regression surfaces here before it
-//           hits a route handler.
+//           HEAD request against `resupply.audit_log` through the
+//           service-role client (`select("id", { head: true })`, no
+//           count) — that exercises the same PostgREST path every
+//           other request travels through without paying for a row
+//           scan, so a network/auth/schema regression surfaces here
+//           before it hits a route handler.
 //
 //   queue — pg-boss has bootstrapped its schema. pg-boss boots
 //           in-process at startup (see src/worker/index.ts; the

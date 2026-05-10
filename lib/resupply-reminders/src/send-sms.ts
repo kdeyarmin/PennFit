@@ -153,7 +153,7 @@ export async function sendReminderSms(
 
   const messageBody =
     input.body ??
-    `Hi ${patient.legal_first_name}, this is ${cfg.practiceName}. Time to refill ` +
+    `Hi ${patient.legal_first_name ?? "there"}, this is ${cfg.practiceName}. Time to refill ` +
       "your CPAP supplies — reply YES to confirm shipping to the address on " +
       "file, EDIT to change it, or STOP to opt out.";
 
