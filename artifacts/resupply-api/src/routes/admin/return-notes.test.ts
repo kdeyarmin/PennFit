@@ -13,6 +13,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseCallCount,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -170,6 +171,18 @@ describe("POST /admin/shop/returns/:returnId/notes", () => {
     expect(res.body).toEqual({
       id: "note_new",
       createdAt: "2026-05-04T12:00:00.000Z",
+    });
+
+    // Insert payload uses snake_case columns and stores the full body.
+    const inserts = getSupabaseWritePayloads(
+      "shop_return_notes",
+      "insert",
+    ) as Record<string, unknown>[];
+    expect(inserts[0]).toMatchObject({
+      return_id: RETURN_ID,
+      author_user_id: ADMIN.userId,
+      author_email: ADMIN.email,
+      body: "Denied — outside the 30-day comfort-guarantee window.",
     });
 
     expect(logAuditMock).toHaveBeenCalledTimes(1);

@@ -22,6 +22,8 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseWritePayloads,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -237,6 +239,19 @@ describe("POST /voice/place-call", () => {
     expect(entry?.patientId).toBe(PATIENT_ID);
     expect(entry?.episodeId).toBe(EPISODE_ID);
     expect(entry?.twilioCallSid).toBe("CA_TEST_123");
+
+    // Post-dial UPDATE persisted the Twilio CallSid on the
+    // conversations row using the snake_case column the schema
+    // uses (`external_ref`), scoped to the new conversation id.
+    const updatePayloads = getSupabaseWritePayloads(
+      "conversations",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updatePayloads[0]?.external_ref).toBe("CA_TEST_123");
+    const updateFilters = getSupabaseFilterCalls("conversations", "update");
+    expect(updateFilters).toEqual(
+      expect.arrayContaining([{ verb: "eq", args: ["id", CONVERSATION_ID] }]),
+    );
 
     // Audit row emitted with status=ok and PHI-free metadata.
     expect(logAuditMock).toHaveBeenCalledTimes(1);

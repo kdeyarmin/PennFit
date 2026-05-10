@@ -21,6 +21,7 @@ import {
   installSupabaseMock,
   stageSupabaseResponse,
   getSupabaseCallCount,
+  getSupabaseWritePayloads,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -168,6 +169,8 @@ describe("POST /admin/shop/customers/:userId/notes", () => {
       .post(`/admin/shop/customers/${USER_ID}/notes`)
       .send({ body: "x".repeat(4001) });
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(getSupabaseCallCount("shop_customer_notes", "insert")).toBe(0);
   });
 
   it("404s when the customer doesn't exist", async () => {
@@ -240,11 +243,17 @@ describe("POST /admin/shop/customers/:userId/notes", () => {
       .post(`/admin/shop/customers/${USER_ID}/notes`)
       .send({ body: "  hello there  " });
 
+    const inserts = getSupabaseWritePayloads(
+      "shop_customer_notes",
+      "insert",
+    ) as Record<string, unknown>[];
+    // Persisted body is the TRIMMED string, not the raw 15-char input.
+    expect(inserts[0]?.body).toBe("hello there");
+
     const audit = logAuditMock.mock.calls[0]?.[0] as {
       metadata: Record<string, unknown>;
     };
-    // Body length is the TRIMMED length ("hello there" = 11), not the
-    // raw 15-char input.
+    // body_length matches the trimmed length.
     expect(audit.metadata.body_length).toBe("hello there".length);
   });
 });

@@ -54,6 +54,16 @@ const callCounts = new Map<string, number>();
 // `.delete()` records `undefined`). Order is preserved so a test that
 // makes N writes can read them off in order.
 const writePayloads = new Map<string, unknown[]>();
+// Per-(table, op) log of filter / order verbs and their args, captured
+// across the chain (`.eq("col", val)`, `.ilike(...)`, `.gte(...)`, etc.).
+// Lets a test assert "the route applied an `.ilike("action", "%x%")`
+// filter on this select", which is the closest behavioural check
+// available without inspecting raw SQL.
+export interface CapturedFilterCall {
+  verb: string;
+  args: unknown[];
+}
+const filterCalls = new Map<string, CapturedFilterCall[]>();
 
 function key(table: string, op: SupabaseOp): string {
   return `${table}.${op}`;
@@ -175,6 +185,28 @@ function makeTableBuilder(table: string): TableBuilder {
     writePayloads.set(k, list);
   };
 
+  // Filter verbs are buffered until we know which op they belong to (a
+  // chain like `.select(...).eq(...)` resolves on `.then()`/.maybeSingle();
+  // a `.update(...).eq(...)` resolves the same way but under "update").
+  // We commit on finalize against whatever the locked op turned out to be.
+  const pendingFilters: CapturedFilterCall[] = [];
+  const captureFilter =
+    (verb: string) =>
+    (...args: unknown[]) => {
+      pendingFilters.push({ verb, args });
+      return builder;
+    };
+
+  const finalizeWithFilters = (): Promise<StagedSupabaseResponse> => {
+    if (op !== null && pendingFilters.length > 0) {
+      const k = key(table, op);
+      const existing = filterCalls.get(k) ?? [];
+      existing.push(...pendingFilters);
+      filterCalls.set(k, existing);
+    }
+    return finalize();
+  };
+
   const builder: TableBuilder = {
     select: () => {
       setOp("select");
@@ -200,29 +232,30 @@ function makeTableBuilder(table: string): TableBuilder {
       recordPayload("delete", undefined);
       return builder;
     },
-    eq: () => builder,
-    neq: () => builder,
-    in: () => builder,
-    lt: () => builder,
-    lte: () => builder,
-    gt: () => builder,
-    gte: () => builder,
-    not: () => builder,
-    is: () => builder,
-    like: () => builder,
-    ilike: () => builder,
-    match: () => builder,
-    contains: () => builder,
-    containedBy: () => builder,
-    textSearch: () => builder,
-    filter: () => builder,
-    or: () => builder,
-    order: () => builder,
-    limit: () => builder,
-    range: () => builder,
-    maybeSingle: () => finalize(),
-    single: () => finalize(),
-    then: (onfulfilled, onrejected) => finalize().then(onfulfilled, onrejected),
+    eq: captureFilter("eq"),
+    neq: captureFilter("neq"),
+    in: captureFilter("in"),
+    lt: captureFilter("lt"),
+    lte: captureFilter("lte"),
+    gt: captureFilter("gt"),
+    gte: captureFilter("gte"),
+    not: captureFilter("not"),
+    is: captureFilter("is"),
+    like: captureFilter("like"),
+    ilike: captureFilter("ilike"),
+    match: captureFilter("match"),
+    contains: captureFilter("contains"),
+    containedBy: captureFilter("containedBy"),
+    textSearch: captureFilter("textSearch"),
+    filter: captureFilter("filter"),
+    or: captureFilter("or"),
+    order: captureFilter("order"),
+    limit: captureFilter("limit"),
+    range: captureFilter("range"),
+    maybeSingle: () => finalizeWithFilters(),
+    single: () => finalizeWithFilters(),
+    then: (onfulfilled, onrejected) =>
+      finalizeWithFilters().then(onfulfilled, onrejected),
   };
   return builder;
 }
@@ -252,6 +285,14 @@ export interface SupabaseMockHandle {
    * exercised. `delete` records `undefined`.
    */
   writePayloads(table: string, op: SupabaseOp): unknown[];
+  /**
+   * Filter / order verbs (and their args) chained on the builder for
+   * `(table, op)` since the last `reset()`. Useful for asserting "the
+   * route applied an `.ilike("action", "%x%")` filter on this select"
+   * without inspecting raw SQL. Returns `[]` if the chain never used
+   * any filter/order verbs.
+   */
+  filterCalls(table: string, op: SupabaseOp): CapturedFilterCall[];
 }
 
 /**
@@ -292,6 +333,7 @@ export function installSupabaseMock(): SupabaseMockHandle {
       queues.clear();
       callCounts.clear();
       writePayloads.clear();
+      filterCalls.clear();
     },
     stage(table, op, result) {
       stageSupabaseResponse(table, op, result);
@@ -301,6 +343,9 @@ export function installSupabaseMock(): SupabaseMockHandle {
     },
     writePayloads(table, op) {
       return writePayloads.get(key(table, op)) ?? [];
+    },
+    filterCalls(table, op) {
+      return filterCalls.get(key(table, op)) ?? [];
     },
   };
 }
@@ -319,4 +364,12 @@ export function getSupabaseWritePayloads(
   op: SupabaseOp,
 ): unknown[] {
   return writePayloads.get(key(table, op)) ?? [];
+}
+
+/** Standalone alias for `installSupabaseMock().filterCalls(...)`. */
+export function getSupabaseFilterCalls(
+  table: string,
+  op: SupabaseOp,
+): CapturedFilterCall[] {
+  return filterCalls.get(key(table, op)) ?? [];
 }

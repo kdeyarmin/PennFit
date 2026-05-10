@@ -135,8 +135,10 @@ async function main(): Promise<void> {
 
   const existing = await repo.findUserByEmail(emailLower);
   let userId: string;
+  let finalStatus: string;
   if (existing) {
     userId = existing.id;
+    finalStatus = existing.status;
     if (existing.role !== argsParsed.role) {
       if (!argsParsed.force) {
         fail(
@@ -163,6 +165,7 @@ async function main(): Promise<void> {
         );
       }
       await repo.updateUserStatus(userId, "invited");
+      finalStatus = "invited";
     }
   } else {
     const inserted = await repo.insertUser({
@@ -172,6 +175,7 @@ async function main(): Promise<void> {
       status: "invited",
     });
     userId = inserted.id;
+    finalStatus = inserted.status;
   }
 
   // Issue a password_reset token (1 hour TTL — same as the
@@ -235,7 +239,7 @@ async function main(): Promise<void> {
   if (!recheck) fail("internal: re-hash failed");
 
   process.stdout.write(
-    `[auth:bootstrap-admin] Done. user=${userId} role=${argsParsed.role} status=invited\n`,
+    `[auth:bootstrap-admin] Done. user=${userId} role=${argsParsed.role} status=${finalStatus}\n`,
   );
   // Avoid unused-var lint without changing the semantic
   void env;

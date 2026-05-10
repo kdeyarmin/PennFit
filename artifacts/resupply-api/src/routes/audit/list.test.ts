@@ -11,6 +11,7 @@ import {
 import {
   installSupabaseMock,
   stageSupabaseResponse,
+  getSupabaseFilterCalls,
 } from "../../test-helpers/supabase-mock";
 
 const supabaseMock = installSupabaseMock();
@@ -112,7 +113,7 @@ describe("GET /audit", () => {
     });
   });
 
-  it("filters by action + targetTable + since without crashing", async () => {
+  it("translates filter params into the expected PostgREST chain", async () => {
     stubVerifiedAdmin();
     stageSupabaseResponse("audit_log", "select", { data: [], count: 0 });
     const res = await request(makeApp()).get(
@@ -121,11 +122,21 @@ describe("GET /audit", () => {
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([]);
     expect(res.body.total).toBe(0);
-    // The legacy test checked that filter params landed in the SQL
-    // bindings; with PostgREST those translate to chained
-    // `.ilike()` / `.eq()` / `.gte()` calls, which the mock builder
-    // accepts as no-ops. The behavioural contract — filters don't
-    // crash and the staged result is what comes back — is preserved.
+
+    // Each filter param must produce its corresponding chained verb on
+    // the audit_log select; a regression that drops one would silently
+    // return a wider result set.
+    const filters = getSupabaseFilterCalls("audit_log", "select");
+    expect(filters).toEqual(
+      expect.arrayContaining([
+        { verb: "ilike", args: ["action", "%patient%"] },
+        { verb: "eq", args: ["target_table", "patients"] },
+        {
+          verb: "gte",
+          args: ["occurred_at", "2025-01-01T00:00:00.000Z"],
+        },
+      ]),
+    );
   });
 
   it("returns metadata={} when row has nullish metadata", async () => {
