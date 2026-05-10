@@ -5,22 +5,21 @@
 //   * 200 with empty list + null cursor for a signed-in user with no orders
 //   * 200 with grouped line items per order when both tables have rows
 //   * Items belonging to other orders are not bled into this user's
-//     response (the line-item join is keyed on the user's order ids,
-//     not on the user's id — so we test that grouping really is
-//     per-order)
-//   * Pagination cursor is emitted only when the page is full (limit+1
-//     trick) — proving the contract callers rely on
-//
-// We don't test the Stripe product-name lookup itself here; that path
-// is covered by the integration-style preview-mode behaviour
-// (Stripe-not-configured returns the "Product <id>" fallback shape)
-// and by the existing stripe/config tests.
+//     response
+//   * Pagination cursor is emitted only when the page is full
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
 import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as string | null },
@@ -28,56 +27,6 @@ const { mockSignedIn } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
-
-// Two-stage select: the route does
-//   1. SELECT ... FROM shop_orders WHERE ... ORDER BY ... LIMIT n+1
-//   2. SELECT ... FROM shop_order_items WHERE order_id IN (...)
-// The POST endpoint adds:
-//   3. SELECT ... FROM shop_orders WHERE id = ? LIMIT 1
-//   4. UPDATE shop_orders ... WHERE ... RETURNING ...
-// We push the result for each call into `selectQueue` / `updateQueue`
-// in order. A test that doesn't push for a query gets `[]`.
-const selectQueue: unknown[][] = [];
-const updateQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-      // The line-item query has no `.limit()`; awaiting the chain
-      // straight after `.where()` should resolve to the next queue
-      // entry. We model that via a thenable.
-      then: (
-        resolve: (v: unknown) => unknown,
-        reject: (e: unknown) => unknown,
-      ) => Promise.resolve(result).then(resolve, reject),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const result = updateQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 // Force preview-mode for the Stripe name lookup so the test never
 // reaches a real Stripe SDK call. The handler degrades gracefully
@@ -103,16 +52,12 @@ function stubSignedIn(userId: string): void {
 }
 
 beforeEach(() => {
-  selectQueue.length = 0;
-  updateQueue.length = 0;
   mockSignedIn.current = null;
-  dbStub.select.mockClear();
-  dbStub.update.mockClear();
+  supabaseMock.reset();
 });
 
 afterEach(() => {
-  selectQueue.length = 0;
-  updateQueue.length = 0;
+  supabaseMock.reset();
 });
 
 describe("GET /shop/me/orders", () => {
@@ -123,55 +68,69 @@ describe("GET /shop/me/orders", () => {
 
   it("returns an empty list with null cursor for a user with no orders", async () => {
     stubSignedIn("user_alice");
-    selectQueue.push([]); // shop_orders query → no rows
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
     const res = await request(makeApp()).get("/resupply-api/shop/me/orders");
     expect(res.status).toBe(200);
     expect(res.body.orders).toEqual([]);
     expect(res.body.nextCursor).toBeNull();
-    // No second select should run when the first returns empty.
-    expect(dbStub.select).toHaveBeenCalledTimes(1);
+    // No second SELECT runs when the first returns empty.
+    expect(getSupabaseCallCount("shop_order_items", "select")).toBe(0);
   });
 
   it("groups line items per order and falls back to 'Product <id>' when Stripe is unavailable", async () => {
     stubSignedIn("user_alice");
-    const paidAt1 = new Date("2026-04-20T12:00:00Z");
-    const paidAt2 = new Date("2026-04-22T12:00:00Z");
-    selectQueue.push([
-      {
-        id: "ord_1",
-        stripeSessionId: "cs_1",
-        status: "paid",
-        amountTotalCents: 4998,
-        currency: "usd",
-        createdAt: paidAt1,
-        paidAt: paidAt1,
-      },
-      {
-        id: "ord_2",
-        stripeSessionId: "cs_2",
-        status: "paid",
-        amountTotalCents: 1999,
-        currency: "usd",
-        createdAt: paidAt2,
-        paidAt: paidAt2,
-      },
-    ]);
-    selectQueue.push([
-      {
-        orderId: "ord_1",
-        productId: "prod_AirFitP10",
-        quantity: 2,
-        unitAmountCents: 2499,
-        currency: "usd",
-      },
-      {
-        orderId: "ord_2",
-        productId: "prod_FilterPack",
-        quantity: 1,
-        unitAmountCents: 1999,
-        currency: "usd",
-      },
-    ]);
+    const paidAt1Iso = new Date("2026-04-20T12:00:00Z").toISOString();
+    const paidAt2Iso = new Date("2026-04-22T12:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [
+        {
+          id: "ord_1",
+          stripe_session_id: "cs_1",
+          status: "paid",
+          amount_total_cents: 4998,
+          currency: "usd",
+          created_at: paidAt1Iso,
+          paid_at: paidAt1Iso,
+          shipping_address_json: null,
+          tracking_carrier: null,
+          tracking_number: null,
+          shipped_at: null,
+          delivered_at: null,
+        },
+        {
+          id: "ord_2",
+          stripe_session_id: "cs_2",
+          status: "paid",
+          amount_total_cents: 1999,
+          currency: "usd",
+          created_at: paidAt2Iso,
+          paid_at: paidAt2Iso,
+          shipping_address_json: null,
+          tracking_carrier: null,
+          tracking_number: null,
+          shipped_at: null,
+          delivered_at: null,
+        },
+      ],
+    });
+    stageSupabaseResponse("shop_order_items", "select", {
+      data: [
+        {
+          order_id: "ord_1",
+          product_id: "prod_AirFitP10",
+          quantity: 2,
+          unit_amount_cents: 2499,
+          currency: "usd",
+        },
+        {
+          order_id: "ord_2",
+          product_id: "prod_FilterPack",
+          quantity: 1,
+          unit_amount_cents: 1999,
+          currency: "usd",
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get("/resupply-api/shop/me/orders");
     expect(res.status).toBe(200);
@@ -198,19 +157,24 @@ describe("GET /shop/me/orders", () => {
     // Default limit is 20; push 21 rows to trigger pagination.
     const baseDate = new Date("2026-04-29T00:00:00Z");
     const orderRows = Array.from({ length: 21 }, (_, i) => {
-      const paidAt = new Date(baseDate.getTime() - i * 60_000);
+      const paidAtIso = new Date(baseDate.getTime() - i * 60_000).toISOString();
       return {
         id: `ord_${i + 1}`,
-        stripeSessionId: `cs_${i + 1}`,
+        stripe_session_id: `cs_${i + 1}`,
         status: "paid",
-        amountTotalCents: 1000,
+        amount_total_cents: 1000,
         currency: "usd",
-        createdAt: paidAt,
-        paidAt,
+        created_at: paidAtIso,
+        paid_at: paidAtIso,
+        shipping_address_json: null,
+        tracking_carrier: null,
+        tracking_number: null,
+        shipped_at: null,
+        delivered_at: null,
       };
     });
-    selectQueue.push(orderRows);
-    selectQueue.push([]); // No line items needed for the cursor assertion.
+    stageSupabaseResponse("shop_orders", "select", { data: orderRows });
+    stageSupabaseResponse("shop_order_items", "select", { data: [] });
 
     const res = await request(makeApp()).get("/resupply-api/shop/me/orders");
     expect(res.status).toBe(200);
@@ -223,46 +187,48 @@ describe("GET /shop/me/orders", () => {
 
   it("projects tracking + shipping_address + canEditAddress on each order", async () => {
     stubSignedIn("user_alice");
-    const paidAt = new Date("2026-04-20T12:00:00Z");
-    const shippedAt = new Date("2026-04-22T15:00:00Z");
-    selectQueue.push([
-      {
-        id: "ord_unshipped",
-        stripeSessionId: "cs_a",
-        status: "paid",
-        amountTotalCents: 1000,
-        currency: "usd",
-        createdAt: paidAt,
-        paidAt,
-        shippingAddress: {
-          line1: "1 Penn Plz",
-          line2: null,
-          city: "Philadelphia",
-          state: "PA",
-          postalCode: "19104",
-          country: "US",
+    const paidAtIso = new Date("2026-04-20T12:00:00Z").toISOString();
+    const shippedAtIso = new Date("2026-04-22T15:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: [
+        {
+          id: "ord_unshipped",
+          stripe_session_id: "cs_a",
+          status: "paid",
+          amount_total_cents: 1000,
+          currency: "usd",
+          created_at: paidAtIso,
+          paid_at: paidAtIso,
+          shipping_address_json: {
+            line1: "1 Penn Plz",
+            line2: null,
+            city: "Philadelphia",
+            state: "PA",
+            postalCode: "19104",
+            country: "US",
+          },
+          tracking_carrier: null,
+          tracking_number: null,
+          shipped_at: null,
+          delivered_at: null,
         },
-        trackingCarrier: null,
-        trackingNumber: null,
-        shippedAt: null,
-        deliveredAt: null,
-      },
-      {
-        id: "ord_shipped",
-        stripeSessionId: "cs_b",
-        status: "paid",
-        amountTotalCents: 2000,
-        currency: "usd",
-        createdAt: paidAt,
-        paidAt,
-        shippingAddress: null,
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999XYZ",
-        shippedAt,
-        deliveredAt: null,
-      },
-    ]);
-    selectQueue.push([]); // line items: none needed for projection asserts
+        {
+          id: "ord_shipped",
+          stripe_session_id: "cs_b",
+          status: "paid",
+          amount_total_cents: 2000,
+          currency: "usd",
+          created_at: paidAtIso,
+          paid_at: paidAtIso,
+          shipping_address_json: null,
+          tracking_carrier: "UPS",
+          tracking_number: "1Z999XYZ",
+          shipped_at: shippedAtIso,
+          delivered_at: null,
+        },
+      ],
+    });
+    stageSupabaseResponse("shop_order_items", "select", { data: [] });
     const res = await request(makeApp()).get("/resupply-api/shop/me/orders");
     expect(res.status).toBe(200);
 
@@ -278,11 +244,9 @@ describe("GET /shop/me/orders", () => {
       (o: { id: string }) => o.id === "ord_shipped",
     )!;
     expect(shipped.canEditAddress).toBe(false);
-    expect(shipped.shippedAt).toBe(shippedAt.toISOString());
+    expect(shipped.shippedAt).toBe(shippedAtIso);
     expect(shipped.tracking.carrier).toBe("UPS");
     expect(shipped.tracking.number).toBe("1Z999XYZ");
-    // Track URL is computed server-side so the UI doesn't have to
-    // know carrier-specific URL templates.
     expect(shipped.tracking.url).toContain("1Z999XYZ");
     expect(shipped.tracking.url).toContain("ups.com");
   });
@@ -307,7 +271,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
     expect(res.status).toBe(401);
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("rejects non-UUID order ids", async () => {
@@ -317,7 +281,7 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
       .send(validAddress);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_order_id");
-    expect(dbStub.select).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
   });
 
   it("rejects bodies missing required fields", async () => {
@@ -331,25 +295,25 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
 
   it("returns 404 when no row matches the id", async () => {
     stubSignedIn("user_alice");
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_orders", "select", { data: null });
     const res = await request(makeApp())
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("order_not_found");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("returns 404 (not 403) when the order belongs to another shopper", async () => {
     stubSignedIn("user_alice");
-    selectQueue.push([
-      {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
         id: VALID_ID,
-        customerId: "user_bob",
+        customer_id: "user_bob",
         status: "paid",
-        shippedAt: null,
+        shipped_at: null,
       },
-    ]);
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
@@ -357,59 +321,59 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     // a brute-force probe from learning which order ids exist.
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("order_not_found");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("returns 409 when the order isn't paid yet", async () => {
     stubSignedIn("user_alice");
-    selectQueue.push([
-      {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
         id: VALID_ID,
-        customerId: "user_alice",
+        customer_id: "user_alice",
         status: "pending",
-        shippedAt: null,
+        shipped_at: null,
       },
-    ]);
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("order_not_paid");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("returns 409 once the parcel has shipped", async () => {
     stubSignedIn("user_alice");
-    selectQueue.push([
-      {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
         id: VALID_ID,
-        customerId: "user_alice",
+        customer_id: "user_alice",
         status: "paid",
-        shippedAt: new Date("2026-04-25T09:00:00Z"),
+        shipped_at: new Date("2026-04-25T09:00:00Z").toISOString(),
       },
-    ]);
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("order_already_shipped");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("writes the address (uppercasing state) and returns the projected order", async () => {
     stubSignedIn("user_alice");
-    selectQueue.push([
-      {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
         id: VALID_ID,
-        customerId: "user_alice",
+        customer_id: "user_alice",
         status: "paid",
-        shippedAt: null,
+        shipped_at: null,
       },
-    ]);
-    updateQueue.push([
-      {
+    });
+    stageSupabaseResponse("shop_orders", "update", {
+      data: {
         id: VALID_ID,
-        shippingAddress: {
+        shipping_address_json: {
           line1: "456 New Address Ln",
           line2: "Suite 9",
           city: "Philadelphia",
@@ -417,9 +381,9 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
           postalCode: "19104",
           country: "US",
         },
-        shippedAt: null,
+        shipped_at: null,
       },
-    ]);
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
@@ -434,15 +398,16 @@ describe("POST /shop/me/orders/:orderId/shipping-address", () => {
     // matches zero rows because the admin entered tracking in
     // between. The handler must surface this as 409, not 500.
     stubSignedIn("user_alice");
-    selectQueue.push([
-      {
+    stageSupabaseResponse("shop_orders", "select", {
+      data: {
         id: VALID_ID,
-        customerId: "user_alice",
+        customer_id: "user_alice",
         status: "paid",
-        shippedAt: null,
+        shipped_at: null,
       },
-    ]);
-    updateQueue.push([]); // Zero rows updated.
+    });
+    // maybeSingle on zero rows resolves to null.
+    stageSupabaseResponse("shop_orders", "update", { data: null });
     const res = await request(makeApp())
       .post(`/resupply-api/shop/me/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);

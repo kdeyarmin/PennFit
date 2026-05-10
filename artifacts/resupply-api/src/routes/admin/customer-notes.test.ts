@@ -17,6 +17,14 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -32,47 +40,14 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
-// Fluent drizzle stub. The route does up to four queries:
-//   GET:  SELECT id FROM shop_customers (exists) → SELECT … FROM
-//         shop_customer_notes ORDER BY created_at DESC LIMIT 50
-//   POST: SELECT id FROM shop_customers (exists) → INSERT INTO
-//         shop_customer_notes RETURNING id, created_at
-const selectQueue: unknown[][] = [];
-const insertQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const result = insertQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import customerNotesRouter from "./customer-notes";
 
 const USER_ID = "user_abc123";
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
 
 function makeApp(): Express {
   const app = express();
@@ -83,11 +58,8 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  insertQueue.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
-  dbStub.select.mockClear();
-  dbStub.insert.mockClear();
 });
 
 describe("GET /admin/shop/customers/:userId/notes", () => {
@@ -99,26 +71,19 @@ describe("GET /admin/shop/customers/:userId/notes", () => {
   });
 
   it("400s with malformed userId (rejects spaces / special chars)", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp()).get(
       `/admin/shop/customers/has spaces!/notes`,
     );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_user_id");
-    expect(dbStub.select).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
   });
 
   it("404s when the customer doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]); // exists check
+    mockAdmin.current = ADMIN;
+    // exists check → maybeSingle returns null when no row
+    stageSupabaseResponse("shop_customers", "select", { data: null });
     const res = await request(makeApp()).get(
       `/admin/shop/customers/${USER_ID}/notes`,
     );
@@ -127,28 +92,28 @@ describe("GET /admin/shop/customers/:userId/notes", () => {
   });
 
   it("returns the notes list", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: USER_ID }]); // exists
-    selectQueue.push([
-      {
-        id: "note_1",
-        body: "Spoke with Anna 5/3 — switching to nasal pillows.",
-        authorEmail: "ops@penn.example.com",
-        authorUserId: "u_admin",
-        createdAt: new Date("2026-05-03T15:00:00Z"),
-      },
-      {
-        id: "note_0",
-        body: "Old note.",
-        authorEmail: "other@penn.example.com",
-        authorUserId: "u_other",
-        createdAt: new Date("2026-05-01T10:00:00Z"),
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: USER_ID },
+    });
+    stageSupabaseResponse("shop_customer_notes", "select", {
+      data: [
+        {
+          id: "note_1",
+          body: "Spoke with Anna 5/3 — switching to nasal pillows.",
+          author_email: "ops@penn.example.com",
+          author_user_id: "u_admin",
+          created_at: new Date("2026-05-03T15:00:00Z").toISOString(),
+        },
+        {
+          id: "note_0",
+          body: "Old note.",
+          author_email: "other@penn.example.com",
+          author_user_id: "u_other",
+          created_at: new Date("2026-05-01T10:00:00Z").toISOString(),
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       `/admin/shop/customers/${USER_ID}/notes`,
@@ -189,56 +154,48 @@ describe("POST /admin/shop/customers/:userId/notes", () => {
   });
 
   it("400s with empty body", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/notes`)
       .send({ body: "   " });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customer_notes", "insert")).toBe(0);
   });
 
   it("400s with over-limit body", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/notes`)
       .send({ body: "x".repeat(4001) });
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(getSupabaseCallCount("shop_customer_notes", "insert")).toBe(0);
   });
 
   it("404s when the customer doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]); // exists check
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", { data: null });
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/notes`)
       .send({ body: "Spoke 5/3" });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("customer_not_found");
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customer_notes", "insert")).toBe(0);
   });
 
   it("inserts + audits with non-PHI envelope", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: USER_ID }]); // exists
-    insertQueue.push([
-      { id: "note_new", createdAt: new Date("2026-05-04T12:00:00Z") },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: USER_ID },
+    });
+    // INSERT … RETURNING with .single() returns the row directly.
+    stageSupabaseResponse("shop_customer_notes", "insert", {
+      data: {
+        id: "note_new",
+        created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+      },
+    });
 
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/notes`)
@@ -271,25 +228,32 @@ describe("POST /admin/shop/customers/:userId/notes", () => {
   });
 
   it("trims whitespace before persisting + measuring length", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: USER_ID }]);
-    insertQueue.push([
-      { id: "note_t", createdAt: new Date("2026-05-04T12:00:00Z") },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: USER_ID },
+    });
+    stageSupabaseResponse("shop_customer_notes", "insert", {
+      data: {
+        id: "note_t",
+        created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+      },
+    });
 
     await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/notes`)
       .send({ body: "  hello there  " });
 
+    const inserts = getSupabaseWritePayloads(
+      "shop_customer_notes",
+      "insert",
+    ) as Record<string, unknown>[];
+    // Persisted body is the TRIMMED string, not the raw 15-char input.
+    expect(inserts[0]?.body).toBe("hello there");
+
     const audit = logAuditMock.mock.calls[0]?.[0] as {
       metadata: Record<string, unknown>;
     };
-    // Body length is the TRIMMED length ("hello there" = 11), not the
-    // raw 15-char input.
+    // body_length matches the trimmed length.
     expect(audit.metadata.body_length).toBe("hello there".length);
   });
 });

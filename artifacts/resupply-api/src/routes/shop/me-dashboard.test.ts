@@ -12,6 +12,12 @@ import express, { type Express } from "express";
 import request from "supertest";
 
 import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as string | null },
@@ -19,41 +25,6 @@ const { mockSignedIn } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
-
-// Three SELECTs: subscriptions, latest order, pending count, abandoned cart.
-// Plus the route reads them in this order. We push 4 results per call.
-const selectQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    // Some calls await the where directly (count + cart) — make
-    // .where also resolve when used as a terminal.
-    (obj as { where: unknown }).where = (..._args: unknown[]) => ({
-      ...obj,
-      then: (resolve: (v: unknown) => void) =>
-        Promise.resolve(result).then(resolve),
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    });
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import meDashboardRouter from "./me-dashboard";
 
@@ -68,8 +39,16 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockSignedIn.current = null;
-  selectQueue.length = 0;
+  supabaseMock.reset();
 });
+
+// All four reads run concurrently in `Promise.all`. Stage in order.
+function stageEmpty(): void {
+  stageSupabaseResponse("shop_subscriptions", "select", { data: [] });
+  stageSupabaseResponse("shop_orders", "select", { data: null });
+  stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
+  stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
+}
 
 describe("GET /shop/me/dashboard", () => {
   it("401s without sign-in", async () => {
@@ -79,10 +58,7 @@ describe("GET /shop/me/dashboard", () => {
 
   it("returns an empty digest when the customer has nothing", async () => {
     mockSignedIn.current = USER_ID;
-    selectQueue.push([]); // subscriptions
-    selectQueue.push([]); // latest order
-    selectQueue.push([{ count: 0 }]); // pending count
-    selectQueue.push([]); // abandoned cart
+    stageEmpty();
 
     const res = await request(makeApp()).get("/shop/me/dashboard");
     expect(res.status).toBe(200);
@@ -103,29 +79,38 @@ describe("GET /shop/me/dashboard", () => {
       vi.setSystemTime(now);
 
       mockSignedIn.current = USER_ID;
-      const inFiveDays = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      selectQueue.push([
-        // Active sub eligible NOW (period rolled yesterday).
-        {
-          id: "sub_now",
-          status: "active",
-          currentPeriodEnd: yesterday,
-          cancelAtPeriodEnd: false,
-          items: [{ name: "Mask cushion" }],
-        },
-        // Active sub eligible in ~5 days — drives nextShipment.
-        {
-          id: "sub_soon",
-          status: "active",
-          currentPeriodEnd: inFiveDays,
-          cancelAtPeriodEnd: false,
-          items: [{ name: "Tubing" }],
-        },
-      ]);
-      selectQueue.push([]); // latest order
-      selectQueue.push([{ count: 0 }]); // pending count
-      selectQueue.push([]); // abandoned cart
+      const inFiveDaysIso = new Date(
+        now.getTime() + 5 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const yesterdayIso = new Date(
+        now.getTime() - 24 * 60 * 60 * 1000,
+      ).toISOString();
+      stageSupabaseResponse("shop_subscriptions", "select", {
+        data: [
+          // Active sub eligible NOW (period rolled yesterday).
+          {
+            id: "sub_now",
+            status: "active",
+            current_period_end: yesterdayIso,
+            cancel_at_period_end: false,
+            items: [{ name: "Mask cushion" }],
+          },
+          // Active sub eligible in ~5 days — drives nextShipment.
+          {
+            id: "sub_soon",
+            status: "active",
+            current_period_end: inFiveDaysIso,
+            cancel_at_period_end: false,
+            items: [{ name: "Tubing" }],
+          },
+        ],
+      });
+      stageSupabaseResponse("shop_orders", "select", { data: null });
+      stageSupabaseResponse("shop_orders", "select", {
+        data: null,
+        count: 0,
+      });
+      stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
 
       const res = await request(makeApp()).get("/shop/me/dashboard");
       expect(res.status).toBe(200);
@@ -152,18 +137,23 @@ describe("GET /shop/me/dashboard", () => {
     // A sub that's cancelling at period end shouldn't suggest a
     // reorder — Stripe will let it lapse rather than auto-renew.
     mockSignedIn.current = USER_ID;
-    selectQueue.push([
-      {
-        id: "sub_cancel",
-        status: "active",
-        currentPeriodEnd: new Date(Date.now() - 24 * 60 * 60 * 1000),
-        cancelAtPeriodEnd: true,
-        items: [{ name: "Mask cushion" }],
-      },
-    ]);
-    selectQueue.push([]); // latest order
-    selectQueue.push([{ count: 0 }]); // pending count
-    selectQueue.push([]); // abandoned cart
+    const yesterdayIso = new Date(
+      Date.now() - 24 * 60 * 60 * 1000,
+    ).toISOString();
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: [
+        {
+          id: "sub_cancel",
+          status: "active",
+          current_period_end: yesterdayIso,
+          cancel_at_period_end: true,
+          items: [{ name: "Mask cushion" }],
+        },
+      ],
+    });
+    stageSupabaseResponse("shop_orders", "select", { data: null });
+    stageSupabaseResponse("shop_orders", "select", { data: null, count: 0 });
+    stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
 
     const res = await request(makeApp()).get("/shop/me/dashboard");
     expect(res.status).toBe(200);

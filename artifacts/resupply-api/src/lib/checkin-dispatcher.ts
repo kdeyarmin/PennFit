@@ -718,20 +718,22 @@ export function nextDueCheckin(
   return null;
 }
 
-export function stampFieldForDay(label: OnboardingDayLabel): string {
+export function stampFieldForDay(
+  label: OnboardingDayLabel,
+): keyof JourneyUpdate {
   switch (label) {
     case "day1":
-      return "day1SentAt";
+      return "day1_sent_at";
     case "day3":
-      return "day3SentAt";
+      return "day3_sent_at";
     case "day7":
-      return "day7SentAt";
+      return "day7_sent_at";
     case "day30":
-      return "day30SentAt";
+      return "day30_sent_at";
     case "day60":
-      return "day60SentAt";
+      return "day60_sent_at";
     case "day90":
-      return "day90SentAt";
+      return "day90_sent_at";
   }
 }
 

@@ -1,13 +1,18 @@
 // @workspace/resupply-db
-// Drizzle schema + Postgres connection for the CPAP resupply system.
+// Schema + Supabase service-role client for the CPAP resupply system.
 //
 // Public surface:
-//   - The `resupply.*` schema and every table defined under `./schema/`.
-//   - A single shared Postgres pool used by every resupply package
-//     that needs to talk to Postgres. See `./pool.ts` for sizing/
-//     timeout rationale and ADR 003 for the "one pool per process"
-//     rule.
-//   - The patient_latest_message projection helpers.
+//   - Drizzle table definitions under `./schema/` — kept as the
+//     single source of truth for `drizzle-kit` migration generation.
+//     Runtime callers do NOT use these types for queries; they call
+//     PostgREST through the Supabase client below.
+//   - `getSupabaseServiceRoleClient()` — the shared, lazily-initialized
+//     Supabase JS client used by every resupply package that needs to
+//     read/write Postgres at runtime.
+//   - The patient_latest_message projection helpers (Supabase-flavored).
+//   - `getDbPool` is retained for the migration tooling under `./scripts`
+//     and for the legacy `pgAuthRepository` fallback in
+//     `@workspace/resupply-auth`. No production runtime path calls it.
 //
 // PHI is stored as plaintext (text/jsonb). Earlier revisions used
 // pgcrypto column-level encryption; migration 0025 stripped it.
@@ -25,9 +30,7 @@ export type { Database, Json } from "./supabase-types";
 export {
   PREVIEW_MAX_CHARS,
   buildPreview,
-  upsertPatientLatestMessage,
   upsertPatientLatestMessageSb,
-  tryUpsertPatientLatestMessage,
   tryUpsertPatientLatestMessageSb,
   setProjectionLogger,
   type LatestMessageDirection,

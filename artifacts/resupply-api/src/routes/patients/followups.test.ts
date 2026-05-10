@@ -9,6 +9,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -24,53 +31,15 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
-const selectQueue: unknown[][] = [];
-const insertQueue: unknown[][] = [];
-const updateQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const result = insertQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const result = updateQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import followupsRouter from "./followups";
 
 const PATIENT_ID = "11111111-1111-4111-8111-111111111111";
 const FOLLOWUP_ID = "22222222-2222-4222-8222-222222222222";
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
 
 function makeApp(): Express {
   const app = express();
@@ -81,13 +50,8 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  insertQueue.length = 0;
-  updateQueue.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
-  dbStub.select.mockClear();
-  dbStub.insert.mockClear();
-  dbStub.update.mockClear();
 });
 
 describe("GET /patients/:id/followups", () => {
@@ -99,12 +63,8 @@ describe("GET /patients/:id/followups", () => {
   });
 
   it("404s when the patient doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: null });
     const res = await request(makeApp()).get(
       `/patients/${PATIENT_ID}/followups`,
     );
@@ -113,23 +73,21 @@ describe("GET /patients/:id/followups", () => {
   });
 
   it("returns the open queue", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: PATIENT_ID }]);
-    selectQueue.push([
-      {
-        id: FOLLOWUP_ID,
-        body: "Follow up on prescription expiry",
-        dueAt: new Date("2026-05-12T16:00:00Z"),
-        completedAt: null,
-        completedByEmail: null,
-        createdByEmail: "ops@penn.example.com",
-        createdAt: new Date("2026-05-04T12:00:00Z"),
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("patient_followups", "select", {
+      data: [
+        {
+          id: FOLLOWUP_ID,
+          body: "Follow up on prescription expiry",
+          due_at: new Date("2026-05-12T16:00:00Z").toISOString(),
+          completed_at: null,
+          completed_by_email: null,
+          created_by_email: "ops@penn.example.com",
+          created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       `/patients/${PATIENT_ID}/followups`,
@@ -149,32 +107,24 @@ describe("POST /patients/:id/followups", () => {
   });
 
   it("400s with empty body", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/patients/${PATIENT_ID}/followups`)
       .send({ body: "  ", dueAt: "2026-05-10T16:00:00Z" });
     expect(res.status).toBe(400);
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("patient_followups", "insert")).toBe(0);
   });
 
   it("inserts + audits with non-PHI envelope", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: PATIENT_ID }]);
-    insertQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("patient_followups", "insert", {
+      data: {
         id: FOLLOWUP_ID,
-        createdAt: new Date("2026-05-04T12:00:00Z"),
-        dueAt: new Date("2026-05-10T16:00:00Z"),
+        created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+        due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
       },
-    ]);
+    });
 
     const body =
       "Patient said device is leaking — verify replacement mask shipped.";
@@ -205,19 +155,15 @@ describe("POST /patients/:id/followups", () => {
 
 describe("PATCH /patients/:id/followups/:fid/complete", () => {
   it("404s when the followup belongs to a different patient", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_followups", "select", {
+      data: {
         id: FOLLOWUP_ID,
-        patientId: "33333333-3333-4333-8333-333333333333",
-        completedAt: null,
+        patient_id: "33333333-3333-4333-8333-333333333333",
+        completed_at: null,
         body: "x",
       },
-    ]);
+    });
     const res = await request(makeApp()).patch(
       `/patients/${PATIENT_ID}/followups/${FOLLOWUP_ID}/complete`,
     );
@@ -225,19 +171,15 @@ describe("PATCH /patients/:id/followups/:fid/complete", () => {
   });
 
   it("409s when the followup is already complete", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_followups", "select", {
+      data: {
         id: FOLLOWUP_ID,
-        patientId: PATIENT_ID,
-        completedAt: new Date("2026-05-04T15:00:00Z"),
+        patient_id: PATIENT_ID,
+        completed_at: new Date("2026-05-04T15:00:00Z").toISOString(),
         body: "x",
       },
-    ]);
+    });
     const res = await request(makeApp()).patch(
       `/patients/${PATIENT_ID}/followups/${FOLLOWUP_ID}/complete`,
     );
@@ -245,26 +187,22 @@ describe("PATCH /patients/:id/followups/:fid/complete", () => {
   });
 
   it("marks complete + audits", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("patient_followups", "select", {
+      data: {
         id: FOLLOWUP_ID,
-        patientId: PATIENT_ID,
-        completedAt: null,
+        patient_id: PATIENT_ID,
+        completed_at: null,
         body: "Confirm replacement",
-        dueAt: new Date("2026-05-10T16:00:00Z"),
+        due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
       },
-    ]);
-    updateQueue.push([
-      {
+    });
+    stageSupabaseResponse("patient_followups", "update", {
+      data: {
         id: FOLLOWUP_ID,
-        completedAt: new Date("2026-05-05T16:00:00Z"),
+        completed_at: new Date("2026-05-05T16:00:00Z").toISOString(),
       },
-    ]);
+    });
 
     const res = await request(makeApp()).patch(
       `/patients/${PATIENT_ID}/followups/${FOLLOWUP_ID}/complete`,

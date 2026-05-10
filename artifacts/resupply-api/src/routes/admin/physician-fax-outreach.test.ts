@@ -21,6 +21,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -54,65 +61,6 @@ vi.mock("@workspace/resupply-telecom", async () => {
     ...actual,
     createTwilioFaxClient: () => ({ sendFax: sendFaxMock }),
   };
-});
-
-const selectQueue: unknown[][] = [];
-const insertReturnQueue: unknown[][] = [];
-const updateReturnQueue: unknown[][] = [];
-const insertedValues: Record<string, unknown>[] = [];
-const updatedSets: Record<string, unknown>[] = [];
-
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      values: (vals: Record<string, unknown>) => {
-        insertedValues.push(vals);
-        return obj;
-      },
-      returning: () =>
-        Promise.resolve(insertReturnQueue.shift() ?? [{ id: "out_1" }]),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: (vals: Record<string, unknown>) => {
-        updatedSets.push(vals);
-        return obj;
-      },
-      where: () => ({
-        returning: () =>
-          Promise.resolve(updateReturnQueue.shift() ?? [{ id: "out_1" }]),
-        then: (
-          onfulfilled: (v: undefined) => unknown,
-          onrejected?: (r: unknown) => unknown,
-        ) => Promise.resolve(undefined as undefined).then(onfulfilled, onrejected),
-        catch: (onrejected?: (r: unknown) => unknown) =>
-          Promise.resolve(undefined as undefined).catch(onrejected),
-      }),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
 });
 
 import physicianFaxOutreachRouter from "./physician-fax-outreach";
@@ -150,11 +98,7 @@ beforeEach(() => {
   for (const k of TWILIO_FAX_ENV_KEYS) originalEnv[k] = process.env[k];
   for (const k of TWILIO_FAX_ENV_KEYS) delete process.env[k];
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  insertReturnQueue.length = 0;
-  updateReturnQueue.length = 0;
-  insertedValues.length = 0;
-  updatedSets.length = 0;
+  supabaseMock.reset();
   sendFaxMock.mockClear();
   logAuditMock.mockClear();
 });
@@ -175,7 +119,6 @@ describe("POST /admin/physician-fax-outreach", () => {
 
   it("400s on bad fax format", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([{ id: PATIENT_ID }]);
     const res = await request(makeApp())
       .post("/admin/physician-fax-outreach")
       .send({ ...VALID_BODY, physicianFaxE164: "215-555-1212" });
@@ -193,7 +136,7 @@ describe("POST /admin/physician-fax-outreach", () => {
 
   it("404s when patient doesn't exist", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([]); // patient lookup
+    stageSupabaseResponse("patients", "select", { data: null });
     const res = await request(makeApp())
       .post("/admin/physician-fax-outreach")
       .send(VALID_BODY);
@@ -203,8 +146,10 @@ describe("POST /admin/physician-fax-outreach", () => {
 
   it("400s when prescription doesn't belong to patient", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([{ id: PATIENT_ID }]); // patient
-    selectQueue.push([{ id: PRESCRIPTION_ID, patientId: "different_patient" }]); // rx
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: { id: PRESCRIPTION_ID, patient_id: "different_patient" },
+    });
     const res = await request(makeApp())
       .post("/admin/physician-fax-outreach")
       .send({ ...VALID_BODY, prescriptionId: PRESCRIPTION_ID });
@@ -214,8 +159,10 @@ describe("POST /admin/physician-fax-outreach", () => {
 
   it("201s + inserts + audits with non-PHI envelope (no Twilio config)", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([{ id: PATIENT_ID }]); // patient lookup
-    insertReturnQueue.push([{ id: "out_xyz" }]);
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("physician_fax_outreach", "insert", {
+      data: { id: "out_xyz" },
+    });
 
     const res = await request(makeApp())
       .post("/admin/physician-fax-outreach")
@@ -228,12 +175,16 @@ describe("POST /admin/physician-fax-outreach", () => {
       provider: "not_configured",
     });
 
-    expect(insertedValues).toHaveLength(1);
-    expect(insertedValues[0]).toMatchObject({
-      patientId: PATIENT_ID,
-      physicianName: "Dr. Anna Stein",
-      physicianFaxE164: "+12155551212",
-      createdByEmail: ADMIN_EMAIL,
+    const inserts = getSupabaseWritePayloads(
+      "physician_fax_outreach",
+      "insert",
+    ) as Record<string, unknown>[];
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      patient_id: PATIENT_ID,
+      physician_name: "Dr. Anna Stein",
+      physician_fax_e164: "+12155551212",
+      created_by_email: ADMIN_EMAIL,
     });
 
     expect(sendFaxMock).not.toHaveBeenCalled();
@@ -261,8 +212,12 @@ describe("POST /admin/physician-fax-outreach", () => {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([{ id: PATIENT_ID }]);
-    insertReturnQueue.push([{ id: "out_xyz" }]);
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("physician_fax_outreach", "insert", {
+      data: { id: "out_xyz" },
+    });
+    // Post-send stamp.
+    stageSupabaseResponse("physician_fax_outreach", "update", { error: null });
 
     const res = await request(makeApp())
       .post("/admin/physician-fax-outreach")
@@ -277,7 +232,12 @@ describe("POST /admin/physician-fax-outreach", () => {
 
     expect(sendFaxMock).toHaveBeenCalledOnce();
     const faxCallArgs = sendFaxMock.mock.calls as unknown as Array<
-      Array<{ to: string; from: string; mediaUrl: string; statusCallbackUrl: string }>
+      Array<{
+        to: string;
+        from: string;
+        mediaUrl: string;
+        statusCallbackUrl: string;
+      }>
     >;
     const faxCall = faxCallArgs[0]![0]!;
     expect(faxCall.to).toBe("+12155551212");
@@ -289,12 +249,15 @@ describe("POST /admin/physician-fax-outreach", () => {
       "https://api.example.test/resupply-api/fax/status-callback",
     );
 
-    // DB update stamps vendor_ref + status='sent'
-    expect(updatedSets).toHaveLength(1);
-    expect(updatedSets[0]).toMatchObject({
+    const updates = getSupabaseWritePayloads(
+      "physician_fax_outreach",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
       status: "sent",
-      vendorRef: "FX_test_sid",
-      vendorName: "twilio",
+      vendor_ref: "FX_test_sid",
+      vendor_name: "twilio",
     });
   });
 
@@ -309,8 +272,12 @@ describe("POST /admin/physician-fax-outreach", () => {
     );
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([{ id: PATIENT_ID }]);
-    insertReturnQueue.push([{ id: "out_fail" }]);
+    stageSupabaseResponse("patients", "select", { data: { id: PATIENT_ID } });
+    stageSupabaseResponse("physician_fax_outreach", "insert", {
+      data: { id: "out_fail" },
+    });
+    // Failure-stamp update.
+    stageSupabaseResponse("physician_fax_outreach", "update", { error: null });
 
     const res = await request(makeApp())
       .post("/admin/physician-fax-outreach")
@@ -321,8 +288,12 @@ describe("POST /admin/physician-fax-outreach", () => {
     expect(res.body.provider).toBe("twilio");
     expect(typeof res.body.dispatchError).toBe("string");
 
-    expect(updatedSets).toHaveLength(1);
-    expect(updatedSets[0]).toMatchObject({ status: "failed" });
+    const updates = getSupabaseWritePayloads(
+      "physician_fax_outreach",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ status: "failed" });
   });
 });
 
@@ -342,24 +313,26 @@ describe("GET /admin/physician-fax-outreach", () => {
 
   it("returns scoped rows + providerConfigured flag (unconfigured)", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([
-      {
-        id: "out_1",
-        patientId: PATIENT_ID,
-        prescriptionId: null,
-        physicianName: "Dr. A",
-        physicianFaxE164: "+12155551212",
-        status: "pending",
-        vendorRef: null,
-        vendorName: null,
-        sentAt: null,
-        deliveredAt: null,
-        failedAt: null,
-        failureReason: null,
-        createdByEmail: ADMIN_EMAIL,
-        createdAt: new Date("2026-04-30T12:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("physician_fax_outreach", "select", {
+      data: [
+        {
+          id: "out_1",
+          patient_id: PATIENT_ID,
+          prescription_id: null,
+          physician_name: "Dr. A",
+          physician_fax_e164: "+12155551212",
+          status: "pending",
+          vendor_ref: null,
+          vendor_name: null,
+          sent_at: null,
+          delivered_at: null,
+          failed_at: null,
+          failure_reason: null,
+          created_by_email: ADMIN_EMAIL,
+          created_at: new Date("2026-04-30T12:00:00Z").toISOString(),
+        },
+      ],
+    });
     const res = await request(makeApp()).get(
       `/admin/physician-fax-outreach?patientId=${PATIENT_ID}`,
     );
@@ -377,7 +350,7 @@ describe("GET /admin/physician-fax-outreach", () => {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([]);
+    stageSupabaseResponse("physician_fax_outreach", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       `/admin/physician-fax-outreach?patientId=${PATIENT_ID}`,
@@ -411,7 +384,7 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([]); // row lookup returns nothing
+    stageSupabaseResponse("physician_fax_outreach", "select", { data: null });
 
     const res = await request(makeApp()).post(
       "/admin/physician-fax-outreach/no-such-id/retry",
@@ -427,14 +400,14 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([
-      {
+    stageSupabaseResponse("physician_fax_outreach", "select", {
+      data: {
         id: "out_1",
         status: "sent",
-        physicianFaxE164: "+12155551212",
-        patientId: PATIENT_ID,
+        physician_fax_e164: "+12155551212",
+        patient_id: PATIENT_ID,
       },
-    ]);
+    });
 
     const res = await request(makeApp()).post(
       "/admin/physician-fax-outreach/out_1/retry",
@@ -451,14 +424,14 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([
-      {
+    stageSupabaseResponse("physician_fax_outreach", "select", {
+      data: {
         id: "out_1",
         status: "delivered",
-        physicianFaxE164: "+12155551212",
-        patientId: PATIENT_ID,
+        physician_fax_e164: "+12155551212",
+        patient_id: PATIENT_ID,
       },
-    ]);
+    });
 
     const res = await request(makeApp()).post(
       "/admin/physician-fax-outreach/out_1/retry",
@@ -474,14 +447,20 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     process.env.RESUPPLY_VOICE_PUBLIC_BASE_URL = "https://api.example.test";
 
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    selectQueue.push([
-      {
+    stageSupabaseResponse("physician_fax_outreach", "select", {
+      data: {
         id: "out_1",
         status: "failed",
-        physicianFaxE164: "+12155551212",
-        patientId: PATIENT_ID,
+        physician_fax_e164: "+12155551212",
+        patient_id: PATIENT_ID,
       },
-    ]);
+    });
+    // Optimistic-concurrency claim (updates updated_at) + post-send
+    // status stamp.
+    stageSupabaseResponse("physician_fax_outreach", "update", {
+      data: { id: "out_1" },
+    });
+    stageSupabaseResponse("physician_fax_outreach", "update", { error: null });
 
     const res = await request(makeApp()).post(
       "/admin/physician-fax-outreach/out_1/retry",
@@ -494,13 +473,17 @@ describe("POST /admin/physician-fax-outreach/:id/retry", () => {
     });
 
     expect(sendFaxMock).toHaveBeenCalledOnce();
-    // updatedSets[0] is the optimistic-concurrency claim (updatedAt touch);
-    // updatedSets[1] is the post-send status stamp.
-    expect(updatedSets).toHaveLength(2);
-    expect(updatedSets[1]).toMatchObject({
+    const updates = getSupabaseWritePayloads(
+      "physician_fax_outreach",
+      "update",
+    ) as Record<string, unknown>[];
+    // updates[0] is the optimistic-concurrency claim (just touches
+    // updated_at); updates[1] is the post-send status stamp.
+    expect(updates).toHaveLength(2);
+    expect(updates[1]).toMatchObject({
       status: "sent",
-      vendorRef: "FX_test_sid",
-      vendorName: "twilio",
+      vendor_ref: "FX_test_sid",
+      vendor_name: "twilio",
     });
   });
 });

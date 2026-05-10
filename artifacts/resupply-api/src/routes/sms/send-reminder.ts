@@ -19,7 +19,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   sendReminderSms,
   type SendReminderOutcome,
@@ -76,7 +76,7 @@ router.post("/sms/send-reminder", requireAdmin, async (req, res) => {
   let outcome: SendReminderOutcome;
   try {
     outcome = await sendReminderSms({
-      pool: getDbPool(),
+      supabase: getSupabaseServiceRoleClient(),
       cfg: {
         twilioAccountSid: cfg.sms.twilioAccountSid,
         twilioAuthToken: cfg.sms.twilioAuthToken,

@@ -4,7 +4,7 @@ import { URL } from "node:url";
 
 import { WebSocketServer, type WebSocket } from "ws";
 
-import { getDbPool, setProjectionLogger } from "@workspace/resupply-db";
+import { setProjectionLogger } from "@workspace/resupply-db";
 
 import { assertRequiredEnv } from "./lib/env-check";
 
@@ -197,13 +197,17 @@ process.on("unhandledRejection", (reason) => {
   void flushLogsAndExit(1);
 });
 
-// Graceful shutdown: drain HTTP, close the WS server, close the DB
-// pool, exit. Without this, SIGTERM kills in-flight requests
-// mid-flight (the orchestrator's deploy-rollover signal). The
-// 25-second cap is below typical orchestrator grace periods (30s on
-// Replit, K8s default) so we always abort cleanly before the kernel
-// SIGKILLs us — better to drop a stuck connection than have the
-// kernel interrupt a half-written DB transaction.
+// Graceful shutdown: drain HTTP, close the WS server, stop the
+// in-process pg-boss worker, exit. Without this, SIGTERM kills
+// in-flight requests mid-flight (the orchestrator's deploy-rollover
+// signal). The 25-second cap is below typical orchestrator grace
+// periods (30s on Replit, K8s default) so we always abort cleanly
+// before the kernel SIGKILLs us — better to drop a stuck connection
+// than have the kernel interrupt a half-written DB transaction.
+//
+// Application DB connections are managed by the Supabase client
+// (HTTP via PostgREST — no pool to drain). pg-boss owns its own
+// node-postgres pool and closes it as part of `boss.stop()`.
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) {
@@ -221,19 +225,12 @@ async function shutdown(signal: string): Promise<void> {
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, 25_000));
   await Promise.race([httpClosed, timeout]);
 
-  // Stop pg-boss BEFORE the DB pool closes — pg-boss owns its own
-  // pool but our /readyz check probes the shared schema, and a clean
-  // pg-boss stop drains any in-flight job handlers gracefully.
+  // Stop pg-boss — owns its own node-postgres pool and drains any
+  // in-flight job handlers gracefully on `boss.stop()`.
   try {
     await stopWorker();
   } catch (err) {
     logger.warn({ err: serializeErr(err) }, "shutdown: worker stop errored");
-  }
-
-  try {
-    await getDbPool().end();
-  } catch (err) {
-    logger.warn({ err: serializeErr(err) }, "shutdown: db pool close errored");
   }
 
   logger.info({ signal }, "shutdown: complete");

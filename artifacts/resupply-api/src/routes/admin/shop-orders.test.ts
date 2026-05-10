@@ -1,5 +1,4 @@
-// Route tests for routes/admin/shop-orders.ts. Mirrors the
-// fluent-stub pattern in shop-products.test.ts + my-orders.test.ts.
+// Route tests for routes/admin/shop-orders.ts.
 //
 // Coverage matrix:
 //   POST /tracking   — admin gate, id format, body validation,
@@ -15,13 +14,11 @@
 //                      happy-path Stripe refunds.create.
 //
 // Mocking strategy:
-//   * `getDbPool` returns an empty object; the real Drizzle import is
-//     replaced by a fluent stub that pulls the next pre-queued result
-//     off `selectQueue` / `updateQueue`. Each test pushes the rows
-//     it expects each query to see, in order.
+//   * Supabase client is stubbed via the shared `supabase-mock` helper.
+//     Each test stages the rows it expects each query to see, in order.
 //   * Stripe is mocked at the lib/stripe/config layer; only refunds
 //     are exercised here.
-//   * the auth provider is mocked via auth-deps; the admin gate
+//   * The auth provider is mocked via auth-deps; the admin gate
 //     resolves a verified email matching RESUPPLY_ADMIN_EMAILS.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -32,6 +29,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -39,75 +43,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// Drizzle stub. Three query shapes are exercised by this router:
-//   1. SELECT → .from() → .where() → .limit() → Promise<rows>
-//   2. UPDATE → .set() → .where() → .returning() → Promise<rows>
-//   3. UPDATE → .set() → .where()                → Promise<void>
-//      (bare update — used by the helper's claim-release path
-//      to NULL out shipping_email_sent_at on send failure)
-// We push results onto the matching queue in the order the handler
-// will consume them. A test that does not push anything for a query
-// gets `[]` back, mirroring "no row matched". Bare-update calls do
-// NOT consume from updateQueue and are tracked separately via
-// `updateBareCalls.count` so concurrency tests can assert release.
-// A select queue entry is normally an array of row objects. For
-// transient-failure tests we also accept an Error sentinel — the
-// fluent rejects with that error on terminate (`.limit()` or bare
-// await) instead of resolving rows. This pins the catch-all release
-// behaviour for transient post-claim DB lookup failures.
-type SelectQueueEntry = unknown[] | Error;
-const selectQueue: SelectQueueEntry[] = [];
-const updateQueue: unknown[][] = [];
-const updateBareCalls = { count: 0 };
-const dbStub = {
-  select: vi.fn(() => {
-    const head = selectQueue.shift();
-    const settle = (): Promise<unknown[]> =>
-      head instanceof Error
-        ? Promise.reject(head)
-        : Promise.resolve(head ?? []);
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => settle(),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    let returningCalled = false;
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => obj,
-      returning: () => {
-        returningCalled = true;
-        const result = updateQueue.shift() ?? [];
-        return Promise.resolve(result);
-      },
-      // Awaiting the chain WITHOUT `.returning()` resolves with
-      // undefined and is recorded as a "bare" UPDATE.
-      then: (
-        resolve: (v: unknown) => unknown,
-        reject: (e: unknown) => unknown,
-      ) => {
-        if (!returningCalled) updateBareCalls.count += 1;
-        return Promise.resolve(undefined).then(resolve, reject);
-      },
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 const stripeRefundsCreateMock = vi.fn();
 let stripeConfigured = true;
@@ -121,9 +56,8 @@ vi.mock("../../lib/stripe/config", () => ({
   }),
 }));
 
-// SendGrid mock — the tracking handler now triggers an email after
-// the UPDATE. We mock at module boundary so the helper itself runs
-// (escaping, body composition, idempotency check) but no socket opens.
+// SendGrid mock — the tracking handler triggers an email after the
+// UPDATE.
 const sendEmailMock = vi.fn();
 const createSendgridClientMock = vi.fn<
   () => { sendEmail: typeof sendEmailMock }
@@ -139,8 +73,6 @@ vi.mock("@workspace/resupply-email", async () => {
 });
 
 // Web-push mock — wired into shipping notifications (Phase G.2).
-// We only verify it gets called with a customer id; full delivery
-// semantics are covered by the helper's own unit tests.
 const sendPushToCustomerMock = vi.hoisted(() =>
   vi.fn<
     (
@@ -179,26 +111,28 @@ function stubVerifiedAdmin(): void {
   };
 }
 
+// Snake-case row shape PostgREST returns. The route's response
+// mapper projects to camelCase for the JSON body.
 function paidOrderRow(
   over: Partial<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   return {
     id: VALID_ID,
-    stripeSessionId: "cs_test_1",
-    stripePaymentIntentId: "pi_test_1",
+    stripe_session_id: "cs_test_1",
+    stripe_payment_intent_id: "pi_test_1",
     status: "paid",
-    amountTotalCents: 4998,
+    amount_total_cents: 4998,
     currency: "usd",
-    customerId: "user_alice",
-    createdAt: new Date("2026-04-20T12:00:00Z"),
-    paidAt: new Date("2026-04-20T12:01:00Z"),
-    shippingAddress: null,
-    trackingCarrier: null,
-    trackingNumber: null,
-    shippedAt: null,
-    deliveredAt: null,
-    shippingEmailSentAt: null,
-    customerEmail: null,
+    customer_id: "user_alice",
+    created_at: new Date("2026-04-20T12:00:00Z").toISOString(),
+    paid_at: new Date("2026-04-20T12:01:00Z").toISOString(),
+    shipping_address_json: null,
+    tracking_carrier: null,
+    tracking_number: null,
+    shipped_at: null,
+    delivered_at: null,
+    shipping_email_sent_at: null,
+    customer_email: null,
     ...over,
   };
 }
@@ -221,11 +155,7 @@ beforeEach(() => {
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   process.env.SHOP_PUBLIC_BASE_URL = "https://test.example.com";
   stripeConfigured = true;
-  selectQueue.length = 0;
-  updateQueue.length = 0;
-  updateBareCalls.count = 0;
-  dbStub.select.mockClear();
-  dbStub.update.mockClear();
+  supabaseMock.reset();
   stripeRefundsCreateMock.mockReset();
   sendEmailMock.mockReset();
   createSendgridClientMock.mockReset();
@@ -241,8 +171,6 @@ afterEach(() => {
     if (originalEnv[k] === undefined) delete process.env[k];
     else process.env[k] = originalEnv[k];
   }
-  selectQueue.length = 0;
-  updateQueue.length = 0;
 });
 
 // =====================================================================
@@ -254,7 +182,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
       .send({ carrier: "UPS", number: "1Z999AA1" });
     expect([401, 403]).toContain(res.status);
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("rejects ids that aren't a UUID", async () => {
@@ -264,7 +192,7 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
       .send({ carrier: "UPS", number: "1Z999AA1" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_order_id");
-    expect(dbStub.select).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
   });
 
   it("rejects empty carrier or number", async () => {
@@ -274,101 +202,103 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
       .send({ carrier: "  ", number: "1Z999" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
-    expect(dbStub.select).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
   });
 
   it("returns 404 when no row matches the id", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_orders", "select", { data: null });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
       .send({ carrier: "UPS", number: "1Z999AA1" });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("order_not_found");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("returns 409 when the order isn't paid", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow({ status: "pending" })]);
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ status: "pending" }),
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
       .send({ carrier: "UPS", number: "1Z999AA1" });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("order_not_paid");
     expect(res.body.currentStatus).toBe("pending");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("writes tracking + shipped_at and returns the projected order", async () => {
     stubVerifiedAdmin();
-    const shippedAt = new Date("2026-04-25T09:00:00Z");
-    selectQueue.push([paidOrderRow()]); // loadOrder
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999AA1",
-        shippedAt,
+    const shippedAtIso = new Date("2026-04-25T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() }); // loadOrder
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999AA1",
+        shipped_at: shippedAtIso,
       }),
-    ]); // tracking UPDATE returning
-    // The helper's atomic claim wins (timestamp was cleared by the
-    // route's CASE-WHEN). Then the customer lookup returns no row,
-    // so the helper RELEASES the claim — that's a bare UPDATE.
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999AA1",
-        shippedAt,
+    }); // tracking UPDATE returning
+    // The helper's atomic claim wins (timestamp was cleared). Then
+    // the customer lookup returns no row, so the helper RELEASES
+    // the claim — that's a separate UPDATE.
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999AA1",
+        shipped_at: shippedAtIso,
       }),
-    ]); // atomic claim returning
-    selectQueue.push([]); // shop_customers — empty
+    }); // atomic claim returning
+    stageSupabaseResponse("shop_customers", "select", { data: null }); // empty
+    stageSupabaseResponse("shop_orders", "update", { error: null }); // release
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
       .send({ carrier: "UPS", number: "1Z999AA1" });
     expect(res.status).toBe(200);
     expect(res.body.order.trackingCarrier).toBe("UPS");
     expect(res.body.order.trackingNumber).toBe("1Z999AA1");
-    expect(res.body.order.shippedAt).toBe(shippedAt.toISOString());
-    // Two .returning() UPDATEs — tracking write + atomic claim.
-    // One bare UPDATE — release of the claim because no recipient.
-    expect(dbStub.update).toHaveBeenCalledTimes(3);
-    expect(updateBareCalls.count).toBe(1);
+    expect(res.body.order.shippedAt).toBe(shippedAtIso);
+    // Three UPDATEs total — tracking write + atomic claim + release.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(3);
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
   it("allows overwriting tracking on a re-shipped order", async () => {
     stubVerifiedAdmin();
-    const reShippedAt = new Date("2026-04-29T09:00:00Z");
-    selectQueue.push([
-      paidOrderRow({
-        trackingCarrier: "USPS",
-        trackingNumber: "9400-old",
-        shippedAt: new Date("2026-04-21T09:00:00Z"),
+    const reShippedAtIso = new Date("2026-04-29T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({
+        tracking_carrier: "USPS",
+        tracking_number: "9400-old",
+        shipped_at: new Date("2026-04-21T09:00:00Z").toISOString(),
       }),
-    ]); // loadOrder
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "FedEx",
-        trackingNumber: "FX-NEW",
-        shippedAt: reShippedAt,
+    }); // loadOrder
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "FedEx",
+        tracking_number: "FX-NEW",
+        shipped_at: reShippedAtIso,
       }),
-    ]); // tracking UPDATE returning (CASE-WHEN cleared shipping_email_sent_at)
-    // Atomic claim wins on the cleared timestamp.
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "FedEx",
-        trackingNumber: "FX-NEW",
-        shippedAt: reShippedAt,
+    }); // tracking UPDATE returning
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "FedEx",
+        tracking_number: "FX-NEW",
+        shipped_at: reShippedAtIso,
       }),
-    ]); // atomic claim returning
-    selectQueue.push([]); // shop_customers — empty → release
+    }); // atomic claim returning
+    stageSupabaseResponse("shop_customers", "select", { data: null });
+    stageSupabaseResponse("shop_orders", "update", { error: null }); // release
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
       .send({ carrier: "FedEx", number: "FX-NEW" });
     expect(res.status).toBe(200);
     expect(res.body.order.trackingCarrier).toBe("FedEx");
-    expect(res.body.order.shippedAt).toBe(reShippedAt.toISOString());
-    expect(updateBareCalls.count).toBe(1);
+    expect(res.body.order.shippedAt).toBe(reShippedAtIso);
+    // tracking write + atomic claim + release = 3 updates.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(3);
   });
 
   // -------------------------------------------------------------------
@@ -382,23 +312,25 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_ship_first" });
 
-    const shippedAt = new Date("2026-04-25T09:00:00Z");
-    selectQueue.push([paidOrderRow()]); // loadOrder
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999",
-        shippedAt,
+    const shippedAtIso = new Date("2026-04-25T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() }); // loadOrder
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999",
+        shipped_at: shippedAtIso,
       }),
-    ]); // tracking UPDATE returning
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999",
-        shippedAt,
+    }); // tracking UPDATE returning
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999",
+        shipped_at: shippedAtIso,
       }),
-    ]); // atomic claim returning
-    selectQueue.push([{ email: "buyer@example.com" }]); // shop_customers
+    }); // atomic claim returning
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { email_lower: "buyer@example.com" },
+    });
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -410,10 +342,9 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(arg.subject).toBe("Your PennPaps order has shipped");
     expect(arg.to).toBe("buyer@example.com");
     expect(arg.html).toContain("ups.com/track");
-    // Two .returning() UPDATEs — tracking write + atomic claim.
-    // Zero bare UPDATEs — success path does not release.
-    expect(dbStub.update).toHaveBeenCalledTimes(2);
-    expect(updateBareCalls.count).toBe(0);
+    // Two UPDATEs — tracking write + atomic claim. No release on the
+    // success path.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(2);
     // Phase G.2 — push fan-out fires after a successful email,
     // scoped to the linked customer.
     expect(sendPushToCustomerMock).toHaveBeenCalledTimes(1);
@@ -433,29 +364,28 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
 
-    const sentAt = new Date("2026-04-25T09:00:00Z");
-    selectQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999",
-        shippedAt: sentAt,
-        shippingEmailSentAt: sentAt,
+    const sentAtIso = new Date("2026-04-25T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999",
+        shipped_at: sentAtIso,
+        shipping_email_sent_at: sentAtIso,
       }),
-    ]); // loadOrder
+    }); // loadOrder
     // Tracking UPDATE: identical values → CASE-WHEN keeps
-    // shipping_email_sent_at non-null. Returns the row with stamp
-    // intact.
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999",
-        shippedAt: new Date("2026-04-26T09:00:00Z"),
-        shippingEmailSentAt: sentAt,
+    // shipping_email_sent_at non-null. Returns the row with stamp intact.
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999",
+        shipped_at: new Date("2026-04-26T09:00:00Z").toISOString(),
+        shipping_email_sent_at: sentAtIso,
       }),
-    ]);
+    });
     // Atomic claim attempt finds shipping_email_sent_at non-null →
-    // returns []. Helper short-circuits with "already_sent_or_missing".
-    updateQueue.push([]);
+    // returns null. Helper short-circuits with "already_sent_or_missing".
+    stageSupabaseResponse("shop_orders", "update", { data: null });
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -463,10 +393,8 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
 
     expect(res.status).toBe(200);
     expect(sendEmailMock).not.toHaveBeenCalled();
-    // Two .returning() UPDATEs — tracking write + (failed) claim
-    // attempt. Zero bare UPDATEs — nothing to release.
-    expect(dbStub.update).toHaveBeenCalledTimes(2);
-    expect(updateBareCalls.count).toBe(0);
+    // Two UPDATEs — tracking write + (failed) claim attempt.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(2);
     // Phase G.2 — push must NOT fire when the claim is skipped.
     expect(sendPushToCustomerMock).not.toHaveBeenCalled();
   });
@@ -477,35 +405,35 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_ship_reship" });
 
-    const oldSentAt = new Date("2026-04-21T09:00:00Z");
-    const newShippedAt = new Date("2026-04-29T09:00:00Z");
-    selectQueue.push([
-      paidOrderRow({
-        trackingCarrier: "USPS",
-        trackingNumber: "9400-old",
-        shippedAt: oldSentAt,
-        shippingEmailSentAt: oldSentAt,
+    const oldSentAtIso = new Date("2026-04-21T09:00:00Z").toISOString();
+    const newShippedAtIso = new Date("2026-04-29T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({
+        tracking_carrier: "USPS",
+        tracking_number: "9400-old",
+        shipped_at: oldSentAtIso,
+        shipping_email_sent_at: oldSentAtIso,
       }),
-    ]); // loadOrder — already had tracking + email sent
-    // Tracking UPDATE: carrier changed → CASE-WHEN clears the
-    // shipping_email_sent_at column. Returned row reflects this.
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "FedEx",
-        trackingNumber: "FX-NEW",
-        shippedAt: newShippedAt,
-        shippingEmailSentAt: null,
+    }); // loadOrder — already had tracking + email sent
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "FedEx",
+        tracking_number: "FX-NEW",
+        shipped_at: newShippedAtIso,
+        shipping_email_sent_at: null,
       }),
-    ]);
+    });
     // Atomic claim wins on the freshly-cleared timestamp.
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "FedEx",
-        trackingNumber: "FX-NEW",
-        shippedAt: newShippedAt,
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "FedEx",
+        tracking_number: "FX-NEW",
+        shipped_at: newShippedAtIso,
       }),
-    ]);
-    selectQueue.push([{ email: "buyer@example.com" }]); // shop_customers
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { email_lower: "buyer@example.com" },
+    });
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -516,9 +444,8 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     const arg = sendEmailMock.mock.calls[0]![0];
     expect(arg.html).toContain("FX-NEW");
     expect(arg.html).toContain("fedex.com");
-    // Two .returning() UPDATEs — tracking write + atomic claim.
-    expect(dbStub.update).toHaveBeenCalledTimes(2);
-    expect(updateBareCalls.count).toBe(0);
+    // Two UPDATEs — tracking write + atomic claim.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(2);
   });
 
   it("falls back to persisted customer_email when customer_id is null (guest re-ship)", async () => {
@@ -527,29 +454,32 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockResolvedValueOnce({ messageId: "msg_ship_guest" });
 
-    const shippedAt = new Date("2026-04-30T09:00:00Z");
-    selectQueue.push([
-      paidOrderRow({ customerId: null, customerEmail: "guest@example.com" }),
-    ]); // loadOrder
-    updateQueue.push([
-      paidOrderRow({
-        customerId: null,
-        customerEmail: "guest@example.com",
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z-GUEST",
-        shippedAt,
+    const shippedAtIso = new Date("2026-04-30T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({
+        customer_id: null,
+        customer_email: "guest@example.com",
       }),
-    ]); // tracking UPDATE
-    updateQueue.push([
-      paidOrderRow({
-        customerId: null,
-        customerEmail: "guest@example.com",
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z-GUEST",
-        shippedAt,
+    }); // loadOrder
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        customer_id: null,
+        customer_email: "guest@example.com",
+        tracking_carrier: "UPS",
+        tracking_number: "1Z-GUEST",
+        shipped_at: shippedAtIso,
       }),
-    ]); // atomic claim
-    // No shop_customers SELECT expected — customerId is null.
+    }); // tracking UPDATE
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        customer_id: null,
+        customer_email: "guest@example.com",
+        tracking_carrier: "UPS",
+        tracking_number: "1Z-GUEST",
+        shipped_at: shippedAtIso,
+      }),
+    }); // atomic claim
+    // No shop_customers SELECT expected — customer_id is null.
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -558,8 +488,9 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(res.status).toBe(200);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
     expect(sendEmailMock.mock.calls[0]![0].to).toBe("guest@example.com");
-    expect(updateBareCalls.count).toBe(0);
-    // Phase G.2 — push is gated on customerId; guest orders must NOT
+    // Two UPDATEs (tracking + claim), no release.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(2);
+    // Phase G.2 — push is gated on customer_id; guest orders must NOT
     // trigger a push notification.
     expect(sendPushToCustomerMock).not.toHaveBeenCalled();
   });
@@ -569,26 +500,29 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     process.env.SENDGRID_API_KEY = "SG.test";
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
 
-    const shippedAt = new Date("2026-04-30T10:00:00Z");
-    selectQueue.push([paidOrderRow()]); // loadOrder
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z-TRANS",
-        shippedAt,
+    const shippedAtIso = new Date("2026-04-30T10:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() }); // loadOrder
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z-TRANS",
+        shipped_at: shippedAtIso,
       }),
-    ]); // tracking UPDATE
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z-TRANS",
-        shippedAt,
+    }); // tracking UPDATE
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z-TRANS",
+        shipped_at: shippedAtIso,
       }),
-    ]); // atomic claim wins
-    // Customer-lookup SELECT REJECTS — simulates a transient pg
-    // error after the claim was acquired. The catch-all release
-    // path must still fire so a future admin re-save can retry.
-    selectQueue.push(new Error("ECONNRESET while reading shop_customers"));
+    }); // atomic claim wins
+    // Customer-lookup SELECT errors — simulates a transient pg error
+    // after the claim was acquired. The catch-all release path must
+    // still fire so a future admin re-save can retry.
+    stageSupabaseResponse("shop_customers", "select", {
+      error: new Error("ECONNRESET while reading shop_customers"),
+    });
+    stageSupabaseResponse("shop_orders", "update", { error: null }); // release
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -599,8 +533,8 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     expect(res.status).toBe(200);
     // Email was never actually sent.
     expect(sendEmailMock).not.toHaveBeenCalled();
-    // Claim was won then released → exactly one bare UPDATE.
-    expect(updateBareCalls.count).toBe(1);
+    // Three UPDATEs — tracking + claim + release.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(3);
     // Phase G.2 — push must NOT fire when the claim was released.
     expect(sendPushToCustomerMock).not.toHaveBeenCalled();
   });
@@ -611,23 +545,26 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
     process.env.SENDGRID_FROM_EMAIL = "no-reply@penn.example";
     sendEmailMock.mockRejectedValueOnce(new Error("upstream 503"));
 
-    const shippedAt = new Date("2026-04-30T09:00:00Z");
-    selectQueue.push([paidOrderRow()]); // loadOrder
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999",
-        shippedAt,
+    const shippedAtIso = new Date("2026-04-30T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() }); // loadOrder
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999",
+        shipped_at: shippedAtIso,
       }),
-    ]); // tracking UPDATE
-    updateQueue.push([
-      paidOrderRow({
-        trackingCarrier: "UPS",
-        trackingNumber: "1Z999",
-        shippedAt,
+    }); // tracking UPDATE
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999",
+        shipped_at: shippedAtIso,
       }),
-    ]); // atomic claim
-    selectQueue.push([{ email: "buyer@example.com" }]);
+    }); // atomic claim
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { email_lower: "buyer@example.com" },
+    });
+    stageSupabaseResponse("shop_orders", "update", { error: null }); // release
 
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/tracking`)
@@ -635,8 +572,8 @@ describe("POST /admin/shop/orders/:orderId/tracking", () => {
 
     // Route must NOT 500 just because email upstream is flapping.
     expect(res.status).toBe(200);
-    // Claim was won then released → exactly one bare UPDATE.
-    expect(updateBareCalls.count).toBe(1);
+    // Three UPDATEs — tracking + claim + release.
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(3);
     // Phase G.2 — push must NOT fire when the email send failed and
     // the claim was released.
     expect(sendPushToCustomerMock).not.toHaveBeenCalled();
@@ -656,7 +593,7 @@ describe("POST /admin/shop/orders/:orderId/delivered", () => {
 
   it("returns 404 when the order doesn't exist", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_orders", "select", { data: null });
     const res = await request(makeApp()).post(
       `/resupply-api/admin/shop/orders/${VALID_ID}/delivered`,
     );
@@ -666,42 +603,52 @@ describe("POST /admin/shop/orders/:orderId/delivered", () => {
 
   it("returns 409 when the order hasn't shipped", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow()]);
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
     const res = await request(makeApp()).post(
       `/resupply-api/admin/shop/orders/${VALID_ID}/delivered`,
     );
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("order_not_shipped");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 
   it("stamps delivered_at on a shipped order", async () => {
     stubVerifiedAdmin();
-    const shippedAt = new Date("2026-04-25T09:00:00Z");
-    const deliveredAt = new Date("2026-04-28T15:00:00Z");
-    selectQueue.push([paidOrderRow({ shippedAt })]);
-    updateQueue.push([paidOrderRow({ shippedAt, deliveredAt })]);
+    const shippedAtIso = new Date("2026-04-25T09:00:00Z").toISOString();
+    const deliveredAtIso = new Date("2026-04-28T15:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ shipped_at: shippedAtIso }),
+    });
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        shipped_at: shippedAtIso,
+        delivered_at: deliveredAtIso,
+      }),
+    });
     const res = await request(makeApp()).post(
       `/resupply-api/admin/shop/orders/${VALID_ID}/delivered`,
     );
     expect(res.status).toBe(200);
-    expect(res.body.order.deliveredAt).toBe(deliveredAt.toISOString());
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
+    expect(res.body.order.deliveredAt).toBe(deliveredAtIso);
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(1);
   });
 
   it("is idempotent on a re-fire (does not bump delivered_at)", async () => {
     stubVerifiedAdmin();
-    const shippedAt = new Date("2026-04-25T09:00:00Z");
-    const originalDeliveredAt = new Date("2026-04-28T15:00:00Z");
-    selectQueue.push([
-      paidOrderRow({ shippedAt, deliveredAt: originalDeliveredAt }),
-    ]);
+    const shippedAtIso = new Date("2026-04-25T09:00:00Z").toISOString();
+    const originalDeliveredAtIso = new Date("2026-04-28T15:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({
+        shipped_at: shippedAtIso,
+        delivered_at: originalDeliveredAtIso,
+      }),
+    });
     const res = await request(makeApp()).post(
       `/resupply-api/admin/shop/orders/${VALID_ID}/delivered`,
     );
     expect(res.status).toBe(200);
-    expect(res.body.order.deliveredAt).toBe(originalDeliveredAt.toISOString());
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(res.body.order.deliveredAt).toBe(originalDeliveredAtIso);
+    expect(getSupabaseCallCount("shop_orders", "update")).toBe(0);
   });
 });
 
@@ -736,7 +683,7 @@ describe("PATCH /admin/shop/orders/:orderId/shipping-address", () => {
 
   it("returns 404 when the order doesn't exist", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_orders", "select", { data: null });
     const res = await request(makeApp())
       .patch(`/resupply-api/admin/shop/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
@@ -746,12 +693,12 @@ describe("PATCH /admin/shop/orders/:orderId/shipping-address", () => {
 
   it("writes the address (uppercasing state) and returns the projected order", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow()]);
-    updateQueue.push([
-      paidOrderRow({
-        shippingAddress: { ...validAddress, state: "PA", line2: "Apt 4" },
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        shipping_address_json: { ...validAddress, state: "PA" },
       }),
-    ]);
+    });
     const res = await request(makeApp())
       .patch(`/resupply-api/admin/shop/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
@@ -762,19 +709,21 @@ describe("PATCH /admin/shop/orders/:orderId/shipping-address", () => {
 
   it("allows the override even after shipment", async () => {
     stubVerifiedAdmin();
-    const shippedAt = new Date("2026-04-25T09:00:00Z");
-    selectQueue.push([paidOrderRow({ shippedAt })]);
-    updateQueue.push([
-      paidOrderRow({
-        shippedAt,
-        shippingAddress: { ...validAddress, state: "PA" },
+    const shippedAtIso = new Date("2026-04-25T09:00:00Z").toISOString();
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ shipped_at: shippedAtIso }),
+    });
+    stageSupabaseResponse("shop_orders", "update", {
+      data: paidOrderRow({
+        shipped_at: shippedAtIso,
+        shipping_address_json: { ...validAddress, state: "PA" },
       }),
-    ]);
+    });
     const res = await request(makeApp())
       .patch(`/resupply-api/admin/shop/orders/${VALID_ID}/shipping-address`)
       .send(validAddress);
     expect(res.status).toBe(200);
-    expect(res.body.order.shippedAt).toBe(shippedAt.toISOString());
+    expect(res.body.order.shippedAt).toBe(shippedAtIso);
   });
 });
 
@@ -791,7 +740,7 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("returns 404 when the order doesn't exist", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_orders", "select", { data: null });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({});
@@ -801,7 +750,9 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("returns 409 when the order is already refunded", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow({ status: "refunded" })]);
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ status: "refunded" }),
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({});
@@ -812,7 +763,9 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("returns 409 when the order isn't paid yet", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow({ status: "pending" })]);
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ status: "pending" }),
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({});
@@ -823,7 +776,9 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("returns 409 when there's no captured payment_intent", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow({ stripePaymentIntentId: null })]);
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ stripe_payment_intent_id: null }),
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({});
@@ -833,7 +788,9 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("returns 409 when amountCents exceeds the order total", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow({ amountTotalCents: 4998 })]);
+    stageSupabaseResponse("shop_orders", "select", {
+      data: paidOrderRow({ amount_total_cents: 4998 }),
+    });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({ amountCents: 9999 });
@@ -846,7 +803,7 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
   it("returns 503 when Stripe isn't configured", async () => {
     stubVerifiedAdmin();
     stripeConfigured = false;
-    selectQueue.push([paidOrderRow()]);
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
     const res = await request(makeApp())
       .post(`/resupply-api/admin/shop/orders/${VALID_ID}/refund`)
       .send({});
@@ -856,7 +813,7 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("forwards Stripe errors as 502", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow()]);
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
     stripeRefundsCreateMock.mockRejectedValue(
       Object.assign(new Error("stripe down"), { statusCode: 502 }),
     );
@@ -869,7 +826,7 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("issues a full refund when amount is omitted", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow()]);
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
     stripeRefundsCreateMock.mockResolvedValue({
       id: "re_test_1",
       amount: 4998,
@@ -881,9 +838,7 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
     expect(res.status).toBe(200);
     expect(res.body.refund.id).toBe("re_test_1");
     expect(res.body.refund.amountCents).toBe(4998);
-    // Verify we passed the payment_intent through. amount must be
-    // omitted from the SDK call when the body omits it (Stripe
-    // interprets missing amount as "full refund").
+    // Verify we passed the payment_intent through.
     const callArgs = stripeRefundsCreateMock.mock.calls[0]?.[0] as {
       payment_intent?: string;
       amount?: number;
@@ -896,7 +851,7 @@ describe("POST /admin/shop/orders/:orderId/refund", () => {
 
   it("forwards amount + reason on a partial refund", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([paidOrderRow()]);
+    stageSupabaseResponse("shop_orders", "select", { data: paidOrderRow() });
     stripeRefundsCreateMock.mockResolvedValue({
       id: "re_test_partial",
       amount: 1000,

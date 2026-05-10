@@ -1,51 +1,28 @@
 // Smoke tests for POST /email/sendgrid-events.
 //
-// Purpose: lock in the contract the architect previously flagged as
-// untested — namely, that:
+// Purpose: lock in the contract that:
 //   * Requests without a valid ECDSA signature are rejected (401)
 //     with NO database side effects.
 //   * Requests with a valid ECDSA signature are accepted (200) and
 //     the SendGrid event maps to our internal delivery_status
 //     taxonomy on the matching `messages` row.
-//   * The full set of mappings we ship — processed → sent,
-//     delivered → delivered, bounce → bounced, dropped → dropped,
-//     deferred → deferred — fires the expected UPDATE.
-//
-// The route uses `db.execute(sql\`...\`)` for the messages update
-// (raw SQL, not the query builder), so the drizzle stub here only
-// needs to expose a single `execute` method — we capture invocations
-// to assert mapping behaviour without a real Postgres.
-//
-// Signing strategy mirrors the lib's own signature.test.ts: we mint
-// a fresh ECDSA P-256 keypair per test, install the public key into
-// SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY, and sign the raw body bytes the
-// way SendGrid does (HMAC-style: timestamp + body, ECDSA-SHA256).
+//   * The full set of mappings — processed → sent, delivered →
+//     delivered, bounce → bounced, dropped → dropped, deferred →
+//     deferred — fires the expected UPDATE.
 
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-// ---------------------------------------------------------------------------
-// Drizzle stub — only `.execute(sql\`...\`)` is used by this route.
-// ---------------------------------------------------------------------------
-const executeMock = vi.fn().mockResolvedValue(undefined);
-const dbStub = {
-  execute: executeMock,
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
 
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 // safeAudit hits @workspace/resupply-audit which expects a real DB.
 // Stub it out — the audit-row contents are validated in their own
@@ -95,6 +72,16 @@ function buildApp(): Express {
   return app;
 }
 
+// Pre-stage N successful UPDATE responses on `messages` so each
+// event in a batch resolves cleanly without a "no staged response"
+// surprise. PostgREST returns just `{ error: null }` for an UPDATE
+// without a trailing select.
+function stageMessageUpdates(n: number) {
+  for (let i = 0; i < n; i += 1) {
+    stageSupabaseResponse("messages", "update", { error: null });
+  }
+}
+
 const ENV_KEYS = [
   "SENDGRID_API_KEY",
   "SENDGRID_FROM_EMAIL",
@@ -119,7 +106,7 @@ describe("POST /email/sendgrid-events", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
-    executeMock.mockClear();
+    supabaseMock.reset();
     safeAuditMock.mockClear();
   });
   afterEach(() => {
@@ -144,13 +131,14 @@ describe("POST /email/sendgrid-events", () => {
       .send(body);
 
     expect(res.status).toBe(401);
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("messages", "update")).toBe(0);
     expect(safeAuditMock).not.toHaveBeenCalled();
   });
 
   it("accepts a validly-signed batch and UPDATEs the matching messages row (delivered)", async () => {
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
+    stageMessageUpdates(1);
 
     const ts = "1810000000";
     const body = JSON.stringify([
@@ -172,13 +160,14 @@ describe("POST /email/sendgrid-events", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(executeMock).toHaveBeenCalledTimes(1);
-    // The first arg is a drizzle SQL chunk — its .queryChunks include
-    // the bound parameters. Stringify and assert on the substring.
-    const sqlArg = executeMock.mock.calls[0]![0];
-    const stringified = JSON.stringify(sqlArg);
-    expect(stringified).toContain("delivered");
-    expect(stringified).toContain("sg.msg.delivered.1");
+    expect(getSupabaseCallCount("messages", "update")).toBe(1);
+    const updates = getSupabaseWritePayloads(
+      "messages",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates[0]?.delivery_status).toBe("delivered");
+    // The 'delivered' branch also bumps delivered_at as an ISO string.
+    expect(typeof updates[0]?.delivered_at).toBe("string");
   });
 
   it.each([
@@ -192,6 +181,7 @@ describe("POST /email/sendgrid-events", () => {
     async ({ event, expectedStatus }) => {
       const { publicKeyBase64, privateKeyPem } = freshKeyPair();
       setBaseEnv(publicKeyBase64);
+      stageMessageUpdates(1);
 
       const ts = "1810000001";
       const body = JSON.stringify([
@@ -215,10 +205,12 @@ describe("POST /email/sendgrid-events", () => {
         .send(body);
 
       expect(res.status).toBe(200);
-      expect(executeMock).toHaveBeenCalledTimes(1);
-      const stringified = JSON.stringify(executeMock.mock.calls[0]![0]);
-      expect(stringified).toContain(expectedStatus);
-      expect(stringified).toContain(`sg.msg.${event}.1`);
+      expect(getSupabaseCallCount("messages", "update")).toBe(1);
+      const update = getSupabaseWritePayloads(
+        "messages",
+        "update",
+      )[0] as Record<string, unknown>;
+      expect(update.delivery_status).toBe(expectedStatus);
 
       // bounce + dropped also write an audit row.
       if (event === "bounce" || event === "dropped") {
@@ -249,7 +241,7 @@ describe("POST /email/sendgrid-events", () => {
       .send("some plain text");
 
     expect(res.status).toBe(400);
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("messages", "update")).toBe(0);
   });
 
   it("returns 400 when body is invalid (wrong schema) despite a valid signature", async () => {
@@ -272,7 +264,7 @@ describe("POST /email/sendgrid-events", () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: "parse_failed" });
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("messages", "update")).toBe(0);
   });
 
   it("rejects a tampered body with the original valid signature (401)", async () => {
@@ -295,15 +287,10 @@ describe("POST /email/sendgrid-events", () => {
       .send(tamperedBody);
 
     expect(res.status).toBe(401);
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("messages", "update")).toBe(0);
   });
 
   it("returns 400 for a validly-signed request with non-JSON Content-Type (text/plain)", async () => {
-    // When Content-Type is not application/json, express.raw() does not
-    // populate req.body as a Buffer, so the signature middleware has no
-    // raw bytes to verify against and rejects the request with 400.
-    // This ensures that a non-JSON SendGrid request is never silently
-    // accepted (which would suppress retries and lose the event batch).
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
 
@@ -322,18 +309,16 @@ describe("POST /email/sendgrid-events", () => {
       .send(body);
 
     expect(res.status).toBe(400);
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("messages", "update")).toBe(0);
   });
 
   it("returns 400 (not 200) for a validly-signed request with invalid JSON body", async () => {
-    // B-12: parse failures must return 400 so SendGrid retries the
-    // event batch instead of treating a 200 as successful delivery.
+    // Parse failures must return 400 so SendGrid retries the event
+    // batch instead of treating a 200 as successful delivery.
     const { publicKeyBase64, privateKeyPem } = freshKeyPair();
     setBaseEnv(publicKeyBase64);
 
     const ts = "1810000004";
-    // Content-Type is application/json so express.raw() captures the
-    // body as a Buffer; the signature is valid over these exact bytes.
     const invalidJsonBody = "{ this is not valid JSON !!!";
     const sig = signBody(privateKeyPem, ts, invalidJsonBody);
 
@@ -347,7 +332,6 @@ describe("POST /email/sendgrid-events", () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: "parse_failed" });
-    // No DB updates must occur when the body is unparseable.
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("messages", "update")).toBe(0);
   });
 });

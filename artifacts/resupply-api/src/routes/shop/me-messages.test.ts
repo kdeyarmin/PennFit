@@ -20,6 +20,14 @@ import {
   makeRequireSignedInMock,
   type MockSignedInProfile,
 } from "../../test-helpers/auth-mocks";
+import { installSupabaseMock } from "../../test-helpers/supabase-mock";
+
+// Install the shared Supabase stub so any code path the route pulls
+// in transitively (audit log, ensureShopCustomerRow, etc.) gets a
+// no-op client instead of attempting a real PostgREST round-trip.
+// All meaningful DB work in this suite happens through the mocked
+// `in-app-conversation` helper below.
+installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: {
@@ -87,13 +95,6 @@ vi.mock("../../lib/messaging/in-app-conversation", async () => {
     markInAppThreadRead: markInAppThreadReadMock,
     appendCustomerMessage: appendCustomerMessageMock,
   };
-});
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
 });
 
 // SendGrid notification — Phase 6. The test toggles

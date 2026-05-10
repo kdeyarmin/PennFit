@@ -1,12 +1,14 @@
 // withIdempotency middleware unit tests.
 //
-// These tests use an in-memory stand-in for the idempotency_keys
-// table so we can exercise the lookup / replay / mismatch / expired
-// paths without spinning up Postgres. The middleware reads the table
-// via `drizzle(getDbPool()).select()` and writes via `.insert()` —
-// both go through the `db` shape that we mock here. The same shape
-// is used by the existing patients/list.test.ts so this pattern is
-// familiar.
+// Uses an in-memory stand-in for the idempotency_keys table so we can
+// exercise the lookup / replay / mismatch / expired paths without
+// spinning up Postgres. The middleware reads the table via Supabase's
+// `.schema("resupply").from("idempotency_keys").select(...).maybeSingle()`
+// and writes via `.upsert(...)` — both go through a `getSupabaseServiceRoleClient`
+// stub installed below. The stub is stateful (the upsert path in
+// request A must be visible to the SELECT in request B for replay
+// tests to be meaningful), so it keeps a `Map` keyed by the composite
+// PK `(user_id, endpoint, key)`.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, {
@@ -17,155 +19,97 @@ import express, {
 } from "express";
 import request from "supertest";
 
-// In-memory store shared across the mocked db calls within one test.
+// In-memory store keyed by `${user_id}|${endpoint}|${key}`. Holds the
+// row shape PostgREST would return on a `select()` (snake_case
+// columns). The middleware stores `request_hash` as a Buffer →
+// `bufferToHexBytea` produces the `\x<hex>` JSON string we get back.
 type StoredRow = {
-  userId: string;
+  user_id: string;
   endpoint: string;
   key: string;
-  requestHash: Buffer;
-  responseStatus: number;
-  responseBody: unknown;
-  expiresAt: Date;
+  request_hash: string;
+  response_status: number;
+  response_body: unknown;
+  expires_at: string;
 };
-let store: StoredRow[] = [];
-// Pending filter state captured by select().from().where(...) so the
-// fluent terminal call can apply it.
-let selectFilter: ((row: StoredRow) => boolean) | null = null;
-// Holds the last where()-filter object for an UPDATE-style call. We
-// don't need it for these tests since onConflictDoUpdate handles
-// upserts, but the var keeps the fluent shape symmetric.
-
-function fluentSelect(rows: StoredRow[]): unknown {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: (predicate: unknown) => {
-      // The middleware passes a Drizzle SQL object built from
-      // `and(eq(...), eq(...), eq(...))`. We don't try to introspect
-      // that — the test stub's `eq`/`and` mocks (below) capture the
-      // expected (userId, endpoint, key) tuple in `selectFilter`
-      // for us.
-      void predicate;
-      return obj;
-    },
-    limit: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(selectFilter ? rows.filter(selectFilter) : rows).then(
-        (filtered) => {
-          selectFilter = null;
-          return resolve(filtered);
-        },
-        reject,
-      ),
-  };
-  return obj;
+const store = new Map<string, StoredRow>();
+function rowKey(userId: string, endpoint: string, key: string): string {
+  return `${userId}|${endpoint}|${key}`;
 }
 
-function fluentInsert(): unknown {
-  let pendingValues: Partial<StoredRow> | null = null;
-  let upsert = false;
-  let upsertSet: Partial<StoredRow> | null = null;
-  const obj: Record<string, unknown> = {
-    values: (v: Partial<StoredRow>) => {
-      pendingValues = v;
-      return obj;
-    },
-    onConflictDoUpdate: (cfg: { set: Partial<StoredRow> }) => {
-      upsert = true;
-      upsertSet = cfg.set;
-      return obj;
-    },
-    then: (
-      resolve: (v: unknown) => unknown,
-      reject: (e: unknown) => unknown,
-    ) => {
-      try {
-        if (!pendingValues) throw new Error("insert without values");
-        const idx = store.findIndex(
-          (r) =>
-            r.userId === pendingValues!.userId &&
-            r.endpoint === pendingValues!.endpoint &&
-            r.key === pendingValues!.key,
-        );
-        if (idx >= 0) {
-          if (upsert) {
-            store[idx] = {
-              ...store[idx],
-              ...(upsertSet as Partial<StoredRow>),
-              userId: store[idx].userId,
-              endpoint: store[idx].endpoint,
-              key: store[idx].key,
-            };
-          }
-          // No-op without onConflictDoUpdate.
-        } else {
-          store.push({
-            userId: pendingValues.userId!,
-            endpoint: pendingValues.endpoint!,
-            key: pendingValues.key!,
-            requestHash: pendingValues.requestHash!,
-            responseStatus: pendingValues.responseStatus!,
-            responseBody: pendingValues.responseBody,
-            expiresAt: pendingValues.expiresAt!,
-          });
-        }
-        return Promise.resolve(undefined).then(resolve, reject);
-      } catch (err) {
-        return Promise.resolve(undefined).then(() => reject(err));
+// Builder factory. Locks the op on the first verb (matching
+// supabase-js's behaviour: `update().select()` is RETURNING; the
+// trailing select is decoration).
+function makeBuilder() {
+  let op: "select" | "upsert" | null = null;
+  let pendingFilter: { user_id?: string; endpoint?: string; key?: string } = {};
+  let pendingPayload: Partial<StoredRow> | null = null;
+
+  const settle = async (): Promise<{ data: unknown; error: unknown }> => {
+    if (op === "select") {
+      const { user_id, endpoint, key } = pendingFilter;
+      if (!user_id || !endpoint || !key) {
+        return { data: null, error: null };
       }
+      const row = store.get(rowKey(user_id, endpoint, key));
+      return { data: row ?? null, error: null };
+    }
+    if (op === "upsert") {
+      if (!pendingPayload) return { data: null, error: null };
+      const { user_id, endpoint, key } = pendingPayload;
+      if (!user_id || !endpoint || !key) {
+        return {
+          data: null,
+          error: new Error("upsert payload missing PK columns"),
+        };
+      }
+      // PostgREST upsert with onConflict on the composite PK behaves
+      // as INSERT-or-REPLACE — store the full new payload.
+      store.set(rowKey(user_id, endpoint, key), pendingPayload as StoredRow);
+      return { data: null, error: null };
+    }
+    return { data: null, error: null };
+  };
+
+  const builder: Record<string, unknown> = {
+    select: () => {
+      if (op === null) op = "select";
+      return builder;
     },
-  };
-  return obj;
-}
-
-const dbStub = {
-  select: vi.fn(() => fluentSelect(store)),
-  insert: vi.fn(() => fluentInsert()),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-// Mock the eq() and and() helpers used by the middleware so we can
-// derive the (userId, endpoint, key) filter from the call args.
-// Drizzle's actual `and` returns an opaque SQL object; we replace it
-// with a plain function that captures the filter.
-vi.mock("drizzle-orm", async () => {
-  const actual =
-    await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
-  const eqMock = (col: { name?: string } | unknown, val: unknown) => ({
-    __eq: true,
-    col: (col as { name?: string }).name ?? String(col),
-    val,
-  });
-  const andMock = (...preds: Array<{ col?: string; val?: unknown }>) => {
-    selectFilter = (row: StoredRow) => {
-      const lookup: Record<string, unknown> = {
-        user_id: row.userId,
-        endpoint: row.endpoint,
-        key: row.key,
+    upsert: (values: Partial<StoredRow>, _opts?: unknown) => {
+      op = "upsert";
+      pendingPayload = values;
+      return builder;
+    },
+    eq: (col: string, val: unknown) => {
+      pendingFilter = {
+        ...pendingFilter,
+        [col]: typeof val === "string" ? val : String(val),
       };
-      return preds.every((p) => {
-        if (!p || typeof p !== "object" || p.col === undefined) return true;
-        return lookup[p.col as string] === p.val;
-      });
-    };
-    return { __and: true };
+      return builder;
+    },
+    limit: () => builder,
+    maybeSingle: () => settle(),
+    single: () => settle(),
+    then: (
+      onfulfilled: (v: unknown) => unknown,
+      onrejected?: (e: unknown) => unknown,
+    ) => settle().then(onfulfilled, onrejected),
   };
-  return {
-    ...actual,
-    eq: eqMock,
-    and: andMock,
-  };
-});
+  return builder;
+}
 
 vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
+  const actual = await vi.importActual<
+    typeof import("@workspace/resupply-db")
+  >("@workspace/resupply-db");
   return {
     ...actual,
-    getDbPool: () => ({}) as never,
+    getSupabaseServiceRoleClient: () => ({
+      schema: () => ({
+        from: () => makeBuilder(),
+      }),
+    }),
   };
 });
 
@@ -197,10 +141,7 @@ function makeApp(handlerImpl?: (req: Request, res: Response) => void): Express {
 
 describe("withIdempotency middleware", () => {
   beforeEach(() => {
-    store = [];
-    selectFilter = null;
-    dbStub.select.mockClear();
-    dbStub.insert.mockClear();
+    store.clear();
   });
 
   it("passes through when no Idempotency-Key header is supplied", async () => {
@@ -212,8 +153,7 @@ describe("withIdempotency middleware", () => {
     // Two separate handler runs → two distinct ids.
     expect(a.body.id).not.toBe(b.body.id);
     // Lookup never consulted, persistence never attempted.
-    expect(dbStub.select).not.toHaveBeenCalled();
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(store.size).toBe(0);
   });
 
   it("replays the stored 2xx response on a key+body match", async () => {
@@ -230,9 +170,9 @@ describe("withIdempotency middleware", () => {
     expect(a.status).toBe(201);
     expect(a.body).toEqual({ id: "patient_1", echo: { name: "Ada" } });
 
-    // Allow `res.on("finish")` listener to flush the persistence insert.
+    // Allow `res.on("finish")` listener to flush the persistence upsert.
     await new Promise((r) => setImmediate(r));
-    expect(store).toHaveLength(1);
+    expect(store.size).toBe(1);
 
     const b = await request(app)
       .post("/echo")
@@ -295,7 +235,7 @@ describe("withIdempotency middleware", () => {
       .send({ x: 1 });
     expect(r.status).toBe(409);
     await new Promise((r) => setImmediate(r));
-    expect(store).toHaveLength(0);
+    expect(store.size).toBe(0);
   });
 
   it("treats expired rows as a miss and overwrites them", async () => {
@@ -306,14 +246,17 @@ describe("withIdempotency middleware", () => {
     });
     const key = "abcdef-12345-stale";
     // Pre-seed a stale row so the first request sees it as expired.
-    store.push({
-      userId: "user_admin",
+    // request_hash is stored as the hex-bytea JSON string; an all-FFs
+    // hash forces a body mismatch, and the past expires_at marks it
+    // stale so the middleware falls through to the handler.
+    store.set(rowKey("user_admin", ENDPOINT, key), {
+      user_id: "user_admin",
       endpoint: ENDPOINT,
       key,
-      requestHash: Buffer.alloc(32, 0xff),
-      responseStatus: 201,
-      responseBody: { id: "stale_patient" },
-      expiresAt: new Date(Date.now() - 1000),
+      request_hash: `\\x${"ff".repeat(32)}`,
+      response_status: 201,
+      response_body: { id: "stale_patient" },
+      expires_at: new Date(Date.now() - 1000).toISOString(),
     });
     const r = await request(app)
       .post("/echo")
@@ -324,8 +267,9 @@ describe("withIdempotency middleware", () => {
     expect(counter).toBe(1);
     await new Promise((r) => setImmediate(r));
     // Row was overwritten in place.
-    expect(store).toHaveLength(1);
-    expect(store[0].responseBody).toEqual({ id: "patient_1" });
+    expect(store.size).toBe(1);
+    const stored = store.get(rowKey("user_admin", ENDPOINT, key))!;
+    expect(stored.response_body).toEqual({ id: "patient_1" });
   });
 
   it("rejects keys that are too short", async () => {
@@ -356,7 +300,7 @@ describe("withIdempotency middleware", () => {
     expect(a.body).toEqual({ id: "patient_1", via: "send" });
 
     await new Promise((r) => setImmediate(r));
-    expect(store).toHaveLength(1);
+    expect(store.size).toBe(1);
 
     const b = await request(app)
       .post("/echo")
@@ -383,8 +327,9 @@ describe("withIdempotency middleware", () => {
     expect(a.status).toBe(200);
 
     await new Promise((r) => setImmediate(r));
-    expect(store).toHaveLength(1);
-    expect(store[0]!.responseBody).toBeNull();
+    expect(store.size).toBe(1);
+    const stored = store.get(rowKey("user_admin", ENDPOINT, key))!;
+    expect(stored.response_body).toBeNull();
 
     const b = await request(app)
       .post("/echo")
@@ -414,10 +359,6 @@ describe("withIdempotency middleware", () => {
     // Covers the patchedSend capture path: handlers that call res.send()
     // directly (e.g. with a pre-serialised JSON string) must also be
     // captured so a retry does not re-execute the handler.
-    // Note: res.send(str) makes Express set Content-Type: text/html, so
-    // supertest parses the original response as text. The stored body is
-    // the JSON.parsed object. The replay comes back via res.json() with
-    // Content-Type: application/json so supertest parses it correctly.
     let counter = 0;
     const app = makeApp((_req, res) => {
       counter += 1;
@@ -425,7 +366,7 @@ describe("withIdempotency middleware", () => {
         .status(201)
         .send(JSON.stringify({ id: `patient_send_${counter}`, source: "send" }));
     });
-    const key = "abcdef-12345-send-path";
+    const key = "abcdef-12345-send-json";
 
     const a = await request(app)
       .post("/echo")
@@ -435,11 +376,12 @@ describe("withIdempotency middleware", () => {
     // Express sets text/html for res.send(str); check raw text, not parsed body.
     expect(a.text).toContain("patient_send_1");
 
-    // Flush the finish listener so the persistence insert runs.
+    // Flush the finish listener so the persistence upsert runs.
     await new Promise((r) => setImmediate(r));
-    expect(store).toHaveLength(1);
+    expect(store.size).toBe(1);
     // The middleware JSON.parses the string body before storing it.
-    expect(store[0].responseBody).toEqual({
+    const stored = store.get(rowKey("user_admin", ENDPOINT, key))!;
+    expect(stored.response_body).toEqual({
       id: "patient_send_1",
       source: "send",
     });
@@ -465,7 +407,7 @@ describe("withIdempotency middleware", () => {
       counter += 1;
       res.status(200).end();
     });
-    const key = "abcdef-12345-end-path";
+    const key = "abcdef-12345-end-empty";
 
     const a = await request(app)
       .post("/echo")
@@ -474,10 +416,11 @@ describe("withIdempotency middleware", () => {
     expect(a.status).toBe(200);
 
     await new Promise((r) => setImmediate(r));
-    expect(store).toHaveLength(1);
+    expect(store.size).toBe(1);
+    const stored = store.get(rowKey("user_admin", ENDPOINT, key))!;
     // res.end() with no prior capture stores null as the body.
-    expect(store[0].responseBody).toBeNull();
-    expect(store[0].responseStatus).toBe(200);
+    expect(stored.response_body).toBeNull();
+    expect(stored.response_status).toBe(200);
 
     const b = await request(app)
       .post("/echo")

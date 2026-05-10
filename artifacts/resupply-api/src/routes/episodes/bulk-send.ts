@@ -24,7 +24,7 @@ import { Router, type IRouter, type Request } from "express";
 import expressRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   sendReminderSms,
   sendReminderEmail,
@@ -104,13 +104,15 @@ router.post("/episodes/bulk-send", requireAdmin, bulkSendLimiter, async (req, re
   // ids don't appear in the result will be reported as
   // `episode_not_found` per-id below — the bulk endpoint deliberately
   // does NOT 404 the whole request just because one id was bogus.
-  const pool = getDbPool();
-  const lookup = await pool.query<{ id: string; patient_id: string }>(
-    "SELECT id, patient_id FROM resupply.episodes WHERE id = ANY($1::uuid[])",
-    [episodeIds],
-  );
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: lookupRows, error: lookupErr } = await supabase
+    .schema("resupply")
+    .from("episodes")
+    .select("id, patient_id")
+    .in("id", episodeIds);
+  if (lookupErr) throw lookupErr;
   const patientByEpisode = new Map<string, string>();
-  for (const row of lookup.rows) {
+  for (const row of lookupRows ?? []) {
     patientByEpisode.set(row.id, row.patient_id);
   }
 
@@ -140,7 +142,7 @@ router.post("/episodes/bulk-send", requireAdmin, bulkSendLimiter, async (req, re
     try {
       if (channel === "sms") {
         outcome = await sendReminderSms({
-          pool,
+          supabase,
           cfg: {
             twilioAccountSid: cfg.sms.twilioAccountSid,
             twilioAuthToken: cfg.sms.twilioAuthToken,
@@ -155,7 +157,7 @@ router.post("/episodes/bulk-send", requireAdmin, bulkSendLimiter, async (req, re
         });
       } else {
         outcome = await sendReminderEmail({
-          pool,
+          supabase,
           cfg: {
             sendgridApiKey: cfg.email.sendgridApiKey,
             sendgridFromEmail: cfg.email.sendgridFromEmail,

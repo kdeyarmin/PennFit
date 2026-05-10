@@ -1,28 +1,34 @@
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
 import { logger } from "./logger";
+import { isWorkerReady } from "../worker/index.js";
 
 // What "ready" means for the resupply API:
 //
-//   db    — Postgres is reachable AND accepting queries from this
-//           process's connection pool. Anything admin-facing fails
-//           if the DB is down, so this is a hard requirement.
+//   db    — Supabase PostgREST is reachable AND accepting queries from
+//           this process. Anything admin-facing fails if the DB is
+//           down, so this is a hard requirement. We probe by issuing a
+//           HEAD request against `resupply.audit_log` through the
+//           service-role client (`select("id", { head: true })`, no
+//           count) — that exercises the same PostgREST path every
+//           other request travels through without paying for a row
+//           scan, so a network/auth/schema regression surfaces here
+//           before it hits a route handler.
+//
 //   queue — pg-boss has bootstrapped its schema. pg-boss boots
 //           in-process at startup (see src/worker/index.ts; the
 //           formerly-separate resupply-worker artifact was folded
 //           into this process so a single deploy gates on a single
-//           healthz). We still probe the schema rather than checking
-//           an in-memory `workerReady` flag because the schema is
-//           the cross-process contract: any future tool that probes
-//           "is the queue alive?" can run this same check without
-//           reaching into our process state.
+//           healthz). The worker exposes an `isWorkerReady()` flag
+//           that flips true once `boss.start()` has returned and
+//           every job handler has been registered — that's the same
+//           "queue is ready" signal the schema probe used to give us,
+//           with no DB round-trip required.
 //
-// Each check is wrapped in a per-check timeout so a wedged dependency
-// can't stall the readiness probe past the deploy gate's own
-// timeout. The aggregate check is bounded by the slowest individual
-// check, never the sum.
+// The DB check is wrapped in a per-check timeout so a wedged dependency
+// can't stall the readiness probe past the deploy gate's own timeout.
 
 const CHECK_TIMEOUT_MS = 1_500;
-const PGBOSS_SCHEMA = "pgboss_resupply";
 
 export type CheckStatus = "ok" | "failed";
 
@@ -62,17 +68,17 @@ function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
 
 // Categorize a thrown error into one of a small set of safe-to-expose
 // labels. Anything we don't recognize collapses to "unavailable" so
-// we never echo raw driver text back over the wire.
+// we never echo raw driver / PostgREST text back over the wire.
 function categorize(err: unknown): string {
   if (err instanceof Error) {
     if (/timed out/i.test(err.message)) return "timeout";
-    // node-postgres wraps libpq errors with a `code` property for
-    // Postgres SQLSTATE values. We don't surface the SQLSTATE
-    // itself — we just bucket common dev-mode failures.
     const code = (err as { code?: string }).code;
     if (code === "ECONNREFUSED") return "connection_refused";
     if (code === "ENOTFOUND") return "host_not_found";
     if (code === "ETIMEDOUT") return "timeout";
+    // PostgREST surfaces Postgres SQLSTATE values on the error object
+    // when the server reaches the database but the database itself is
+    // unhealthy.
     if (code === "57P03") return "database_starting_up";
     if (code === "3D000") return "database_does_not_exist";
   }
@@ -80,36 +86,43 @@ function categorize(err: unknown): string {
 }
 
 async function checkDb(): Promise<void> {
-  const pool = getDbPool();
-  await withTimeout(pool.query("SELECT 1"), "db check");
+  // `head: true` makes PostgREST emit a HEAD with no row payload. We
+  // don't ask for `count: "exact"` — that would force PostgREST to
+  // run a `COUNT(*)` over `resupply.audit_log` regardless of the
+  // limit clause, and audit_log is append-only (it grows unbounded
+  // for the lifetime of the deploy). The bare `head + limit(1)` is
+  // enough to confirm the database is responding and the
+  // service-role JWT still validates against it.
+  // The supabase-js PostgrestBuilder is a PromiseLike, so we lift it
+  // into a real Promise via Promise.resolve before composing with the
+  // withTimeout race wrapper.
+  const supabase = getSupabaseServiceRoleClient();
+  const { error } = await withTimeout(
+    Promise.resolve(
+      supabase
+        .schema("resupply")
+        .from("audit_log")
+        .select("id", { head: true })
+        .limit(1),
+    ),
+    "db check",
+  );
+  if (error) throw error;
 }
 
-async function checkQueue(): Promise<void> {
-  const pool = getDbPool();
-  // pg-boss creates its `version` table on `boss.start()`. If the row
-  // count is zero, the worker has not finished bootstrapping yet
-  // (or is down) — treat that as queue-unready rather than queue-ok.
-  // We use a parameterized query so the schema name is bound, not
-  // string-concatenated, even though it's a constant — habit.
-  const result = await withTimeout(
-    pool.query<{ exists: boolean }>(
-      "SELECT EXISTS (" +
-        "  SELECT 1 FROM information_schema.tables" +
-        "  WHERE table_schema = $1 AND table_name = 'version'" +
-        ") AS exists",
-      [PGBOSS_SCHEMA],
-    ),
-    "queue check",
-  );
-  if (!result.rows[0]?.exists) {
-    throw Object.assign(new Error("pg-boss schema not initialized"), {
-      code: "SCHEMA_MISSING",
+function checkQueue(): void {
+  if (!isWorkerReady()) {
+    throw Object.assign(new Error("pg-boss not ready"), {
+      code: "WORKER_NOT_READY",
     });
   }
 }
 
 export async function checkReadiness(): Promise<ReadinessResult> {
-  const [db, queue] = await Promise.allSettled([checkDb(), checkQueue()]);
+  const [db, queue] = await Promise.allSettled([
+    checkDb(),
+    Promise.resolve().then(() => checkQueue()),
+  ]);
 
   const checks: ReadinessResult["checks"] = {
     db: db.status === "fulfilled" ? "ok" : "failed",
@@ -120,16 +133,11 @@ export async function checkReadiness(): Promise<ReadinessResult> {
   if (db.status === "rejected") {
     errors.db = categorize(db.reason);
     // Log only the categorized failure mode — never the raw error.
-    // node-postgres error.message routinely includes connection-string
-    // fragments ("password authentication failed for user X on host
-    // Y", "database X does not exist"). The HTTP body redaction is
-    // already proven by the integration test; this keeps the
-    // admin-readable log stream equally clean. Treat every log
-    // line as world-readable.
+    // Treat every log line as world-readable.
     logger.warn({ errCategory: errors.db }, "readiness: db check failed");
   }
   if (queue.status === "rejected") {
-    if ((queue.reason as { code?: string })?.code === "SCHEMA_MISSING") {
+    if ((queue.reason as { code?: string })?.code === "WORKER_NOT_READY") {
       errors.queue = "schema_not_initialized";
     } else {
       errors.queue = categorize(queue.reason);

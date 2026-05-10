@@ -19,6 +19,13 @@ import {
   makeRequireSignedInMock,
   type MockSignedInRef,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as MockSignedInRef["current"] },
@@ -26,44 +33,6 @@ const { mockSignedIn } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
-
-const selectQueue: unknown[][] = [];
-const updateReturnQueue: unknown[][] = [];
-const updateSets: Record<string, unknown>[] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      innerJoin: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: (vals: Record<string, unknown>) => {
-        updateSets.push(vals);
-        return obj;
-      },
-      where: () => obj,
-      returning: () => Promise.resolve(updateReturnQueue.shift() ?? []),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import meInsightsRouter from "./me-insights";
 
@@ -78,9 +47,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockSignedIn.current = null;
-  selectQueue.length = 0;
-  updateReturnQueue.length = 0;
-  updateSets.length = 0;
+  supabaseMock.reset();
 });
 
 describe("GET /shop/me/insights", () => {
@@ -91,7 +58,7 @@ describe("GET /shop/me/insights", () => {
 
   it("returns empty array when no email is attached to the session", async () => {
     mockSignedIn.current = USER_ID;
-    // No selectQueue push — handler short-circuits before query.
+    // No stage — handler short-circuits before query.
     const res = await request(makeApp()).get("/shop/me/insights");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ insights: [] });
@@ -102,7 +69,7 @@ describe("GET /shop/me/insights", () => {
       customerId: USER_ID,
       email: "alice@example.com",
     };
-    selectQueue.push([]);
+    stageSupabaseResponse("patients", "select", { data: [] });
     const res = await request(makeApp()).get("/shop/me/insights");
     expect(res.status).toBe(200);
     expect(res.body.insights).toEqual([]);
@@ -114,10 +81,9 @@ describe("GET /shop/me/insights", () => {
       email: "shared@example.com",
     };
     // Simulate two patient rows with the same email.
-    selectQueue.push([
-      { patientId: "patient_a" },
-      { patientId: "patient_b" },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient_a" }, { id: "patient_b" }],
+    });
     const res = await request(makeApp()).get("/shop/me/insights");
     expect(res.status).toBe(200);
     expect(res.body.insights).toEqual([]);
@@ -129,26 +95,30 @@ describe("GET /shop/me/insights", () => {
       email: "alice@example.com",
     };
     // First select: patient lookup returns one row.
-    selectQueue.push([{ patientId: "patient_alice" }]);
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient_alice" }],
+    });
     // Second select: events for that patient.
-    selectQueue.push([
-      {
-        id: "evt_leak",
-        kind: "leak_rising",
-        detectedAt: new Date("2026-04-30T12:00:00Z"),
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-30",
-        sentAt: new Date("2026-04-30T13:00:00Z"),
-      },
-      {
-        id: "evt_use",
-        kind: "usage_dropping",
-        detectedAt: new Date("2026-04-29T12:00:00Z"),
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-29",
-        sentAt: null,
-      },
-    ]);
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [
+        {
+          id: "evt_leak",
+          kind: "leak_rising",
+          detected_at: new Date("2026-04-30T12:00:00Z").toISOString(),
+          window_start_date: "2026-04-15",
+          window_end_date: "2026-04-30",
+          sent_at: new Date("2026-04-30T13:00:00Z").toISOString(),
+        },
+        {
+          id: "evt_use",
+          kind: "usage_dropping",
+          detected_at: new Date("2026-04-29T12:00:00Z").toISOString(),
+          window_start_date: "2026-04-15",
+          window_end_date: "2026-04-29",
+          sent_at: null,
+        },
+      ],
+    });
     const res = await request(makeApp()).get("/shop/me/insights");
     expect(res.status).toBe(200);
     expect(res.body.insights).toHaveLength(2);
@@ -172,19 +142,21 @@ describe("GET /shop/me/insights", () => {
       customerId: USER_ID,
       email: "alice@example.com",
     };
-    // First select: patient lookup returns one row.
-    selectQueue.push([{ patientId: "patient_alice" }]);
-    // Second select: events for that patient.
-    selectQueue.push([
-      {
-        id: "evt_leak",
-        kind: "leak_rising",
-        detectedAt: new Date("2026-04-30T12:00:00Z"),
-        windowStartDate: "2026-04-15",
-        windowEndDate: "2026-04-30",
-        sentAt: new Date("2026-04-30T13:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient_alice" }],
+    });
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [
+        {
+          id: "evt_leak",
+          kind: "leak_rising",
+          detected_at: new Date("2026-04-30T12:00:00Z").toISOString(),
+          window_start_date: "2026-04-15",
+          window_end_date: "2026-04-30",
+          sent_at: new Date("2026-04-30T13:00:00Z").toISOString(),
+        },
+      ],
+    });
     const res = await request(makeApp()).get("/shop/me/insights");
     const json = JSON.stringify(res.body);
     // None of the detection inputs ever leak.
@@ -228,19 +200,25 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
       email: "alice@example.com",
     };
     // Patient lookup resolves to exactly one row (unambiguous).
-    selectQueue.push([{ id: PATIENT_ID }]);
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
     // UPDATE … RETURNING [] → not-our-row OR already-dismissed; we
     // collapse both into a 404 so an attacker can't enumerate IDs.
-    updateReturnQueue.push([]);
+    stageSupabaseResponse("patient_smart_trigger_events", "update", {
+      data: [],
+    });
     const res = await request(makeApp()).post(
       `/shop/me/insights/${DISMISS_ID}/dismiss`,
     );
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("insight_not_found");
     // Set was attempted (the WHERE filtered it out, not the SET).
-    expect(updateSets).toHaveLength(1);
-    expect(updateSets[0]?.dismissedAt).toBeInstanceOf(Date);
-    expect(updateSets[0]?.dismissedByEmail).toBe("alice@example.com");
+    const updates = getSupabaseWritePayloads(
+      "patient_smart_trigger_events",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates).toHaveLength(1);
+    expect(typeof updates[0]?.dismissed_at).toBe("string");
+    expect(updates[0]?.dismissed_by_email).toBe("alice@example.com");
   });
 
   it("returns ok + audits when the row matches", async () => {
@@ -249,16 +227,22 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
       email: "Alice@Example.com",
     };
     // Patient lookup resolves to exactly one row (unambiguous).
-    selectQueue.push([{ id: PATIENT_ID }]);
-    updateReturnQueue.push([{ id: DISMISS_ID }]);
+    stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
+    stageSupabaseResponse("patient_smart_trigger_events", "update", {
+      data: [{ id: DISMISS_ID }],
+    });
     const res = await request(makeApp()).post(
       `/shop/me/insights/${DISMISS_ID}/dismiss`,
     );
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(updateSets).toHaveLength(1);
+    const updates = getSupabaseWritePayloads(
+      "patient_smart_trigger_events",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(updates).toHaveLength(1);
     // Email is normalized to lowercase before stamping audit.
-    expect(updateSets[0]?.dismissedByEmail).toBe("alice@example.com");
+    expect(updates[0]?.dismissed_by_email).toBe("alice@example.com");
   });
 
   it("404s when the email matches more than one patient (ambiguous)", async () => {
@@ -268,12 +252,18 @@ describe("POST /shop/me/insights/:id/dismiss (Phase G.5)", () => {
     };
     // Two patients share the same email → ambiguous → bail without
     // attempting the UPDATE.
-    selectQueue.push([{ id: "patient_1" }, { id: "patient_2" }]);
+    stageSupabaseResponse("patients", "select", {
+      data: [{ id: "patient_1" }, { id: "patient_2" }],
+    });
     const res = await request(makeApp()).post(
       `/shop/me/insights/${DISMISS_ID}/dismiss`,
     );
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("insight_not_found");
-    expect(updateSets).toHaveLength(0);
+    const updates = getSupabaseWritePayloads(
+      "patient_smart_trigger_events",
+      "update",
+    );
+    expect(updates).toHaveLength(0);
   });
 });

@@ -21,43 +21,12 @@ vi.mock("@workspace/resupply-telecom", async () => {
   };
 });
 
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    set: () => obj,
-    values: () => obj,
-    orderBy: () => obj,
-    onConflictDoUpdate: () => Promise.resolve(undefined),
-    onConflictDoNothing: () => Promise.resolve(undefined),
-    limit: () => Promise.resolve(result),
-    returning: () => Promise.resolve(result),
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const insertQueue: unknown[] = [];
-const updateQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-  insert: vi.fn(() => fluent(insertQueue.shift() ?? [])),
-  update: vi.fn(() => fluent(updateQueue.shift() ?? undefined)),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
 
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 const logAuditMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -73,8 +42,7 @@ vi.mock("../../lib/messaging/order-flow", () => ({
 
 // MMS ingestion — mocked at the module boundary so the route test
 // can assert "we called ingest with the right shape" without
-// stubbing fetch + GCS in here too (those concerns live in
-// ingest-mms.test.ts).
+// stubbing fetch + GCS in here too.
 const ingestMmsMock = vi.fn().mockResolvedValue({
   attempted: 0,
   succeeded: 0,
@@ -126,13 +94,32 @@ function setMessagingEnv(): void {
 
 const FROM_PHONE = "+12155551212";
 
+// Stage the standard "known patient → existing conversation"
+// supabase response sequence the dispatch path expects:
+//   1. patients SELECT (phone_lookup hit)
+//   2. messages SELECT (sid_dedup miss)
+//   3. conversations SELECT (open thread)
+//   4. messages INSERT (inbound)
+//   5. conversations UPDATE (last_message_at stamp) — null/no-error
+// Everything beyond that (outbound reply insert, conversation close,
+// AI thread fetch) is unstaged so the mock returns the default
+// { data: null, error: null } envelope, which the route tolerates.
+function stageKnownPatientFlow(): void {
+  stageSupabaseResponse("patients", "select", { data: [{ id: PATIENT_ID }] });
+  stageSupabaseResponse("messages", "select", { data: null });
+  stageSupabaseResponse("conversations", "select", {
+    data: { id: CONVERSATION_ID },
+  });
+  stageSupabaseResponse("messages", "insert", {
+    data: { id: "44444444-4444-4444-8444-444444444444" },
+  });
+}
+
 describe("POST /sms/inbound", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
-    selectQueue.length = 0;
-    insertQueue.length = 0;
-    updateQueue.length = 0;
+    supabaseMock.reset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
     placeOrderMock.mockReset();
     pausePatientMock.mockReset().mockResolvedValue(undefined);
@@ -142,9 +129,6 @@ describe("POST /sms/inbound", () => {
       rejected: 0,
       errored: 0,
     });
-    dbStub.select.mockClear();
-    dbStub.insert.mockClear();
-    dbStub.update.mockClear();
     __setAiFallbackAdapterForTests(null);
   });
   afterEach(() => {
@@ -172,7 +156,7 @@ describe("POST /sms/inbound", () => {
 
   it("audits unknown_phone and replies with opt-out boilerplate", async () => {
     setMessagingEnv();
-    selectQueue.push([]); // phone lookup miss
+    stageSupabaseResponse("patients", "select", { data: [] });
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -185,7 +169,6 @@ describe("POST /sms/inbound", () => {
       });
     expect(res.status).toBe(200);
     expect(res.text).toContain("This number isn't set up");
-    // PHI scrub: From not in body or audit.
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("messaging.inbound.received");
@@ -194,15 +177,13 @@ describe("POST /sms/inbound", () => {
   });
 
   it("audits ambiguous_phone and replies with router-guard boilerplate when two patients share a phone", async () => {
-    // Family-plan / shared-line scenario: phone_e164 equality returns
-    // multiple patients. We can't safely route the inbound to either
-    // patient's conversation thread, so we audit, surface a generic
-    // reply, and bail out before any conversation/messages writes.
     setMessagingEnv();
-    selectQueue.push([
-      { patientId: PATIENT_ID },
-      { patientId: "99999999-9999-4999-8999-999999999999" },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        { id: PATIENT_ID },
+        { id: "99999999-9999-4999-8999-999999999999" },
+      ],
+    });
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -215,9 +196,7 @@ describe("POST /sms/inbound", () => {
       });
     expect(res.status).toBe(200);
     expect(res.text).toContain("This number is on multiple accounts");
-    // No conversation insert / message persist on the ambiguous path.
     expect(placeOrderMock).not.toHaveBeenCalled();
-    // Single audit row, with the right outcome and PHI-scrubbed metadata.
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("messaging.inbound.received");
@@ -228,12 +207,7 @@ describe("POST /sms/inbound", () => {
 
   it("dispatches confirm intent → places order, closes, audits ok", async () => {
     setMessagingEnv();
-    selectQueue.push([{ patientId: PATIENT_ID }]); // phone_lookup hit
-    // Forward-port of main commit 63de00e (Task #20): MessageSid
-    // dedup pre-check runs after the phone lookup. Empty result =
-    // "this SID has not been seen before, proceed normally".
-    selectQueue.push([]); // sid_dedup miss
-    selectQueue.push([{ id: CONVERSATION_ID }]); // open conversation
+    stageKnownPatientFlow();
     placeOrderMock.mockResolvedValue({
       status: "ok",
       episodeId: EPISODE_ID,
@@ -277,9 +251,7 @@ describe("POST /sms/inbound", () => {
 
   it("STOP keyword pauses patient + closes regardless of conversation context", async () => {
     setMessagingEnv();
-    selectQueue.push([{ patientId: PATIENT_ID }]);
-    selectQueue.push([]); // sid_dedup miss (Task #20 forward-port)
-    selectQueue.push([{ id: CONVERSATION_ID }]);
+    stageKnownPatientFlow();
 
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
@@ -307,11 +279,9 @@ describe("POST /sms/inbound", () => {
 
   it("AI fallback fires on unknown intent and steers dispatch", async () => {
     setMessagingEnv();
-    selectQueue.push([{ patientId: PATIENT_ID }]);
-    selectQueue.push([]); // sid_dedup miss (Task #20 forward-port)
-    selectQueue.push([{ id: CONVERSATION_ID }]);
+    stageKnownPatientFlow();
     // Recent thread fetch (decrypted) for AI context.
-    selectQueue.push([]);
+    stageSupabaseResponse("messages", "select", { data: [] });
     placeOrderMock.mockResolvedValue({
       status: "ok",
       episodeId: EPISODE_ID,
@@ -346,9 +316,7 @@ describe("POST /sms/inbound", () => {
 
   it("HELP returns boilerplate without dispatching anywhere", async () => {
     setMessagingEnv();
-    selectQueue.push([{ patientId: PATIENT_ID }]);
-    selectQueue.push([]); // sid_dedup miss (Task #20 forward-port)
-    selectQueue.push([{ id: CONVERSATION_ID }]);
+    stageKnownPatientFlow();
 
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
@@ -368,16 +336,7 @@ describe("POST /sms/inbound", () => {
 
   it("ingests MMS media when NumMedia>0 and audits counts only", async () => {
     setMessagingEnv();
-    selectQueue.push([{ patientId: PATIENT_ID }]); // phone_lookup hit
-    selectQueue.push([]); // sid_dedup miss
-    selectQueue.push([{ id: CONVERSATION_ID }]); // open conversation
-    // Inbound message insert returns the new message id so the
-    // ingest call has something to attach to.
-    const INBOUND_MSG_ID = "44444444-4444-4444-8444-444444444444";
-    insertQueue.push([{ id: INBOUND_MSG_ID }]);
-    // The HELP path doesn't dispatch an order; outbound reply
-    // insert pulls the next entry — empty is fine.
-    insertQueue.push([]);
+    stageKnownPatientFlow();
 
     ingestMmsMock.mockResolvedValueOnce({
       attempted: 2,
@@ -407,7 +366,7 @@ describe("POST /sms/inbound", () => {
     // webhook body (so MediaUrlN are reachable).
     expect(ingestMmsMock).toHaveBeenCalledTimes(1);
     const ingestArgs = ingestMmsMock.mock.calls[0][0];
-    expect(ingestArgs.messageId).toBe(INBOUND_MSG_ID);
+    expect(ingestArgs.messageId).toBe("44444444-4444-4444-8444-444444444444");
     expect(ingestArgs.numMedia).toBe(2);
     expect(ingestArgs.twilioAccountSid).toBe("ACtest");
     expect(ingestArgs.twilioAuthToken).toBe("test-twilio-token");
@@ -425,10 +384,7 @@ describe("POST /sms/inbound", () => {
       rejected: 0,
       errored: 0,
     });
-    // PHI / linkability guard — counts-only payload. Audit row's
-    // (targetTable, targetId) tuple already pins this to the
-    // message; the metadata must NOT mirror conversation_id,
-    // patient_id, or the Twilio message SID.
+    // PHI / linkability guard — counts-only payload.
     const auditJson = JSON.stringify(ingestAudit?.metadata);
     expect(auditJson).not.toContain("ME001");
     expect(auditJson).not.toContain("ME002");
@@ -439,14 +395,11 @@ describe("POST /sms/inbound", () => {
   });
 
   // CARRIER COMPLIANCE — STOP/HELP must be honored even when we
-  // can't map the inbound number to a patient. Twilio's Advanced
-  // Opt-Out handles per-number suppression; we just emit the
-  // canonical reply and audit so investigators can prove the
-  // keyword was honored.
+  // can't map the inbound number to a patient.
 
   it("STOP from unknown phone replies with STOP boilerplate + audits unknown_phone_stop", async () => {
     setMessagingEnv();
-    selectQueue.push([]); // phone_lookup miss
+    stageSupabaseResponse("patients", "select", { data: [] });
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -460,20 +413,18 @@ describe("POST /sms/inbound", () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain("unsubscribed");
     expect(res.text).toMatch(/<Response><Message>/);
-    // No order placement, no pause (no patient_id to pause).
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0][0];
     expect(audit.action).toBe("messaging.inbound.received");
     expect(audit.metadata.outcome).toBe("unknown_phone_stop");
-    // PHI scrub.
     expect(JSON.stringify(audit.metadata)).not.toContain(FROM_PHONE);
   });
 
   it("HELP from unknown phone replies with HELP boilerplate + audits unknown_phone_help", async () => {
     setMessagingEnv();
-    selectQueue.push([]); // phone_lookup miss
+    stageSupabaseResponse("patients", "select", { data: [] });
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")
       .type("form")
@@ -496,7 +447,7 @@ describe("POST /sms/inbound", () => {
 
   it("STOP from unparseable From still returns STOP boilerplate", async () => {
     setMessagingEnv();
-    // No selectQueue entries — we never reach the phone_lookup query
+    // No supabase stages — we never reach the phone_lookup query
     // because normalizeE164 rejects the From first.
     const res = await request(makeApp())
       .post("/resupply-api/sms/inbound")

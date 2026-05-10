@@ -14,9 +14,10 @@
 //     auth coupling. The actor is passed in explicitly.
 //
 // Architecture rule (Rule 13): this package may import db, telecom,
-// email, messaging, audit, drizzle, pg — but NOT twilio, @sendgrid/mail,
+// email, messaging, audit — but NOT twilio, @sendgrid/mail,
 // openai, @anthropic-ai/sdk directly. Vendor SDKs are reached only
-// through the resupply-{telecom,email} wrappers.
+// through the resupply-{telecom,email} wrappers. All DB access goes
+// through the Supabase client exported from `@workspace/resupply-db`.
 
 export { sendReminderSms } from "./send-sms";
 export type { SendReminderSmsInput } from "./send-sms";

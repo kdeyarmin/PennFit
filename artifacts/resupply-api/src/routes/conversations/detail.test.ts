@@ -8,6 +8,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -15,35 +21,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    leftJoin: () => obj,
-    innerJoin: () => obj,
-    orderBy: () => obj,
-    limit: () => obj,
-    offset: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 const logAuditMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -84,9 +61,8 @@ describe("GET /conversations/:id", () => {
 
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
+    supabaseMock.reset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
   });
   afterEach(() => {
@@ -105,7 +81,9 @@ describe("GET /conversations/:id", () => {
 
   it("returns 404 when conversation row is empty", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([]);
+    // Header + messages run in parallel; both must be staged.
+    stageSupabaseResponse("conversations", "select", { data: null });
+    stageSupabaseResponse("messages", "select", { data: [] });
     const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}`,
     );
@@ -115,45 +93,55 @@ describe("GET /conversations/:id", () => {
 
   it("returns conversation + decrypted messages and writes a conversation.view audit row", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    // Initial parallel pair: header + messages.
+    stageSupabaseResponse("conversations", "select", {
+      data: {
         id: CONV_ID,
-        patientId: PATIENT_ID,
-        patientFirstName: "Alice",
-        patientLastName: "Smith",
-        episodeId: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        customer_id: null,
+        episode_id: EPISODE_ID,
         channel: "sms",
         status: "open",
-        lastMessageAt: new Date("2025-04-02T12:00:00Z"),
-        createdAt: new Date("2025-04-01T11:00:00Z"),
+        last_message_at: new Date("2025-04-02T12:00:00Z").toISOString(),
+        created_at: new Date("2025-04-01T11:00:00Z").toISOString(),
+        assigned_admin_user_id: null,
+        assigned_at: null,
+        priority: "normal",
+        sla_due_at: null,
+        escalated_at: null,
+        escalated_to: null,
+        escalation_reason: null,
       },
-    ]);
-    selectQueue.push([
-      {
-        id: MSG_A,
-        direction: "outbound",
-        senderRole: "admin",
-        body: "Hi Alice, your CPAP supplies are due. Reply YES to confirm.",
-        deliveryStatus: "delivered",
-        sentAt: new Date("2025-04-01T11:01:00Z"),
-        deliveredAt: new Date("2025-04-01T11:01:05Z"),
-        createdAt: new Date("2025-04-01T11:01:00Z"),
-      },
-      {
-        id: MSG_B,
-        direction: "inbound",
-        senderRole: "patient",
-        body: "YES",
-        deliveryStatus: null,
-        sentAt: null,
-        deliveredAt: null,
-        createdAt: new Date("2025-04-02T12:00:00Z"),
-      },
-    ]);
-    // Third query — message_attachments by message_id IN (...).
-    // Empty here: this test asserts the legacy shape still works
-    // when no attachments exist.
-    selectQueue.push([]);
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: [
+        {
+          id: MSG_A,
+          direction: "outbound",
+          sender_role: "admin",
+          body: "Hi Alice, your CPAP supplies are due. Reply YES to confirm.",
+          delivery_status: "delivered",
+          sent_at: new Date("2025-04-01T11:01:00Z").toISOString(),
+          delivered_at: new Date("2025-04-01T11:01:05Z").toISOString(),
+          created_at: new Date("2025-04-01T11:01:00Z").toISOString(),
+        },
+        {
+          id: MSG_B,
+          direction: "inbound",
+          sender_role: "patient",
+          body: "YES",
+          delivery_status: null,
+          sent_at: null,
+          delivered_at: null,
+          created_at: new Date("2025-04-02T12:00:00Z").toISOString(),
+        },
+      ],
+    });
+    // Second parallel triple: patients + customers + attachments.
+    stageSupabaseResponse("patients", "select", {
+      data: { legal_first_name: "Alice", legal_last_name: "Smith" },
+    });
+    stageSupabaseResponse("message_attachments", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}`,
@@ -186,52 +174,64 @@ describe("GET /conversations/:id", () => {
   });
 
   it("groups attachments per message in the response payload", async () => {
-    // Asserts the new MMS attachment plumbing: detail.ts pulls
-    // message_attachments via inArray and groups in memory.
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    stageSupabaseResponse("conversations", "select", {
+      data: {
         id: CONV_ID,
-        patientId: PATIENT_ID,
-        patientFirstName: "Bob",
-        patientLastName: "Jones",
-        episodeId: EPISODE_ID,
+        patient_id: PATIENT_ID,
+        customer_id: null,
+        episode_id: EPISODE_ID,
         channel: "sms",
         status: "open",
-        lastMessageAt: new Date("2025-05-01T12:00:00Z"),
-        createdAt: new Date("2025-05-01T11:00:00Z"),
+        last_message_at: new Date("2025-05-01T12:00:00Z").toISOString(),
+        created_at: new Date("2025-05-01T11:00:00Z").toISOString(),
+        assigned_admin_user_id: null,
+        assigned_at: null,
+        priority: "normal",
+        sla_due_at: null,
+        escalated_at: null,
+        escalated_to: null,
+        escalation_reason: null,
       },
-    ]);
-    selectQueue.push([
-      {
-        id: MSG_A,
-        direction: "inbound",
-        senderRole: "patient",
-        body: "Here are the photos you asked for",
-        deliveryStatus: null,
-        sentAt: new Date("2025-05-01T12:00:00Z"),
-        deliveredAt: null,
-        createdAt: new Date("2025-05-01T12:00:00Z"),
-      },
-    ]);
-    selectQueue.push([
-      {
-        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-        messageId: MSG_A,
-        filename: "mms-ME001.jpg",
-        contentType: "image/jpeg",
-        sizeBytes: 12345,
-        createdAt: new Date("2025-05-01T12:00:01Z"),
-      },
-      {
-        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
-        messageId: MSG_A,
-        filename: "mms-ME002.png",
-        contentType: "image/png",
-        sizeBytes: 6789,
-        createdAt: new Date("2025-05-01T12:00:02Z"),
-      },
-    ]);
+    });
+    stageSupabaseResponse("messages", "select", {
+      data: [
+        {
+          id: MSG_A,
+          direction: "inbound",
+          sender_role: "patient",
+          body: "Here are the photos you asked for",
+          delivery_status: null,
+          sent_at: new Date("2025-05-01T12:00:00Z").toISOString(),
+          delivered_at: null,
+          created_at: new Date("2025-05-01T12:00:00Z").toISOString(),
+        },
+      ],
+    });
+    stageSupabaseResponse("patients", "select", {
+      data: { legal_first_name: "Bob", legal_last_name: "Jones" },
+    });
+    stageSupabaseResponse("message_attachments", "select", {
+      data: [
+        {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+          message_id: MSG_A,
+          filename: "mms-ME001.jpg",
+          content_type: "image/jpeg",
+          size_bytes: 12345,
+          created_at: new Date("2025-05-01T12:00:01Z").toISOString(),
+        },
+        {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+          message_id: MSG_A,
+          filename: "mms-ME002.png",
+          content_type: "image/png",
+          size_bytes: 6789,
+          created_at: new Date("2025-05-01T12:00:02Z").toISOString(),
+        },
+      ],
+    });
+
     const res = await request(makeApp()).get(
       `/resupply-api/conversations/${CONV_ID}`,
     );

@@ -1,9 +1,15 @@
-// Integration test for logAudit() against a live Postgres database.
+// Integration test for logAudit() against a live database.
 //
-// Skip-when-unconfigured contract: this suite needs DATABASE_URL.
-// When unset we skip the suite entirely so `pnpm -r test` stays
-// green in environments without a live db (CI runs that don't set
-// it).
+// Skip-when-unconfigured contract: this suite exercises the full
+// write+read round-trip, so it needs BOTH the Supabase service-role
+// client (writes go through PostgREST after the Drizzle → Supabase
+// migration) AND a raw `pg` pool (the afterEach cleanup + read-back
+// SELECTs talk to Postgres directly so we don't depend on the same
+// PostgREST surface we are testing). When any of the three env
+// vars is missing we skip the whole suite so `pnpm -r test` stays
+// green in environments that don't have all three (e.g. the GitHub
+// Actions Tests job, which provides DATABASE_URL but not the
+// Supabase vars).
 //
 // The suite cleans up after itself: every row inserted gets a
 // random `requestId` in metadata and a deletion in afterEach. We
@@ -19,7 +25,10 @@ import {
   registerAuditRequestIdResolver,
 } from "./index";
 
-const skip = !process.env.DATABASE_URL;
+const skip =
+  !process.env.DATABASE_URL ||
+  !process.env.SUPABASE_URL ||
+  !process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const describeIfDb = skip ? describe.skip : describe;
 

@@ -8,6 +8,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -15,37 +21,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    leftJoin: () => obj,
-    orderBy: () => obj,
-    limit: () => obj,
-    offset: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
 
 const logAuditMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -86,9 +61,8 @@ describe("GET /patients/:id", () => {
 
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
+    supabaseMock.reset();
     logAuditMock.mockReset().mockResolvedValue(undefined);
   });
   afterEach(() => {
@@ -116,7 +90,12 @@ describe("GET /patients/:id", () => {
 
   it("returns 404 when patient row is empty", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([]); // patient
+    // First Promise.all: header + four child collections.
+    stageSupabaseResponse("patients", "select", { data: null });
+    stageSupabaseResponse("prescriptions", "select", { data: [] });
+    stageSupabaseResponse("episodes", "select", { data: [] });
+    stageSupabaseResponse("conversations", "select", { data: [] });
+    stageSupabaseResponse("fulfillments", "select", { data: [] });
     const res = await request(makeApp()).get(
       `/resupply-api/patients/${PATIENT_ID}`,
     );
@@ -127,65 +106,89 @@ describe("GET /patients/:id", () => {
 
   it("returns full detail and writes a patient.view audit row", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([
-      {
+    // First parallel block: header + four child collections.
+    stageSupabaseResponse("patients", "select", {
+      data: {
         id: PATIENT_ID,
-        pacwareId: "PAC-001",
-        firstName: "Alice",
-        lastName: "Smith",
+        pacware_id: "PAC-001",
+        legal_first_name: "Alice",
+        legal_last_name: "Smith",
         status: "active",
-        hasPhone: true,
-        hasEmail: true,
-        createdAt: new Date("2025-01-15T10:00:00Z"),
-        updatedAt: new Date("2025-01-15T10:00:00Z"),
+        phone_e164: "+14155551212",
+        email: "alice@example.com",
+        insurance_payer: null,
+        cadence_override_days: null,
+        channel_preference: null,
+        created_at: new Date("2025-01-15T10:00:00Z").toISOString(),
+        updated_at: new Date("2025-01-15T10:00:00Z").toISOString(),
+        portal_auth_user_id: null,
+        portal_invited_at: null,
       },
-    ]); // patient
-    selectQueue.push([
-      {
-        id: RX_ID,
-        itemSku: "MASK-001",
-        cadenceDays: 90,
-        validFrom: new Date("2025-01-01T00:00:00Z"),
-        validUntil: null,
-        status: "active",
-        createdAt: new Date("2025-01-01T00:00:00Z"),
-      },
-    ]); // prescriptions
-    selectQueue.push([
-      {
-        id: EPISODE_ID,
-        prescriptionId: RX_ID,
-        itemSku: "MASK-001",
-        status: "outreach_pending",
-        dueAt: new Date("2025-04-01T00:00:00Z"),
-        expiresAt: null,
-        createdAt: new Date("2025-04-01T00:00:00Z"),
-      },
-    ]); // episodes
-    selectQueue.push([
-      {
-        id: CONV_ID,
-        episodeId: EPISODE_ID,
-        channel: "sms",
-        status: "open",
-        lastMessageAt: new Date("2025-04-02T12:00:00Z"),
-        createdAt: new Date("2025-04-02T11:00:00Z"),
-      },
-    ]); // conversations
-    selectQueue.push([
-      {
-        id: FUL_ID,
-        episodeId: EPISODE_ID,
-        itemSku: "MASK-001",
-        quantity: "1",
-        status: "queued",
-        pacwareOrderRef: null,
-        submittedAt: null,
-        shippedAt: null,
-        deliveredAt: null,
-        createdAt: new Date("2025-04-03T00:00:00Z"),
-      },
-    ]); // fulfillments
+    });
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [
+        {
+          id: RX_ID,
+          item_sku: "MASK-001",
+          cadence_days: 90,
+          valid_from: new Date("2025-01-01T00:00:00Z").toISOString(),
+          valid_until: null,
+          status: "active",
+          created_at: new Date("2025-01-01T00:00:00Z").toISOString(),
+          attachment_filename: null,
+          attachment_content_type: null,
+          attachment_size_bytes: null,
+          attachment_uploaded_at: null,
+        },
+      ],
+    });
+    stageSupabaseResponse("episodes", "select", {
+      data: [
+        {
+          id: EPISODE_ID,
+          prescription_id: RX_ID,
+          status: "outreach_pending",
+          due_at: new Date("2025-04-01T00:00:00Z").toISOString(),
+          expires_at: null,
+          created_at: new Date("2025-04-01T00:00:00Z").toISOString(),
+        },
+      ],
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: [
+        {
+          id: CONV_ID,
+          episode_id: EPISODE_ID,
+          channel: "sms",
+          status: "open",
+          last_message_at: new Date("2025-04-02T12:00:00Z").toISOString(),
+          created_at: new Date("2025-04-02T11:00:00Z").toISOString(),
+        },
+      ],
+    });
+    stageSupabaseResponse("fulfillments", "select", {
+      data: [
+        {
+          id: FUL_ID,
+          episode_id: EPISODE_ID,
+          item_sku: "MASK-001",
+          quantity: "1",
+          status: "queued",
+          pacware_order_ref: null,
+          submitted_at: null,
+          shipped_at: null,
+          delivered_at: null,
+          created_at: new Date("2025-04-03T00:00:00Z").toISOString(),
+        },
+      ],
+    });
+    // Second parallel block: latest_message + auth + episode-rx bulk.
+    stageSupabaseResponse("patient_latest_message", "select", { data: null });
+    // No portal_auth_user_id → users skip is hit (resolved already).
+    // Bulk lookup of episode prescriptions by id IN (...).
+    stageSupabaseResponse("prescriptions", "select", {
+      data: [{ id: RX_ID, item_sku: "MASK-001" }],
+    });
 
     const res = await request(makeApp()).get(
       `/resupply-api/patients/${PATIENT_ID}`,

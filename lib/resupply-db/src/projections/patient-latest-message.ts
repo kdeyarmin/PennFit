@@ -1,8 +1,3 @@
-import { eq, sql } from "drizzle-orm";
-import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-
-import { conversations } from "../schema/conversations";
-import { patientLatestMessage } from "../schema/patient-latest-message";
 import type { ResupplySupabaseClient } from "../supabase-client";
 
 /**
@@ -10,7 +5,7 @@ import type { ResupplySupabaseClient } from "../supabase-client";
  *
  * Call this exactly once per message INSERT — outbound and inbound,
  * SMS / email / voice. Best-effort by design: callers SHOULD use the
- * `tryUpsertPatientLatestMessage` wrapper so a projection failure
+ * `tryUpsertPatientLatestMessageSb` wrapper so a projection failure
  * never aborts the underlying message send (the projection is a UX
  * accelerator; the message itself is the source of truth).
  *
@@ -24,14 +19,20 @@ import type { ResupplySupabaseClient } from "../supabase-client";
  *
  * Out-of-order safety:
  *   Webhook redelivery and out-of-order channel callbacks can deliver
- *   an older message AFTER a newer one. We compare the incoming
- *   `messageAt` against the existing row in the `WHERE` clause of
- *   the conflict update — strict `<` so equal-timestamp redelivery
- *   becomes a no-op and the projection isn't churned. (For two
- *   genuinely-distinct messages with the exact same timestamp the
- *   first-writer wins; that's an acceptable corner for a UX
- *   projection where the messages table remains the source of
- *   truth.)
+ *   an older message AFTER a newer one. PostgREST has no
+ *   `ON CONFLICT DO UPDATE WHERE …` clause, so the guard is split
+ *   into two atomic statements:
+ *
+ *     1. UPDATE WHERE patient_id = $1 AND last_message_at < $newAt
+ *        RETURNING patient_id
+ *        — applies the refresh iff the new timestamp is strictly newer.
+ *
+ *     2. If the UPDATE returned 0 rows, INSERT. If the INSERT collides
+ *        with the unique on patient_id (23505), it means a concurrent
+ *        writer (or a fresher existing row) won the race — no-op.
+ *
+ *   Net behavior: each call leaves the row with the strictly-freshest
+ *   event ever seen, even under concurrent out-of-order redelivery.
  *
  * Preview truncation:
  *   We store at most PREVIEW_MAX_CHARS of plaintext. The preview is
@@ -103,90 +104,6 @@ export function buildPreview(body: string): string {
  * a `false` simply means a fresher (or identical) projection already
  * exists.
  */
-export async function upsertPatientLatestMessage(
-  db: NodePgDatabase<Record<string, unknown>>,
-  input: UpsertPatientLatestMessageInput,
-): Promise<boolean> {
-  const preview = buildPreview(input.body);
-
-  // Always derive patient id from the conversation. See the
-  // module-level comment for the rationale.
-  const rows = await db
-    .select({ patientId: conversations.patientId })
-    .from(conversations)
-    .where(eq(conversations.id, input.conversationId))
-    .limit(1);
-  if (rows.length === 0) {
-    // Conversation must exist (foreign key on messages enforces
-    // this), so reaching here means an upstream bug. Surface as
-    // a no-op; the tryUpsert wrapper logs the failure path
-    // separately if the underlying call throws.
-    return false;
-  }
-  const patientId = rows[0]!.patientId;
-  if (!patientId) {
-    // Post-0033: conversations can be customer-keyed (in_app) with
-    // patient_id NULL. The patient_latest_message projection is
-    // patient-only by design (it powers the patient list page). For
-    // an in-app, customer-keyed conversation we have nothing to
-    // project here — surface as a no-op. The customer-facing
-    // /shop/me/messages endpoint reads from `messages` directly.
-    return false;
-  }
-
-  const result = await db
-    .insert(patientLatestMessage)
-    .values({
-      patientId,
-      lastMessageAt: input.messageAt,
-      lastMessageDirection: input.direction,
-      lastMessagePreview: preview,
-      lastMessageConversationId: input.conversationId,
-    })
-    .onConflictDoUpdate({
-      target: patientLatestMessage.patientId,
-      set: {
-        lastMessageAt: input.messageAt,
-        lastMessageDirection: input.direction,
-        lastMessagePreview: preview,
-        lastMessageConversationId: input.conversationId,
-        updatedAt: sql`now()`,
-      },
-      // Out-of-order guard. EXCLUDED is the proposed new row;
-      // the bare column reference is the existing row. Strict `<`
-      // means equal-timestamp redelivery becomes a no-op (rather
-      // than churning the row with the same content). Vendor
-      // timestamps are second-resolution at best so duplicate
-      // redelivery commonly arrives with identical messageAt.
-      setWhere: sql`${patientLatestMessage.lastMessageAt} < EXCLUDED.${sql.identifier("last_message_at")}`,
-    })
-    .returning({ patientId: patientLatestMessage.patientId });
-
-  return result.length > 0;
-}
-
-/**
- * Supabase-flavored variant of `upsertPatientLatestMessage`. Same
- * semantics; PostgREST has no `ON CONFLICT DO UPDATE WHERE …` so the
- * out-of-order guard is split into two atomic statements:
- *
- *   1. UPDATE WHERE patient_id = $1 AND last_message_at < $newAt
- *      RETURNING patient_id
- *      — applies the refresh iff the new timestamp is strictly newer.
- *
- *   2. If the UPDATE returned 0 rows, INSERT. If the INSERT collides
- *      with the unique on patient_id (23505), it means a concurrent
- *      writer (or a fresher existing row) won the race — no-op.
- *
- * Net behavior matches the Drizzle path: each call leaves the row
- * with the strictly-freshest event ever seen, even under concurrent
- * out-of-order redelivery. The two statements are NOT wrapped in a
- * transaction; that's deliberate. If a writer succeeds with the
- * UPDATE, no INSERT is attempted. If a writer's UPDATE matches 0
- * rows and a parallel writer races them on INSERT, both will
- * collide on the unique and the loser silently no-ops — the
- * stronger-timestamp INSERT survives.
- */
 export async function upsertPatientLatestMessageSb(
   supabase: ResupplySupabaseClient,
   input: UpsertPatientLatestMessageInput,
@@ -245,9 +162,27 @@ export async function upsertPatientLatestMessageSb(
     });
   if (insertErr) {
     if ((insertErr as { code?: string }).code === "23505") {
-      // Concurrent writer (or a fresher existing row already wins on
-      // the timestamp guard above). No-op.
-      return false;
+      // A concurrent writer beat us to the INSERT, so the row exists
+      // now. Re-run the conditional UPDATE: if our timestamp is
+      // fresher than whichever writer won, the lt() guard lets us
+      // overwrite. Without this, two simultaneous writers can leave
+      // the older message in the projection (the writer that loses
+      // the INSERT race exits before checking timestamps).
+      const { data: retried, error: retryErr } = await supabase
+        .schema("resupply")
+        .from("patient_latest_message")
+        .update({
+          last_message_at: messageAtIso,
+          last_message_direction: input.direction,
+          last_message_preview: preview,
+          last_message_conversation_id: input.conversationId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("patient_id", patientId)
+        .lt("last_message_at", messageAtIso)
+        .select("patient_id");
+      if (retryErr) throw retryErr;
+      return (retried ?? []).length > 0;
     }
     throw insertErr;
   }
@@ -291,31 +226,6 @@ export function setProjectionLogger(logger: ProjectionLogger): void {
   defaultLogger = logger;
 }
 
-export async function tryUpsertPatientLatestMessage(
-  db: NodePgDatabase<Record<string, unknown>>,
-  input: UpsertPatientLatestMessageInput,
-  logger?: ProjectionLogger,
-): Promise<boolean> {
-  try {
-    return await upsertPatientLatestMessage(db, input);
-  } catch (err) {
-    (logger ?? defaultLogger).warn(
-      {
-        err: err instanceof Error ? err.message : String(err),
-        conversationId: input.conversationId,
-        direction: input.direction,
-      },
-      "patient_latest_message: refresh failed",
-    );
-    return false;
-  }
-}
-
-/**
- * Best-effort Supabase-flavored wrapper. Use from message-write
- * callsites that have already migrated to supabase-js so the
- * projection refresh doesn't drag a Drizzle handle along.
- */
 export async function tryUpsertPatientLatestMessageSb(
   supabase: ResupplySupabaseClient,
   input: UpsertPatientLatestMessageInput,

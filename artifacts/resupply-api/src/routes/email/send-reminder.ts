@@ -9,7 +9,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { EmailConfigError } from "@workspace/resupply-email";
 import {
   sendReminderEmail,
@@ -57,7 +57,7 @@ router.post("/email/send-reminder", requireAdmin, async (req, res) => {
   let outcome: SendReminderOutcome;
   try {
     outcome = await sendReminderEmail({
-      pool: getDbPool(),
+      supabase: getSupabaseServiceRoleClient(),
       cfg: {
         sendgridApiKey: cfg.email.sendgridApiKey,
         sendgridFromEmail: cfg.email.sendgridFromEmail,

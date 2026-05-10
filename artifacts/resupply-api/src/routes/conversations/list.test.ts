@@ -8,6 +8,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -15,34 +21,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    leftJoin: () => obj,
-    orderBy: () => obj,
-    limit: () => obj,
-    offset: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 import listRouter from "./list";
 
@@ -76,9 +54,8 @@ describe("GET /conversations", () => {
 
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
+    supabaseMock.reset();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -103,20 +80,38 @@ describe("GET /conversations", () => {
 
   it("returns paginated page joined with patient name", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 1 }]);
-    selectQueue.push([
-      {
-        id: CONV_ID,
-        patientId: PATIENT_ID,
-        patientFirstName: "Alice",
-        patientLastName: "Smith",
-        episodeId: EPISODE_ID,
-        channel: "sms",
-        status: "awaiting_admin",
-        lastMessageAt: new Date("2025-04-02T12:00:00Z"),
-        createdAt: new Date("2025-04-01T11:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("conversations", "select", {
+      data: [
+        {
+          id: CONV_ID,
+          patient_id: PATIENT_ID,
+          customer_id: null,
+          episode_id: EPISODE_ID,
+          channel: "sms",
+          status: "awaiting_admin",
+          last_message_at: new Date("2025-04-02T12:00:00Z").toISOString(),
+          created_at: new Date("2025-04-01T11:00:00Z").toISOString(),
+          assigned_admin_user_id: null,
+          assigned_at: null,
+          priority: "normal",
+          sla_due_at: null,
+          escalated_at: null,
+          escalation_reason: null,
+        },
+      ],
+      count: 1,
+    });
+    // Bulk-fetch the joined identity rows (patients only — no
+    // customer_id on this conversation).
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: PATIENT_ID,
+          legal_first_name: "Alice",
+          legal_last_name: "Smith",
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       "/resupply-api/conversations?status=awaiting_admin&limit=25",
@@ -135,8 +130,12 @@ describe("GET /conversations", () => {
 
   it("filters by patientId", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 0 }]);
-    selectQueue.push([]);
+    stageSupabaseResponse("conversations", "select", {
+      data: [],
+      count: 0,
+    });
+    // No conversations on the page → no identity-table round-trips,
+    // so we don't need to stage them.
     const res = await request(makeApp()).get(
       `/resupply-api/conversations?patientId=${PATIENT_ID}`,
     );

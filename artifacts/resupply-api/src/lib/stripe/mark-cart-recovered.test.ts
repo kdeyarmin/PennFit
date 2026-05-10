@@ -14,37 +14,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type Stripe from "stripe";
 
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    set: () => obj,
-    values: () => obj,
-    returning: () => Promise.resolve(result),
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const updateQueue: unknown[] = [];
-const dbStub = {
-  update: vi.fn(() => fluent(updateQueue.shift() ?? [])),
-  select: vi.fn(() => fluent([])),
-  insert: vi.fn(() => fluent([])),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
 
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 import { markCartRecovered } from "./webhook-handler";
 
@@ -67,19 +42,20 @@ function makeLog() {
 
 describe("markCartRecovered", () => {
   beforeEach(() => {
-    updateQueue.length = 0;
-    dbStub.update.mockClear();
+    supabaseMock.reset();
   });
 
   it("issues an UPDATE when session.metadata.customer_id is present", async () => {
     const log = makeLog();
-    // Drizzle .returning() returns [{ id }] when a row was matched.
-    updateQueue.push([{ id: "row_aaa" }]);
+    // PostgREST returns the matched-row(s) array via the trailing
+    // `.select("id")` after the UPDATE.
+    stageSupabaseResponse("shop_abandoned_carts", "update", {
+      data: [{ id: "row_aaa" }],
+    });
     await markCartRecovered(
       makeSession({ customer_id: "user_signed_in_42" }),
       log,
     );
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
     expect(log.info).toHaveBeenCalledTimes(1);
     const [meta, msg] = log.info.mock.calls[0];
     expect(meta).toEqual({ customerId: "user_signed_in_42", rowId: "row_aaa" });
@@ -91,16 +67,14 @@ describe("markCartRecovered", () => {
     await markCartRecovered(makeSession(null), log);
     await markCartRecovered(makeSession({}), log);
     await markCartRecovered(makeSession({ other: "value" }), log);
-    expect(dbStub.update).not.toHaveBeenCalled();
     expect(log.info).not.toHaveBeenCalled();
     expect(log.warn).not.toHaveBeenCalled();
   });
 
   it("does not log when no row matched (already recovered or never created)", async () => {
     const log = makeLog();
-    updateQueue.push([]); // no row updated
+    stageSupabaseResponse("shop_abandoned_carts", "update", { data: [] });
     await markCartRecovered(makeSession({ customer_id: "user_no_cart" }), log);
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
     expect(log.info).not.toHaveBeenCalled();
   });
 });

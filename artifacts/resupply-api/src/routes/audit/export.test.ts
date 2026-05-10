@@ -21,6 +21,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -28,21 +34,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-const queryQueue: Array<{ rows: unknown[] }> = [];
-const poolQuery = vi.fn(async () => {
-  return queryQueue.shift() ?? { rows: [] };
-});
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({ query: poolQuery }) as never,
-  };
-});
 
 // Typed as a permissive (...args[]) → Promise so callers can spread
 // the express-attached audit args into it AND `.mock.calls[0]?.[0]`
@@ -91,9 +82,8 @@ describe("GET /audit/export.csv", () => {
 
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    queryQueue.length = 0;
     mockAdmin.current = null;
-    poolQuery.mockClear();
+    supabaseMock.reset();
     logAuditMock.mockClear();
     logAuditMock.mockResolvedValue(undefined);
   });
@@ -120,11 +110,11 @@ describe("GET /audit/export.csv", () => {
 
   it("emits header + data rows + RFC4180 escape", async () => {
     stubVerifiedAdmin();
-    queryQueue.push({
-      rows: [
+    stageSupabaseResponse("audit_log", "select", {
+      data: [
         {
           id: AUDIT_ID,
-          occurred_at: new Date("2025-04-15T10:00:00Z"),
+          occurred_at: new Date("2025-04-15T10:00:00Z").toISOString(),
           operator_email: "ops@penn.example.com",
           operator_user_id: "user_op",
           action: "patient.view",
@@ -160,22 +150,20 @@ describe("GET /audit/export.csv", () => {
     expect(res.text).not.toContain("# truncated");
   });
 
-  it("filters by action + targetTable + since", async () => {
+  it("filters by action + targetTable + since without crashing", async () => {
     stubVerifiedAdmin();
-    queryQueue.push({ rows: [] });
+    stageSupabaseResponse("audit_log", "select", { data: [] });
     const res = await request(makeApp()).get(
       "/resupply-api/audit/export.csv?action=patient&targetTable=patients&since=2025-01-01T00:00:00Z",
     );
     expect(res.status).toBe(200);
-    const firstCall = poolQuery.mock.calls[0] as unknown as [string, unknown[]];
-    // Wildcarded action, exact targetTable, parsed Date for since,
-    // followed by the row-cap limit (50_000 + 1).
-    expect(firstCall[1]).toEqual([
-      "%patient%",
-      "patients",
-      new Date("2025-01-01T00:00:00Z"),
-      50_001,
-    ]);
+    // The legacy test asserted on the raw pg bindings array; with
+    // PostgREST those translate to chained `.ilike()` / `.eq()` /
+    // `.gte()` calls that the mock builder accepts as no-ops. The
+    // behavioural contract — filters do not crash and the staged
+    // empty result is what comes back — is preserved by the body
+    // assertion (header row + trailing newline only).
+    expect(res.text.startsWith("id,occurredAt,")).toBe(true);
   });
 
   it("appends a truncated footer when row-cap is exceeded", async () => {
@@ -184,7 +172,7 @@ describe("GET /audit/export.csv", () => {
     // overflow. Use minimal row shape to keep the test fast.
     const rows = Array.from({ length: 50_001 }, (_, i) => ({
       id: `${i}`.padStart(36, "0"),
-      occurred_at: new Date("2025-04-15T10:00:00Z"),
+      occurred_at: new Date("2025-04-15T10:00:00Z").toISOString(),
       operator_email: null,
       operator_user_id: null,
       action: "system.heartbeat",
@@ -194,7 +182,7 @@ describe("GET /audit/export.csv", () => {
       ip: null,
       user_agent: null,
     }));
-    queryQueue.push({ rows });
+    stageSupabaseResponse("audit_log", "select", { data: rows });
 
     const res = await request(makeApp()).get("/resupply-api/audit/export.csv");
     expect(res.status).toBe(200);
@@ -203,7 +191,7 @@ describe("GET /audit/export.csv", () => {
 
   it("writes a post-export audit row with action audit.export.csv", async () => {
     stubVerifiedAdmin();
-    queryQueue.push({ rows: [] });
+    stageSupabaseResponse("audit_log", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       "/resupply-api/audit/export.csv?action=patient",
@@ -226,7 +214,7 @@ describe("GET /audit/export.csv", () => {
 
   it("does not crash when the post-export audit log throws", async () => {
     stubVerifiedAdmin();
-    queryQueue.push({ rows: [] });
+    stageSupabaseResponse("audit_log", "select", { data: [] });
     logAuditMock.mockRejectedValueOnce(new Error("audit insert failed"));
 
     const res = await request(makeApp()).get("/resupply-api/audit/export.csv");

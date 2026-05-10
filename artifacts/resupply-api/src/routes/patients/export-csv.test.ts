@@ -1,9 +1,9 @@
 // Route tests for GET /patients/export.csv.
 //
-// We mock both the db (via drizzle) and the `decrypt` helper. The
-// real `decrypt` reads pgcrypto-encrypted bytea; in tests we just
-// have it pass-through the input as a string so we can assert the
-// CSV cells without spinning up Postgres.
+// Mocks Supabase via the shared helper. The route reads decrypted
+// columns directly from PostgREST via the service-role client; the
+// rows we stage already have plaintext values in place of any
+// historical pgcrypto column wrapping.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -13,6 +13,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -20,48 +26,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-const selectQueue: unknown[] = [];
-function fluentSelect(rows: unknown): unknown {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    orderBy: () => obj,
-    limit: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(rows).then(resolve, reject),
-  };
-  return obj;
-}
-const dbStub = {
-  select: vi.fn(() => fluentSelect(selectQueue.shift() ?? [])),
-  insert: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      onConflictDoUpdate: () => obj,
-      then: (resolve: (v: unknown) => unknown) =>
-        Promise.resolve(undefined).then(resolve),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-// Pass-through `decrypt`: in tests the "encrypted" column is a string
-// the test fixture provided directly. Mocking here keeps the test
-// hermetic from pgcrypto.
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-    decrypt: (v: unknown) => (v == null ? null : String(v)),
-  };
-});
 
 const logAuditMock = vi.fn(async (..._a: unknown[]) => undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -90,23 +54,22 @@ const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
-// Drizzle returns one object per `.select({alias: ...})` row. Our
-// route aliases decrypted columns as `firstName/lastName/...`, so
-// the fake rows mirror the post-SELECT shape (decryption already
-// applied, mock just hands back the plaintext values directly).
+// Snake-case rows matching what PostgREST returns. The route reads
+// these column names directly and writes them into the CSV through
+// `csvEscape`.
 function fakeRow(
   overrides: Partial<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   return {
-    pacwareId: "PAC-1",
-    firstName: "Ada",
-    lastName: "Lovelace",
-    dateOfBirth: "1815-12-10",
-    phoneE164: "+14155551212",
+    pacware_id: "PAC-1",
+    legal_first_name: "Ada",
+    legal_last_name: "Lovelace",
+    date_of_birth: "1815-12-10",
+    phone_e164: "+14155551212",
     email: "ada@example.com",
     status: "active",
-    createdAt: new Date("2026-04-01T00:00:00Z"),
-    updatedAt: new Date("2026-04-02T00:00:00Z"),
+    created_at: new Date("2026-04-01T00:00:00Z").toISOString(),
+    updated_at: new Date("2026-04-02T00:00:00Z").toISOString(),
     ...overrides,
   };
 }
@@ -117,9 +80,8 @@ describe("GET /patients/export.csv", () => {
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     process.env.NODE_ENV = "test";
     mockAdmin.current = null;
-    selectQueue.length = 0;
+    supabaseMock.reset();
     logAuditMock.mockClear();
-    dbStub.select.mockClear();
     stubVerifiedAdmin();
   });
 
@@ -131,7 +93,7 @@ describe("GET /patients/export.csv", () => {
   });
 
   it("returns text/csv with the documented header row", async () => {
-    selectQueue.push([fakeRow()]);
+    stageSupabaseResponse("patients", "select", { data: [fakeRow()] });
 
     const res = await request(makeApp()).get(
       "/resupply-api/patients/export.csv",
@@ -149,8 +111,10 @@ describe("GET /patients/export.csv", () => {
     expect(res.headers["x-truncated"]).toBeUndefined();
   });
 
-  it("CSV-escapes commas and quotes in decrypted PHI cells", async () => {
-    selectQueue.push([fakeRow({ lastName: 'O"Brien, Sr.' })]);
+  it("CSV-escapes commas and quotes in PHI cells", async () => {
+    stageSupabaseResponse("patients", "select", {
+      data: [fakeRow({ legal_last_name: 'O"Brien, Sr.' })],
+    });
     const res = await request(makeApp()).get(
       "/resupply-api/patients/export.csv",
     );
@@ -161,13 +125,12 @@ describe("GET /patients/export.csv", () => {
   });
 
   it("sets X-Truncated when the row count exceeds the cap", async () => {
-    // Build 5001 rows: triggers truncation. We cheat by using the
-    // same skeleton row 5001 times — id repetition is fine for this
-    // assertion since we're testing the header, not row content.
+    // Build 5001 rows: triggers truncation. Repeating identifiers is
+    // fine — we're testing the header behaviour, not row content.
     const rows = Array.from({ length: 5001 }, (_, i) =>
-      fakeRow({ pacwareId: `PAC-${i}` }),
+      fakeRow({ pacware_id: `PAC-${i}` }),
     );
-    selectQueue.push(rows);
+    stageSupabaseResponse("patients", "select", { data: rows });
     const res = await request(makeApp()).get(
       "/resupply-api/patients/export.csv",
     );
@@ -179,7 +142,9 @@ describe("GET /patients/export.csv", () => {
   });
 
   it("audits the export with row count and filter shape (no PHI)", async () => {
-    selectQueue.push([fakeRow(), fakeRow({ pacwareId: "PAC-2" })]);
+    stageSupabaseResponse("patients", "select", {
+      data: [fakeRow(), fakeRow({ pacware_id: "PAC-2" })],
+    });
     await request(makeApp()).get(
       "/resupply-api/patients/export.csv?status=paused&search=Smith",
     );

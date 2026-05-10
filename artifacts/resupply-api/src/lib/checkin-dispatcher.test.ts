@@ -74,12 +74,12 @@ describe("nextDueCheckin", () => {
 
 describe("stampFieldForDay", () => {
   it.each([
-    ["day1", "day1SentAt"],
-    ["day3", "day3SentAt"],
-    ["day7", "day7SentAt"],
-    ["day30", "day30SentAt"],
-    ["day60", "day60SentAt"],
-    ["day90", "day90SentAt"],
+    ["day1", "day1_sent_at"],
+    ["day3", "day3_sent_at"],
+    ["day7", "day7_sent_at"],
+    ["day30", "day30_sent_at"],
+    ["day60", "day60_sent_at"],
+    ["day90", "day90_sent_at"],
   ] as const)("maps %s → %s", (label, field) => {
     expect(stampFieldForDay(label)).toBe(field);
   });

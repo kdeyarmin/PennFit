@@ -1,10 +1,9 @@
 // Supabase-backed implementation of `AuthRepository`.
 //
-// Phase 2 of the lib/resupply-auth Drizzle/pg → Supabase port.
-// `pgAuthRepository` in `./repository.ts` is still the production
-// implementation and remains the canonical source of truth for SQL
-// shapes; this file mirrors it on the Supabase JS client and lets a
-// route author opt in by injecting it.
+// Production wires `supabaseAuthRepository` via `getAuthDeps()` in
+// artifacts/resupply-api/src/lib/auth-deps.ts. The legacy
+// `pgAuthRepository` in `./repository.ts` is retained as a reference
+// for SQL shape only; nothing in the runtime path calls it.
 //
 // Bytea columns (sessions.token_hash, sessions.user_agent_hash,
 // email_tokens.token_hash) round-trip through the helpers in
@@ -22,8 +21,6 @@
 // return zero rows. No RPC needed.
 //
 // What still delegates to pg: nothing.
-
-import type { Pool } from "pg";
 
 import type {
   AuthRole,
@@ -45,7 +42,6 @@ import type {
   AuthUser,
   PasswordCredential,
 } from "./repository.js";
-import { pgAuthRepository as _pgAuthRepository } from "./repository.js";
 
 interface UserRow {
   id: string;
@@ -125,11 +121,6 @@ const EMAIL_TOKEN_COLS =
 
 export function supabaseAuthRepository(
   supabase: ResupplySupabaseClient,
-  // Reserved for a future emergency fallback (e.g. the Supabase API
-  // is unreachable but DATABASE_URL still works). Currently unused —
-  // every method is on Supabase.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _fallback?: Pool,
 ): AuthRepository {
   return {
     async findUserByEmail(emailLower) {

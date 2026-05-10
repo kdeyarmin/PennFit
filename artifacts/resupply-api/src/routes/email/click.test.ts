@@ -9,39 +9,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    set: () => obj,
-    values: () => obj,
-    limit: () => Promise.resolve(result),
-    returning: () => Promise.resolve(result),
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const updateQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-  insert: vi.fn(() => fluent([])),
-  update: vi.fn(() => fluent(updateQueue.shift() ?? undefined)),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
 
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
+const supabaseMock = installSupabaseMock();
 
 const logAuditMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("@workspace/resupply-audit", () => ({
@@ -95,14 +69,10 @@ function setMessagingEnv(): void {
 }
 
 function resetMocks(): void {
-  selectQueue.length = 0;
-  updateQueue.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockReset().mockResolvedValue(undefined);
   placeOrderMock.mockReset();
   pausePatientMock.mockReset().mockResolvedValue(undefined);
-  dbStub.select.mockClear();
-  dbStub.insert.mockClear();
-  dbStub.update.mockClear();
 }
 
 describe("GET /email/click (landing page — no side effects)", () => {
@@ -169,7 +139,7 @@ describe("GET /email/click (landing page — no side effects)", () => {
       conversationId: CONVERSATION_ID,
       action: "confirm",
     });
-    selectQueue.push([]); // conversation lookup miss
+    stageSupabaseResponse("conversations", "select", { data: null });
 
     const res = await request(makeApp()).get(
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
@@ -184,7 +154,9 @@ describe("GET /email/click (landing page — no side effects)", () => {
       conversationId: CONVERSATION_ID,
       action: "confirm",
     });
-    selectQueue.push([{ id: CONVERSATION_ID }]);
+    stageSupabaseResponse("conversations", "select", {
+      data: { id: CONVERSATION_ID },
+    });
 
     const res = await request(makeApp()).get(
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
@@ -200,7 +172,7 @@ describe("GET /email/click (landing page — no side effects)", () => {
     // GET must NEVER touch the order-flow / patient-pause helpers.
     expect(placeOrderMock).not.toHaveBeenCalled();
     expect(pausePatientMock).not.toHaveBeenCalled();
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
 
     // The link-open is audited (informational, no PHI mutation).
     const audits = logAuditMock.mock.calls.map((c) => c[0]);
@@ -247,9 +219,15 @@ describe("POST /email/click (signed action)", () => {
       conversationId: CONVERSATION_ID,
       action: "confirm",
     });
-    selectQueue.push([
-      { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
-    ]);
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        id: CONVERSATION_ID,
+        patient_id: PATIENT_ID,
+        episode_id: EPISODE_ID,
+      },
+    });
+    // Closing-the-conversation update on the success path.
+    stageSupabaseResponse("conversations", "update", { error: null });
     placeOrderMock.mockResolvedValue({
       status: "ok",
       episodeId: EPISODE_ID,
@@ -278,9 +256,14 @@ describe("POST /email/click (signed action)", () => {
       conversationId: CONVERSATION_ID,
       action: "stop",
     });
-    selectQueue.push([
-      { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
-    ]);
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        id: CONVERSATION_ID,
+        patient_id: PATIENT_ID,
+        episode_id: EPISODE_ID,
+      },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(makeApp()).post(
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,
@@ -303,9 +286,14 @@ describe("POST /email/click (signed action)", () => {
       conversationId: CONVERSATION_ID,
       action: "edit",
     });
-    selectQueue.push([
-      { id: CONVERSATION_ID, patientId: PATIENT_ID, episodeId: EPISODE_ID },
-    ]);
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        id: CONVERSATION_ID,
+        patient_id: PATIENT_ID,
+        episode_id: EPISODE_ID,
+      },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(makeApp()).post(
       `/resupply-api/email/click?t=${encodeURIComponent(token)}`,

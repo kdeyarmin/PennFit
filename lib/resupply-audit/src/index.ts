@@ -18,13 +18,17 @@
 //   * It gives us one place to wire AsyncLocalStorage actor
 //     propagation when that lands (see ADR 006).
 //
-// Phase 0 keeps the helper tiny: validate metadata, raw INSERT via
-// the shared pool. No transactional context yet — when audit rows
-// need to participate in a request transaction, we'll add an
-// overload that accepts a `PoolClient` rather than fetching one
-// fresh.
+// Phase 0 keeps the helper tiny: validate metadata, INSERT via the
+// shared Supabase service-role client. No transactional context yet —
+// when audit rows need to participate in a request transaction, we'll
+// add an overload that accepts a `ResupplySupabaseClient` against an
+// open transaction (PostgREST does not expose transactions, so this
+// would require a Postgres function).
 
-import { getDbPool } from "@workspace/resupply-db";
+import {
+  getSupabaseServiceRoleClient,
+  type Json,
+} from "@workspace/resupply-db";
 
 import { sanitizeMetadata } from "./sanitize";
 
@@ -129,22 +133,20 @@ export async function logAudit(event: AuditEvent): Promise<void> {
       : event.metadata;
   const metadata = sanitizeMetadata(metadataInput);
 
-  await getDbPool().query(
-    "INSERT INTO resupply.audit_log " +
-      "(operator_email, operator_user_id, action, " +
-      " target_table, target_id, metadata, ip, user_agent) " +
-      "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)",
-    [
-      event.adminEmail ?? null,
-      event.adminUserId ?? null,
-      event.action,
-      event.targetTable ?? null,
-      event.targetId ?? null,
-      JSON.stringify(metadata),
-      event.ip ?? null,
-      event.userAgent ?? null,
-    ],
-  );
+  const { error } = await getSupabaseServiceRoleClient()
+    .schema("resupply")
+    .from("audit_log")
+    .insert({
+      operator_email: event.adminEmail ?? null,
+      operator_user_id: event.adminUserId ?? null,
+      action: event.action,
+      target_table: event.targetTable ?? null,
+      target_id: event.targetId ?? null,
+      metadata: metadata as unknown as Json,
+      ip: event.ip ?? null,
+      user_agent: event.userAgent ?? null,
+    });
+  if (error) throw error;
 }
 
 /**

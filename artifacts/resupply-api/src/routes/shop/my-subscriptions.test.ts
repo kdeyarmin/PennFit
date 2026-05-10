@@ -36,18 +36,18 @@
 //
 //   GET / — smoke: 401 unsigned, 200 with rows
 //   POST /cancel — smoke: 200 happy path still wires through
-//
-// Mocking strategy mirrors my-orders.test.ts: drizzle is replaced
-// with a fluent stub backed by `selectQueue` / `updateQueue`; Stripe
-// is mocked at the lib/stripe/config layer; the auth provider auth is mocked
-// via auth-deps. We DON'T import a real Stripe SDK; the mock hands
-// back plain objects shaped like the SDK responses we read.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
 import { makeRequireSignedInMock } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockSignedIn } = vi.hoisted(() => ({
   mockSignedIn: { current: null as string | null },
@@ -55,41 +55,6 @@ const { mockSignedIn } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireSignedIn", () =>
   makeRequireSignedInMock(mockSignedIn),
 );
-
-// Drizzle stub. Two query shapes used by this router:
-//   1. SELECT → .from() → .where() → .orderBy()? → .limit() → Promise<rows>
-//   2. UPDATE → .set() → .where() → Promise<...>
-const selectQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => Promise.resolve(undefined),
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 const stripeSubscriptionsUpdateMock = vi.fn();
 const stripeSubscriptionsRetrieveMock = vi.fn();
@@ -133,9 +98,7 @@ function makeApp(): Express {
   return app;
 }
 
-// Counter for synthesising unique X-Forwarded-For per request. Each
-// test (or each request within a test) gets its own bucket so the
-// in-process rate limiter doesn't cross-contaminate.
+// Counter for synthesising unique X-Forwarded-For per request.
 let ipCounter = 0;
 function uniqueIp(): string {
   ipCounter += 1;
@@ -149,27 +112,23 @@ function get(app: Express, path: string) {
 }
 
 // Per-call unique customer id. The pause/resume/cancel/cadence rate
-// limiters key on `req.userCustomerId` (NOT IP), so the
-// `uniqueIp()` trick above doesn't help them — once the same user
-// hits a limiter 5x within 60s the rest of the file's tests get
-// 429s. Minting a fresh id per signin call keeps each test in its
-// own bucket. Safe because the drizzle stub ignores WHERE clauses
-// (returns whatever's in `selectQueue`) and no assertion compares
-// against the literal USER_ID value.
+// limiters key on `req.userCustomerId` (NOT IP), so each test gets
+// its own bucket.
 let signinCounter = 0;
 function stubSignedIn(userId: string): void {
   signinCounter += 1;
   mockSignedIn.current = `${userId}_${signinCounter}`;
 }
 
+// Snake-case row shape the route reads via PostgREST.
 function activeSubRow(
   over: Partial<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   return {
     id: VALID_ID,
-    stripeSubscriptionId: STRIPE_SUB_ID,
+    stripe_subscription_id: STRIPE_SUB_ID,
     status: "active",
-    cancelAtPeriodEnd: false,
+    cancel_at_period_end: false,
     items: [
       {
         priceId: CURRENT_PRICE_ID,
@@ -186,19 +145,13 @@ function activeSubRow(
 }
 
 beforeEach(() => {
-  selectQueue.length = 0;
   stripeConfigured = true;
   mockSignedIn.current = null;
-  dbStub.select.mockClear();
-  dbStub.update.mockClear();
+  supabaseMock.reset();
   stripeSubscriptionsUpdateMock.mockReset();
   stripeSubscriptionsRetrieveMock.mockReset();
   stripePricesRetrieveMock.mockReset();
   stripePricesListMock.mockReset();
-});
-
-afterEach(() => {
-  selectQueue.length = 0;
 });
 
 // ---------- POST /pause ----------
@@ -215,7 +168,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
 
   it("404 when not owned (no row matches id+customerId)", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([]); // owner lookup returns nothing
+    stageSupabaseResponse("shop_subscriptions", "select", { data: null });
     const r = await post(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
@@ -227,7 +180,9 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
 
   it("409 when subscription is canceled", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow({ status: "canceled" })]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow({ status: "canceled" }),
+    });
     const r = await post(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
@@ -239,7 +194,9 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
 
   it("503 when stripe is not configured", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripeConfigured = false;
     const r = await post(
       makeApp(),
@@ -251,7 +208,9 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
 
   it("502 when stripe SDK throws", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripeSubscriptionsUpdateMock.mockRejectedValueOnce(
       new Error("network blip"),
     );
@@ -265,7 +224,9 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
 
   it("200 happy path sends pause_collection: { behavior: 'void' }", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripeSubscriptionsUpdateMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
     });
@@ -287,7 +248,9 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
 describe("POST /shop/me/subscriptions/:id/resume", () => {
   it("200 happy path sends pause_collection: '' (clear)", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripeSubscriptionsUpdateMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
     });
@@ -304,7 +267,9 @@ describe("POST /shop/me/subscriptions/:id/resume", () => {
 
   it("409 when subscription is canceled (shared guard)", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow({ status: "canceled" })]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow({ status: "canceled" }),
+    });
     const r = await post(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/resume`,
@@ -338,7 +303,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("404 when not owned", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_subscriptions", "select", { data: null });
     const r = await post(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
@@ -348,7 +313,9 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("409 when subscription is canceled", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow({ status: "canceled" })]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow({ status: "canceled" }),
+    });
     const r = await post(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
@@ -359,8 +326,8 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("409 multi_item_subscription when local snapshot has 2 items", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([
-      activeSubRow({
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow({
         items: [
           {
             priceId: CURRENT_PRICE_ID,
@@ -382,7 +349,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
           },
         ],
       }),
-    ]);
+    });
     const r = await post(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
@@ -393,7 +360,9 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("200 unchanged: true when new priceId equals current", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     const r = await post(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
@@ -405,7 +374,9 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("400 invalid_price when prices.retrieve throws", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripePricesRetrieveMock.mockRejectedValueOnce(new Error("no such price"));
     const r = await post(
       makeApp(),
@@ -417,7 +388,9 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("400 price_not_recurring when type is one_time", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripePricesRetrieveMock.mockResolvedValueOnce({
       id: NEW_PRICE_ID,
       type: "one_time",
@@ -434,7 +407,9 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("400 price_product_mismatch when target price is on a different product", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripePricesRetrieveMock.mockResolvedValueOnce({
       id: NEW_PRICE_ID,
       type: "recurring",
@@ -451,7 +426,9 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("502 when subscriptions.retrieve throws", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripePricesRetrieveMock.mockResolvedValueOnce({
       id: NEW_PRICE_ID,
       type: "recurring",
@@ -471,7 +448,9 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
 
   it("200 happy path swaps the item with proration_behavior: 'none'", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripePricesRetrieveMock.mockResolvedValueOnce({
       id: NEW_PRICE_ID,
       type: "recurring",
@@ -513,7 +492,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
 
   it("404 when not owned", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([]);
+    stageSupabaseResponse("shop_subscriptions", "select", { data: null });
     const r = await get(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
@@ -524,8 +503,8 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
 
   it("409 multi_item_subscription", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([
-      activeSubRow({
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow({
         items: [
           {
             priceId: CURRENT_PRICE_ID,
@@ -547,7 +526,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
           },
         ],
       }),
-    ]);
+    });
     const r = await get(
       makeApp(),
       `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
@@ -557,7 +536,9 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
 
   it("200 with sorted options + isCurrent flag on the matching price", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     // Return prices in INTENTIONALLY UNSORTED order; assert the
     // server sorts by interval-in-days ascending (30 → 60 → 90).
     stripePricesListMock.mockResolvedValueOnce({
@@ -618,7 +599,9 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
 
   it("200 with empty options when stripe.prices.list throws (degrades gracefully)", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([activeSubRow()]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: activeSubRow(),
+    });
     stripePricesListMock.mockRejectedValueOnce(new Error("network blip"));
     const r = await get(
       makeApp(),
@@ -639,18 +622,20 @@ describe("GET /shop/me/subscriptions (smoke)", () => {
 
   it("200 with rows projected", async () => {
     stubSignedIn(USER_ID);
-    selectQueue.push([
-      {
-        id: VALID_ID,
-        stripeSubscriptionId: STRIPE_SUB_ID,
-        status: "active",
-        items: [],
-        currentPeriodEnd: new Date("2026-06-14T00:00:00Z"),
-        cancelAtPeriodEnd: false,
-        canceledAt: null,
-        createdAt: new Date("2026-04-01T00:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: [
+        {
+          id: VALID_ID,
+          stripe_subscription_id: STRIPE_SUB_ID,
+          status: "active",
+          items: [],
+          current_period_end: new Date("2026-06-14T00:00:00Z").toISOString(),
+          cancel_at_period_end: false,
+          canceled_at: null,
+          created_at: new Date("2026-04-01T00:00:00Z").toISOString(),
+        },
+      ],
+    });
     const r = await get(makeApp(), "/resupply-api/me/subscriptions");
     expect(r.status).toBe(200);
     expect(r.body.subscriptions).toHaveLength(1);
@@ -664,15 +649,18 @@ describe("GET /shop/me/subscriptions (smoke)", () => {
 describe("POST /shop/me/subscriptions/:id/cancel (smoke)", () => {
   it("200 happy path flips cancel_at_period_end on Stripe", async () => {
     stubSignedIn(USER_ID);
-    // cancel does its own SELECT (not via findOwnedSubscription)
-    selectQueue.push([
-      {
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: {
         id: VALID_ID,
-        stripeSubscriptionId: STRIPE_SUB_ID,
+        stripe_subscription_id: STRIPE_SUB_ID,
         status: "active",
-        cancelAtPeriodEnd: false,
+        cancel_at_period_end: false,
+        items: [],
       },
-    ]);
+    });
+    // The cancel route also issues an UPDATE on shop_subscriptions
+    // after the Stripe call succeeds — stage a no-error envelope.
+    stageSupabaseResponse("shop_subscriptions", "update", { error: null });
     stripeSubscriptionsUpdateMock.mockResolvedValueOnce({
       id: STRIPE_SUB_ID,
     });

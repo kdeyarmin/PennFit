@@ -1,7 +1,7 @@
 // Unit tests for the MMS ingestion module.
 //
 // These mock global.fetch (Twilio download + GCS PUT both go through
-// fetch) plus a stub ObjectStorageService + drizzle insert, so we
+// fetch) plus a stub ObjectStorageService + Supabase insert, so we
 // can assert the per-media gating (allowlist, size cap, missing
 // SID) without touching the network or the database.
 
@@ -15,29 +15,13 @@ import {
   type MockInstance,
 } from "vitest";
 
-// db stub. ingest-mms.ts calls drizzle(getDbPool()).insert(messageAttachments).values(...)
-// then awaits — fluent shape is the same as the inbound test. We
-// capture every insert payload so assertions can pin filename /
-// content type / size.
-const insertCalls: Array<Record<string, unknown>> = [];
-const insertImpl = vi.fn();
-const dbStub = {
-  insert: vi.fn(() => ({
-    values: (vals: Record<string, unknown>) => {
-      insertCalls.push(vals);
-      return Promise.resolve(insertImpl(vals));
-    },
-  })),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 // ObjectStorageService stub — both upload-url issuance and ACL set.
 const getUploadUrlMock = vi.fn(
@@ -102,13 +86,22 @@ function isTwilioMediaUrl(url: string): boolean {
   }
 }
 
+// Read the captured insert payloads on `message_attachments` from
+// the shared supabase mock. These are the rows the production code
+// would have written; we assert on filename / content_type / size /
+// object_key / twilio_media_sid here.
+function attachmentInserts(): Record<string, unknown>[] {
+  return getSupabaseWritePayloads(
+    "message_attachments",
+    "insert",
+  ) as Record<string, unknown>[];
+}
+
 describe("ingestInboundMmsMedia", () => {
   let fetchSpy: MockInstance;
 
   beforeEach(() => {
-    insertCalls.length = 0;
-    insertImpl.mockReset();
-    dbStub.insert.mockClear();
+    supabaseMock.reset();
     getUploadUrlMock.mockClear();
     setAclMock.mockClear();
     (SILENT_LOGGER.warn as ReturnType<typeof vi.fn>).mockReset?.();
@@ -136,7 +129,7 @@ describe("ingestInboundMmsMedia", () => {
       errored: 0,
     });
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(insertCalls).toHaveLength(0);
+    expect(attachmentInserts()).toHaveLength(0);
   });
 
   it("downloads, uploads, and persists a single allowed image", async () => {
@@ -150,7 +143,6 @@ describe("ingestInboundMmsMedia", () => {
       // GCS upload PUT.
       return new Response("", { status: 200 });
     });
-    insertImpl.mockReturnValue(undefined);
 
     const result = await ingestInboundMmsMedia(
       {
@@ -174,13 +166,14 @@ describe("ingestInboundMmsMedia", () => {
       rejected: 0,
       errored: 0,
     });
-    expect(insertCalls).toHaveLength(1);
-    const inserted = insertCalls[0]!;
-    expect(inserted.messageId).toBe(MSG_ID);
-    expect(inserted.contentType).toBe("image/png");
-    expect(inserted.sizeBytes).toBe(64);
-    expect(inserted.objectKey).toBe("/objects/uploads/abc");
-    expect(inserted.twilioMediaSid).toBe("MEdef");
+    const inserts = attachmentInserts();
+    expect(inserts).toHaveLength(1);
+    const inserted = inserts[0]!;
+    expect(inserted.message_id).toBe(MSG_ID);
+    expect(inserted.content_type).toBe("image/png");
+    expect(inserted.size_bytes).toBe(64);
+    expect(inserted.object_key).toBe("/objects/uploads/abc");
+    expect(inserted.twilio_media_sid).toBe("MEdef");
     expect(String(inserted.filename)).toMatch(/^mms-MEdef\.png$/);
   });
 
@@ -212,7 +205,7 @@ describe("ingestInboundMmsMedia", () => {
     expect(result.rejected).toBe(1);
     expect(result.succeeded).toBe(0);
     expect(getUploadUrlMock).not.toHaveBeenCalled();
-    expect(insertCalls).toHaveLength(0);
+    expect(attachmentInserts()).toHaveLength(0);
   });
 
   it("rejects oversize bytes (>5MB) without inserting", async () => {
@@ -244,7 +237,7 @@ describe("ingestInboundMmsMedia", () => {
     );
     expect(result.rejected).toBe(1);
     expect(result.succeeded).toBe(0);
-    expect(insertCalls).toHaveLength(0);
+    expect(attachmentInserts()).toHaveLength(0);
   });
 
   it("counts a download non-2xx as rejected and continues", async () => {
@@ -287,8 +280,9 @@ describe("ingestInboundMmsMedia", () => {
       rejected: 1,
       errored: 0,
     });
-    expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0]!.twilioMediaSid).toBe("MEgood");
+    const inserts = attachmentInserts();
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]!.twilio_media_sid).toBe("MEgood");
   });
 
   it("caps at MAX_MEDIA_PER_MESSAGE when numMedia is wildly inflated", async () => {
@@ -375,7 +369,6 @@ describe("ingestInboundMmsMedia", () => {
 
     it("uploads + inserts an email-sourced PNG attachment", async () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 })); // GCS PUT
-      insertImpl.mockReturnValue(undefined);
 
       const outcome = await persistInboundAttachment(
         {
@@ -390,19 +383,19 @@ describe("ingestInboundMmsMedia", () => {
       );
 
       expect(outcome).toBe("succeeded");
-      expect(insertCalls).toHaveLength(1);
-      const inserted = insertCalls[0]!;
-      expect(inserted.messageId).toBe(SAMPLE_MSG);
-      expect(inserted.contentType).toBe("image/png");
-      expect(inserted.sizeBytes).toBe(128);
-      expect(inserted.objectKey).toBe("/objects/uploads/abc");
-      expect(inserted.twilioMediaSid).toBeNull();
+      const inserts = attachmentInserts();
+      expect(inserts).toHaveLength(1);
+      const inserted = inserts[0]!;
+      expect(inserted.message_id).toBe(SAMPLE_MSG);
+      expect(inserted.content_type).toBe("image/png");
+      expect(inserted.size_bytes).toBe(128);
+      expect(inserted.object_key).toBe("/objects/uploads/abc");
+      expect(inserted.twilio_media_sid).toBeNull();
       expect(String(inserted.filename)).toBe("patient-card.png");
     });
 
     it("strips charset from content-type when matching the allowlist", async () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 }));
-      insertImpl.mockReturnValue(undefined);
 
       const outcome = await persistInboundAttachment(
         {
@@ -418,7 +411,7 @@ describe("ingestInboundMmsMedia", () => {
         SILENT_LOGGER,
       );
       expect(outcome).toBe("succeeded");
-      expect(insertCalls[0]!.contentType).toBe("application/pdf");
+      expect(attachmentInserts()[0]!.content_type).toBe("application/pdf");
     });
 
     it("rejects content types outside the allowlist without uploading", async () => {
@@ -436,7 +429,7 @@ describe("ingestInboundMmsMedia", () => {
       );
       expect(outcome).toBe("rejected");
       expect(getUploadUrlMock).not.toHaveBeenCalled();
-      expect(insertCalls).toHaveLength(0);
+      expect(attachmentInserts()).toHaveLength(0);
     });
 
     it("rejects oversize (>5MB) bytes without uploading", async () => {
@@ -454,12 +447,11 @@ describe("ingestInboundMmsMedia", () => {
       );
       expect(outcome).toBe("rejected");
       expect(getUploadUrlMock).not.toHaveBeenCalled();
-      expect(insertCalls).toHaveLength(0);
+      expect(attachmentInserts()).toHaveLength(0);
     });
 
     it("synthesizes a safe filename when caller passes null", async () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 }));
-      insertImpl.mockReturnValue(undefined);
 
       const outcome = await persistInboundAttachment(
         {
@@ -474,14 +466,13 @@ describe("ingestInboundMmsMedia", () => {
       );
       expect(outcome).toBe("succeeded");
       // Falls back to "<source>-<random>.<ext>" — no sid available.
-      expect(String(insertCalls[0]!.filename)).toMatch(
+      expect(String(attachmentInserts()[0]!.filename)).toMatch(
         /^email-[a-z0-9]+\.png$/,
       );
     });
 
     it("scrubs path separators + control chars from caller-supplied names", async () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 }));
-      insertImpl.mockReturnValue(undefined);
 
       const outcome = await persistInboundAttachment(
         {
@@ -495,7 +486,7 @@ describe("ingestInboundMmsMedia", () => {
         SILENT_LOGGER,
       );
       expect(outcome).toBe("succeeded");
-      const fn = String(insertCalls[0]!.filename);
+      const fn = String(attachmentInserts()[0]!.filename);
       // Path separators and NUL bytes must be replaced — those are the
       // actively dangerous bits. We deliberately allow ".." to survive
       // as part of the basename (it isn't dangerous once the slashes
@@ -505,10 +496,12 @@ describe("ingestInboundMmsMedia", () => {
       expect(fn).not.toContain("\x00");
     });
 
-    it("returns 'errored' when the DB insert throws", async () => {
+    it("returns 'errored' when the DB insert fails", async () => {
       fetchSpy = mockFetch(() => new Response("", { status: 200 }));
-      insertImpl.mockImplementation(() => {
-        throw new Error("transient db error");
+      // Stage an error envelope on the next message_attachments
+      // insert. PostgREST surfaces transport failures as `error`.
+      stageSupabaseResponse("message_attachments", "insert", {
+        error: new Error("transient db error"),
       });
 
       const outcome = await persistInboundAttachment(
@@ -527,28 +520,6 @@ describe("ingestInboundMmsMedia", () => {
   });
 
   // Task #52 — exercise the OVERALL_BUDGET_MS race in `ingestInboundMmsMedia`.
-  //
-  // What this guards
-  // ----------------
-  // The 9-second overall budget is the only thing standing between a
-  // stalled GCS PUT (or a never-acked Twilio CDN read) and Twilio's
-  // 15-second webhook retry threshold — past which Twilio retries
-  // the inbound webhook and we get duplicate `messages` rows guarded
-  // only by the partial unique index. The other tests in this file
-  // use immediate-resolve fetch mocks, so a regression that removed
-  // the `Promise.race` against the budget timer would not be caught.
-  //
-  // How the budget works under test
-  // -------------------------------
-  // - `vi.useFakeTimers()` controls BOTH the per-media abort timer
-  //   (5s) and the overall-budget timer (9s).
-  // - `fetch` is mocked to return a Promise that never settles (and
-  //   ignores the AbortSignal — the budget is supposed to save us
-  //   precisely when the AbortSignal is honoured by nothing on the
-  //   other end of the wire).
-  // - Advancing fake time past 9s resolves the budget sentinel,
-  //   `Promise.race` returns it, and the helper folds every slot
-  //   into the `errored` bucket and emits one warning log line.
   describe("OVERALL_BUDGET_MS — stalled fetch can't hold the webhook", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -623,10 +594,8 @@ describe("ingestInboundMmsMedia", () => {
       });
       // Critical: no DB insert can have happened — the production
       // code path returns BEFORE any persistInboundAttachment call
-      // could land. A bug that swallowed the budget but still
-      // awaited the never-settling fetches would either hang the
-      // test or — worse in production — let the webhook stall.
-      expect(insertCalls).toHaveLength(0);
+      // could land.
+      expect(attachmentInserts()).toHaveLength(0);
       expect(getUploadUrlMock).not.toHaveBeenCalled();
     });
 
@@ -681,8 +650,10 @@ describe("ingestInboundMmsMedia", () => {
       }
       return new Response("", { status: 200 });
     });
-    insertImpl.mockImplementation(() => {
-      throw new Error("unique violation on twilio_media_sid");
+    // PostgREST surfaces a unique-violation as a `code: "23505"`
+    // error envelope — same shape we'd see in prod.
+    stageSupabaseResponse("message_attachments", "insert", {
+      error: { code: "23505", message: "unique violation on twilio_media_sid" },
     });
 
     const result = await ingestInboundMmsMedia(

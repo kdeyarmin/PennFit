@@ -16,17 +16,11 @@
 //   - Metadata is structural only — never the SMS body, never the
 //     phone number plaintext, never the admin's typed text.
 
-import { desc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-
 import { normalizeE164 } from "@workspace/resupply-domain";
 import {
-  conversations,
-  episodes,
-  messages,
-  patients,
-  tryUpsertPatientLatestMessage,
+  tryUpsertPatientLatestMessageSb,
+  type Json,
+  type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 import {
   createTwilioSmsClient,
@@ -38,7 +32,7 @@ import { safeAuditFromActor } from "./safe-audit";
 import type { SendActor, SendReminderOutcome, SmsSendConfig } from "./types";
 
 export interface SendReminderSmsInput {
-  pool: Pool;
+  supabase: ResupplySupabaseClient;
   cfg: SmsSendConfig;
   patientId: string;
   episodeId?: string;
@@ -54,51 +48,52 @@ export interface SendReminderSmsInput {
 export async function sendReminderSms(
   input: SendReminderSmsInput,
 ): Promise<SendReminderOutcome> {
-  const { pool, cfg, patientId, actor } = input;
-  const db = drizzle(pool);
+  const { supabase, cfg, patientId, actor } = input;
 
-  const patientRows = await db
-    .select({
-      id: patients.id,
-      status: patients.status,
-      phoneE164: patients.phoneE164,
-      legalFirstName: patients.legalFirstName,
-    })
-    .from(patients)
-    .where(eq(patients.id, patientId))
-    .limit(1);
-  const patient = patientRows[0];
+  const { data: patient, error: patientErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id, status, phone_e164, legal_first_name")
+    .eq("id", patientId)
+    .limit(1)
+    .maybeSingle();
+  if (patientErr) throw patientErr;
   if (!patient) return { status: "patient_not_found" };
   if (patient.status !== "active") {
     return { status: "patient_not_active", patientStatus: patient.status };
   }
-  if (!patient.phoneE164) return { status: "patient_missing_phone" };
+  if (!patient.phone_e164) return { status: "patient_missing_phone" };
 
   // Resolve episode — explicit if provided, else most recent.
   let episodeId = input.episodeId;
   if (!episodeId) {
-    const recent = await db
-      .select({ id: episodes.id })
-      .from(episodes)
-      .where(eq(episodes.patientId, patientId))
-      .orderBy(desc(episodes.dueAt))
-      .limit(1);
-    episodeId = recent[0]?.id;
+    const { data: recent, error: recentErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id")
+      .eq("patient_id", patientId)
+      .order("due_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentErr) throw recentErr;
+    episodeId = recent?.id;
     if (!episodeId) return { status: "no_episode_for_patient" };
   } else {
-    const epRows = await db
-      .select({ id: episodes.id, patientId: episodes.patientId })
-      .from(episodes)
-      .where(eq(episodes.id, episodeId))
-      .limit(1);
-    const ep = epRows[0];
+    const { data: ep, error: epErr } = await supabase
+      .schema("resupply")
+      .from("episodes")
+      .select("id, patient_id")
+      .eq("id", episodeId)
+      .limit(1)
+      .maybeSingle();
+    if (epErr) throw epErr;
     if (!ep) return { status: "episode_not_found" };
-    if (ep.patientId !== patientId) {
+    if (ep.patient_id !== patientId) {
       return { status: "episode_patient_mismatch" };
     }
   }
 
-  const normalizedPhone = normalizeE164(patient.phoneE164);
+  const normalizedPhone = normalizeE164(patient.phone_e164);
   if (!normalizedPhone) return { status: "patient_phone_unnormalizable" };
 
   // Inbound-routing safety check.
@@ -110,12 +105,14 @@ export async function sendReminderSms(
   // confirmations) will route to whichever row Postgres returns
   // first. We refuse to send before the ambiguity exists, audit it,
   // and let an admin de-duplicate the patient roster.
-  const otherOwners = await db
-    .select({ id: patients.id })
-    .from(patients)
-    .where(eq(patients.phoneE164, normalizedPhone))
+  const { data: otherOwners, error: otherOwnersErr } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id")
+    .eq("phone_e164", normalizedPhone)
     .limit(2); // need at most 2 rows to detect the conflict
-  const otherIds = otherOwners
+  if (otherOwnersErr) throw otherOwnersErr;
+  const otherIds = (otherOwners ?? [])
     .map((r) => r.id)
     .filter((id) => id !== patientId);
   if (otherIds.length > 0) {
@@ -137,22 +134,26 @@ export async function sendReminderSms(
     };
   }
 
-  const insertedConv = await db
-    .insert(conversations)
-    .values({
-      patientId,
-      episodeId,
+  const { data: insertedConv, error: insertConvErr } = await supabase
+    .schema("resupply")
+    .from("conversations")
+    .insert({
+      patient_id: patientId,
+      episode_id: episodeId,
       channel: "sms",
       status: "open",
-      lastMessageAt: new Date(),
+      last_message_at: new Date().toISOString(),
     })
-    .returning({ id: conversations.id });
-  const conversationId = insertedConv[0]?.id;
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+  if (insertConvErr) throw insertConvErr;
+  const conversationId = insertedConv?.id;
   if (!conversationId) return { status: "conversation_create_failed" };
 
   const messageBody =
     input.body ??
-    `Hi ${patient.legalFirstName}, this is ${cfg.practiceName}. Time to refill ` +
+    `Hi ${patient.legal_first_name ?? "there"}, this is ${cfg.practiceName}. Time to refill ` +
       "your CPAP supplies — reply YES to confirm shipping to the address on " +
       "file, EDIT to change it, or STOP to opt out.";
 
@@ -208,24 +209,31 @@ export async function sendReminderSms(
   }
 
   const sentAt = new Date();
+  const sentAtIso = sentAt.toISOString();
   // Twilio accepted the message. Wrap subsequent DB writes so a transient
   // DB error does NOT propagate — a propagated error causes the worker to
   // retry, which would re-call this function and send a duplicate SMS.
   // The vendorRef in the log is sufficient for ops to manually reconcile.
   try {
-    await db.insert(messages).values({
-      conversationId,
-      direction: "outbound",
-      senderRole: "agent",
-      body: messageBody,
-      deliveryStatus: "queued",
-      vendorMetadata: { twilio_message_sid: messageSid },
-      sentAt,
-    });
-    await db
-      .update(conversations)
-      .set({ externalRef: messageSid, updatedAt: new Date() })
-      .where(eq(conversations.id, conversationId));
+    const { error: insertMsgErr } = await supabase
+      .schema("resupply")
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        direction: "outbound",
+        sender_role: "agent",
+        body: messageBody,
+        delivery_status: "queued",
+        vendor_metadata: { twilio_message_sid: messageSid } as unknown as Json,
+        sent_at: sentAtIso,
+      });
+    if (insertMsgErr) throw insertMsgErr;
+    const { error: stampConvErr } = await supabase
+      .schema("resupply")
+      .from("conversations")
+      .update({ external_ref: messageSid, updated_at: new Date().toISOString() })
+      .eq("id", conversationId);
+    if (stampConvErr) throw stampConvErr;
   } catch (dbErr) {
     console.error(
       "[send-sms] DB write failed after Twilio accept — SMS sent but unrecorded. Manual reconciliation required.",
@@ -236,7 +244,7 @@ export async function sendReminderSms(
   // Refresh the latest-message projection. Best-effort — a projection
   // failure must not abort the send (the message itself is the source
   // of truth; the projection is a UX accelerator only).
-  await tryUpsertPatientLatestMessage(db, {
+  await tryUpsertPatientLatestMessageSb(supabase, {
     conversationId,
     body: messageBody,
     direction: "outbound",

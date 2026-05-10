@@ -8,6 +8,12 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -15,37 +21,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    leftJoin: () => obj,
-    orderBy: () => obj,
-    limit: () => obj,
-    offset: () => obj,
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
 
 import listRouter from "./list";
 
@@ -71,15 +46,41 @@ const ENV_KEYS = ["RESUPPLY_ADMIN_EMAILS", "NODE_ENV"] as const;
 type EnvKey = (typeof ENV_KEYS)[number];
 const originalEnv: Partial<Record<EnvKey, string | undefined>> = {};
 
+function rowA() {
+  return {
+    id: PATIENT_A,
+    pacware_id: "PAC-001",
+    legal_first_name: "Alice",
+    legal_last_name: "Smith",
+    status: "active",
+    phone_e164: "+14155551212",
+    email: null,
+    created_at: new Date("2025-01-15T10:00:00Z").toISOString(),
+    updated_at: new Date("2025-01-15T10:00:00Z").toISOString(),
+  };
+}
+function rowB() {
+  return {
+    id: PATIENT_B,
+    pacware_id: "PAC-002",
+    legal_first_name: "Bob",
+    legal_last_name: "Jones",
+    status: "paused",
+    phone_e164: null,
+    email: "bob@example.com",
+    created_at: new Date("2025-01-10T10:00:00Z").toISOString(),
+    updated_at: new Date("2025-01-12T10:00:00Z").toISOString(),
+  };
+}
+
 describe("GET /patients", () => {
   beforeEach(() => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
+    supabaseMock.reset();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -113,31 +114,12 @@ describe("GET /patients", () => {
 
   it("returns paginated, decrypted-name page with hasPhone/hasEmail booleans", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 2 }]);
-    selectQueue.push([
-      {
-        id: PATIENT_A,
-        pacwareId: "PAC-001",
-        firstName: "Alice",
-        lastName: "Smith",
-        status: "active",
-        hasPhone: true,
-        hasEmail: false,
-        createdAt: new Date("2025-01-15T10:00:00Z"),
-        updatedAt: new Date("2025-01-15T10:00:00Z"),
-      },
-      {
-        id: PATIENT_B,
-        pacwareId: "PAC-002",
-        firstName: "Bob",
-        lastName: "Jones",
-        status: "paused",
-        hasPhone: false,
-        hasEmail: true,
-        createdAt: new Date("2025-01-10T10:00:00Z"),
-        updatedAt: new Date("2025-01-12T10:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: [rowA(), rowB()],
+      count: 2,
+    });
+    // Bulk-fetch the latest-message projection.
+    stageSupabaseResponse("patient_latest_message", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       "/resupply-api/patients?limit=10&offset=0",
@@ -163,8 +145,7 @@ describe("GET /patients", () => {
 
   it("applies status + search filters without crashing", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 0 }]);
-    selectQueue.push([]);
+    stageSupabaseResponse("patients", "select", { data: [], count: 0 });
 
     const res = await request(makeApp()).get(
       "/resupply-api/patients?status=active&search=alice",
@@ -176,8 +157,7 @@ describe("GET /patients", () => {
 
   it("uses defaults limit=25 offset=0 when not supplied", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 0 }]);
-    selectQueue.push([]);
+    stageSupabaseResponse("patients", "select", { data: [], count: 0 });
 
     const res = await request(makeApp()).get("/resupply-api/patients");
     expect(res.status).toBe(200);
@@ -186,29 +166,13 @@ describe("GET /patients", () => {
   });
 
   // ----- Search by phone (HMAC-indexed, exact match) -----------------
-  // The route detects a phone-shaped search via normalizeE164 and
-  // routes through a direct equality query on patients.phone_e164
-  // instead of the ILIKE substring path. We don't assert on Drizzle's
-  // SQL fragments here — that's testing implementation detail. Instead
-  // we assert that the response shape is correct under both
-  // "patient found" and "no match" conditions, which catches any
-  // wiring regression.
   it("returns the matched patient when search is a valid E.164 phone", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 1 }]);
-    selectQueue.push([
-      {
-        id: PATIENT_A,
-        pacwareId: "PAC-001",
-        firstName: "Alice",
-        lastName: "Smith",
-        status: "active",
-        hasPhone: true,
-        hasEmail: false,
-        createdAt: new Date("2025-01-15T10:00:00Z"),
-        updatedAt: new Date("2025-01-15T10:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: [rowA()],
+      count: 1,
+    });
+    stageSupabaseResponse("patient_latest_message", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       "/resupply-api/patients?search=%2B14155551212",
@@ -225,8 +189,7 @@ describe("GET /patients", () => {
 
   it("returns empty page when phone search has no match", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 0 }]);
-    selectQueue.push([]);
+    stageSupabaseResponse("patients", "select", { data: [], count: 0 });
 
     const res = await request(makeApp()).get(
       "/resupply-api/patients?search=%2B14155550000",
@@ -236,16 +199,12 @@ describe("GET /patients", () => {
     expect(res.body.items).toEqual([]);
   });
 
-  // Loose-format phone (no +, parens + dashes) must also normalize
-  // and use the equality path. We don't see the SQL — but if the route
-  // wired the wrong branch, the count call would still resolve from
-  // the queue and the test would still pass. The intent here is to
-  // pin the behavior: any of these formats yields a 200 with the
-  // expected shape, no crash on normalizeE164.
+  // Loose-format phone normalises and uses the equality path. The
+  // mock ignores the predicate shape — we only assert the response
+  // is well-formed.
   it("accepts loose-formatted phone input via the equality path", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 0 }]);
-    selectQueue.push([]);
+    stageSupabaseResponse("patients", "select", { data: [], count: 0 });
 
     const res = await request(makeApp()).get(
       "/resupply-api/patients?search=%28415%29%20555-1212",
@@ -255,26 +214,13 @@ describe("GET /patients", () => {
   });
 
   // ----- Search by email substring (ILIKE union path) ----------------
-  // Email is non-phone-shaped so it goes through the text-search
-  // union. We just need to assert the route doesn't crash and
-  // returns a well-shaped page when the search is an email
-  // fragment. The actual SQL is exercised in integration / the DB.
   it("accepts email-fragment search via the ILIKE path", async () => {
     stubVerifiedAdmin();
-    selectQueue.push([{ count: 1 }]);
-    selectQueue.push([
-      {
-        id: PATIENT_B,
-        pacwareId: "PAC-002",
-        firstName: "Bob",
-        lastName: "Jones",
-        status: "active",
-        hasPhone: false,
-        hasEmail: true,
-        createdAt: new Date("2025-01-10T10:00:00Z"),
-        updatedAt: new Date("2025-01-10T10:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("patients", "select", {
+      data: [rowB()],
+      count: 1,
+    });
+    stageSupabaseResponse("patient_latest_message", "select", { data: [] });
 
     const res = await request(makeApp()).get(
       "/resupply-api/patients?search=%40gmail.com",

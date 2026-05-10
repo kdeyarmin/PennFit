@@ -1,16 +1,25 @@
 // Unit tests for runSmartTriggerEvaluator (Phase G.13 helper).
 //
-// We mock the drizzle adapter + audit + the rule library so the test
-// covers the orchestration layer specifically: candidate iteration,
-// per-patient night fetch, proposal insert lifecycle (ON CONFLICT
-// DO NOTHING returning empty → skippedExisting; non-empty → inserted),
-// and the audit envelope shape.
+// Mocks the Supabase service-role client + audit + the rule library
+// so the test covers the orchestration layer specifically: candidate
+// iteration, per-patient night fetch, proposal insert lifecycle
+// (PostgREST returns `{ error: { code: '23505' } }` on the partial-
+// unique-index violation → skippedExisting; `{ data: { id }, error:
+// null }` → inserted), and the audit envelope shape.
 //
 // The pure rule logic (evaluateAll, evaluateLeakRising, etc.) is
 // covered separately in ./index.test.ts; we only need a controlled
 // stub of evaluateAll here.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const logAuditMock = vi.hoisted(() =>
   vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
@@ -30,58 +39,6 @@ const evaluateAllMock = vi.hoisted(() =>
 );
 vi.mock("./index", () => ({ evaluateAll: evaluateAllMock }));
 
-interface SelectStubFrame {
-  rows: unknown[];
-}
-const selectQueue: SelectStubFrame[] = [];
-const insertReturnQueue: Array<Array<{ id: string }>> = [];
-const insertedValues: Array<Record<string, unknown>> = [];
-
-const dbStub = {
-  selectDistinct: vi.fn(() => {
-    const result = selectQueue.shift()?.rows ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  select: vi.fn(() => {
-    const result = selectQueue.shift()?.rows ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      values: (vals: Record<string, unknown>) => {
-        insertedValues.push(vals);
-        return obj;
-      },
-      onConflictDoNothing: () => obj,
-      returning: () => Promise.resolve(insertReturnQueue.shift() ?? []),
-    };
-    return obj;
-  }),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import { runSmartTriggerEvaluator } from "./evaluator";
 
 const ACTOR = {
@@ -92,9 +49,7 @@ const ACTOR = {
 };
 
 beforeEach(() => {
-  selectQueue.length = 0;
-  insertReturnQueue.length = 0;
-  insertedValues.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
   evaluateAllMock.mockReset();
   evaluateAllMock.mockReturnValue([]);
@@ -102,7 +57,8 @@ beforeEach(() => {
 
 describe("runSmartTriggerEvaluator", () => {
   it("returns zero counts when no candidate patients exist", async () => {
-    selectQueue.push({ rows: [] }); // selectDistinct candidates
+    // Initial candidate roster is empty.
+    stageSupabaseResponse("patient_therapy_nights", "select", { data: [] });
     const result = await runSmartTriggerEvaluator(ACTOR);
     expect(result).toEqual({
       scanned: 0,
@@ -110,14 +66,23 @@ describe("runSmartTriggerEvaluator", () => {
       inserted: 0,
       skippedExisting: 0,
     });
-    expect(insertedValues).toEqual([]);
+    expect(getSupabaseWritePayloads("patient_smart_trigger_events", "insert"))
+      .toEqual([]);
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("scans candidates that produce no proposals without inserting", async () => {
-    selectQueue.push({ rows: [{ patientId: "p_1" }, { patientId: "p_2" }] });
-    selectQueue.push({ rows: [{ date: "2026-04-01" }] }); // p_1 nights
-    selectQueue.push({ rows: [{ date: "2026-04-01" }] }); // p_2 nights
+    // Roster: two patients with at least one recent night.
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ patient_id: "p_1" }, { patient_id: "p_2" }],
+    });
+    // Per-patient night history.
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ night_date: "2026-04-01" }],
+    });
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ night_date: "2026-04-01" }],
+    });
     evaluateAllMock.mockReturnValue([]);
 
     const result = await runSmartTriggerEvaluator(ACTOR);
@@ -128,19 +93,22 @@ describe("runSmartTriggerEvaluator", () => {
       inserted: 0,
       skippedExisting: 0,
     });
-    expect(insertedValues).toEqual([]);
+    expect(getSupabaseWritePayloads("patient_smart_trigger_events", "insert"))
+      .toEqual([]);
   });
 
   it("inserts a new event + audits when a rule fires", async () => {
-    selectQueue.push({ rows: [{ patientId: "p_1" }] });
-    selectQueue.push({
-      rows: [
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ patient_id: "p_1" }],
+    });
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [
         {
-          date: "2026-04-15",
-          usageMinutes: 240,
-          ahi: 3.5,
-          leakRateLMin: 12,
-          pressureP95Cmh2o: 11,
+          night_date: "2026-04-15",
+          usage_minutes: 240,
+          ahi: "3.5",
+          leak_rate_l_min: "12",
+          pressure_p95_cmh2o: "11",
         },
       ],
     });
@@ -151,7 +119,12 @@ describe("runSmartTriggerEvaluator", () => {
         windowEndDate: "2026-04-14",
       },
     ]);
-    insertReturnQueue.push([{ id: "evt_new_1" }]);
+    // PostgREST INSERT … RETURNING with .maybeSingle() returns the
+    // single inserted row (or null if ON CONFLICT skipped). Here we
+    // simulate a successful insert with a new id.
+    stageSupabaseResponse("patient_smart_trigger_events", "insert", {
+      data: { id: "evt_new_1" },
+    });
 
     const result = await runSmartTriggerEvaluator(ACTOR);
 
@@ -161,14 +134,15 @@ describe("runSmartTriggerEvaluator", () => {
       inserted: 1,
       skippedExisting: 0,
     });
-    expect(insertedValues).toEqual([
-      {
-        patientId: "p_1",
-        kind: "leak_rising",
-        windowStartDate: "2026-04-01",
-        windowEndDate: "2026-04-14",
-      },
-    ]);
+    expect(getSupabaseWritePayloads("patient_smart_trigger_events", "insert"))
+      .toEqual([
+        {
+          patient_id: "p_1",
+          kind: "leak_rising",
+          window_start_date: "2026-04-01",
+          window_end_date: "2026-04-14",
+        },
+      ]);
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     const audit = logAuditMock.mock.calls[0]?.[0] as {
       action: string;
@@ -187,9 +161,13 @@ describe("runSmartTriggerEvaluator", () => {
     });
   });
 
-  it("counts ON CONFLICT DO NOTHING (empty returning) as skippedExisting", async () => {
-    selectQueue.push({ rows: [{ patientId: "p_1" }] });
-    selectQueue.push({ rows: [{ date: "2026-04-15" }] });
+  it("counts unique-violation (23505) as skippedExisting", async () => {
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ patient_id: "p_1" }],
+    });
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ night_date: "2026-04-15" }],
+    });
     evaluateAllMock.mockReturnValue([
       {
         kind: "cushion_wear",
@@ -197,7 +175,12 @@ describe("runSmartTriggerEvaluator", () => {
         windowEndDate: "2026-04-14",
       },
     ]);
-    insertReturnQueue.push([]); // ON CONFLICT skipped insert
+    // Simulate the partial-unique-index hit: PostgREST surfaces it as
+    // an error envelope with `code: "23505"`, the route swallows it
+    // and bumps `skippedExisting`.
+    stageSupabaseResponse("patient_smart_trigger_events", "insert", {
+      error: { code: "23505", message: "duplicate key value" },
+    });
 
     const result = await runSmartTriggerEvaluator(ACTOR);
 
@@ -212,15 +195,17 @@ describe("runSmartTriggerEvaluator", () => {
   });
 
   it("PHI invariant — therapy values never reach the audit envelope", async () => {
-    selectQueue.push({ rows: [{ patientId: "p_phi" }] });
-    selectQueue.push({
-      rows: [
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [{ patient_id: "p_phi" }],
+    });
+    stageSupabaseResponse("patient_therapy_nights", "select", {
+      data: [
         {
-          date: "2026-04-15",
-          usageMinutes: 240,
-          ahi: 3.5,
-          leakRateLMin: 99.9,
-          pressureP95Cmh2o: 11,
+          night_date: "2026-04-15",
+          usage_minutes: 240,
+          ahi: "3.5",
+          leak_rate_l_min: "99.9",
+          pressure_p95_cmh2o: "11",
         },
       ],
     });
@@ -231,7 +216,9 @@ describe("runSmartTriggerEvaluator", () => {
         windowEndDate: "2026-04-14",
       },
     ]);
-    insertReturnQueue.push([{ id: "evt_phi_1" }]);
+    stageSupabaseResponse("patient_smart_trigger_events", "insert", {
+      data: { id: "evt_phi_1" },
+    });
 
     await runSmartTriggerEvaluator(ACTOR);
 
@@ -240,8 +227,8 @@ describe("runSmartTriggerEvaluator", () => {
     // The detection inputs (leak rate, AHI, usage) must never appear
     // in the audit envelope — only kind + window dates + patient_id.
     expect(auditJson).not.toContain("99.9");
-    expect(auditJson).not.toContain("usageMinutes");
-    expect(auditJson).not.toContain("leakRate");
+    expect(auditJson).not.toContain("usage_minutes");
+    expect(auditJson).not.toContain("leak_rate");
     expect(auditJson).not.toContain("ahi");
   });
 });

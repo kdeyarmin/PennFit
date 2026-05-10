@@ -12,9 +12,8 @@
 //   * idempotent no-op when already in the requested status
 //   * happy path: writes status + audits with non-PHI envelope
 //
-// We mock drizzle at the fluent-builder level (same pattern as
-// detail.test.ts and reply-in-app.test.ts) and stub the audit
-// helper so we can assert the envelope shape.
+// Mocks the Supabase service-role client via the shared helper and
+// stubs the audit helper so we can assert the envelope shape.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
@@ -24,6 +23,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -31,41 +37,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// Drizzle stub. The route does:
-//   1. SELECT status, channel FROM conversations WHERE id = ?
-//   2. UPDATE conversations SET status = ?, sla_due_at = ?, updated_at
-//      = ? WHERE id = ?
-// `selectQueue` feeds 1; `update` is intercepted via dbStub.
-const selectQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => Promise.resolve([{ id: "row" }]),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 const logAuditMock = vi.hoisted(() =>
   vi.fn<(input: unknown) => Promise<undefined>>(async () => undefined),
@@ -85,12 +56,16 @@ function makeApp(): Express {
   return app;
 }
 
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
+
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
-  dbStub.select.mockClear();
-  dbStub.update.mockClear();
 });
 
 describe("POST /conversations/:id/status (Phase 8)", () => {
@@ -102,73 +77,62 @@ describe("POST /conversations/:id/status (Phase 8)", () => {
   });
 
   it("400s with an invalid status value", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/status`)
       .send({ status: "garbage" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("invalid_body");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    // Validation must short-circuit before any DB write.
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
   });
 
   it("404s when the conversation doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]);
+    mockAdmin.current = ADMIN;
+    // maybeSingle returns null when the row doesn't exist.
+    stageSupabaseResponse("conversations", "select", { data: null });
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/status`)
       .send({ status: "closed" });
     expect(res.status).toBe(404);
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
   });
 
   it("409s when the channel is not in_app", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ status: "open", channel: "sms" }]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("conversations", "select", {
+      data: { status: "open", channel: "sms" },
+    });
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/status`)
       .send({ status: "closed" });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("wrong_channel");
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("returns 200 with changed=false when already in the requested status", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ status: "closed", channel: "in_app" }]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("conversations", "select", {
+      data: { status: "closed", channel: "in_app" },
+    });
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/status`)
       .send({ status: "closed" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, status: "closed", changed: false });
     // No-op: no UPDATE, no audit row.
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("flips status + audits with non-PHI envelope on a valid mutation", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ status: "awaiting_admin", channel: "in_app" }]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("conversations", "select", {
+      data: { status: "awaiting_admin", channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/status`)
@@ -176,7 +140,7 @@ describe("POST /conversations/:id/status (Phase 8)", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, status: "closed", changed: true });
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
+    expect(getSupabaseCallCount("conversations", "update")).toBe(1);
     expect(logAuditMock).toHaveBeenCalledTimes(1);
 
     const audit = logAuditMock.mock.calls[0]?.[0] as {
@@ -196,12 +160,11 @@ describe("POST /conversations/:id/status (Phase 8)", () => {
   });
 
   it("supports reopen: closed → awaiting_admin", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ status: "closed", channel: "in_app" }]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("conversations", "select", {
+      data: { status: "closed", channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/status`)

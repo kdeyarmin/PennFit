@@ -3,7 +3,7 @@
 // in-house auth router needs:
 //
 //   - env: from `readAuthEnv(process.env)`.
-//   - repo: pgAuthRepository over the shared pool.
+//   - repo: supabaseAuthRepository over the shared service-role client.
 //   - audit: a thin adapter over `@workspace/resupply-audit.logAudit`
 //     (which writes to resupply.audit_log). Auth events go through
 //     the same chokepoint as everything else for one-grep
@@ -29,10 +29,10 @@ import {
   EmailConfigError,
 } from "@workspace/resupply-email";
 import { logAudit } from "@workspace/resupply-audit";
-import { getDbPool } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
-  pgAuthRepository,
   readAuthEnv,
+  supabaseAuthRepository,
   type AuthDeps,
   type CustomerIdResolver,
   type EmailSender,
@@ -52,7 +52,7 @@ let cachedDeps: AuthDeps | undefined;
 export function getAuthDeps(): AuthDeps {
   if (cachedDeps !== undefined) return cachedDeps;
   const env = readAuthEnv(process.env);
-  const repo = pgAuthRepository(getDbPool());
+  const repo = supabaseAuthRepository(getSupabaseServiceRoleClient());
 
   const audit: AuthDeps["audit"] = (event) => {
     // logAudit is async + write-through; auth handlers don't
@@ -115,26 +115,22 @@ export function getAuthDeps(): AuthDeps {
  */
 function makeCustomerIdResolver(): CustomerIdResolver {
   return async (input) => {
-    const pool = getDbPool();
-    const existing = await pool.query<{
-      customer_id: string;
-      display_name: string | null;
-      email_lower: string | null;
-    }>(
-      `SELECT customer_id, display_name, email_lower
-         FROM resupply.shop_customers
-        WHERE auth_user_id = $1
-        LIMIT 1`,
-      [input.authUserId],
-    );
-    if (existing.rows[0]) {
-      const row = existing.rows[0];
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: existing, error: existingErr } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .select("customer_id, display_name, email_lower")
+      .eq("auth_user_id", input.authUserId)
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
+    if (existing) {
       return {
-        customerKey: row.customer_id,
+        customerKey: existing.customer_id,
         // Prefer auth.users.email — that's the canonical inbox
         // (rotating it goes through the in-house verify flow).
         email: input.emailLower,
-        displayName: input.displayName ?? row.display_name,
+        displayName: input.displayName ?? existing.display_name,
       };
     }
 
@@ -142,16 +138,48 @@ function makeCustomerIdResolver(): CustomerIdResolver {
     // shop_customers row yet (typical for brand-new in-house
     // sign-ups). Mint the row keyed by auth.users.id; subsequent
     // requests find it via the auth_user_id index.
-    await pool.query(
-      `INSERT INTO resupply.shop_customers
-         (customer_id, auth_user_id, email_lower, display_name)
-       VALUES ($1, $1, $2, $3)
-       ON CONFLICT (customer_id) DO UPDATE
-         SET auth_user_id = EXCLUDED.auth_user_id,
-             email_lower = COALESCE(EXCLUDED.email_lower, resupply.shop_customers.email_lower),
-             updated_at = NOW()`,
-      [input.authUserId, input.emailLower, input.displayName],
-    );
+    //
+    // We explicitly model the original SQL's `ON CONFLICT (customer_id)
+    // DO UPDATE SET auth_user_id = EXCLUDED.auth_user_id, email_lower
+    // = COALESCE(EXCLUDED.email_lower, …)` semantics here. PostgREST's
+    // upsert helper would clobber `display_name` with the new payload
+    // (potentially null) on conflict, which can erase a curated name
+    // on a row whose `customer_id` happens to match `auth.users.id`
+    // (rare: a backfilled or re-bootstrapped shop_customers row). So
+    // we INSERT first and only fall back to a targeted UPDATE on a
+    // unique-violation, mirroring the prior behavior.
+    const { error: insertErr } = await supabase
+      .schema("resupply")
+      .from("shop_customers")
+      .insert({
+        customer_id: input.authUserId,
+        auth_user_id: input.authUserId,
+        email_lower: input.emailLower,
+        display_name: input.displayName ?? null,
+      });
+    if (insertErr) {
+      if ((insertErr as { code?: string }).code === "23505") {
+        const updatePayload: {
+          auth_user_id: string;
+          updated_at: string;
+          email_lower?: string;
+        } = {
+          auth_user_id: input.authUserId,
+          updated_at: new Date().toISOString(),
+        };
+        // Mirror COALESCE(EXCLUDED.email_lower, …): only overwrite
+        // when the caller actually has a value.
+        if (input.emailLower) updatePayload.email_lower = input.emailLower;
+        const { error: updateErr } = await supabase
+          .schema("resupply")
+          .from("shop_customers")
+          .update(updatePayload)
+          .eq("customer_id", input.authUserId);
+        if (updateErr) throw updateErr;
+      } else {
+        throw insertErr;
+      }
+    }
     return {
       customerKey: input.authUserId,
       email: input.emailLower,

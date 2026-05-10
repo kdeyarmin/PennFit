@@ -2,8 +2,9 @@
 //
 // Covers both channels: email (existing path, regression coverage)
 // and SMS (new in this phase). The dispatcher iterates rows from
-// patient_smart_trigger_events joined to patients; this test stubs
-// drizzle so we only need to script the joined-query result.
+// patient_smart_trigger_events, joined to patients in JS via a bulk
+// `.in()` lookup; this test stages each Supabase round-trip via the
+// shared mock helper.
 //
 // Audit invariant: metadata.channel reflects the channel actually
 // used. Body content (SMS or email) never appears in the audit log.
@@ -16,6 +17,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -92,72 +100,6 @@ vi.mock("../../lib/web-push", () => ({
   isPushConfigured: () => false,
 }));
 
-const selectQueue: unknown[][] = [];
-const executeQueue: Array<{ rows: unknown[] }> = [];
-const updateSets: Record<string, unknown>[] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    // Make the builder both chainable (for .from().where().limit()) and
-    // thenable (for `await db.select().from().where()` without .limit()).
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      innerJoin: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-      then: (
-        resolve: (v: unknown) => unknown,
-        reject?: (e: unknown) => unknown,
-      ) => Promise.resolve(result).then(resolve, reject),
-    };
-    return obj;
-  }),
-  execute: vi.fn(async () => {
-    // First call is the atomic claim CTE; subsequent calls are unclaims.
-    return executeQueue.shift() ?? { rows: [] };
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: (vals: Record<string, unknown>) => {
-        updateSets.push(vals);
-        return obj;
-      },
-      where: () => Promise.resolve(),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    // The /evaluate endpoint also lives in this router but isn't
-    // exercised here — provide a chainable no-op so route mounting
-    // doesn't throw at module load.
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      onConflictDoNothing: () => obj,
-      returning: () => Promise.resolve([]),
-    };
-    return obj;
-  }),
-  selectDistinct: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve([]),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import smartTriggersRouter from "./smart-triggers";
 
 const ADMIN_EMAIL = "ops@penn.example.com";
@@ -171,9 +113,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  executeQueue.length = 0;
-  updateSets.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
   sendEmailMock.mockClear();
   sendEmailMock.mockResolvedValue({ messageId: "sg_1" });
@@ -184,8 +124,7 @@ beforeEach(() => {
   sendPushToCustomerByEmailMock.mockClear();
 });
 afterEach(() => {
-  selectQueue.length = 0;
-  executeQueue.length = 0;
+  supabaseMock.reset();
 });
 
 describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
@@ -197,7 +136,8 @@ describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
   it("503s when SendGrid is not configured", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     sendgridConfigured.current = false;
-    selectQueue.push([]);
+    // SendGrid throws at client construction → dispatcher returns
+    // "not_configured" before any DB read, so no stages are needed.
     const res = await request(makeApp()).post("/admin/smart-triggers/send-due");
     expect(res.status).toBe(503);
     expect(res.body.error).toBe("email_not_configured");
@@ -205,19 +145,26 @@ describe("POST /admin/smart-triggers/send-due (email — regression)", () => {
 
   it("sends + stamps + audits with channel='email'", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    // Atomic claim returns the event row (id + patientId + kind only).
-    executeQueue.push({
-      rows: [{ eventId: "evt_1", patientId: "p_1", kind: "leak_rising" }],
+    // Step 1 — eligible-event candidates.
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [{ id: "evt_1", patient_id: "p_1", kind: "leak_rising" }],
     });
-    // Batch patient fetch returns the contact data.
-    selectQueue.push([
-      {
-        id: "p_1",
-        firstName: "Anna",
-        email: "anna@example.com",
-        phoneE164: "+12155551212",
-      },
-    ]);
+    // Step 2 — bulk patient fetch.
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: "anna@example.com",
+          phone_e164: "+12155551212",
+          status: "active",
+        },
+      ],
+    });
+    // Step 3 — atomic claim returns the claimed row.
+    stageSupabaseResponse("patient_smart_trigger_events", "update", {
+      data: [{ id: "evt_1", patient_id: "p_1", kind: "leak_rising" }],
+    });
     const res = await request(makeApp()).post("/admin/smart-triggers/send-due");
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -252,7 +199,6 @@ describe("POST /admin/smart-triggers/send-due?channel=sms (Phase G.7)", () => {
   it("503s when Twilio is missing", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
     twilioConfigured.current = false;
-    selectQueue.push([]);
     const res = await request(makeApp()).post(
       "/admin/smart-triggers/send-due?channel=sms",
     );
@@ -271,19 +217,26 @@ describe("POST /admin/smart-triggers/send-due?channel=sms (Phase G.7)", () => {
 
   it("sends SMS + stamps + audits with channel='sms'; never logs body", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    // Atomic claim — only event rows returned.
-    executeQueue.push({
-      rows: [{ eventId: "evt_1", patientId: "p_1", kind: "cushion_wear" }],
+    // Step 1 — eligible-event candidates.
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [{ id: "evt_1", patient_id: "p_1", kind: "cushion_wear" }],
     });
-    // Batch patient fetch — patient has phone but no email.
-    selectQueue.push([
-      {
-        id: "p_1",
-        firstName: "Anna",
-        email: null,
-        phoneE164: "+12155551212",
-      },
-    ]);
+    // Step 2 — bulk patient fetch (no email, only phone).
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: null,
+          phone_e164: "+12155551212",
+          status: "active",
+        },
+      ],
+    });
+    // Step 3 — atomic claim.
+    stageSupabaseResponse("patient_smart_trigger_events", "update", {
+      data: [{ id: "evt_1", patient_id: "p_1", kind: "cushion_wear" }],
+    });
     const res = await request(makeApp()).post(
       "/admin/smart-triggers/send-due?channel=sms",
     );
@@ -322,9 +275,23 @@ describe("POST /admin/smart-triggers/send-due?channel=sms (Phase G.7)", () => {
 
   it("claims zero rows when no patient has a phone (SMS channel)", async () => {
     mockAdmin.current = { userId: "u", email: ADMIN_EMAIL, role: "admin" };
-    // The atomic claim CTE filters phone_e164 IS NOT NULL, so a patient
-    // without a phone number is never claimed — execute returns empty.
-    executeQueue.push({ rows: [] });
+    // Step 1 — there's an event candidate, but...
+    stageSupabaseResponse("patient_smart_trigger_events", "select", {
+      data: [{ id: "evt_1", patient_id: "p_1", kind: "leak_rising" }],
+    });
+    // Step 2 — patient has no phone, so the JS-side filter excludes
+    // them and we never reach the atomic claim.
+    stageSupabaseResponse("patients", "select", {
+      data: [
+        {
+          id: "p_1",
+          legal_first_name: "Anna",
+          email: "anna@example.com",
+          phone_e164: null,
+          status: "active",
+        },
+      ],
+    });
     const res = await request(makeApp()).post(
       "/admin/smart-triggers/send-due?channel=sms",
     );
@@ -337,6 +304,10 @@ describe("POST /admin/smart-triggers/send-due?channel=sms (Phase G.7)", () => {
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(sendSmsMock).not.toHaveBeenCalled();
-    expect(updateSets).toEqual([]);
+    const updates = getSupabaseWritePayloads(
+      "patient_smart_trigger_events",
+      "update",
+    );
+    expect(updates).toEqual([]);
   });
 });

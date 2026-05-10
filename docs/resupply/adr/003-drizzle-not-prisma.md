@@ -1,5 +1,21 @@
 # ADR 003 — Drizzle (not Prisma) for the resupply database
 
+> **2026-05 amendment — partial supersession.** The runtime data path
+> has since moved from Drizzle + `node-postgres` to the Supabase
+> service-role client (`getSupabaseServiceRoleClient()` in
+> `@workspace/resupply-db`, talking to PostgREST). Drizzle is retained
+> as the **schema source-of-truth**: `lib/resupply-db/src/schema/**`
+> drives `drizzle-kit generate`, and `lib/resupply-db/scripts/migrate.mjs`
+> applies the generated SQL via raw `pg`. No production runtime path
+> imports `drizzle-orm` or constructs a `pg.Pool`. The decision below
+> still holds for migration tooling and ORM ergonomics; the runtime
+> data-path discussion is superseded by the Supabase migration.
+>
+> See `CLAUDE.md` → "Conventions worth knowing" → DB for the current
+> contract, and the
+> `feat(supabase): finish Drizzle/pg → Supabase runtime migration` PR
+> for the completion log.
+
 ## Context
 
 The original plan called for Prisma. The existing `lib/db` package already

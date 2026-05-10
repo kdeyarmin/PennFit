@@ -4,9 +4,9 @@
 //   * Twilio signature validated — 403 without valid X-Twilio-Signature
 //   * 200 + empty TwiML on missing required fields (ack, don't audit)
 //   * queued / processing / sending  → status update to "sent"
-//   * delivered                      → status update to "delivered" + deliveredAt
+//   * delivered                      → status update to "delivered" + delivered_at
 //   * failed / no-answer / busy /
-//     canceled                       → status update to "failed" + failedAt + failureReason
+//     canceled                       → status update to "failed" + failed_at + failure_reason
 //   * DB update and audit are fire-and-forget; 200 is sent first
 //
 // PHI invariant: audit metadata contains only the Twilio fax SID and
@@ -15,6 +15,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
+
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 // Stub Twilio signature middleware — validate that it's called but skip
 // the actual HMAC check so tests don't need real Twilio credentials.
@@ -41,35 +50,6 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
-const updatedSets: Array<{ set: Record<string, unknown>; where: string }> = [];
-const dbStub = {
-  update: vi.fn(() => {
-    const entry: { set: Record<string, unknown>; where: string } = {
-      set: {},
-      where: "",
-    };
-    updatedSets.push(entry);
-    const obj: Record<string, unknown> = {
-      set: (vals: Record<string, unknown>) => {
-        entry.set = vals;
-        return obj;
-      },
-      where: () => Promise.resolve(),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import statusCallbackRouter from "./status-callback";
 
 function makeApp(): Express {
@@ -80,13 +60,19 @@ function makeApp(): Express {
 }
 
 beforeEach(() => {
-  updatedSets.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
-  dbStub.update.mockClear();
 });
+
+// Stage a fresh "no error" envelope before any happy-path call so the
+// route's `await supabase.from(...).update(...)` resolves cleanly.
+function stageUpdateOk() {
+  stageSupabaseResponse("physician_fax_outreach", "update", { error: null });
+}
 
 describe("POST /fax/status-callback", () => {
   it("returns 200 with empty TwiML XML", async () => {
+    stageUpdateOk();
     const res = await request(makeApp())
       .post("/fax/status-callback")
       .type("form")
@@ -101,7 +87,7 @@ describe("POST /fax/status-callback", () => {
       .post("/fax/status-callback")
       .type("form")
       .send({ Status: "delivered" });
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("physician_fax_outreach", "update")).toBe(0);
   });
 
   it("skips DB update when Status is missing", async () => {
@@ -109,7 +95,7 @@ describe("POST /fax/status-callback", () => {
       .post("/fax/status-callback")
       .type("form")
       .send({ FaxSid: "FX_abc" });
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("physician_fax_outreach", "update")).toBe(0);
   });
 
   it("skips DB update for unknown Status values", async () => {
@@ -117,47 +103,65 @@ describe("POST /fax/status-callback", () => {
       .post("/fax/status-callback")
       .type("form")
       .send({ FaxSid: "FX_abc", Status: "receiving" });
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("physician_fax_outreach", "update")).toBe(0);
   });
 
   it.each(["queued", "processing", "sending"] as const)(
     "maps %s → status='sent' in DB",
     async (twilioStatus) => {
+      stageUpdateOk();
       await request(makeApp())
         .post("/fax/status-callback")
         .type("form")
         .send({ FaxSid: "FX_abc", Status: twilioStatus });
-      expect(updatedSets).toHaveLength(1);
-      expect(updatedSets[0]!.set).toMatchObject({ status: "sent" });
-      expect(updatedSets[0]!.set).not.toHaveProperty("deliveredAt");
-      expect(updatedSets[0]!.set).not.toHaveProperty("failedAt");
+      const updates = getSupabaseWritePayloads(
+        "physician_fax_outreach",
+        "update",
+      );
+      expect(updates).toHaveLength(1);
+      const patch = updates[0] as Record<string, unknown>;
+      expect(patch).toMatchObject({ status: "sent" });
+      expect(patch).not.toHaveProperty("delivered_at");
+      expect(patch).not.toHaveProperty("failed_at");
     },
   );
 
-  it("maps delivered → status='delivered' + deliveredAt", async () => {
+  it("maps delivered → status='delivered' + delivered_at", async () => {
+    stageUpdateOk();
     await request(makeApp())
       .post("/fax/status-callback")
       .type("form")
       .send({ FaxSid: "FX_abc", Status: "delivered" });
-    expect(updatedSets[0]!.set).toMatchObject({ status: "delivered" });
-    expect(updatedSets[0]!.set.deliveredAt).toBeInstanceOf(Date);
-    expect(updatedSets[0]!.set).not.toHaveProperty("failedAt");
+    const patch = getSupabaseWritePayloads(
+      "physician_fax_outreach",
+      "update",
+    )[0] as Record<string, unknown>;
+    expect(patch).toMatchObject({ status: "delivered" });
+    // PostgREST uses ISO timestamp strings, not Date instances.
+    expect(typeof patch.delivered_at).toBe("string");
+    expect(patch).not.toHaveProperty("failed_at");
   });
 
   it.each(["failed", "no-answer", "busy", "canceled"] as const)(
-    "maps %s → status='failed' + failedAt + failureReason",
+    "maps %s → status='failed' + failed_at + failure_reason",
     async (twilioStatus) => {
+      stageUpdateOk();
       await request(makeApp())
         .post("/fax/status-callback")
         .type("form")
         .send({ FaxSid: "FX_abc", Status: twilioStatus, ErrorCode: "30006" });
-      expect(updatedSets[0]!.set).toMatchObject({ status: "failed" });
-      expect(updatedSets[0]!.set.failedAt).toBeInstanceOf(Date);
-      expect(updatedSets[0]!.set.failureReason).toContain("30006");
+      const patch = getSupabaseWritePayloads(
+        "physician_fax_outreach",
+        "update",
+      )[0] as Record<string, unknown>;
+      expect(patch).toMatchObject({ status: "failed" });
+      expect(typeof patch.failed_at).toBe("string");
+      expect(String(patch.failure_reason)).toContain("30006");
     },
   );
 
   it("emits audit event with non-PHI envelope", async () => {
+    stageUpdateOk();
     await request(makeApp())
       .post("/fax/status-callback")
       .type("form")

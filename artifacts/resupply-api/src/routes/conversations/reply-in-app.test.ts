@@ -16,12 +16,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
-import { SQL } from "drizzle-orm";
 
 import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+  getSupabaseWritePayloads,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -29,49 +36,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-// Drizzle stub. The route does up to two SELECTs and one UPDATE:
-//   1. Early channel check: SELECT channel FROM conversations …
-//   2. Email-resolution join: SELECT email, displayName, prefs,
-//      lastNotifiedAt FROM conversations JOIN shop_customers …
-//   3. Throttle stamp (post-send only): UPDATE conversations SET
-//      last_in_app_notification_at = now() …  (DB-side expression)
-// All three run through the fluent stub; the test pushes select
-// results in order and inspects updateCalls for throttle stamping.
-const selectQueue: unknown[][] = [];
-const updateCalls: Array<Record<string, unknown>> = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      innerJoin: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const obj: Record<string, unknown> = {
-      set: (vals: Record<string, unknown>) => {
-        updateCalls.push(vals);
-        return obj;
-      },
-      where: () => Promise.resolve(),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 // Bypass idempotency middleware — this test isn't about
 // idempotency semantics.
@@ -149,8 +113,7 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  updateCalls.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
   appendAdminInAppReplyMock.mockClear();
   appendAdminInAppReplyMock.mockResolvedValue({
@@ -176,7 +139,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([]); // early channel check returns nothing
+    stageSupabaseResponse("conversations", "select", { data: null });
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/reply`)
       .send({ body: "ping" });
@@ -202,14 +165,29 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]); // early channel check
-    selectQueue.push([
-      {
-        customerId: "user_anna",
-        email: "shopper@example.com",
-        displayName: "Anna Singh",
+    // Early channel check.
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
+    // tryNotifyCustomerOfReply — conversations.customer_id +
+    // last_in_app_notification_at lookup.
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        customer_id: "user_anna",
+        last_in_app_notification_at: null,
       },
-    ]); // email-resolution join
+    });
+    // shop_customers lookup.
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "user_anna",
+        email_lower: "shopper@example.com",
+        display_name: "Anna Singh",
+        communication_preferences: null,
+      },
+    });
+    // Throttle stamp.
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/reply`)
@@ -268,14 +246,24 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]); // early channel check
-    selectQueue.push([
-      {
-        customerId: "user_anna",
-        email: "shopper@example.com",
-        displayName: "Anna Singh",
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        customer_id: "user_anna",
+        last_in_app_notification_at: null,
       },
-    ]); // email-resolution join
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "user_anna",
+        email_lower: "shopper@example.com",
+        display_name: "Anna Singh",
+        communication_preferences: null,
+      },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
     sendEmailMock.mockRejectedValueOnce(new Error("SendGrid unavailable"));
 
     const res = await request(makeApp())
@@ -305,7 +293,9 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]); // early channel check
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
     appendAdminInAppReplyMock.mockResolvedValueOnce({
       status: "conversation_closed",
     } as unknown as { status: "ok"; result: { messageId: string } });
@@ -323,15 +313,23 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]); // early channel check
-    selectQueue.push([
-      {
-        customerId: "user_anna",
-        email: "shopper@example.com",
-        displayName: "Anna Singh",
-        prefs: { emailInAppReplyNotifications: false },
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        customer_id: "user_anna",
+        last_in_app_notification_at: null,
       },
-    ]);
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "user_anna",
+        email_lower: "shopper@example.com",
+        display_name: "Anna Singh",
+        communication_preferences: { emailInAppReplyNotifications: false },
+      },
+    });
 
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/reply`)
@@ -356,15 +354,24 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]);
-    selectQueue.push([
-      {
-        customerId: "user_anna",
-        email: "shopper@example.com",
-        displayName: "Anna Singh",
-        prefs: null,
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        customer_id: "user_anna",
+        last_in_app_notification_at: null,
       },
-    ]);
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "user_anna",
+        email_lower: "shopper@example.com",
+        display_name: "Anna Singh",
+        communication_preferences: null,
+      },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/reply`)
@@ -382,16 +389,23 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]);
-    selectQueue.push([
-      {
-        customerId: "user_anna",
-        email: "shopper@example.com",
-        displayName: "Anna Singh",
-        prefs: null,
-        lastNotifiedAt: new Date(Date.now() - 60_000),
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        customer_id: "user_anna",
+        last_in_app_notification_at: new Date(Date.now() - 60_000).toISOString(),
       },
-    ]);
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "user_anna",
+        email_lower: "shopper@example.com",
+        display_name: "Anna Singh",
+        communication_preferences: null,
+      },
+    });
 
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/reply`)
@@ -402,7 +416,7 @@ describe("POST /conversations/:id/reply (in_app)", () => {
     expect(logAuditMock).toHaveBeenCalledTimes(1);
     // No email, no throttle UPDATE — we never sent.
     expect(sendEmailMock).not.toHaveBeenCalled();
-    expect(updateCalls).toHaveLength(0);
+    expect(getSupabaseCallCount("conversations", "update")).toBe(0);
   });
 
   it("sends and stamps when the prior notification was outside the throttle window", async () => {
@@ -413,16 +427,26 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]);
-    selectQueue.push([
-      {
-        customerId: "user_anna",
-        email: "shopper@example.com",
-        displayName: "Anna Singh",
-        prefs: null,
-        lastNotifiedAt: new Date(Date.now() - 30 * 60_000),
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        customer_id: "user_anna",
+        last_in_app_notification_at: new Date(
+          Date.now() - 30 * 60_000,
+        ).toISOString(),
       },
-    ]);
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "user_anna",
+        email_lower: "shopper@example.com",
+        display_name: "Anna Singh",
+        communication_preferences: null,
+      },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
 
     const res = await request(makeApp())
       .post(`/conversations/${CONV_ID}/reply`)
@@ -430,8 +454,14 @@ describe("POST /conversations/:id/reply (in_app)", () => {
 
     expect(res.status).toBe(201);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0]?.lastInAppNotificationAt).toBeInstanceOf(SQL);
+    expect(getSupabaseCallCount("conversations", "update")).toBe(1);
+    // The route stamps `last_in_app_notification_at` on the row;
+    // the patch payload is an ISO string under PostgREST.
+    const updates = getSupabaseWritePayloads(
+      "conversations",
+      "update",
+    ) as Record<string, unknown>[];
+    expect(typeof updates[0]?.last_in_app_notification_at).toBe("string");
   });
 
   it("treats notification email failure as best-effort (still 201)", async () => {
@@ -440,14 +470,24 @@ describe("POST /conversations/:id/reply (in_app)", () => {
       email: "ops@penn.example.com",
       role: "admin",
     };
-    selectQueue.push([{ channel: "in_app" }]);
-    selectQueue.push([
-      {
-        customerId: "user_anna",
-        email: "shopper@example.com",
-        displayName: "Anna Singh",
+    stageSupabaseResponse("conversations", "select", {
+      data: { channel: "in_app" },
+    });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
+        customer_id: "user_anna",
+        last_in_app_notification_at: null,
       },
-    ]);
+    });
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: "user_anna",
+        email_lower: "shopper@example.com",
+        display_name: "Anna Singh",
+        communication_preferences: null,
+      },
+    });
+    stageSupabaseResponse("conversations", "update", { error: null });
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid down"));
 
     const res = await request(makeApp())

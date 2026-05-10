@@ -15,6 +15,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
+
 // Mock pdfkit so tests don't generate real PDFs and stay fast.
 vi.mock("pdfkit", async () => {
   const { EventEmitter } = await import("node:events");
@@ -49,27 +57,6 @@ vi.mock("../../lib/fax-document-token", () => ({
   verifyFaxDocumentToken: verifyTokenMock,
 }));
 
-const selectQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      limit: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({ drizzle: () => dbStub }));
-vi.mock("@workspace/resupply-db", async () => {
-  const actual =
-    await vi.importActual<typeof import("@workspace/resupply-db")>(
-      "@workspace/resupply-db",
-    );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import documentRouter from "./document";
 
 function makeApp(): Express {
@@ -79,9 +66,8 @@ function makeApp(): Express {
 }
 
 beforeEach(() => {
-  selectQueue.length = 0;
+  supabaseMock.reset();
   verifyTokenMock.mockClear();
-  dbStub.select.mockClear();
 });
 
 describe("GET /fax/document/:token", () => {
@@ -90,7 +76,7 @@ describe("GET /fax/document/:token", () => {
     const res = await request(makeApp()).get("/fax/document/bad-token");
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("invalid_token");
-    expect(dbStub.select).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("physician_fax_outreach", "select")).toBe(0);
   });
 
   it("403s when token is expired", async () => {
@@ -103,7 +89,7 @@ describe("GET /fax/document/:token", () => {
 
   it("404s when outreach row not found in DB", async () => {
     verifyTokenMock.mockReturnValueOnce({ valid: true, outreachId: "out_1" });
-    selectQueue.push([]); // DB returns no rows
+    stageSupabaseResponse("physician_fax_outreach", "select", { data: null });
     const res = await request(makeApp()).get("/fax/document/valid.token");
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("not_found");
@@ -111,13 +97,13 @@ describe("GET /fax/document/:token", () => {
 
   it("200s and streams a PDF with correct headers", async () => {
     verifyTokenMock.mockReturnValueOnce({ valid: true, outreachId: "out_1" });
-    selectQueue.push([
-      {
-        physicianName: "Dr. Anna Stein",
-        coverLetterText:
+    stageSupabaseResponse("physician_fax_outreach", "select", {
+      data: {
+        physician_name: "Dr. Anna Stein",
+        cover_letter_text:
           "Please renew the prescription for the patient below.",
       },
-    ]);
+    });
     const res = await request(makeApp()).get("/fax/document/valid.token");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/application\/pdf/);
@@ -131,12 +117,13 @@ describe("GET /fax/document/:token", () => {
     process.env.RESUPPLY_PRACTICE_NAME = "TestPractice";
     try {
       verifyTokenMock.mockReturnValueOnce({ valid: true, outreachId: "out_2" });
-      selectQueue.push([
-        {
-          physicianName: "Dr. B",
-          coverLetterText: "At least twenty characters here for the cover letter.",
+      stageSupabaseResponse("physician_fax_outreach", "select", {
+        data: {
+          physician_name: "Dr. B",
+          cover_letter_text:
+            "At least twenty characters here for the cover letter.",
         },
-      ]);
+      });
       const res = await request(makeApp()).get("/fax/document/valid.token");
       expect(res.status).toBe(200);
     } finally {

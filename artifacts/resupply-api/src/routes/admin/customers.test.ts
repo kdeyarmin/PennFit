@@ -1,8 +1,7 @@
 // Route tests for routes/admin/customers.ts (the Customer 360
-// admin surface). Mirrors the fluent-stub pattern in
-// shop-orders.test.ts and shop-products.test.ts.
+// admin surface).
 //
-// Coverage matrix (T1: list endpoint only — T2/T3 will extend):
+// Coverage matrix:
 //   GET /admin/shop/customers
 //     * unauthenticated caller       -> 401/403
 //     * non-admin caller             -> 403
@@ -11,17 +10,19 @@
 //     * empty list happy path        -> 200, total=0
 //     * list with one row            -> emailRedacted shape correct
 //     * pagination + sort + filter   -> echoed in response
-//     * lifetime + sub flag pass-through from SQL aggregation
+//     * lifetime + sub flag pass-through from JS aggregation
 //     * subscription=active filter   -> reaches handler (smoke test)
 //
 // Mocking strategy:
-//   * `getDbPool` returns an empty object; the real Drizzle import
-//     is replaced by a stub whose `.execute()` pulls the next
-//     pre-queued result off `executeQueue`. The customers list
-//     handler issues exactly two execute() calls per request: the
-//     paginated SELECT, then the COUNT(*) total. Each test pushes
-//     two rows-results in that order.
-//   * the auth provider is mocked via auth-deps; the admin gate
+//   * Supabase client stubbed via the shared `supabase-mock` helper.
+//     The list endpoint fans out to four tables (`shop_customers`,
+//     `shop_orders`, `shop_subscriptions`, `conversations`); the
+//     detail endpoint to eight; the reorder endpoint to three.
+//     Each test stages the rows it expects each query to see, in
+//     order.
+//   * Stripe is mocked at the lib/stripe/config layer for the
+//     reorder happy path.
+//   * The auth provider is mocked via auth-deps; the admin gate
 //     resolves a verified email matching RESUPPLY_ADMIN_EMAILS.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -32,6 +33,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -40,19 +48,7 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-// Drizzle stub. The customers list handler uses db.execute(sql`...`)
-// (NOT the fluent select/from chain), so the stub only needs an
-// .execute() method that pops from a queue.
-const executeQueue: Array<{ rows: unknown[] }> = [];
-const dbStub = {
-  execute: vi.fn(() => Promise.resolve(executeQueue.shift() ?? { rows: [] })),
-};
-
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-// Stripe stub for reorder tests. Same shape as shop-orders.test.ts.
+// Stripe stub for reorder tests.
 const stripeCheckoutCreateMock = vi.fn();
 let stripeConfigured = true;
 vi.mock("../../lib/stripe/config", () => ({
@@ -73,13 +69,6 @@ vi.mock("../../lib/stripe/config", () => ({
     },
   }),
 }));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
 
 const ALLOWED_EMAIL = "ops@penn.example.com";
 
@@ -107,8 +96,7 @@ beforeEach(() => {
   for (const k of ENV_KEYS) delete process.env[k];
   process.env.NODE_ENV = "test";
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-  executeQueue.length = 0;
-  dbStub.execute.mockClear();
+  supabaseMock.reset();
   stripeCheckoutCreateMock.mockReset();
   stripeConfigured = true;
   mockAdmin.current = null;
@@ -119,12 +107,38 @@ afterEach(() => {
     if (originalEnv[k] === undefined) delete process.env[k];
     else process.env[k] = originalEnv[k];
   }
-  executeQueue.length = 0;
 });
 
 async function loadRouter() {
   const mod = await import("./customers");
   return mod.default;
+}
+
+// ====================================================================
+// Helper: stage the four tables the list endpoint reads in parallel.
+// `customers` is the shop_customers SELECT. `orders`, `subs`, and
+// `convs` represent the rollup data feeding the JS-side aggregations.
+// ====================================================================
+interface ListStageInput {
+  customers: Array<Record<string, unknown>>;
+  orders?: Array<Record<string, unknown>>;
+  subs?: Array<Record<string, unknown>>;
+  convs?: Array<Record<string, unknown>>;
+}
+
+function stageListEndpoint(opts: ListStageInput): void {
+  stageSupabaseResponse("shop_customers", "select", { data: opts.customers });
+  if (opts.customers.length === 0) {
+    // Route short-circuits when no candidate ids — the parallel
+    // rollup queries return Promise.resolve({data:[]}) JS-side
+    // and never hit the mock.
+    return;
+  }
+  stageSupabaseResponse("shop_orders", "select", { data: opts.orders ?? [] });
+  stageSupabaseResponse("shop_subscriptions", "select", {
+    data: opts.subs ?? [],
+  });
+  stageSupabaseResponse("conversations", "select", { data: opts.convs ?? [] });
 }
 
 describe("GET /admin/shop/customers — auth gate", () => {
@@ -134,7 +148,7 @@ describe("GET /admin/shop/customers — auth gate", () => {
       "/resupply-api/admin/shop/customers",
     );
     expect([401, 403]).toContain(res.status);
-    expect(dbStub.execute).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
   });
 
   it("rejects non-admin callers (verified email not on allowlist)", async () => {
@@ -143,7 +157,7 @@ describe("GET /admin/shop/customers — auth gate", () => {
       "/resupply-api/admin/shop/customers",
     );
     expect(res.status).toBe(401);
-    expect(dbStub.execute).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
   });
 });
 
@@ -180,8 +194,7 @@ describe("GET /admin/shop/customers — query validation", () => {
 describe("GET /admin/shop/customers — happy path", () => {
   it("returns empty result with total=0 when no customers", async () => {
     stubVerifiedAdmin();
-    executeQueue.push({ rows: [] }); // list query
-    executeQueue.push({ rows: [{ total: 0 }] }); // count query
+    stageListEndpoint({ customers: [] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
@@ -197,22 +210,43 @@ describe("GET /admin/shop/customers — happy path", () => {
 
   it("redacts email and maps every column shape", async () => {
     stubVerifiedAdmin();
-    executeQueue.push({
-      rows: [
+    // Three paid orders summing to 12345, latest at 2026-04-01.
+    stageListEndpoint({
+      customers: [
         {
-          user_id: "user_1",
+          customer_id: "user_1",
           display_name: "Jane Doe",
           email_lower: "jane.doe@example.com",
           stripe_customer_id: "cus_123",
           created_at: "2026-01-01T00:00:00Z",
-          orders_count: 3,
-          lifetime_value_cents: 12345,
-          last_order_at: "2026-04-01T00:00:00Z",
-          has_active_subscription: true,
         },
       ],
+      orders: [
+        {
+          customer_id: "user_1",
+          amount_total_cents: 5000,
+          paid_at: "2026-04-01T00:01:00Z",
+          status: "paid",
+          created_at: "2026-04-01T00:00:00Z",
+        },
+        {
+          customer_id: "user_1",
+          amount_total_cents: 4345,
+          paid_at: "2026-03-01T00:01:00Z",
+          status: "paid",
+          created_at: "2026-03-01T00:00:00Z",
+        },
+        {
+          customer_id: "user_1",
+          amount_total_cents: 3000,
+          paid_at: "2026-02-01T00:01:00Z",
+          status: "paid",
+          created_at: "2026-02-01T00:00:00Z",
+        },
+      ],
+      subs: [{ customer_id: "user_1" }],
+      convs: [],
     });
-    executeQueue.push({ rows: [{ total: 1 }] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
@@ -228,30 +262,28 @@ describe("GET /admin/shop/customers — happy path", () => {
     expect(c.stripeCustomerId).toBe("cus_123");
     expect(c.ordersCount).toBe(3);
     expect(c.lifetimeValueCents).toBe(12345);
-    expect(c.lastOrderAt).toBe("2026-04-01T00:00:00.000Z");
+    expect(c.lastOrderAt).toBe("2026-04-01T00:00:00Z");
     expect(c.hasActiveSubscription).toBe(true);
-    expect(c.createdAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(c.createdAt).toBe("2026-01-01T00:00:00Z");
     expect(res.body.total).toBe(1);
   });
 
   it("preserves null lastOrderAt for never-ordered customers", async () => {
     stubVerifiedAdmin();
-    executeQueue.push({
-      rows: [
+    stageListEndpoint({
+      customers: [
         {
-          user_id: "user_2",
+          customer_id: "user_2",
           display_name: null,
           email_lower: "no@orders.io",
           stripe_customer_id: null,
           created_at: "2026-02-01T00:00:00Z",
-          orders_count: 0,
-          lifetime_value_cents: 0,
-          last_order_at: null,
-          has_active_subscription: false,
         },
       ],
+      orders: [],
+      subs: [],
+      convs: [],
     });
-    executeQueue.push({ rows: [{ total: 1 }] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
@@ -266,8 +298,7 @@ describe("GET /admin/shop/customers — happy path", () => {
 
   it("echoes pagination + sort + filter in response and reaches DB", async () => {
     stubVerifiedAdmin();
-    executeQueue.push({ rows: [] });
-    executeQueue.push({ rows: [{ total: 0 }] });
+    stageListEndpoint({ customers: [] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers?page=2&pageSize=10&sortBy=lifetime_value&order=asc&subscription=active",
@@ -275,27 +306,27 @@ describe("GET /admin/shop/customers — happy path", () => {
     expect(res.status).toBe(200);
     expect(res.body.page).toBe(2);
     expect(res.body.pageSize).toBe(10);
-    expect(dbStub.execute).toHaveBeenCalledTimes(2);
+    // Empty candidate set short-circuits before the rollup queries —
+    // only the shop_customers SELECT fires.
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(1);
   });
 
   it("redacts very-short local-parts safely (<=2 chars)", async () => {
     stubVerifiedAdmin();
-    executeQueue.push({
-      rows: [
+    stageListEndpoint({
+      customers: [
         {
-          user_id: "user_short",
+          customer_id: "user_short",
           display_name: "AB",
           email_lower: "ab@x.io",
           stripe_customer_id: null,
           created_at: "2026-01-01T00:00:00Z",
-          orders_count: 0,
-          lifetime_value_cents: 0,
-          last_order_at: null,
-          has_active_subscription: false,
         },
       ],
+      orders: [],
+      subs: [],
+      convs: [],
     });
-    executeQueue.push({ rows: [{ total: 1 }] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
@@ -305,61 +336,55 @@ describe("GET /admin/shop/customers — happy path", () => {
     expect(res.body.customers[0].emailRedacted).toBe("ab@x.io");
   });
 
-  // ─── Phase 9: inAppNeedsReply column + ?awaitingReply=1 filter ────
-
   it("surfaces inAppNeedsReply on each row (Phase 9)", async () => {
     stubVerifiedAdmin();
-    executeQueue.push({
-      rows: [
+    stageListEndpoint({
+      customers: [
         {
-          user_id: "user_waiting",
+          customer_id: "user_waiting",
           display_name: "Anna",
           email_lower: "anna@example.com",
           stripe_customer_id: null,
           created_at: "2026-01-01T00:00:00Z",
-          orders_count: 0,
-          lifetime_value_cents: 0,
-          last_order_at: null,
-          has_active_subscription: false,
-          in_app_needs_reply: true,
         },
         {
-          user_id: "user_caught_up",
+          customer_id: "user_caught_up",
           display_name: "Bo",
           email_lower: "bo@example.com",
           stripe_customer_id: null,
           created_at: "2026-01-01T00:00:00Z",
-          orders_count: 0,
-          lifetime_value_cents: 0,
-          last_order_at: null,
-          has_active_subscription: false,
-          in_app_needs_reply: false,
         },
       ],
+      orders: [],
+      subs: [],
+      // Only user_waiting has an awaiting_admin in_app conversation.
+      convs: [{ customer_id: "user_waiting" }],
     });
-    executeQueue.push({ rows: [{ total: 2 }] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers",
     );
     expect(res.status).toBe(200);
-    expect(res.body.customers[0].inAppNeedsReply).toBe(true);
-    expect(res.body.customers[1].inAppNeedsReply).toBe(false);
+    const waiting = res.body.customers.find(
+      (c: { userId: string }) => c.userId === "user_waiting",
+    );
+    const caughtUp = res.body.customers.find(
+      (c: { userId: string }) => c.userId === "user_caught_up",
+    );
+    expect(waiting.inAppNeedsReply).toBe(true);
+    expect(caughtUp.inAppNeedsReply).toBe(false);
   });
 
   it("forwards ?awaitingReply=1 to the SQL filter (Phase 9)", async () => {
     stubVerifiedAdmin();
-    executeQueue.push({ rows: [] });
-    executeQueue.push({ rows: [{ total: 0 }] });
+    stageListEndpoint({ customers: [] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       "/resupply-api/admin/shop/customers?awaitingReply=1",
     );
     expect(res.status).toBe(200);
-    // Both queries fire (list + count) — the filter is server-side
-    // so our test fixture pushed empty rows; we just verify the
-    // route accepted the param without 400ing.
-    expect(dbStub.execute).toHaveBeenCalledTimes(2);
+    // Empty candidate set → only shop_customers SELECT fires.
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(1);
   });
 
   it("rejects an invalid ?awaitingReply value (Phase 9)", async () => {
@@ -369,7 +394,7 @@ describe("GET /admin/shop/customers — happy path", () => {
       "/resupply-api/admin/shop/customers?awaitingReply=garbage",
     );
     expect(res.status).toBe(400);
-    expect(dbStub.execute).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
   });
 });
 
@@ -377,60 +402,78 @@ describe("GET /admin/shop/customers — happy path", () => {
 // GET /admin/shop/customers/:userId — single-customer detail
 // =====================================================================
 //
-// The detail handler issues SIX execute() calls per request, in order:
-//   1. customer mirror row    (shop_customers)
-//   2. recent orders          (shop_orders, LIMIT 25)
-//   3. subscriptions          (shop_subscriptions)
-//   4. abandoned cart         (shop_abandoned_carts, LIMIT 1)
-//   5. reviews                (shop_reviews, LIMIT 100)
-//   6. stats rollup           (single row of aggregates)
-//
-// On the 404 path (no customer AND no orders) only the first two
-// calls are made.
+// The detail handler issues 8 parallel queries:
+//   1. shop_customers (single, maybeSingle)
+//   2. shop_orders (recent, limit 25)
+//   3. shop_subscriptions
+//   4. shop_abandoned_carts (single, maybeSingle)
+//   5. shop_reviews (recent, limit 100)
+//   6. conversations (single in_app, maybeSingle)
+//   7. shop_orders (lifetime stats — full set)
+//   8. shop_reviews (head:true count of pending)
+// Plus optional:
+//   * shop_order_items (bulk by order_id) when there are orders
+//   * messages (by conversation_id) when there's an in-app row
 
 const VALID_USER_ID = "user_2abc_DEF-9";
 
-function pushDetailQueue(opts: {
+interface DetailStageInput {
   customer: Record<string, unknown> | null;
   orders: Array<Record<string, unknown>>;
   subscriptions?: Array<Record<string, unknown>>;
   abandonedCart?: Record<string, unknown> | null;
   reviews?: Array<Record<string, unknown>>;
-  /**
-   * In-app conversation summary (added in PR #54). Defaults to no
-   * thread (empty rows) so existing tests don't have to be aware of
-   * the new query unless they specifically exercise the in-app
-   * surface. Pushed in the same order as the route's SQL: between
-   * reviews and stats.
-   */
   inAppConversation?: Record<string, unknown> | null;
-  stats?: Record<string, unknown>;
-}): void {
-  executeQueue.push({ rows: opts.customer ? [opts.customer] : [] });
-  executeQueue.push({ rows: opts.orders });
-  // The remaining queries are only issued if the 404 short-
-  // circuit was NOT triggered.
+  /**
+   * Lifetime stats are computed JS-side from `statsOrders` (a
+   * separate query than the recent-25 list). When omitted we mirror
+   * `orders` so the legacy aggregated `stats` row from the test
+   * harness lines up.
+   */
+  statsOrders?: Array<Record<string, unknown>>;
+  pendingReviewsCount?: number;
+}
+
+function stageDetailEndpoint(opts: DetailStageInput): void {
+  stageSupabaseResponse("shop_customers", "select", {
+    data: opts.customer,
+  });
+  stageSupabaseResponse("shop_orders", "select", { data: opts.orders });
+  stageSupabaseResponse("shop_subscriptions", "select", {
+    data: opts.subscriptions ?? [],
+  });
+  stageSupabaseResponse("shop_abandoned_carts", "select", {
+    data: opts.abandonedCart ?? null,
+  });
+  stageSupabaseResponse("shop_reviews", "select", {
+    data: opts.reviews ?? [],
+  });
+  stageSupabaseResponse("conversations", "select", {
+    data: opts.inAppConversation ?? null,
+  });
+  // 7. Lifetime-stats orders SELECT — separate from #2.
+  stageSupabaseResponse("shop_orders", "select", {
+    data: opts.statsOrders ?? opts.orders,
+  });
+  // 8. Pending-reviews head:true count.
+  stageSupabaseResponse("shop_reviews", "select", {
+    data: null,
+    count: opts.pendingReviewsCount ?? 0,
+  });
+
+  // 404 short-circuit: when no customer AND no orders, the route
+  // returns before the optional follow-up reads.
   const not404 = !!opts.customer || opts.orders.length > 0;
   if (!not404) return;
-  executeQueue.push({ rows: opts.subscriptions ?? [] });
-  executeQueue.push({
-    rows: opts.abandonedCart ? [opts.abandonedCart] : [],
-  });
-  executeQueue.push({ rows: opts.reviews ?? [] });
-  executeQueue.push({
-    rows: opts.inAppConversation ? [opts.inAppConversation] : [],
-  });
-  executeQueue.push({
-    rows: [
-      opts.stats ?? {
-        orders_count: opts.orders.length,
-        lifetime_value_cents: 0,
-        first_order_at: null,
-        last_order_at: null,
-        pending_reviews_count: 0,
-      },
-    ],
-  });
+
+  // shop_order_items is only fetched when there's at least one order.
+  if (opts.orders.length > 0) {
+    stageSupabaseResponse("shop_order_items", "select", { data: [] });
+  }
+  // messages SELECT only fires when there's an in-app conversation.
+  if (opts.inAppConversation) {
+    stageSupabaseResponse("messages", "select", { data: [] });
+  }
 }
 
 describe("GET /admin/shop/customers/:userId — auth + validation", () => {
@@ -440,7 +483,7 @@ describe("GET /admin/shop/customers/:userId — auth + validation", () => {
       `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
     );
     expect([401, 403]).toContain(res.status);
-    expect(dbStub.execute).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customers", "select")).toBe(0);
   });
 
   it("rejects non-admin callers", async () => {
@@ -465,7 +508,7 @@ describe("GET /admin/shop/customers/:userId — auth + validation", () => {
 describe("GET /admin/shop/customers/:userId — happy paths", () => {
   it("returns 404 when no customer row AND no orders", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({ customer: null, orders: [] });
+    stageDetailEndpoint({ customer: null, orders: [] });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
@@ -476,9 +519,41 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 
   it("returns full profile for registered customer with orders", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
+    const orders = [
+      {
+        id: "ord_1",
+        stripe_session_id: "cs_1",
+        stripe_payment_intent_id: "pi_1",
+        status: "paid",
+        amount_total_cents: 5000,
+        currency: "usd",
+        created_at: "2026-04-01T00:00:00Z",
+        paid_at: "2026-04-01T00:01:00Z",
+        shipped_at: null,
+        delivered_at: null,
+        tracking_carrier: null,
+        tracking_number: null,
+        shipping_address_json: { line1: "123 Main" },
+      },
+      {
+        id: "ord_0",
+        stripe_session_id: "cs_0",
+        stripe_payment_intent_id: "pi_0",
+        status: "delivered",
+        amount_total_cents: 3000,
+        currency: "usd",
+        created_at: "2026-02-01T00:00:00Z",
+        paid_at: "2026-02-01T00:01:00Z",
+        shipped_at: "2026-02-02T00:00:00Z",
+        delivered_at: "2026-02-04T00:00:00Z",
+        tracking_carrier: "UPS",
+        tracking_number: "1Z999",
+        shipping_address_json: null,
+      },
+    ];
+    stageDetailEndpoint({
       customer: {
-        user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
         display_name: "Jane Doe",
         email_lower: "jane@example.com",
         stripe_customer_id: "cus_abc",
@@ -487,43 +562,13 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
         default_payment_method_last4: "4242",
         default_payment_method_exp_month: 12,
         default_payment_method_exp_year: 2030,
+        cpap_device_json: null,
+        physician_info_json: null,
+        facial_measurements_json: null,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-04-01T00:00:00Z",
       },
-      orders: [
-        {
-          id: "ord_1",
-          stripe_session_id: "cs_1",
-          stripe_payment_intent_id: "pi_1",
-          status: "paid",
-          amount_total_cents: 5000,
-          currency: "usd",
-          created_at: "2026-04-01T00:00:00Z",
-          paid_at: "2026-04-01T00:01:00Z",
-          shipped_at: null,
-          delivered_at: null,
-          tracking_carrier: null,
-          tracking_number: null,
-          shipping_address_json: { line1: "123 Main" },
-          item_count: 2,
-        },
-        {
-          id: "ord_0",
-          stripe_session_id: "cs_0",
-          stripe_payment_intent_id: "pi_0",
-          status: "delivered",
-          amount_total_cents: 3000,
-          currency: "usd",
-          created_at: "2026-02-01T00:00:00Z",
-          paid_at: "2026-02-01T00:01:00Z",
-          shipped_at: "2026-02-02T00:00:00Z",
-          delivered_at: "2026-02-04T00:00:00Z",
-          tracking_carrier: "UPS",
-          tracking_number: "1Z999",
-          shipping_address_json: null,
-          item_count: 1,
-        },
-      ],
+      orders,
       subscriptions: [
         {
           id: "sub_1",
@@ -564,14 +609,156 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
           updated_at: "2026-03-01T00:00:00Z",
         },
       ],
-      stats: {
-        orders_count: 2,
-        lifetime_value_cents: 8000,
-        first_order_at: "2026-02-01T00:00:00Z",
-        last_order_at: "2026-04-01T00:00:00Z",
-        pending_reviews_count: 0,
+    });
+    // The route also fetches shop_order_items for the page's orders,
+    // staged here with item counts so the response reflects them.
+    // (stageDetailEndpoint stages an empty array — override below.)
+    // We need to overwrite the empty stage with two rows.
+    // Reset and re-stage with explicit item rows:
+    supabaseMock.reset();
+    stageDetailEndpoint({
+      customer: {
+        customer_id: VALID_USER_ID,
+        display_name: "Jane Doe",
+        email_lower: "jane@example.com",
+        stripe_customer_id: "cus_abc",
+        shipping_address_json: { line1: "123 Main", city: "Phila" },
+        default_payment_method_brand: "visa",
+        default_payment_method_last4: "4242",
+        default_payment_method_exp_month: 12,
+        default_payment_method_exp_year: 2030,
+        cpap_device_json: null,
+        physician_info_json: null,
+        facial_measurements_json: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-04-01T00:00:00Z",
+      },
+      orders,
+      subscriptions: [
+        {
+          id: "sub_1",
+          stripe_subscription_id: "sub_stripe_1",
+          stripe_customer_id: "cus_abc",
+          status: "active",
+          items: [{ priceId: "price_x", quantity: 1 }],
+          current_period_end: "2026-05-01T00:00:00Z",
+          cancel_at_period_end: false,
+          canceled_at: null,
+          initial_amount_total_cents: 5000,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        },
+      ],
+      abandonedCart: {
+        id: "cart_1",
+        items: [{ priceId: "price_y", quantity: 2 }],
+        subtotal_cents: 4000,
+        currency: "usd",
+        updated_at: "2026-04-15T00:00:00Z",
+        reminded_at: "2026-04-16T00:00:00Z",
+        recovered_at: null,
+        cleared_at: null,
+        created_at: "2026-04-15T00:00:00Z",
+      },
+      reviews: [
+        {
+          id: "rev_1",
+          product_id: "prod_x",
+          rating: 5,
+          title: "Great",
+          body: "Loved it",
+          status: "approved",
+          moderation_note: null,
+          moderated_at: "2026-03-01T00:00:00Z",
+          created_at: "2026-03-01T00:00:00Z",
+          updated_at: "2026-03-01T00:00:00Z",
+        },
+      ],
+    });
+    // Drop the empty shop_order_items stage queued by stageDetailEndpoint
+    // and substitute one with item rows. The mock's queue is FIFO per
+    // (table, op); reset isolates this. With shop_order_items as the
+    // last queued select on that table the data shape is { data: [...] }.
+    // For simplicity stage two rows that yield itemCount of 2 for ord_1
+    // and 1 for ord_0:
+    supabaseMock.reset();
+    // Rebuild the full stage chain WITH item rows.
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: VALID_USER_ID,
+        display_name: "Jane Doe",
+        email_lower: "jane@example.com",
+        stripe_customer_id: "cus_abc",
+        shipping_address_json: { line1: "123 Main", city: "Phila" },
+        default_payment_method_brand: "visa",
+        default_payment_method_last4: "4242",
+        default_payment_method_exp_month: 12,
+        default_payment_method_exp_year: 2030,
+        cpap_device_json: null,
+        physician_info_json: null,
+        facial_measurements_json: null,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-04-01T00:00:00Z",
       },
     });
+    stageSupabaseResponse("shop_orders", "select", { data: orders });
+    stageSupabaseResponse("shop_subscriptions", "select", {
+      data: [
+        {
+          id: "sub_1",
+          stripe_subscription_id: "sub_stripe_1",
+          stripe_customer_id: "cus_abc",
+          status: "active",
+          items: [{ priceId: "price_x", quantity: 1 }],
+          current_period_end: "2026-05-01T00:00:00Z",
+          cancel_at_period_end: false,
+          canceled_at: null,
+          initial_amount_total_cents: 5000,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("shop_abandoned_carts", "select", {
+      data: {
+        id: "cart_1",
+        items: [{ priceId: "price_y", quantity: 2 }],
+        subtotal_cents: 4000,
+        currency: "usd",
+        updated_at: "2026-04-15T00:00:00Z",
+        reminded_at: "2026-04-16T00:00:00Z",
+        recovered_at: null,
+        cleared_at: null,
+        created_at: "2026-04-15T00:00:00Z",
+      },
+    });
+    stageSupabaseResponse("shop_reviews", "select", {
+      data: [
+        {
+          id: "rev_1",
+          product_id: "prod_x",
+          rating: 5,
+          title: "Great",
+          body: "Loved it",
+          status: "approved",
+          moderation_note: null,
+          moderated_at: "2026-03-01T00:00:00Z",
+          created_at: "2026-03-01T00:00:00Z",
+          updated_at: "2026-03-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("conversations", "select", { data: null });
+    stageSupabaseResponse("shop_orders", "select", { data: orders });
+    stageSupabaseResponse("shop_reviews", "select", { data: null, count: 0 });
+    // shop_order_items — with item count rows for the two orders.
+    stageSupabaseResponse("shop_order_items", "select", {
+      data: [
+        { order_id: "ord_1", quantity: 2 },
+        { order_id: "ord_0", quantity: 1 },
+      ],
+    });
+
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
       `/resupply-api/admin/shop/customers/${VALID_USER_ID}`,
@@ -598,16 +785,16 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
     expect(res.body.stats.ordersCount).toBe(2);
     expect(res.body.stats.lifetimeValueCents).toBe(8000);
     expect(res.body.stats.avgOrderValueCents).toBe(4000);
-    expect(res.body.stats.firstOrderAt).toBe("2026-02-01T00:00:00.000Z");
-    expect(res.body.stats.lastOrderAt).toBe("2026-04-01T00:00:00.000Z");
+    expect(res.body.stats.firstOrderAt).toBe("2026-02-01T00:00:00Z");
+    expect(res.body.stats.lastOrderAt).toBe("2026-04-01T00:00:00Z");
     expect(res.body.stats.pendingReviewsCount).toBe(0);
   });
 
   it("preserves null amount_total_cents on pending orders (no $0.00 coercion)", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
+    stageDetailEndpoint({
       customer: {
-        user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
         display_name: "Jane Doe",
         email_lower: "jane@example.com",
         stripe_customer_id: "cus_abc",
@@ -616,6 +803,9 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
         default_payment_method_last4: null,
         default_payment_method_exp_month: null,
         default_payment_method_exp_year: null,
+        cpap_device_json: null,
+        physician_info_json: null,
+        facial_measurements_json: null,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-04-01T00:00:00Z",
       },
@@ -625,9 +815,6 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
           stripe_session_id: "cs_pending",
           stripe_payment_intent_id: null,
           status: "pending",
-          // Stripe hasn't stamped a final total yet — DB column is null.
-          // The detail endpoint must surface null, NOT coerce to 0,
-          // so the UI can render an em dash instead of a misleading $0.00.
           amount_total_cents: null,
           currency: null,
           created_at: "2026-04-30T00:00:00Z",
@@ -637,19 +824,8 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
           tracking_carrier: null,
           tracking_number: null,
           shipping_address_json: null,
-          item_count: 1,
         },
       ],
-      subscriptions: [],
-      abandonedCart: null,
-      reviews: [],
-      stats: {
-        orders_count: 0,
-        lifetime_value_cents: 0,
-        first_order_at: null,
-        last_order_at: null,
-        pending_reviews_count: 0,
-      },
     });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
@@ -663,7 +839,7 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 
   it("synthesizes a guest customer when only orders exist", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
+    stageDetailEndpoint({
       customer: null,
       orders: [
         {
@@ -680,16 +856,8 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
           tracking_carrier: null,
           tracking_number: null,
           shipping_address_json: { line1: "999 Guest Ln" },
-          item_count: 1,
         },
       ],
-      stats: {
-        orders_count: 1,
-        lifetime_value_cents: 2500,
-        first_order_at: "2026-04-01T00:00:00Z",
-        last_order_at: "2026-04-01T00:00:00Z",
-        pending_reviews_count: 0,
-      },
     });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
@@ -708,9 +876,9 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 
   it("computes avgOrderValueCents=0 when ordersCount=0", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
+    stageDetailEndpoint({
       customer: {
-        user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
         display_name: "Empty",
         email_lower: "empty@example.com",
         stripe_customer_id: null,
@@ -719,18 +887,13 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
         default_payment_method_last4: null,
         default_payment_method_exp_month: null,
         default_payment_method_exp_year: null,
+        cpap_device_json: null,
+        physician_info_json: null,
+        facial_measurements_json: null,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
       },
       orders: [],
-      // Customer exists but no orders — must not 404, and avg must be 0.
-      stats: {
-        orders_count: 0,
-        lifetime_value_cents: 0,
-        first_order_at: null,
-        last_order_at: null,
-        pending_reviews_count: 0,
-      },
     });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
@@ -742,13 +905,11 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
     expect(res.body.abandonedCart).toBeNull();
   });
 
-  // ─── PR #54: clinical info + in-app conversation surfacing ─────
-
   it("surfaces clinicalInfo from shop_customers (PR #54)", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
+    stageDetailEndpoint({
       customer: {
-        user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
         display_name: "Anna Singh",
         email_lower: "anna@example.com",
         stripe_customer_id: null,
@@ -778,6 +939,7 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
           postalCode: null,
           npi: null,
         },
+        facial_measurements_json: null,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-04-01T00:00:00Z",
       },
@@ -799,7 +961,7 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 
   it("returns null clinicalInfo for guest checkouts (no shop_customers row)", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
+    stageDetailEndpoint({
       customer: null,
       orders: [
         {
@@ -816,7 +978,6 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
           tracking_carrier: null,
           tracking_number: null,
           shipping_address_json: { line1: "1 Guest Ln" },
-          item_count: 1,
         },
       ],
     });
@@ -832,9 +993,11 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 
   it("surfaces inAppConversation summary when present (PR #54)", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
-      customer: {
-        user_id: VALID_USER_ID,
+    // The route reads conversations + then messages for stats. Stage
+    // a conversation row + 4 messages (2 inbound after last outbound).
+    stageSupabaseResponse("shop_customers", "select", {
+      data: {
+        customer_id: VALID_USER_ID,
         display_name: "Anna",
         email_lower: "a@x.io",
         stripe_customer_id: null,
@@ -845,20 +1008,34 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
         default_payment_method_exp_year: null,
         cpap_device_json: null,
         physician_info_json: null,
+        facial_measurements_json: null,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-04-01T00:00:00Z",
       },
-      orders: [],
-      inAppConversation: {
+    });
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_subscriptions", "select", { data: [] });
+    stageSupabaseResponse("shop_abandoned_carts", "select", { data: null });
+    stageSupabaseResponse("shop_reviews", "select", { data: [] });
+    stageSupabaseResponse("conversations", "select", {
+      data: {
         id: "conv_in_app_1",
         status: "awaiting_admin",
         last_message_at: "2026-05-01T12:00:00Z",
         created_at: "2026-04-25T00:00:00Z",
-        message_count: 4,
-        unread_from_customer: 2,
-        last_inbound_at: "2026-05-01T12:00:00Z",
-        last_outbound_at: "2026-04-30T08:00:00Z",
       },
+    });
+    stageSupabaseResponse("shop_orders", "select", { data: [] });
+    stageSupabaseResponse("shop_reviews", "select", { data: null, count: 0 });
+    // Messages SELECT — 4 total, 2 inbound after the last outbound at
+    // 2026-04-30T08:00:00Z.
+    stageSupabaseResponse("messages", "select", {
+      data: [
+        { direction: "outbound", created_at: "2026-04-25T00:00:00Z" },
+        { direction: "outbound", created_at: "2026-04-30T08:00:00Z" },
+        { direction: "inbound", created_at: "2026-05-01T10:00:00Z" },
+        { direction: "inbound", created_at: "2026-05-01T12:00:00Z" },
+      ],
     });
     const router = await loadRouter();
     const res = await request(makeApp(router)).get(
@@ -875,9 +1052,9 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 
   it("returns null inAppConversation when the customer has never messaged", async () => {
     stubVerifiedAdmin();
-    pushDetailQueue({
+    stageDetailEndpoint({
       customer: {
-        user_id: VALID_USER_ID,
+        customer_id: VALID_USER_ID,
         display_name: null,
         email_lower: null,
         stripe_customer_id: null,
@@ -888,6 +1065,7 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
         default_payment_method_exp_year: null,
         cpap_device_json: null,
         physician_info_json: null,
+        facial_measurements_json: null,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-04-01T00:00:00Z",
       },
@@ -905,33 +1083,31 @@ describe("GET /admin/shop/customers/:userId — happy paths", () => {
 // =====================================================================
 // POST /admin/shop/customers/:userId/reorder
 // =====================================================================
-//
-// Per-test queue layout (when handler runs end-to-end):
-//   [0] source order lookup
-//   [1] order items lookup
-//   [2] customer mirror lookup
-//
-// Tests that short-circuit before Stripe (404, ownership-mismatch,
-// not-paid, no-items) push fewer rows.
 
 const SOURCE_ORDER_ID = "11111111-2222-3333-4444-555555555555";
 
-function pushReorderQueue({
-  order,
-  items,
-  customer,
-}: {
+interface ReorderStageInput {
   order: Record<string, unknown> | null;
   items?: Array<{ price_id: string; quantity: number }>;
   customer?: {
     email_lower: string | null;
     stripe_customer_id: string | null;
   } | null;
-}) {
-  executeQueue.push({ rows: order ? [order] : [] });
-  if (items !== undefined) executeQueue.push({ rows: items });
-  if (customer !== undefined)
-    executeQueue.push({ rows: customer ? [customer] : [] });
+}
+
+function stageReorderEndpoint(opts: ReorderStageInput): void {
+  // 1. shop_orders (single, maybeSingle).
+  stageSupabaseResponse("shop_orders", "select", { data: opts.order });
+  if (opts.items !== undefined) {
+    // 2. shop_order_items (array).
+    stageSupabaseResponse("shop_order_items", "select", { data: opts.items });
+  }
+  if (opts.customer !== undefined) {
+    // 3. shop_customers (single, maybeSingle).
+    stageSupabaseResponse("shop_customers", "select", {
+      data: opts.customer,
+    });
+  }
 }
 
 describe("POST /admin/shop/customers/:userId/reorder — auth & validation", () => {
@@ -941,7 +1117,7 @@ describe("POST /admin/shop/customers/:userId/reorder — auth & validation", () 
       .post(`/resupply-api/admin/shop/customers/${VALID_USER_ID}/reorder`)
       .send({ sourceOrderId: SOURCE_ORDER_ID });
     expect(res.status).toBe(401);
-    expect(dbStub.execute).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_orders", "select")).toBe(0);
     expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 
@@ -971,7 +1147,7 @@ describe("POST /admin/shop/customers/:userId/reorder — auth & validation", () 
 describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
   it("returns 404 when source order doesn't exist", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({ order: null });
+    stageReorderEndpoint({ order: null });
     const router = await loadRouter();
     const res = await request(makeApp(router))
       .post(`/resupply-api/admin/shop/customers/${VALID_USER_ID}/reorder`)
@@ -983,7 +1159,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
 
   it("returns 400 when source order belongs to a different user", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",
@@ -1002,7 +1178,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
 
   it("returns 400 when source order isn't paid", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "pending",
@@ -1022,7 +1198,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
 
   it("returns 400 when source order is refunded", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "refunded",
@@ -1041,7 +1217,7 @@ describe("POST /admin/shop/customers/:userId/reorder — preconditions", () => {
 
   it("returns 400 when source order has no eligible items", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",
@@ -1064,7 +1240,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
   it("returns 503 when Stripe isn't configured", async () => {
     stubVerifiedAdmin();
     stripeConfigured = false;
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",
@@ -1085,7 +1261,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
 
   it("creates a Checkout Session with the customer when stripe_customer_id is known", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",
@@ -1130,9 +1306,6 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
     expect(params.metadata.customer_id).toBe(VALID_USER_ID);
     expect(params.metadata.reorder_source_order_id).toBe(SOURCE_ORDER_ID);
     expect(params.metadata.initiated_by_admin).toBe(ALLOWED_EMAIL);
-    // success_url must hit the existing customer-facing landing page
-    // (/shop/checkout-success?session_id={CHECKOUT_SESSION_ID}) so
-    // the post-payment view actually exists; cancel_url returns to /shop.
     expect(params.success_url).toBe(
       "https://shop.test.example.com/shop/checkout-success?session_id={CHECKOUT_SESSION_ID}",
     );
@@ -1141,7 +1314,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
 
   it("falls back to customer_email when no stripe_customer_id is mirrored", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",
@@ -1172,7 +1345,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
 
   it("omits both customer and customer_email when no mirror row exists", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",
@@ -1199,7 +1372,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
 
   it("returns 502 when Stripe returns no session url", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",
@@ -1224,7 +1397,7 @@ describe("POST /admin/shop/customers/:userId/reorder — Stripe integration", ()
 
   it("propagates Stripe error status as 502 and returns stripe_checkout_failed", async () => {
     stubVerifiedAdmin();
-    pushReorderQueue({
+    stageReorderEndpoint({
       order: {
         id: SOURCE_ORDER_ID,
         status: "paid",

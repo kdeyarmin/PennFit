@@ -1,21 +1,21 @@
 // Route tests for the cart-abandonment admin dispatcher.
 //
-// Same fluent-stub pattern as routes/email/send-reminder.test.ts. The
-// dispatcher's hot path is now an atomic UPDATE ... RETURNING via
-// `db.execute(sql\`...\`)` — we queue the {rows: [...]} payload it
-// returns, then assert on the SendGrid mock + the unclaim
-// `db.update(...)` invocations that fire on send failures.
-//
 // Coverage:
-//   * atomic claim — a single db.execute SQL string contains both
-//     UPDATE shop_abandoned_carts and WHERE id IN (SELECT id FROM
-//     eligible), proving claims and filtering happen in one statement
+//   * candidate select short-circuits when nothing is eligible
 //   * stamps reminded_at on success (claim sticks, no unclaim UPDATE)
-//   * idempotency — zero rows returned by the claim = zero sends,
+//   * idempotency — empty candidate set = zero sends, zero claim,
 //     zero unclaims
 //   * SendGrid not configured — returns sendgridConfigured:false and
 //     UNCLAIMS the row so the next run can retry once env is fixed
 //   * SendGrid 4xx — counts as skippedFailed and UNCLAIMS the row
+//
+// Note: the legacy raw-SQL atomic claim was unwound into chained
+// Supabase calls (`SELECT ids` → `UPDATE … IN (ids) IS null
+// .select(...)`). The pre-Supabase test asserted on the raw SQL
+// fragments to prove the claim was a single UPDATE … RETURNING; with
+// PostgREST that introspection is no longer possible, so the
+// behavioural contract — claim only fires when there are candidates,
+// and unclaim fires on failure — is what we pin instead.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express, { type Express } from "express";
@@ -25,6 +25,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -32,68 +39,6 @@ const { mockAdmin } = vi.hoisted(() => ({
 vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
-
-function fluent(result: unknown) {
-  const obj: Record<string, unknown> = {
-    from: () => obj,
-    where: () => obj,
-    set: () => obj,
-    values: () => obj,
-    orderBy: () => obj,
-    leftJoin: () => obj,
-    innerJoin: () => obj,
-    onConflictDoUpdate: () => Promise.resolve(undefined),
-    onConflictDoNothing: () => Promise.resolve(undefined),
-    limit: () => Promise.resolve(result),
-    returning: () => Promise.resolve(result),
-    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve(result).then(resolve, reject),
-  };
-  return obj;
-}
-const selectQueue: unknown[] = [];
-const updateQueue: unknown[] = [];
-// db.execute() now drives the dispatcher's atomic claim — it returns
-// {rows, rowCount, ...} from node-postgres. Drizzle's `sql\`...\`` tag
-// gets passed in here; we just queue the result payload.
-const executeQueue: Array<{ rows: unknown[] }> = [];
-// Last sql template-literal passed to db.execute(). Tests assert on
-// the raw SQL string to prove the atomic UPDATE...RETURNING shape.
-let lastExecuteSql: string | null = null;
-function sqlToString(query: { queryChunks?: unknown[] }): string {
-  // Drizzle's SQL object holds chunks; serialise to a plain string by
-  // walking the chunks. Good enough for assertions.
-  if (!query || !Array.isArray(query.queryChunks)) return String(query);
-  return query.queryChunks
-    .map((c) => {
-      if (typeof c === "string") return c;
-      if (c && typeof c === "object" && "value" in c)
-        return String((c as { value: unknown }).value);
-      return "";
-    })
-    .join("");
-}
-const dbStub = {
-  select: vi.fn(() => fluent(selectQueue.shift() ?? [])),
-  update: vi.fn(() => fluent(updateQueue.shift() ?? undefined)),
-  execute: vi.fn((query: unknown) => {
-    lastExecuteSql = sqlToString(query as { queryChunks?: unknown[] });
-    return Promise.resolve(executeQueue.shift() ?? { rows: [] });
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return {
-    ...actual,
-    getDbPool: () => ({}) as never,
-  };
-});
 
 const sendEmailMock = vi.fn();
 const createSendgridClientMock = vi.fn<
@@ -155,6 +100,7 @@ function setSendgridEnv(): void {
 function makeRow(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: ROW_A,
+    customer_id: "user_a",
     email: "joan@example.com",
     items: [
       {
@@ -167,7 +113,7 @@ function makeRow(over: Record<string, unknown> = {}): Record<string, unknown> {
         mode: "payment",
       },
     ],
-    subtotalCents: 4500,
+    subtotal_cents: 4500,
     currency: "usd",
     ...over,
   };
@@ -178,19 +124,13 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     for (const k of ENV_KEYS) originalEnv[k] = process.env[k];
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
-    selectQueue.length = 0;
-    updateQueue.length = 0;
-    executeQueue.length = 0;
-    lastExecuteSql = null;
     mockAdmin.current = null;
+    supabaseMock.reset();
     sendEmailMock.mockReset();
     createSendgridClientMock.mockReset();
     createSendgridClientMock.mockImplementation(() => ({
       sendEmail: sendEmailMock,
     }));
-    dbStub.select.mockClear();
-    dbStub.update.mockClear();
-    dbStub.execute.mockClear();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -199,57 +139,20 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     }
   });
 
-  it("atomically claims rows in a single UPDATE...RETURNING (no select-then-update race)", async () => {
-    // This test is the architect's recommended concurrency-safety
-    // assertion: prove the dispatcher uses ONE atomic statement to
-    // claim and filter, not a SELECT followed by per-row UPDATEs.
-    // Two concurrent invocations are race-free if and only if the
-    // claim happens in this single statement.
-    setSendgridEnv();
-    stubVerifiedAdmin();
-    executeQueue.push({ rows: [] });
-
-    await request(makeApp())
-      .post("/resupply-api/admin/shop/abandoned-carts/send-due")
-      .send({});
-
-    expect(dbStub.execute).toHaveBeenCalledTimes(1);
-    expect(lastExecuteSql).not.toBeNull();
-    const sqlText = lastExecuteSql ?? "";
-    // Drizzle SQL column references render as opaque chunks in the
-    // template-literal body; we assert on the static keywords that
-    // *do* serialise in our stub. Combined, these prove the dispatcher
-    // uses ONE atomic UPDATE...RETURNING, not a SELECT-then-UPDATE.
-
-    // CTE wrapper that selects ID candidates first.
-    expect(sqlText).toMatch(/WITH eligible AS\s*\(/i);
-    expect(sqlText).toMatch(/SELECT id/i);
-    // The four suppression-flag checks (3× IS NULL + 1× IS NOT NULL).
-    // The fourth IS NULL coverage is the recovered_at flag.
-    expect(
-      (sqlText.match(/\bIS NULL\b/gi) ?? []).length,
-    ).toBeGreaterThanOrEqual(3);
-    expect(sqlText).toMatch(/\bIS NOT NULL\b/i);
-    // Non-empty items predicate.
-    expect(sqlText).toMatch(/jsonb_array_length/i);
-    // Lock model: skip locked rows so two concurrent dispatcher
-    // invocations don't block each other AND don't double-claim.
-    expect(sqlText).toMatch(/FOR UPDATE SKIP LOCKED/i);
-    // Atomic claim: UPDATE that flips reminded_at to now() in the
-    // same statement that selected the rows.
-    expect(sqlText).toMatch(/UPDATE/i);
-    expect(sqlText).toMatch(/SET reminded_at\s*=\s*now\(\)/i);
-    expect(sqlText).toMatch(/WHERE id IN \(SELECT id FROM eligible\)/i);
-    // RETURNING is required so we can iterate the claimed rows.
-    expect(sqlText).toMatch(/RETURNING/i);
-  });
-
   it("delivers one email per claimed row and leaves the claim stamped", async () => {
     setSendgridEnv();
     stubVerifiedAdmin();
-    executeQueue.push({
-      rows: [makeRow({ id: ROW_A }), makeRow({ id: ROW_B })],
+    // Step 1: candidate ids.
+    stageSupabaseResponse("shop_abandoned_carts", "select", {
+      data: [{ id: ROW_A }, { id: ROW_B }],
     });
+    // Step 2: atomic claim — UPDATE … RETURNING the rows.
+    stageSupabaseResponse("shop_abandoned_carts", "update", {
+      data: [makeRow({ id: ROW_A }), makeRow({ id: ROW_B })],
+    });
+    // Step 3: bulk comm-prefs lookup.
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
+
     sendEmailMock.mockResolvedValue({ messageId: "SG_TEST_1" });
 
     const res = await request(makeApp())
@@ -266,9 +169,9 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sendgridConfigured: true,
     });
     expect(sendEmailMock).toHaveBeenCalledTimes(2);
-    // No unclaim UPDATEs on the success path — the atomic claim from
-    // db.execute() is the only stamp that needs to happen.
-    expect(dbStub.update).not.toHaveBeenCalled();
+    // No unclaim UPDATEs on the success path. Exactly one UPDATE
+    // total (the atomic claim).
+    expect(getSupabaseCallCount("shop_abandoned_carts", "update")).toBe(1);
     // Subject line + cart contents are public catalog data; subtotal
     // is rendered in the email body, but no PHI should be there.
     const call = sendEmailMock.mock.calls[0][0];
@@ -279,13 +182,12 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     expect(call.customArgs).toEqual({ kind: "cart_abandonment_v1" });
   });
 
-  it("is idempotent: zero rows claimed = zero sends and zero unclaims", async () => {
+  it("is idempotent: zero candidates = zero claim, zero sends, zero unclaims", async () => {
     setSendgridEnv();
     stubVerifiedAdmin();
-    // First invocation stamped both; second invocation finds nothing
-    // because the atomic UPDATE filter excludes `reminded_at IS NOT
-    // NULL`.
-    executeQueue.push({ rows: [] });
+    // No eligible rows → handler short-circuits before the claim
+    // UPDATE.
+    stageSupabaseResponse("shop_abandoned_carts", "select", { data: [] });
 
     const res = await request(makeApp())
       .post("/resupply-api/admin/shop/abandoned-carts/send-due")
@@ -301,23 +203,28 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sendgridConfigured: true,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
-    expect(dbStub.update).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_abandoned_carts", "update")).toBe(0);
   });
 
   it("returns sendgridConfigured:false and UNCLAIMS the row when SendGrid env is missing", async () => {
-    // No SENDGRID_* env — but admin auth still configured so we get
-    // past requireAdmin and into the dispatcher body.
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
     process.env.NODE_ENV = "test";
     stubVerifiedAdmin();
-    executeQueue.push({ rows: [makeRow({ id: ROW_A })] });
+    stageSupabaseResponse("shop_abandoned_carts", "select", {
+      data: [{ id: ROW_A }],
+    });
+    stageSupabaseResponse("shop_abandoned_carts", "update", {
+      data: [makeRow({ id: ROW_A })],
+    });
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
+    // Per-row unclaim + remaining-rows unclaim (in this case 0
+    // remaining → unclaimMany guards itself, only one unclaim hits).
+    stageSupabaseResponse("shop_abandoned_carts", "update", { error: null });
     // The helper catches EmailConfigError and surfaces it as
     // {configured:false}.
     createSendgridClientMock.mockImplementation(() => {
       throw new EmailConfigError("SENDGRID_API_KEY is required");
     });
-    // Reserve one update slot for the unclaim.
-    updateQueue.push(undefined);
 
     const res = await request(makeApp())
       .post("/resupply-api/admin/shop/abandoned-carts/send-due")
@@ -333,24 +240,30 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
       sendgridConfigured: false,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
-    // Critical: we MUST unclaim the row (UPDATE setting remindedAt
-    // back to NULL) when SendGrid is off, or the row would be silently
-    // swallowed and never re-tried after the operator wires up env.
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
+    // Two UPDATEs total: the atomic claim, plus the unclaim. Without
+    // the unclaim the row would be silently swallowed and never
+    // re-tried after the operator wires up env.
+    expect(getSupabaseCallCount("shop_abandoned_carts", "update")).toBe(2);
   });
 
   it("counts SendGrid 4xx/5xx as skippedFailed and UNCLAIMS the row", async () => {
     setSendgridEnv();
     stubVerifiedAdmin();
-    executeQueue.push({ rows: [makeRow({ id: ROW_A })] });
+    stageSupabaseResponse("shop_abandoned_carts", "select", {
+      data: [{ id: ROW_A }],
+    });
+    stageSupabaseResponse("shop_abandoned_carts", "update", {
+      data: [makeRow({ id: ROW_A })],
+    });
+    stageSupabaseResponse("shop_customers", "select", { data: [] });
+    // Per-row unclaim after the SendGrid 4xx.
+    stageSupabaseResponse("shop_abandoned_carts", "update", { error: null });
     sendEmailMock.mockRejectedValue(
       Object.assign(new Error("blocked"), {
         name: "EmailApiError",
         status: 550,
       }),
     );
-    // Reserve one update slot for the unclaim.
-    updateQueue.push(undefined);
 
     const res = await request(makeApp())
       .post("/resupply-api/admin/shop/abandoned-carts/send-due")
@@ -362,8 +275,8 @@ describe("POST /admin/shop/abandoned-carts/send-due", () => {
     expect(res.body.skippedFailed).toBe(1);
     // We tried SendGrid (configured was true), so configured stays true.
     expect(res.body.sendgridConfigured).toBe(true);
-    // Row was unclaimed so the next dispatcher run can retry it.
-    expect(dbStub.update).toHaveBeenCalledTimes(1);
+    // Two UPDATEs total: the atomic claim + the per-row unclaim.
+    expect(getSupabaseCallCount("shop_abandoned_carts", "update")).toBe(2);
   });
 });
 
@@ -373,11 +286,8 @@ describe("GET /admin/shop/abandoned-carts", () => {
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.NODE_ENV = "test";
     process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
-    selectQueue.length = 0;
-    updateQueue.length = 0;
     mockAdmin.current = null;
-    dbStub.select.mockClear();
-    dbStub.update.mockClear();
+    supabaseMock.reset();
   });
   afterEach(() => {
     for (const k of ENV_KEYS) {
@@ -388,25 +298,27 @@ describe("GET /admin/shop/abandoned-carts", () => {
 
   it("redacts the email and returns aggregated counts per row", async () => {
     stubVerifiedAdmin();
-    const now = new Date("2026-04-29T12:00:00Z");
-    selectQueue.push([
-      {
-        id: ROW_A,
-        customerId: "user_a",
-        email: "joan@example.com",
-        items: [
-          { quantity: 2, name: "Headgear" },
-          { quantity: 1, name: "Tubing" },
-        ],
-        subtotalCents: 12000,
-        currency: "usd",
-        updatedAt: now,
-        remindedAt: null,
-        recoveredAt: null,
-        clearedAt: null,
-        createdAt: now,
-      },
-    ]);
+    const nowIso = "2026-04-29T12:00:00.000Z";
+    stageSupabaseResponse("shop_abandoned_carts", "select", {
+      data: [
+        {
+          id: ROW_A,
+          customer_id: "user_a",
+          email: "joan@example.com",
+          items: [
+            { quantity: 2, name: "Headgear" },
+            { quantity: 1, name: "Tubing" },
+          ],
+          subtotal_cents: 12000,
+          currency: "usd",
+          updated_at: nowIso,
+          reminded_at: null,
+          recovered_at: null,
+          cleared_at: null,
+          created_at: nowIso,
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       "/resupply-api/admin/shop/abandoned-carts",

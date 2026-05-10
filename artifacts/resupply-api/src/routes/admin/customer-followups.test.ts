@@ -18,6 +18,13 @@ import {
   makeRequireAdminMock,
   type MockAdminCtx,
 } from "../../test-helpers/auth-mocks";
+import {
+  installSupabaseMock,
+  stageSupabaseResponse,
+  getSupabaseCallCount,
+} from "../../test-helpers/supabase-mock";
+
+const supabaseMock = installSupabaseMock();
 
 const { mockAdmin } = vi.hoisted(() => ({
   mockAdmin: { current: null as MockAdminCtx | null },
@@ -33,59 +40,15 @@ vi.mock("@workspace/resupply-audit", () => ({
   logAudit: logAuditMock,
 }));
 
-const selectQueue: unknown[][] = [];
-const insertQueue: unknown[][] = [];
-const updateQueue: unknown[][] = [];
-const dbStub = {
-  select: vi.fn(() => {
-    const result = selectQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      from: () => obj,
-      where: () => obj,
-      orderBy: () => obj,
-      limit: () => Promise.resolve(result),
-      // Allow awaiting the builder directly (no .limit() call) — used
-      // by the ?include=completed history path.
-      then: (
-        onfulfilled: (v: unknown[]) => unknown,
-        onrejected?: (r: unknown) => unknown,
-      ) => Promise.resolve(result).then(onfulfilled, onrejected),
-    };
-    return obj;
-  }),
-  insert: vi.fn(() => {
-    const result = insertQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      values: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-  update: vi.fn(() => {
-    const result = updateQueue.shift() ?? [];
-    const obj: Record<string, unknown> = {
-      set: () => obj,
-      where: () => obj,
-      returning: () => Promise.resolve(result),
-    };
-    return obj;
-  }),
-};
-vi.mock("drizzle-orm/node-postgres", () => ({
-  drizzle: () => dbStub,
-}));
-
-vi.mock("@workspace/resupply-db", async () => {
-  const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
-    "@workspace/resupply-db",
-  );
-  return { ...actual, getDbPool: () => ({}) as never };
-});
-
 import followupsRouter from "./customer-followups";
 
 const USER_ID = "user_abc123";
 const FOLLOWUP_ID = "11111111-1111-4111-8111-111111111111";
+const ADMIN: MockAdminCtx = {
+  userId: "u_admin",
+  email: "ops@penn.example.com",
+  role: "admin",
+};
 
 function makeApp(): Express {
   const app = express();
@@ -96,13 +59,8 @@ function makeApp(): Express {
 
 beforeEach(() => {
   mockAdmin.current = null;
-  selectQueue.length = 0;
-  insertQueue.length = 0;
-  updateQueue.length = 0;
+  supabaseMock.reset();
   logAuditMock.mockClear();
-  dbStub.select.mockClear();
-  dbStub.insert.mockClear();
-  dbStub.update.mockClear();
 });
 
 describe("GET /admin/shop/customers/:userId/followups", () => {
@@ -114,11 +72,7 @@ describe("GET /admin/shop/customers/:userId/followups", () => {
   });
 
   it("400s with malformed userId", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp()).get(
       `/admin/shop/customers/has spaces!/followups`,
     );
@@ -127,12 +81,8 @@ describe("GET /admin/shop/customers/:userId/followups", () => {
   });
 
   it("404s when the customer doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", { data: null });
     const res = await request(makeApp()).get(
       `/admin/shop/customers/${USER_ID}/followups`,
     );
@@ -141,23 +91,23 @@ describe("GET /admin/shop/customers/:userId/followups", () => {
   });
 
   it("returns the open queue by default", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: USER_ID }]);
-    selectQueue.push([
-      {
-        id: FOLLOWUP_ID,
-        body: "Call about UPS claim",
-        dueAt: new Date("2026-05-10T16:00:00Z"),
-        completedAt: null,
-        completedByEmail: null,
-        createdByEmail: "ops@penn.example.com",
-        createdAt: new Date("2026-05-04T12:00:00Z"),
-      },
-    ]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: USER_ID },
+    });
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: [
+        {
+          id: FOLLOWUP_ID,
+          body: "Call about UPS claim",
+          due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
+          completed_at: null,
+          completed_by_email: null,
+          created_by_email: "ops@penn.example.com",
+          created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       `/admin/shop/customers/${USER_ID}/followups`,
@@ -172,40 +122,39 @@ describe("GET /admin/shop/customers/:userId/followups", () => {
   });
 
   it("returns full history with ?include=completed", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const DONE_ID = "22222222-2222-4222-8222-222222222222";
-    selectQueue.push([{ id: USER_ID }]);
-    selectQueue.push([
-      {
-        id: FOLLOWUP_ID,
-        body: "Open task",
-        dueAt: new Date("2026-05-10T16:00:00Z"),
-        completedAt: null,
-        completedByEmail: null,
-        createdByEmail: "ops@penn.example.com",
-        createdAt: new Date("2026-05-04T12:00:00Z"),
-      },
-      {
-        id: DONE_ID,
-        body: "Older completed task",
-        dueAt: new Date("2026-04-01T09:00:00Z"),
-        completedAt: new Date("2026-04-02T10:00:00Z"),
-        completedByEmail: "ops@penn.example.com",
-        createdByEmail: "ops@penn.example.com",
-        createdAt: new Date("2026-03-28T08:00:00Z"),
-      },
-    ]);
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: USER_ID },
+    });
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: [
+        {
+          id: FOLLOWUP_ID,
+          body: "Open task",
+          due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
+          completed_at: null,
+          completed_by_email: null,
+          created_by_email: "ops@penn.example.com",
+          created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+        },
+        {
+          id: DONE_ID,
+          body: "Older completed task",
+          due_at: new Date("2026-04-01T09:00:00Z").toISOString(),
+          completed_at: new Date("2026-04-02T10:00:00Z").toISOString(),
+          completed_by_email: "ops@penn.example.com",
+          created_by_email: "ops@penn.example.com",
+          created_at: new Date("2026-03-28T08:00:00Z").toISOString(),
+        },
+      ],
+    });
 
     const res = await request(makeApp()).get(
       `/admin/shop/customers/${USER_ID}/followups?include=completed`,
     );
     expect(res.status).toBe(200);
     expect(res.body.followups).toHaveLength(2);
-    // History includes completed rows.
     const doneRow = res.body.followups.find(
       (f: { id: string }) => f.id === DONE_ID,
     );
@@ -223,24 +172,16 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
   });
 
   it("400s with empty body", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
       .send({ body: "  ", dueAt: "2026-05-10T16:00:00Z" });
     expect(res.status).toBe(400);
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customer_followups", "insert")).toBe(0);
   });
 
   it("400s with bad dueAt", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
       .send({ body: "Ping", dueAt: "not-a-date" });
@@ -248,35 +189,30 @@ describe("POST /admin/shop/customers/:userId/followups", () => {
   });
 
   it("404s when the customer doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", { data: null });
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
       .send({ body: "Ping", dueAt: "2026-05-10T16:00:00Z" });
     expect(res.status).toBe(404);
-    expect(dbStub.insert).not.toHaveBeenCalled();
+    expect(getSupabaseCallCount("shop_customer_followups", "insert")).toBe(0);
   });
 
   it("inserts + audits with non-PHI envelope", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([{ id: USER_ID }]);
-    insertQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customers", "select", {
+      data: { customer_id: USER_ID },
+    });
+    stageSupabaseResponse("shop_customer_followups", "insert", {
+      data: {
         id: FOLLOWUP_ID,
-        createdAt: new Date("2026-05-04T12:00:00Z"),
-        dueAt: new Date("2026-05-10T16:00:00Z"),
+        created_at: new Date("2026-05-04T12:00:00Z").toISOString(),
+        due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
       },
-    ]);
+    });
 
-    const body = "Call Anna about her UPS claim — confirm replacement shipped.";
+    const body =
+      "Call Anna about her UPS claim — confirm replacement shipped.";
     const res = await request(makeApp())
       .post(`/admin/shop/customers/${USER_ID}/followups`)
       .send({ body, dueAt: "2026-05-10T16:00:00Z" });
@@ -310,11 +246,7 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   });
 
   it("400s with malformed followup id", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
+    mockAdmin.current = ADMIN;
     const res = await request(makeApp()).patch(
       `/admin/shop/customers/${USER_ID}/followups/not-a-uuid/complete`,
     );
@@ -323,12 +255,8 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   });
 
   it("404s when the followup doesn't exist", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([]);
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customer_followups", "select", { data: null });
     const res = await request(makeApp()).patch(
       `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
     );
@@ -337,19 +265,15 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   });
 
   it("404s when the followup belongs to a different customer", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: {
         id: FOLLOWUP_ID,
-        customerId: "user_someone_else",
-        completedAt: null,
+        customer_id: "user_someone_else",
+        completed_at: null,
         body: "anything",
       },
-    ]);
+    });
     const res = await request(makeApp()).patch(
       `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
     );
@@ -357,19 +281,15 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   });
 
   it("409s when the followup is already complete", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: {
         id: FOLLOWUP_ID,
-        customerId: USER_ID,
-        completedAt: new Date("2026-05-04T15:00:00Z"),
+        customer_id: USER_ID,
+        completed_at: new Date("2026-05-04T15:00:00Z").toISOString(),
         body: "anything",
       },
-    ]);
+    });
     const res = await request(makeApp()).patch(
       `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,
     );
@@ -378,26 +298,22 @@ describe("PATCH /admin/shop/customers/:userId/followups/:id/complete", () => {
   });
 
   it("marks complete + audits", async () => {
-    mockAdmin.current = {
-      userId: "u_admin",
-      email: "ops@penn.example.com",
-      role: "admin",
-    };
-    selectQueue.push([
-      {
+    mockAdmin.current = ADMIN;
+    stageSupabaseResponse("shop_customer_followups", "select", {
+      data: {
         id: FOLLOWUP_ID,
-        customerId: USER_ID,
-        completedAt: null,
+        customer_id: USER_ID,
+        completed_at: null,
         body: "Call Anna 5/10",
-        dueAt: new Date("2026-05-10T16:00:00Z"),
+        due_at: new Date("2026-05-10T16:00:00Z").toISOString(),
       },
-    ]);
-    updateQueue.push([
-      {
+    });
+    stageSupabaseResponse("shop_customer_followups", "update", {
+      data: {
         id: FOLLOWUP_ID,
-        completedAt: new Date("2026-05-04T16:00:00Z"),
+        completed_at: new Date("2026-05-04T16:00:00Z").toISOString(),
       },
-    ]);
+    });
 
     const res = await request(makeApp()).patch(
       `/admin/shop/customers/${USER_ID}/followups/${FOLLOWUP_ID}/complete`,

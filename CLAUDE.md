@@ -111,9 +111,19 @@ read — lives in [`README.md`](./README.md#environment-variables) and
 ## Conventions worth knowing
 
 - **Validation:** Zod at every HTTP boundary in `resupply-api`.
-- **DB:** Drizzle ORM with `node-postgres`. Migration drift is enforced
-  by `scripts/check-drizzle-drift.sh`; migration pairs by
-  `scripts/check-resupply-migration-pair.sh`.
+- **DB:** the runtime data path is the **Supabase service-role client**
+  exported from `@workspace/resupply-db` as
+  `getSupabaseServiceRoleClient()`; every route, worker, and helper
+  reads/writes through PostgREST via that client. Drizzle is retained
+  ONLY for the migration source-of-truth: the table definitions under
+  `lib/resupply-db/src/schema/**` drive `drizzle-kit generate` and
+  `lib/resupply-db/scripts/migrate.mjs` applies the SQL via raw `pg`.
+  No production runtime path imports `drizzle-orm` or constructs a
+  `pg.Pool`. Migration drift is enforced by
+  `scripts/check-drizzle-drift.sh`; migration pairs by
+  `scripts/check-resupply-migration-pair.sh`. The
+  "no direct `pg` outside `lib/resupply-db`" invariant is enforced by
+  Rule 7 in `scripts/check-resupply-architecture.sh`.
 - **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies.
   Admin auth flows live under `/admin/sign-in`, `/admin/forgot-password`,
   `/admin/reset-password`, `/admin/verify-email`.
