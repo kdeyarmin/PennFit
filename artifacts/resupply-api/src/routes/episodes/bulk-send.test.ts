@@ -4,7 +4,7 @@
 // rather than the deep telecom/email/db stack, because bulk-send's
 // responsibility is ORCHESTRATION only:
 //   - parse + dedupe the id slate
-//   - look up patient_id per id in one round-trip
+//   - look up patient_id per id in one round-trip via Supabase
 //   - serial fan-out to the helpers
 //   - aggregate per-id outcomes into summary + results[]
 //   - short-circuit on vendor config errors
@@ -12,6 +12,11 @@
 // The helpers themselves are exhaustively tested in
 // lib/resupply-reminders/. Repeating those scenarios here would
 // inflate test runtime without catching anything new.
+//
+// Migration note: previously used `getDbPool()` with a raw pg query mock
+// for the episode lookup. After the Drizzle → Supabase migration, the route
+// calls `getSupabaseServiceRoleClient().schema(...).from(...).select(...).in(...)`
+// so we mock the Supabase chain instead.
 
 import {
   describe,
@@ -37,14 +42,25 @@ vi.mock("../../middlewares/requireAdmin", () =>
   makeRequireAdminMock(mockAdmin),
 );
 
-const queryMock: Mock = vi.fn();
+// Mock the Supabase chain for the episode lookup in bulk-send:
+//   supabase.schema("resupply").from("episodes").select("id, patient_id").in("id", episodeIds)
+// Returns { data: [...], error: null | Error }.
+const episodeLookupMock: Mock = vi.fn();
 vi.mock("@workspace/resupply-db", async () => {
   const actual = await vi.importActual<typeof import("@workspace/resupply-db")>(
     "@workspace/resupply-db",
   );
   return {
     ...actual,
-    getDbPool: () => ({ query: queryMock }) as never,
+    getSupabaseServiceRoleClient: () => ({
+      schema: () => ({
+        from: () => ({
+          select: () => ({
+            in: episodeLookupMock,
+          }),
+        }),
+      }),
+    }),
   };
 });
 
@@ -128,6 +144,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.RESUPPLY_ADMIN_EMAILS = ALLOWED_EMAIL;
   readMessagingConfigMock.mockReturnValue(BASE_CFG);
+  episodeLookupMock.mockReset();
+  sendReminderSmsMock.mockReset();
+  sendReminderEmailMock.mockReset();
 });
 
 afterEach(() => {
@@ -189,12 +208,13 @@ describe("POST /episodes/bulk-send", () => {
 
   it("happy path — three SMS sends all succeed", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
         { id: EP3, patient_id: PT3 },
       ],
+      error: null,
     });
     sendReminderSmsMock.mockImplementation(
       async (args: { episodeId: string; patientId: string }) => ({
@@ -220,12 +240,13 @@ describe("POST /episodes/bulk-send", () => {
 
   it("partial failure — mixed outcomes are reported per-id", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
         { id: EP3, patient_id: PT3 },
       ],
+      error: null,
     });
     sendReminderSmsMock
       .mockResolvedValueOnce({
@@ -262,8 +283,10 @@ describe("POST /episodes/bulk-send", () => {
 
   it("reports episode_not_found for ids missing from the lookup", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [{ id: EP1, patient_id: PT1 }],
+    episodeLookupMock.mockResolvedValueOnce({
+      // Only EP1 found; EP2 is absent (e.g. deleted or wrong id)
+      data: [{ id: EP1, patient_id: PT1 }],
+      error: null,
     });
     sendReminderSmsMock.mockResolvedValue({
       status: "ok",
@@ -288,12 +311,13 @@ describe("POST /episodes/bulk-send", () => {
 
   it("short-circuits on TwilioConfigError, marking remainder as twilio_config_error", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
         { id: EP3, patient_id: PT3 },
       ],
+      error: null,
     });
     sendReminderSmsMock
       .mockResolvedValueOnce({
@@ -329,11 +353,12 @@ describe("POST /episodes/bulk-send", () => {
 
   it("short-circuits on EmailConfigError when channel=email", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
       ],
+      error: null,
     });
     sendReminderEmailMock.mockRejectedValueOnce(
       new EmailConfigError("missing api key"),
@@ -353,11 +378,12 @@ describe("POST /episodes/bulk-send", () => {
 
   it("de-duplicates input ids while preserving first-seen order", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [
         { id: EP1, patient_id: PT1 },
         { id: EP2, patient_id: PT2 },
       ],
+      error: null,
     });
     sendReminderSmsMock.mockResolvedValue({
       status: "ok",
@@ -379,8 +405,9 @@ describe("POST /episodes/bulk-send", () => {
 
   it("routes to email helper when channel=email", async () => {
     stubVerifiedAdmin();
-    queryMock.mockResolvedValueOnce({
-      rows: [{ id: EP1, patient_id: PT1 }],
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [{ id: EP1, patient_id: PT1 }],
+      error: null,
     });
     sendReminderEmailMock.mockResolvedValue({
       status: "ok",
@@ -396,5 +423,75 @@ describe("POST /episodes/bulk-send", () => {
     expect(res.body.summary.sent).toBe(1);
     expect(sendReminderEmailMock).toHaveBeenCalledTimes(1);
     expect(sendReminderSmsMock).not.toHaveBeenCalled();
+  });
+
+  it("throws when Supabase episode lookup returns an error", async () => {
+    // A Supabase-level error (network issue, auth failure) on the episodes
+    // lookup should propagate as an uncaught exception, reaching the global
+    // error handler and returning 500.
+    stubVerifiedAdmin();
+    const dbErr = new Error("PostgREST connection failed");
+    episodeLookupMock.mockResolvedValueOnce({
+      data: null,
+      error: dbErr,
+    });
+
+    // The route handler `if (lookupErr) throw lookupErr` so Express catches it.
+    const res = await request(makeApp())
+      .post("/resupply-api/episodes/bulk-send")
+      .send({ episodeIds: [EP1], channel: "sms" });
+
+    expect(res.status).toBe(500);
+    expect(sendReminderSmsMock).not.toHaveBeenCalled();
+  });
+
+  it("passes supabase client and cfg through to the SMS helper", async () => {
+    stubVerifiedAdmin();
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [{ id: EP1, patient_id: PT1 }],
+      error: null,
+    });
+    sendReminderSmsMock.mockResolvedValue({
+      status: "ok",
+      conversationId: "c",
+      vendorRef: "SM_ARG_CHECK",
+    });
+
+    await request(makeApp())
+      .post("/resupply-api/episodes/bulk-send")
+      .send({ episodeIds: [EP1], channel: "sms" });
+
+    const callArgs = sendReminderSmsMock.mock.calls[0][0];
+    expect(callArgs.patientId).toBe(PT1);
+    expect(callArgs.episodeId).toBe(EP1);
+    // supabase client was threaded through from the route
+    expect(callArgs.supabase).toBeDefined();
+    // cfg fields are wired from BASE_CFG
+    expect(callArgs.cfg.twilioAccountSid).toBe("AC_x");
+    expect(callArgs.cfg.practiceName).toBe("Test Practice");
+  });
+
+  it("passes supabase client and cfg through to the email helper", async () => {
+    stubVerifiedAdmin();
+    episodeLookupMock.mockResolvedValueOnce({
+      data: [{ id: EP1, patient_id: PT1 }],
+      error: null,
+    });
+    sendReminderEmailMock.mockResolvedValue({
+      status: "ok",
+      conversationId: "c",
+      vendorRef: "SG_ARG_CHECK",
+    });
+
+    await request(makeApp())
+      .post("/resupply-api/episodes/bulk-send")
+      .send({ episodeIds: [EP1], channel: "email" });
+
+    const callArgs = sendReminderEmailMock.mock.calls[0][0];
+    expect(callArgs.patientId).toBe(PT1);
+    expect(callArgs.episodeId).toBe(EP1);
+    expect(callArgs.supabase).toBeDefined();
+    expect(callArgs.cfg.sendgridApiKey).toBe("SG.x");
+    expect(callArgs.cfg.practiceName).toBe("Test Practice");
   });
 });
