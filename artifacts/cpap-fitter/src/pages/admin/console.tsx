@@ -41,6 +41,7 @@ import { AdminShopReviewsPage } from "@/pages/admin/admin-shop-reviews";
 import { AdminProductQuestionsPage } from "@/pages/admin/admin-product-questions";
 import { AdminShopReturnsPage } from "@/pages/admin/admin-shop-returns";
 import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
+import { AdminTodayPage } from "@/pages/admin/admin-today";
 import { AdminMacrosPage } from "@/pages/admin/admin-macros";
 import { AdminMessageTemplatesPage } from "@/pages/admin/admin-message-templates";
 import { AdminShopSubscriptionsPage } from "@/pages/admin/admin-shop-subscriptions";
@@ -144,6 +145,7 @@ function AdminConsole() {
           </Route>
           <Route path="/admin/shop/returns" component={AdminShopReturnsPage} />
           <Route path="/admin/followups" component={AdminFollowupsPage} />
+          <Route path="/admin/today" component={AdminTodayPage} />
           <Route path="/admin/macros" component={AdminMacrosPage} />
           <Route
             path="/admin/templates"

@@ -16,6 +16,7 @@ import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
+import todayRouter from "./admin/today.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -209,6 +210,12 @@ router.use(opsStatusRouter);
 // (awaiting-reply convs, pending returns, pending reviews). Read-
 // only, called on every nav render with a 30s SPA cache.
 router.use(inboxCountsRouter);
+// /admin/today — unified CSR work queue; top items across the
+// queues a CSR touches every day (conversations awaiting reply,
+// overdue followups, pending returns, compliance alerts, Rx
+// renewals due, documents to review). One round-trip; ~5 items
+// per queue. The /admin/today SPA page renders this directly.
+router.use(todayRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue

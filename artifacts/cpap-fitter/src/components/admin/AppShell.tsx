@@ -13,6 +13,7 @@ import {
 } from "@/lib/admin/inbox-counts-api";
 import {
   LayoutDashboard,
+  Inbox,
   MessageSquareText,
   ListChecks,
   CalendarClock,
@@ -117,6 +118,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: LayoutDashboard,
         matchPrefix: "/admin",
         hint: "Today's queues and team workload at a glance",
+      },
+      {
+        href: "/admin/today",
+        label: "My Today",
+        icon: Inbox,
+        matchPrefix: "/admin/today",
+        hint: "Top items across every queue — conversations, returns, alerts, Rx renewals, documents",
       },
       {
         href: "/admin/conversations",
