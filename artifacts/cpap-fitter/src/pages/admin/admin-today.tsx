@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  Inbox,
   MessageSquare,
   PackageX,
   Pill,
@@ -94,6 +95,7 @@ export function AdminTodayPage() {
         <ComplianceAlertsCard data={data} />
         <RxRenewalsCard data={data} />
         <DocumentsCard data={data} />
+        <InboundFaxesCard data={data} />
       </div>
     </div>
   );
@@ -415,6 +417,54 @@ function DocumentsCard({ data }: { data: TodayResponse }) {
                 </span>
                 <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
                   — {d.filename} · uploaded {relativeAge(d.created_at)}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function InboundFaxesCard({ data }: { data: TodayResponse }) {
+  const items = data.inboundFaxes;
+  return (
+    <Card
+      title={
+        <SectionTitle
+          icon={<Inbox className="h-4 w-4" />}
+          label="New inbound faxes"
+          count={items.length}
+        />
+      }
+      action={
+        <Link
+          href="/admin/inbound-faxes"
+          className="text-xs font-semibold hover:underline"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          Open queue →
+        </Link>
+      }
+    >
+      {items.length === 0 ? (
+        <EmptyState>No untriaged faxes.</EmptyState>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((f) => (
+            <li key={f.id} className="text-sm">
+              <Link
+                href={`/admin/inbound-faxes`}
+                className="hover:underline"
+              >
+                <span className="font-medium">
+                  {f.from_e164 ?? "Unknown sender"}
+                </span>
+                <span className="ml-2" style={{ color: "hsl(var(--ink-3))" }}>
+                  — {f.num_pages ?? "?"}{" "}
+                  {f.num_pages === 1 ? "page" : "pages"} ·{" "}
+                  {relativeAge(f.received_at)}
                 </span>
               </Link>
             </li>

@@ -83,7 +83,8 @@ type NavLink = {
     | "pendingReturns"
     | "pendingReviews"
     | "overdueFollowups"
-    | "newPatientDocuments";
+    | "newPatientDocuments"
+    | "newInboundFaxes";
 };
 
 type NavGroup = {
@@ -182,6 +183,14 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: HeartHandshake,
         matchPrefix: "/admin/providers",
         hint: "Central physician/NP registry — NPPES-backed",
+      },
+      {
+        href: "/admin/inbound-faxes",
+        label: "Inbound faxes",
+        icon: Inbox,
+        matchPrefix: "/admin/inbound-faxes",
+        hint: "Triage queue for faxes Twilio delivered — sleep studies, Rx renewals, chart notes",
+        badgeKey: "newInboundFaxes",
       },
     ],
   },

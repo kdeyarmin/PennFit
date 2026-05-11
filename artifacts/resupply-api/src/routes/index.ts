@@ -20,6 +20,7 @@ import todayRouter from "./admin/today.js";
 import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
+import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -235,6 +236,11 @@ router.use(swoRouter);
 // Sliding 30-day window finder lives in
 // lib/compliance-attestation.ts and is unit-tested without pdfkit.
 router.use(complianceAttestationRouter);
+// /admin/inbound-faxes/* — triage queue for faxes Twilio delivers.
+// The webhook lives at /fax/inbound (mounted elsewhere); this is
+// the CSR-facing surface for listing, attaching to patient/Rx/
+// provider, and archiving.
+router.use(inboundFaxesRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue

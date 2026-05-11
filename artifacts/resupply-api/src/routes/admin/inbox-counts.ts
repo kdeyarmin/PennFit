@@ -59,6 +59,7 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
     { count: newPatientDocuments },
     { count: overdueShop },
     { count: overduePatient },
+    { count: newInboundFaxes },
   ] = await Promise.all([
     supabase
       .schema("resupply")
@@ -92,6 +93,11 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
       .select("*", { count: "exact", head: true })
       .is("completed_at", null)
       .lt("due_at", nowIso),
+    supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "new"),
   ]);
 
   res.json({
@@ -100,6 +106,7 @@ router.get("/admin/inbox-counts", requireAdmin, async (_req, res) => {
     pendingReviews: pendingReviews ?? 0,
     overdueFollowups: (overdueShop ?? 0) + (overduePatient ?? 0),
     newPatientDocuments: newPatientDocuments ?? 0,
+    newInboundFaxes: newInboundFaxes ?? 0,
     serverTime: new Date().toISOString(),
   });
 });

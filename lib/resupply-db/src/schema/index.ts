@@ -14,6 +14,7 @@ export * from "./providers";
 export * from "./sleep-studies";
 export * from "./insurance-coverages";
 export * from "./prior-authorizations";
+export * from "./inbound-faxes";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";

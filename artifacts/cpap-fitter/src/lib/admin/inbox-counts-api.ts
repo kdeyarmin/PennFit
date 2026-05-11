@@ -9,6 +9,8 @@ export interface AdminInboxCounts {
   overdueFollowups: number;
   /** Patient-uploaded documents that no admin has yet marked as reviewed. */
   newPatientDocuments: number;
+  /** Inbound faxes that have landed in the queue but no CSR has triaged. */
+  newInboundFaxes: number;
   serverTime: string;
 }
 

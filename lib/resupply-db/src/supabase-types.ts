@@ -848,6 +848,37 @@ export interface Database {
         >;
         Relationships: [];
       };
+      inbound_faxes: {
+        Row: {
+          id: string;
+          twilio_fax_sid: string;
+          from_e164: string | null;
+          to_e164: string | null;
+          received_at: string;
+          num_pages: number | null;
+          media_object_key: string | null;
+          media_content_type: string | null;
+          media_size_bytes: number | null;
+          status: "new" | "triaged" | "attached" | "archived";
+          attached_patient_id: string | null;
+          attached_provider_id: string | null;
+          attached_prescription_id: string | null;
+          attached_document_type: string | null;
+          assigned_admin_user_id: string | null;
+          triaged_at: string | null;
+          triaged_by_user_id: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["inbound_faxes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["inbound_faxes"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;

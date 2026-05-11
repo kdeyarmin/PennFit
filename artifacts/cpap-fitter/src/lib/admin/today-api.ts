@@ -55,6 +55,14 @@ export interface TodayDocument {
   created_at: string;
 }
 
+export interface TodayInboundFax {
+  id: string;
+  twilio_fax_sid: string;
+  from_e164: string | null;
+  num_pages: number | null;
+  received_at: string;
+}
+
 export interface TodayResponse {
   serverTime: string;
   conversationsAwaitingReply: TodayConversation[];
@@ -63,6 +71,7 @@ export interface TodayResponse {
   complianceAlerts: TodayComplianceAlert[];
   rxRenewalsDue: TodayRxRenewal[];
   documentsToReview: TodayDocument[];
+  inboundFaxes: TodayInboundFax[];
 }
 
 export async function fetchTodayWorklist(): Promise<TodayResponse> {

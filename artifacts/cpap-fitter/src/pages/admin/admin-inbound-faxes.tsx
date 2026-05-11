@@ -1,0 +1,491 @@
+// /admin/inbound-faxes — CSR triage queue for inbound faxes.
+//
+// Page layout
+// -----------
+// Header with status filter (Open / All / Archived); below it, a
+// table of faxes with received-at, sender, page count, and a status
+// pill. Selecting a row opens the triage modal which embeds the PDF
+// in an iframe and exposes the attach-to-patient / archive controls.
+//
+// MVP scope: patient + provider + prescription IDs are entered as
+// UUIDs (most CSRs will copy/paste from the patient-detail page in
+// another tab). A follow-up sprint can replace those with proper
+// autocomplete pickers. The state-machine validation lives on the
+// server (returns 400 with the issue), so the form is permissive on
+// purpose.
+
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ExternalLink, FileText, Inbox, Loader2 } from "lucide-react";
+
+import { Card } from "@/components/admin/Card";
+import { Spinner } from "@/components/admin/Spinner";
+import { ErrorPanel } from "@/components/admin/ErrorPanel";
+import { Button } from "@/components/admin/Button";
+import { Input } from "@/components/admin/Input";
+import {
+  inboundFaxMediaUrl,
+  listInboundFaxes,
+  patchInboundFax,
+  type InboundFaxListItem,
+  type InboundFaxStatus,
+} from "@/lib/admin/inbound-faxes-api";
+
+type Filter = "open" | "new" | "triaged" | "attached" | "archived";
+
+const queryKey = (f: Filter) => ["admin", "inbound-faxes", f] as const;
+
+export function AdminInboundFaxesPage() {
+  const [filter, setFilter] = useState<Filter>("open");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: queryKey(filter),
+    queryFn: () => listInboundFaxes(filter),
+  });
+
+  return (
+    <div className="p-6 space-y-6 max-w-6xl">
+      <header>
+        <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <Inbox className="h-6 w-6" />
+          Inbound faxes
+        </h1>
+        <p
+          className="text-sm mt-1"
+          style={{ color: "hsl(var(--ink-3))" }}
+        >
+          Faxes that Twilio has delivered to our fax number. Triage
+          each into the right patient + document category, or archive
+          junk. Bytes are mirrored to private storage so the PDF stays
+          available long after Twilio&apos;s 365-day media retention
+          window.
+        </p>
+      </header>
+
+      <div className="flex items-center gap-2">
+        {(["open", "new", "triaged", "attached", "archived"] as const).map(
+          (f) => (
+            <FilterChip
+              key={f}
+              label={
+                f === "open" ? "Open queue" : f.charAt(0).toUpperCase() + f.slice(1)
+              }
+              active={filter === f}
+              onClick={() => setFilter(f)}
+            />
+          ),
+        )}
+      </div>
+
+      <Card>
+        {isPending ? (
+          <Spinner />
+        ) : isError ? (
+          <ErrorPanel error={error} onRetry={() => void refetch()} />
+        ) : data.faxes.length === 0 ? (
+          <p
+            className="text-sm py-3"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            No faxes in this view.
+          </p>
+        ) : (
+          <FaxTable rows={data.faxes} onSelect={setSelectedId} />
+        )}
+      </Card>
+
+      {selectedId && (
+        <TriageModal
+          faxId={selectedId}
+          fax={data?.faxes.find((f) => f.id === selectedId) ?? null}
+          onClose={() => setSelectedId(null)}
+          filter={filter}
+        />
+      )}
+    </div>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
+      style={{
+        backgroundColor: active
+          ? "hsl(var(--penn-gold))"
+          : "hsl(var(--line-2))",
+        color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-2))",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+const STATUS_COLOR: Record<InboundFaxStatus, string> = {
+  new: "bg-amber-100 text-amber-900",
+  triaged: "bg-blue-100 text-blue-900",
+  attached: "bg-emerald-100 text-emerald-900",
+  archived: "bg-gray-100 text-gray-700",
+};
+
+function FaxTable({
+  rows,
+  onSelect,
+}: {
+  rows: InboundFaxListItem[];
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr
+          className="text-left border-b"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          <th className="py-2 font-semibold">Received</th>
+          <th className="py-2 font-semibold">From</th>
+          <th className="py-2 font-semibold">Pages</th>
+          <th className="py-2 font-semibold">Category</th>
+          <th className="py-2 font-semibold">Status</th>
+          <th className="py-2 font-semibold"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => {
+          const received = new Date(r.receivedAt).toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          });
+          return (
+            <tr
+              key={r.id}
+              className="border-b cursor-pointer hover:bg-[hsl(var(--bg-2))]"
+              style={{ borderColor: "hsl(var(--line-2))" }}
+              onClick={() => onSelect(r.id)}
+            >
+              <td className="py-2">{received}</td>
+              <td className="py-2 font-mono text-xs">
+                {r.fromE164 ?? "—"}
+              </td>
+              <td
+                className="py-2 tabular-nums text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                {r.numPages ?? "—"}
+              </td>
+              <td className="py-2 text-xs">
+                {r.attachedDocumentType ?? "—"}
+              </td>
+              <td className="py-2">
+                <span
+                  className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${STATUS_COLOR[r.status]}`}
+                >
+                  {r.status}
+                </span>
+              </td>
+              <td className="py-2 text-right">
+                {r.hasMedia ? (
+                  <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--penn-navy))]">
+                    <FileText className="h-3 w-3" /> Has PDF
+                  </span>
+                ) : (
+                  <span
+                    className="text-xs"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    Media missing
+                  </span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+const DOCUMENT_TYPE_SUGGESTIONS = [
+  "sleep_study",
+  "prescription",
+  "chart_note",
+  "rx_renewal_response",
+  "eob",
+  "other",
+];
+
+function TriageModal({
+  faxId,
+  fax,
+  onClose,
+  filter,
+}: {
+  faxId: string;
+  fax: InboundFaxListItem | null;
+  onClose: () => void;
+  filter: Filter;
+}) {
+  const qc = useQueryClient();
+
+  const [patientId, setPatientId] = useState(fax?.attachedPatientId ?? "");
+  const [providerId, setProviderId] = useState(
+    fax?.attachedProviderId ?? "",
+  );
+  const [prescriptionId, setPrescriptionId] = useState(
+    fax?.attachedPrescriptionId ?? "",
+  );
+  const [docType, setDocType] = useState(fax?.attachedDocumentType ?? "");
+  const [notes, setNotes] = useState(fax?.notes ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  const patch = useMutation({
+    mutationFn: (body: Parameters<typeof patchInboundFax>[1]) =>
+      patchInboundFax(faxId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKey(filter) });
+      void qc.invalidateQueries({ queryKey: ["admin-inbox-counts"] });
+      onClose();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  function isUuidOrEmpty(s: string): boolean {
+    return s === "" || /^[0-9a-f-]{36}$/i.test(s.trim());
+  }
+
+  const patientValid = isUuidOrEmpty(patientId);
+  const providerValid = isUuidOrEmpty(providerId);
+  const rxValid = isUuidOrEmpty(prescriptionId);
+  const formValid = patientValid && providerValid && rxValid;
+
+  function commonBody(): Parameters<typeof patchInboundFax>[1] {
+    return {
+      attachedPatientId: patientId.trim() || null,
+      attachedProviderId: providerId.trim() || null,
+      attachedPrescriptionId: prescriptionId.trim() || null,
+      attachedDocumentType: docType.trim() || null,
+      notes: notes.trim() || null,
+    };
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
+      onClick={() => !patch.isPending && onClose()}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-5xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
+        style={{ backgroundColor: "#ffffff" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2
+              className="text-lg font-semibold"
+              style={{ color: "hsl(var(--ink-1))" }}
+            >
+              Triage fax
+            </h2>
+            {fax?.hasMedia && (
+              <a
+                href={inboundFaxMediaUrl(faxId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[hsl(var(--penn-navy))] hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open PDF in new tab
+              </a>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* PDF preview pane */}
+            <div className="border rounded h-[60vh] overflow-hidden bg-[hsl(var(--bg-2))]">
+              {fax?.hasMedia ? (
+                <iframe
+                  src={inboundFaxMediaUrl(faxId)}
+                  title="Fax preview"
+                  className="w-full h-full"
+                  style={{ border: 0 }}
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-muted-foreground p-4 text-center">
+                  Media not persisted for this fax. The Twilio webhook
+                  may have hit the retention window, or the download
+                  failed at receive time. Check the application log
+                  for the audit row with this fax&apos;s ID.
+                </div>
+              )}
+            </div>
+
+            {/* Triage form */}
+            <div className="space-y-3">
+              <FormField
+                label="Patient ID"
+                value={patientId}
+                onChange={setPatientId}
+                placeholder="UUID — copy from /admin/patients"
+                invalid={!patientValid}
+              />
+              <FormField
+                label="Provider ID (optional)"
+                value={providerId}
+                onChange={setProviderId}
+                placeholder="UUID — copy from /admin/providers"
+                invalid={!providerValid}
+              />
+              <FormField
+                label="Prescription ID (optional)"
+                value={prescriptionId}
+                onChange={setPrescriptionId}
+                placeholder="UUID — copy from the patient's Rx row"
+                invalid={!rxValid}
+              />
+              <div>
+                <label
+                  className="text-xs font-semibold block mb-1"
+                  style={{ color: "hsl(var(--penn-navy))" }}
+                >
+                  Document category
+                </label>
+                <Input
+                  list="fax-doc-types"
+                  value={docType}
+                  onChange={(e) => setDocType(e.target.value)}
+                  placeholder="sleep_study, prescription, chart_note…"
+                />
+                <datalist id="fax-doc-types">
+                  {DOCUMENT_TYPE_SUGGESTIONS.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label
+                  className="text-xs font-semibold block mb-1"
+                  style={{ color: "hsl(var(--penn-navy))" }}
+                >
+                  Notes
+                </label>
+                <textarea
+                  className="w-full rounded border px-2 py-1.5 text-sm"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  maxLength={2000}
+                />
+              </div>
+
+              {error && (
+                <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+                  {error}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border/40">
+            <Button intent="ghost" onClick={onClose} disabled={patch.isPending}>
+              Cancel
+            </Button>
+            <Button
+              intent="ghost"
+              disabled={patch.isPending}
+              onClick={() =>
+                patch.mutate({ ...commonBody(), status: "archived" })
+              }
+            >
+              {patch.isPending && patch.variables?.status === "archived" ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : null}
+              Archive (junk)
+            </Button>
+            <Button
+              intent="secondary"
+              disabled={patch.isPending || !formValid}
+              onClick={() => patch.mutate(commonBody())}
+            >
+              Save (keep as new)
+            </Button>
+            <Button
+              disabled={
+                patch.isPending ||
+                !formValid ||
+                patientId.trim().length === 0
+              }
+              isLoading={
+                patch.isPending && patch.variables?.status === "attached"
+              }
+              onClick={() =>
+                patch.mutate({ ...commonBody(), status: "attached" })
+              }
+              title={
+                patientId.trim().length === 0
+                  ? "Set a patient ID first"
+                  : undefined
+              }
+            >
+              Attach to patient
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  invalid,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  invalid?: boolean;
+}) {
+  return (
+    <div>
+      <label
+        className="text-xs font-semibold block mb-1"
+        style={{ color: "hsl(var(--penn-navy))" }}
+      >
+        {label}
+      </label>
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          borderColor: invalid ? "#dc2626" : undefined,
+        }}
+      />
+      {invalid && (
+        <p className="text-[10px] text-rose-700 mt-1">
+          Must be a UUID or empty.
+        </p>
+      )}
+    </div>
+  );
+}

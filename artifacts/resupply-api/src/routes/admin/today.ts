@@ -97,6 +97,14 @@ interface DocumentRow {
   created_at: string;
 }
 
+interface InboundFaxRow {
+  id: string;
+  twilio_fax_sid: string;
+  from_e164: string | null;
+  num_pages: number | null;
+  received_at: string;
+}
+
 router.get("/admin/today", requireAdmin, async (_req, res) => {
   const supabase = getSupabaseServiceRoleClient();
   const nowIso = new Date().toISOString();
@@ -115,6 +123,7 @@ router.get("/admin/today", requireAdmin, async (_req, res) => {
     alertsRes,
     rxRes,
     docsRes,
+    faxesRes,
   ] = await Promise.all([
     supabase
       .schema("resupply")
@@ -176,6 +185,13 @@ router.get("/admin/today", requireAdmin, async (_req, res) => {
       .is("reviewed_at", null)
       .order("created_at", { ascending: true })
       .limit(PER_QUEUE_LIMIT),
+    supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .select("id, twilio_fax_sid, from_e164, num_pages, received_at")
+      .eq("status", "new")
+      .order("received_at", { ascending: true })
+      .limit(PER_QUEUE_LIMIT),
   ]);
 
   // Surface any read error to the client as 503 — partial worklists
@@ -189,6 +205,7 @@ router.get("/admin/today", requireAdmin, async (_req, res) => {
     alertsRes,
     rxRes,
     docsRes,
+    faxesRes,
   ]) {
     if (r.error) {
       logger.error(
@@ -233,6 +250,7 @@ router.get("/admin/today", requireAdmin, async (_req, res) => {
     complianceAlerts: (alertsRes.data ?? []) as ComplianceAlertRow[],
     rxRenewalsDue: (rxRes.data ?? []) as RxRenewalRow[],
     documentsToReview: (docsRes.data ?? []) as DocumentRow[],
+    inboundFaxes: (faxesRes.data ?? []) as InboundFaxRow[],
   });
 });
 
