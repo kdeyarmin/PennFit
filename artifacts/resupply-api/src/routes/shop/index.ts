@@ -31,6 +31,7 @@ import productQuestionsRouter from "./product-questions";
 import productCompatibilityRouter from "./product-compatibility";
 import mePushSubscriptionsRouter from "./me-push-subscriptions";
 import meInsightsRouter from "./me-insights";
+import meTherapySummaryRouter from "./me-therapy-summary";
 import meDocumentsRouter from "./me-documents";
 
 const router: IRouter = Router();
@@ -60,6 +61,11 @@ router.use(mePushSubscriptionsRouter);
 // smart-trigger events (Phase G.4). Email-matched lookup against
 // patient_smart_trigger_events; empty when no patient row matches.
 router.use(meInsightsRouter);
+// /shop/me/therapy-summary — patient-facing 30-night CPAP usage rollup
+// (avg hours, AHI, leak, Medicare-style adherence rate). Email-matched
+// against patients.email like /shop/me/insights; empty response when
+// no patient row matches or no nights are imported yet.
+router.use(meTherapySummaryRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);

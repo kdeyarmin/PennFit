@@ -503,6 +503,39 @@ export const dismissInsight = (id: string) =>
   });
 
 // ---------------------------------------------------------------------------
+// Therapy summary — patient-facing 30-night usage rollup. Mirrors the
+// shape returned by GET /shop/me/therapy-summary; see that route's
+// preamble for field semantics.
+// ---------------------------------------------------------------------------
+
+export interface TherapyNight {
+  date: string;
+  usageHours: number | null;
+  ahi: number | null;
+  leakLMin: number | null;
+  pressureP95Cmh2o: number | null;
+  source: string;
+}
+
+export interface TherapySummary {
+  hasData: boolean;
+  patientLinked: boolean;
+  windowNights: number;
+  nightsWithData: number;
+  windowStartDate: string | null;
+  windowEndDate: string | null;
+  avgUsageHours: number | null;
+  avgAhi: number | null;
+  avgLeakLMin: number | null;
+  compliantNights: number | null;
+  complianceRate: number | null;
+  nights: TherapyNight[];
+}
+
+export const fetchTherapySummary = () =>
+  meFetch<TherapySummary>("/shop/me/therapy-summary");
+
+// ---------------------------------------------------------------------------
 // Patient document upload — insurance cards, prescriptions, referrals, etc.
 // ---------------------------------------------------------------------------
 

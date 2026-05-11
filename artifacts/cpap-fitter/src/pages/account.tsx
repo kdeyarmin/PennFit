@@ -94,6 +94,7 @@ import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 import { InsightsSection } from "@/components/insights-section";
+import { TherapySummarySection } from "@/components/therapy-summary-section";
 import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
@@ -325,6 +326,7 @@ function AccountInner() {
           */}
           <CustomerChatSection />
           <DocumentsSection />
+          <TherapySummarySection />
           <InsightsSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
