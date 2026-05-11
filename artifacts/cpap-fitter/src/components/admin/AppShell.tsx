@@ -303,6 +303,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Operational KPIs and exports",
       },
       {
+        href: "/admin/analytics",
+        label: "Clinical Analytics",
+        icon: Activity,
+        matchPrefix: "/admin/analytics",
+        hint: "Resupply funnel, compliance cohorts, CSR productivity",
+      },
+      {
         href: "/admin/pennpaps/analytics",
         label: "Storefront Analytics",
         icon: BarChart3,

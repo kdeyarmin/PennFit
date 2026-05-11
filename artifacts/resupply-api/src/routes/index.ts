@@ -22,6 +22,7 @@ import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
+import analyticsRouter from "./admin/analytics.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -247,6 +248,11 @@ router.use(inboundFaxesRouter);
 // Philips-DreamStation-style workflows where every DME needs to
 // know which dispensed serials are in the recall lot.
 router.use(equipmentRecallsRouter);
+// /admin/analytics/* — clinical-side analytics (resupply funnel,
+// compliance cohorts, CSR productivity). Distinct from storefront
+// analytics at /admin/storefront/analytics which covers orders +
+// email health + mask popularity.
+router.use(analyticsRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
