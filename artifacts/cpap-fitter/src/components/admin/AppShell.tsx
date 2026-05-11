@@ -176,6 +176,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Patient roster, profiles, and 360 view",
         badgeKey: "newPatientDocuments",
       },
+      {
+        href: "/admin/providers",
+        label: "Providers",
+        icon: HeartHandshake,
+        matchPrefix: "/admin/providers",
+        hint: "Central physician/NP registry — NPPES-backed",
+      },
     ],
   },
   {

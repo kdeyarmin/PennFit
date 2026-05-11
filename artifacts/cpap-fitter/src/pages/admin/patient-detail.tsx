@@ -21,6 +21,11 @@ import {
   type PatientTimelineEvent,
 } from "@workspace/api-client-react/admin";
 import { Card } from "@/components/admin/Card";
+import {
+  InsuranceCoveragesTab,
+  PriorAuthorizationsTab,
+  SleepStudiesTab,
+} from "@/components/admin/ClinicalTabs";
 import { Table, type Column } from "@/components/admin/Table";
 import {
   Badge,
@@ -100,7 +105,10 @@ type Tab =
   | "fax-outreach"
   | "documents"
   | "portal"
-  | "device-data";
+  | "device-data"
+  | "sleep-studies"
+  | "insurance"
+  | "prior-auths";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -320,6 +328,24 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Device data
         </TabButton>
+        <TabButton
+          active={tab === "sleep-studies"}
+          onClick={() => setTab("sleep-studies")}
+        >
+          Sleep studies
+        </TabButton>
+        <TabButton
+          active={tab === "insurance"}
+          onClick={() => setTab("insurance")}
+        >
+          Insurance
+        </TabButton>
+        <TabButton
+          active={tab === "prior-auths"}
+          onClick={() => setTab("prior-auths")}
+        >
+          Prior auths
+        </TabButton>
       </div>
 
       <Card>
@@ -359,6 +385,9 @@ export function PatientDetailPage({ id }: { id: string }) {
           <PortalTab patient={data} onChanged={() => void refetch()} />
         )}
         {tab === "device-data" && <IntegrationsTab patientId={id} />}
+        {tab === "sleep-studies" && <SleepStudiesTab patientId={id} />}
+        {tab === "insurance" && <InsuranceCoveragesTab patientId={id} />}
+        {tab === "prior-auths" && <PriorAuthorizationsTab patientId={id} />}
       </Card>
     </div>
   );

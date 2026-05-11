@@ -1,0 +1,104 @@
+// Hand-rolled fetch wrapper for /admin/providers + the NPPES lookup
+// proxy. Same pattern as today-api.ts and followups-list-api.ts.
+
+export type ProviderSource = "nppes" | "csr_entry" | "backfill";
+
+export interface ProviderListItem {
+  id: string;
+  npi: string;
+  legalName: string;
+  taxonomyCode: string | null;
+  phoneE164: string | null;
+  faxE164: string | null;
+  email: string | null;
+  practiceName: string | null;
+  source: ProviderSource;
+  verifiedAt: string | null;
+  createdAt: string;
+}
+
+export interface ProviderDetail extends ProviderListItem {
+  practiceAddress: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+  } | null;
+  notes: string | null;
+  updatedAt: string;
+}
+
+export interface NppesProviderProjection {
+  npi: string;
+  legalName: string;
+  taxonomyCode: string | null;
+  phoneE164: string | null;
+  faxE164: string | null;
+  practiceName: string | null;
+  practiceAddress: ProviderDetail["practiceAddress"];
+}
+
+export interface CreateProviderRequest {
+  npi: string;
+  legalName: string;
+  taxonomyCode?: string | null;
+  phoneE164?: string | null;
+  faxE164?: string | null;
+  email?: string | null;
+  practiceName?: string | null;
+  practiceAddress?: ProviderDetail["practiceAddress"];
+  notes?: string | null;
+  source?: "nppes" | "csr_entry";
+}
+
+export interface CreateProviderResponse {
+  id: string;
+  created: boolean;
+}
+
+async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`/resupply-api${path}`, {
+    headers: { Accept: "application/json", ...(init.headers ?? {}) },
+    ...init,
+  });
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const body = (await res.json()) as { message?: string; error?: string };
+      message = body.message ?? body.error ?? message;
+    } catch {
+      // ignore — non-JSON body
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as T;
+}
+
+export async function listProviders(query: string = ""): Promise<{
+  providers: ProviderListItem[];
+}> {
+  const qs = query ? `?q=${encodeURIComponent(query)}` : "";
+  return jsonFetch(`/admin/providers${qs}`);
+}
+
+export async function lookupNppes(npi: string): Promise<{
+  provider: NppesProviderProjection;
+}> {
+  return jsonFetch(`/admin/providers/nppes-lookup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ npi }),
+  });
+}
+
+export async function createProvider(
+  body: CreateProviderRequest,
+): Promise<CreateProviderResponse> {
+  return jsonFetch(`/admin/providers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
