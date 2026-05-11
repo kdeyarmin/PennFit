@@ -25,6 +25,7 @@ import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import trainingRecordsRouter from "./admin/training-records.js";
 import grievancesRouter from "./admin/grievances.js";
+import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -262,6 +263,10 @@ router.use(analyticsRouter);
 // query these exact artifacts during DMEPOS site visits.
 router.use(trainingRecordsRouter);
 router.use(grievancesRouter);
+// /admin/bulk-campaigns/* — staging-side surface for bulk-email
+// campaigns. Phase A persists draft + cancelled; Phase B will add
+// the send-side worker that drains bulk_campaign_recipients.
+router.use(bulkCampaignsRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue

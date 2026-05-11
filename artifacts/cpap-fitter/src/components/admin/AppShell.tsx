@@ -164,6 +164,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/templates",
         hint: "Edit the copy used by automated customer messages",
       },
+      {
+        href: "/admin/bulk-campaigns",
+        label: "Bulk Campaigns",
+        icon: BellRing,
+        matchPrefix: "/admin/bulk-campaigns",
+        hint: "Resolve audience + draft a bulk email send",
+      },
     ],
   },
   {

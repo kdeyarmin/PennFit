@@ -19,6 +19,8 @@ export * from "./equipment-assets";
 export * from "./equipment-recalls";
 export * from "./staff-training-records";
 export * from "./patient-grievances";
+export * from "./bulk-campaigns";
+export * from "./bulk-campaign-recipients";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";

@@ -1016,6 +1016,71 @@ export interface Database {
         >;
         Relationships: [];
       };
+      bulk_campaigns: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          audience_kind:
+            | "all_active_shop_customers"
+            | "all_active_patients"
+            | "by_patient_payer"
+            | "manual_list";
+          audience_payer: string | null;
+          channel: "email";
+          category: "marketing" | "service" | "compliance";
+          compliance_attestation: string | null;
+          template_key: string;
+          throttle_per_minute: number;
+          status:
+            | "draft"
+            | "sending"
+            | "sent"
+            | "paused"
+            | "cancelled";
+          started_at: string | null;
+          completed_at: string | null;
+          cancelled_at: string | null;
+          created_by_user_id: string | null;
+          cancelled_by_user_id: string | null;
+          total_recipients: number;
+          suppressed_count: number;
+          sent_count: number;
+          failed_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["bulk_campaigns"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["bulk_campaigns"]["Row"]
+        >;
+        Relationships: [];
+      };
+      bulk_campaign_recipients: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          recipient_kind: "patient" | "shop_customer";
+          recipient_id: string;
+          recipient_email: string | null;
+          status: "pending" | "suppressed" | "sending" | "sent" | "failed";
+          suppression_reason: string | null;
+          sent_at: string | null;
+          vendor_message_id: string | null;
+          error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["bulk_campaign_recipients"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["bulk_campaign_recipients"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;
