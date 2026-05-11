@@ -536,6 +536,53 @@ export const fetchTherapySummary = () =>
   meFetch<TherapySummary>("/shop/me/therapy-summary");
 
 // ---------------------------------------------------------------------------
+// My returns — patient-facing list of return requests this customer
+// has opened. Mirrors GET /shop/me/returns; see the route preamble for
+// status/reason field semantics.
+// ---------------------------------------------------------------------------
+
+export type ShopReturnStatus =
+  | "requested"
+  | "approved"
+  | "rejected"
+  | "shipped_back"
+  | "received"
+  | "refunded"
+  | "replaced"
+  | "closed";
+
+export type ShopReturnReason =
+  | "fit"
+  | "defective"
+  | "wrong_item"
+  | "no_longer_needed"
+  | "other";
+
+export interface MyReturnRow {
+  id: string;
+  orderId: string;
+  sessionId: string;
+  status: ShopReturnStatus;
+  reason: ShopReturnReason;
+  reasonNote: string | null;
+  resolution: string | null;
+  refundCents: number | null;
+  returnLabelUrl: string | null;
+  returnCarrier: string | null;
+  returnTrackingNumber: string | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  receivedAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+}
+
+export const fetchMyReturns = () =>
+  meFetch<{ returns: MyReturnRow[] }>("/shop/me/returns");
+
+// ---------------------------------------------------------------------------
 // Patient document upload — insurance cards, prescriptions, referrals, etc.
 // ---------------------------------------------------------------------------
 
