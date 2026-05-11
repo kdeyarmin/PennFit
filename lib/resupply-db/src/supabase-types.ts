@@ -940,6 +940,82 @@ export interface Database {
         >;
         Relationships: [];
       };
+      staff_training_records: {
+        Row: {
+          id: string;
+          staff_user_id: string;
+          training_type:
+            | "hipaa_privacy"
+            | "hipaa_security"
+            | "osha_bloodborne"
+            | "osha_general"
+            | "infection_control"
+            | "fit_test"
+            | "new_hire_orientation"
+            | "dmepos_supplier_stds"
+            | "other";
+          course_title: string | null;
+          completed_at: string;
+          expires_at: string | null;
+          credit_hours: string | null;
+          provider: string | null;
+          certificate_reference: string | null;
+          evidence_object_key: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["staff_training_records"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["staff_training_records"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_grievances: {
+        Row: {
+          id: string;
+          patient_id: string;
+          equipment_asset_id: string | null;
+          kind: "complaint" | "grievance" | "adverse_event";
+          severity: "low" | "moderate" | "high";
+          source:
+            | "phone"
+            | "email"
+            | "sms"
+            | "in_person"
+            | "letter"
+            | "portal"
+            | "other";
+          summary: string;
+          description: string | null;
+          received_at: string;
+          status:
+            | "open"
+            | "acknowledged"
+            | "escalated"
+            | "resolved"
+            | "reopened";
+          acknowledged_at: string | null;
+          acknowledged_by_user_id: string | null;
+          resolution: string | null;
+          resolved_at: string | null;
+          resolved_by_user_id: string | null;
+          reported_to_fda: "yes" | "no" | "not_applicable";
+          fda_report_reference: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_grievances"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_grievances"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;

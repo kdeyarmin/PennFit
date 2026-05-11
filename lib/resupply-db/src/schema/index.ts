@@ -17,6 +17,8 @@ export * from "./prior-authorizations";
 export * from "./inbound-faxes";
 export * from "./equipment-assets";
 export * from "./equipment-recalls";
+export * from "./staff-training-records";
+export * from "./patient-grievances";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";

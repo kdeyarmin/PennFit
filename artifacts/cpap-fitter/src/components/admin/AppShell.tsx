@@ -350,6 +350,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Resupply admin activity trail",
       },
       {
+        href: "/admin/compliance",
+        label: "Compliance binder",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/compliance",
+        hint: "Staff training records + patient grievances for DMEPOS surveyors",
+      },
+      {
         href: "/admin/pennpaps/audit",
         label: "Storefront Audit",
         icon: FileSearch,

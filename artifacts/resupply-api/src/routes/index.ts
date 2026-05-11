@@ -23,6 +23,8 @@ import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
+import trainingRecordsRouter from "./admin/training-records.js";
+import grievancesRouter from "./admin/grievances.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -253,6 +255,13 @@ router.use(equipmentRecallsRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/compliance/* — accreditation-binder surfaces: per-staff
+// training records (HIPAA, OSHA, fit-test, infection-control,
+// orientation) and patient grievances (complaints + grievances +
+// adverse events under one typed row). Surveyors (ACHC, BOC, TJC)
+// query these exact artifacts during DMEPOS site visits.
+router.use(trainingRecordsRouter);
+router.use(grievancesRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
