@@ -364,6 +364,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Staff training records + patient grievances for DMEPOS surveyors",
       },
       {
+        href: "/admin/security",
+        label: "Account security",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/security",
+        hint: "Manage your own MFA / authenticator-app enrollment",
+      },
+      {
         href: "/admin/pennpaps/audit",
         label: "Storefront Audit",
         icon: FileSearch,

@@ -26,6 +26,7 @@ import analyticsRouter from "./admin/analytics.js";
 import trainingRecordsRouter from "./admin/training-records.js";
 import grievancesRouter from "./admin/grievances.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
+import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -267,6 +268,10 @@ router.use(grievancesRouter);
 // campaigns. Phase A persists draft + cancelled; Phase B will add
 // the send-side worker that drains bulk_campaign_recipients.
 router.use(bulkCampaignsRouter);
+// /admin/mfa/* — TOTP enrollment for admin/CSR accounts. Phase A:
+// enrollment + status + disable only. Sign-in gating ships in Phase B
+// after the enrollment flow has been proven in production.
+router.use(mfaRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue

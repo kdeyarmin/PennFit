@@ -1081,6 +1081,25 @@ export interface Database {
         >;
         Relationships: [];
       };
+      admin_mfa_secrets: {
+        Row: {
+          id: string;
+          staff_user_id: string;
+          secret_base32: string;
+          verified_at: string | null;
+          last_used_at: string | null;
+          last_used_counter: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["admin_mfa_secrets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["admin_mfa_secrets"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;
