@@ -707,6 +707,7 @@ export interface Database {
         Row: {
           id: string;
           patient_id: string;
+          provider_id: string | null;
           item_sku: string;
           hcpcs_code: string | null;
           cadence_days: number;
@@ -725,6 +726,126 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["prescriptions"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["prescriptions"]["Row"]>;
+        Relationships: [];
+      };
+      providers: {
+        Row: {
+          id: string;
+          npi: string;
+          legal_name: string;
+          taxonomy_code: string | null;
+          phone_e164: string | null;
+          fax_e164: string | null;
+          email: string | null;
+          practice_address: Json | null;
+          practice_name: string | null;
+          source: "nppes" | "csr_entry" | "backfill";
+          verified_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["providers"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["providers"]["Row"]>;
+        Relationships: [];
+      };
+      sleep_studies: {
+        Row: {
+          id: string;
+          patient_id: string;
+          study_date: string;
+          study_type: "psg" | "hsat" | "split_night" | "re_titration";
+          ahi: string;
+          rdi: string | null;
+          lowest_spo2_pct: number | null;
+          sleep_efficiency_pct: number | null;
+          diagnosis_icd10: string | null;
+          interpreting_provider_id: string | null;
+          facility_name: string | null;
+          source: "external_lab" | "home_test_vendor" | "csr_entry";
+          document_id: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["sleep_studies"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["sleep_studies"]["Row"]>;
+        Relationships: [];
+      };
+      insurance_coverages: {
+        Row: {
+          id: string;
+          patient_id: string;
+          rank: "primary" | "secondary" | "tertiary";
+          payer_name: string;
+          plan_name: string | null;
+          member_id: string;
+          group_number: string | null;
+          policyholder_name: string | null;
+          policyholder_relationship:
+            | "self"
+            | "spouse"
+            | "child"
+            | "other"
+            | null;
+          effective_date: string | null;
+          termination_date: string | null;
+          in_network: boolean | null;
+          deductible_cents: number | null;
+          deductible_met_cents: number | null;
+          oop_max_cents: number | null;
+          copay_cents: number | null;
+          capped_rental_status:
+            | "rental_month_1_to_3"
+            | "rental_month_4_to_13"
+            | "purchased"
+            | "not_applicable"
+            | null;
+          verified_at: string | null;
+          verified_by_user_id: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_coverages"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_coverages"]["Row"]
+        >;
+        Relationships: [];
+      };
+      prior_authorizations: {
+        Row: {
+          id: string;
+          patient_id: string;
+          insurance_coverage_id: string | null;
+          hcpcs_code: string;
+          payer_name: string;
+          auth_number: string | null;
+          status:
+            | "draft"
+            | "submitted"
+            | "approved"
+            | "denied"
+            | "appealed"
+            | "expired";
+          requested_at: string | null;
+          submitted_at: string | null;
+          decision_at: string | null;
+          approved_through: string | null;
+          denial_reason: string | null;
+          document_id: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["prior_authorizations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["prior_authorizations"]["Row"]
+        >;
         Relationships: [];
       };
       messages: {

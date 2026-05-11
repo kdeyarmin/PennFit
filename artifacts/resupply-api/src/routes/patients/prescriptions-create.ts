@@ -62,6 +62,14 @@ const bodySchema = z
         (v) => v == null || HCPCS_RE.test(v),
         "must be a HCPCS code like E0601, optionally with modifiers (e.g. A7030-KX)",
       ),
+    // Optional FK to the central providers registry. Either:
+    //   * providerId (preferred — admin form picks from the lookup), or
+    //   * the legacy prescriberName / prescriberNpi pair (kept for
+    //     backward compatibility with older clients and so a CSR can
+    //     still record an unverified prescriber without an NPI).
+    // Both can be sent together; the server keeps them — provider_id
+    // is the authoritative pointer, the jsonb captures the form data.
+    providerId: z.string().uuid().nullable().optional(),
     prescriberName: z
       .string()
       .trim()
@@ -160,6 +168,7 @@ router.post("/patients/:id/prescriptions", requireAdmin, async (req, res) => {
     .from("prescriptions")
     .insert({
       patient_id: patientId,
+      provider_id: body.providerId ?? null,
       item_sku: body.itemSku,
       cadence_days: body.cadenceDays,
       valid_from: body.validFrom,
@@ -175,6 +184,7 @@ router.post("/patients/:id/prescriptions", requireAdmin, async (req, res) => {
   const populated = ["itemSku", "cadenceDays", "validFrom"];
   if (body.validUntil) populated.push("validUntil");
   if (body.hcpcsCode) populated.push("hcpcsCode");
+  if (body.providerId) populated.push("providerId");
   if (body.prescriberName) populated.push("prescriberName");
   if (body.prescriberNpi) populated.push("prescriberNpi");
   if (body.diagnosis) populated.push("diagnosis");

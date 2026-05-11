@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { patients } from "./patients";
+import { providers } from "./providers";
 import { resupplySchema } from "./_schema";
 
 /**
@@ -106,6 +107,16 @@ export const prescriptions = resupplySchema.table(
     // compliance work (SWO generation, 90-day attestation, prior
     // authorisation). Optional — pre-migration rows have null.
     hcpcsCode: varchar("hcpcs_code", { length: 12 }),
+
+    // FK into the central providers registry (added in 0071+0072).
+    // Replaces the free-text jsonb `details.prescriberName/Npi` as
+    // the authoritative pointer at the prescribing physician. The
+    // jsonb fields stay for provenance ("what the prescription form
+    // literally said") but new code reads provider_id. ON DELETE
+    // SET NULL — see the migration comment.
+    providerId: uuid("provider_id").references(() => providers.id, {
+      onDelete: "set null",
+    }),
   },
   (t) => ({
     patientIdx: index("prescriptions_patient_idx").on(t.patientId),
@@ -114,6 +125,7 @@ export const prescriptions = resupplySchema.table(
       t.itemSku,
     ),
     statusIdx: index("prescriptions_status_idx").on(t.status),
+    providerIdIdx: index("prescriptions_provider_id_idx").on(t.providerId),
   }),
 );
 

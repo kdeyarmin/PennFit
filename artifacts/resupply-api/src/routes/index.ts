@@ -17,6 +17,7 @@ import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
 import todayRouter from "./admin/today.js";
+import providersRouter from "./admin/providers.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -216,6 +217,12 @@ router.use(inboxCountsRouter);
 // renewals due, documents to review). One round-trip; ~5 items
 // per queue. The /admin/today SPA page renders this directly.
 router.use(todayRouter);
+// /admin/providers/* — central physician/NP registry. Replaces the
+// free-text jsonb prescriber data scattered across prescriptions
+// and shop_customers. NPPES lookup endpoint proxies the public
+// NPI registry so CSRs autofill provider records instead of
+// re-keying.
+router.use(providersRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue
