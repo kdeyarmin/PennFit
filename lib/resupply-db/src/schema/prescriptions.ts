@@ -99,6 +99,13 @@ export const prescriptions = resupplySchema.table(
     renewalRequestedAt: timestamp("renewal_requested_at", {
       withTimezone: true,
     }),
+
+    // HCPCS Level II code for what the Rx authorises (e.g. E0601 for
+    // CPAP devices, A7030 for full face mask cushions, A7038 for
+    // disposable filters). Required for downstream Medicare/payer
+    // compliance work (SWO generation, 90-day attestation, prior
+    // authorisation). Optional — pre-migration rows have null.
+    hcpcsCode: varchar("hcpcs_code", { length: 12 }),
   },
   (t) => ({
     patientIdx: index("prescriptions_patient_idx").on(t.patientId),

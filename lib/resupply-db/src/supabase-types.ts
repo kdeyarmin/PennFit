@@ -708,6 +708,7 @@ export interface Database {
           id: string;
           patient_id: string;
           item_sku: string;
+          hcpcs_code: string | null;
           cadence_days: number;
           valid_from: string;
           valid_until: string | null;

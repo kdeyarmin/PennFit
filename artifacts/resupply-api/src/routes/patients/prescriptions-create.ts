@@ -34,6 +34,12 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const idParam = z.object({ id: z.string().uuid() });
 
+// HCPCS Level II codes are 1 letter + 4 digits, optionally followed
+// by hyphen-separated 2-char modifiers (KX, NU, RR, GA, ...). We
+// permit up to four modifiers, which covers every Medicare CPAP/RAD
+// scenario we have seen. Lowercase input is normalized at insert.
+const HCPCS_RE = /^[A-Z]\d{4}(-[A-Z0-9]{2}){0,4}$/;
+
 const bodySchema = z
   .object({
     itemSku: z.string().trim().min(1).max(64),
@@ -45,6 +51,17 @@ const bodySchema = z
       .nullable()
       .optional()
       .transform((v) => (v === "" ? null : v)),
+    hcpcsCode: z
+      .string()
+      .trim()
+      .max(12)
+      .nullable()
+      .optional()
+      .transform((v) => (v == null || v === "" ? null : v.toUpperCase()))
+      .refine(
+        (v) => v == null || HCPCS_RE.test(v),
+        "must be a HCPCS code like E0601, optionally with modifiers (e.g. A7030-KX)",
+      ),
     prescriberName: z
       .string()
       .trim()
@@ -147,6 +164,7 @@ router.post("/patients/:id/prescriptions", requireAdmin, async (req, res) => {
       cadence_days: body.cadenceDays,
       valid_from: body.validFrom,
       valid_until: body.validUntil ?? null,
+      hcpcs_code: body.hcpcsCode ?? null,
       details: detailsBlob,
       status: "active",
     })
@@ -156,6 +174,7 @@ router.post("/patients/:id/prescriptions", requireAdmin, async (req, res) => {
 
   const populated = ["itemSku", "cadenceDays", "validFrom"];
   if (body.validUntil) populated.push("validUntil");
+  if (body.hcpcsCode) populated.push("hcpcsCode");
   if (body.prescriberName) populated.push("prescriberName");
   if (body.prescriberNpi) populated.push("prescriberNpi");
   if (body.diagnosis) populated.push("diagnosis");

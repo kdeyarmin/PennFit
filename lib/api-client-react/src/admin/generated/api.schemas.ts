@@ -755,6 +755,8 @@ export const PatientPrescriptionStatus = {
 export interface PatientPrescription {
   id: string;
   itemSku: string;
+  /** HCPCS Level II code, optionally with up to four 2-char modifiers (e.g. "E0601", "A7030-KX"). */
+  hcpcsCode?: string | null;
   cadenceDays: number;
   validFrom: string;
   validUntil?: string | null;
@@ -1804,6 +1806,13 @@ export interface CreatePrescriptionRequest {
   validFrom: string;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   validUntil?: string | null;
+  /**
+   * HCPCS Level II code authorising the SKU. Letter + 4 digits, with up to
+   * four hyphen-separated 2-char modifiers (e.g. "E0601", "A7030-KX-NU").
+   * @maxLength 12
+   * @pattern ^[A-Z]\d{4}(-[A-Z0-9]{2}){0,4}$
+   */
+  hcpcsCode?: string | null;
   /** @maxLength 160 */
   prescriberName?: string | null;
   /** @maxLength 20 */

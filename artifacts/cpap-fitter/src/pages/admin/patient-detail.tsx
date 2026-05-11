@@ -675,6 +675,11 @@ function PrescriptionsTab({
   const cols: Column<Prescription>[] = [
     { key: "sku", header: "Item", render: (r) => r.itemSku },
     {
+      key: "hcpcs",
+      header: "HCPCS",
+      render: (r) => r.hcpcsCode ?? "—",
+    },
+    {
       key: "cadence",
       header: "Cadence",
       render: (r) => `${r.cadenceDays} days`,
@@ -1876,6 +1881,7 @@ function AddPrescriptionModal({
     new Date().toISOString().slice(0, 10),
   );
   const [validUntil, setValidUntil] = useState("");
+  const [hcpcsCode, setHcpcsCode] = useState("");
   const [prescriberName, setPrescriberName] = useState("");
   const [prescriberNpi, setPrescriberNpi] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
@@ -1917,12 +1923,20 @@ function AddPrescriptionModal({
       setError("Valid-until must be on or after valid-from.");
       return;
     }
+    const hcpcs = hcpcsCode.trim().toUpperCase();
+    if (hcpcs && !/^[A-Z]\d{4}(-[A-Z0-9]{2}){0,4}$/.test(hcpcs)) {
+      setError(
+        "HCPCS must be a code like E0601, optionally with modifiers (e.g. A7030-KX).",
+      );
+      return;
+    }
 
     const body: {
       itemSku: string;
       cadenceDays: number;
       validFrom: string;
       validUntil?: string | null;
+      hcpcsCode?: string | null;
       prescriberName?: string | null;
       prescriberNpi?: string | null;
       diagnosis?: string | null;
@@ -1933,6 +1947,7 @@ function AddPrescriptionModal({
       validFrom,
     };
     if (validUntil) body.validUntil = validUntil;
+    if (hcpcs) body.hcpcsCode = hcpcs;
     if (prescriberName.trim()) body.prescriberName = prescriberName.trim();
     if (prescriberNpi.trim()) body.prescriberNpi = prescriberNpi.trim();
     if (diagnosis.trim()) body.diagnosis = diagnosis.trim();
@@ -2024,6 +2039,18 @@ function AddPrescriptionModal({
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
                 disabled={isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rx-hcpcs">HCPCS code (optional)</Label>
+              <Input
+                id="rx-hcpcs"
+                value={hcpcsCode}
+                maxLength={12}
+                placeholder="e.g. E0601 or A7030-KX"
+                onChange={(e) => setHcpcsCode(e.target.value)}
+                disabled={isPending}
+                autoComplete="off"
               />
             </div>
             <div>

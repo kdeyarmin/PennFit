@@ -1,0 +1,31 @@
+-- prescriptions.hcpcs_code — HCPCS Level II code authorising the SKU.
+--
+-- Why this column lives here:
+--   The PennFit DB does not hold a product catalogue (Pacware is the
+--   inventory system of record), so we cannot derive HCPCS from a
+--   `shop_products` row at runtime. Recording the code on the
+--   prescription captures the prescriber's intent at the moment of
+--   order, which is what every downstream compliance workflow
+--   (Standard Written Order PDF, Medicare 90-day adherence
+--   attestation, prior authorisation) actually needs.
+--
+--   Optional — pre-migration rows have NULL. Routes that surface the
+--   column treat NULL as "code not recorded yet" rather than an error.
+--
+-- Length: 12. The longest active CMS HCPCS code is 5 chars; with up
+-- to four 2-char modifiers (e.g. "KX", "NU", "RR", "GA") and the
+-- standard hyphens, 12 chars covers `A7030-KX-NU-RR`-style strings.
+--
+-- IMPORTANT — journal posture
+-- ---------------------------
+-- This file follows the same forward-deploy-safe pattern as 0067
+-- (message_templates) and 0066 (facial_measurements): not yet listed
+-- in _journal.json, applies idempotently with `IF NOT EXISTS`. The
+-- migrate.mjs runner picks up unjournaled SQL via drizzle-orm's
+-- migrator scanning the folder; environments past this migration are
+-- expected to have the column. Any environment that hasn't applied
+-- it will surface a "column does not exist" PostgREST error on the
+-- next prescription create — same posture as 0066/0067.
+
+ALTER TABLE "resupply"."prescriptions"
+  ADD COLUMN IF NOT EXISTS "hcpcs_code" varchar(12);
