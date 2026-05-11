@@ -116,7 +116,23 @@ export const createBulkCampaignDraft = (body: CreateDraftRequest) =>
 export const cancelBulkCampaign = (id: string) =>
   jsonFetch<{ id: string; status: "cancelled" }>(
     `/admin/bulk-campaigns/${encodeURIComponent(id)}/cancel`,
-    {
-      method: "POST",
-    },
+    { method: "POST" },
+  );
+
+export const startBulkCampaign = (id: string) =>
+  jsonFetch<{ id: string; status: "sending" }>(
+    `/admin/bulk-campaigns/${encodeURIComponent(id)}/start`,
+    { method: "POST" },
+  );
+
+export const pauseBulkCampaign = (id: string) =>
+  jsonFetch<{ id: string; status: "paused" }>(
+    `/admin/bulk-campaigns/${encodeURIComponent(id)}/pause`,
+    { method: "POST" },
+  );
+
+export const resumeBulkCampaign = (id: string) =>
+  jsonFetch<{ id: string; status: "sending" }>(
+    `/admin/bulk-campaigns/${encodeURIComponent(id)}/resume`,
+    { method: "POST" },
   );

@@ -34,6 +34,7 @@ import { registerSmartTriggerSendJob } from "./jobs/smart-trigger-send.js";
 import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
+import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -180,6 +181,12 @@ export async function startWorker(): Promise<void> {
   // CSR alerts for at-risk patients. Both crons share the Supabase
   // service-role client and are idempotent on re-run.
   await registerOnboardingCheckinJobs(boss);
+
+  // Bulk-campaign send worker (Phase B). On-demand: tick jobs are
+  // enqueued by the /admin/bulk-campaigns/:id/start endpoint and
+  // self-re-enqueue every TICK_INTERVAL_SECONDS until the campaign
+  // is drained, paused, or cancelled.
+  await registerBulkCampaignTickJob(boss);
 
   workerReady = true;
   logger.info(

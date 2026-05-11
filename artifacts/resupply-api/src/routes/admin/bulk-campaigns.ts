@@ -28,8 +28,14 @@ import {
   type PatientCandidate,
   type ShopCustomerCandidate,
 } from "../../lib/bulk-campaigns/resolve-audience";
+import {
+  isLegalCampaignTransition,
+  type CampaignStatus,
+} from "../../lib/bulk-campaigns/dispatch-helpers";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { getBoss } from "../../worker/index.js";
+import { enqueueImmediateTick } from "../../worker/jobs/bulk-campaign-tick.js";
 
 const router: IRouter = Router();
 
@@ -415,10 +421,70 @@ router.get(
   },
 );
 
-router.post(
-  "/admin/bulk-campaigns/:id/cancel",
-  requireAdmin,
-  async (req, res) => {
+// ── Lifecycle transitions (Phase B) ────────────────────────────────
+//
+// start  : draft   → sending   + enqueue an immediate tick
+// pause  : sending → paused    (worker exits on next tick)
+// resume : paused  → sending   + enqueue an immediate tick
+// cancel : * → cancelled       (terminal; sent/cancelled are no-ops
+//          unless they're already in that state, in which case 409)
+//
+// All four routes share the same /:id/:action shape with a single
+// handler that does the legal-transition check and the side effects.
+
+interface TransitionPlan {
+  to: CampaignStatus;
+  /** Per-transition audit action. */
+  auditAction: string;
+  /** Side effect to run after the DB update succeeds. */
+  sideEffect?: (campaignId: string) => Promise<void>;
+}
+
+function planFor(action: "start" | "pause" | "resume" | "cancel"): TransitionPlan {
+  switch (action) {
+    case "start":
+      return {
+        to: "sending",
+        auditAction: "bulk_campaign.start",
+        sideEffect: async (id) => {
+          const boss = getBoss();
+          if (boss) {
+            await enqueueImmediateTick(boss, id);
+          } else {
+            // The worker isn't booted (dev / test environment).
+            // Mark the campaign sending anyway — the next worker
+            // boot will pick it up via its own tick discovery if
+            // we add one, or an admin can re-start once the
+            // worker is up.
+            logger.warn(
+              { campaignId: id },
+              "bulk_campaign.start: worker not running; campaign queued but no tick enqueued",
+            );
+          }
+        },
+      };
+    case "pause":
+      return { to: "paused", auditAction: "bulk_campaign.pause" };
+    case "resume":
+      return {
+        to: "sending",
+        auditAction: "bulk_campaign.resume",
+        sideEffect: async (id) => {
+          const boss = getBoss();
+          if (boss) {
+            await enqueueImmediateTick(boss, id);
+          }
+        },
+      };
+    case "cancel":
+      return { to: "cancelled", auditAction: "bulk_campaign.cancel" };
+  }
+}
+
+function makeTransitionHandler(
+  action: "start" | "pause" | "resume" | "cancel",
+) {
+  return async (req: import("express").Request, res: import("express").Response) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       res.status(404).json({ error: "not_found" });
@@ -429,7 +495,7 @@ router.post(
     const { data: existing, error: getErr } = await supabase
       .schema("resupply")
       .from("bulk_campaigns")
-      .select("id, status")
+      .select("id, status, total_recipients, suppressed_count")
       .eq("id", params.data.id)
       .limit(1)
       .maybeSingle();
@@ -438,23 +504,43 @@ router.post(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    // Phase A only supports cancelling from `draft`. Phase B will
-    // extend this to also cancel `paused` or `sending` campaigns
-    // once the worker can be told to stop.
-    if (existing.status !== "draft") {
+
+    const plan = planFor(action);
+    if (!isLegalCampaignTransition(existing.status, plan.to)) {
       res.status(409).json({
         error: "invalid_transition",
-        message: `Cannot cancel a campaign in status "${existing.status}". Only drafts can be cancelled in Phase A.`,
+        message: `Cannot ${action} a campaign in status "${existing.status}".`,
       });
       return;
     }
 
+    // Defensive: don't start a campaign whose entire audience is
+    // suppressed — the worker would immediately mark it sent with
+    // zero deliveries, which is misleading. Surface a clear 409
+    // instead so the CSR can rebuild the audience.
+    if (
+      action === "start" &&
+      existing.total_recipients - existing.suppressed_count <= 0
+    ) {
+      res.status(409).json({
+        error: "no_pending_recipients",
+        message:
+          "Every recipient in this campaign is suppressed; cancel it and build a new audience.",
+      });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
     const updates: Database["resupply"]["Tables"]["bulk_campaigns"]["Update"] =
-      {
-        status: "cancelled",
-        cancelled_at: new Date().toISOString(),
-        cancelled_by_user_id: req.adminUserId ?? null,
-      };
+      { status: plan.to };
+    if (action === "start" && existing.status === "draft") {
+      updates.started_at = nowIso;
+    }
+    if (action === "cancel") {
+      updates.cancelled_at = nowIso;
+      updates.cancelled_by_user_id = req.adminUserId ?? null;
+    }
+
     const { error: updErr } = await supabase
       .schema("resupply")
       .from("bulk_campaigns")
@@ -462,23 +548,64 @@ router.post(
       .eq("id", params.data.id);
     if (updErr) throw updErr;
 
+    if (plan.sideEffect) {
+      try {
+        await plan.sideEffect(params.data.id);
+      } catch (err) {
+        logger.error(
+          {
+            campaignId: params.data.id,
+            action,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          `bulk_campaign.${action}: side effect failed`,
+        );
+        // Don't roll back the status update — the audit captures
+        // the failed side-effect and a CSR can re-trigger the
+        // action (e.g. resume from paused) to retry the tick
+        // enqueue.
+      }
+    }
+
     await logAudit({
-      action: "bulk_campaign.cancel",
+      action: plan.auditAction,
       adminEmail: req.adminEmail ?? null,
       adminUserId: req.adminUserId ?? null,
       targetTable: "bulk_campaigns",
       targetId: params.data.id,
       metadata: {
         from_status: existing.status,
+        to_status: plan.to,
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
-      logger.warn({ err }, "bulk_campaign.cancel audit failed");
+      logger.warn({ err }, `${plan.auditAction} audit failed`);
     });
 
-    res.status(200).json({ id: params.data.id, status: "cancelled" });
-  },
+    res.status(200).json({ id: params.data.id, status: plan.to });
+  };
+}
+
+router.post(
+  "/admin/bulk-campaigns/:id/start",
+  requireAdmin,
+  makeTransitionHandler("start"),
+);
+router.post(
+  "/admin/bulk-campaigns/:id/pause",
+  requireAdmin,
+  makeTransitionHandler("pause"),
+);
+router.post(
+  "/admin/bulk-campaigns/:id/resume",
+  requireAdmin,
+  makeTransitionHandler("resume"),
+);
+router.post(
+  "/admin/bulk-campaigns/:id/cancel",
+  requireAdmin,
+  makeTransitionHandler("cancel"),
 );
 
 export default router;

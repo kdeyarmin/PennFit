@@ -29,6 +29,9 @@ import {
   createBulkCampaignDraft,
   getBulkCampaign,
   listBulkCampaigns,
+  pauseBulkCampaign,
+  resumeBulkCampaign,
+  startBulkCampaign,
   type AudienceKind,
   type BulkCampaignDetail,
   type BulkCampaignListItem,
@@ -389,13 +392,36 @@ function CampaignDetailModal({
     queryFn: () => getBulkCampaign(id),
   });
 
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: listQueryKey });
+    void qc.invalidateQueries({ queryKey: detailKey });
+  };
+
+  const start = useMutation({
+    mutationFn: () => startBulkCampaign(id),
+    onSuccess: invalidate,
+  });
+  const pause = useMutation({
+    mutationFn: () => pauseBulkCampaign(id),
+    onSuccess: invalidate,
+  });
+  const resume = useMutation({
+    mutationFn: () => resumeBulkCampaign(id),
+    onSuccess: invalidate,
+  });
   const cancel = useMutation({
     mutationFn: () => cancelBulkCampaign(id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: listQueryKey });
-      void qc.invalidateQueries({ queryKey: detailKey });
-    },
+    onSuccess: invalidate,
   });
+
+  const anyPending =
+    start.isPending || pause.isPending || resume.isPending || cancel.isPending;
+  const actionError =
+    start.error?.message ??
+    pause.error?.message ??
+    resume.error?.message ??
+    cancel.error?.message ??
+    null;
 
   return (
     <ModalShell title="Campaign detail" onClose={onClose}>
@@ -406,9 +432,12 @@ function CampaignDetailModal({
       ) : (
         <CampaignDetailBody
           data={data}
-          cancelling={cancel.isPending}
+          actionsPending={anyPending}
+          actionError={actionError}
+          onStart={() => start.mutate()}
+          onPause={() => pause.mutate()}
+          onResume={() => resume.mutate()}
           onCancel={() => cancel.mutate()}
-          cancelError={cancel.error?.message ?? null}
         />
       )}
       <div className="flex justify-end pt-3 border-t border-border/40">
@@ -422,14 +451,20 @@ function CampaignDetailModal({
 
 function CampaignDetailBody({
   data,
-  cancelling,
+  actionsPending,
+  actionError,
+  onStart,
+  onPause,
+  onResume,
   onCancel,
-  cancelError,
 }: {
   data: BulkCampaignDetail;
-  cancelling: boolean;
+  actionsPending: boolean;
+  actionError: string | null;
+  onStart: () => void;
+  onPause: () => void;
+  onResume: () => void;
   onCancel: () => void;
-  cancelError: string | null;
 }) {
   return (
     <div className="space-y-4">
@@ -543,25 +578,57 @@ function CampaignDetailBody({
         )}
       </div>
 
-      {data.status === "draft" && (
+      {(data.status === "draft" ||
+        data.status === "sending" ||
+        data.status === "paused") && (
         <div className="pt-3 border-t border-border/40 space-y-2">
-          <p className="text-xs text-muted-foreground">
-            Phase A is staging-only. Sending will land in Phase B once
-            the worker is wired up.
-          </p>
-          {cancelError && (
+          {actionError && (
             <div className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
-              {cancelError}
+              {actionError}
             </div>
           )}
-          <Button
-            intent="ghost"
-            onClick={onCancel}
-            disabled={cancelling}
-            isLoading={cancelling}
-          >
-            Cancel this draft
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {data.status === "draft" && (
+              <Button
+                onClick={onStart}
+                disabled={actionsPending}
+                isLoading={actionsPending}
+              >
+                Start sending
+              </Button>
+            )}
+            {data.status === "sending" && (
+              <Button
+                intent="secondary"
+                onClick={onPause}
+                disabled={actionsPending}
+                isLoading={actionsPending}
+              >
+                Pause
+              </Button>
+            )}
+            {data.status === "paused" && (
+              <Button
+                onClick={onResume}
+                disabled={actionsPending}
+                isLoading={actionsPending}
+              >
+                Resume
+              </Button>
+            )}
+            <Button
+              intent="ghost"
+              onClick={onCancel}
+              disabled={actionsPending}
+            >
+              Cancel campaign
+            </Button>
+          </div>
+          {data.status === "sending" && (
+            <p className="text-[10px] text-muted-foreground">
+              Pause / cancel takes effect within {10} seconds (next tick).
+            </p>
+          )}
         </div>
       )}
     </div>
