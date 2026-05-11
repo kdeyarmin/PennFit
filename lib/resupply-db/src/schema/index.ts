@@ -15,6 +15,8 @@ export * from "./sleep-studies";
 export * from "./insurance-coverages";
 export * from "./prior-authorizations";
 export * from "./inbound-faxes";
+export * from "./equipment-assets";
+export * from "./equipment-recalls";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";

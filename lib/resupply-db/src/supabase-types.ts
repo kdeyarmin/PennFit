@@ -879,6 +879,67 @@ export interface Database {
         >;
         Relationships: [];
       };
+      equipment_assets: {
+        Row: {
+          id: string;
+          patient_id: string;
+          prescription_id: string | null;
+          device_class:
+            | "cpap"
+            | "auto_cpap"
+            | "bipap"
+            | "asv"
+            | "avaps"
+            | "humidifier"
+            | "oximeter"
+            | "other";
+          manufacturer: string;
+          model: string;
+          serial_number: string;
+          pressure_setting: string | null;
+          humidifier_setting: string | null;
+          status: "active" | "returned" | "recalled" | "retired";
+          dispensed_at: string | null;
+          dispensing_note: string | null;
+          recall_id: string | null;
+          metadata: Json | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["equipment_assets"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["equipment_assets"]["Row"]
+        >;
+        Relationships: [];
+      };
+      equipment_recalls: {
+        Row: {
+          id: string;
+          recall_reference: string;
+          title: string;
+          manufacturer: string;
+          model_match: string | null;
+          serial_match: Json | null;
+          severity: "urgent" | "priority" | "advisory";
+          status: "active" | "closed";
+          issued_at: string | null;
+          deadline_at: string | null;
+          reference_url: string | null;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["equipment_recalls"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["equipment_recalls"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;

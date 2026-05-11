@@ -192,6 +192,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Triage queue for faxes Twilio delivered — sleep studies, Rx renewals, chart notes",
         badgeKey: "newInboundFaxes",
       },
+      {
+        href: "/admin/equipment-recalls",
+        label: "Recalls",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/equipment-recalls",
+        hint: "Manufacturer recall registry + scan against dispensed serials",
+      },
     ],
   },
   {

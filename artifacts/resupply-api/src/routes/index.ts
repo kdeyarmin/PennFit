@@ -21,6 +21,7 @@ import providersRouter from "./admin/providers.js";
 import swoRouter from "./admin/swo.js";
 import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
+import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -241,6 +242,11 @@ router.use(complianceAttestationRouter);
 // the CSR-facing surface for listing, attaching to patient/Rx/
 // provider, and archiving.
 router.use(inboundFaxesRouter);
+// /admin/equipment-recalls/* — manufacturer recall registry + the
+// scan endpoint that surfaces affected patients. Required for
+// Philips-DreamStation-style workflows where every DME needs to
+// know which dispensed serials are in the recall lot.
+router.use(equipmentRecallsRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue

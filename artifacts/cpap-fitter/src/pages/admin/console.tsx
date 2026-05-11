@@ -44,6 +44,7 @@ import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
 import { AdminTodayPage } from "@/pages/admin/admin-today";
 import { AdminProvidersPage } from "@/pages/admin/admin-providers";
 import { AdminInboundFaxesPage } from "@/pages/admin/admin-inbound-faxes";
+import { AdminEquipmentRecallsPage } from "@/pages/admin/admin-equipment-recalls";
 import { AdminMacrosPage } from "@/pages/admin/admin-macros";
 import { AdminMessageTemplatesPage } from "@/pages/admin/admin-message-templates";
 import { AdminShopSubscriptionsPage } from "@/pages/admin/admin-shop-subscriptions";
@@ -152,6 +153,10 @@ function AdminConsole() {
           <Route
             path="/admin/inbound-faxes"
             component={AdminInboundFaxesPage}
+          />
+          <Route
+            path="/admin/equipment-recalls"
+            component={AdminEquipmentRecallsPage}
           />
           <Route path="/admin/macros" component={AdminMacrosPage} />
           <Route

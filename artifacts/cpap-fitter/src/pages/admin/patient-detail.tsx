@@ -26,6 +26,7 @@ import {
   PriorAuthorizationsTab,
   SleepStudiesTab,
 } from "@/components/admin/ClinicalTabs";
+import { EquipmentTab } from "@/components/admin/EquipmentTab";
 import {
   openPdfInNewTab,
   summarizePdfError,
@@ -112,7 +113,8 @@ type Tab =
   | "device-data"
   | "sleep-studies"
   | "insurance"
-  | "prior-auths";
+  | "prior-auths"
+  | "equipment";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -350,6 +352,12 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Prior auths
         </TabButton>
+        <TabButton
+          active={tab === "equipment"}
+          onClick={() => setTab("equipment")}
+        >
+          Equipment
+        </TabButton>
       </div>
 
       <Card>
@@ -392,6 +400,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "sleep-studies" && <SleepStudiesTab patientId={id} />}
         {tab === "insurance" && <InsuranceCoveragesTab patientId={id} />}
         {tab === "prior-auths" && <PriorAuthorizationsTab patientId={id} />}
+        {tab === "equipment" && <EquipmentTab patientId={id} />}
       </Card>
     </div>
   );

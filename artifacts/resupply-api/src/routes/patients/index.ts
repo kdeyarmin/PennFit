@@ -22,6 +22,7 @@ import prescriptionsUpdateRouter from "./prescriptions-update";
 import sleepStudiesRouter from "./sleep-studies";
 import insuranceCoveragesRouter from "./insurance-coverages";
 import priorAuthorizationsRouter from "./prior-authorizations";
+import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
 
@@ -62,6 +63,10 @@ router.use(insuranceCoveragesRouter);
 // /patients/:id/prior-authorizations — payer auths to dispense a
 // specific HCPCS for a specific patient (capture-only in 2a).
 router.use(priorAuthorizationsRouter);
+// /patients/:id/equipment — clinical equipment asset registry
+// (patient ↔ device serial-number link). Required for manufacturer
+// recall workflows. Distinct from Pacware warehouse inventory.
+router.use(equipmentRouter);
 router.use(detailRouter);
 router.use(timelineRouter);
 router.use(updateRouter);
