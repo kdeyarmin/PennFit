@@ -18,6 +18,8 @@ import opsStatusRouter from "./admin/ops-status.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
 import todayRouter from "./admin/today.js";
 import providersRouter from "./admin/providers.js";
+import swoRouter from "./admin/swo.js";
+import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -223,6 +225,16 @@ router.use(todayRouter);
 // NPI registry so CSRs autofill provider records instead of
 // re-keying.
 router.use(providersRouter);
+// /admin/patients/:id/prescriptions/:rxId/swo — render the
+// CMS-standardized Standard Written Order as a streaming PDF.
+// Consumes the providers FK + sleep_studies ICD-10 introduced in
+// the Tier-2a sprint.
+router.use(swoRouter);
+// /admin/patients/:id/compliance-attestation — render the 90-day
+// Medicare LCD L33718 adherence attestation as a streaming PDF.
+// Sliding 30-day window finder lives in
+// lib/compliance-attestation.ts and is unit-tested without pdfkit.
+router.use(complianceAttestationRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue

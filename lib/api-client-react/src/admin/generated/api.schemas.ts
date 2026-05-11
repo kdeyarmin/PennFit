@@ -757,6 +757,8 @@ export interface PatientPrescription {
   itemSku: string;
   /** HCPCS Level II code, optionally with up to four 2-char modifiers (e.g. "E0601", "A7030-KX"). */
   hcpcsCode?: string | null;
+  /** FK into resupply.providers — the prescribing physician's row. Null until a CSR links one (or the providers backfill stitches the jsonb data). */
+  providerId?: string | null;
   cadenceDays: number;
   validFrom: string;
   validUntil?: string | null;

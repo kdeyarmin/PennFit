@@ -26,6 +26,10 @@ import {
   PriorAuthorizationsTab,
   SleepStudiesTab,
 } from "@/components/admin/ClinicalTabs";
+import {
+  openPdfInNewTab,
+  summarizePdfError,
+} from "@/lib/admin/pdf-download";
 import { Table, type Column } from "@/components/admin/Table";
 import {
   Badge,
@@ -755,6 +759,11 @@ function PrescriptionsTab({
       render: (r) =>
         r.status === "active" ? (
           <div className="flex gap-2 justify-end">
+            <GenerateSwoButton
+              patientId={patientId}
+              rx={r}
+              onError={(msg) => setActionError(msg)}
+            />
             <Button
               intent="secondary"
               isLoading={busyRxId === r.id}
@@ -807,6 +816,61 @@ function PrescriptionsTab({
         />
       )}
     </div>
+  );
+}
+
+// Inline button for the prescription row actions column. Pre-flights
+// the SWO endpoint (which returns 422 on incomplete inputs — missing
+// HCPCS code or unlinked provider) and either opens the PDF in a new
+// tab or surfaces the issue list inline on the prescriptions table.
+function GenerateSwoButton({
+  patientId,
+  rx,
+  onError,
+}: {
+  patientId: string;
+  rx: Prescription;
+  onError: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function handleClick() {
+    setBusy(true);
+    try {
+      const result = await openPdfInNewTab(
+        `/resupply-api/admin/patients/${encodeURIComponent(
+          patientId,
+        )}/prescriptions/${encodeURIComponent(rx.id)}/swo`,
+      );
+      if (!result.ok) {
+        onError(`SWO: ${summarizePdfError(result.error)}`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Disable when we already know the row is missing a required field.
+  // The route still validates server-side; the UI gate is purely to
+  // save the click-and-toast cycle.
+  const missingHcpcs = !rx.hcpcsCode;
+  const missingProvider = !rx.providerId;
+  const disabledTitle = missingHcpcs
+    ? "Add an HCPCS code on this prescription first"
+    : missingProvider
+      ? "Link a provider in the registry first"
+      : undefined;
+
+  return (
+    <Button
+      intent="secondary"
+      isLoading={busy}
+      disabled={busy || missingHcpcs || missingProvider}
+      onClick={() => void handleClick()}
+      title={disabledTitle}
+    >
+      Generate SWO
+    </Button>
   );
 }
 
@@ -3669,6 +3733,17 @@ function IntegrationsTab({ patientId }: { patientId: string }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Therapy data from each configured cloud. Refresh re-pulls
+          from the partner; the snapshot is cached for the dashboard
+          and the patient-facing adherence card.
+        </p>
+        <GenerateAttestationButton
+          patientId={patientId}
+          onError={setRefreshError}
+        />
+      </div>
       {refreshError && (
         <div
           className="rounded-md border px-3 py-2 text-sm"
@@ -3690,6 +3765,49 @@ function IntegrationsTab({ patientId }: { patientId: string }) {
         />
       ))}
     </div>
+  );
+}
+
+// "Generate adherence attestation" — pre-flights the
+// /admin/patients/:id/compliance-attestation endpoint and opens the
+// PDF in a new tab. The route returns 422 with `no_therapy_data`
+// when the patient has zero therapy_nights on file (no SD card
+// upload + no modem sync yet), which we surface inline rather than
+// rendering a JSON error in a new tab.
+function GenerateAttestationButton({
+  patientId,
+  onError,
+}: {
+  patientId: string;
+  onError: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function handleClick() {
+    setBusy(true);
+    try {
+      const result = await openPdfInNewTab(
+        `/resupply-api/admin/patients/${encodeURIComponent(
+          patientId,
+        )}/compliance-attestation`,
+      );
+      if (!result.ok) {
+        onError(`Attestation: ${summarizePdfError(result.error)}`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Button
+      intent="secondary"
+      isLoading={busy}
+      disabled={busy}
+      onClick={() => void handleClick()}
+    >
+      Generate 90-day attestation
+    </Button>
   );
 }
 

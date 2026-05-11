@@ -67,7 +67,7 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
       .schema("resupply")
       .from("prescriptions")
       .select(
-        "id, item_sku, hcpcs_code, cadence_days, valid_from, valid_until, status, created_at, attachment_filename, attachment_content_type, attachment_size_bytes, attachment_uploaded_at",
+        "id, item_sku, hcpcs_code, provider_id, cadence_days, valid_from, valid_until, status, created_at, attachment_filename, attachment_content_type, attachment_size_bytes, attachment_uploaded_at",
       )
       .eq("patient_id", id)
       .order("created_at", { ascending: false }),
@@ -200,6 +200,7 @@ router.get("/patients/:id", requireAdmin, async (req, res) => {
       id: p.id,
       itemSku: p.item_sku,
       hcpcsCode: p.hcpcs_code,
+      providerId: p.provider_id,
       cadenceDays: p.cadence_days,
       // valid_from/valid_until are `date` columns; PostgREST returns
       // them as `YYYY-MM-DD` strings, no Date conversion needed.
