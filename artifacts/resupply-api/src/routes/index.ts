@@ -29,6 +29,7 @@ import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
 import productivityRouter from "./admin/productivity.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
+import officeClosuresRouter from "./admin/office-closures.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -281,6 +282,9 @@ router.use(patientDocumentsRetentionRouter);
 // day-to-day); requireAdminOnly for substitute rule changes
 // (clinical preference order).
 router.use(shopBackordersRouter);
+// /admin/office-closures — CSR-managed closure windows; inbound
+// SMS during an active window gets the closure auto-reply.
+router.use(officeClosuresRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

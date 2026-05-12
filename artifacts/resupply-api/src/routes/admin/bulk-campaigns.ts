@@ -21,12 +21,11 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { fetchAudienceCandidates } from "../../lib/bulk-campaigns/fetch-candidates";
 import {
   resolveAudience,
   type AudienceKind,
   type Category,
-  type PatientCandidate,
-  type ShopCustomerCandidate,
 } from "../../lib/bulk-campaigns/resolve-audience";
 import {
   isLegalCampaignTransition,
@@ -152,97 +151,13 @@ router.post(
     }
 
     // ── Pull candidates ───────────────────────────────────────────
-    const shopCandidates: ShopCustomerCandidate[] = [];
-    const patientCandidates: PatientCandidate[] = [];
-
-    if (b.audienceKind === "all_active_shop_customers") {
-      const { data, error } = await supabase
-        .schema("resupply")
-        .from("shop_customers")
-        .select("customer_id, email_lower, communication_preferences");
-      if (error) throw error;
-      for (const r of data ?? []) {
-        shopCandidates.push({
-          id: r.customer_id,
-          emailLower: r.email_lower,
-          communicationPreferences:
-            r.communication_preferences as ShopCustomerCandidate["communicationPreferences"],
-        });
-      }
-    } else if (b.audienceKind === "all_active_patients") {
-      const { data, error } = await supabase
-        .schema("resupply")
-        .from("patients")
-        .select("id, email, status, insurance_payer")
-        .eq("status", "active");
-      if (error) throw error;
-      for (const r of data ?? []) {
-        patientCandidates.push({
-          id: r.id,
-          email: r.email,
-          status: r.status,
-          insurancePayer: r.insurance_payer,
-        });
-      }
-    } else if (b.audienceKind === "by_patient_payer") {
-      const { data, error } = await supabase
-        .schema("resupply")
-        .from("patients")
-        .select("id, email, status, insurance_payer")
-        .eq("status", "active")
-        .eq("insurance_payer", b.audiencePayer ?? "");
-      if (error) throw error;
-      for (const r of data ?? []) {
-        patientCandidates.push({
-          id: r.id,
-          email: r.email,
-          status: r.status,
-          insurancePayer: r.insurance_payer,
-        });
-      }
-    } else if (b.audienceKind === "manual_list") {
-      // Bulk-fetch each list, but cap PostgREST `.in` payload at a
-      // reasonable size. 1000 ids per batch keeps the URL under
-      // 32KB. The resolver will dedupe further.
-      const BATCH = 1000;
-      const shopIds = b.manualShopCustomerIds ?? [];
-      for (let i = 0; i < shopIds.length; i += BATCH) {
-        const slice = shopIds.slice(i, i + BATCH);
-        const { data, error } = await supabase
-          .schema("resupply")
-          .from("shop_customers")
-          .select("customer_id, email_lower, communication_preferences")
-          .in("customer_id", slice);
-        if (error) throw error;
-        for (const r of data ?? []) {
-          shopCandidates.push({
-            id: r.customer_id,
-            emailLower: r.email_lower,
-            communicationPreferences:
-              r.communication_preferences as ShopCustomerCandidate["communicationPreferences"],
-          });
-        }
-      }
-      const patientIds = b.manualPatientIds ?? [];
-      for (let i = 0; i < patientIds.length; i += BATCH) {
-        const slice = patientIds.slice(i, i + BATCH);
-        const { data, error } = await supabase
-          .schema("resupply")
-          .from("patients")
-          .select("id, email, status, insurance_payer")
-          .in("id", slice);
-        if (error) throw error;
-        for (const r of data ?? []) {
-          patientCandidates.push({
-            id: r.id,
-            email: r.email,
-            status: r.status,
-            insurancePayer: r.insurance_payer,
-          });
-        }
-      }
-    }
-
+    const { shopCandidates, patientCandidates } =
+      await fetchAudienceCandidates(supabase, {
+        audienceKind: b.audienceKind,
+        audiencePayer: b.audiencePayer,
+        manualShopCustomerIds: b.manualShopCustomerIds,
+        manualPatientIds: b.manualPatientIds,
+      });
     const resolved = resolveAudience({
       audienceKind: b.audienceKind,
       audiencePayer: b.audiencePayer ?? null,
@@ -623,6 +538,153 @@ router.post(
   "/admin/bulk-campaigns/:id/cancel",
   requireAdmin,
   makeTransitionHandler("cancel"),
+);
+
+// ────────────────────────────────────────────────────────────────
+// POST /admin/bulk-campaigns/:id/regenerate-audience — re-resolve
+// the audience for a campaign that's still in `draft` status.
+//
+// Operational reality: a CSR drafts a campaign Monday, audience
+// is 1,200 patients. Wednesday a few patients opt out, a few new
+// ones join. Friday the CSR wants to send — without regenerate
+// they're sending against a stale list.
+//
+// Behavior:
+//   * Refuses non-draft campaigns (409 not_in_draft).
+//   * Re-fetches candidates using the SAME audienceKind/payer the
+//     draft was created with (we don't re-take manual_list inputs;
+//     they were a CSR-curated list and re-running against the same
+//     ids is what we want).
+//   * Wipes existing bulk_campaign_recipients for the campaign,
+//     then inserts the freshly resolved set in 500-row batches.
+//   * Updates the campaign's materialized counters.
+//   * Idempotent across re-runs (each call replaces the snapshot).
+// ────────────────────────────────────────────────────────────────
+router.post(
+  "/admin/bulk-campaigns/:id/regenerate-audience",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "campaign_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: campaign, error: lookupErr } = await supabase
+      .schema("resupply")
+      .from("bulk_campaigns")
+      .select("id, status, audience_kind, audience_payer, category")
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!campaign) {
+      res.status(404).json({ error: "campaign_not_found" });
+      return;
+    }
+    if (campaign.status !== "draft") {
+      res.status(409).json({
+        error: "not_in_draft",
+        message: `Cannot regenerate audience on a campaign in ${campaign.status} status. Cancel and create a new draft.`,
+      });
+      return;
+    }
+
+    // manual_list regenerates aren't supported via this endpoint —
+    // the original manual ids are NOT pinned on bulk_campaigns
+    // (they live only on the recipients table at create time).
+    // For manual lists, the CSR's intent is "the list I picked is
+    // the list"; refusing here keeps the operation honest.
+    if (campaign.audience_kind === "manual_list") {
+      res.status(409).json({
+        error: "manual_list_not_regenerable",
+        message:
+          "manual_list campaigns are pinned to the ids picked at draft time. Cancel and create a fresh draft to change the list.",
+      });
+      return;
+    }
+
+    const { shopCandidates, patientCandidates } =
+      await fetchAudienceCandidates(supabase, {
+        audienceKind: campaign.audience_kind as AudienceKind,
+        audiencePayer: campaign.audience_payer,
+      });
+
+    const resolved = resolveAudience({
+      audienceKind: campaign.audience_kind as AudienceKind,
+      audiencePayer: campaign.audience_payer,
+      category: campaign.category as Category,
+      shopCustomers: shopCandidates,
+      patients: patientCandidates,
+    });
+
+    // Wipe the prior snapshot. We don't soft-delete — the audit
+    // log records "regenerate happened at T with totals X" and
+    // that's the audit story; the prior recipient rows aren't
+    // re-needed.
+    const { error: delErr } = await supabase
+      .schema("resupply")
+      .from("bulk_campaign_recipients")
+      .delete()
+      .eq("campaign_id", idCheck.data);
+    if (delErr) throw delErr;
+
+    if (resolved.recipients.length > 0) {
+      const BATCH = 500;
+      for (let i = 0; i < resolved.recipients.length; i += BATCH) {
+        const slice = resolved.recipients.slice(i, i + BATCH).map((r) => ({
+          campaign_id: idCheck.data,
+          recipient_kind: r.recipientKind,
+          recipient_id: r.recipientId,
+          recipient_email: r.recipientEmail,
+          status: r.status,
+          suppression_reason: r.suppressionReason,
+        }));
+        const { error } = await supabase
+          .schema("resupply")
+          .from("bulk_campaign_recipients")
+          .insert(slice);
+        if (error) throw error;
+      }
+    }
+
+    // Refresh materialized counters.
+    const { error: updErr } = await supabase
+      .schema("resupply")
+      .from("bulk_campaigns")
+      .update({
+        total_recipients: resolved.totals.total,
+        suppressed_count: resolved.totals.suppressed,
+        sent_count: 0,
+        failed_count: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", idCheck.data);
+    if (updErr) throw updErr;
+
+    await logAudit({
+      action: "bulk_campaign.audience.regenerated",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "bulk_campaigns",
+      targetId: idCheck.data,
+      metadata: {
+        audience_kind: campaign.audience_kind,
+        total: resolved.totals.total,
+        pending: resolved.totals.pending,
+        suppressed: resolved.totals.suppressed,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "bulk_campaign.audience.regenerated audit failed",
+      );
+    });
+
+    res.json({ ok: true, totals: resolved.totals });
+  },
 );
 
 export default router;

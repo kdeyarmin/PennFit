@@ -1250,6 +1250,42 @@ export interface Database {
         >;
         Relationships: [];
       };
+      patient_maintenance_nudges: {
+        Row: {
+          id: string;
+          patient_id: string;
+          sent_at: string;
+          channel: "email" | "sms";
+          task_keys: Json;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_maintenance_nudges"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_maintenance_nudges"]["Row"]
+        >;
+        Relationships: [];
+      };
+      office_closures: {
+        Row: {
+          id: string;
+          label: string;
+          starts_at: string;
+          ends_at: string;
+          auto_reply_message: string;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["office_closures"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["office_closures"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;

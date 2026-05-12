@@ -36,6 +36,8 @@ import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.j
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
 import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
+import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
+import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -181,6 +183,14 @@ export async function startWorker(): Promise<void> {
   // on legacy rows and flags expired rows for compliance review.
   // Destruction itself is human-triggered via the admin UI.
   await registerPatientDocumentsRetentionSweepJob(boss);
+  // Recall notification send-side worker — drains queued
+  // recall_notifications rows once per day. The matcher
+  // (POST /admin/equipment-recalls/:id/match-assets) populates
+  // the queue; this job actually delivers email + SMS.
+  await registerRecallNotificationSendJob(boss);
+  // Patient hygiene weekly nudge — emails patients with overdue
+  // mask-wipe / hose-wash / etc. tasks. Sunday 11:13 UTC.
+  await registerMaintenanceNudgeJob(boss);
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase

@@ -29,6 +29,8 @@ export * from "./patient-maintenance-log";
 export * from "./shop-backorders";
 export * from "./shop-sku-substitutes";
 export * from "./recall-notifications";
+export * from "./patient-maintenance-nudges";
+export * from "./office-closures";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";
