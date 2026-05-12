@@ -30,6 +30,9 @@ import productivityRouter from "./admin/productivity.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
 import shopBackordersRouter from "./admin/shop-backorders.js";
 import officeClosuresRouter from "./admin/office-closures.js";
+import coachingPlansRouter from "./admin/coaching-plans.js";
+import conversationRoutingRouter from "./admin/conversation-routing.js";
+import conversationCoachingNotesRouter from "./admin/conversation-coaching-notes.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -285,6 +288,14 @@ router.use(shopBackordersRouter);
 // /admin/office-closures — CSR-managed closure windows; inbound
 // SMS during an active window gets the closure auto-reply.
 router.use(officeClosuresRouter);
+// /admin/coaching-plans/* — adherence coaching workflow that
+// layers an outreach state machine on top of csr_compliance_alerts.
+router.use(coachingPlansRouter);
+// Skill-based conversation routing — PATCH skill arrays + a
+// GET assignee-suggestions endpoint that scores active admins.
+router.use(conversationRoutingRouter);
+// Supervisor coaching notes on conversations (Tier 1 J).
+router.use(conversationCoachingNotesRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

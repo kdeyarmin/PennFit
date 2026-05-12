@@ -30,6 +30,7 @@ import {
   HelpCircle,
   Boxes,
   AlertOctagon,
+  CalendarOff,
   TruckIcon,
   Activity,
   BarChart3,
@@ -399,6 +400,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: UsersRound,
         matchPrefix: "/admin/team",
         hint: "Manage admin & agent accounts",
+      },
+      {
+        href: "/admin/closures",
+        label: "Closures",
+        icon: CalendarOff,
+        matchPrefix: "/admin/closures",
+        hint: "Holidays and weather closures with inbound-SMS auto-reply",
       },
       {
         href: "/admin/settings",

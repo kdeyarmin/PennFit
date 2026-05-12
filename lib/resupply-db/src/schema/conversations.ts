@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
-import { check, index, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  jsonb,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import { episodes } from "./episodes";
 import { patients } from "./patients";
@@ -109,6 +116,16 @@ export const conversations = resupplySchema.table(
     // rows in admin_users yet.
     assignedAdminUserId: text("assigned_admin_user_id"),
     assignedAt: timestamp("assigned_at", { withTimezone: true }),
+    /**
+     * Skill tags this conversation needs the assignee to have.
+     * Empty array = no specific skills required. The assignee-
+     * suggestion endpoint scores admin_users by intersection-
+     * cardinality with this list and surfaces the highest match.
+     */
+    requiredSkills: jsonb("required_skills")
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<string[]>(),
     priority: text("priority").notNull().default("normal"),
     slaDueAt: timestamp("sla_due_at", { withTimezone: true }),
     escalatedAt: timestamp("escalated_at", { withTimezone: true }),

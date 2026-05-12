@@ -170,6 +170,7 @@ export interface Database {
           revoked_by: string | null;
           last_login_at: string | null;
           auth_user_id: string | null;
+          skills: Json;
           created_at: string;
           updated_at: string;
         };
@@ -194,6 +195,7 @@ export interface Database {
           revoked_by?: string | null;
           last_login_at?: string | null;
           auth_user_id?: string | null;
+          skills?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -247,6 +249,7 @@ export interface Database {
           escalation_reason: string | null;
           customer_last_read_at: string | null;
           last_in_app_notification_at: string | null;
+          required_skills: Json;
           created_at: string;
           updated_at: string;
         };
@@ -1012,6 +1015,33 @@ export interface Database {
         >;
         Relationships: [];
       };
+      recall_remediation_actions: {
+        Row: {
+          id: string;
+          recall_id: string;
+          asset_id: string;
+          action:
+            | "returned_to_manufacturer"
+            | "destroyed"
+            | "replaced"
+            | "patient_declined"
+            | "lost"
+            | "unreachable";
+          evidence_url: string | null;
+          notes: string | null;
+          performed_by_user_id: string | null;
+          performed_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["recall_remediation_actions"]["Row"]
+        >;
+        Relationships: [];
+      };
       staff_training_records: {
         Row: {
           id: string;
@@ -1283,6 +1313,56 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["office_closures"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_coaching_plans: {
+        Row: {
+          id: string;
+          patient_id: string;
+          source_alert_id: string | null;
+          opened_by_user_id: string | null;
+          status:
+            | "open"
+            | "outreach_made"
+            | "improving"
+            | "escalated"
+            | "resolved"
+            | "abandoned";
+          target_compliance_pct: number;
+          latest_compliance_pct: string | null;
+          target_date: string | null;
+          latest_outreach_at: string | null;
+          resolution_note: string | null;
+          opened_at: string;
+          closed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_coaching_plans"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_coaching_plans"]["Row"]
+        >;
+        Relationships: [];
+      };
+      conversation_coaching_notes: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          target_user_id: string;
+          author_user_id: string;
+          kind: "praise" | "suggestion" | "concern";
+          body: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["conversation_coaching_notes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["conversation_coaching_notes"]["Row"]
         >;
         Relationships: [];
       };

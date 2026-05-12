@@ -479,4 +479,174 @@ router.get(
   },
 );
 
+// ────────────────────────────────────────────────────────────────
+// Remediation actions — per-asset record of what we DID once the
+// recall notification reached the patient. Surveyors + FDA both
+// ask for this.
+// ────────────────────────────────────────────────────────────────
+const REMEDIATION_ACTIONS = [
+  "returned_to_manufacturer",
+  "destroyed",
+  "replaced",
+  "patient_declined",
+  "lost",
+  "unreachable",
+] as const;
+
+const remediationBody = z
+  .object({
+    assetId: z.string().uuid(),
+    action: z.enum(REMEDIATION_ACTIONS),
+    evidenceUrl: z.string().trim().url().max(2048).nullable().optional(),
+    notes: z.string().trim().max(2000).nullable().optional(),
+  })
+  .strict();
+
+router.post(
+  "/admin/equipment-recalls/:id/remediation",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "recall_not_found" });
+      return;
+    }
+    const parsed = remediationBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    // Destroyed actions require evidence — surveyors specifically
+    // ask for the destruction certificate on Class I recalls.
+    if (
+      parsed.data.action === "destroyed" &&
+      !parsed.data.evidenceUrl
+    ) {
+      res.status(400).json({
+        error: "evidence_required",
+        message:
+          "evidenceUrl is required for action=destroyed (destruction certificate / photo).",
+      });
+      return;
+    }
+
+    const supabase = getSupabaseServiceRoleClient();
+    // Confirm the recall + asset exist and the asset actually
+    // belongs to this recall (preventing accidental log of an
+    // action against an unrelated unit).
+    const { data: notification, error: notErr } = await supabase
+      .schema("resupply")
+      .from("recall_notifications")
+      .select("id")
+      .eq("recall_id", idCheck.data)
+      .eq("asset_id", parsed.data.assetId)
+      .limit(1)
+      .maybeSingle();
+    if (notErr) throw notErr;
+    if (!notification) {
+      res.status(409).json({
+        error: "asset_not_in_recall",
+        message:
+          "This asset isn't on the recall's notification roster. Run match-assets first.",
+      });
+      return;
+    }
+
+    // Upsert by (recall_id, asset_id) — the matcher idempotency
+    // pattern, repeated. Re-logging a different action OVERWRITES
+    // the prior one; we keep one final action per (recall, asset)
+    // and the audit log records the history.
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("recall_remediation_actions")
+      .upsert(
+        {
+          recall_id: idCheck.data,
+          asset_id: parsed.data.assetId,
+          action: parsed.data.action,
+          evidence_url: parsed.data.evidenceUrl ?? null,
+          notes: parsed.data.notes ?? null,
+          performed_by_user_id: req.adminUserId ?? null,
+          performed_at: new Date().toISOString(),
+        },
+        { onConflict: "recall_id,asset_id" },
+      )
+      .select("id")
+      .single();
+    if (error) throw error;
+
+    await logAudit({
+      action: "equipment_recall.remediation.logged",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "recall_remediation_actions",
+      targetId: row.id,
+      metadata: {
+        recall_id: idCheck.data,
+        asset_id: parsed.data.assetId,
+        action: parsed.data.action,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "equipment_recall.remediation.logged audit failed",
+      );
+    });
+
+    res.status(201).json({ id: row.id });
+  },
+);
+
+router.get(
+  "/admin/equipment-recalls/:id/remediation",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "recall_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("recall_remediation_actions")
+      .select(
+        "id, recall_id, asset_id, action, evidence_url, notes, performed_by_user_id, performed_at, created_at",
+      )
+      .eq("recall_id", idCheck.data)
+      .order("performed_at", { ascending: false })
+      .limit(2000);
+    if (error) throw error;
+
+    const counts = (data ?? []).reduce(
+      (acc, r) => {
+        acc[r.action] = (acc[r.action] ?? 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    res.json({
+      counts,
+      actions: (data ?? []).map((r) => ({
+        id: r.id,
+        assetId: r.asset_id,
+        action: r.action,
+        evidenceUrl: r.evidence_url,
+        notes: r.notes,
+        performedByUserId: r.performed_by_user_id,
+        performedAt: r.performed_at,
+      })),
+    });
+  },
+);
+
 export default router;

@@ -19,7 +19,7 @@
 // see lib/resupply-auth/src/rbac.ts.
 
 import { sql } from "drizzle-orm";
-import { check, index, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, jsonb, text, timestamp } from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 
@@ -60,6 +60,20 @@ export const adminUsers = resupplySchema.table(
     status: text("status", { enum: ["pending", "active", "revoked"] }).notNull().default("pending"),
     displayName: text("display_name"),
     notes: text("notes"),
+    /**
+     * Skill tags used by /admin/conversations/:id/assignee-suggestions
+     * to rank candidate assignees. Example values: "spanish",
+     * "clinical", "billing_basics", "mask_fit", "hardware_setup".
+     * Curated by admins via PATCH /admin/team/:id/skills. Default
+     * empty array — pre-existing admins are eligible for routing
+     * against ANY required skill (their absence on this list means
+     * "we don't have evidence they specialize in X," not "they
+     * can't help with X").
+     */
+    skills: jsonb("skills")
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<string[]>(),
     invitedBy: text("invited_by"),
     invitedAt: timestamp("invited_at", { withTimezone: true })
       .notNull()
