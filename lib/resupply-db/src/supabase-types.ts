@@ -152,7 +152,14 @@ export interface Database {
         Row: {
           id: string;
           email_lower: string;
-          role: "admin" | "agent";
+          role:
+            | "admin"
+            | "supervisor"
+            | "csr"
+            | "fitter"
+            | "fulfillment"
+            | "compliance_officer"
+            | "agent";
           status: "pending" | "active" | "revoked";
           display_name: string | null;
           notes: string | null;
@@ -169,7 +176,14 @@ export interface Database {
         Insert: {
           id?: string;
           email_lower: string;
-          role?: "admin" | "agent";
+          role?:
+            | "admin"
+            | "supervisor"
+            | "csr"
+            | "fitter"
+            | "fulfillment"
+            | "compliance_officer"
+            | "agent";
           status?: "pending" | "active" | "revoked";
           display_name?: string | null;
           notes?: string | null;

@@ -25,7 +25,10 @@ import {
 
 import { scanCompliance } from "../../lib/compliance-scanner";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import {
+  requireAdmin,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 type CsrComplianceAlertUpdate =
@@ -209,7 +212,12 @@ const patchBody = z
 
 router.patch(
   "/admin/csr-compliance-alerts/:id",
-  requireAdmin,
+  // RBAC Phase A: resolve / snooze / reopen are clinical
+  // decisions — gate to roles that actually triage compliance
+  // (admin, supervisor, compliance_officer per the catalog).
+  // The GET / scan-now routes keep the broader requireAdmin
+  // gate; CSRs need to SEE alerts even if they can't close them.
+  requirePermission("compliance.resolve"),
   async (req, res) => {
     const idCheck = z.string().uuid().safeParse(req.params.id);
     if (!idCheck.success) {

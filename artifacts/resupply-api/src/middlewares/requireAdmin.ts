@@ -26,11 +26,15 @@
 import type { Request, Response, NextFunction } from "express";
 
 import {
+  type Permission,
   SESSION_COOKIE,
   hashToken,
   isExpired,
   readCookie,
+  roleHasPermission,
 } from "@workspace/resupply-auth";
+import type { AdminRole } from "@workspace/resupply-db";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { getAuthDeps } from "../lib/auth-deps";
 import { logger } from "../lib/logger";
@@ -41,7 +45,20 @@ declare global {
     interface Request {
       adminEmail?: string;
       adminUserId?: string;
+      /**
+       * Coarse role bucket from `auth.users.role` — "admin" or
+       * "agent". This is the staff-or-not gate that has existed
+       * since the cutover and is still authoritative for whether
+       * the caller has reached the admin surface AT ALL.
+       */
       adminRole?: "admin" | "agent";
+      /**
+       * Fine-grained role from `admin_users.role` — Phase A RBAC.
+       * Falls back to `adminRole` when the admin_users row hasn't
+       * been migrated yet (legacy pre-cutover rows). Use this for
+       * permission decisions via `requirePermission(perm)`.
+       */
+      adminGranularRole?: AdminRole;
     }
   }
 }
@@ -50,6 +67,13 @@ interface ResolvedAdmin {
   email: string;
   userId: string;
   role: "admin" | "agent";
+  /**
+   * From admin_users.role. Defaults to the coarse `role` value
+   * when the admin_users lookup fails or no row exists — legacy
+   * rows pre-dating Phase A are treated as their coarse role
+   * (admin → admin, agent → agent), preserving backwards-compat.
+   */
+  granularRole: AdminRole;
 }
 
 /**
@@ -84,7 +108,43 @@ async function resolveAdmin(req: Request): Promise<ResolvedAdmin | null> {
     if (user.role !== "admin" && user.role !== "agent") {
       return null;
     }
-    return { email: user.emailLower, userId: user.id, role: user.role };
+
+    // Look up the granular role from admin_users. Best-effort: if
+    // this fails (lookup error, no row), fall back to the coarse
+    // role so the user still has SOME role and the request
+    // continues. The trade is "lenient under DB blips" vs "fail
+    // closed" — and the coarse `auth.users.role` already gated
+    // staff-or-not above, so the fallback is the same access the
+    // user had before Phase A.
+    let granularRole: AdminRole = user.role;
+    try {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("role")
+        .eq("auth_user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (data?.role) {
+        granularRole = data.role as AdminRole;
+      }
+    } catch (err) {
+      logger.warn(
+        {
+          event: "resupply_admin_granular_role_lookup_failed",
+          err: err instanceof Error ? err.message : "unknown",
+        },
+        "requireAdmin: admin_users.role lookup failed; falling back to coarse role",
+      );
+    }
+
+    return {
+      email: user.emailLower,
+      userId: user.id,
+      role: user.role,
+      granularRole,
+    };
   } catch (err) {
     logger.warn(
       {
@@ -110,6 +170,7 @@ export async function requireAdmin(
   req.adminEmail = admin.email;
   req.adminUserId = admin.userId;
   req.adminRole = admin.role;
+  req.adminGranularRole = admin.granularRole;
   next();
 }
 
@@ -136,4 +197,77 @@ export async function requireAdminOnly(
     return;
   }
   next();
+}
+
+/**
+ * requirePermission(perm) — granular RBAC gate (Phase A).
+ *
+ * Chains `requireAdmin` (so we have a resolved staff user + the
+ * adminGranularRole on req), then consults the catalog in
+ * lib/resupply-auth/src/rbac.ts. Permits the request iff the
+ * granular role carries the named permission.
+ *
+ *   router.post(
+ *     "/admin/returns/:id/approve",
+ *     requirePermission("returns.approve"),
+ *     handler,
+ *   );
+ *
+ * Failure modes:
+ *   * 401 — no session (delegated to requireAdmin).
+ *   * 403 with code "permission_denied" — session present but
+ *     role lacks the permission. The body includes which
+ *     permission was required so a UI can render a useful error
+ *     ("you need the supervisor role to approve returns").
+ *
+ * NOTE: the body intentionally surfaces the required permission
+ * key but NOT the caller's role — the role is in the audit log
+ * for the failed call; leaking it in the response would help an
+ * attacker enumerate which role they need to compromise.
+ */
+export function requirePermission(perm: Permission) {
+  return async function handlePermissionGate(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    let advanced = false;
+    await requireAdmin(req, res, () => {
+      advanced = true;
+    });
+    if (!advanced) return;
+
+    const role = req.adminGranularRole;
+    if (!role) {
+      // Defensive: requireAdmin should have populated this. If it
+      // didn't, refuse — failing closed is the right posture for a
+      // permission gate.
+      res.status(403).json({
+        error: "permission_denied",
+        message: "Your account doesn't have permission for this action.",
+        requiredPermission: perm,
+      });
+      return;
+    }
+    if (!roleHasPermission(role, perm)) {
+      logger.info(
+        {
+          event: "rbac_permission_denied",
+          adminUserId: req.adminUserId,
+          role,
+          requiredPermission: perm,
+          method: req.method,
+          path: req.originalUrl,
+        },
+        "requirePermission: role lacks permission",
+      );
+      res.status(403).json({
+        error: "permission_denied",
+        message: "Your account doesn't have permission for this action.",
+        requiredPermission: perm,
+      });
+      return;
+    }
+    next();
+  };
 }

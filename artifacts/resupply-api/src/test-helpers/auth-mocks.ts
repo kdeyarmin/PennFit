@@ -33,10 +33,23 @@
 
 import type { NextFunction, Request, Response } from "express";
 
+import {
+  type Permission,
+  roleHasPermission,
+} from "@workspace/resupply-auth";
+import type { AdminRole } from "@workspace/resupply-db";
+
 export interface MockAdminCtx {
   userId: string;
   email: string;
   role: "admin" | "agent";
+  /**
+   * Optional granular role (RBAC Phase A). When omitted, defaults
+   * to `role` — existing tests that only set "admin" / "agent" still
+   * work, and permission checks pass admin universally + agent via
+   * the legacy mirror set.
+   */
+  granularRole?: AdminRole;
 }
 
 export interface MockAdminRef {
@@ -68,11 +81,15 @@ export interface MockSignedInRef {
 export function makeRequireAdminMock(ref: MockAdminRef): {
   requireAdmin: (req: Request, res: Response, next: NextFunction) => void;
   requireAdminOnly: (req: Request, res: Response, next: NextFunction) => void;
+  requirePermission: (
+    perm: Permission,
+  ) => (req: Request, res: Response, next: NextFunction) => void;
 } {
   const attach = (req: Request, ctx: MockAdminCtx): void => {
     req.adminUserId = ctx.userId;
     req.adminEmail = ctx.email;
     req.adminRole = ctx.role;
+    req.adminGranularRole = ctx.granularRole ?? ctx.role;
   };
   return {
     requireAdmin: (req, res, next) => {
@@ -92,6 +109,23 @@ export function makeRequireAdminMock(ref: MockAdminRef): {
         res.status(403).json({
           error:
             "This action requires admin privileges. Customer-service agents cannot perform destructive operations.",
+        });
+        return;
+      }
+      attach(req, ref.current);
+      next();
+    },
+    requirePermission: (perm) => (req, res, next) => {
+      if (!ref.current) {
+        res.status(401).json({ error: "Sign in required" });
+        return;
+      }
+      const role = ref.current.granularRole ?? ref.current.role;
+      if (!roleHasPermission(role, perm)) {
+        res.status(403).json({
+          error: "permission_denied",
+          message: "Your account doesn't have permission for this action.",
+          requiredPermission: perm,
         });
         return;
       }

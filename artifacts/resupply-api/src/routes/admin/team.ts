@@ -93,7 +93,28 @@ const adminTeamMutationLimiter = expressRateLimit({
   },
 });
 
-const ROLE_VALUES: AdminRole[] = ["admin", "agent"];
+// RBAC Phase A: extended catalog. `admin_users.role` carries the
+// granular value (csr, supervisor, fitter, fulfillment,
+// compliance_officer, etc.); `auth.users.role` keeps the coarse
+// "admin or agent" bucket via `coarseAuthRoleFor()` below.
+const ROLE_VALUES: AdminRole[] = [
+  "admin",
+  "supervisor",
+  "csr",
+  "fitter",
+  "fulfillment",
+  "compliance_officer",
+  "agent",
+];
+
+/** Map a granular admin role to the coarse auth.users.role bucket.
+ *  Only `admin` keeps its name; every other role buckets to `agent`.
+ *  The granular role drives RBAC; the coarse role only answers
+ *  "is this user staff at all + are they the super-admin role." */
+function coarseAuthRoleFor(role: AdminRole): "admin" | "agent" {
+  return role === "admin" ? "admin" : "agent";
+}
+
 const inviteBody = z
   .object({
     email: z.string().trim().toLowerCase().email(),
@@ -213,10 +234,12 @@ router.post(
       }
     }
 
-    // Mint or refresh the auth row + send the invite email.
+    // Mint or refresh the auth row + send the invite email. The
+    // coarse `auth.users.role` only cares about admin-vs-agent;
+    // the granular role lands on admin_users.role below.
     const invite = await inviteTeamMember(supabase, deps, {
       emailLower: email,
-      role,
+      role: coarseAuthRoleFor(role),
       displayName: displayName ?? prior?.display_name ?? null,
       productName: "Resupply",
       uiPathPrefix: "/admin",
@@ -321,7 +344,7 @@ router.post(
     const deps = getAuthDeps();
     const invite = await inviteTeamMember(supabase, deps, {
       emailLower: row.email_lower,
-      role: row.role as AdminRole,
+      role: coarseAuthRoleFor(row.role as AdminRole),
       displayName: row.display_name,
       productName: "Resupply",
       uiPathPrefix: "/admin",
@@ -441,9 +464,11 @@ router.patch(
       return;
     }
     const supabase = getSupabaseServiceRoleClient();
-    // Refuse to demote yourself from admin to agent — same self-
-    // lock-out concern as revoke.
-    if (parsed.data.role === "agent") {
+    // Refuse to demote yourself out of the admin role — same
+    // self-lock-out concern as revoke. With Phase A's wider role
+    // catalog, ANY change away from admin is a self-demote, not
+    // just admin→agent.
+    if (parsed.data.role && parsed.data.role !== "admin") {
       const { data: row, error: lookupErr } = await supabase
         .schema("resupply")
         .from("admin_users")
@@ -460,7 +485,7 @@ router.patch(
         res.status(409).json({
           error: "cannot_demote_self",
           message:
-            "You can't demote yourself to agent. Have another admin do it.",
+            "You can't demote yourself out of the admin role. Have another admin do it.",
         });
         return;
       }
@@ -488,9 +513,15 @@ router.patch(
       res.status(404).json({ error: "member_not_found" });
       return;
     }
-    // Mirror the role change on resupply_auth.users so requireAdmin sees it.
+    // Mirror the role change on resupply_auth.users so requireAdmin
+    // sees the coarse bucket. Granular role already landed on
+    // admin_users.role above.
     if (parsed.data.role && updated.auth_user_id) {
-      await updateTeamMemberRole(supabase, updated.auth_user_id, parsed.data.role);
+      await updateTeamMemberRole(
+        supabase,
+        updated.auth_user_id,
+        coarseAuthRoleFor(parsed.data.role),
+      );
     }
     res.json({ member: await serializeWithAuthLookup(supabase, updated) });
   },

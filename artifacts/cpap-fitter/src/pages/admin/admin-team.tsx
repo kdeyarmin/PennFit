@@ -23,8 +23,29 @@ import {
 
 const ROLE_LABEL: Record<TeamRole, string> = {
   admin: "Admin",
-  agent: "Customer-service rep",
+  supervisor: "Supervisor",
+  csr: "Customer service",
+  fitter: "Fitter",
+  fulfillment: "Fulfillment",
+  compliance_officer: "Compliance officer",
+  // Legacy "everything-CSR" role — new invites should pick a
+  // specific role rather than `agent`. The label calls it out so
+  // an admin doesn't pick it by accident.
+  agent: "Agent (legacy)",
 };
+
+/** Roles offered in the invite + edit selectors. Order roughly
+ *  matches the rbac catalog: senior → frontline → specialist. The
+ *  legacy `agent` is intentionally at the bottom. */
+const ROLE_OPTIONS: TeamRole[] = [
+  "admin",
+  "supervisor",
+  "csr",
+  "fitter",
+  "fulfillment",
+  "compliance_officer",
+  "agent",
+];
 
 const STATUS_TONE: Record<TeamStatus, string> = {
   active: "bg-emerald-100 text-emerald-900 border-emerald-300",
@@ -155,8 +176,19 @@ function MemberRow({
     mutationFn: () => patchMember(member.id, { role: "admin" }),
     onSuccess: invalidate,
   });
+  // Demote target: with the wider catalog, demoting an admin
+  // straight to the legacy "agent" loses information about what
+  // the user actually does. Demote to `csr` instead — admins can
+  // then refine via the role selector below if needed.
   const demote = useMutation({
-    mutationFn: () => patchMember(member.id, { role: "agent" }),
+    mutationFn: () => patchMember(member.id, { role: "csr" }),
+    onSuccess: invalidate,
+  });
+  // Inline role change for non-admin → any other non-admin role.
+  // The dropdown lets a supervisor reassign a CSR to fulfillment
+  // (etc.) without going through promote→demote.
+  const changeRole = useMutation({
+    mutationFn: (next: TeamRole) => patchMember(member.id, { role: next }),
     onSuccess: invalidate,
   });
 
@@ -169,7 +201,9 @@ function MemberRow({
           ? promote.error.message
           : demote.error instanceof Error
             ? demote.error.message
-            : null;
+            : changeRole.error instanceof Error
+              ? changeRole.error.message
+              : null;
 
   return (
     <li
@@ -232,22 +266,42 @@ function MemberRow({
               {resend.isPending ? "Resending…" : "Resend invite"}
             </button>
           )}
-          {member.status === "active" && member.role === "agent" && (
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Grant admin privileges to ${member.displayName ?? member.email}? They will be able to manage team members and access all admin features.`,
+          {member.status === "active" && member.role !== "admin" && (
+            <>
+              <select
+                value={member.role}
+                onChange={(e) => {
+                  const next = e.target.value as TeamRole;
+                  if (next === member.role) return;
+                  changeRole.mutate(next);
+                }}
+                disabled={changeRole.isPending}
+                className="rounded border border-slate-300 px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-60"
+                aria-label="Change role"
+                data-testid={`team-member-${member.id}-role-select`}
+              >
+                {ROLE_OPTIONS.filter((r) => r !== "admin").map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Grant admin privileges to ${member.displayName ?? member.email}? They will be able to manage team members and access all admin features.`,
+                    )
                   )
-                )
-                  promote.mutate();
-              }}
-              disabled={promote.isPending}
-              className="rounded border border-blue-300 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
-            >
-              {promote.isPending ? "Promoting…" : "Promote to admin"}
-            </button>
+                    promote.mutate();
+                }}
+                disabled={promote.isPending}
+                className="rounded border border-blue-300 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
+              >
+                {promote.isPending ? "Promoting…" : "Promote to admin"}
+              </button>
+            </>
           )}
           {member.status === "active" && member.role === "admin" && (
             <button
@@ -255,7 +309,7 @@ function MemberRow({
               onClick={() => {
                 if (
                   window.confirm(
-                    `Demote ${member.displayName ?? member.email} to CSR (agent) role? They will lose admin privileges.`,
+                    `Demote ${member.displayName ?? member.email} to the Customer service role? They will lose admin privileges.`,
                   )
                 )
                   demote.mutate();
@@ -298,7 +352,9 @@ function MemberRow({
 function InviteCard() {
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<TeamRole>("agent");
+  // Default to `csr` rather than the legacy `agent` for new
+  // invites — the wider catalog is the future-looking choice.
+  const [role, setRole] = useState<TeamRole>("csr");
   const [displayName, setDisplayName] = useState("");
   const [notes, setNotes] = useState("");
   const [warning, setWarning] = useState<string | null>(null);
@@ -311,7 +367,7 @@ function InviteCard() {
       setEmail("");
       setDisplayName("");
       setNotes("");
-      setRole("agent");
+      setRole("csr");
       if (!result.emailSent) {
         setWarning(
           "We couldn't send the invitation email automatically — share the sign-up link with this person directly.",
@@ -355,8 +411,12 @@ function InviteCard() {
             onChange={(e) => setRole(e.target.value as TeamRole)}
             className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
           >
-            <option value="agent">Customer-service rep</option>
-            <option value="admin">Admin (full privileges)</option>
+            {ROLE_OPTIONS.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABEL[r]}
+                {r === "admin" ? " (full privileges)" : ""}
+              </option>
+            ))}
           </select>
         </div>
         <div>

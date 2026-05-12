@@ -15,4 +15,5 @@ export * from "./team-invite";
 export * from "./bytea";
 export * from "./mfa-challenge";
 export * from "./mfa-recovery";
+export * from "./rbac";
 export * from "./totp";
