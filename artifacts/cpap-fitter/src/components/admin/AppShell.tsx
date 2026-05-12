@@ -29,6 +29,7 @@ import {
   Star,
   HelpCircle,
   Boxes,
+  AlertOctagon,
   TruckIcon,
   Activity,
   BarChart3,
@@ -233,6 +234,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/shop/returns",
         hint: "Return requests, restocks, refund decisions",
         badgeKey: "pendingReturns",
+      },
+      {
+        href: "/admin/shop/backorders",
+        label: "Backorders & subs",
+        icon: AlertOctagon,
+        matchPrefix: "/admin/shop/backorders",
+        hint: "Mark SKUs out of stock; manage resupply substitution rules",
       },
       {
         href: "/admin/shop/customers",

@@ -28,6 +28,7 @@ import grievancesRouter from "./admin/grievances.js";
 import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
 import productivityRouter from "./admin/productivity.js";
 import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
+import shopBackordersRouter from "./admin/shop-backorders.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -275,6 +276,11 @@ router.use(accreditationPoliciesRouter);
 // /admin/patient-documents/retention/* — HIPAA retention sweep
 // review queue, legal-hold toggle, and (admin-only) destruction.
 router.use(patientDocumentsRetentionRouter);
+// /admin/shop/backorders + /admin/shop/sku-substitutes — resupply
+// substitution catalog. requireAdmin for backorder marks (CSR
+// day-to-day); requireAdminOnly for substitute rule changes
+// (clinical preference order).
+router.use(shopBackordersRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

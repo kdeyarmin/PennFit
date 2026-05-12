@@ -47,6 +47,9 @@ import {
   type ResupplySupabaseClient,
 } from "@workspace/resupply-db";
 
+import { resolveFulfillmentSku } from "../backorder/resolve-fulfillment-sku";
+import { logger } from "../logger";
+
 export type PlaceOrderResult =
   | {
       status: "ok";
@@ -187,13 +190,60 @@ async function ensureFulfillments(
     return (existing ?? []).map((r) => r.id);
   }
 
+  // Backorder substitution. resolveFulfillmentSku reads
+  // shop_backorders + shop_sku_substitutes and either passes the
+  // primary through (common path) or hands us an alternative
+  // when the primary is currently backordered. See
+  // lib/backorder/resolve-fulfillment-sku.ts for the full
+  // contract. Failures here MUST NOT block confirmation — fall
+  // back to the prescription's primary SKU and let ops handle
+  // it via the existing manual Pacware CSV flow.
+  let shipSku = args.itemSku;
+  let substitutedFromSku: string | null = null;
+  try {
+    const resolved = await resolveFulfillmentSku(supabase, args.itemSku);
+    shipSku = resolved.sku;
+    substitutedFromSku = resolved.substituted
+      ? (resolved.substitutedFromSku ?? null)
+      : null;
+    if (resolved.substituted) {
+      logger.info(
+        {
+          event: "resupply.substitution.applied",
+          episodeId: args.episodeId,
+          primarySku: resolved.substitutedFromSku,
+          shippedSku: resolved.sku,
+        },
+        "resupply: backorder substitution applied",
+      );
+    } else if (resolved.noAlternative) {
+      logger.warn(
+        {
+          event: "resupply.substitution.no_alternative",
+          episodeId: args.episodeId,
+          primarySku: args.itemSku,
+        },
+        "resupply: primary backordered + no in-stock alternative; queueing primary anyway",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        event: "resupply.substitution.resolve_failed",
+        err: err instanceof Error ? err.message : "unknown",
+      },
+      "resupply: substitution lookup failed; falling back to primary SKU",
+    );
+  }
+
   const { data: inserted, error: insertErr } = await supabase
     .schema("resupply")
     .from("fulfillments")
     .insert({
       patient_id: args.patientId,
       episode_id: args.episodeId,
-      item_sku: args.itemSku,
+      item_sku: shipSku,
+      substituted_from_sku: substitutedFromSku,
       status: "queued",
     })
     .select("id");

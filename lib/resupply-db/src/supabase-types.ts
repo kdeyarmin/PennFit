@@ -285,9 +285,40 @@ export interface Database {
           delivered_at: string | null;
           created_at: string;
           updated_at: string;
+          substituted_from_sku: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fulfillments"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fulfillments"]["Row"]>;
+        Relationships: [];
+      };
+      shop_backorders: {
+        Row: {
+          id: string;
+          sku: string;
+          marked_at: string;
+          cleared_at: string | null;
+          notes: string | null;
+          marked_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_backorders"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_backorders"]["Row"]>;
+        Relationships: [];
+      };
+      shop_sku_substitutes: {
+        Row: {
+          id: string;
+          primary_sku: string;
+          alternative_sku: string;
+          priority: number;
+          notes: string | null;
+          active: boolean;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["shop_sku_substitutes"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["shop_sku_substitutes"]["Row"]>;
         Relationships: [];
       };
       patients: {
