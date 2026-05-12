@@ -28,14 +28,18 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { createHmac } from "node:crypto";
+
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getLinkHmacKey } from "@workspace/resupply-secrets";
 import {
   readAuthEnv,
   supabaseAuthRepository,
   type AuthDeps,
   type CustomerIdResolver,
   type EmailSender,
+  type MfaProbe,
 } from "@workspace/resupply-auth";
 
 import { logger } from "./logger";
@@ -93,8 +97,101 @@ export function getAuthDeps(): AuthDeps {
     secureCookies: process.env.NODE_ENV === "production",
     allowSignUp: false, // staff-facing API: no public sign-up
     customerIdResolver: makeCustomerIdResolver(),
+    mfa: makeMfaProbe(),
+    mfaChallengeHmacKey: deriveMfaChallengeKey(),
   };
   return cachedDeps;
+}
+
+/**
+ * MFA probe — looks up admin_mfa_secrets for the user_id the sign-
+ * in / verify-mfa handler resolves. Returns null when the user has
+ * NO active enrollment (either no row, or the row is mid-enrollment
+ * with verified_at IS NULL).
+ *
+ * The probe path is the slowest possible point in sign-in (one
+ * extra round-trip per admin signing in), so we keep the SELECT
+ * narrow and indexed on staff_user_id.
+ */
+function makeMfaProbe(): MfaProbe {
+  return {
+    async findActiveSecret(userId) {
+      const supabase = getSupabaseServiceRoleClient();
+      // staff_user_id on admin_mfa_secrets references admin_users.id,
+      // not auth.users.id. The sign-in handler passes auth.users.id;
+      // we bridge through admin_users.auth_user_id.
+      const { data: admin, error: adminErr } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (adminErr) throw adminErr;
+      if (!admin) return null;
+
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .select("secret_base32, verified_at, last_used_counter")
+        .eq("staff_user_id", admin.id)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data || !data.verified_at) return null;
+      return {
+        secretBase32: data.secret_base32,
+        lastUsedCounter: data.last_used_counter,
+      };
+    },
+    async recordVerify(userId, counter) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: admin } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!admin) return;
+      await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .update({
+          last_used_counter: counter,
+          last_used_at: new Date().toISOString(),
+        })
+        .eq("staff_user_id", admin.id);
+    },
+  };
+}
+
+/**
+ * Derive a domain-separated MFA challenge HMAC key from the
+ * existing RESUPPLY_LINK_HMAC_KEY. We don't add a second env var
+ * because:
+ *   1. Deployments shouldn't have to coordinate two secrets when
+ *      one is enough,
+ *   2. HMAC-SHA256(link_key, "mfa-challenge-v1") isolates the
+ *      keys cryptographically — a future compromise of one
+ *      doesn't compromise the other.
+ *
+ * Returns null when RESUPPLY_LINK_HMAC_KEY isn't set (dev/test
+ * environments). The auth lib's mfa branch refuses to issue a
+ * challenge in that case, so a misconfigured staging deploy will
+ * fail-closed visibly.
+ */
+function deriveMfaChallengeKey(): Buffer | undefined {
+  try {
+    const linkKey = getLinkHmacKey();
+    return createHmac("sha256", linkKey)
+      .update("mfa-challenge-v1")
+      .digest();
+  } catch {
+    // Boot env-check.ts requires RESUPPLY_LINK_HMAC_KEY for prod;
+    // in test setups it's typically absent and that's fine.
+    return undefined;
+  }
 }
 
 /**

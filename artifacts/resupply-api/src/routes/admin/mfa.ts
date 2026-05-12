@@ -25,12 +25,13 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { logger } from "../../lib/logger";
 import {
   buildOtpauthUri,
   generateBase32Secret,
   verifyTotpCode,
-} from "../../lib/mfa/totp";
+} from "@workspace/resupply-auth";
+
+import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();

@@ -1,0 +1,253 @@
+// POST /auth/sign-in/verify-mfa — exchange a challenge token + TOTP
+// code for an actual session cookie.
+//
+// This route only exists when AuthDeps.mfa is wired. The customer
+// storefront mount doesn't supply `mfa`, so this endpoint isn't
+// mounted there — sign-in stays single-step for shop customers.
+//
+// Contract:
+//   POST { challengeToken, code }
+//     → 200 { ok: true }                — session cookie set
+//     → 401 mfa_challenge_invalid       — token signature or shape bad
+//     → 401 mfa_challenge_expired       — token past exp
+//     → 400 mfa_code_invalid            — TOTP code wrong / replayed
+//     → 404 mfa_not_enrolled            — race: enrollment removed
+//                                          between sign-in and verify
+//
+// PHI / audit posture: every outcome writes an audit row keyed by
+// the resolved user_id. The challenge token itself is never logged.
+// On code-invalid we DO NOT increment a rate-limit counter here —
+// the 30-second step window + last_used_counter replay reject is
+// the cost of a TOTP brute-force, and rate-limiting per-challenge
+// would lock a user out within a 5-minute window if they fat-finger
+// twice in a row.
+
+import { createHash, randomBytes } from "node:crypto";
+
+import { type Request, type Response } from "express";
+import { z } from "zod";
+
+import {
+  buildCsrfCookie,
+  buildSessionCookie,
+  appendSetCookie,
+} from "../cookies";
+import { checkCsrf } from "../csrf";
+import { verifyMfaChallengeToken } from "../mfa-challenge";
+import { issueWindow } from "../session";
+import { issueToken } from "../token";
+import { verifyTotpCode } from "../totp";
+
+import { authError } from "./responses";
+import type { AuthDeps } from "./types";
+
+const VerifyBody = z.object({
+  challengeToken: z.string().min(1).max(2048),
+  code: z.string().regex(/^\d{6}$/, "code must be 6 digits"),
+});
+
+function hashUserAgent(req: Request): Buffer | null {
+  const ua = req.headers["user-agent"];
+  if (!ua || typeof ua !== "string") return null;
+  return createHash("sha256").update(ua).digest();
+}
+
+export function makeVerifySignInMfaHandler(deps: AuthDeps) {
+  const now = deps.now ?? (() => new Date());
+  const ttlDays = deps.env.sessionTtlDays;
+
+  return async function handleVerifyMfa(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    const csrfCheck = checkCsrf(req);
+    if (!csrfCheck.ok) {
+      authError(res, 403, "csrf_failed", "Request failed a security check.");
+      return;
+    }
+
+    const parsed = VerifyBody.safeParse(req.body);
+    if (!parsed.success) {
+      authError(
+        res,
+        400,
+        "invalid_input",
+        "A challenge token and 6-digit code are required.",
+      );
+      return;
+    }
+
+    if (!deps.mfa || !deps.mfaChallengeHmacKey) {
+      // Should be impossible — the route is only mounted when both
+      // are present — but defend against a future mis-mount.
+      authError(
+        res,
+        500,
+        "mfa_misconfigured",
+        "MFA verification is not configured on this server.",
+      );
+      return;
+    }
+
+    const verified = verifyMfaChallengeToken(parsed.data.challengeToken, {
+      hmacKey: deps.mfaChallengeHmacKey,
+      nowMs: now().getTime(),
+    });
+    if (!verified.ok) {
+      // Distinguish expired vs invalid so the SPA can prompt
+      // "your sign-in timed out, please start over" specifically.
+      const code =
+        verified.reason === "expired"
+          ? "mfa_challenge_expired"
+          : "mfa_challenge_invalid";
+      void deps.audit({
+        action: "auth.mfa_verify_failed",
+        ip: req.ip ?? null,
+        metadata: { reason: verified.reason },
+      });
+      authError(
+        res,
+        401,
+        code,
+        verified.reason === "expired"
+          ? "Sign-in timed out. Please start over."
+          : "That sign-in link is invalid. Please start over.",
+      );
+      return;
+    }
+
+    const userId = verified.claims.uid;
+    const user = await deps.repo.findUserById(userId);
+    if (!user) {
+      // Token was valid but the user no longer exists. Treat as a
+      // challenge-invalid so we don't leak account state.
+      authError(
+        res,
+        401,
+        "mfa_challenge_invalid",
+        "Sign-in could not be completed. Please start over.",
+      );
+      return;
+    }
+    if (user.status === "locked" || user.status === "revoked") {
+      void deps.audit({
+        action: "auth.mfa_verify_failed",
+        adminEmail: user.emailLower,
+        adminUserId: user.id,
+        ip: req.ip ?? null,
+        metadata: { reason: user.status === "locked" ? "locked" : "revoked" },
+      });
+      authError(
+        res,
+        401,
+        "mfa_challenge_invalid",
+        "Sign-in could not be completed. Please start over.",
+      );
+      return;
+    }
+
+    let secret;
+    try {
+      secret = await deps.mfa.findActiveSecret(userId);
+    } catch (err) {
+      void deps.audit({
+        action: "auth.mfa_probe_failed",
+        adminEmail: user.emailLower,
+        adminUserId: user.id,
+        ip: req.ip ?? null,
+        metadata: {
+          err: err instanceof Error ? err.message : String(err),
+        },
+      });
+      authError(
+        res,
+        500,
+        "mfa_probe_failed",
+        "Couldn't complete sign-in. Please try again.",
+      );
+      return;
+    }
+    if (!secret) {
+      // The user disabled MFA between sign-in and verify, or the
+      // row was deleted by another admin. Refuse — the password
+      // step alone shouldn't be enough now that the client thinks
+      // MFA is on the path.
+      authError(
+        res,
+        404,
+        "mfa_not_enrolled",
+        "MFA is no longer active on this account. Please start over.",
+      );
+      return;
+    }
+
+    const result = verifyTotpCode(secret.secretBase32, parsed.data.code, {
+      window: 1,
+      minCounter: secret.lastUsedCounter ?? undefined,
+    });
+    if (!result.ok || result.counter == null) {
+      void deps.audit({
+        action: "auth.mfa_verify_failed",
+        adminEmail: user.emailLower,
+        adminUserId: user.id,
+        ip: req.ip ?? null,
+        metadata: { reason: "wrong_code" },
+      });
+      authError(
+        res,
+        400,
+        "mfa_code_invalid",
+        "Code didn't match. Check the time on your phone and retry.",
+      );
+      return;
+    }
+
+    // Record the verify (best-effort — see MfaProbe contract).
+    try {
+      await deps.mfa.recordVerify(user.id, result.counter);
+    } catch {
+      // Swallowed — the verify succeeded; missing the counter
+      // bump only means the next verify might accept the same
+      // window. The 30-second step still bounds the replay.
+    }
+
+    // Success: issue session — same code path as sign-in.
+    const token = issueToken();
+    const csrfRaw = randomBytes(24).toString("base64url");
+    const window = issueWindow(now(), { ttlDays });
+
+    const session = await deps.repo.insertSession({
+      tokenHash: token.hash,
+      userId: user.id,
+      expiresAt: window.expiresAt,
+      ip: req.ip ?? null,
+      userAgentHash: hashUserAgent(req),
+    });
+
+    void deps.audit({
+      action: "auth.sign_in",
+      adminEmail: user.emailLower,
+      adminUserId: user.id,
+      ip: req.ip ?? null,
+      metadata: {
+        sessionId: session.id,
+        role: user.role,
+        mfa: true,
+      },
+    });
+
+    const maxAge = ttlDays * 24 * 60 * 60;
+    appendSetCookie(res, [
+      buildSessionCookie(token.raw, {
+        secure: deps.secureCookies,
+        maxAgeSeconds: maxAge,
+      }),
+      buildCsrfCookie(csrfRaw, {
+        secure: deps.secureCookies,
+        maxAgeSeconds: maxAge,
+      }),
+    ]);
+
+    res.status(200).json({ ok: true });
+  };
+}

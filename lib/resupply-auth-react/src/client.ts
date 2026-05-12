@@ -46,6 +46,15 @@ export type AuthErrorCode =
   | "rate_limited"
   | "account_locked"
   | "email_unverified"
+  // MFA (Phase B) — emitted by the server on the
+  // /auth/sign-in/verify-mfa surface and the MFA branch of
+  // /auth/sign-in.
+  | "mfa_probe_failed"
+  | "mfa_misconfigured"
+  | "mfa_challenge_invalid"
+  | "mfa_challenge_expired"
+  | "mfa_code_invalid"
+  | "mfa_not_enrolled"
   | "internal"
   | "unknown";
 
@@ -92,8 +101,32 @@ function readCsrfCookie(): string | null {
   return null;
 }
 
+/**
+ * Sign-in result.
+ *
+ *   * `{ ok: true }`                           — single-step done.
+ *     Session cookie is set; the SPA can call `/me` and route
+ *     into the app.
+ *   * `{ ok: true, mfaRequired: true, challengeToken }` — the
+ *     account has TOTP enrolled. NO session cookie has been set;
+ *     the SPA must collect a 6-digit code and call
+ *     `verifySignInMfa({ challengeToken, code })`.
+ */
+export type SignInResult =
+  | { ok: true; mfaRequired?: false }
+  | { ok: true; mfaRequired: true; challengeToken: string };
+
 export interface AuthClient {
-  signIn(input: { email: string; password: string }): Promise<void>;
+  signIn(input: { email: string; password: string }): Promise<SignInResult>;
+  /**
+   * Second step of the MFA sign-in flow. Issues the session cookie
+   * on success. Throws AuthError on invalid / expired challenge or
+   * wrong code (callers branch on `err.code`).
+   */
+  verifySignInMfa(input: {
+    challengeToken: string;
+    code: string;
+  }): Promise<void>;
   signUp(input: {
     email: string;
     password: string;
@@ -191,6 +224,29 @@ export function createAuthClient(config: AuthClientConfig): AuthClient {
     async signIn(input) {
       await seedCsrf();
       const res = await call("/sign-in", {
+        method: "POST",
+        body: input,
+        requireCsrf: true,
+      });
+      const body = (await expectOk(res)) as
+        | { ok: true; mfaRequired?: boolean; challengeToken?: string }
+        | null;
+      if (body && body.mfaRequired === true && body.challengeToken) {
+        return {
+          ok: true,
+          mfaRequired: true,
+          challengeToken: body.challengeToken,
+        };
+      }
+      return { ok: true };
+    },
+    async verifySignInMfa(input) {
+      // Seed a fresh CSRF token — the mfaRequired branch of the
+      // prior /sign-in didn't issue cookies (no session yet, by
+      // design), so the SPA needs a CSRF cookie to call this
+      // verify endpoint.
+      await seedCsrf();
+      const res = await call("/sign-in/verify-mfa", {
         method: "POST",
         body: input,
         requireCsrf: true,

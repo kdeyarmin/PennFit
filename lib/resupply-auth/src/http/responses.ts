@@ -17,6 +17,16 @@ export type AuthErrorCode =
   | "rate_limited"
   | "account_locked"
   | "email_unverified"
+  // MFA (Phase B) — sign-in MFA gate + /sign-in/verify-mfa
+  // outcomes. Both `mfa_probe_failed` and `mfa_misconfigured`
+  // arise from server-side wiring problems; the SPA renders them
+  // as "try again / contact support" without exposing internals.
+  | "mfa_probe_failed"
+  | "mfa_misconfigured"
+  | "mfa_challenge_invalid"
+  | "mfa_challenge_expired"
+  | "mfa_code_invalid"
+  | "mfa_not_enrolled"
   | "internal";
 
 export function authError(
