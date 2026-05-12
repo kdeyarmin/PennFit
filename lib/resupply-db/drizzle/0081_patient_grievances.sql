@@ -48,15 +48,14 @@ CREATE INDEX IF NOT EXISTS "patient_grievances_patient_idx"
 CREATE INDEX IF NOT EXISTS "patient_grievances_status_severity_received_idx"
   ON "resupply"."patient_grievances" ("status", "severity", "received_at");
 
--- Foreign key constraints for audit trail (who acknowledged/resolved)
-ALTER TABLE "resupply"."patient_grievances"
-  ADD CONSTRAINT "fk_patient_grievances_acknowledged_by"
-  FOREIGN KEY ("acknowledged_by_user_id")
-  REFERENCES "resupply"."staff_users"("id")
-  ON DELETE SET NULL;
-
-ALTER TABLE "resupply"."patient_grievances"
-  ADD CONSTRAINT "fk_patient_grievances_resolved_by"
-  FOREIGN KEY ("resolved_by_user_id")
-  REFERENCES "resupply"."staff_users"("id")
-  ON DELETE SET NULL;
+-- NOTE: acknowledged_by_user_id and resolved_by_user_id are
+-- deliberately SOFT references (no FK) — matching the schema
+-- declaration in lib/resupply-db/src/schema/patient-grievances.ts.
+-- A rare staff-user deletion should NOT erase the audit history of
+-- every grievance that staff member touched. The application
+-- layer treats a row whose user_id no longer resolves as "staff
+-- gone" without breaking the grievance row.
+--
+-- (An earlier auto-fix attempted to add FKs against `staff_users`,
+-- which doesn't exist in this schema — the staff table is
+-- `admin_users`. Reverted both for the soft-FK posture above.)
