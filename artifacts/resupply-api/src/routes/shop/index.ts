@@ -32,6 +32,7 @@ import productCompatibilityRouter from "./product-compatibility";
 import mePushSubscriptionsRouter from "./me-push-subscriptions";
 import meInsightsRouter from "./me-insights";
 import meTherapySummaryRouter from "./me-therapy-summary";
+import meMaintenanceRouter from "./me-maintenance";
 import meDocumentsRouter from "./me-documents";
 
 const router: IRouter = Router();
@@ -66,6 +67,10 @@ router.use(meInsightsRouter);
 // against patients.email like /shop/me/insights; empty response when
 // no patient row matches or no nights are imported yet.
 router.use(meTherapySummaryRouter);
+// /shop/me/maintenance — patient-facing hygiene checklist. Cadence
+// catalog lives in code (lib/patient-maintenance/catalog.ts); per-
+// patient completion log lives in resupply.patient_maintenance_log.
+router.use(meMaintenanceRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);

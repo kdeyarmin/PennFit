@@ -1174,6 +1174,23 @@ export interface Database {
         >;
         Relationships: [];
       };
+      patient_maintenance_log: {
+        Row: {
+          id: string;
+          patient_id: string;
+          task_key: string;
+          completed_at: string;
+          source: string;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_maintenance_log"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_maintenance_log"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;

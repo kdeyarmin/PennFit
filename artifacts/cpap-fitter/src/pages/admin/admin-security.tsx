@@ -25,6 +25,7 @@ import {
   beginEnrollMfa,
   disableMfa,
   getMfaStatus,
+  regenerateRecoveryCodes,
   verifyEnrollMfa,
   type BeginEnrollResponse,
   type MfaStatus,
@@ -195,6 +196,11 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
   const qc = useQueryClient();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // After regenerate succeeds we render the one-time codes panel
+  // inline, then dismissal returns to the normal Enrolled view.
+  const [regeneratedCodes, setRegeneratedCodes] = useState<string[] | null>(
+    null,
+  );
   const disable = useMutation({
     mutationFn: () => disableMfa(code.trim()),
     onSuccess: () => {
@@ -203,6 +209,29 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
     },
     onError: (e: Error) => setError(e.message),
   });
+  const regenerate = useMutation({
+    mutationFn: () => regenerateRecoveryCodes(code.trim()),
+    onSuccess: (r) => {
+      setCode("");
+      setError(null);
+      setRegeneratedCodes(r.recoveryCodes);
+      // status query refetched after dismissal — keep the
+      // "10 of 10" badge accurate.
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  if (regeneratedCodes) {
+    return (
+      <RecoveryCodesPanel
+        codes={regeneratedCodes}
+        onDone={() => {
+          setRegeneratedCodes(null);
+          void qc.invalidateQueries({ queryKey: statusKey });
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -233,9 +262,8 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
         <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
           <div>
-            You have no recovery codes left. If you lose your authenticator
-            you'll need another admin to reset MFA on your account. To get
-            a fresh batch, disable MFA below and re-enroll.
+            You have no recovery codes left. Regenerate a fresh batch below
+            (you&apos;ll need a current authenticator code).
           </div>
         </div>
       )}
@@ -244,8 +272,8 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
           <div>
             Only {data.recoveryCodesRemaining} recovery code
-            {data.recoveryCodesRemaining === 1 ? "" : "s"} remaining. To
-            mint a fresh batch, disable MFA below and re-enroll.
+            {data.recoveryCodesRemaining === 1 ? "" : "s"} remaining.
+            Regenerate a fresh batch below to keep your fallback intact.
           </div>
         </div>
       )}
@@ -255,11 +283,12 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
         style={{ borderColor: "hsl(var(--line-2))" }}
       >
         <p className="text-sm">
-          To disable MFA, enter a current 6-digit code from your
-          authenticator. This prevents accidental disable from a
-          compromised session.
+          Enter a current 6-digit code from your authenticator app, then
+          choose an action. The code requirement prevents a compromised
+          session from quietly disabling MFA or rotating your recovery
+          codes.
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Input
             value={code}
             onChange={(e) =>
@@ -273,7 +302,30 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           />
           <Button
             intent="ghost"
-            disabled={code.length !== 6 || disable.isPending}
+            disabled={
+              code.length !== 6 ||
+              regenerate.isPending ||
+              disable.isPending
+            }
+            isLoading={regenerate.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Generate a fresh batch of 10 recovery codes? Your existing codes will stop working.",
+                )
+              )
+                regenerate.mutate();
+            }}
+          >
+            Regenerate recovery codes
+          </Button>
+          <Button
+            intent="ghost"
+            disabled={
+              code.length !== 6 ||
+              regenerate.isPending ||
+              disable.isPending
+            }
             isLoading={disable.isPending}
             onClick={() => disable.mutate()}
           >

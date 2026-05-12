@@ -8,6 +8,13 @@ export interface MfaStatus {
   createdAt: string | null;
   /** Unspent backup-code count. 0 when not enrolled. */
   recoveryCodesRemaining: number;
+  /** Phase D — admin-side MFA enforcement. "required" gates further
+   *  admin nav until the caller enrolls; "off" keeps enrollment
+   *  optional. */
+  enforcementMode: "off" | "required";
+  /** True when enforcement is "required" AND the caller hasn't
+   *  enrolled. SPA reads this to force-redirect to /admin/security. */
+  mustEnroll: boolean;
 }
 
 export interface VerifyEnrollResponse {
@@ -67,3 +74,13 @@ export const disableMfa = (code: string) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
   });
+
+export const regenerateRecoveryCodes = (code: string) =>
+  jsonFetch<{ ok: true; recoveryCodes: string[] }>(
+    "/admin/mfa/recovery-codes/regenerate",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    },
+  );

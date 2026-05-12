@@ -95,6 +95,7 @@ import { CommPrefsSection } from "@/components/comm-prefs-section";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 import { InsightsSection } from "@/components/insights-section";
 import { TherapySummarySection } from "@/components/therapy-summary-section";
+import { MaintenanceSection } from "@/components/maintenance-section";
 import { MyReturnsSection } from "@/components/my-returns-section";
 import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
@@ -328,6 +329,7 @@ function AccountInner() {
           <CustomerChatSection />
           <DocumentsSection />
           <TherapySummarySection />
+          <MaintenanceSection />
           <InsightsSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />

@@ -49,6 +49,17 @@ function getIssuerLabel(): string {
   return process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps";
 }
 
+/** MFA enforcement mode — env-var-gated so an org can flip the
+ *  toggle without a code change. "required" means surveyors see a
+ *  mandatory MFA story and the SPA forces unenrolled admins to
+ *  /admin/security on every nav. "off" preserves the original
+ *  Phase A posture where enrollment is optional. */
+type EnforcementMode = "off" | "required";
+function getEnforcementMode(): EnforcementMode {
+  const v = process.env.AUTH_REQUIRE_MFA_FOR_ADMINS?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes" ? "required" : "off";
+}
+
 router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
   const adminUserId = req.adminUserId;
   if (!adminUserId) {
@@ -79,13 +90,20 @@ router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
     recoveryCodesRemaining = count ?? 0;
   }
 
+  const enforcementMode = getEnforcementMode();
+  const enrolled = !!data?.verified_at;
+
   res.json({
-    enrolled: !!data?.verified_at,
+    enrolled,
     inProgressEnrollment: !!data && !data.verified_at,
     verifiedAt: data?.verified_at ?? null,
     lastUsedAt: data?.last_used_at ?? null,
     createdAt: data?.created_at ?? null,
     recoveryCodesRemaining,
+    // Enforcement (Phase D). SPA reads `mustEnroll` to render a
+    // sticky banner / forced redirect on every admin nav.
+    enforcementMode,
+    mustEnroll: enforcementMode === "required" && !enrolled,
   });
 });
 
@@ -425,5 +443,127 @@ router.post("/admin/mfa/disable", requireAdmin, async (req, res) => {
 
   res.json({ ok: true, enrolled: false });
 });
+
+// ────────────────────────────────────────────────────────────────
+// POST /admin/mfa/recovery-codes/regenerate — mint a fresh batch
+// without going through disable+re-enroll. Gated behind a current
+// TOTP code (same posture as disable) so a compromised session
+// can't quietly rotate the codes out from under the user.
+//
+// Operationally: an admin who has spent a few codes wants the
+// roster back at 10. Today they'd disable MFA, re-enroll, and
+// re-show the QR — which leaks more than necessary and means
+// briefly unenrolled time. This endpoint preserves the secret +
+// last_used_counter, only the recovery batch changes.
+// ────────────────────────────────────────────────────────────────
+router.post(
+  "/admin/mfa/recovery-codes/regenerate",
+  requireAdmin,
+  async (req, res) => {
+    const adminUserId = req.adminUserId;
+    const adminEmail = req.adminEmail;
+    if (!adminUserId || !adminEmail) {
+      res.status(500).json({ error: "admin_context_missing" });
+      return;
+    }
+    const parsed = verifyBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        message:
+          "A valid current TOTP code is required to regenerate recovery codes.",
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .select("id, secret_base32, verified_at, last_used_counter")
+      .eq("staff_user_id", adminUserId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row || !row.verified_at) {
+      res.status(404).json({
+        error: "not_enrolled",
+        message:
+          "MFA is not active on this account; nothing to regenerate.",
+      });
+      return;
+    }
+
+    const result = verifyTotpCode(row.secret_base32, parsed.data.code, {
+      window: 1,
+      minCounter: row.last_used_counter ?? undefined,
+    });
+    if (!result.ok || result.counter == null) {
+      res.status(400).json({
+        error: "invalid_code",
+        message: "Code didn't match — refusing to regenerate.",
+      });
+      return;
+    }
+
+    // Burn the counter advance from this verify so the same code
+    // can't be replayed against /disable.
+    await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .update({
+        last_used_counter: result.counter,
+        last_used_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+
+    // Wipe the entire old batch (used + spendable). Surveyors are
+    // OK with this: the audit_log entry records the regenerate
+    // moment and the count, which is what they actually ask for.
+    // Keeping the used rows around after a regenerate would
+    // confuse the "codes remaining" badge in /admin/security.
+    const { error: delErr } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_recovery_codes")
+      .delete()
+      .eq("staff_user_id", adminUserId);
+    if (delErr) throw delErr;
+
+    const batch = generateRecoveryCodes();
+    const { error: insErr } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_recovery_codes")
+      .insert(
+        batch.map((c) => ({
+          staff_user_id: adminUserId,
+          code_hash: c.hash,
+        })),
+      );
+    if (insErr) throw insErr;
+
+    await logAudit({
+      action: "auth.mfa.recovery_codes_regenerated",
+      adminEmail,
+      adminUserId,
+      targetTable: "admin_mfa_recovery_codes",
+      targetId: null,
+      metadata: { count: batch.length },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "auth.mfa.recovery_codes_regenerated audit failed",
+      );
+    });
+
+    res.json({
+      ok: true,
+      // Same shape as enroll-verify's recovery branch: plain-text
+      // display codes, shown ONCE. The SPA must surface them and
+      // dismiss; there's no read API to retrieve them later.
+      recoveryCodes: batch.map((c) => c.display),
+    });
+  },
+);
 
 export default router;

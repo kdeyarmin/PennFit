@@ -49,6 +49,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useDashboardIdentity } from "@/lib/admin/identity";
+import { getMfaStatus } from "@/lib/admin/mfa-api";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { GlobalLookup } from "./GlobalLookup";
 import { RoleProvider, type AdminRole } from "@/lib/admin/role-context";
@@ -589,6 +590,55 @@ export function AdminHeaderChip({
   );
 }
 
+/**
+ * Sticky banner shown on every admin page when the org has flipped
+ * AUTH_REQUIRE_MFA_FOR_ADMINS=true AND this caller hasn't enrolled.
+ * We don't hard-redirect — the caller may legitimately be on
+ * /admin/security already, and a forced redirect mid-form would be
+ * jarring — but we surface the requirement visibly on every screen.
+ * Surveyors looking at the live admin UI see the enforcement and
+ * the path to compliance.
+ */
+function MfaEnforcementBanner() {
+  const [location] = useLocation();
+  const { data } = useQuery({
+    queryKey: ["admin", "mfa", "status"] as const,
+    queryFn: getMfaStatus,
+    // Cheap; refetching on focus keeps the banner accurate when an
+    // admin enrolls in another tab.
+    refetchOnWindowFocus: true,
+    staleTime: 30_000,
+  });
+  if (!data?.mustEnroll) return null;
+  if (location === "/admin/security") {
+    // Caller is already where they need to be — render a calmer
+    // inline notice rather than a redirect.
+    return (
+      <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        Enroll multi-factor authentication below to access the rest of
+        the admin console. This is a policy-level requirement; your team
+        flipped it on.
+      </div>
+    );
+  }
+  return (
+    <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900 flex items-start justify-between gap-3">
+      <div>
+        <strong>Multi-factor authentication is required.</strong> You
+        must enroll an authenticator app before you can keep using the
+        admin console. This policy applies to every admin / CSR
+        account.
+      </div>
+      <Link
+        href="/admin/security"
+        className="rounded bg-amber-900 text-white px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+      >
+        Enroll now
+      </Link>
+    </div>
+  );
+}
+
 export function AppShell({
   adminEmail,
   adminRole = "admin",
@@ -699,6 +749,7 @@ export function AppShell({
             </nav>
           </aside>
           <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
+            <MfaEnforcementBanner />
             {children}
           </main>
         </div>

@@ -536,6 +536,47 @@ export const fetchTherapySummary = () =>
   meFetch<TherapySummary>("/shop/me/therapy-summary");
 
 // ---------------------------------------------------------------------------
+// Maintenance — patient-facing hygiene checklist (daily mask wipe,
+// weekly hose wash, monthly filter, etc.). Cadence catalog lives
+// on the server; the client receives task rows already decorated
+// with last-completed + next-due + bucket.
+// ---------------------------------------------------------------------------
+
+export type MaintenanceCategory =
+  | "mask"
+  | "tubing"
+  | "humidifier"
+  | "filter";
+export type MaintenanceDueBucket = "due_now" | "due_soon" | "current";
+
+export interface MaintenanceTask {
+  key: string;
+  label: string;
+  category: MaintenanceCategory;
+  frequencyDays: number;
+  why: string;
+  lastCompletedAt: string | null;
+  nextDueDate: string;
+  bucket: MaintenanceDueBucket;
+  daysUntilDue: number;
+}
+
+export interface MaintenanceSummary {
+  patientLinked: boolean;
+  asOfDate: string;
+  tasks: MaintenanceTask[];
+}
+
+export const fetchMaintenanceSummary = () =>
+  meFetch<MaintenanceSummary>("/shop/me/maintenance");
+
+export const logMaintenanceTask = (taskKey: string) =>
+  meFetch<{ id: string; taskKey: string; completedAt: string }>(
+    `/shop/me/maintenance/${encodeURIComponent(taskKey)}/log`,
+    { method: "POST" },
+  );
+
+// ---------------------------------------------------------------------------
 // My returns — patient-facing list of return requests this customer
 // has opened. Mirrors GET /shop/me/returns; see the route preamble for
 // status/reason field semantics.

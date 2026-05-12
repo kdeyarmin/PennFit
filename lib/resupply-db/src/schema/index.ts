@@ -25,6 +25,7 @@ export * from "./admin-mfa-secrets";
 export * from "./admin-mfa-recovery-codes";
 export * from "./accreditation-policies";
 export * from "./admin-policy-attestations";
+export * from "./patient-maintenance-log";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";
