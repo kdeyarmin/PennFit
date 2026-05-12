@@ -25,6 +25,7 @@ import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
 import trainingRecordsRouter from "./admin/training-records.js";
 import grievancesRouter from "./admin/grievances.js";
+import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -264,6 +265,11 @@ router.use(analyticsRouter);
 // query these exact artifacts during DMEPOS site visits.
 router.use(trainingRecordsRouter);
 router.use(grievancesRouter);
+// /admin/accreditation/* — the policy catalog + per-staff
+// attestation surface + binder summary that ties the three
+// evidence sections (policies, training, grievances) together
+// for a single hand-off to a surveyor.
+router.use(accreditationPoliciesRouter);
 // /admin/bulk-campaigns/* — staging-side surface for bulk-email
 // campaigns. Phase A persists draft + cancelled; Phase B will add
 // the send-side worker that drains bulk_campaign_recipients.

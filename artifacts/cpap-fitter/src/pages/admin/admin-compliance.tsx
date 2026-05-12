@@ -13,7 +13,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ShieldCheck } from "lucide-react";
+import { Download, Plus, ShieldCheck } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -36,26 +36,37 @@ import {
   type TrainingExpiryBucket,
   type TrainingType,
 } from "@/lib/admin/compliance-api";
+import {
+  createPolicy,
+  getBinderSummary,
+  listPolicies,
+  patchPolicy,
+  type AccreditationPolicy,
+  type CreatePolicyRequest,
+} from "@/lib/admin/accreditation-api";
 
-type Tab = "training" | "grievances";
+type Tab = "training" | "grievances" | "policies";
 
 export function AdminCompliancePage() {
   const [tab, setTab] = useState<Tab>("training");
   return (
     <div className="p-6 space-y-6 max-w-6xl">
-      <header>
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <ShieldCheck className="h-6 w-6" />
-          Compliance binder
-        </h1>
-        <p
-          className="text-sm mt-1"
-          style={{ color: "hsl(var(--ink-3))" }}
-        >
-          Accreditation evidence for DMEPOS surveyors (ACHC, BOC, TJC).
-          Training records and patient grievances live here so a site
-          visit can answer "show me X" in one query.
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold flex items-center gap-2">
+            <ShieldCheck className="h-6 w-6" />
+            Compliance binder
+          </h1>
+          <p
+            className="text-sm mt-1"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            Accreditation evidence for DMEPOS surveyors (ACHC, BOC, TJC).
+            Training records, patient grievances, and policy attestations
+            live here so a site visit can answer "show me X" in one query.
+          </p>
+        </div>
+        <BinderSummaryCard />
       </header>
 
       <div className="flex items-center gap-2">
@@ -69,9 +80,79 @@ export function AdminCompliancePage() {
           active={tab === "grievances"}
           onClick={() => setTab("grievances")}
         />
+        <TabChip
+          label="Policies"
+          active={tab === "policies"}
+          onClick={() => setTab("policies")}
+        />
       </div>
 
-      {tab === "training" ? <TrainingPanel /> : <GrievancesPanel />}
+      {tab === "training" ? (
+        <TrainingPanel />
+      ) : tab === "grievances" ? (
+        <GrievancesPanel />
+      ) : (
+        <PoliciesPanel />
+      )}
+    </div>
+  );
+}
+
+/** A compact stat card in the page header: totals + one-click CSV
+ *  links. Surveyors expect a one-page summary; this is it. */
+function BinderSummaryCard() {
+  const { data } = useQuery({
+    queryKey: ["admin", "accreditation", "binder"],
+    queryFn: getBinderSummary,
+  });
+  if (!data) return null;
+  return (
+    <div
+      className="rounded-lg border p-3 text-xs space-y-1.5 min-w-[14rem]"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div
+        className="text-[10px] uppercase tracking-wider font-semibold"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        Binder snapshot
+      </div>
+      <div className="flex justify-between">
+        <span>Active policies</span>
+        <span className="font-mono">{data.sections.policies.active}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Attestations</span>
+        <span className="font-mono">
+          {data.sections.policies.attestations}
+        </span>
+      </div>
+      <div className="flex justify-between">
+        <span>Training records</span>
+        <span className="font-mono">{data.sections.training.total}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Open grievances</span>
+        <span className="font-mono">{data.sections.grievances.open}</span>
+      </div>
+      <div className="flex flex-col gap-1 pt-1">
+        <a
+          href={data.sections.policies.csvUrl}
+          className="inline-flex items-center gap-1 hover:underline"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          <Download className="h-3 w-3" />
+          Attestations CSV
+        </a>
+        <a
+          href={data.sections.auditLog.csvUrl}
+          className="inline-flex items-center gap-1 hover:underline"
+          style={{ color: "hsl(var(--penn-navy))" }}
+        >
+          <Download className="h-3 w-3" />
+          Audit log CSV
+        </a>
+      </div>
     </div>
   );
 }
@@ -745,6 +826,300 @@ function EditGrievanceModal({
         onSave={() => patch.mutate()}
         saving={patch.isPending}
         canSave={true}
+        error={error}
+      />
+    </ModalShell>
+  );
+}
+
+// ── Policies tab ───────────────────────────────────────────────────
+
+const POLICY_CATEGORY_LABEL: Record<string, string> = {
+  hipaa: "HIPAA",
+  operations: "Operations",
+  clinical: "Clinical",
+  hr: "HR",
+  safety: "Safety",
+  dmepos: "DMEPOS",
+  other: "Other",
+};
+
+function PoliciesPanel() {
+  const qc = useQueryClient();
+  const queryKey = ["admin", "accreditation", "policies"] as const;
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey,
+    queryFn: listPolicies,
+  });
+  const [showAdd, setShowAdd] = useState(false);
+
+  if (isPending) return <Spinner />;
+  if (isError) return <ErrorPanel error={error} onRetry={() => void refetch()} />;
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey });
+    void qc.invalidateQueries({
+      queryKey: ["admin", "accreditation", "binder"],
+    });
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-sm text-muted-foreground">
+          {data.policies.length} policies / versions on file.
+        </div>
+        <Button onClick={() => setShowAdd(true)}>
+          <Plus className="h-4 w-4 mr-1.5" />
+          Add policy version
+        </Button>
+      </div>
+
+      {data.policies.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">
+          No policies yet. Add HIPAA NPP, DMEPOS supplier standards, infection
+          control, etc. so surveyors see what staff have acknowledged.
+        </p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr
+              className="text-left border-b"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <th className="py-2 font-semibold">Category</th>
+              <th className="py-2 font-semibold">Title</th>
+              <th className="py-2 font-semibold">Version</th>
+              <th className="py-2 font-semibold">State</th>
+              <th className="py-2 font-semibold text-right">Attestations</th>
+              <th className="py-2 font-semibold"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.policies.map((p) => (
+              <PolicyRow key={p.id} policy={p} onChanged={invalidate} />
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {showAdd && (
+        <AddPolicyModal
+          onClose={() => setShowAdd(false)}
+          onCreated={() => {
+            setShowAdd(false);
+            invalidate();
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function PolicyRow({
+  policy,
+  onChanged,
+}: {
+  policy: AccreditationPolicy;
+  onChanged: () => void;
+}) {
+  const state = policy.retiredAt
+    ? "retired"
+    : policy.activeAt
+      ? "active"
+      : "draft";
+  const activate = useMutation({
+    mutationFn: () => patchPolicy(policy.id, { activate: true }),
+    onSuccess: onChanged,
+  });
+  const retire = useMutation({
+    mutationFn: () => patchPolicy(policy.id, { retire: true }),
+    onSuccess: onChanged,
+  });
+  return (
+    <tr
+      className="border-b"
+      style={{ borderColor: "hsl(var(--line-2))" }}
+    >
+      <td className="py-1.5 text-xs">
+        {POLICY_CATEGORY_LABEL[policy.category] ?? policy.category}
+      </td>
+      <td className="py-1.5">
+        <div>{policy.title}</div>
+        <div className="text-[10px] text-muted-foreground font-mono">
+          {policy.policyKey}
+        </div>
+      </td>
+      <td className="py-1.5 font-mono text-xs">{policy.version}</td>
+      <td className="py-1.5">
+        <span
+          className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${
+            state === "active"
+              ? "bg-emerald-100 text-emerald-900"
+              : state === "retired"
+                ? "bg-slate-200 text-slate-700"
+                : "bg-amber-100 text-amber-900"
+          }`}
+        >
+          {state}
+        </span>
+      </td>
+      <td className="py-1.5 text-right font-mono">
+        {policy.attestationCount}
+      </td>
+      <td className="py-1.5 text-right">
+        {state === "draft" && (
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => activate.mutate()}
+            isLoading={activate.isPending}
+          >
+            Activate
+          </Button>
+        )}
+        {state === "active" && (
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Retire "${policy.title}" v${policy.version}? Staff won't be prompted to attest it anymore; existing attestations are preserved.`,
+                )
+              )
+                retire.mutate();
+            }}
+            isLoading={retire.isPending}
+          >
+            Retire
+          </Button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function AddPolicyModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [policyKey, setPolicyKey] = useState("");
+  const [version, setVersion] = useState("1");
+  const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const [bodyUrl, setBodyUrl] = useState("");
+  const [category, setCategory] = useState("hipaa");
+  const [activate, setActivate] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = useMutation({
+    mutationFn: () => {
+      const body: CreatePolicyRequest = {
+        policyKey: policyKey.trim(),
+        version: version.trim(),
+        title: title.trim(),
+        summary: summary.trim() || null,
+        bodyUrl: bodyUrl.trim() || null,
+        category,
+        activate,
+      };
+      return createPolicy(body);
+    },
+    onSuccess: () => onCreated(),
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const keyValid = /^[a-z0-9_]{1,64}$/.test(policyKey.trim());
+  const canSave =
+    keyValid && version.trim().length > 0 && title.trim().length > 0;
+
+  return (
+    <ModalShell title="Add policy version" onClose={onClose}>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Key (lowercase, underscores)</Label>
+          <Input
+            value={policyKey}
+            onChange={(e) => setPolicyKey(e.target.value)}
+            placeholder="hipaa_npp"
+          />
+          {policyKey.trim() && !keyValid && (
+            <p className="text-[10px] text-rose-700 mt-1">
+              Use lowercase letters, digits, and underscores only.
+            </p>
+          )}
+        </div>
+        <div>
+          <Label>Version</Label>
+          <Input
+            value={version}
+            onChange={(e) => setVersion(e.target.value)}
+            placeholder="1 or 2024-Q1"
+          />
+        </div>
+        <div className="col-span-2">
+          <LabeledInput
+            label="Title"
+            value={title}
+            onChange={setTitle}
+            placeholder="HIPAA Notice of Privacy Practices"
+          />
+        </div>
+        <div>
+          <Label>Category</Label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full rounded border px-2 py-1.5 text-sm"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <option value="hipaa">HIPAA</option>
+            <option value="operations">Operations</option>
+            <option value="clinical">Clinical</option>
+            <option value="hr">HR</option>
+            <option value="safety">Safety</option>
+            <option value="dmepos">DMEPOS</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div className="col-span-2">
+          <LabeledInput
+            label="Body URL (PDF link, GCS-stored doc, etc.)"
+            value={bodyUrl}
+            onChange={setBodyUrl}
+            placeholder="https://…"
+          />
+        </div>
+        <div className="col-span-2">
+          <Label>Summary</Label>
+          <textarea
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            rows={3}
+            maxLength={4000}
+            className="w-full rounded border px-2 py-1.5 text-sm"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+            placeholder="Plain-English summary staff see before attesting."
+          />
+        </div>
+        <label className="col-span-2 inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={activate}
+            onChange={(e) => setActivate(e.target.checked)}
+          />
+          Activate immediately (otherwise saved as draft)
+        </label>
+      </div>
+      <ModalFooter
+        onCancel={onClose}
+        onSave={() => create.mutate()}
+        saving={create.isPending}
+        canSave={canSave}
         error={error}
       />
     </ModalShell>

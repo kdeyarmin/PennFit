@@ -1131,6 +1131,49 @@ export interface Database {
         >;
         Relationships: [];
       };
+      accreditation_policies: {
+        Row: {
+          id: string;
+          policy_key: string;
+          version: string;
+          title: string;
+          summary: string | null;
+          body_url: string | null;
+          category: string;
+          active_at: string | null;
+          retired_at: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["accreditation_policies"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["accreditation_policies"]["Row"]
+        >;
+        Relationships: [];
+      };
+      admin_policy_attestations: {
+        Row: {
+          id: string;
+          staff_user_id: string;
+          policy_id: string;
+          attested_at: string;
+          signature_method: string;
+          acknowledged_text: string;
+          ip: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["admin_policy_attestations"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["admin_policy_attestations"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;
