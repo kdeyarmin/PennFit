@@ -26,6 +26,7 @@ import { z } from "zod";
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { maybeAutoAssignConversation } from "../../lib/routing/auto-assign";
 import { scoreCandidates } from "../../lib/routing/skill-score";
 import { logger } from "../../lib/logger";
 import {
@@ -231,6 +232,58 @@ router.get(
     });
 
     res.json({ requiredSkills, candidates });
+  },
+);
+
+// ────────────────────────────────────────────────────────────────
+// POST /admin/conversations/:id/auto-assign — pick the top-ranked
+// candidate from scoreCandidates() and stamp the conversation.
+// Refuses to overwrite an existing assignment (use a manual
+// re-assign for that). Returns a discriminated outcome so the SPA
+// can render the appropriate banner.
+// ────────────────────────────────────────────────────────────────
+router.post(
+  "/admin/conversations/:id/auto-assign",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const result = await maybeAutoAssignConversation(supabase, idCheck.data);
+
+    if (result.assigned) {
+      await logAudit({
+        action: "conversation.auto_assigned",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "conversations",
+        targetId: idCheck.data,
+        metadata: {
+          assignee_user_id: result.adminUserId,
+          matched_skill_count: result.matchedSkillCount,
+        },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      }).catch((err) => {
+        logger.warn({ err }, "conversation.auto_assigned audit failed");
+      });
+    }
+    // Translate the non-assigned outcomes to 409 so the SPA can
+    // branch on status. "conversation_not_found" stays a 404.
+    if (!result.assigned) {
+      if (result.reason === "conversation_not_found") {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+      res.status(409).json({
+        error: result.reason,
+      });
+      return;
+    }
+    res.json(result);
   },
 );
 

@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   PackageCheck,
   HeartHandshake,
+  HeartPulse,
   Star,
   HelpCircle,
   Boxes,
@@ -379,6 +380,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: ShieldCheck,
         matchPrefix: "/admin/compliance",
         hint: "Staff training records + patient grievances for DMEPOS surveyors",
+      },
+      {
+        href: "/admin/coaching",
+        label: "Adherence coaching",
+        icon: HeartPulse,
+        matchPrefix: "/admin/coaching",
+        hint: "Outreach plans for patients with slipping CPAP adherence",
       },
       {
         href: "/admin/security",

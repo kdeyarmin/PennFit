@@ -28,6 +28,7 @@ import {
   type GrievanceStatus,
 } from "../../lib/compliance/training-expiry";
 import { logger } from "../../lib/logger";
+import { buildMedWatchSummary } from "../../lib/medwatch/build-summary";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 type GrievanceUpdate =
@@ -346,6 +347,139 @@ router.patch(
       logger.warn({ err }, "compliance.grievance.update audit failed");
     });
     res.status(200).json({ id: params.data.id, changed: true });
+  },
+);
+
+// ────────────────────────────────────────────────────────────────
+// GET /admin/compliance/grievances/:id/medwatch-summary — render a
+// print-friendly MedWatch voluntary-report summary that the CSR
+// can copy-paste into the FDA online form. Only valid for
+// kind=adverse_event rows; refuses anything else.
+//
+// ?format=html (default) returns the print-friendly HTML.
+// ?format=json returns the structured field bag.
+// ────────────────────────────────────────────────────────────────
+router.get(
+  "/admin/compliance/grievances/:id/medwatch-summary",
+  requireAdmin,
+  async (req, res) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "grievance_not_found" });
+      return;
+    }
+    const format = req.query.format === "json" ? "json" : "html";
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: grievance, error: gErr } = await supabase
+      .schema("resupply")
+      .from("patient_grievances")
+      .select(
+        "id, patient_id, equipment_asset_id, kind, severity, summary, description, received_at, fda_report_reference",
+      )
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (gErr) throw gErr;
+    if (!grievance) {
+      res.status(404).json({ error: "grievance_not_found" });
+      return;
+    }
+    if (grievance.kind !== "adverse_event") {
+      res.status(409).json({
+        error: "not_adverse_event",
+        message:
+          "MedWatch summaries are only produced for kind=adverse_event rows.",
+      });
+      return;
+    }
+
+    const { data: patient, error: pErr } = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select(
+        "id, legal_first_name, legal_last_name, date_of_birth",
+      )
+      .eq("id", grievance.patient_id)
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw pErr;
+    if (!patient) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    let asset: {
+      manufacturer: string;
+      model: string;
+      serialNumber: string;
+      dispensedAt: string | null;
+    } | null = null;
+    if (grievance.equipment_asset_id) {
+      const { data: a } = await supabase
+        .schema("resupply")
+        .from("equipment_assets")
+        .select("manufacturer, model, serial_number, dispensed_at")
+        .eq("id", grievance.equipment_asset_id)
+        .limit(1)
+        .maybeSingle();
+      if (a) {
+        asset = {
+          manufacturer: a.manufacturer,
+          model: a.model,
+          serialNumber: a.serial_number,
+          dispensedAt: a.dispensed_at,
+        };
+      }
+    }
+
+    const summary = buildMedWatchSummary({
+      grievance: {
+        id: grievance.id,
+        summary: grievance.summary,
+        description: grievance.description,
+        severity: grievance.severity as "low" | "moderate" | "high",
+        receivedAt: grievance.received_at,
+        fdaReportReference: grievance.fda_report_reference,
+        kind: grievance.kind as
+          | "complaint"
+          | "grievance"
+          | "adverse_event",
+      },
+      patient: {
+        id: patient.id,
+        legalFirstName: patient.legal_first_name,
+        legalLastName: patient.legal_last_name,
+        dateOfBirth: patient.date_of_birth,
+        // patients schema has no sex column today — the MedWatch
+        // form accepts blank here; CSR fills it on the FDA side.
+        sex: null,
+      },
+      asset,
+      practiceName:
+        process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+    });
+
+    await logAudit({
+      action: "compliance.medwatch.summary_generated",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "patient_grievances",
+      targetId: grievance.id,
+      metadata: { patient_id: grievance.patient_id, format },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "compliance.medwatch.summary_generated audit failed",
+      );
+    });
+
+    if (format === "json") {
+      res.json({ fields: summary.fields });
+      return;
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(summary.html);
   },
 );
 
