@@ -990,6 +990,28 @@ export interface Database {
         >;
         Relationships: [];
       };
+      recall_notifications: {
+        Row: {
+          id: string;
+          recall_id: string;
+          asset_id: string;
+          patient_id: string;
+          status: "queued" | "sent" | "failed" | "bounced" | "skipped";
+          channel: "email" | "sms" | "letter" | null;
+          notified_at: string | null;
+          failed_at: string | null;
+          failed_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["recall_notifications"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["recall_notifications"]["Row"]
+        >;
+        Relationships: [];
+      };
       staff_training_records: {
         Row: {
           id: string;
@@ -1139,6 +1161,7 @@ export interface Database {
           verified_at: string | null;
           last_used_at: string | null;
           last_used_counter: number | null;
+          device_label: string | null;
           created_at: string;
           updated_at: string;
         };

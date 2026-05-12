@@ -68,19 +68,24 @@ router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
-  const { data, error } = await supabase
+  // Multi-device: pull EVERY row for this admin so the SPA can
+  // render the device list (one row per enrolled device, plus any
+  // in-progress unverified row).
+  const { data: rows, error } = await supabase
     .schema("resupply")
     .from("admin_mfa_secrets")
-    .select("verified_at, last_used_at, created_at")
+    .select(
+      "id, verified_at, last_used_at, created_at, device_label",
+    )
     .eq("staff_user_id", adminUserId)
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: true });
   if (error) throw error;
+  const allRows = rows ?? [];
+  const verifiedRows = allRows.filter((r) => r.verified_at);
+  const inProgress = allRows.find((r) => !r.verified_at) ?? null;
 
-  // Count of unspent recovery codes — drives the "you have N
-  // recovery codes left" hint in the security settings UI.
   let recoveryCodesRemaining = 0;
-  if (data?.verified_at) {
+  if (verifiedRows.length > 0) {
     const { count } = await supabase
       .schema("resupply")
       .from("admin_mfa_recovery_codes")
@@ -91,21 +96,47 @@ router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
   }
 
   const enforcementMode = getEnforcementMode();
-  const enrolled = !!data?.verified_at;
+  const enrolled = verifiedRows.length > 0;
+  // First-verified row drives the legacy "verifiedAt / createdAt"
+  // fields so existing SPA code keeps working without a refactor.
+  const primary = verifiedRows[0] ?? null;
+  // Most-recent last_used_at across devices.
+  const lastUsedAt =
+    verifiedRows
+      .map((r) => r.last_used_at)
+      .filter((v): v is string => v != null)
+      .sort()
+      .pop() ?? null;
 
   res.json({
     enrolled,
-    inProgressEnrollment: !!data && !data.verified_at,
-    verifiedAt: data?.verified_at ?? null,
-    lastUsedAt: data?.last_used_at ?? null,
-    createdAt: data?.created_at ?? null,
+    inProgressEnrollment: inProgress != null,
+    verifiedAt: primary?.verified_at ?? null,
+    lastUsedAt,
+    createdAt: primary?.created_at ?? null,
     recoveryCodesRemaining,
-    // Enforcement (Phase D). SPA reads `mustEnroll` to render a
-    // sticky banner / forced redirect on every admin nav.
     enforcementMode,
     mustEnroll: enforcementMode === "required" && !enrolled,
+    // Multi-device list. Each entry is one verified device the
+    // admin has enrolled — the SPA renders a per-row "Remove"
+    // button alongside the existing "Disable all" / "Regenerate
+    // codes" actions.
+    devices: verifiedRows.map((r) => ({
+      id: r.id,
+      label: r.device_label,
+      verifiedAt: r.verified_at,
+      lastUsedAt: r.last_used_at,
+      createdAt: r.created_at,
+    })),
   });
 });
+
+const beginBody = z
+  .object({
+    deviceLabel: z.string().trim().min(1).max(64).optional(),
+  })
+  .strict()
+  .optional();
 
 router.post(
   "/admin/mfa/enroll/begin",
@@ -117,56 +148,68 @@ router.post(
       res.status(500).json({ error: "admin_context_missing" });
       return;
     }
+    const parsedBody = beginBody.safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const deviceLabel = parsedBody.data?.deviceLabel ?? null;
 
     const supabase = getSupabaseServiceRoleClient();
-    // Refuse if already enrolled — caller must disable first. Keeps
-    // the lifecycle explicit: an admin who's lost their phone walks
-    // through disable (which requires a valid code from the OLD
-    // authenticator) before they can re-enroll. The recovery path
-    // is a separate Phase-B "reset by another admin" surface.
-    const { data: existing, error: existingErr } = await supabase
+    // Multi-device (migration 0091): admins can enroll multiple
+    // devices. We DO still consolidate any in-progress unverified
+    // row — if the admin clicked "begin" twice without finishing,
+    // the second click overwrites the abandoned row rather than
+    // accumulating draft rows.
+    const { data: existingInProgress, error: existingErr } = await supabase
       .schema("resupply")
       .from("admin_mfa_secrets")
-      .select("verified_at")
+      .select("id")
       .eq("staff_user_id", adminUserId)
+      .is("verified_at", null)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (existingErr) {
-      logger.error({ err: existingErr }, "auth.mfa.enroll_begin: enrollment check failed");
+      logger.error(
+        { err: existingErr },
+        "auth.mfa.enroll_begin: enrollment check failed",
+      );
       res.status(500).json({
         error: "enrollment_check_failed",
         message: "Failed to verify enrollment status — database error.",
       });
       return;
     }
-    if (existing?.verified_at) {
-      res.status(409).json({
-        error: "already_enrolled",
-        message:
-          "MFA is already enrolled for this account. Disable it first to enroll a new device.",
-      });
-      return;
-    }
 
-    // Mint a fresh secret. Overwrites any in-progress row so a
-    // reload of the enrollment UI gets a clean QR each time.
     const secretBase32 = generateBase32Secret();
     const nowIso = new Date().toISOString();
-    const { error: upsertErr } = await supabase
-      .schema("resupply")
-      .from("admin_mfa_secrets")
-      .upsert(
-        {
+    if (existingInProgress) {
+      const { error: updErr } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .update({
+          secret_base32: secretBase32,
+          device_label: deviceLabel,
+          updated_at: nowIso,
+        })
+        .eq("id", existingInProgress.id);
+      if (updErr) throw updErr;
+    } else {
+      const { error: insErr } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .insert({
           staff_user_id: adminUserId,
           secret_base32: secretBase32,
           verified_at: null,
           last_used_at: null,
           last_used_counter: null,
+          device_label: deviceLabel,
           updated_at: nowIso,
-        },
-        { onConflict: "staff_user_id" },
-      );
-    if (upsertErr) throw upsertErr;
+        });
+      if (insErr) throw insErr;
+    }
 
     const issuer = getIssuerLabel();
     const otpauthUri = buildOtpauthUri({
@@ -224,11 +267,15 @@ router.post(
     }
     const supabase = getSupabaseServiceRoleClient();
 
+    // Multi-device: the in-progress enrollment is the most recent
+    // unverified row (created or refreshed by /begin). Pick that.
     const { data: row, error } = await supabase
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("id, secret_base32, verified_at, last_used_counter")
       .eq("staff_user_id", adminUserId)
+      .is("verified_at", null)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -269,7 +316,18 @@ router.post(
       return;
     }
 
-    const isFirstVerify = !row.verified_at;
+    // Recovery codes are minted ONLY on the very first verified
+    // device. Subsequent devices (Phase 0091 multi-device) reuse
+    // the existing batch — codes are user-scoped, not device-
+    // scoped. Detect "is this the first verified row across all
+    // of the admin's enrollments?" by counting prior verified rows.
+    const { count: priorVerifiedCount } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .select("id", { count: "exact", head: true })
+      .eq("staff_user_id", adminUserId)
+      .not("verified_at", "is", null);
+    const isFirstVerify = (priorVerifiedCount ?? 0) === 0;
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
       .schema("resupply")
@@ -377,15 +435,18 @@ router.post("/admin/mfa/disable", requireAdmin, async (req, res) => {
     return;
   }
   const supabase = getSupabaseServiceRoleClient();
-  const { data: row, error } = await supabase
+  // Multi-device: pull ALL verified secrets and accept any code
+  // that matches. A user disabling MFA after losing one device
+  // shouldn't have to know WHICH device is still working — they
+  // just type a code.
+  const { data: rows, error } = await supabase
     .schema("resupply")
     .from("admin_mfa_secrets")
     .select("id, secret_base32, verified_at, last_used_counter")
     .eq("staff_user_id", adminUserId)
-    .limit(1)
-    .maybeSingle();
+    .not("verified_at", "is", null);
   if (error) throw error;
-  if (!row || !row.verified_at) {
+  if (!rows || rows.length === 0) {
     res.status(404).json({
       error: "not_enrolled",
       message: "MFA is not active on this account; nothing to disable.",
@@ -393,23 +454,30 @@ router.post("/admin/mfa/disable", requireAdmin, async (req, res) => {
     return;
   }
 
-  const result = verifyTotpCode(row.secret_base32, parsed.data.code, {
-    window: 1,
-    minCounter: row.last_used_counter ?? undefined,
+  const matched = rows.some((r) => {
+    const res = verifyTotpCode(r.secret_base32, parsed.data.code, {
+      window: 1,
+      minCounter: r.last_used_counter ?? undefined,
+    });
+    return res.ok;
   });
-  if (!result.ok) {
+  if (!matched) {
     res.status(400).json({
       error: "invalid_code",
       message: "Code didn't match — refusing to disable.",
     });
     return;
   }
+  // Synthetic "row" used by the downstream audit log so the
+  // existing single-row logging stays sensible. Disable wipes
+  // every device for the admin.
+  const row = { id: rows[0]!.id } as { id: string };
 
   const { error: delErr } = await supabase
     .schema("resupply")
     .from("admin_mfa_secrets")
     .delete()
-    .eq("id", row.id);
+    .eq("staff_user_id", adminUserId);
   if (delErr) throw delErr;
 
   // Best-effort: wipe outstanding recovery codes too. They're
@@ -443,6 +511,110 @@ router.post("/admin/mfa/disable", requireAdmin, async (req, res) => {
 
   res.json({ ok: true, enrolled: false });
 });
+
+// ────────────────────────────────────────────────────────────────
+// POST /admin/mfa/devices/:id/disable — remove a SINGLE enrolled
+// device. Requires a current TOTP code from ANY remaining device
+// (same protect-against-compromised-session posture as /disable).
+// Refuses to remove the last device — use /disable for that
+// (it also wipes the recovery codes batch atomically).
+// ────────────────────────────────────────────────────────────────
+const deviceIdParam = z.object({ id: z.string().uuid() });
+
+router.post(
+  "/admin/mfa/devices/:id/disable",
+  requireAdmin,
+  async (req, res) => {
+    const adminUserId = req.adminUserId;
+    const adminEmail = req.adminEmail;
+    if (!adminUserId || !adminEmail) {
+      res.status(500).json({ error: "admin_context_missing" });
+      return;
+    }
+    const params = deviceIdParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = verifyBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        message:
+          "A valid current TOTP code is required to remove a device.",
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: rows, error } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .select("id, secret_base32, verified_at, last_used_counter, device_label")
+      .eq("staff_user_id", adminUserId)
+      .not("verified_at", "is", null);
+    if (error) throw error;
+    const verifiedRows = rows ?? [];
+    if (verifiedRows.length === 0) {
+      res.status(404).json({
+        error: "not_enrolled",
+        message: "MFA is not active on this account.",
+      });
+      return;
+    }
+    const target = verifiedRows.find((r) => r.id === params.data.id);
+    if (!target) {
+      res.status(404).json({
+        error: "device_not_found",
+        message: "That device isn't on your account.",
+      });
+      return;
+    }
+    if (verifiedRows.length === 1) {
+      res.status(409).json({
+        error: "last_device",
+        message:
+          "Cannot remove your only enrolled device. Use Disable MFA to turn off two-factor entirely.",
+      });
+      return;
+    }
+    // TOTP gate — any remaining device's code is acceptable.
+    const matched = verifiedRows.some((r) => {
+      const result = verifyTotpCode(r.secret_base32, parsed.data.code, {
+        window: 1,
+        minCounter: r.last_used_counter ?? undefined,
+      });
+      return result.ok;
+    });
+    if (!matched) {
+      res.status(400).json({
+        error: "invalid_code",
+        message: "Code didn't match — refusing to remove.",
+      });
+      return;
+    }
+    const { error: delErr } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_secrets")
+      .delete()
+      .eq("id", target.id);
+    if (delErr) throw delErr;
+
+    await logAudit({
+      action: "auth.mfa.device_removed",
+      adminEmail,
+      adminUserId,
+      targetTable: "admin_mfa_secrets",
+      targetId: target.id,
+      metadata: { device_label: target.device_label ?? null },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "auth.mfa.device_removed audit failed");
+    });
+
+    res.json({ ok: true });
+  },
+);
 
 // ────────────────────────────────────────────────────────────────
 // POST /admin/mfa/recovery-codes/regenerate — mint a fresh batch

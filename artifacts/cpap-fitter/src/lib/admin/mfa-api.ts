@@ -1,5 +1,13 @@
 // Hand-rolled fetch wrapper for /admin/mfa/*.
 
+export interface MfaDevice {
+  id: string;
+  label: string | null;
+  verifiedAt: string;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
 export interface MfaStatus {
   enrolled: boolean;
   inProgressEnrollment: boolean;
@@ -15,6 +23,9 @@ export interface MfaStatus {
   /** True when enforcement is "required" AND the caller hasn't
    *  enrolled. SPA reads this to force-redirect to /admin/security. */
   mustEnroll: boolean;
+  /** Multi-device list (migration 0091). Each row is one enrolled
+   *  authenticator the admin has activated. */
+  devices: MfaDevice[];
 }
 
 export interface VerifyEnrollResponse {
@@ -56,10 +67,22 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const getMfaStatus = () => jsonFetch<MfaStatus>("/admin/mfa/status");
 
-export const beginEnrollMfa = () =>
+export const beginEnrollMfa = (deviceLabel?: string) =>
   jsonFetch<BeginEnrollResponse>("/admin/mfa/enroll/begin", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(deviceLabel ? { deviceLabel } : {}),
   });
+
+export const disableMfaDevice = (deviceId: string, code: string) =>
+  jsonFetch<{ ok: true }>(
+    `/admin/mfa/devices/${encodeURIComponent(deviceId)}/disable`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    },
+  );
 
 export const verifyEnrollMfa = (code: string) =>
   jsonFetch<VerifyEnrollResponse>("/admin/mfa/enroll/verify", {

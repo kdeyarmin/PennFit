@@ -24,10 +24,12 @@ import { Input } from "@/components/admin/Input";
 import {
   beginEnrollMfa,
   disableMfa,
+  disableMfaDevice,
   getMfaStatus,
   regenerateRecoveryCodes,
   verifyEnrollMfa,
   type BeginEnrollResponse,
+  type MfaDevice,
   type MfaStatus,
 } from "@/lib/admin/mfa-api";
 import {
@@ -201,6 +203,9 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
   const [regeneratedCodes, setRegeneratedCodes] = useState<string[] | null>(
     null,
   );
+  // Multi-device — when the admin wants to add another authenticator,
+  // we route into the same enrollment flow the UnenrolledPanel uses.
+  const [addingDevice, setAddingDevice] = useState(false);
   const disable = useMutation({
     mutationFn: () => disableMfa(code.trim()),
     onSuccess: () => {
@@ -233,6 +238,24 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
     );
   }
 
+  if (addingDevice) {
+    // Reuse the unenrolled flow — it talks to the same /enroll/begin
+    // and /enroll/verify endpoints, which after migration 0091 happily
+    // stack another verified row onto the admin's account.
+    return (
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setAddingDevice(false)}
+          className="text-xs text-muted-foreground hover:underline"
+        >
+          ← Back to enrolled devices
+        </button>
+        <UnenrolledPanel inProgress={data.inProgressEnrollment} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -257,6 +280,8 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           {data.recoveryCodesRemaining} of 10
         </dd>
       </dl>
+
+      <DeviceList devices={data.devices} code={code} />
 
       {data.recoveryCodesRemaining === 0 && (
         <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
@@ -338,6 +363,15 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
           </div>
         )}
       </div>
+
+      <div>
+        <Button
+          intent="ghost"
+          onClick={() => setAddingDevice(true)}
+        >
+          + Add another device
+        </Button>
+      </div>
     </div>
   );
 }
@@ -355,9 +389,11 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
   // we DON'T want to keep the plaintext in memory longer than we
   // have to. We don't persist it.
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [deviceLabel, setDeviceLabel] = useState("");
 
   const begin = useMutation({
-    mutationFn: beginEnrollMfa,
+    mutationFn: () =>
+      beginEnrollMfa(deviceLabel.trim() ? deviceLabel.trim() : undefined),
     onSuccess: (r) => {
       setEnrollState(r);
       setError(null);
@@ -413,6 +449,17 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
             {error}
           </div>
         )}
+        <div>
+          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+            Device label (optional)
+          </label>
+          <Input
+            value={deviceLabel}
+            onChange={(e) => setDeviceLabel(e.target.value.slice(0, 64))}
+            placeholder="iPhone, Yubikey, Desktop authy…"
+            style={{ width: "16rem" }}
+          />
+        </div>
         <Button
           onClick={() => begin.mutate()}
           isLoading={begin.isPending}
@@ -565,6 +612,78 @@ function RecoveryCodesPanel({
           Done
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Multi-device list — one row per enrolled authenticator. The
+ *  per-device "Remove" button requires the current TOTP code from
+ *  the global code field (same field used for Disable / Regenerate).
+ *  Refuses to remove the LAST device — the server enforces this too
+ *  and we mirror it in the UI for a friendlier error path.
+ */
+function DeviceList({
+  devices,
+  code,
+}: {
+  devices: MfaDevice[];
+  code: string;
+}) {
+  const qc = useQueryClient();
+  const remove = useMutation({
+    mutationFn: (id: string) => disableMfaDevice(id, code.trim()),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: statusKey }),
+  });
+  if (devices.length === 0) return null;
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1">
+        Enrolled devices ({devices.length})
+      </div>
+      <ul
+        className="rounded border divide-y text-xs"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+      >
+        {devices.map((d) => (
+          <li
+            key={d.id}
+            className="px-3 py-2 flex items-center justify-between gap-3"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <div className="min-w-0">
+              <div className="font-medium">{d.label ?? "Unnamed device"}</div>
+              <div className="text-[10px] text-muted-foreground">
+                Added {new Date(d.createdAt).toLocaleDateString()}
+                {d.lastUsedAt
+                  ? ` · last used ${new Date(d.lastUsedAt).toLocaleDateString()}`
+                  : " · never used"}
+              </div>
+            </div>
+            {devices.length > 1 && (
+              <Button
+                intent="ghost"
+                size="sm"
+                disabled={code.length !== 6 || remove.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Remove "${d.label ?? "this device"}"? Other devices and recovery codes stay active.`,
+                    )
+                  )
+                    remove.mutate(d.id);
+                }}
+              >
+                Remove
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {remove.error instanceof Error && (
+        <p className="text-[10px] text-rose-700 mt-1">
+          {remove.error.message}
+        </p>
+      )}
     </div>
   );
 }

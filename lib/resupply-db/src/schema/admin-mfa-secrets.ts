@@ -4,8 +4,8 @@ import {
   index,
   text,
   timestamp,
-  uniqueIndex,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 import { adminUsers } from "./admin-users";
@@ -94,6 +94,17 @@ export const adminMfaSecrets = resupplySchema.table(
      *  next verify refuses any counter ≤ this value. */
     lastUsedCounter: bigint("last_used_counter", { mode: "number" }),
 
+    /**
+     * Per-device label, supplied at enrollment time so an admin
+     * with multiple devices can tell their iPhone from their
+     * desktop authenticator from a Yubikey backup. Optional —
+     * defaults to "Device 1" / "Device 2" / … client-side when
+     * the user didn't bother to name it. (Migration 0091 widened
+     * the (staff_user_id) UNIQUE constraint to allow multiple
+     * rows; this column is how the SPA disambiguates the list.)
+     */
+    deviceLabel: varchar("device_label", { length: 64 }),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -103,10 +114,11 @@ export const adminMfaSecrets = resupplySchema.table(
       .$onUpdateFn(() => new Date()),
   },
   (t) => ({
-    // One MFA secret per admin — the UNIQUE constraint is what
-    // "Begin enroll" relies on for its overwrite-if-unverified
-    // upsert semantics.
-    staffUserUnique: uniqueIndex("admin_mfa_secrets_staff_user_unique").on(
+    // Multi-device (migration 0091): the (staff_user_id) UNIQUE
+    // constraint was dropped to let an admin enroll a phone +
+    // hardware key. We still want fast per-user lookups during
+    // sign-in verify, so the column is indexed (non-unique).
+    staffUserIdx: index("admin_mfa_secrets_staff_user_idx").on(
       t.staffUserId,
     ),
     verifiedAtIdx: index("admin_mfa_secrets_verified_at_idx").on(

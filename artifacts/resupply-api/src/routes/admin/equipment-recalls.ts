@@ -27,6 +27,7 @@ import {
   getSupabaseServiceRoleClient,
 } from "@workspace/resupply-db";
 
+import { runRecallBulkMatch } from "../../lib/equipment/recall-bulk-match";
 import { logger } from "../../lib/logger";
 import {
   recallMatchesAsset,
@@ -369,6 +370,110 @@ router.get(
         serialNumber: a.serial_number,
         status: a.status,
         dispensedAt: a.dispensed_at,
+      })),
+    });
+  },
+);
+
+// ────────────────────────────────────────────────────────────────
+// POST /admin/equipment-recalls/:id/match-assets — run the bulk
+// matcher: stamp every affected equipment_asset and upsert a
+// recall_notifications row in 'queued' state. Idempotent — re-
+// running returns alreadyQueuedCount rather than duplicating.
+// ────────────────────────────────────────────────────────────────
+router.post(
+  "/admin/equipment-recalls/:id/match-assets",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "recall_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    let result;
+    try {
+      result = await runRecallBulkMatch(supabase, idCheck.data);
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        /recall .* not found/.test(err.message)
+      ) {
+        res.status(404).json({ error: "recall_not_found" });
+        return;
+      }
+      throw err;
+    }
+
+    await logAudit({
+      action: "equipment_recall.match_assets",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "equipment_recalls",
+      targetId: idCheck.data,
+      metadata: {
+        matchedCount: result.matchedCount,
+        newlyQueuedCount: result.newlyQueuedCount,
+        alreadyQueuedCount: result.alreadyQueuedCount,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn({ err }, "equipment_recall.match_assets audit failed");
+    });
+
+    res.json(result);
+  },
+);
+
+// ────────────────────────────────────────────────────────────────
+// GET /admin/equipment-recalls/:id/notifications — list the
+// per-asset notification rows for a recall. Used by the SPA to
+// render the "X queued, Y sent, Z failed" view.
+// ────────────────────────────────────────────────────────────────
+router.get(
+  "/admin/equipment-recalls/:id/notifications",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "recall_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("recall_notifications")
+      .select(
+        "id, asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason, created_at",
+      )
+      .eq("recall_id", idCheck.data)
+      .order("created_at", { ascending: false })
+      .limit(2000);
+    if (error) throw error;
+
+    // Group counts by status so the SPA can render a summary row
+    // without doing the arithmetic itself.
+    const counts = (data ?? []).reduce(
+      (acc, r) => {
+        acc[r.status] = (acc[r.status] ?? 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    res.json({
+      counts,
+      notifications: (data ?? []).map((r) => ({
+        id: r.id,
+        assetId: r.asset_id,
+        patientId: r.patient_id,
+        status: r.status,
+        channel: r.channel,
+        notifiedAt: r.notified_at,
+        failedAt: r.failed_at,
+        failedReason: r.failed_reason,
+        createdAt: r.created_at,
       })),
     });
   },

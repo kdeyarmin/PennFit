@@ -130,22 +130,64 @@ function makeMfaProbe(): MfaProbe {
       if (adminErr) throw adminErr;
       if (!admin) return null;
 
+      // After the multi-device migration, this is "any active
+      // secret" — used by sign-in to detect "does this user have
+      // MFA at all?" The verify path uses findAllActiveSecrets to
+      // try each device.
       const { data, error } = await supabase
         .schema("resupply")
         .from("admin_mfa_secrets")
         .select("secret_base32, verified_at, last_used_counter")
         .eq("staff_user_id", admin.id)
+        .not("verified_at", "is", null)
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      if (!data || !data.verified_at) return null;
+      if (!data) return null;
       return {
         secretBase32: data.secret_base32,
         lastUsedCounter: data.last_used_counter,
       };
     },
-    async recordVerify(userId, counter) {
+    async findAllActiveSecrets(userId) {
       const supabase = getSupabaseServiceRoleClient();
+      const { data: admin } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!admin) return [];
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .select("id, secret_base32, last_used_counter")
+        .eq("staff_user_id", admin.id)
+        .not("verified_at", "is", null)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((r) => ({
+        id: r.id,
+        secretBase32: r.secret_base32,
+        lastUsedCounter: r.last_used_counter,
+      }));
+    },
+    async recordVerify(userId, counter, secretId) {
+      const supabase = getSupabaseServiceRoleClient();
+      // Multi-device: when the verify path tells us WHICH secret
+      // matched (secretId), scope the counter bump to that row.
+      // Falls back to user-scoped update for legacy callers that
+      // don't pass secretId.
+      const nowIso = new Date().toISOString();
+      if (secretId) {
+        await supabase
+          .schema("resupply")
+          .from("admin_mfa_secrets")
+          .update({ last_used_counter: counter, last_used_at: nowIso })
+          .eq("id", secretId);
+        return;
+      }
       const { data: admin } = await supabase
         .schema("resupply")
         .from("admin_users")
@@ -157,10 +199,7 @@ function makeMfaProbe(): MfaProbe {
       await supabase
         .schema("resupply")
         .from("admin_mfa_secrets")
-        .update({
-          last_used_counter: counter,
-          last_used_at: new Date().toISOString(),
-        })
+        .update({ last_used_counter: counter, last_used_at: nowIso })
         .eq("staff_user_id", admin.id);
     },
     async findRecoveryCodeMatch(userId, codeHash) {

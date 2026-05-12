@@ -577,6 +577,63 @@ export const logMaintenanceTask = (taskKey: string) =>
   );
 
 // ---------------------------------------------------------------------------
+// Substitutions — patient-facing list of recent resupplies where the
+// shipped SKU differed from the prescription's SKU (because the
+// primary was backordered when the episode confirmed).
+// ---------------------------------------------------------------------------
+
+export interface SubstitutionRow {
+  id: string;
+  shippedSku: string;
+  requestedSku: string;
+  status: string;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+export interface SubstitutionsResponse {
+  patientLinked: boolean;
+  substitutions: SubstitutionRow[];
+}
+
+export const fetchSubstitutions = () =>
+  meFetch<SubstitutionsResponse>("/shop/me/substitutions");
+
+// ---------------------------------------------------------------------------
+// Education feed — onboarding-stage-personalized articles.
+// ---------------------------------------------------------------------------
+
+export type EducationStage =
+  | "new"
+  | "habituating"
+  | "steady"
+  | "experienced";
+
+export type EducationCategory =
+  | "comfort"
+  | "troubleshooting"
+  | "maintenance"
+  | "lifestyle";
+
+export interface EducationArticle {
+  slug: string;
+  title: string;
+  summary: string;
+  category: EducationCategory;
+}
+
+export interface EducationFeed {
+  patientLinked: boolean;
+  stage: EducationStage;
+  daysOnTherapy: number;
+  articles: EducationArticle[];
+}
+
+export const fetchEducationFeed = () =>
+  meFetch<EducationFeed>("/shop/me/education-feed");
+
+// ---------------------------------------------------------------------------
 // My returns — patient-facing list of return requests this customer
 // has opened. Mirrors GET /shop/me/returns; see the route preamble for
 // status/reason field semantics.

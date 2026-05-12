@@ -266,17 +266,38 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       }
     } else {
       mfaPathLabel = "totp";
-      const result = verifyTotpCode(secret.secretBase32, parsed.data.code!, {
-        window: 1,
-        minCounter: secret.lastUsedCounter ?? undefined,
-      });
-      if (!result.ok || result.counter == null) {
+      // Multi-device path: try each enrolled secret. We accept the
+      // FIRST that matches and burn its counter. If the probe
+      // doesn't implement findAllActiveSecrets we fall back to the
+      // single secret returned by findActiveSecret (backwards
+      // compat for artifacts that haven't shipped multi-device).
+      const candidates = deps.mfa.findAllActiveSecrets
+        ? await deps.mfa.findAllActiveSecrets(user.id)
+        : [{ id: "", ...secret }];
+
+      let matched: { counter: number; secretId: string } | null = null;
+      for (const cand of candidates) {
+        const result = verifyTotpCode(
+          cand.secretBase32,
+          parsed.data.code!,
+          {
+            window: 1,
+            minCounter: cand.lastUsedCounter ?? undefined,
+          },
+        );
+        if (result.ok && result.counter != null) {
+          matched = { counter: result.counter, secretId: cand.id };
+          break;
+        }
+      }
+
+      if (!matched) {
         void deps.audit({
           action: "auth.mfa_verify_failed",
           adminEmail: user.emailLower,
           adminUserId: user.id,
           ip: req.ip ?? null,
-          metadata: { reason: "wrong_code" },
+          metadata: { reason: "wrong_code", deviceCount: candidates.length },
         });
         authError(
           res,
@@ -286,9 +307,14 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         );
         return;
       }
-      // Record the verify (best-effort — see MfaProbe contract).
+      // Record the verify on the specific device that matched
+      // (best-effort — see MfaProbe contract).
       try {
-        await deps.mfa.recordVerify(user.id, result.counter);
+        await deps.mfa.recordVerify(
+          user.id,
+          matched.counter,
+          matched.secretId || undefined,
+        );
       } catch {
         // Swallowed — the verify succeeded; missing the counter
         // bump only means the next verify might accept the same

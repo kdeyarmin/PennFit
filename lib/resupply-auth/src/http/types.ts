@@ -172,15 +172,40 @@ export interface MfaProbe {
    * Return an active TOTP secret for the user, or null when the
    * user has NO MFA enrolled. "Active" means
    * admin_mfa_secrets.verified_at IS NOT NULL.
+   *
+   * For multi-device support, this returns ANY active secret —
+   * the caller uses it to detect "does the user have MFA at all?"
+   * The verify path uses `findAllActiveSecrets` instead to try
+   * each enrolled device.
    */
   findActiveSecret(userId: string): Promise<MfaProbeSecret | null>;
+  /**
+   * Return every active TOTP secret for the user, ordered by
+   * created_at ascending (oldest first). Used by the sign-in
+   * verify-mfa path to try each enrolled device.
+   *
+   * Optional for backwards-compat: artifacts that haven't
+   * shipped multi-device yet can leave this unimplemented, and
+   * the verify path falls back to the single-secret findActiveSecret.
+   */
+  findAllActiveSecrets?(
+    userId: string,
+  ): Promise<Array<MfaProbeSecret & { id: string }>>;
   /**
    * Bump last_used_counter + last_used_at after a successful
    * verify. Implementations should be best-effort — a write
    * failure here MUST NOT prevent the user from signing in (the
    * verify already passed), but should be logged.
+   *
+   * `secretId` is the specific admin_mfa_secrets row that matched.
+   * Optional for backwards-compat with single-device implementations
+   * (the user-scoped update still works for them).
    */
-  recordVerify(userId: string, counter: number): Promise<void>;
+  recordVerify(
+    userId: string,
+    counter: number,
+    secretId?: string,
+  ): Promise<void>;
   /**
    * Recovery-code branch — look up a SPENDABLE (used_at IS NULL)
    * recovery code by its SHA-256 hash, restricted to the given

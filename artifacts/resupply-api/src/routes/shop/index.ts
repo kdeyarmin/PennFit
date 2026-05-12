@@ -33,6 +33,8 @@ import mePushSubscriptionsRouter from "./me-push-subscriptions";
 import meInsightsRouter from "./me-insights";
 import meTherapySummaryRouter from "./me-therapy-summary";
 import meMaintenanceRouter from "./me-maintenance";
+import meSubstitutionsRouter from "./me-substitutions";
+import meEducationFeedRouter from "./me-education-feed";
 import meDocumentsRouter from "./me-documents";
 
 const router: IRouter = Router();
@@ -71,6 +73,14 @@ router.use(meTherapySummaryRouter);
 // catalog lives in code (lib/patient-maintenance/catalog.ts); per-
 // patient completion log lives in resupply.patient_maintenance_log.
 router.use(meMaintenanceRouter);
+// /shop/me/substitutions — patient-facing notice of recent
+// resupply substitutions (we shipped X because Y was backordered).
+// Reads fulfillments.substituted_from_sku for the last 180 days.
+router.use(meSubstitutionsRouter);
+// /shop/me/education-feed — onboarding-stage-personalized
+// education feed. Stage = days since first therapy night (or
+// patient.created_at when no nights yet).
+router.use(meEducationFeedRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);
