@@ -254,4 +254,149 @@ router.get(
   },
 );
 
+// ── Recurring (weekly) closures ──────────────────────────────────
+
+const TIME_HHMMSS = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/;
+
+const recurringCreateBody = z
+  .object({
+    label: z.string().trim().min(1).max(200),
+    dayOfWeek: z.number().int().min(0).max(6),
+    startTimeUtc: z.string().regex(TIME_HHMMSS),
+    endTimeUtc: z.string().regex(TIME_HHMMSS),
+    autoReplyMessage: z.string().trim().min(1).max(320),
+  })
+  .strict()
+  .refine((b) => b.endTimeUtc > b.startTimeUtc, {
+    message: "endTimeUtc must be later than startTimeUtc",
+  });
+
+router.get(
+  "/admin/office-closures/recurring",
+  requireAdmin,
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("office_recurring_closures")
+      .select(
+        "id, label, day_of_week, start_time_utc, end_time_utc, auto_reply_message, active, created_by_user_id, created_at, updated_at",
+      )
+      .order("day_of_week", { ascending: true })
+      .limit(200);
+    if (error) throw error;
+    res.json({
+      rules: (data ?? []).map((r) => ({
+        id: r.id,
+        label: r.label,
+        dayOfWeek: r.day_of_week,
+        startTimeUtc: r.start_time_utc,
+        endTimeUtc: r.end_time_utc,
+        autoReplyMessage: r.auto_reply_message,
+        active: r.active === 1,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      })),
+    });
+  },
+);
+
+router.post(
+  "/admin/office-closures/recurring",
+  requireAdmin,
+  async (req, res) => {
+    const parsed = recurringCreateBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "invalid_body",
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: row, error } = await supabase
+      .schema("resupply")
+      .from("office_recurring_closures")
+      .insert({
+        label: parsed.data.label,
+        day_of_week: parsed.data.dayOfWeek,
+        start_time_utc: parsed.data.startTimeUtc,
+        end_time_utc: parsed.data.endTimeUtc,
+        auto_reply_message: parsed.data.autoReplyMessage,
+        created_by_user_id: req.adminUserId ?? null,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    await logAudit({
+      action: "office_closure.recurring.created",
+      adminEmail: req.adminEmail ?? null,
+      adminUserId: req.adminUserId ?? null,
+      targetTable: "office_recurring_closures",
+      targetId: row.id,
+      metadata: {
+        day_of_week: parsed.data.dayOfWeek,
+        start_time_utc: parsed.data.startTimeUtc,
+        end_time_utc: parsed.data.endTimeUtc,
+      },
+      ip: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+    }).catch((err) => {
+      logger.warn(
+        { err },
+        "office_closure.recurring.created audit failed",
+      );
+    });
+    res.status(201).json({ id: row.id });
+  },
+);
+
+router.patch(
+  "/admin/office-closures/recurring/:id",
+  requireAdmin,
+  async (req, res) => {
+    const params = idParam.safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const parsed = z
+      .object({
+        active: z.boolean().optional(),
+        autoReplyMessage: z
+          .string()
+          .trim()
+          .min(1)
+          .max(320)
+          .optional(),
+      })
+      .strict()
+      .safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const update: {
+      active?: number;
+      auto_reply_message?: string;
+      updated_at: string;
+    } = { updated_at: new Date().toISOString() };
+    if (parsed.data.active != null)
+      update.active = parsed.data.active ? 1 : 0;
+    if (parsed.data.autoReplyMessage != null)
+      update.auto_reply_message = parsed.data.autoReplyMessage;
+    const { error } = await supabase
+      .schema("resupply")
+      .from("office_recurring_closures")
+      .update(update)
+      .eq("id", params.data.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  },
+);
+
 export default router;

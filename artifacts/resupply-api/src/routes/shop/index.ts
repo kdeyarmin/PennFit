@@ -35,6 +35,8 @@ import meTherapySummaryRouter from "./me-therapy-summary";
 import meMaintenanceRouter from "./me-maintenance";
 import meSubstitutionsRouter from "./me-substitutions";
 import meEducationFeedRouter from "./me-education-feed";
+import meQuarterlySummaryRouter from "./me-quarterly-summary";
+import meAppointmentRequestRouter from "./me-appointment-request";
 import meDocumentsRouter from "./me-documents";
 
 const router: IRouter = Router();
@@ -81,6 +83,13 @@ router.use(meSubstitutionsRouter);
 // education feed. Stage = days since first therapy night (or
 // patient.created_at when no nights yet).
 router.use(meEducationFeedRouter);
+// /shop/me/quarterly-summary — print-friendly 90-day therapy
+// rollup the patient can share with their sleep MD.
+router.use(meQuarterlySummaryRouter);
+// /shop/me/appointment-request — patient-initiated request for a
+// fitting / telehealth / general appointment. Writes to the
+// appointment_requests CSR queue.
+router.use(meAppointmentRequestRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);

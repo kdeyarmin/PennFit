@@ -378,4 +378,71 @@ router.patch("/admin/inbound-faxes/:id", requireAdmin, async (req, res) => {
   res.status(200).json({ id: params.data.id, changed: true });
 });
 
+// GET /admin/inbound-faxes/:id/suggested-patients — saves CSRs a
+// search step by surfacing patient candidates that share the fax
+// sender's phone number (or its last 7 digits for fuzzy matches
+// when the country code is rewritten).
+router.get(
+  "/admin/inbound-faxes/:id/suggested-patients",
+  requireAdmin,
+  async (req, res) => {
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(req.params);
+    if (!params.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: fax } = await supabase
+      .schema("resupply")
+      .from("inbound_faxes")
+      .select("id, from_e164")
+      .eq("id", params.data.id)
+      .limit(1)
+      .maybeSingle();
+    if (!fax) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (!fax.from_e164) {
+      res.json({ candidates: [] });
+      return;
+    }
+    // First try exact-match, then fall back to last-7-digit
+    // contains. Capping at 10 keeps the response small.
+    const exact = await supabase
+      .schema("resupply")
+      .from("patients")
+      .select("id, legal_first_name, legal_last_name, email, phone_e164")
+      .eq("phone_e164", fax.from_e164)
+      .limit(10);
+    const candidates = (exact.data ?? []).slice();
+    if (candidates.length === 0) {
+      const tail = fax.from_e164.slice(-7);
+      if (tail.length === 7) {
+        const fuzzy = await supabase
+          .schema("resupply")
+          .from("patients")
+          .select(
+            "id, legal_first_name, legal_last_name, email, phone_e164",
+          )
+          .ilike("phone_e164", `%${tail}%`)
+          .limit(10);
+        candidates.push(...(fuzzy.data ?? []));
+      }
+    }
+    res.json({
+      faxFromE164: fax.from_e164,
+      candidates: candidates.map((p) => ({
+        id: p.id,
+        legalFirstName: p.legal_first_name,
+        legalLastName: p.legal_last_name,
+        email: p.email,
+        phoneE164: p.phone_e164,
+      })),
+    });
+  },
+);
+
 export default router;

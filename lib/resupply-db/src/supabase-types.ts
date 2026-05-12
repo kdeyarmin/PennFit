@@ -1320,6 +1320,73 @@ export interface Database {
         >;
         Relationships: [];
       };
+      csr_shifts: {
+        Row: {
+          id: string;
+          staff_user_id: string;
+          starts_at: string;
+          ends_at: string;
+          status: "scheduled" | "called_off" | "actual";
+          notes: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["csr_shifts"]["Row"]>;
+        Relationships: [];
+      };
+      appointment_requests: {
+        Row: {
+          id: string;
+          requester_email: string;
+          requester_name: string | null;
+          requester_phone: string | null;
+          topic: string;
+          preferred_window: string | null;
+          notes: string | null;
+          status:
+            | "new"
+            | "contacted"
+            | "scheduled"
+            | "declined"
+            | "cancelled";
+          attached_patient_id: string | null;
+          assigned_admin_user_id: string | null;
+          triaged_at: string | null;
+          scheduled_for: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["appointment_requests"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["appointment_requests"]["Row"]
+        >;
+        Relationships: [];
+      };
+      office_recurring_closures: {
+        Row: {
+          id: string;
+          label: string;
+          day_of_week: number;
+          start_time_utc: string;
+          end_time_utc: string;
+          auto_reply_message: string;
+          active: number;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["office_recurring_closures"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["office_recurring_closures"]["Row"]
+        >;
+        Relationships: [];
+      };
       patient_coaching_plans: {
         Row: {
           id: string;

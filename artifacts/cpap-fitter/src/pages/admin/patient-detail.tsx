@@ -63,6 +63,11 @@ import {
   type PatientOnboardingJourney,
 } from "@/lib/admin/patient-onboarding-api";
 import {
+  fetchPatientAddressHistory,
+  fetchPatientTimeline,
+  postPatientAddressChange,
+} from "@/lib/admin/patient-history-api";
+import {
   prescriptionAttachmentDownloadUrl,
   removePrescriptionAttachment,
   uploadPrescriptionAttachment,
@@ -102,6 +107,8 @@ import {
 
 type Tab =
   | "timeline"
+  | "activity"
+  | "address"
   | "episodes"
   | "conversations"
   | "fulfillments"
@@ -274,6 +281,18 @@ export function PatientDetailPage({ id }: { id: string }) {
           Timeline
         </TabButton>
         <TabButton
+          active={tab === "activity"}
+          onClick={() => setTab("activity")}
+        >
+          Activity
+        </TabButton>
+        <TabButton
+          active={tab === "address"}
+          onClick={() => setTab("address")}
+        >
+          Address
+        </TabButton>
+        <TabButton
           active={tab === "episodes"}
           onClick={() => setTab("episodes")}
         >
@@ -371,6 +390,8 @@ export function PatientDetailPage({ id }: { id: string }) {
             }
           />
         )}
+        {tab === "activity" && <ActivityTab patientId={id} />}
+        {tab === "address" && <AddressHistoryTab patientId={id} />}
         {tab === "episodes" && <EpisodesTab episodes={data.episodes} />}
         {tab === "conversations" && (
           <ConversationsTab
@@ -4211,6 +4232,206 @@ function OnboardingAttemptsView({ patientId }: { patientId: string }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// ── Activity tab — broader timeline (coaching plans, grievances,
+// recall notifications, address changes) from /admin/patients/:id/timeline
+
+function ActivityTab({ patientId }: { patientId: string }) {
+  const { data, isPending, isError, error } = useQuery({
+    queryKey: ["admin", "patients", patientId, "activity"] as const,
+    queryFn: () => fetchPatientTimeline(patientId),
+  });
+  if (isPending) return <Spinner label="Loading activity…" />;
+  if (isError) {
+    return (
+      <p className="text-sm" style={{ color: "#b91c1c" }}>
+        {error instanceof Error ? error.message : "Failed to load."}
+      </p>
+    );
+  }
+  if (data.events.length === 0) {
+    return (
+      <EmptyState
+        title="No activity yet."
+        hint="Episodes, conversations, grievances, recalls, and coaching plans all show here as they happen."
+      />
+    );
+  }
+  return (
+    <ol className="space-y-2">
+      {data.events.map((e) => (
+        <li
+          key={`${e.kind}-${e.refId}-${e.at}`}
+          className="rounded border p-3 flex items-baseline justify-between gap-3"
+          style={{ borderColor: "hsl(var(--line-2))" }}
+        >
+          <div className="min-w-0">
+            <div className="text-sm font-medium">{e.title}</div>
+            <div className="text-xs text-muted-foreground">{e.detail}</div>
+          </div>
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+            {formatDateTime(e.at)}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ── Address history tab ──────────────────────────────────────────
+
+function AddressHistoryTab({ patientId }: { patientId: string }) {
+  const qc = useQueryClient();
+  const queryKey = ["admin", "patients", patientId, "address-history"] as const;
+  const { data, isPending, isError, error } = useQuery({
+    queryKey,
+    queryFn: () => fetchPatientAddressHistory(patientId),
+  });
+  const [showForm, setShowForm] = useState(false);
+
+  if (isPending) return <Spinner label="Loading address history…" />;
+  if (isError) {
+    return (
+      <p className="text-sm" style={{ color: "#b91c1c" }}>
+        {error instanceof Error ? error.message : "Failed to load."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold">Address changes</h3>
+        <Button
+          intent="ghost"
+          size="sm"
+          onClick={() => setShowForm((v) => !v)}
+        >
+          {showForm ? "Cancel" : "Record change"}
+        </Button>
+      </div>
+      {showForm && (
+        <AddressHistoryForm
+          patientId={patientId}
+          onSaved={() => {
+            setShowForm(false);
+            void qc.invalidateQueries({ queryKey });
+          }}
+        />
+      )}
+      {data.history.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No address changes on file.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {data.history.map((h) => (
+            <li
+              key={h.id}
+              className="rounded border p-3 text-sm"
+              style={{ borderColor: "hsl(var(--line-2))" }}
+            >
+              <div>
+                {[h.line1, h.line2, h.city, h.state, h.postalCode, h.country]
+                  .filter(Boolean)
+                  .join(" · ") || "(cleared)"}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                {h.reason ?? "—"} · {formatDateTime(h.createdAt)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AddressHistoryForm({
+  patientId,
+  onSaved,
+}: {
+  patientId: string;
+  onSaved: () => void;
+}) {
+  const [line1, setLine1] = useState("");
+  const [line2, setLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("US");
+  const [reason, setReason] = useState("");
+  const save = useMutation({
+    mutationFn: () =>
+      postPatientAddressChange(patientId, {
+        line1: line1 || null,
+        line2: line2 || null,
+        city: city || null,
+        state: state || null,
+        postalCode: postalCode || null,
+        country: country || null,
+        reason: reason.trim(),
+      }),
+    onSuccess: onSaved,
+  });
+  return (
+    <div
+      className="rounded border p-3 space-y-2"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="grid sm:grid-cols-2 gap-2">
+        <Input
+          placeholder="Line 1"
+          value={line1}
+          onChange={(e) => setLine1(e.target.value)}
+        />
+        <Input
+          placeholder="Line 2"
+          value={line2}
+          onChange={(e) => setLine2(e.target.value)}
+        />
+        <Input
+          placeholder="City"
+          value={city}
+          onChange={(e) => setCity(e.target.value)}
+        />
+        <Input
+          placeholder="State"
+          value={state}
+          onChange={(e) => setState(e.target.value)}
+        />
+        <Input
+          placeholder="Postal code"
+          value={postalCode}
+          onChange={(e) => setPostalCode(e.target.value)}
+        />
+        <Input
+          placeholder="Country (2-letter)"
+          value={country}
+          onChange={(e) => setCountry(e.target.value.toUpperCase())}
+          maxLength={2}
+        />
+      </div>
+      <Input
+        placeholder="Reason (required)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      {save.error instanceof Error && (
+        <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
+          {save.error.message}
+        </div>
+      )}
+      <Button
+        disabled={!reason.trim() || save.isPending}
+        isLoading={save.isPending}
+        onClick={() => save.mutate()}
+      >
+        Save
+      </Button>
     </div>
   );
 }

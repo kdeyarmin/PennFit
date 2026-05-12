@@ -29,9 +29,11 @@ import { Button } from "@/components/admin/Button";
 import { Input } from "@/components/admin/Input";
 import {
   createProvider,
+  listProviderCaseload,
   listProviders,
   lookupNppes,
   type NppesProviderProjection,
+  type ProviderCaseloadEntry,
   type ProviderListItem,
   type ProviderSource,
 } from "@/lib/admin/providers-api";
@@ -119,6 +121,144 @@ const SOURCE_COLOR: Record<ProviderSource, string> = {
 };
 
 function ProvidersTable({ rows }: { rows: ProviderListItem[] }) {
+  const [caseloadFor, setCaseloadFor] = useState<ProviderListItem | null>(
+    null,
+  );
+  return (
+    <>
+      <table className="w-full text-sm">
+        <thead>
+          <tr
+            className="text-left border-b"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <th className="py-2 font-semibold">NPI</th>
+            <th className="py-2 font-semibold">Name</th>
+            <th className="py-2 font-semibold">Taxonomy</th>
+            <th className="py-2 font-semibold">Fax</th>
+            <th className="py-2 font-semibold">Source</th>
+            <th className="py-2 font-semibold" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr
+              key={r.id}
+              className="border-b"
+              style={{ borderColor: "hsl(var(--line-2))" }}
+            >
+              <td className="py-2 font-mono text-xs">{r.npi}</td>
+              <td className="py-2">
+                <div>{r.legalName}</div>
+                {r.practiceName && (
+                  <div
+                    className="text-xs"
+                    style={{ color: "hsl(var(--ink-3))" }}
+                  >
+                    {r.practiceName}
+                  </div>
+                )}
+              </td>
+              <td
+                className="py-2 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                {r.taxonomyCode ?? "—"}
+              </td>
+              <td className="py-2 font-mono text-xs">{r.faxE164 ?? "—"}</td>
+              <td className="py-2">
+                <span
+                  className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${SOURCE_COLOR[r.source]}`}
+                >
+                  {SOURCE_LABEL[r.source]}
+                </span>
+              </td>
+              <td className="py-2 text-right">
+                <Button
+                  intent="ghost"
+                  onClick={() => setCaseloadFor(r)}
+                >
+                  Caseload
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {caseloadFor && (
+        <CaseloadModal
+          provider={caseloadFor}
+          onClose={() => setCaseloadFor(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function CaseloadModal({
+  provider,
+  onClose,
+}: {
+  provider: ProviderListItem;
+  onClose: () => void;
+}) {
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "providers", provider.id, "caseload"] as const,
+    queryFn: () => listProviderCaseload(provider.id),
+  });
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-3xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
+        style={{ backgroundColor: "#ffffff" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 space-y-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">
+                Caseload — {provider.legalName}
+              </h2>
+              <p
+                className="text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                Patients with a prescription written by NPI{" "}
+                <span className="font-mono">{provider.npi}</span>. Up to 200,
+                most recent first.
+              </p>
+            </div>
+            <Button intent="ghost" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+          {isPending ? (
+            <Spinner />
+          ) : isError ? (
+            <ErrorPanel error={error} onRetry={() => void refetch()} />
+          ) : data.patients.length === 0 ? (
+            <p
+              className="text-sm py-3"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              No patients currently on this provider&apos;s caseload.
+            </p>
+          ) : (
+            <CaseloadTable rows={data.patients} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CaseloadTable({ rows }: { rows: ProviderCaseloadEntry[] }) {
   return (
     <table className="w-full text-sm">
       <thead>
@@ -126,45 +266,52 @@ function ProvidersTable({ rows }: { rows: ProviderListItem[] }) {
           className="text-left border-b"
           style={{ borderColor: "hsl(var(--line-1))" }}
         >
-          <th className="py-2 font-semibold">NPI</th>
-          <th className="py-2 font-semibold">Name</th>
-          <th className="py-2 font-semibold">Taxonomy</th>
-          <th className="py-2 font-semibold">Fax</th>
-          <th className="py-2 font-semibold">Source</th>
+          <th className="py-2 font-semibold">Patient</th>
+          <th className="py-2 font-semibold">Email</th>
+          <th className="py-2 font-semibold">Phone</th>
+          <th className="py-2 font-semibold">Rx status</th>
+          <th className="py-2 font-semibold">Valid until</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr
-            key={r.id}
+            key={r.prescriptionId}
             className="border-b"
             style={{ borderColor: "hsl(var(--line-2))" }}
           >
-            <td className="py-2 font-mono text-xs">{r.npi}</td>
             <td className="py-2">
-              <div>{r.legalName}</div>
-              {r.practiceName && (
-                <div
-                  className="text-xs"
-                  style={{ color: "hsl(var(--ink-3))" }}
+              <a
+                className="underline"
+                href={`/admin/patients/${r.patientId}`}
+                style={{ color: "hsl(var(--penn-blue))" }}
+              >
+                {[r.legalFirstName, r.legalLastName]
+                  .filter(Boolean)
+                  .join(" ") || r.patientId.slice(0, 8)}
+              </a>
+              {r.patientStatus && r.patientStatus !== "active" && (
+                <span
+                  className="ml-2 inline-block px-1 py-0.5 rounded text-[10px] uppercase"
+                  style={{ backgroundColor: "hsl(var(--line-2))" }}
                 >
-                  {r.practiceName}
-                </div>
+                  {r.patientStatus}
+                </span>
               )}
             </td>
             <td
               className="py-2 text-xs"
               style={{ color: "hsl(var(--ink-3))" }}
             >
-              {r.taxonomyCode ?? "—"}
+              {r.email ?? "—"}
             </td>
-            <td className="py-2 font-mono text-xs">{r.faxE164 ?? "—"}</td>
-            <td className="py-2">
-              <span
-                className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${SOURCE_COLOR[r.source]}`}
-              >
-                {SOURCE_LABEL[r.source]}
-              </span>
+            <td className="py-2 font-mono text-xs">{r.phoneE164 ?? "—"}</td>
+            <td className="py-2 text-xs">{r.prescriptionStatus ?? "—"}</td>
+            <td
+              className="py-2 text-xs"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              {r.validUntil ?? "open-ended"}
             </td>
           </tr>
         ))}

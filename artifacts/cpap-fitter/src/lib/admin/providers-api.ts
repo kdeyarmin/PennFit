@@ -102,3 +102,24 @@ export async function createProvider(
     body: JSON.stringify(body),
   });
 }
+
+export interface ProviderCaseloadEntry {
+  patientId: string;
+  legalFirstName: string | null;
+  legalLastName: string | null;
+  email: string | null;
+  phoneE164: string | null;
+  patientStatus: string | null;
+  prescriptionId: string;
+  prescriptionStatus: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
+}
+
+export async function listProviderCaseload(
+  providerId: string,
+): Promise<{ patients: ProviderCaseloadEntry[] }> {
+  return jsonFetch(
+    `/admin/providers/${encodeURIComponent(providerId)}/patients`,
+  );
+}

@@ -245,6 +245,76 @@ router.post("/admin/providers", requireAdmin, async (req, res) => {
   res.status(201).json({ id: row.id, created: true });
 });
 
+// GET /admin/providers/:id/patients — referral-attribution view:
+// every patient who currently has an active prescription written by
+// this provider. Useful when a CSR opens a provider record and needs
+// to see "who's on Dr. Smith's caseload" or before a bulk fax-to-MD
+// outreach. Limited to 200 most-recently-prescribed-for patients to
+// keep the payload bounded; CSRs needing more should use the search
+// bar on /admin/patients with the provider's NPI.
+router.get(
+  "/admin/providers/:id/patients",
+  requireAdmin,
+  async (req, res) => {
+    const idParse = z.string().uuid().safeParse(req.params.id);
+    if (!idParse.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("prescriptions")
+      .select(
+        "id, patient_id, status, valid_from, valid_until, patients!inner(id, legal_first_name, legal_last_name, email, phone_e164, status)",
+      )
+      .eq("provider_id", idParse.data)
+      .order("valid_from", { ascending: false })
+      .limit(200);
+    if (error) throw error;
+    const seen = new Set<string>();
+    const patients: Array<{
+      patientId: string;
+      legalFirstName: string | null;
+      legalLastName: string | null;
+      email: string | null;
+      phoneE164: string | null;
+      patientStatus: string | null;
+      prescriptionId: string;
+      prescriptionStatus: string | null;
+      validFrom: string | null;
+      validUntil: string | null;
+    }> = [];
+    for (const r of data ?? []) {
+      if (seen.has(r.patient_id)) continue;
+      seen.add(r.patient_id);
+      const p = (r as { patients?: unknown }).patients as
+        | {
+            id: string;
+            legal_first_name: string | null;
+            legal_last_name: string | null;
+            email: string | null;
+            phone_e164: string | null;
+            status: string | null;
+          }
+        | null;
+      patients.push({
+        patientId: r.patient_id,
+        legalFirstName: p?.legal_first_name ?? null,
+        legalLastName: p?.legal_last_name ?? null,
+        email: p?.email ?? null,
+        phoneE164: p?.phone_e164 ?? null,
+        patientStatus: p?.status ?? null,
+        prescriptionId: r.id,
+        prescriptionStatus: r.status,
+        validFrom: r.valid_from,
+        validUntil: r.valid_until,
+      });
+    }
+    res.json({ patients });
+  },
+);
+
 router.post(
   "/admin/providers/nppes-lookup",
   requireAdmin,

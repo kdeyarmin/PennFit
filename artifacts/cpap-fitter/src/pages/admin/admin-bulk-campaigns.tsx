@@ -577,6 +577,18 @@ function CampaignDetailBody({
             </tbody>
           </table>
         )}
+        <div className="mt-2">
+          <a
+            href={`/resupply-api/admin/bulk-campaigns/${data.id}/recipients.csv`}
+            className="inline-block rounded border px-3 py-1 text-xs font-semibold"
+            style={{
+              borderColor: "hsl(var(--line-1))",
+              color: "hsl(var(--penn-navy))",
+            }}
+          >
+            Download recipients CSV
+          </a>
+        </div>
       </div>
 
       {(data.status === "draft" ||

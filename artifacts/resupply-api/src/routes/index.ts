@@ -36,6 +36,9 @@ import conversationCoachingNotesRouter from "./admin/conversation-coaching-notes
 import conversationTriageRouter from "./admin/conversation-triage.js";
 import patientAddressHistoryRouter from "./admin/patient-address-history.js";
 import patientTimelineRouter from "./admin/patient-timeline.js";
+import auditArchiveRouter from "./admin/audit-archive.js";
+import csrShiftsRouter from "./admin/csr-shifts.js";
+import appointmentRequestsRouter from "./admin/appointment-requests.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -307,6 +310,13 @@ router.use(patientAddressHistoryRouter);
 // fulfillments, conversations, address changes, grievances,
 // coaching plans, and recall notifications.
 router.use(patientTimelineRouter);
+// HIPAA audit-log archive — list flagged rows + admin destroy.
+router.use(auditArchiveRouter);
+// CSR shift schedule — who's on now + admin scheduling.
+router.use(csrShiftsRouter);
+// /admin/appointment-requests — CSR queue for patient-initiated
+// appointment requests (fitting help, telehealth, etc.).
+router.use(appointmentRequestsRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

@@ -717,10 +717,23 @@ function RecallRosterModal({
             </button>
           </div>
 
-          <RosterCountsBar
-            notifications={notifQuery.data?.counts ?? {}}
-            remediation={remediationQuery.data?.counts ?? {}}
-          />
+          <div className="flex items-start justify-between gap-2">
+            <RosterCountsBar
+              notifications={notifQuery.data?.counts ?? {}}
+              remediation={remediationQuery.data?.counts ?? {}}
+            />
+            <a
+              href={`/resupply-api/admin/equipment-recalls/${recallId}/roster.csv`}
+              className="rounded border px-2 py-1 text-xs font-semibold whitespace-nowrap"
+              style={{
+                borderColor: "hsl(var(--line-1))",
+                color: "hsl(var(--penn-navy))",
+              }}
+              title="Surveyor binder doc — notifications + remediation joined per asset"
+            >
+              Roster CSV
+            </a>
+          </div>
 
           {notifQuery.isPending ? (
             <Spinner />

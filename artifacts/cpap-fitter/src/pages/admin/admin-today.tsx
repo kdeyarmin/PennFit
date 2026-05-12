@@ -10,7 +10,7 @@
 // muted "all clear" line so the page communicates state explicitly
 // rather than going eerily empty.
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   Activity,
@@ -34,6 +34,7 @@ import {
   type TodayResponse,
   type TodayComplianceAlert,
 } from "@/lib/admin/today-api";
+import { createCoachingPlan } from "@/lib/admin/coaching-plans-api";
 
 const queryKey = ["admin", "today"] as const;
 
@@ -319,30 +320,66 @@ function ComplianceAlertsCard({ data }: { data: TodayResponse }) {
       ) : (
         <ul className="space-y-2">
           {items.map((a) => (
-            <li key={a.id} className="text-sm flex items-start gap-2">
-              <SeverityChip severity={a.severity} />
-              <div className="flex-1">
-                <Link
-                  href={`/admin/patients/${a.patient_id}`}
-                  className="font-medium hover:underline"
-                >
-                  {humanizeAlertType(a.alert_type)}
-                </Link>
-                {a.summary && (
-                  <span
-                    className="ml-2"
-                    style={{ color: "hsl(var(--ink-3))" }}
-                  >
-                    — {a.summary.slice(0, 80)}
-                    {a.summary.length > 80 ? "…" : ""}
-                  </span>
-                )}
-              </div>
-            </li>
+            <ComplianceAlertRow key={a.id} alert={a} />
           ))}
         </ul>
       )}
     </Card>
+  );
+}
+
+function ComplianceAlertRow({ alert }: { alert: TodayComplianceAlert }) {
+  const qc = useQueryClient();
+  const plan = useMutation({
+    mutationFn: () =>
+      createCoachingPlan({
+        patientId: alert.patient_id,
+        sourceAlertId: alert.id,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "coaching-plans"],
+      });
+    },
+  });
+  return (
+    <li className="text-sm flex items-start gap-2">
+      <SeverityChip severity={alert.severity} />
+      <div className="flex-1 min-w-0">
+        <Link
+          href={`/admin/patients/${alert.patient_id}`}
+          className="font-medium hover:underline"
+        >
+          {humanizeAlertType(alert.alert_type)}
+        </Link>
+        {alert.summary && (
+          <span
+            className="ml-2"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            — {alert.summary.slice(0, 80)}
+            {alert.summary.length > 80 ? "…" : ""}
+          </span>
+        )}
+        {plan.isError && (
+          <div
+            className="text-xs mt-0.5"
+            style={{ color: "hsl(var(--alert))" }}
+          >
+            Couldn&apos;t open plan: {(plan.error as Error).message}
+          </div>
+        )}
+      </div>
+      <Button
+        intent="ghost"
+        onClick={() => plan.mutate()}
+        disabled={plan.isPending || plan.isSuccess}
+        title="Open a coaching plan from this alert (snoozes the alert 30 days)."
+      >
+        {plan.isSuccess ? "Plan opened" : plan.isPending ? "Opening…" : "Plan"}
+      </Button>
+    </li>
   );
 }
 

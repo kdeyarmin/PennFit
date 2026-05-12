@@ -189,7 +189,24 @@ function ClosureListCard() {
   });
 
   return (
-    <Card title="Recent + upcoming">
+    <Card
+      title={
+        <span className="flex items-center justify-between w-full gap-2">
+          Recent + upcoming
+          <a
+            href="/resupply-api/admin/office-closures.ics"
+            className="rounded border px-2 py-1 text-xs font-semibold"
+            style={{
+              borderColor: "hsl(var(--line-1))",
+              color: "hsl(var(--penn-navy))",
+            }}
+            title="Download .ics to subscribe in Google Calendar / Outlook / Apple Calendar"
+          >
+            Subscribe (iCal)
+          </a>
+        </span>
+      }
+    >
       {isPending ? (
         <Spinner />
       ) : isError ? (

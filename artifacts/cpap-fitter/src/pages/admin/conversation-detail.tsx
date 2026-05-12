@@ -35,6 +35,7 @@ import {
   type CoachingNote,
   type CoachingNoteKind,
 } from "@/lib/admin/coaching-notes-api";
+import { triageApi } from "@/lib/admin/conversation-triage-api";
 import { Patient360Panel } from "@/components/admin/Patient360Panel";
 import { Customer360Panel } from "@/components/admin/Customer360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
@@ -283,6 +284,21 @@ export function ConversationDetailPage({ id }: { id: string }) {
               onAfterAction={() => void refetch()}
             />
           )}
+
+          <TriagePanel
+            conversationId={data.id}
+            initialTags={
+              ((data as { tags?: string[] }).tags ?? []) as string[]
+            }
+            initialSnoozedUntil={
+              (data as { snoozedUntil?: string | null }).snoozedUntil ?? null
+            }
+            isAssigned={
+              ((data as { assignedAdminUserId?: string | null })
+                .assignedAdminUserId ?? null) != null
+            }
+            onChanged={() => void refetch()}
+          />
 
           <CoachingNotesPanel
             conversationId={data.id}
@@ -1186,5 +1202,174 @@ function NewCoachingNoteForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+// ── Conversation triage (snooze / tags / claim + transcript) ─────
+
+function TriagePanel({
+  conversationId,
+  initialTags,
+  initialSnoozedUntil,
+  isAssigned,
+  onChanged,
+}: {
+  conversationId: string;
+  initialTags: string[];
+  initialSnoozedUntil: string | null;
+  isAssigned: boolean;
+  onChanged: () => void;
+}) {
+  const [tags, setTags] = useState<string[]>(initialTags);
+  const [newTag, setNewTag] = useState("");
+  const [snoozeIso, setSnoozeIso] = useState<string | null>(
+    initialSnoozedUntil,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const saveTags = useMutation({
+    mutationFn: (next: string[]) => triageApi.setTags(conversationId, next),
+    onSuccess: (r) => {
+      setTags(r.tags);
+      onChanged();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+  const saveSnooze = useMutation({
+    mutationFn: (next: string | null) =>
+      triageApi.setSnooze(conversationId, next),
+    onSuccess: (_r, vars) => {
+      setSnoozeIso(vars);
+      onChanged();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+  const claim = useMutation({
+    mutationFn: () => triageApi.claim(conversationId),
+    onSuccess: onChanged,
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const addTag = () => {
+    const t = newTag.trim().toLowerCase();
+    if (!t || !/^[a-z0-9_-]{1,32}$/.test(t)) return;
+    if (tags.includes(t)) return;
+    saveTags.mutate([...tags, t]);
+    setNewTag("");
+  };
+  const removeTag = (t: string) =>
+    saveTags.mutate(tags.filter((x) => x !== t));
+  const snoozeFor = (days: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + days);
+    saveSnooze.mutate(d.toISOString());
+  };
+
+  const isSnoozed = snoozeIso && new Date(snoozeIso) > new Date();
+
+  return (
+    <Card title="Triage">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {!isAssigned && (
+            <Button
+              intent="ghost"
+              size="sm"
+              onClick={() => claim.mutate()}
+              isLoading={claim.isPending}
+            >
+              Claim
+            </Button>
+          )}
+          {isSnoozed ? (
+            <>
+              <span className="text-xs">
+                Snoozed until {new Date(snoozeIso!).toLocaleString()}
+              </span>
+              <Button
+                intent="ghost"
+                size="sm"
+                onClick={() => saveSnooze.mutate(null)}
+                isLoading={saveSnooze.isPending}
+              >
+                Un-snooze
+              </Button>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+                Snooze
+              </span>
+              {[1, 3, 7].map((d) => (
+                <Button
+                  key={d}
+                  intent="ghost"
+                  size="sm"
+                  onClick={() => snoozeFor(d)}
+                  isLoading={saveSnooze.isPending}
+                >
+                  {d}d
+                </Button>
+              ))}
+            </>
+          )}
+          <a
+            href={triageApi.transcriptCsvUrl(conversationId)}
+            className="rounded border px-2 py-1 text-xs font-semibold"
+            style={{
+              borderColor: "hsl(var(--line-1))",
+              color: "hsl(var(--penn-navy))",
+            }}
+          >
+            Transcript CSV
+          </a>
+        </div>
+
+        <div>
+          <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1">
+            Tags
+          </div>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {tags.map((t) => (
+              <span
+                key={t}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+                style={{
+                  backgroundColor: "hsl(var(--line-2))",
+                  color: "hsl(var(--ink-2))",
+                }}
+              >
+                {t}
+                <button
+                  type="button"
+                  onClick={() => removeTag(t)}
+                  aria-label={`Remove ${t}`}
+                  className="hover:opacity-70"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addTag();
+                }
+              }}
+              placeholder="add tag…"
+              maxLength={32}
+              className="rounded border px-2 py-0.5 text-xs"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            />
+          </div>
+        </div>
+        {error && (
+          <p className="text-xs text-rose-700">{error}</p>
+        )}
+      </div>
+    </Card>
   );
 }
