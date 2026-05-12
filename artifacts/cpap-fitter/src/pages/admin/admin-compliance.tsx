@@ -301,7 +301,7 @@ function AddTrainingModal({
     onError: (e: Error) => setError(e.message),
   });
 
-  const isUuid = /^[0-9a-f-]{36}$/i.test(staffUserId.trim());
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffUserId.trim());
   const canSave = isUuid && completedAt;
 
   return (
@@ -552,7 +552,7 @@ function AddGrievanceModal({
     onError: (e: Error) => setError(e.message),
   });
 
-  const isUuid = /^[0-9a-f-]{36}$/i.test(patientId.trim());
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(patientId.trim());
   const canSave = isUuid && summary.trim().length > 0;
 
   return (

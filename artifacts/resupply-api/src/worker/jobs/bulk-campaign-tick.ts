@@ -279,19 +279,25 @@ export async function processTick(
     }
   }
 
-  // 5. Update counters on the campaign row. We compute increments
-  //    rather than a separate aggregation query for two reasons:
-  //    a) it's one UPDATE instead of two SELECTs + UPDATE,
-  //    b) the counters drift fastest immediately after a tick;
-  //       a periodic reconciler can true them up if needed.
-  await supabase
-    .schema("resupply")
-    .from("bulk_campaigns")
-    .update({
-      sent_count: campaign.sent_count + sent,
-      failed_count: campaign.failed_count + failed,
-    })
-    .eq("id", campaign.id);
+  // 5. Update counters on the campaign row using atomic increments.
+  //    We use a raw UPDATE with column references to ensure concurrent
+  //    ticks properly accumulate deltas instead of clobbering each other.
+  if (sent > 0 || failed > 0) {
+    const pool = await import("@workspace/resupply-db").then((m) => m.getDbPool());
+    const { rows } = await pool.query(
+      `UPDATE resupply.bulk_campaigns
+       SET sent_count = sent_count + $1,
+           failed_count = failed_count + $2
+       WHERE id = $3`,
+      [sent, failed, campaign.id],
+    );
+    if (rows.length === 0) {
+      log.warn(
+        { campaignId: campaign.id },
+        "bulk_campaigns.tick: counter update affected 0 rows",
+      );
+    }
+  }
 
   log.info(
     { campaignId: campaign.id, sent, failed, batchSize },
@@ -344,23 +350,30 @@ async function markCampaignSent(
     status: "sent",
     completed_at: new Date().toISOString(),
   };
-  await supabase
+  const { data: updated } = await supabase
     .schema("resupply")
     .from("bulk_campaigns")
     .update(update)
-    .eq("id", campaignId);
-  await logAudit({
-    action: "bulk_campaign.completed",
-    adminEmail: SYSTEM_ACTOR_EMAIL,
-    adminUserId: null,
-    targetTable: "bulk_campaigns",
-    targetId: campaignId,
-    metadata: {},
-    ip: null,
-    userAgent: null,
-  }).catch((err) => {
-    logger.warn({ err }, "bulk_campaign.completed audit failed");
-  });
+    .eq("id", campaignId)
+    .eq("status", "sending")
+    .select("id");
+  // Only audit if the update actually happened (i.e., campaign was
+  // still in 'sending' state). If it was paused/cancelled during
+  // the final tick, skip the completion audit.
+  if (updated && updated.length > 0) {
+    await logAudit({
+      action: "bulk_campaign.completed",
+      adminEmail: SYSTEM_ACTOR_EMAIL,
+      adminUserId: null,
+      targetTable: "bulk_campaigns",
+      targetId: campaignId,
+      metadata: {},
+      ip: null,
+      userAgent: null,
+    }).catch((err) => {
+      logger.warn({ err }, "bulk_campaign.completed audit failed");
+    });
+  }
 }
 
 export async function enqueueNextTick(

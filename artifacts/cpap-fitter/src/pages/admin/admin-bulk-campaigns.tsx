@@ -32,6 +32,7 @@ import {
   pauseBulkCampaign,
   resumeBulkCampaign,
   startBulkCampaign,
+  TICK_INTERVAL_SECONDS,
   type AudienceKind,
   type BulkCampaignDetail,
   type BulkCampaignListItem,
@@ -626,7 +627,7 @@ function CampaignDetailBody({
           </div>
           {data.status === "sending" && (
             <p className="text-[10px] text-muted-foreground">
-              Pause / cancel takes effect within {10} seconds (next tick).
+              Pause / cancel takes effect within {TICK_INTERVAL_SECONDS} seconds (next tick).
             </p>
           )}
         </div>

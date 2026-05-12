@@ -23,7 +23,12 @@ CREATE TABLE IF NOT EXISTS "resupply"."bulk_campaign_recipients" (
   CONSTRAINT "bulk_campaign_recipients_kind_enum"
     CHECK ("recipient_kind" IN ('patient', 'shop_customer')),
   CONSTRAINT "bulk_campaign_recipients_status_enum"
-    CHECK ("status" IN ('pending', 'suppressed', 'sending', 'sent', 'failed'))
+    CHECK ("status" IN ('pending', 'suppressed', 'sending', 'sent', 'failed')),
+  CONSTRAINT "bulk_campaign_recipients_suppression_reason_check"
+    CHECK (
+      ("status" = 'suppressed' AND "suppression_reason" IS NOT NULL AND "suppression_reason" <> '')
+      OR ("status" <> 'suppressed' AND "suppression_reason" IS NULL)
+    )
 );
 
 CREATE INDEX IF NOT EXISTS "bulk_campaign_recipients_campaign_idx"
@@ -37,3 +42,19 @@ CREATE INDEX IF NOT EXISTS "bulk_campaign_recipients_campaign_status_idx"
 CREATE UNIQUE INDEX IF NOT EXISTS "bulk_campaign_recipients_campaign_recipient_unique"
   ON "resupply"."bulk_campaign_recipients"
   ("campaign_id", "recipient_kind", "recipient_id");
+
+-- Trigger to automatically update the updated_at timestamp on row updates.
+-- The $onUpdateFn in Drizzle ORM has no effect when using Supabase/PostgREST,
+-- so we handle it at the database level.
+CREATE OR REPLACE FUNCTION "resupply"."set_bulk_campaign_recipients_updated_at"()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "bulk_campaign_recipients_updated_at_trigger"
+  BEFORE UPDATE ON "resupply"."bulk_campaign_recipients"
+  FOR EACH ROW
+  EXECUTE FUNCTION "resupply"."set_bulk_campaign_recipients_updated_at"();

@@ -171,13 +171,21 @@ router.post(
     const b = parsed.data;
     const supabase = getSupabaseServiceRoleClient();
 
-    const { data: patient } = await supabase
+    const { data: patient, error: patientErr } = await supabase
       .schema("resupply")
       .from("patients")
       .select("id")
       .eq("id", b.patientId)
       .limit(1)
       .maybeSingle();
+    if (patientErr) {
+      logger.error({ err: patientErr }, "compliance.grievance.create: patient lookup failed");
+      res.status(500).json({
+        error: "patient_lookup_failed",
+        message: "Failed to verify patient — database error.",
+      });
+      return;
+    }
     if (!patient) {
       res.status(404).json({ error: "patient_not_found" });
       return;
@@ -208,11 +216,10 @@ router.post(
       targetTable: "patient_grievances",
       targetId: row.id,
       metadata: {
-        patient_id: b.patientId,
         kind: b.kind,
         severity: b.severity,
         source: b.source,
-        // summary/description withheld — PHI.
+        // summary/description/patient_id withheld — PHI.
       },
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
@@ -253,13 +260,21 @@ router.patch(
 
     let prevStatus: GrievanceStatus | null = null;
     if (fields.status !== undefined) {
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .schema("resupply")
         .from("patient_grievances")
         .select("status")
         .eq("id", params.data.id)
         .limit(1)
         .maybeSingle();
+      if (existingErr) {
+        logger.error({ err: existingErr }, "compliance.grievance.update: status lookup failed");
+        res.status(500).json({
+          error: "status_lookup_failed",
+          message: "Failed to verify current status — database error.",
+        });
+        return;
+      }
       if (!existing) {
         res.status(404).json({ error: "not_found" });
         return;

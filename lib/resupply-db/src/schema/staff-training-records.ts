@@ -148,3 +148,15 @@ export type InsertStaffTrainingRecordRow =
 export type StaffTrainingType = NonNullable<
   StaffTrainingRecordRow["trainingType"]
 >;
+
+export const TRAINING_TYPE_VALUES = [
+  "hipaa_privacy",
+  "hipaa_security",
+  "osha_bloodborne",
+  "osha_general",
+  "infection_control",
+  "fit_test",
+  "new_hire_orientation",
+  "dmepos_supplier_stds",
+  "other",
+] as const;

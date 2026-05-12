@@ -90,13 +90,21 @@ router.post(
     // through disable (which requires a valid code from the OLD
     // authenticator) before they can re-enroll. The recovery path
     // is a separate Phase-B "reset by another admin" surface.
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .schema("resupply")
       .from("admin_mfa_secrets")
       .select("verified_at")
       .eq("staff_user_id", adminUserId)
       .limit(1)
       .maybeSingle();
+    if (existingErr) {
+      logger.error({ err: existingErr }, "auth.mfa.enroll_begin: enrollment check failed");
+      res.status(500).json({
+        error: "enrollment_check_failed",
+        message: "Failed to verify enrollment status — database error.",
+      });
+      return;
+    }
     if (existing?.verified_at) {
       res.status(409).json({
         error: "already_enrolled",

@@ -97,8 +97,7 @@ export const bulkCampaignRecipients = resupplySchema.table(
       .default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .default(sql`now()`)
-      .$onUpdateFn(() => new Date()),
+      .default(sql`now()`),
   },
   (t) => ({
     campaignIdx: index("bulk_campaign_recipients_campaign_idx").on(

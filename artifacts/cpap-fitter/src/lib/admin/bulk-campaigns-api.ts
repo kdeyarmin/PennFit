@@ -1,5 +1,9 @@
 // Hand-rolled fetch wrapper for /admin/bulk-campaigns/*.
 
+// Tick interval from the backend worker — used in the UI to show
+// pause/cancel latency ("takes effect within N seconds").
+export const TICK_INTERVAL_SECONDS = 10;
+
 export type AudienceKind =
   | "all_active_shop_customers"
   | "all_active_patients"

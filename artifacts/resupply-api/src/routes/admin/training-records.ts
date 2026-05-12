@@ -18,6 +18,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import {
   type Database,
   getSupabaseServiceRoleClient,
+  TRAINING_TYPE_VALUES,
 } from "@workspace/resupply-db";
 
 import { bucketizeTrainingExpiry } from "../../lib/compliance/training-expiry";
@@ -32,18 +33,6 @@ const router: IRouter = Router();
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const idParam = z.object({ id: z.string().uuid() });
-
-const TRAINING_TYPE_VALUES = [
-  "hipaa_privacy",
-  "hipaa_security",
-  "osha_bloodborne",
-  "osha_general",
-  "infection_control",
-  "fit_test",
-  "new_hire_orientation",
-  "dmepos_supplier_stds",
-  "other",
-] as const;
 
 const createBody = z
   .object({

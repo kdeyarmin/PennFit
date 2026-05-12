@@ -120,7 +120,7 @@ router.post(
     // about to send. The send-side worker will re-check at send
     // time too (handles late deactivation), but failing here keeps
     // a CSR from creating a campaign against a typo'd key.
-    const { data: tpl } = await supabase
+    const { data: tpl, error: tplErr } = await supabase
       .schema("resupply")
       .from("message_templates")
       .select("template_key, channel, is_active")
@@ -128,6 +128,14 @@ router.post(
       .eq("channel", "email")
       .limit(1)
       .maybeSingle();
+    if (tplErr) {
+      logger.error({ err: tplErr }, "bulk_campaigns.draft.create: template lookup failed");
+      res.status(500).json({
+        error: "template_lookup_failed",
+        message: "Failed to verify template — database error.",
+      });
+      return;
+    }
     if (!tpl) {
       res.status(400).json({
         error: "template_not_found",
@@ -541,12 +549,21 @@ function makeTransitionHandler(
       updates.cancelled_by_user_id = req.adminUserId ?? null;
     }
 
-    const { error: updErr } = await supabase
+    const { data: updated, error: updErr } = await supabase
       .schema("resupply")
       .from("bulk_campaigns")
       .update(updates)
-      .eq("id", params.data.id);
+      .eq("id", params.data.id)
+      .eq("status", existing.status)
+      .select("id");
     if (updErr) throw updErr;
+    if (!updated || updated.length === 0) {
+      res.status(409).json({
+        error: "status_conflict",
+        message: `Campaign status changed during ${action} operation — retry.`,
+      });
+      return;
+    }
 
     if (plan.sideEffect) {
       try {

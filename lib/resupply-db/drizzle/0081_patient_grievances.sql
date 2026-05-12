@@ -47,3 +47,16 @@ CREATE INDEX IF NOT EXISTS "patient_grievances_patient_idx"
 -- then received-at, so the urgent ones surface first.
 CREATE INDEX IF NOT EXISTS "patient_grievances_status_severity_received_idx"
   ON "resupply"."patient_grievances" ("status", "severity", "received_at");
+
+-- Foreign key constraints for audit trail (who acknowledged/resolved)
+ALTER TABLE "resupply"."patient_grievances"
+  ADD CONSTRAINT "fk_patient_grievances_acknowledged_by"
+  FOREIGN KEY ("acknowledged_by_user_id")
+  REFERENCES "resupply"."staff_users"("id")
+  ON DELETE SET NULL;
+
+ALTER TABLE "resupply"."patient_grievances"
+  ADD CONSTRAINT "fk_patient_grievances_resolved_by"
+  FOREIGN KEY ("resolved_by_user_id")
+  REFERENCES "resupply"."staff_users"("id")
+  ON DELETE SET NULL;
