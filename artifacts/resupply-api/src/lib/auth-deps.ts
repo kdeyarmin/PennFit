@@ -163,6 +163,46 @@ function makeMfaProbe(): MfaProbe {
         })
         .eq("staff_user_id", admin.id);
     },
+    async findRecoveryCodeMatch(userId, codeHash) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: admin } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!admin) return null;
+      // Spendable rows only — used_at IS NULL. The unique index on
+      // code_hash means at most one row matches; the staff_user_id
+      // filter prevents a code minted for admin A from being spent
+      // by admin B (defense in depth — the hash unique constraint
+      // alone would already block that since the hashes wouldn't
+      // collide in practice).
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .select("id")
+        .eq("staff_user_id", admin.id)
+        .eq("code_hash", codeHash)
+        .is("used_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return { id: data.id };
+    },
+    async markRecoveryCodeUsed(rowId, ip) {
+      const supabase = getSupabaseServiceRoleClient();
+      await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .update({
+          used_at: new Date().toISOString(),
+          used_ip: ip ?? null,
+        })
+        .eq("id", rowId);
+    },
   };
 }
 

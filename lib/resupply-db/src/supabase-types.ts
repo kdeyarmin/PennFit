@@ -1100,6 +1100,23 @@ export interface Database {
         >;
         Relationships: [];
       };
+      admin_mfa_recovery_codes: {
+        Row: {
+          id: string;
+          staff_user_id: string;
+          code_hash: string;
+          used_at: string | null;
+          used_ip: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["admin_mfa_recovery_codes"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["admin_mfa_recovery_codes"]["Row"]
+        >;
+        Relationships: [];
+      };
       messages: {
         Row: {
           id: string;

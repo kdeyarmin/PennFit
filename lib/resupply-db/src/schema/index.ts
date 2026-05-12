@@ -22,6 +22,7 @@ export * from "./patient-grievances";
 export * from "./bulk-campaigns";
 export * from "./bulk-campaign-recipients";
 export * from "./admin-mfa-secrets";
+export * from "./admin-mfa-recovery-codes";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";

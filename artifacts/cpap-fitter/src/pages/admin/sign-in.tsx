@@ -34,6 +34,8 @@ export function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [usingRecoveryCode, setUsingRecoveryCode] = useState(false);
   const [step, setStep] = useState<Step>({ kind: "password" });
   const [submitError, setSubmitError] = useState<string | null>(null);
   const signIn = authHooks.useSignIn();
@@ -67,30 +69,33 @@ export function SignInPage() {
     e.preventDefault();
     if (step.kind !== "mfa") return;
     setSubmitError(null);
-    verifyMfa.mutate(
-      { challengeToken: step.challengeToken, code: code.trim() },
-      {
-        onSuccess: () => setLocation("/admin"),
-        onError: (err) => {
-          // If the challenge expired or is otherwise invalid, kick
-          // the user back to step 1 so they can re-enter their
-          // password (the challenge is single-use anyway).
-          if (
-            err instanceof AuthError &&
-            (err.code === "mfa_challenge_expired" ||
-              err.code === "mfa_challenge_invalid")
-          ) {
-            setStep({ kind: "password" });
-            setPassword("");
-            setSubmitError(err.userMessage);
-            return;
-          }
-          setSubmitError(
-            err instanceof AuthError ? err.userMessage : "Verification failed.",
-          );
-        },
+    const payload = usingRecoveryCode
+      ? {
+          challengeToken: step.challengeToken,
+          recoveryCode: recoveryCode.trim(),
+        }
+      : { challengeToken: step.challengeToken, code: code.trim() };
+    verifyMfa.mutate(payload, {
+      onSuccess: () => setLocation("/admin"),
+      onError: (err) => {
+        // If the challenge expired or is otherwise invalid, kick
+        // the user back to step 1 so they can re-enter their
+        // password (the challenge is single-use anyway).
+        if (
+          err instanceof AuthError &&
+          (err.code === "mfa_challenge_expired" ||
+            err.code === "mfa_challenge_invalid")
+        ) {
+          setStep({ kind: "password" });
+          setPassword("");
+          setSubmitError(err.userMessage);
+          return;
+        }
+        setSubmitError(
+          err instanceof AuthError ? err.userMessage : "Verification failed.",
+        );
       },
-    );
+    });
   }
 
   return (
@@ -185,27 +190,49 @@ export function SignInPage() {
               Verify it's you
             </h1>
             <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
-              Enter the 6-digit code from your authenticator app.
+              {usingRecoveryCode
+                ? "Enter one of the backup recovery codes from when you enrolled."
+                : "Enter the 6-digit code from your authenticator app."}
             </p>
           </div>
 
-          <label className="block text-sm">
-            <span className="font-medium">Authenticator code</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              required
-              value={code}
-              onChange={(e) =>
-                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-              }
-              maxLength={6}
-              className="mt-1 w-full rounded-md border px-3 py-2 text-base font-mono tracking-widest text-center"
-              style={{ borderColor: "hsl(var(--line-1))" }}
-              autoFocus
-            />
-          </label>
+          {usingRecoveryCode ? (
+            <label className="block text-sm">
+              <span className="font-medium">Recovery code</span>
+              <input
+                type="text"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                required
+                value={recoveryCode}
+                onChange={(e) => setRecoveryCode(e.target.value)}
+                maxLength={32}
+                className="mt-1 w-full rounded-md border px-3 py-2 text-base font-mono tracking-widest text-center"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+                placeholder="ABCD-EFGH"
+                autoFocus
+              />
+            </label>
+          ) : (
+            <label className="block text-sm">
+              <span className="font-medium">Authenticator code</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                value={code}
+                onChange={(e) =>
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                maxLength={6}
+                className="mt-1 w-full rounded-md border px-3 py-2 text-base font-mono tracking-widest text-center"
+                style={{ borderColor: "hsl(var(--line-1))" }}
+                autoFocus
+              />
+            </label>
+          )}
 
           {submitError && (
             <p
@@ -222,7 +249,12 @@ export function SignInPage() {
 
           <button
             type="submit"
-            disabled={verifyMfa.isPending || code.length !== 6}
+            disabled={
+              verifyMfa.isPending ||
+              (usingRecoveryCode
+                ? recoveryCode.trim().length < 4
+                : code.length !== 6)
+            }
             className="w-full rounded-md text-white font-semibold py-2 text-sm"
             style={{ backgroundColor: "hsl(var(--penn-navy-deep))" }}
           >
@@ -232,9 +264,27 @@ export function SignInPage() {
           <button
             type="button"
             onClick={() => {
+              setUsingRecoveryCode((v) => !v);
+              setCode("");
+              setRecoveryCode("");
+              setSubmitError(null);
+            }}
+            className="w-full rounded-md py-2 text-xs underline"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            {usingRecoveryCode
+              ? "Use my authenticator app instead"
+              : "Use a recovery code instead"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
               setStep({ kind: "password" });
               setPassword("");
               setCode("");
+              setRecoveryCode("");
+              setUsingRecoveryCode(false);
               setSubmitError(null);
             }}
             className="w-full rounded-md py-2 text-xs underline"

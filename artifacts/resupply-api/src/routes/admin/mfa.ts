@@ -28,6 +28,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import {
   buildOtpauthUri,
   generateBase32Secret,
+  generateRecoveryCodes,
   verifyTotpCode,
 } from "@workspace/resupply-auth";
 
@@ -65,12 +66,26 @@ router.get("/admin/mfa/status", requireAdmin, async (req, res) => {
     .maybeSingle();
   if (error) throw error;
 
+  // Count of unspent recovery codes — drives the "you have N
+  // recovery codes left" hint in the security settings UI.
+  let recoveryCodesRemaining = 0;
+  if (data?.verified_at) {
+    const { count } = await supabase
+      .schema("resupply")
+      .from("admin_mfa_recovery_codes")
+      .select("id", { count: "exact", head: true })
+      .eq("staff_user_id", adminUserId)
+      .is("used_at", null);
+    recoveryCodesRemaining = count ?? 0;
+  }
+
   res.json({
     enrolled: !!data?.verified_at,
     inProgressEnrollment: !!data && !data.verified_at,
     verifiedAt: data?.verified_at ?? null,
     lastUsedAt: data?.last_used_at ?? null,
     createdAt: data?.created_at ?? null,
+    recoveryCodesRemaining,
   });
 });
 
@@ -236,6 +251,7 @@ router.post(
       return;
     }
 
+    const isFirstVerify = !row.verified_at;
     const nowIso = new Date().toISOString();
     const { error: updErr } = await supabase
       .schema("resupply")
@@ -248,6 +264,55 @@ router.post(
       .eq("id", row.id);
     if (updErr) throw updErr;
 
+    // On FIRST successful verify (i.e. enrollment completion) mint
+    // a batch of recovery codes. We do this AFTER the secret-row
+    // update so a partial failure leaves enrollment in a sane
+    // state: either the secret is verified AND recovery codes
+    // exist, or the secret is verified but recovery codes are
+    // empty (admin can hit /recovery-codes/regenerate later — but
+    // that endpoint is deferred; for now they'd have to disable
+    // and re-enroll). We accept this trade because the alternative
+    // (mint codes first, then verify the secret) leaks codes to
+    // someone whose TOTP didn't pass — strictly worse.
+    let plaintextRecoveryCodes: string[] | undefined;
+    if (isFirstVerify) {
+      // Defensive: wipe any stale rows from a previous enrollment
+      // (shouldn't exist — disable cleans them — but cheap safety).
+      const { error: delStaleErr } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .delete()
+        .eq("staff_user_id", adminUserId);
+      if (delStaleErr) {
+        logger.warn(
+          { err: delStaleErr },
+          "auth.mfa.enroll_verify: stale recovery-code cleanup failed",
+        );
+      }
+      const batch = generateRecoveryCodes();
+      const { error: insErr } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .insert(
+          batch.map((c) => ({
+            staff_user_id: adminUserId,
+            code_hash: c.hash,
+          })),
+        );
+      if (insErr) {
+        // Don't roll back the secret verification — enrollment is
+        // still effectively done. Surface a soft warning to the
+        // SPA so it can prompt the admin to disable + re-enroll
+        // if they want recovery codes.
+        logger.error(
+          { err: insErr },
+          "auth.mfa.enroll_verify: recovery-codes insert failed",
+        );
+      } else {
+        plaintextRecoveryCodes = batch.map((c) => c.display);
+      }
+    }
+
     await logAudit({
       action: row.verified_at
         ? "auth.mfa.verify_success"
@@ -256,14 +321,24 @@ router.post(
       adminUserId,
       targetTable: "admin_mfa_secrets",
       targetId: row.id,
-      metadata: {},
+      // Recovery-code COUNT only — never log the codes themselves.
+      metadata: plaintextRecoveryCodes
+        ? { recoveryCodesIssued: plaintextRecoveryCodes.length }
+        : {},
       ip: req.ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     }).catch((err) => {
       logger.warn({ err }, "auth.mfa.verify audit failed");
     });
 
-    res.json({ ok: true, enrolled: true });
+    res.json({
+      ok: true,
+      enrolled: true,
+      // ONLY present on the first verify (enrollment completion).
+      // Subsequent calls (verify_success) omit this field — the
+      // codes have already been shown and can't be re-displayed.
+      recoveryCodes: plaintextRecoveryCodes,
+    });
   },
 );
 
@@ -318,6 +393,22 @@ router.post("/admin/mfa/disable", requireAdmin, async (req, res) => {
     .delete()
     .eq("id", row.id);
   if (delErr) throw delErr;
+
+  // Best-effort: wipe outstanding recovery codes too. They're
+  // useless after the secret row is gone (the sign-in verify
+  // refuses on `mfa_not_enrolled` first), but leaving them in the
+  // table inflates the table and confuses the audit picture.
+  const { error: delCodesErr } = await supabase
+    .schema("resupply")
+    .from("admin_mfa_recovery_codes")
+    .delete()
+    .eq("staff_user_id", adminUserId);
+  if (delCodesErr) {
+    logger.warn(
+      { err: delCodesErr },
+      "auth.mfa.disable: recovery-code cleanup failed (non-fatal)",
+    );
+  }
 
   await logAudit({
     action: "auth.mfa.disabled",

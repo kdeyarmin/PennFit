@@ -181,6 +181,34 @@ export interface MfaProbe {
    * verify already passed), but should be logged.
    */
   recordVerify(userId: string, counter: number): Promise<void>;
+  /**
+   * Recovery-code branch — look up a SPENDABLE (used_at IS NULL)
+   * recovery code by its SHA-256 hash, restricted to the given
+   * staff user. Returns the row id when found, null otherwise. The
+   * verify handler calls this when the SPA submits a recovery code
+   * in place of a TOTP code.
+   *
+   * Optional so artifacts that haven't shipped recovery codes yet
+   * can leave this unimplemented; the verify handler treats a
+   * missing method as "recovery branch disabled."
+   */
+  findRecoveryCodeMatch?(
+    userId: string,
+    codeHash: string,
+  ): Promise<{ id: string } | null>;
+  /**
+   * Mark a recovery code row as spent. Sets used_at = now() and
+   * used_ip = `ip` if supplied. Best-effort — like recordVerify,
+   * a write failure MUST NOT block sign-in (the user typed a
+   * valid, one-time code; the worst case is that the same code
+   * could be replayed, which the matching `findRecoveryCodeMatch`
+   * already gates on used_at IS NULL — so a write failure means
+   * the next attempt would also succeed, which is the rare correct
+   * recovery-from-DB-blip behaviour).
+   *
+   * Optional alongside `findRecoveryCodeMatch`.
+   */
+  markRecoveryCodeUsed?(rowId: string, ip: string | null): Promise<void>;
 }
 
 export interface MfaProbeSecret {

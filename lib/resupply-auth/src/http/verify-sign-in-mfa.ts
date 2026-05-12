@@ -34,6 +34,7 @@ import {
 } from "../cookies";
 import { checkCsrf } from "../csrf";
 import { verifyMfaChallengeToken } from "../mfa-challenge";
+import { hashRecoveryCode, normalizeRecoveryCode } from "../mfa-recovery";
 import { issueWindow } from "../session";
 import { issueToken } from "../token";
 import { verifyTotpCode } from "../totp";
@@ -41,10 +42,19 @@ import { verifyTotpCode } from "../totp";
 import { authError } from "./responses";
 import type { AuthDeps } from "./types";
 
-const VerifyBody = z.object({
-  challengeToken: z.string().min(1).max(2048),
-  code: z.string().regex(/^\d{6}$/, "code must be 6 digits"),
-});
+// Either a 6-digit TOTP code OR a recovery code. The recovery
+// branch accepts anything 1..32 chars and normalizes on the server;
+// the actual structural checks happen against the codeHash lookup.
+const VerifyBody = z
+  .object({
+    challengeToken: z.string().min(1).max(2048),
+    code: z.string().regex(/^\d{6}$/, "code must be 6 digits").optional(),
+    recoveryCode: z.string().min(1).max(64).optional(),
+  })
+  .refine(
+    (b) => Boolean(b.code) !== Boolean(b.recoveryCode),
+    "exactly one of `code` or `recoveryCode` is required",
+  );
 
 function hashUserAgent(req: Request): Buffer | null {
   const ua = req.headers["user-agent"];
@@ -181,34 +191,109 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
       return;
     }
 
-    const result = verifyTotpCode(secret.secretBase32, parsed.data.code, {
-      window: 1,
-      minCounter: secret.lastUsedCounter ?? undefined,
-    });
-    if (!result.ok || result.counter == null) {
-      void deps.audit({
-        action: "auth.mfa_verify_failed",
-        adminEmail: user.emailLower,
-        adminUserId: user.id,
-        ip: req.ip ?? null,
-        metadata: { reason: "wrong_code" },
+    // Branch on which factor the SPA supplied. The zod refine
+    // already enforced exactly one of {code, recoveryCode}.
+    let mfaPathLabel: "totp" | "recovery";
+    if (parsed.data.recoveryCode != null) {
+      mfaPathLabel = "recovery";
+      if (
+        !deps.mfa.findRecoveryCodeMatch ||
+        !deps.mfa.markRecoveryCodeUsed
+      ) {
+        // The artifact hasn't wired the recovery branch. Treat as
+        // a wrong code rather than 500 — the SPA can re-prompt for
+        // a TOTP code. Audit reflects the misconfig.
+        void deps.audit({
+          action: "auth.mfa_verify_failed",
+          adminEmail: user.emailLower,
+          adminUserId: user.id,
+          ip: req.ip ?? null,
+          metadata: { reason: "recovery_unconfigured" },
+        });
+        authError(
+          res,
+          400,
+          "mfa_recovery_code_invalid",
+          "Recovery codes aren't available on this account.",
+        );
+        return;
+      }
+      const normalized = normalizeRecoveryCode(parsed.data.recoveryCode);
+      const codeHash = hashRecoveryCode(normalized);
+      let match: { id: string } | null;
+      try {
+        match = await deps.mfa.findRecoveryCodeMatch(user.id, codeHash);
+      } catch (err) {
+        void deps.audit({
+          action: "auth.mfa_probe_failed",
+          adminEmail: user.emailLower,
+          adminUserId: user.id,
+          ip: req.ip ?? null,
+          metadata: {
+            err: err instanceof Error ? err.message : String(err),
+            branch: "recovery",
+          },
+        });
+        authError(
+          res,
+          500,
+          "mfa_probe_failed",
+          "Couldn't complete sign-in. Please try again.",
+        );
+        return;
+      }
+      if (!match) {
+        void deps.audit({
+          action: "auth.mfa_verify_failed",
+          adminEmail: user.emailLower,
+          adminUserId: user.id,
+          ip: req.ip ?? null,
+          metadata: { reason: "wrong_recovery_code" },
+        });
+        authError(
+          res,
+          400,
+          "mfa_recovery_code_invalid",
+          "That recovery code isn't valid or has already been used.",
+        );
+        return;
+      }
+      // Burn the code. Best-effort per the MfaProbe contract.
+      try {
+        await deps.mfa.markRecoveryCodeUsed(match.id, req.ip ?? null);
+      } catch {
+        // Swallowed — see contract.
+      }
+    } else {
+      mfaPathLabel = "totp";
+      const result = verifyTotpCode(secret.secretBase32, parsed.data.code!, {
+        window: 1,
+        minCounter: secret.lastUsedCounter ?? undefined,
       });
-      authError(
-        res,
-        400,
-        "mfa_code_invalid",
-        "Code didn't match. Check the time on your phone and retry.",
-      );
-      return;
-    }
-
-    // Record the verify (best-effort — see MfaProbe contract).
-    try {
-      await deps.mfa.recordVerify(user.id, result.counter);
-    } catch {
-      // Swallowed — the verify succeeded; missing the counter
-      // bump only means the next verify might accept the same
-      // window. The 30-second step still bounds the replay.
+      if (!result.ok || result.counter == null) {
+        void deps.audit({
+          action: "auth.mfa_verify_failed",
+          adminEmail: user.emailLower,
+          adminUserId: user.id,
+          ip: req.ip ?? null,
+          metadata: { reason: "wrong_code" },
+        });
+        authError(
+          res,
+          400,
+          "mfa_code_invalid",
+          "Code didn't match. Check the time on your phone and retry.",
+        );
+        return;
+      }
+      // Record the verify (best-effort — see MfaProbe contract).
+      try {
+        await deps.mfa.recordVerify(user.id, result.counter);
+      } catch {
+        // Swallowed — the verify succeeded; missing the counter
+        // bump only means the next verify might accept the same
+        // window. The 30-second step still bounds the replay.
+      }
     }
 
     // Success: issue session — same code path as sign-in.
@@ -233,6 +318,7 @@ export function makeVerifySignInMfaHandler(deps: AuthDeps) {
         sessionId: session.id,
         role: user.role,
         mfa: true,
+        mfaPath: mfaPathLabel,
       },
     });
 

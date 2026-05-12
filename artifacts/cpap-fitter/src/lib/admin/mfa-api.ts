@@ -6,6 +6,20 @@ export interface MfaStatus {
   verifiedAt: string | null;
   lastUsedAt: string | null;
   createdAt: string | null;
+  /** Unspent backup-code count. 0 when not enrolled. */
+  recoveryCodesRemaining: number;
+}
+
+export interface VerifyEnrollResponse {
+  ok: true;
+  enrolled: true;
+  /**
+   * Display-form recovery codes ("ABCD-EFGH"). Returned ONLY on the
+   * first successful verify (enrollment completion); absent on
+   * subsequent verifies. The SPA MUST show these to the user
+   * exactly once — they're never re-issued through any read API.
+   */
+  recoveryCodes?: string[];
 }
 
 export interface BeginEnrollResponse {
@@ -41,7 +55,7 @@ export const beginEnrollMfa = () =>
   });
 
 export const verifyEnrollMfa = (code: string) =>
-  jsonFetch<{ ok: true; enrolled: true }>("/admin/mfa/enroll/verify", {
+  jsonFetch<VerifyEnrollResponse>("/admin/mfa/enroll/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),

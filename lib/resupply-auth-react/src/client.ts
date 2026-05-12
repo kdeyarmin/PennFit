@@ -55,6 +55,7 @@ export type AuthErrorCode =
   | "mfa_challenge_expired"
   | "mfa_code_invalid"
   | "mfa_not_enrolled"
+  | "mfa_recovery_code_invalid"
   | "internal"
   | "unknown";
 
@@ -122,11 +123,15 @@ export interface AuthClient {
    * Second step of the MFA sign-in flow. Issues the session cookie
    * on success. Throws AuthError on invalid / expired challenge or
    * wrong code (callers branch on `err.code`).
+   *
+   * Either `code` (6-digit TOTP) OR `recoveryCode` (one-time
+   * backup string) must be supplied — never both.
    */
-  verifySignInMfa(input: {
-    challengeToken: string;
-    code: string;
-  }): Promise<void>;
+  verifySignInMfa(
+    input:
+      | { challengeToken: string; code: string }
+      | { challengeToken: string; recoveryCode: string },
+  ): Promise<void>;
   signUp(input: {
     email: string;
     password: string;

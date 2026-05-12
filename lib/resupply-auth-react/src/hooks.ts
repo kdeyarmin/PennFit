@@ -45,7 +45,8 @@ export interface AuthHooks {
   useVerifySignInMfa(): UseMutationResult<
     void,
     AuthError,
-    { challengeToken: string; code: string }
+    | { challengeToken: string; code: string }
+    | { challengeToken: string; recoveryCode: string }
   >;
   useSignUp(): UseMutationResult<
     void,

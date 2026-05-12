@@ -7,7 +7,13 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, KeyRound, ShieldAlert, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  KeyRound,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
@@ -103,7 +109,32 @@ function EnrolledPanel({ data }: { data: MfaStatus }) {
             ? new Date(data.lastUsedAt).toLocaleString()
             : "—"}
         </dd>
+        <dt className="text-muted-foreground">Recovery codes left</dt>
+        <dd>
+          {data.recoveryCodesRemaining} of 10
+        </dd>
       </dl>
+
+      {data.recoveryCodesRemaining === 0 && (
+        <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div>
+            You have no recovery codes left. If you lose your authenticator
+            you'll need another admin to reset MFA on your account. To get
+            a fresh batch, disable MFA below and re-enroll.
+          </div>
+        </div>
+      )}
+      {data.recoveryCodesRemaining > 0 && data.recoveryCodesRemaining <= 3 && (
+        <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div>
+            Only {data.recoveryCodesRemaining} recovery code
+            {data.recoveryCodesRemaining === 1 ? "" : "s"} remaining. To
+            mint a fresh batch, disable MFA below and re-enroll.
+          </div>
+        </div>
+      )}
 
       <div
         className="rounded border p-4 space-y-3"
@@ -152,6 +183,12 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
   );
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Lives outside the panel's mount: once we've shown the codes,
+  // the status query refetches enrolled=true and the UnenrolledPanel
+  // unmounts — by then the user has the strip in front of them and
+  // we DON'T want to keep the plaintext in memory longer than we
+  // have to. We don't persist it.
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
 
   const begin = useMutation({
     mutationFn: beginEnrollMfa,
@@ -164,13 +201,34 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
 
   const verify = useMutation({
     mutationFn: () => verifyEnrollMfa(code.trim()),
-    onSuccess: () => {
+    onSuccess: (r) => {
       setEnrollState(null);
       setCode("");
-      void qc.invalidateQueries({ queryKey: statusKey });
+      if (r.recoveryCodes && r.recoveryCodes.length > 0) {
+        setRecoveryCodes(r.recoveryCodes);
+        // Defer the status refetch until the user dismisses the
+        // recovery-code dialog — otherwise the EnrolledPanel
+        // replaces us mid-display and the codes disappear.
+      } else {
+        // No codes returned (insert failed or already-verified
+        // re-verify). Refetch immediately.
+        void qc.invalidateQueries({ queryKey: statusKey });
+      }
     },
     onError: (e: Error) => setError(e.message),
   });
+
+  if (recoveryCodes) {
+    return (
+      <RecoveryCodesPanel
+        codes={recoveryCodes}
+        onDone={() => {
+          setRecoveryCodes(null);
+          void qc.invalidateQueries({ queryKey: statusKey });
+        }}
+      />
+    );
+  }
 
   if (!enrollState) {
     return (
@@ -264,6 +322,83 @@ function UnenrolledPanel({ inProgress }: { inProgress: boolean }) {
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Shown EXACTLY ONCE after enrollment-verify succeeds. The codes
+ *  never leave the user's session — there's no read API that
+ *  returns them. The "I've saved these" button is the only way out
+ *  of this view; it dismisses the codes and transitions the page
+ *  into the EnrolledPanel via a status refetch. */
+function RecoveryCodesPanel({
+  codes,
+  onDone,
+}: {
+  codes: string[];
+  onDone: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(codes.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may be unavailable in some browser/security
+      // contexts — the codes are still visible on-screen.
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+        <span className="font-medium text-emerald-900">
+          MFA enrolled — save your recovery codes
+        </span>
+      </div>
+
+      <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+        <div>
+          <strong>This is the only time these codes will be shown.</strong>{" "}
+          Save them somewhere safe (password manager, sealed envelope in
+          your desk). Each code can be used <em>once</em> to sign in if you
+          ever lose your authenticator app.
+        </div>
+      </div>
+
+      <div
+        className="rounded border p-4 grid grid-cols-2 gap-2 font-mono text-sm"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+        data-testid="recovery-codes"
+      >
+        {codes.map((c) => (
+          <div key={c} className="select-all">
+            {c}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button intent="ghost" onClick={() => void handleCopy()}>
+          {copied ? "Copied" : "Copy all"}
+        </Button>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+          />
+          I've saved these in a safe place
+        </label>
+        <Button disabled={!confirmed} onClick={onDone}>
+          Done
+        </Button>
+      </div>
     </div>
   );
 }

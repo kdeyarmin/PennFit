@@ -27,6 +27,10 @@ export type AuthErrorCode =
   | "mfa_challenge_expired"
   | "mfa_code_invalid"
   | "mfa_not_enrolled"
+  // Phase C — recovery codes. Distinct from `mfa_code_invalid` so
+  // the SPA can render "this recovery code didn't match" specifically
+  // (and so audit metadata is easy to slice).
+  | "mfa_recovery_code_invalid"
   | "internal";
 
 export function authError(
