@@ -35,6 +35,7 @@ import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
 import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
+import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -176,6 +177,10 @@ export async function startWorker(): Promise<void> {
   // Rows past their 24h TTL are functionally inert (treated as misses
   // by the middleware) but accumulate indefinitely without a prune.
   await registerIdempotencyKeysPruneJob(boss);
+  // HIPAA retention sweep — nightly. Backfills retention_until_at
+  // on legacy rows and flags expired rows for compliance review.
+  // Destruction itself is human-triggered via the admin UI.
+  await registerPatientDocumentsRetentionSweepJob(boss);
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase

@@ -44,8 +44,15 @@ import {
   type AccreditationPolicy,
   type CreatePolicyRequest,
 } from "@/lib/admin/accreditation-api";
+import {
+  destroyDocument,
+  listRetentionDocuments,
+  setLegalHold,
+  type RetentionBucket,
+  type RetentionDocument,
+} from "@/lib/admin/document-retention-api";
 
-type Tab = "training" | "grievances" | "policies";
+type Tab = "training" | "grievances" | "policies" | "retention";
 
 export function AdminCompliancePage() {
   const [tab, setTab] = useState<Tab>("training");
@@ -85,14 +92,21 @@ export function AdminCompliancePage() {
           active={tab === "policies"}
           onClick={() => setTab("policies")}
         />
+        <TabChip
+          label="Document retention"
+          active={tab === "retention"}
+          onClick={() => setTab("retention")}
+        />
       </div>
 
       {tab === "training" ? (
         <TrainingPanel />
       ) : tab === "grievances" ? (
         <GrievancesPanel />
-      ) : (
+      ) : tab === "policies" ? (
         <PoliciesPanel />
+      ) : (
+        <RetentionPanel />
       )}
     </div>
   );
@@ -1123,6 +1137,197 @@ function AddPolicyModal({
         error={error}
       />
     </ModalShell>
+  );
+}
+
+// ── Document retention tab ─────────────────────────────────────────
+
+const RETENTION_BUCKET_OPTIONS: Array<{
+  value: "actionable" | RetentionBucket;
+  label: string;
+}> = [
+  { value: "actionable", label: "Needs review" },
+  { value: "marked", label: "Flagged for destroy" },
+  { value: "legal_hold", label: "On legal hold" },
+  { value: "destroyed", label: "Destroyed (audit)" },
+];
+
+const BUCKET_TONE: Record<RetentionBucket, string> = {
+  active: "bg-emerald-100 text-emerald-900",
+  due_soon: "bg-amber-100 text-amber-900",
+  due_now: "bg-rose-100 text-rose-900",
+  marked: "bg-orange-100 text-orange-900",
+  destroyed: "bg-slate-200 text-slate-700",
+  legal_hold: "bg-blue-100 text-blue-900",
+};
+
+function RetentionPanel() {
+  const qc = useQueryClient();
+  const [bucket, setBucket] = useState<"actionable" | RetentionBucket>(
+    "actionable",
+  );
+  const queryKey = ["admin", "compliance", "retention", bucket] as const;
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey,
+    queryFn: () =>
+      listRetentionDocuments(
+        bucket === "actionable" ? undefined : (bucket as RetentionBucket),
+      ),
+  });
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey });
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          {RETENTION_BUCKET_OPTIONS.map((opt) => (
+            <TabChip
+              key={opt.value}
+              label={opt.label}
+              active={bucket === opt.value}
+              onClick={() => setBucket(opt.value)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {isPending ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorPanel error={error} onRetry={() => void refetch()} />
+      ) : data.documents.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">
+          Nothing in this view.
+        </p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr
+              className="text-left border-b"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            >
+              <th className="py-2 font-semibold">Type</th>
+              <th className="py-2 font-semibold">Filename</th>
+              <th className="py-2 font-semibold">Created</th>
+              <th className="py-2 font-semibold">Retention until</th>
+              <th className="py-2 font-semibold">State</th>
+              <th className="py-2 font-semibold"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.documents.map((d) => (
+              <RetentionRow
+                key={d.id}
+                doc={d}
+                onChanged={invalidate}
+              />
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="mt-3 text-[10px] text-muted-foreground">
+        Retention horizons follow the per-type catalog in the API (HIPAA 6y
+        floor, prescriptions 7y, sleep studies 10y, insurance cards 2y).
+        Destruction is admin-only and requires the row to be flagged by the
+        nightly sweep first.
+      </p>
+    </Card>
+  );
+}
+
+function RetentionRow({
+  doc,
+  onChanged,
+}: {
+  doc: RetentionDocument;
+  onChanged: () => void;
+}) {
+  const hold = useMutation({
+    mutationFn: (next: boolean) => {
+      const reason = window.prompt(
+        next
+          ? "Reason for applying legal hold (litigation, payer audit, etc.):"
+          : "Reason for releasing the hold:",
+      );
+      if (!reason || reason.trim().length === 0) {
+        throw new Error("A reason is required.");
+      }
+      return setLegalHold(doc.id, { hold: next, reason });
+    },
+    onSuccess: onChanged,
+  });
+  const destroy = useMutation({
+    mutationFn: () => destroyDocument(doc.id),
+    onSuccess: onChanged,
+  });
+  const canDestroy =
+    doc.bucket === "marked" && !doc.legalHold && doc.destroyedAt == null;
+  return (
+    <tr
+      className="border-b align-top"
+      style={{ borderColor: "hsl(var(--line-2))" }}
+    >
+      <td className="py-1.5 text-xs">{doc.documentType}</td>
+      <td className="py-1.5 text-xs">
+        <div>{doc.filename ?? "—"}</div>
+        <div className="text-[10px] text-muted-foreground font-mono">
+          {doc.id.slice(0, 8)}
+        </div>
+      </td>
+      <td className="py-1.5 text-xs">
+        {new Date(doc.createdAt).toLocaleDateString()}
+      </td>
+      <td className="py-1.5 text-xs">
+        {doc.retentionUntilAt
+          ? new Date(doc.retentionUntilAt).toLocaleDateString()
+          : "—"}
+      </td>
+      <td className="py-1.5">
+        <span
+          className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${BUCKET_TONE[doc.bucket]}`}
+        >
+          {doc.bucket.replace("_", " ")}
+        </span>
+      </td>
+      <td className="py-1.5 text-right whitespace-nowrap">
+        {doc.destroyedAt == null && (
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => {
+              try {
+                hold.mutate(!doc.legalHold);
+              } catch {
+                // ignore — reason prompt cancellation
+              }
+            }}
+            isLoading={hold.isPending}
+          >
+            {doc.legalHold ? "Release hold" : "Legal hold"}
+          </Button>
+        )}
+        {canDestroy && (
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Destroy this ${doc.documentType}? This clears the underlying object. The row stays in the audit trail.`,
+                )
+              ) {
+                destroy.mutate();
+              }
+            }}
+            isLoading={destroy.isPending}
+          >
+            Destroy
+          </Button>
+        )}
+      </td>
+    </tr>
   );
 }
 

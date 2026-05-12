@@ -404,6 +404,11 @@ export interface Database {
           review_note: string | null;
           created_at: string;
           updated_at: string;
+          retention_until_at: string | null;
+          legal_hold: boolean;
+          retention_marked_at: string | null;
+          destroyed_at: string | null;
+          destroyed_by_admin_id: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["patient_documents"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["patient_documents"]["Row"]>;
