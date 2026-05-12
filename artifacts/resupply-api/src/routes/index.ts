@@ -42,6 +42,14 @@ import appointmentRequestsRouter from "./admin/appointment-requests.js";
 import shopOrderLossClaimsRouter from "./admin/shop-order-loss-claims.js";
 import carrierLabelsRouter from "./admin/carrier-labels.js";
 import formAcknowledgementsRouter from "./admin/form-acknowledgements.js";
+import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
+import referralsAttributeRouter from "./admin/referrals-attribute.js";
+import patientMaintenanceLogRouter from "./admin/patient-maintenance-log.js";
+import resupplyFunnelRouter from "./admin/resupply-funnel.js";
+import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-manual.js";
+import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
+import providerPortalRouter from "./provider-portal.js";
+import shopOrderPodRouter from "./admin/shop-order-pod.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -331,6 +339,31 @@ router.use(carrierLabelsRouter);
 // /admin/form-acknowledgements — accreditation-binder summary +
 // per-patient HIPAA / AOB / ABN / FR / supplier-standards roster.
 router.use(formAcknowledgementsRouter);
+// /admin/patients/:id/fit-override — CSR override of the camera-
+// based mask-fit recommendation. One-row-per-patient.
+router.use(patientFitOverridesRouter);
+// /admin/referrals/scan-attribution — idempotent sweep that marks
+// pending patient_referrals rows as converted when a matching email
+// has placed a paid order.
+router.use(referralsAttributeRouter);
+// /admin/patients/:id/maintenance-log — CSR view of the patient's
+// hygiene checklist completion history.
+router.use(patientMaintenanceLogRouter);
+// /admin/analytics/resupply-funnel — episode-stage rollup with
+// confirm + fulfillment rates over a configurable window.
+router.use(resupplyFunnelRouter);
+// /admin/patients/:id/therapy-nights — manual entry path for nights
+// not delivered via the partner integration.
+router.use(patientTherapyNightsManualRouter);
+// /admin/patients/:id/identity-verifications — durable identity-check
+// log. We never store the SSN/ID; only the outcome + method.
+router.use(patientIdentityVerificationsRouter);
+// /provider-portal/:token — public token-gated read-only caseload
+// view for a physician/NP. Token minted by CSR.
+router.use(providerPortalRouter);
+// /admin/shop/orders/:orderId/pod — proof-of-delivery photo upload
+// stamp for accreditation + dispute resolution.
+router.use(shopOrderPodRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

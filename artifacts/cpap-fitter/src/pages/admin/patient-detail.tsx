@@ -67,6 +67,7 @@ import {
   fetchPatientTimeline,
   postPatientAddressChange,
 } from "@/lib/admin/patient-history-api";
+import { listPatientFormAcks } from "@/lib/admin/form-acks-api";
 import {
   prescriptionAttachmentDownloadUrl,
   removePrescriptionAttachment,
@@ -123,7 +124,8 @@ type Tab =
   | "sleep-studies"
   | "insurance"
   | "prior-auths"
-  | "equipment";
+  | "equipment"
+  | "forms";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -379,6 +381,12 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Equipment
         </TabButton>
+        <TabButton
+          active={tab === "forms"}
+          onClick={() => setTab("forms")}
+        >
+          Forms
+        </TabButton>
       </div>
 
       <Card>
@@ -424,6 +432,7 @@ export function PatientDetailPage({ id }: { id: string }) {
         {tab === "insurance" && <InsuranceCoveragesTab patientId={id} />}
         {tab === "prior-auths" && <PriorAuthorizationsTab patientId={id} />}
         {tab === "equipment" && <EquipmentTab patientId={id} />}
+        {tab === "forms" && <FormAcksTab patientId={id} />}
       </Card>
     </div>
   );
@@ -4433,5 +4442,81 @@ function AddressHistoryForm({
         Save
       </Button>
     </div>
+  );
+}
+
+function FormAcksTab({ patientId }: { patientId: string }) {
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "patients", patientId, "form-acks"] as const,
+    queryFn: () => listPatientFormAcks(patientId),
+  });
+  if (isPending) return <Spinner />;
+  if (isError) {
+    return (
+      <ErrorPanel error={error} onRetry={() => void refetch()} />
+    );
+  }
+  if (data.acknowledgements.length === 0) {
+    return (
+      <p
+        className="text-sm py-3"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        No form acknowledgements on file for this patient.
+      </p>
+    );
+  }
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr
+          className="text-left border-b"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          <th className="py-2 font-semibold">Form</th>
+          <th className="py-2 font-semibold">Signed version</th>
+          <th className="py-2 font-semibold">Source</th>
+          <th className="py-2 font-semibold">Signed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.acknowledgements.map((a) => {
+          const stale =
+            a.currentVersion && a.formVersion !== a.currentVersion;
+          return (
+            <tr
+              key={a.id}
+              className="border-b"
+              style={{ borderColor: "hsl(var(--line-2))" }}
+            >
+              <td className="py-2 font-medium">{a.formKind}</td>
+              <td className="py-2">
+                <span className="font-mono text-xs">{a.formVersion}</span>
+                {stale && (
+                  <span
+                    className="ml-2 inline-block px-1 py-0.5 rounded text-[10px] uppercase"
+                    style={{
+                      backgroundColor: "hsl(var(--alert-bg))",
+                      color: "hsl(var(--alert))",
+                    }}
+                  >
+                    out of date
+                  </span>
+                )}
+              </td>
+              <td
+                className="py-2 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                {a.source}
+              </td>
+              <td className="py-2 text-xs">
+                {new Date(a.signedAt).toLocaleDateString()}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

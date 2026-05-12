@@ -315,6 +315,31 @@ router.get(
   },
 );
 
+// POST /admin/providers/:id/portal-link — mint a 30-day signed link
+// the CSR sends to the provider so they can self-serve a view of
+// their caseload without an account. Idempotent; returns a new
+// token per call (so revocation is "stop sharing this URL").
+router.post(
+  "/admin/providers/:id/portal-link",
+  requireAdmin,
+  async (req, res) => {
+    const idParse = z.string().uuid().safeParse(req.params.id);
+    if (!idParse.success) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    const { signProviderPortalToken } = await import(
+      "../../lib/provider-portal-token"
+    );
+    const token = signProviderPortalToken(idParse.data);
+    res.json({
+      token,
+      path: `/provider-portal/${token}`,
+      expiresInDays: 30,
+    });
+  },
+);
+
 router.post(
   "/admin/providers/nppes-lookup",
   requireAdmin,

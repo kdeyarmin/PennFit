@@ -38,6 +38,11 @@ export const appointmentRequests = resupplySchema.table(
     assignedAdminUserId: text("assigned_admin_user_id"),
     triagedAt: timestamp("triaged_at", { withTimezone: true }),
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    // Tele-visit meeting URL — set by the CSR when the topic is
+    // telehealth_consult and the appointment is confirmed.
+    // Patient-facing reminders read this column.
+    meetingUrl: text("meeting_url"),
+    meetingProvider: varchar("meeting_provider", { length: 32 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),

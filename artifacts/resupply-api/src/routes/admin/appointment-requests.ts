@@ -21,7 +21,7 @@ router.get(
       .schema("resupply")
       .from("appointment_requests")
       .select(
-        "id, requester_email, requester_name, requester_phone, topic, preferred_window, notes, status, attached_patient_id, assigned_admin_user_id, triaged_at, scheduled_for, created_at",
+        "id, requester_email, requester_name, requester_phone, topic, preferred_window, notes, status, attached_patient_id, assigned_admin_user_id, triaged_at, scheduled_for, meeting_url, meeting_provider, created_at",
       )
       .order("created_at", { ascending: false })
       .limit(200);
@@ -44,6 +44,8 @@ router.get(
         assignedAdminUserId: r.assigned_admin_user_id,
         triagedAt: r.triaged_at,
         scheduledFor: r.scheduled_for,
+        meetingUrl: r.meeting_url,
+        meetingProvider: r.meeting_provider,
         createdAt: r.created_at,
       })),
     });
@@ -74,6 +76,8 @@ router.patch(
         assignedAdminUserId: z.string().min(1).max(64).nullable().optional(),
         scheduledFor: z.string().datetime().nullable().optional(),
         notes: z.string().trim().max(2000).nullable().optional(),
+        meetingUrl: z.string().trim().url().max(500).nullable().optional(),
+        meetingProvider: z.string().trim().max(32).nullable().optional(),
       })
       .strict()
       .safeParse(req.body);
@@ -92,6 +96,8 @@ router.patch(
       assigned_admin_user_id?: string | null;
       scheduled_for?: string | null;
       notes?: string | null;
+      meeting_url?: string | null;
+      meeting_provider?: string | null;
       triaged_at?: string;
       updated_at: string;
     } = { updated_at: new Date().toISOString() };
@@ -112,6 +118,12 @@ router.patch(
     }
     if (parsed.data.notes !== undefined) {
       update.notes = parsed.data.notes;
+    }
+    if (parsed.data.meetingUrl !== undefined) {
+      update.meeting_url = parsed.data.meetingUrl;
+    }
+    if (parsed.data.meetingProvider !== undefined) {
+      update.meeting_provider = parsed.data.meetingProvider;
     }
     const supabase = getSupabaseServiceRoleClient();
     const { error } = await supabase

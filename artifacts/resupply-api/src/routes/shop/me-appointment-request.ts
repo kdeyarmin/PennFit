@@ -21,6 +21,45 @@ const body = z
   })
   .strict();
 
+// GET surfaces all of this patient's open/scheduled appointment
+// requests so the portal can show "your telehealth visit is at 4pm
+// — join here" when a CSR has set meeting_url.
+router.get(
+  "/shop/me/appointment-request",
+  requireSignedIn,
+  async (req, res) => {
+    const email = req.shopCustomerEmail;
+    if (!email) {
+      res.json({ requests: [] });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("appointment_requests")
+      .select(
+        "id, topic, preferred_window, status, scheduled_for, meeting_url, meeting_provider, created_at",
+      )
+      .ilike("requester_email", email)
+      .in("status", ["new", "contacted", "scheduled"])
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) throw error;
+    res.json({
+      requests: (data ?? []).map((r) => ({
+        id: r.id,
+        topic: r.topic,
+        preferredWindow: r.preferred_window,
+        status: r.status,
+        scheduledFor: r.scheduled_for,
+        meetingUrl: r.meeting_url,
+        meetingProvider: r.meeting_provider,
+        createdAt: r.created_at,
+      })),
+    });
+  },
+);
+
 router.post(
   "/shop/me/appointment-request",
   requireSignedIn,

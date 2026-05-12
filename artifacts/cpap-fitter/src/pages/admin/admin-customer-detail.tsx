@@ -49,6 +49,7 @@ import { CustomerNotesPanel } from "@/components/admin/CustomerNotesPanel";
 import { CustomerFollowupsPanel } from "@/components/admin/CustomerFollowupsPanel";
 import { MessageTemplateOverridesPanel } from "@/components/admin/message-template-overrides-panel";
 import { OrderNotesPanel } from "@/components/admin/OrderNotesPanel";
+import { LossClaimsPanel } from "@/components/admin/LossClaimsPanel";
 import {
   AdminCustomerNotFoundError,
   getAdminCustomerDetail,
@@ -698,6 +699,7 @@ function OrderRow({
   order: import("@/lib/admin/customers-api").AdminCustomerOrder;
 }) {
   const [showNotes, setShowNotes] = useState(false);
+  const [showClaims, setShowClaims] = useState(false);
   return (
     <li
       style={{
@@ -747,9 +749,26 @@ function OrderRow({
           >
             {showNotes ? "Hide notes" : "Notes"}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowClaims((v) => !v)}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border, #e2e8f0)",
+              borderRadius: 4,
+              padding: "2px 8px",
+              fontSize: 11,
+              cursor: "pointer",
+              color: "var(--text-muted, #475569)",
+            }}
+            aria-expanded={showClaims}
+          >
+            {showClaims ? "Hide claims" : "Claims"}
+          </button>
         </span>
       </div>
       {showNotes && <OrderNotesPanel orderId={order.id} />}
+      {showClaims && <LossClaimsPanel orderId={order.id} />}
     </li>
   );
 }

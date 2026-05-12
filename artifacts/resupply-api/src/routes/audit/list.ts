@@ -46,7 +46,15 @@ const listQuery = z
   .object({
     action: z.string().min(1).max(128).optional(),
     targetTable: z.string().min(1).max(64).optional(),
+    // Exact uuid match against `target_id`. Useful when an
+    // investigator already has the row id and wants the entire
+    // audit trail for it.
+    targetId: z.string().uuid().optional(),
+    // Substring match against operator_email. Same `ilike` posture
+    // as `action` so a partial email ("@example.com") works.
+    operatorEmail: z.string().min(1).max(254).optional(),
     since: z.string().datetime({ offset: true }).optional(),
+    until: z.string().datetime({ offset: true }).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).default(0),
   })
@@ -66,7 +74,16 @@ router.get("/audit", requireAdmin, auditReadLimiter, async (req, res) => {
     });
     return;
   }
-  const { action, targetTable, since, limit, offset } = parsed.data;
+  const {
+    action,
+    targetTable,
+    targetId,
+    operatorEmail,
+    since,
+    until,
+    limit,
+    offset,
+  } = parsed.data;
 
   const supabase = getSupabaseServiceRoleClient();
   let query = supabase
@@ -81,7 +98,11 @@ router.get("/audit", requireAdmin, auditReadLimiter, async (req, res) => {
 
   if (action) query = query.ilike("action", `%${action}%`);
   if (targetTable) query = query.eq("target_table", targetTable);
+  if (targetId) query = query.eq("target_id", targetId);
+  if (operatorEmail)
+    query = query.ilike("operator_email", `%${operatorEmail}%`);
   if (since) query = query.gte("occurred_at", new Date(since).toISOString());
+  if (until) query = query.lte("occurred_at", new Date(until).toISOString());
 
   const { data, count, error } = await query;
   if (error) {

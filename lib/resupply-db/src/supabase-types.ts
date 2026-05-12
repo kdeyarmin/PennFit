@@ -1355,6 +1355,8 @@ export interface Database {
           assigned_admin_user_id: string | null;
           triaged_at: string | null;
           scheduled_for: string | null;
+          meeting_url: string | null;
+          meeting_provider: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1390,6 +1392,46 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["shop_order_loss_claims"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_identity_verifications: {
+        Row: {
+          id: string;
+          patient_id: string;
+          method:
+            | "dob_last4_ssn"
+            | "gov_id_upload"
+            | "video_attest"
+            | "in_person";
+          result: "pass" | "fail" | "skipped";
+          notes: string | null;
+          verified_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_identity_verifications"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_identity_verifications"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_fit_overrides: {
+        Row: {
+          patient_id: string;
+          recommended_mask_sku: string;
+          recommended_mask_size: string | null;
+          rationale: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_fit_overrides"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_fit_overrides"]["Row"]
         >;
         Relationships: [];
       };
@@ -1677,6 +1719,9 @@ export interface Database {
           shipping_email_sent_at: string | null;
           customer_email: string | null;
           review_request_sent_at: string | null;
+          pod_object_key: string | null;
+          pod_uploaded_at: string | null;
+          pod_signed_name: string | null;
           created_at: string;
           updated_at: string;
           paid_at: string | null;

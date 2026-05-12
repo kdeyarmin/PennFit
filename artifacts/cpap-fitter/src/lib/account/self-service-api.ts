@@ -122,3 +122,15 @@ export const submitAppointmentRequest = (body: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
+// ---- Lost-shipment report ----
+
+export const reportLostShipment = (orderId: string, note: string) =>
+  jsonFetch<{ id: string }>(
+    `/shop/me/orders/${encodeURIComponent(orderId)}/loss-claim`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    },
+  );

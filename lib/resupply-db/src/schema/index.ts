@@ -38,6 +38,8 @@ export * from "./appointment-requests";
 export * from "./shop-order-loss-claims";
 export * from "./patient-form-acknowledgements";
 export * from "./patient-referrals";
+export * from "./patient-fit-overrides";
+export * from "./patient-identity-verifications";
 export * from "./patient-coaching-plans";
 export * from "./conversation-coaching-notes";
 export * from "./patient-address-history";
