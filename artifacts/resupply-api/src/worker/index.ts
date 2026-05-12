@@ -39,6 +39,7 @@ import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-docume
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
 import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
+import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 
 let bossInstance: PgBoss | null = null;
@@ -211,6 +212,11 @@ export async function startWorker(): Promise<void> {
   // self-re-enqueue every TICK_INTERVAL_SECONDS until the campaign
   // is drained, paused, or cancelled.
   await registerBulkCampaignTickJob(boss);
+
+  // Nightly bulk refresh of every active therapy-cloud link. Runs at
+  // 04:30 UTC; persists snapshot recentNights into the canonical
+  // patient_therapy_nights table for downstream consumers.
+  await registerTherapyNightlySyncJob(boss);
 
   workerReady = true;
   logger.info(

@@ -50,6 +50,11 @@ import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-man
 import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
 import providerPortalRouter from "./provider-portal.js";
 import shopOrderPodRouter from "./admin/shop-order-pod.js";
+import integrationsStatusRouter from "./admin/integrations-status.js";
+import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
+import integrationsWebhooksRouter from "./integrations-webhooks.js";
+import integrationsErrorsRouter from "./admin/integrations-errors.js";
+import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -364,6 +369,21 @@ router.use(providerPortalRouter);
 // /admin/shop/orders/:orderId/pod — proof-of-delivery photo upload
 // stamp for accreditation + dispute resolution.
 router.use(shopOrderPodRouter);
+// /admin/integrations/status — vendor-adapter health dashboard.
+router.use(integrationsStatusRouter);
+// /admin/integrations/nightly-sync — manual trigger for the nightly
+// bulk-sync sweep. Same code path the scheduled job runs.
+router.use(integrationsNightlySyncRouter);
+// /integrations/webhooks/:vendor — vendor PUSH endpoints (AirView
+// and Care Orchestrator). HMAC-verified. Public mount because
+// vendors don't carry admin sessions.
+router.use(integrationsWebhooksRouter);
+// /admin/integrations/errors — sync-failure triage queue + retry.
+router.use(integrationsErrorsRouter);
+// /admin/patients/:id/integrations/refresh-supplies — post-shipment
+// hook that re-fetches just the vendor supply roster (preserves
+// prior nights + settings).
+router.use(integrationsRefreshSuppliesRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

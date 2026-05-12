@@ -60,6 +60,7 @@ import { AdminBackordersPage } from "@/pages/admin/admin-backorders";
 import { AdminClosuresPage } from "@/pages/admin/admin-closures";
 import { AdminAppointmentRequestsPage } from "@/pages/admin/admin-appointment-requests";
 import { AdminAccreditationBinderPage } from "@/pages/admin/admin-accreditation-binder";
+import { AdminIntegrationsPage } from "@/pages/admin/admin-integrations";
 import { AdminCoachingPage } from "@/pages/admin/admin-coaching";
 import { AdminDeliveryFailuresPage } from "@/pages/admin/admin-delivery-failures";
 import { AdminRuleTesterPage } from "@/pages/admin/admin-rule-tester";
@@ -206,6 +207,10 @@ function AdminConsole() {
           <Route
             path="/admin/accreditation-binder"
             component={AdminAccreditationBinderPage}
+          />
+          <Route
+            path="/admin/integrations"
+            component={AdminIntegrationsPage}
           />
           <Route
             path="/admin/coaching"
