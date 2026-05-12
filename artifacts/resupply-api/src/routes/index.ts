@@ -26,6 +26,7 @@ import analyticsRouter from "./admin/analytics.js";
 import trainingRecordsRouter from "./admin/training-records.js";
 import grievancesRouter from "./admin/grievances.js";
 import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
+import productivityRouter from "./admin/productivity.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -270,6 +271,9 @@ router.use(grievancesRouter);
 // evidence sections (policies, training, grievances) together
 // for a single hand-off to a surveyor.
 router.use(accreditationPoliciesRouter);
+// /admin/productivity — per-agent throughput dashboard for
+// supervisors. reports.read-gated; CSRs see their own row too.
+router.use(productivityRouter);
 // /admin/bulk-campaigns/* — staging-side surface for bulk-email
 // campaigns. Phase A persists draft + cancelled; Phase B will add
 // the send-side worker that drains bulk_campaign_recipients.

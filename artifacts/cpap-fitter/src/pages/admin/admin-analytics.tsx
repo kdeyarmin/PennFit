@@ -16,18 +16,23 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Gauge, Users } from "lucide-react";
+import { Activity, AlertCircle, Download, Gauge, Users } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import {
+  complianceCohortsCsvUrl,
   fetchComplianceCohorts,
   fetchCsrProductivity,
   fetchResupplyFunnel,
+  fetchStuckEpisodes,
+  resupplyFunnelCsvUrl,
   type ComplianceCohortsResponse,
   type CsrProductivityResponse,
   type ResupplyFunnelResponse,
+  type StuckEpisode,
+  type StuckEpisodeStage,
 } from "@/lib/admin/analytics-api";
 
 export function AdminAnalyticsPage() {
@@ -50,12 +55,32 @@ export function AdminAnalyticsPage() {
       </header>
 
       <FunnelPanel days={funnelDays} onDaysChange={setFunnelDays} />
+      <StuckEpisodesPanel />
       <CohortsPanel days={cohortDays} onDaysChange={setCohortDays} />
       <ProductivityPanel
         days={productivityDays}
         onDaysChange={setProductivityDays}
       />
     </div>
+  );
+}
+
+/** A surveyor-friendly inline CSV link rendered on each panel
+ *  header. Browser handles the download via the cookie-based
+ *  session; the API gates with reports.read. */
+function CsvLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
+      style={{
+        backgroundColor: "hsl(var(--line-2))",
+        color: "hsl(var(--ink-2))",
+      }}
+    >
+      <Download className="h-3 w-3" />
+      {label}
+    </a>
   );
 }
 
@@ -121,11 +146,14 @@ function FunnelPanel({
       }
       subtitle="Episode lifecycle and drop-off counts in the window."
       action={
-        <WindowPicker
-          value={days}
-          onChange={onDaysChange}
-          options={[7, 30, 90]}
-        />
+        <div className="flex items-center gap-2">
+          <WindowPicker
+            value={days}
+            onChange={onDaysChange}
+            options={[7, 30, 90]}
+          />
+          <CsvLink href={resupplyFunnelCsvUrl(days)} label="CSV" />
+        </div>
       }
     >
       {isPending ? (
@@ -136,6 +164,144 @@ function FunnelPanel({
         <FunnelBody data={data} />
       )}
     </Card>
+  );
+}
+
+// ── Stuck episodes drill-down ──────────────────────────────────────
+
+const STUCK_STAGE_LABEL: Record<StuckEpisodeStage, string> = {
+  outreach_pending: "Outreach pending",
+  awaiting_response: "Awaiting response",
+  confirmed: "Confirmed (not yet fulfilled)",
+};
+
+function StuckEpisodesPanel() {
+  const [stage, setStage] = useState<StuckEpisodeStage>("awaiting_response");
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "analytics", "stuck", stage],
+    queryFn: () => fetchStuckEpisodes(stage),
+  });
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          Stuck episodes
+        </span>
+      }
+      subtitle="Oldest episodes still sitting in a non-terminal stage. Triage these to clear the funnel."
+      action={
+        <div className="flex items-center gap-1">
+          {(
+            [
+              "outreach_pending",
+              "awaiting_response",
+              "confirmed",
+            ] as StuckEpisodeStage[]
+          ).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStage(s)}
+              className="rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
+              style={{
+                backgroundColor:
+                  stage === s
+                    ? "hsl(var(--penn-gold))"
+                    : "hsl(var(--line-2))",
+                color:
+                  stage === s
+                    ? "hsl(var(--penn-navy))"
+                    : "hsl(var(--ink-2))",
+              }}
+            >
+              {STUCK_STAGE_LABEL[s]}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      {isPending ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorPanel error={error} onRetry={() => void refetch()} />
+      ) : data.episodes.length === 0 ? (
+        <p className="text-sm py-2" style={{ color: "hsl(var(--ink-3))" }}>
+          Nothing stuck in this stage. 🎉
+        </p>
+      ) : (
+        <StuckEpisodesTable episodes={data.episodes} />
+      )}
+    </Card>
+  );
+}
+
+function StuckEpisodesTable({ episodes }: { episodes: StuckEpisode[] }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr
+          className="text-left border-b"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          <th className="py-2 font-semibold">Age</th>
+          <th className="py-2 font-semibold">Patient</th>
+          <th className="py-2 font-semibold">Payer</th>
+          <th className="py-2 font-semibold">Created</th>
+          <th className="py-2 font-semibold">Expires</th>
+          <th className="py-2 font-semibold"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {episodes.map((e) => (
+          <tr
+            key={e.id}
+            className="border-b"
+            style={{ borderColor: "hsl(var(--line-2))" }}
+          >
+            <td
+              className="py-1.5 font-mono tabular-nums"
+              style={{
+                color:
+                  e.ageDays >= 7
+                    ? "hsl(0 70% 35%)"
+                    : e.ageDays >= 3
+                      ? "hsl(35 75% 35%)"
+                      : "hsl(var(--ink-2))",
+              }}
+            >
+              {e.ageDays}d
+            </td>
+            <td className="py-1.5">
+              {e.patientName ?? (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {e.patientId.slice(0, 8)}
+                </span>
+              )}
+            </td>
+            <td className="py-1.5 text-xs">{e.insurancePayer ?? "—"}</td>
+            <td className="py-1.5 text-xs">
+              {new Date(e.createdAt).toLocaleDateString()}
+            </td>
+            <td className="py-1.5 text-xs">
+              {e.expiresAt
+                ? new Date(e.expiresAt).toLocaleDateString()
+                : "—"}
+            </td>
+            <td className="py-1.5 text-right">
+              <a
+                href={`/admin/patients/${e.patientId}`}
+                className="text-xs hover:underline"
+                style={{ color: "hsl(var(--penn-navy))" }}
+              >
+                Open →
+              </a>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -250,11 +416,14 @@ function CohortsPanel({
       }
       subtitle="Medicare 90-day adherence: % of patients whose best 30-night window hit ≥4 hr on ≥70% of nights."
       action={
-        <WindowPicker
-          value={days}
-          onChange={onDaysChange}
-          options={[90, 180, 365]}
-        />
+        <div className="flex items-center gap-2">
+          <WindowPicker
+            value={days}
+            onChange={onDaysChange}
+            options={[90, 180, 365]}
+          />
+          <CsvLink href={complianceCohortsCsvUrl(days)} label="CSV" />
+        </div>
       }
     >
       {isPending ? (

@@ -310,6 +310,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Operational KPIs and exports",
       },
       {
+        href: "/admin/productivity",
+        label: "Team throughput",
+        icon: Activity,
+        matchPrefix: "/admin/productivity",
+        hint: "Per-agent close / approve / resolve counts",
+      },
+      {
         href: "/admin/analytics",
         label: "Clinical Analytics",
         icon: Activity,

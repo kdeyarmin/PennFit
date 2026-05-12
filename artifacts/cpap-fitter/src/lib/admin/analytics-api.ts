@@ -80,3 +80,38 @@ export const fetchCsrProductivity = (days: number) =>
   jsonFetch<CsrProductivityResponse>(
     `/admin/analytics/csr-productivity?days=${days}`,
   );
+
+export type StuckEpisodeStage =
+  | "outreach_pending"
+  | "awaiting_response"
+  | "confirmed";
+
+export interface StuckEpisode {
+  id: string;
+  patientId: string;
+  patientName: string | null;
+  insurancePayer: string | null;
+  status: StuckEpisodeStage;
+  createdAt: string;
+  dueAt: string | null;
+  expiresAt: string | null;
+  prescriptionId: string | null;
+  ageDays: number;
+}
+
+export interface StuckEpisodesResponse {
+  stage: StuckEpisodeStage;
+  count: number;
+  episodes: StuckEpisode[];
+}
+
+export const fetchStuckEpisodes = (stage: StuckEpisodeStage, limit = 25) =>
+  jsonFetch<StuckEpisodesResponse>(
+    `/admin/analytics/episodes-stuck?stage=${stage}&limit=${limit}`,
+  );
+
+export const resupplyFunnelCsvUrl = (days: number) =>
+  `/resupply-api/admin/analytics/resupply-funnel.csv?days=${days}`;
+
+export const complianceCohortsCsvUrl = (days: number) =>
+  `/resupply-api/admin/analytics/compliance-cohorts.csv?days=${days}`;
