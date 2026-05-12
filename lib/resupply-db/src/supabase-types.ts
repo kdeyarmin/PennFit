@@ -1366,6 +1366,81 @@ export interface Database {
         >;
         Relationships: [];
       };
+      shop_order_loss_claims: {
+        Row: {
+          id: string;
+          order_id: string;
+          opened_by_user_id: string | null;
+          status:
+            | "open"
+            | "carrier_filed"
+            | "resolved_refunded"
+            | "resolved_reshipped"
+            | "closed_unresolved";
+          carrier_claim_number: string | null;
+          resolution_note: string | null;
+          opened_at: string;
+          carrier_filed_at: string | null;
+          resolved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_order_loss_claims"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_order_loss_claims"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_referrals: {
+        Row: {
+          id: string;
+          referrer_patient_id: string;
+          code: string;
+          referee_email: string | null;
+          referee_name: string | null;
+          converted_at: string | null;
+          converted_order_id: string | null;
+          status: "pending" | "converted" | "expired" | "revoked";
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_referrals"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_referrals"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_form_acknowledgements: {
+        Row: {
+          id: string;
+          patient_id: string;
+          form_kind:
+            | "hipaa_npp"
+            | "aob"
+            | "abn"
+            | "financial_responsibility"
+            | "supplier_standards";
+          form_version: string;
+          signed_at: string;
+          signed_from_ip: string | null;
+          source: "patient_portal" | "csr_recorded" | "paper_scan";
+          document_id: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_form_acknowledgements"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_form_acknowledgements"]["Row"]
+        >;
+        Relationships: [];
+      };
       office_recurring_closures: {
         Row: {
           id: string;

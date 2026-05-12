@@ -57,6 +57,11 @@ const ALLOWED_DOCUMENT_TYPES = new Set([
   "prescription",
   "referral",
   "eob", // Explanation of Benefits
+  // Patient-uploaded sleep-study report (PSG / HSAT PDF). The
+  // verifications team picks these out of the document-review
+  // queue and extracts the queryable findings into the
+  // sleep_studies table.
+  "sleep_study",
   "other",
 ]);
 

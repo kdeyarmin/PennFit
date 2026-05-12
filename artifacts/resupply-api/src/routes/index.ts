@@ -39,6 +39,9 @@ import patientTimelineRouter from "./admin/patient-timeline.js";
 import auditArchiveRouter from "./admin/audit-archive.js";
 import csrShiftsRouter from "./admin/csr-shifts.js";
 import appointmentRequestsRouter from "./admin/appointment-requests.js";
+import shopOrderLossClaimsRouter from "./admin/shop-order-loss-claims.js";
+import carrierLabelsRouter from "./admin/carrier-labels.js";
+import formAcknowledgementsRouter from "./admin/form-acknowledgements.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -317,6 +320,17 @@ router.use(csrShiftsRouter);
 // /admin/appointment-requests — CSR queue for patient-initiated
 // appointment requests (fitting help, telehealth, etc.).
 router.use(appointmentRequestsRouter);
+// /admin/shop/orders/:orderId/loss-claims — lost-shipment workflow
+// for paid orders that never arrived. Lifecycle: open →
+// carrier_filed → resolved_refunded | resolved_reshipped |
+// closed_unresolved.
+router.use(shopOrderLossClaimsRouter);
+// /admin/shop/returns/:returnId/label — adapter-backed carrier
+// label generation. Returns 503 until CARRIER_LABEL_VENDOR is set.
+router.use(carrierLabelsRouter);
+// /admin/form-acknowledgements — accreditation-binder summary +
+// per-patient HIPAA / AOB / ABN / FR / supplier-standards roster.
+router.use(formAcknowledgementsRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

@@ -37,6 +37,13 @@ import meSubstitutionsRouter from "./me-substitutions";
 import meEducationFeedRouter from "./me-education-feed";
 import meQuarterlySummaryRouter from "./me-quarterly-summary";
 import meAppointmentRequestRouter from "./me-appointment-request";
+import meLossClaimRouter from "./me-loss-claim";
+import validateAddressRouter from "./validate-address";
+import meEquipmentRouter from "./me-equipment";
+import meInsuranceRouter from "./me-insurance";
+import meSleepStudyRouter from "./me-sleep-study";
+import meFormAcknowledgementsRouter from "./me-form-acknowledgements";
+import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
 
 const router: IRouter = Router();
@@ -90,6 +97,27 @@ router.use(meQuarterlySummaryRouter);
 // fitting / telehealth / general appointment. Writes to the
 // appointment_requests CSR queue.
 router.use(meAppointmentRequestRouter);
+// /shop/me/orders/:orderId/loss-claim — patient self-reports a paid
+// shipped order never arrived. Opens a shop_order_loss_claims row
+// for the CSR queue (does not auto-issue a refund).
+router.use(meLossClaimRouter);
+// /shop/validate-address — pre-checkout shipping-address probe.
+// Heuristic-only today; pluggable for a future Smarty/USPS adapter.
+router.use(validateAddressRouter);
+// /shop/me/equipment — patient-facing CPAP/equipment registry.
+// Patients can self-register devices for the recall workflow.
+router.use(meEquipmentRouter);
+// /shop/me/insurance — patient-facing primary-coverage view + update.
+// Every patient update clears verified_at so the CSR queue re-verifies.
+router.use(meInsuranceRouter);
+// /shop/me/sleep-study — patient self-reports the structured findings
+// from a sleep study (AHI, date, type). CSR verifies before LCD gating.
+router.use(meSleepStudyRouter);
+// /shop/me/form-acknowledgements — e-sign of HIPAA NPP / AOB / ABN /
+// Financial Responsibility / Supplier Standards intake forms.
+router.use(meFormAcknowledgementsRouter);
+// /shop/me/referrals — patient-to-patient word-of-mouth referral codes.
+router.use(meReferralsRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);

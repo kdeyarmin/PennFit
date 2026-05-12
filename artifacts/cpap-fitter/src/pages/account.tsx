@@ -92,6 +92,12 @@ import { AccountMessagesSection } from "@/components/account-messages-section";
 import { CustomerChatSection } from "@/components/customer-chat-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
+import {
+  EquipmentRegistrySection,
+  EsignFormsSection,
+  ReferralProgramSection,
+  RequestAppointmentSection,
+} from "@/components/self-service-sections";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 import { InsightsSection } from "@/components/insights-section";
 import { TherapySummarySection } from "@/components/therapy-summary-section";
@@ -344,6 +350,10 @@ function AccountInner() {
             previewMode={previewMode === true}
           />
           <MyReturnsSection />
+          <EquipmentRegistrySection />
+          <RequestAppointmentSection />
+          <EsignFormsSection />
+          <ReferralProgramSection />
           <CommPrefsSection />
           <DataExportSection />
         </div>

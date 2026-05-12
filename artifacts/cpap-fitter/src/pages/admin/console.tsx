@@ -58,6 +58,7 @@ import { AdminReportsPage } from "@/pages/admin/admin-reports";
 import { AdminProductivityPage } from "@/pages/admin/admin-productivity";
 import { AdminBackordersPage } from "@/pages/admin/admin-backorders";
 import { AdminClosuresPage } from "@/pages/admin/admin-closures";
+import { AdminAppointmentRequestsPage } from "@/pages/admin/admin-appointment-requests";
 import { AdminCoachingPage } from "@/pages/admin/admin-coaching";
 import { AdminDeliveryFailuresPage } from "@/pages/admin/admin-delivery-failures";
 import { AdminRuleTesterPage } from "@/pages/admin/admin-rule-tester";
@@ -196,6 +197,10 @@ function AdminConsole() {
           <Route
             path="/admin/closures"
             component={AdminClosuresPage}
+          />
+          <Route
+            path="/admin/appointment-requests"
+            component={AdminAppointmentRequestsPage}
           />
           <Route
             path="/admin/coaching"

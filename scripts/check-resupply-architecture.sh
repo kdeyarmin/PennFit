@@ -388,6 +388,20 @@ if [[ -d lib/resupply-db/src/schema ]]; then
   fi
 fi
 
+# Rule 14b: SQL-migration counterpart to Rule 14. A contributor might
+# bypass the schema-file rule by writing a hand-rolled migration. This
+# catches that by grepping for `CREATE TABLE resupply.<name>` patterns
+# matching the same forbidden vocabulary. Same Pacware-boundary
+# rationale — change only via ADR.
+if [[ -d lib/resupply-db/drizzle ]]; then
+  forbidden_inventory_sql="$(find lib/resupply-db/drizzle -maxdepth 1 -type f -name '*.sql' \
+    -exec grep -liE '(CREATE|ALTER)[[:space:]]+TABLE[[:space:]]+(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?"?resupply"?\."?(inventory_items|inventory_lots|purchase_orders|receiving_events|receiving_receipts|warehouses|stock_transfers)"?' {} \; 2>/dev/null || true)"
+  if [[ -n "$forbidden_inventory_sql" ]]; then
+    fail "SQL migrations may not own inventory/warehousing tables — Pacware is the system of record."
+    echo "$forbidden_inventory_sql" | sed 's/^/    /' >&2
+  fi
+fi
+
 if [[ "$errors" -gt 0 ]]; then
   echo "" >&2
   echo "$errors architecture rule violation(s). See docs/resupply/ARCHITECTURE.md for the full ruleset." >&2
