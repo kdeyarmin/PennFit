@@ -687,4 +687,91 @@ router.post(
   },
 );
 
+// GET /admin/bulk-campaigns/:id/recipients.csv — flat CSV for a
+// CSR to audit who's in / out and why. Paged DB read because a
+// busy campaign can hit tens of thousands of recipients.
+router.get(
+  "/admin/bulk-campaigns/:id/recipients.csv",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "campaign_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: campaign } = await supabase
+      .schema("resupply")
+      .from("bulk_campaigns")
+      .select("id, name")
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (!campaign) {
+      res.status(404).json({ error: "campaign_not_found" });
+      return;
+    }
+    const filename = `bulk-campaign-${campaign.name.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 40)}-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.write(
+      [
+        "recipient_kind",
+        "recipient_id",
+        "recipient_email",
+        "status",
+        "suppression_reason",
+        "created_at",
+      ].join(",") + "\n",
+    );
+    // Page through PostgREST in 1k batches so the response streams
+    // start fast and stay bounded.
+    const PAGE = 1000;
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("bulk_campaign_recipients")
+        .select(
+          "recipient_kind, recipient_id, recipient_email, status, suppression_reason, created_at",
+        )
+        .eq("campaign_id", idCheck.data)
+        .order("created_at", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (error) throw error;
+      const rows = data ?? [];
+      if (rows.length === 0) break;
+      for (const r of rows) {
+        res.write(
+          [
+            r.recipient_kind,
+            r.recipient_id,
+            r.recipient_email,
+            r.status,
+            r.suppression_reason ?? "",
+            r.created_at,
+          ]
+            .map(csvCell)
+            .join(",") + "\n",
+        );
+      }
+      if (rows.length < PAGE) break;
+      offset += PAGE;
+    }
+    res.end();
+  },
+);
+
+function csvCell(value: unknown): string {
+  if (value == null) return "";
+  const s = String(value);
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
 export default router;

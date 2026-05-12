@@ -126,6 +126,22 @@ export const conversations = resupplySchema.table(
       .notNull()
       .default(sql`'[]'::jsonb`)
       .$type<string[]>(),
+    /**
+     * Free-form tags a CSR applies for triage / reporting (e.g.
+     * "billing", "mask-fit", "follow-up-needed"). Empty array
+     * default. Normalized lowercase server-side.
+     */
+    tags: jsonb("tags")
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<string[]>(),
+    /**
+     * Snooze marker — when set, the SPA hides the conversation
+     * from the active queue until the timestamp passes. Strictly
+     * a UI convenience; the server does not auto-resurface (a CSR
+     * un-snoozes via the same endpoint).
+     */
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
     priority: text("priority").notNull().default("normal"),
     slaDueAt: timestamp("sla_due_at", { withTimezone: true }),
     escalatedAt: timestamp("escalated_at", { withTimezone: true }),

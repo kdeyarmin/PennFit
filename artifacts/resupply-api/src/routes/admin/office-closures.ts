@@ -23,6 +23,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { findActiveClosure } from "../../lib/office-closure/active";
+import { buildClosuresIcal } from "../../lib/office-closure/build-ical";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -211,6 +212,45 @@ router.post(
       logger.warn({ err }, "office_closure.ended_early audit failed");
     });
     res.json({ ok: true });
+  },
+);
+
+// GET /admin/office-closures.ics — iCalendar feed for staff who
+// want their personal calendar app to show "office is closed."
+// Includes all closures whose end is in the future + 30 days
+// past (recent past closures stay visible briefly).
+router.get(
+  "/admin/office-closures.ics",
+  requireAdmin,
+  async (_req, res) => {
+    const supabase = getSupabaseServiceRoleClient();
+    const horizon = new Date();
+    horizon.setUTCDate(horizon.getUTCDate() - 30);
+    const { data, error } = await supabase
+      .schema("resupply")
+      .from("office_closures")
+      .select("id, label, starts_at, ends_at, auto_reply_message")
+      .gte("ends_at", horizon.toISOString())
+      .order("starts_at", { ascending: true })
+      .limit(500);
+    if (error) throw error;
+    const ics = buildClosuresIcal({
+      practiceName:
+        process.env.RESUPPLY_PRACTICE_NAME?.trim() || "PennPaps",
+      closures: (data ?? []).map((r) => ({
+        id: r.id,
+        label: r.label,
+        startsAt: r.starts_at,
+        endsAt: r.ends_at,
+        autoReplyMessage: r.auto_reply_message,
+      })),
+    });
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="pennpaps-closures.ics"',
+    );
+    res.send(ics);
   },
 );
 

@@ -38,6 +38,8 @@ import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
+import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
+import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -191,6 +193,13 @@ export async function startWorker(): Promise<void> {
   // Patient hygiene weekly nudge — emails patients with overdue
   // mask-wipe / hose-wash / etc. tasks. Sunday 11:13 UTC.
   await registerMaintenanceNudgeJob(boss);
+  // HIPAA audit-log retention sweep — nightly flag of rows past
+  // the 6-year floor. Destruction stays human-triggered.
+  await registerAuditLogArchiveSweepJob(boss);
+  // Adherence coaching progress sweep — refresh latest_compliance_pct
+  // on open plans and auto-flip outreach_made → improving when the
+  // patient's recent 30-night adherence crosses target.
+  await registerCoachingProgressJob(boss);
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase

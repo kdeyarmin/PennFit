@@ -214,6 +214,7 @@ export interface Database {
           ip: string | null;
           user_agent: string | null;
           occurred_at: string;
+          archived_at: string | null;
         };
         Insert: {
           id?: string;
@@ -226,6 +227,7 @@ export interface Database {
           ip?: string | null;
           user_agent?: string | null;
           occurred_at?: string;
+          archived_at?: string | null;
         };
         Update: Partial<Database["resupply"]["Tables"]["audit_log"]["Insert"]>;
         Relationships: [];
@@ -250,6 +252,8 @@ export interface Database {
           customer_last_read_at: string | null;
           last_in_app_notification_at: string | null;
           required_skills: Json;
+          tags: Json;
+          snoozed_until: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1344,6 +1348,28 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["patient_coaching_plans"]["Row"]
+        >;
+        Relationships: [];
+      };
+      patient_address_history: {
+        Row: {
+          id: string;
+          patient_id: string;
+          line1: string | null;
+          line2: string | null;
+          city: string | null;
+          state: string | null;
+          postal_code: string | null;
+          country: string | null;
+          reason: string | null;
+          changed_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_address_history"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_address_history"]["Row"]
         >;
         Relationships: [];
       };

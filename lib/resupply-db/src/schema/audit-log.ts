@@ -53,12 +53,24 @@ export const auditLog = resupplySchema.table(
     occurredAt: timestamp("occurred_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
+    /**
+     * Stamped by the nightly archive worker when a row is past
+     * the HIPAA 6-year floor. Surveyors and counsel both want a
+     * "we're past the floor on these rows" marker before any
+     * deletion. We DO NOT auto-delete — a human triggers
+     * destruction once they've reviewed the archived set.
+     */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => ({
     occurredAtIdx: index("audit_log_occurred_at_idx").on(t.occurredAt),
     adminIdx: index("audit_log_operator_idx").on(t.adminEmail),
     actionIdx: index("audit_log_action_idx").on(t.action),
     targetIdx: index("audit_log_target_idx").on(t.targetTable, t.targetId),
+    // Sweep hot path — rows past horizon and not yet flagged.
+    archiveSweepIdx: index("audit_log_archive_sweep_idx")
+      .on(t.occurredAt)
+      .where(sql`${t.archivedAt} IS NULL`),
   }),
 );
 

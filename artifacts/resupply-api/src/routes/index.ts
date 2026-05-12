@@ -33,6 +33,9 @@ import officeClosuresRouter from "./admin/office-closures.js";
 import coachingPlansRouter from "./admin/coaching-plans.js";
 import conversationRoutingRouter from "./admin/conversation-routing.js";
 import conversationCoachingNotesRouter from "./admin/conversation-coaching-notes.js";
+import conversationTriageRouter from "./admin/conversation-triage.js";
+import patientAddressHistoryRouter from "./admin/patient-address-history.js";
+import patientTimelineRouter from "./admin/patient-timeline.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -296,6 +299,14 @@ router.use(coachingPlansRouter);
 router.use(conversationRoutingRouter);
 // Supervisor coaching notes on conversations (Tier 1 J).
 router.use(conversationCoachingNotesRouter);
+// Conversation triage (Wave 1): snooze / tags / claim.
+router.use(conversationTriageRouter);
+// Patient address change history.
+router.use(patientAddressHistoryRouter);
+// Patient timeline — unified chronological feed across episodes,
+// fulfillments, conversations, address changes, grievances,
+// coaching plans, and recall notifications.
+router.use(patientTimelineRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);

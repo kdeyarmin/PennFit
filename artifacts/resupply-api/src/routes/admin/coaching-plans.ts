@@ -131,6 +131,31 @@ router.post(
       .single();
     if (error) throw error;
 
+    // Auto-link side-effect (Phase 6): when the plan is opened
+    // FROM an existing alert, snooze that alert for 30 days so
+    // it doesn't keep pestering the CSR while there's an active
+    // coaching plan in flight. Best-effort — a failure here does
+    // not block the plan creation.
+    if (parsed.data.sourceAlertId) {
+      const snoozeUntil = new Date();
+      snoozeUntil.setUTCDate(snoozeUntil.getUTCDate() + 30);
+      const { error: alertErr } = await supabase
+        .schema("resupply")
+        .from("csr_compliance_alerts")
+        .update({
+          status: "snoozed",
+          snoozed_until: snoozeUntil.toISOString(),
+        })
+        .eq("id", parsed.data.sourceAlertId)
+        .eq("status", "open");
+      if (alertErr) {
+        logger.warn(
+          { err: alertErr, alertId: parsed.data.sourceAlertId },
+          "coaching.plan.opened: auto-snooze of source alert failed",
+        );
+      }
+    }
+
     await logAudit({
       action: "coaching.plan.opened",
       adminEmail: req.adminEmail ?? null,

@@ -34,6 +34,7 @@ export * from "./patient-maintenance-nudges";
 export * from "./office-closures";
 export * from "./patient-coaching-plans";
 export * from "./conversation-coaching-notes";
+export * from "./patient-address-history";
 export * from "./physician-fax-outreach";
 export * from "./patient-documents";
 export * from "./episodes";

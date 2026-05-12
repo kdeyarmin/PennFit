@@ -649,4 +649,140 @@ router.get(
   },
 );
 
+// GET /admin/equipment-recalls/:id/roster.csv — surveyor binder
+// document. One row per affected asset, joining notification +
+// remediation state so the FDA visit gets a single document.
+router.get(
+  "/admin/equipment-recalls/:id/roster.csv",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = z.string().uuid().safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "recall_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: recall } = await supabase
+      .schema("resupply")
+      .from("equipment_recalls")
+      .select("id, recall_reference, title")
+      .eq("id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (!recall) {
+      res.status(404).json({ error: "recall_not_found" });
+      return;
+    }
+    const [notifs, remediations, assets] = await Promise.all([
+      supabase
+        .schema("resupply")
+        .from("recall_notifications")
+        .select(
+          "asset_id, patient_id, status, channel, notified_at, failed_at, failed_reason",
+        )
+        .eq("recall_id", idCheck.data)
+        .limit(5000),
+      supabase
+        .schema("resupply")
+        .from("recall_remediation_actions")
+        .select("asset_id, action, evidence_url, performed_at")
+        .eq("recall_id", idCheck.data)
+        .limit(5000),
+      // Asset detail is over-fetched via the notification list's
+      // ids; PostgREST doesn't do JOINs, so we follow with an .in().
+      Promise.resolve(null),
+    ]);
+    if (notifs.error) throw notifs.error;
+    if (remediations.error) throw remediations.error;
+    const notifList = notifs.data ?? [];
+    const remediationByAsset = new Map<
+      string,
+      { action: string; evidence_url: string | null; performed_at: string }
+    >();
+    for (const r of remediations.data ?? []) {
+      if (!remediationByAsset.has(r.asset_id)) {
+        remediationByAsset.set(r.asset_id, {
+          action: r.action,
+          evidence_url: r.evidence_url,
+          performed_at: r.performed_at,
+        });
+      }
+    }
+    void assets;
+    const assetIds = Array.from(new Set(notifList.map((n) => n.asset_id)));
+    let assetMeta = new Map<
+      string,
+      { manufacturer: string; model: string; serial_number: string }
+    >();
+    if (assetIds.length > 0) {
+      const { data: assetData } = await supabase
+        .schema("resupply")
+        .from("equipment_assets")
+        .select("id, manufacturer, model, serial_number")
+        .in("id", assetIds);
+      assetMeta = new Map(
+        (assetData ?? []).map((a) => [
+          a.id,
+          {
+            manufacturer: a.manufacturer,
+            model: a.model,
+            serial_number: a.serial_number,
+          },
+        ]),
+      );
+    }
+
+    const filename = `recall-${(recall.recall_reference ?? recall.id).replace(/[^A-Za-z0-9_-]/g, "_")}-roster.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.write(
+      [
+        "asset_id",
+        "patient_id",
+        "manufacturer",
+        "model",
+        "serial_number",
+        "notification_status",
+        "notification_channel",
+        "notified_at",
+        "remediation_action",
+        "remediation_evidence_url",
+        "remediation_performed_at",
+      ].join(",") + "\n",
+    );
+    for (const n of notifList) {
+      const a = assetMeta.get(n.asset_id);
+      const r = remediationByAsset.get(n.asset_id);
+      res.write(
+        [
+          n.asset_id,
+          n.patient_id,
+          a?.manufacturer ?? "",
+          a?.model ?? "",
+          a?.serial_number ?? "",
+          n.status,
+          n.channel ?? "",
+          n.notified_at ?? "",
+          r?.action ?? "",
+          r?.evidence_url ?? "",
+          r?.performed_at ?? "",
+        ]
+          .map(rosterCsvCell)
+          .join(",") + "\n",
+      );
+    }
+    res.end();
+  },
+);
+
+function rosterCsvCell(value: unknown): string {
+  if (value == null) return "";
+  const s = String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
 export default router;
