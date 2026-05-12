@@ -19,8 +19,10 @@ import { Link } from "wouter";
 import {
   AlertTriangle,
   ExternalLink,
+  ListChecks,
   Plus,
   Search,
+  Send,
 } from "lucide-react";
 
 import { Card } from "@/components/admin/Card";
@@ -31,8 +33,15 @@ import { Input } from "@/components/admin/Input";
 import {
   createEquipmentRecall,
   listEquipmentRecalls,
+  listRecallNotifications,
+  listRecallRemediation,
+  logRecallRemediation,
+  matchRecallAssets,
   scanEquipmentRecall,
   type CreateRecallRequest,
+  type RemediationAction,
+  type RecallNotification,
+  type RemediationLogEntry,
   type EquipmentRecall,
   type RecallScanResult,
   type RecallSerialMatch,
@@ -128,10 +137,23 @@ function RecallRow({
   onScanResult: (r: RecallScanResult) => void;
 }) {
   const [scanError, setScanError] = useState<string | null>(null);
+  const [matchError, setMatchError] = useState<string | null>(null);
+  const [matchSummary, setMatchSummary] = useState<string | null>(null);
+  const [showRoster, setShowRoster] = useState(false);
   const scan = useMutation({
     mutationFn: () => scanEquipmentRecall(recall.id),
     onSuccess: (r) => onScanResult(r),
     onError: (e: Error) => setScanError(e.message),
+  });
+  const match = useMutation({
+    mutationFn: () => matchRecallAssets(recall.id),
+    onSuccess: (r) => {
+      setMatchError(null);
+      setMatchSummary(
+        `Matched ${r.matchedCount} asset${r.matchedCount === 1 ? "" : "s"}; queued ${r.newlyQueuedCount} new notification${r.newlyQueuedCount === 1 ? "" : "s"} (${r.alreadyQueuedCount} already queued).`,
+      );
+    },
+    onError: (e: Error) => setMatchError(e.message),
   });
 
   return (
@@ -193,17 +215,53 @@ function RecallRow({
           {scanError && (
             <p className="text-xs text-rose-700 mt-1">{scanError}</p>
           )}
+          {matchError && (
+            <p className="text-xs text-rose-700 mt-1">{matchError}</p>
+          )}
+          {matchSummary && (
+            <p className="text-xs text-emerald-800 mt-1">{matchSummary}</p>
+          )}
         </div>
-        <Button
-          intent="secondary"
-          disabled={recall.status === "closed" || scan.isPending}
-          isLoading={scan.isPending}
-          onClick={() => scan.mutate()}
-        >
-          <Search className="h-3 w-3 mr-1" />
-          Scan
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button
+            intent="secondary"
+            size="sm"
+            disabled={recall.status === "closed" || scan.isPending}
+            isLoading={scan.isPending}
+            onClick={() => scan.mutate()}
+          >
+            <Search className="h-3 w-3 mr-1" />
+            Scan
+          </Button>
+          <Button
+            intent="secondary"
+            size="sm"
+            disabled={recall.status === "closed" || match.isPending}
+            isLoading={match.isPending}
+            onClick={() => match.mutate()}
+            title="Run the matcher, flag affected assets, and queue notifications"
+          >
+            <Send className="h-3 w-3 mr-1" />
+            Match &amp; notify
+          </Button>
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => setShowRoster(true)}
+            title="View notification status + remediation log for this recall"
+          >
+            <ListChecks className="h-3 w-3 mr-1" />
+            Roster
+          </Button>
+        </div>
       </div>
+      {showRoster && (
+        <RecallRosterModal
+          recallId={recall.id}
+          recallTitle={recall.title}
+          onClose={() => setShowRoster(false)}
+        />
+      )}
     </li>
   );
 }
@@ -580,6 +638,338 @@ function Field({
           placeholder={placeholder}
         />
       )}
+    </div>
+  );
+}
+
+// ── Roster modal — notifications + remediation log + log-action form
+
+const REMEDIATION_ACTIONS: Array<{ value: RemediationAction; label: string }> = [
+  { value: "returned_to_manufacturer", label: "Returned to manufacturer" },
+  { value: "destroyed", label: "Destroyed (requires evidence)" },
+  { value: "replaced", label: "Replaced" },
+  { value: "patient_declined", label: "Patient declined" },
+  { value: "lost", label: "Lost / no longer owned" },
+  { value: "unreachable", label: "Unreachable after attempts" },
+];
+
+const NOTIFICATION_TONE: Record<string, string> = {
+  queued: "bg-amber-100 text-amber-900",
+  sent: "bg-emerald-100 text-emerald-900",
+  failed: "bg-rose-100 text-rose-900",
+  bounced: "bg-rose-100 text-rose-900",
+  skipped: "bg-slate-200 text-slate-700",
+};
+
+function RecallRosterModal({
+  recallId,
+  recallTitle,
+  onClose,
+}: {
+  recallId: string;
+  recallTitle: string;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const notifQuery = useQuery({
+    queryKey: ["admin", "recalls", recallId, "notifications"] as const,
+    queryFn: () => listRecallNotifications(recallId),
+  });
+  const remediationQuery = useQuery({
+    queryKey: ["admin", "recalls", recallId, "remediation"] as const,
+    queryFn: () => listRecallRemediation(recallId),
+  });
+  const invalidate = () => {
+    void qc.invalidateQueries({
+      queryKey: ["admin", "recalls", recallId, "remediation"],
+    });
+  };
+
+  const remediationByAsset = new Map<string, RemediationLogEntry>();
+  for (const entry of remediationQuery.data?.actions ?? []) {
+    if (!remediationByAsset.has(entry.assetId)) {
+      remediationByAsset.set(entry.assetId, entry);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(10,31,68,0.45)" }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-4xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto"
+        style={{ backgroundColor: "#ffffff" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 space-y-4">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-lg font-semibold">{recallTitle} — roster</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs text-muted-foreground hover:underline"
+            >
+              Close
+            </button>
+          </div>
+
+          <RosterCountsBar
+            notifications={notifQuery.data?.counts ?? {}}
+            remediation={remediationQuery.data?.counts ?? {}}
+          />
+
+          {notifQuery.isPending ? (
+            <Spinner />
+          ) : notifQuery.isError ? (
+            <ErrorPanel
+              error={notifQuery.error}
+              onRetry={() => void notifQuery.refetch()}
+            />
+          ) : (notifQuery.data?.notifications ?? []).length === 0 ? (
+            <p className="text-sm py-2 text-muted-foreground">
+              No notifications yet. Run &quot;Match &amp; notify&quot; to populate.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr
+                  className="text-left border-b"
+                  style={{ borderColor: "hsl(var(--line-1))" }}
+                >
+                  <th className="py-2 font-semibold">Asset</th>
+                  <th className="py-2 font-semibold">Notification</th>
+                  <th className="py-2 font-semibold">Channel</th>
+                  <th className="py-2 font-semibold">Remediation</th>
+                  <th className="py-2 font-semibold"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(notifQuery.data?.notifications ?? []).map((n) => (
+                  <RosterRow
+                    key={n.id}
+                    recallId={recallId}
+                    notification={n}
+                    existing={remediationByAsset.get(n.assetId) ?? null}
+                    onLogged={invalidate}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RosterCountsBar({
+  notifications,
+  remediation,
+}: {
+  notifications: Record<string, number>;
+  remediation: Record<string, number>;
+}) {
+  const totalNotif = Object.values(notifications).reduce((a, b) => a + b, 0);
+  const totalRem = Object.values(remediation).reduce((a, b) => a + b, 0);
+  return (
+    <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          Notifications ({totalNotif})
+        </div>
+        <div className="flex gap-2 mt-1 flex-wrap">
+          {Object.entries(notifications).map(([k, v]) => (
+            <span
+              key={k}
+              className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${
+                NOTIFICATION_TONE[k] ?? "bg-slate-100 text-slate-700"
+              }`}
+            >
+              {k}: {v}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          Remediation logged ({totalRem})
+        </div>
+        <div className="flex gap-2 mt-1 flex-wrap">
+          {Object.entries(remediation).map(([k, v]) => (
+            <span
+              key={k}
+              className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider bg-blue-100 text-blue-900"
+            >
+              {k.replace(/_/g, " ")}: {v}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RosterRow({
+  recallId,
+  notification,
+  existing,
+  onLogged,
+}: {
+  recallId: string;
+  notification: RecallNotification;
+  existing: RemediationLogEntry | null;
+  onLogged: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <>
+      <tr
+        className="border-b"
+        style={{ borderColor: "hsl(var(--line-2))" }}
+      >
+        <td className="py-1.5 font-mono text-xs">
+          <a
+            href={`/admin/patients/${notification.patientId}`}
+            className="hover:underline"
+            style={{ color: "hsl(var(--penn-navy))" }}
+          >
+            {notification.assetId.slice(0, 8)}
+          </a>
+        </td>
+        <td className="py-1.5">
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${
+              NOTIFICATION_TONE[notification.status] ?? "bg-slate-100 text-slate-700"
+            }`}
+          >
+            {notification.status}
+          </span>
+        </td>
+        <td className="py-1.5 text-xs">{notification.channel ?? "—"}</td>
+        <td className="py-1.5 text-xs">
+          {existing ? (
+            <span
+              className="inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider bg-blue-100 text-blue-900"
+              title={existing.notes ?? ""}
+            >
+              {existing.action.replace(/_/g, " ")}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+        <td className="py-1.5 text-right">
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => setEditing((v) => !v)}
+          >
+            {editing ? "Cancel" : existing ? "Update" : "Log action"}
+          </Button>
+        </td>
+      </tr>
+      {editing && (
+        <tr style={{ borderColor: "hsl(var(--line-2))" }}>
+          <td colSpan={5} className="py-2 px-2 bg-slate-50">
+            <LogActionForm
+              recallId={recallId}
+              assetId={notification.assetId}
+              onSaved={() => {
+                setEditing(false);
+                onLogged();
+              }}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function LogActionForm({
+  recallId,
+  assetId,
+  onSaved,
+}: {
+  recallId: string;
+  assetId: string;
+  onSaved: () => void;
+}) {
+  const [action, setAction] =
+    useState<RemediationAction>("returned_to_manufacturer");
+  const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [notes, setNotes] = useState("");
+  const log = useMutation({
+    mutationFn: () =>
+      logRecallRemediation(recallId, {
+        assetId,
+        action,
+        evidenceUrl: evidenceUrl.trim() || null,
+        notes: notes.trim() || null,
+      }),
+    onSuccess: onSaved,
+  });
+  const needsEvidence = action === "destroyed";
+  const valid = !needsEvidence || evidenceUrl.trim().length > 0;
+  return (
+    <div className="grid sm:grid-cols-2 gap-2">
+      <div>
+        <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+          Action
+        </label>
+        <select
+          value={action}
+          onChange={(e) => setAction(e.target.value as RemediationAction)}
+          className="w-full rounded border px-2 py-1.5 text-sm"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          {REMEDIATION_ACTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+          Evidence URL {needsEvidence ? "(required)" : "(optional)"}
+        </label>
+        <Input
+          value={evidenceUrl}
+          onChange={(e) => setEvidenceUrl(e.target.value)}
+          placeholder="https://…/destruction-cert.pdf"
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+          Notes
+        </label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value.slice(0, 2000))}
+          rows={2}
+          className="w-full rounded border px-2 py-1.5 text-sm"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        />
+      </div>
+      {log.error instanceof Error && (
+        <div className="sm:col-span-2 rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
+          {log.error.message}
+        </div>
+      )}
+      <div className="sm:col-span-2">
+        <Button
+          disabled={!valid || log.isPending}
+          isLoading={log.isPending}
+          onClick={() => log.mutate()}
+        >
+          Save remediation
+        </Button>
+      </div>
     </div>
   );
 }

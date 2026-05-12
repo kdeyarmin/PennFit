@@ -96,6 +96,7 @@ import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-sect
 import { InsightsSection } from "@/components/insights-section";
 import { TherapySummarySection } from "@/components/therapy-summary-section";
 import { MaintenanceSection } from "@/components/maintenance-section";
+import { MaskLeakWizardSection } from "@/components/mask-leak-wizard-section";
 import { SubstitutionsSection } from "@/components/substitutions-section";
 import { EducationFeedSection } from "@/components/education-feed-section";
 import { MyReturnsSection } from "@/components/my-returns-section";
@@ -333,6 +334,7 @@ function AccountInner() {
           <TherapySummarySection />
           <SubstitutionsSection />
           <MaintenanceSection />
+          <MaskLeakWizardSection />
           <EducationFeedSection />
           <InsightsSection />
           <ReorderSuggestionsSection />

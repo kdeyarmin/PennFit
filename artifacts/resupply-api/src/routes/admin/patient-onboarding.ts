@@ -306,4 +306,56 @@ router.post(
   },
 );
 
+// ────────────────────────────────────────────────────────────────
+// GET /admin/patients/:id/onboarding/attempts — per-checkpoint
+// dispatch log. Drives the "tried email at 09:02 (vendor_error),
+// then SMS at 09:03 (sent)" trail an admin sees on the patient-
+// detail Onboarding tab.
+// ────────────────────────────────────────────────────────────────
+router.get(
+  "/admin/patients/:id/onboarding/attempts",
+  requireAdmin,
+  async (req, res) => {
+    const idCheck = patientIdParam.safeParse(req.params.id);
+    if (!idCheck.success) {
+      res.status(404).json({ error: "patient_not_found" });
+      return;
+    }
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: journey, error: jErr } = await supabase
+      .schema("resupply")
+      .from("patient_onboarding_journeys")
+      .select("id")
+      .eq("patient_id", idCheck.data)
+      .limit(1)
+      .maybeSingle();
+    if (jErr) throw jErr;
+    if (!journey) {
+      res.json({ attempts: [] });
+      return;
+    }
+    const { data: rows, error: aErr } = await supabase
+      .schema("resupply")
+      .from("patient_checkin_attempts")
+      .select(
+        "id, day_label, channel, outcome, vendor_ref, error_code, attempted_at",
+      )
+      .eq("journey_id", journey.id)
+      .order("attempted_at", { ascending: false })
+      .limit(200);
+    if (aErr) throw aErr;
+    res.json({
+      attempts: (rows ?? []).map((r) => ({
+        id: r.id,
+        dayLabel: r.day_label,
+        channel: r.channel,
+        outcome: r.outcome,
+        vendorRef: r.vendor_ref,
+        errorCode: r.error_code,
+        attemptedAt: r.attempted_at,
+      })),
+    });
+  },
+);
+
 export default router;

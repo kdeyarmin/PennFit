@@ -180,3 +180,90 @@ export const scanEquipmentRecall = (recallId: string) =>
   jsonFetch<RecallScanResult>(
     `/admin/equipment-recalls/${encodeURIComponent(recallId)}/scan`,
   );
+
+// ── Match-and-notify + remediation ─────────────────────────────────
+
+export interface MatchAssetsResult {
+  recallId: string;
+  matchedCount: number;
+  newlyQueuedCount: number;
+  alreadyQueuedCount: number;
+  skippedNonMatchCount: number;
+}
+
+export const matchRecallAssets = (recallId: string) =>
+  jsonFetch<MatchAssetsResult>(
+    `/admin/equipment-recalls/${encodeURIComponent(recallId)}/match-assets`,
+    { method: "POST" },
+  );
+
+export type RecallNotificationStatus =
+  | "queued"
+  | "sent"
+  | "failed"
+  | "bounced"
+  | "skipped";
+
+export interface RecallNotification {
+  id: string;
+  assetId: string;
+  patientId: string;
+  status: RecallNotificationStatus;
+  channel: "email" | "sms" | "letter" | null;
+  notifiedAt: string | null;
+  failedAt: string | null;
+  failedReason: string | null;
+  createdAt: string;
+}
+
+export const listRecallNotifications = (recallId: string) =>
+  jsonFetch<{
+    counts: Record<string, number>;
+    notifications: RecallNotification[];
+  }>(
+    `/admin/equipment-recalls/${encodeURIComponent(recallId)}/notifications`,
+  );
+
+export type RemediationAction =
+  | "returned_to_manufacturer"
+  | "destroyed"
+  | "replaced"
+  | "patient_declined"
+  | "lost"
+  | "unreachable";
+
+export interface RemediationLogEntry {
+  id: string;
+  assetId: string;
+  action: RemediationAction;
+  evidenceUrl: string | null;
+  notes: string | null;
+  performedByUserId: string | null;
+  performedAt: string;
+}
+
+export const listRecallRemediation = (recallId: string) =>
+  jsonFetch<{
+    counts: Record<string, number>;
+    actions: RemediationLogEntry[];
+  }>(
+    `/admin/equipment-recalls/${encodeURIComponent(recallId)}/remediation`,
+  );
+
+export const logRecallRemediation = (
+  recallId: string,
+  body: {
+    assetId: string;
+    action: RemediationAction;
+    evidenceUrl?: string | null;
+    notes?: string | null;
+  },
+) =>
+  jsonFetch<{ id: string }>(
+    `/admin/equipment-recalls/${encodeURIComponent(recallId)}/remediation`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );

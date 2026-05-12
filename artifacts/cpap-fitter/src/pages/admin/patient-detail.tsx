@@ -57,7 +57,9 @@ import {
 import {
   enrollPatientOnboarding,
   fetchPatientOnboarding,
+  fetchPatientOnboardingAttempts,
   setPatientOnboardingStatus,
+  type OnboardingAttempt,
   type PatientOnboardingJourney,
 } from "@/lib/admin/patient-onboarding-api";
 import {
@@ -2548,6 +2550,7 @@ function OnboardingTab({ patientId }: { patientId: string }) {
           statusMut.error instanceof Error ? statusMut.error.message : null
         }
       />
+      <OnboardingAttemptsView patientId={patientId} />
     </div>
   );
 }
@@ -2571,8 +2574,10 @@ function OnboardingJourneyView({
     offsetDays: number;
   }> = [
     { label: "Day 1", sentAt: journey.day1SentAt, offsetDays: 1 },
+    { label: "Day 3", sentAt: journey.day3SentAt, offsetDays: 3 },
     { label: "Day 7", sentAt: journey.day7SentAt, offsetDays: 7 },
     { label: "Day 30", sentAt: journey.day30SentAt, offsetDays: 30 },
+    { label: "Day 60", sentAt: journey.day60SentAt, offsetDays: 60 },
     { label: "Day 90", sentAt: journey.day90SentAt, offsetDays: 90 },
   ];
   const startedMs = new Date(journey.startedAt).getTime();
@@ -4127,5 +4132,85 @@ function Term({ label, value }: { label: string; value: string | null }) {
       </dt>
       <dd style={{ color: "hsl(var(--ink-1))" }}>{value ?? "—"}</dd>
     </>
+  );
+}
+
+// Per-checkpoint dispatch attempts — shows "tried email, then SMS"
+// trail so an admin can diagnose "why did Day 7 not actually
+// reach this patient?"
+function OnboardingAttemptsView({ patientId }: { patientId: string }) {
+  const { data, isPending, isError, error } = useQuery({
+    queryKey: ["admin", "patients", patientId, "onboarding", "attempts"] as const,
+    queryFn: () => fetchPatientOnboardingAttempts(patientId),
+  });
+  if (isPending) return null;
+  if (isError) {
+    return (
+      <p className="text-xs" style={{ color: "#b91c1c" }}>
+        {error instanceof Error ? error.message : "Failed to load attempts."}
+      </p>
+    );
+  }
+  if (data.attempts.length === 0) return null;
+
+  // Group by day_label so the trail reads "Day 7: email failed,
+  // SMS sent." Newest attempts already first per server order.
+  const grouped = new Map<string, OnboardingAttempt[]>();
+  for (const a of data.attempts) {
+    const list = grouped.get(a.dayLabel) ?? [];
+    list.push(a);
+    grouped.set(a.dayLabel, list);
+  }
+  const dayLabels = Array.from(grouped.keys());
+
+  return (
+    <div
+      className="rounded border p-3"
+      style={{ borderColor: "hsl(var(--line-2))" }}
+    >
+      <div
+        className="text-[10px] uppercase tracking-wider font-semibold mb-2"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        Dispatch trail
+      </div>
+      <ul className="space-y-2">
+        {dayLabels.map((label) => (
+          <li key={label}>
+            <div
+              className="text-xs font-semibold"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              {label}
+            </div>
+            <ul className="ml-3 text-[11px] space-y-0.5">
+              {grouped.get(label)!.map((a) => (
+                <li
+                  key={a.id}
+                  style={{
+                    color:
+                      a.outcome === "sent"
+                        ? "hsl(var(--ink-2))"
+                        : "#92400e",
+                  }}
+                >
+                  <span className="font-mono">{a.channel}</span> ·{" "}
+                  <span className="font-mono">{a.outcome}</span>
+                  {a.errorCode && (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({a.errorCode})
+                    </span>
+                  )}
+                  <span className="text-muted-foreground ml-2">
+                    {formatDateTime(a.attemptedAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
