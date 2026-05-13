@@ -242,6 +242,37 @@ function makeMfaProbe(): MfaProbe {
         })
         .eq("id", rowId);
     },
+    async consumeRecoveryCode(userId, codeHash, ip) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: admin } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!admin) return null;
+      // Atomic compare-and-set: the .is("used_at", null) clause is
+      // part of the UPDATE WHERE, so Postgres only flips rows that
+      // haven't been spent yet. Two concurrent submissions of the
+      // same valid code can't both succeed — one returns the row,
+      // the other gets an empty result.
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .update({
+          used_at: new Date().toISOString(),
+          used_ip: ip ?? null,
+        })
+        .eq("staff_user_id", admin.id)
+        .eq("code_hash", codeHash)
+        .is("used_at", null)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return { id: data.id };
+    },
   };
 }
 
