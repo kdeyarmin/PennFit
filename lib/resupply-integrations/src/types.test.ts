@@ -6,11 +6,12 @@ import {
 } from "./index";
 
 describe("INTEGRATION_SOURCES", () => {
-  it("includes the three target vendors", () => {
+  it("includes the four target vendors", () => {
     expect(INTEGRATION_SOURCES).toEqual([
       "resmed_airview",
       "philips_care",
       "health_connect",
+      "react_health",
     ]);
   });
 });
