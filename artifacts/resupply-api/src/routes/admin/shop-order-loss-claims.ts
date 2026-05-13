@@ -13,6 +13,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -87,6 +88,7 @@ const createBody = z
 router.post(
   "/admin/shop/orders/:orderId/loss-claims",
   requireAdmin,
+  adminRateLimit({ name: "loss_claims.open", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.orderId);
     if (!idParse.success) {
@@ -152,6 +154,7 @@ const patchBody = z
 router.patch(
   "/admin/shop/loss-claims/:id",
   requireAdmin,
+  adminRateLimit({ name: "loss_claims.update", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
