@@ -6,11 +6,15 @@ import {
 } from "./index";
 
 describe("INTEGRATION_SOURCES", () => {
-  it("includes the three target vendors", () => {
+  it("includes the expected target vendors", () => {
+    // Exact list — keep this in sync as new vendor adapters land.
+    // Order matches the unified-package declaration so the assertion
+    // catches accidental reorderings.
     expect(INTEGRATION_SOURCES).toEqual([
       "resmed_airview",
       "philips_care",
       "health_connect",
+      "react_health",
     ]);
   });
 });
