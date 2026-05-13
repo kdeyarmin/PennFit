@@ -13,7 +13,7 @@ so it can drop into the existing P0–P3 backlog.
 
 ## TL;DR
 
-- **Of the 7 P0 items from 5/8:** 3 fixed, 3 still open, 1 partial.
+- **Of the 7 P0 items from 5/8:** 4 fixed, 2 still open, 1 partial.
   Migration-journal drift (P0.1/P0.2) has _gotten worse_ — the SQL→journal
   gap widened from 21 files to 68 in 5 days, and the `ci.yml` drift check
   is currently `continue-on-error: true`, masking the failure.
@@ -26,8 +26,10 @@ so it can drop into the existing P0–P3 backlog.
   1 LOW). The HIGH is missing HTTP timeouts on the four new therapy-
   cloud integration clients.
 - **Top single PR by leverage:** integration `withTimeout()` helper +
-  the two-line auth-recovery rate-limit fix + the migration drift cleanup.
-  All three are S-effort and unblock the loudest production risks.
+  atomic MFA recovery-code consumption. Both S-effort; together they
+  unblock the HIGH (timeouts) and one MEDIUM (recovery-code TOCTOU).
+  Migration drift cleanup (P0.1/P0.2) is the next-highest leverage
+  but is M-effort and needs coordination with open PRs.
 
 ---
 
@@ -35,15 +37,15 @@ so it can drop into the existing P0–P3 backlog.
 
 ### P0 — schema-deploy + loudest security
 
-| ID   | Item                                                                  | Status                                                                                                                                                                                                                                                                                                               |
-| ---- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0.1 | Drizzle journal drift                                                 | **OPEN — WORSE.** `_journal.json` still has 51 entries; `lib/resupply-db/drizzle/*.sql` now has 119 files (was 73 on 5/8). The new `.github/workflows/ci.yml:97` runs `scripts/check-drizzle-drift.sh` but with `continue-on-error: true`, so PRs don't fail.                                                        |
-| P0.2 | Six duplicate migration prefixes (0016, 0017, 0049, 0050, 0052, 0065) | **OPEN.** `ls lib/resupply-db/drizzle/*.sql \| awk -F_ '{print $1}' \| sort \| uniq -d` still returns all six.                                                                                                                                                                                                       |
-| P0.3 | CI workflow                                                           | **FIXED.** `.github/workflows/ci.yml` exists with `pnpm typecheck`, `pnpm lint:resupply`, codegen + architecture + migration-pair drift checks. (The drizzle-drift step is the one carve-out — see P0.1.)                                                                                                            |
-| P0.5 | Stripe webhook raw-body regression test                               | **FIXED.** `artifacts/resupply-api/src/app-stripe-webhook-ordering.test.ts:66` asserts `Buffer.isBuffer(req.body)`.                                                                                                                                                                                                  |
-| P0.6 | Auth-recovery rate limits                                             | **PARTIAL.** `lib/resupply-auth/src/http/verify-email.ts:46` now wires `checkLoginRateLimit`. `forgot-password.ts` and `reset-password.ts` _import_ the helper and _define_ the config but never invoke it inside their handlers — one-line fix in each.                                                             |
-| P0.7 | Admin write per-actor rate-limits                                     | **PARTIAL.** 12 admin route files now have ad-hoc limiters (e.g., `routes/admin/csr-compliance-alerts.ts:37,44` defines `adminScanLimiter` + `adminCreateLimiter` keyed by `req.adminUserId`). The remaining ~89 admin route files are unprotected. No unified `adminRateLimit` middleware exists in `middlewares/`. |
-| P0.8 | Duplicate router registrations in `routes/index.ts`                   | **FIXED.** Current file (427 LOC) mounts each router exactly once.                                                                                                                                                                                                                                                   |
+| ID   | Item                                                                  | Status                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0.1 | Drizzle journal drift                                                 | **OPEN — WORSE.** `_journal.json` still has 51 entries; `lib/resupply-db/drizzle/*.sql` now has 119 files (was 73 on 5/8). The new `.github/workflows/ci.yml:97` runs `scripts/check-drizzle-drift.sh` but with `continue-on-error: true`, so PRs don't fail.                                                                                                                                          |
+| P0.2 | Six duplicate migration prefixes (0016, 0017, 0049, 0050, 0052, 0065) | **OPEN.** `ls lib/resupply-db/drizzle/*.sql \| awk -F_ '{print $1}' \| sort \| uniq -d` still returns all six.                                                                                                                                                                                                                                                                                         |
+| P0.3 | CI workflow                                                           | **FIXED.** `.github/workflows/ci.yml` exists with `pnpm typecheck`, `pnpm lint:resupply`, codegen + architecture + migration-pair drift checks. (The drizzle-drift step is the one carve-out — see P0.1.)                                                                                                                                                                                              |
+| P0.5 | Stripe webhook raw-body regression test                               | **FIXED.** `artifacts/resupply-api/src/app-stripe-webhook-ordering.test.ts:66` asserts `Buffer.isBuffer(req.body)`.                                                                                                                                                                                                                                                                                    |
+| P0.6 | Auth-recovery rate limits                                             | **FIXED.** All three routes wire `checkLoginRateLimit`: `forgot-password.ts:61`, `reset-password.ts:54`, `verify-email.ts:46`. _(Correction 2026-05-13: an earlier draft of this doc claimed `forgot-password` and `reset-password` were missing the call; spot-checking the actual files showed the calls were present. The sub-agent that surfaced the original claim had read past the call site.)_ |
+| P0.7 | Admin write per-actor rate-limits                                     | **PARTIAL.** 12 admin route files now have ad-hoc limiters (e.g., `routes/admin/csr-compliance-alerts.ts:37,44` defines `adminScanLimiter` + `adminCreateLimiter` keyed by `req.adminUserId`). The remaining ~89 admin route files are unprotected. No unified `adminRateLimit` middleware exists in `middlewares/`.                                                                                   |
+| P0.8 | Duplicate router registrations in `routes/index.ts`                   | **FIXED.** Current file (427 LOC) mounts each router exactly once.                                                                                                                                                                                                                                                                                                                                     |
 
 ### P1 — reliability + DB integrity
 
@@ -256,20 +258,19 @@ the natural first) to set the pattern.
 
 ## Recommended next two waves (top 10 items by leverage)
 
-| #   | ID          | Why                                                                                                 | Effort |
-| --- | ----------- | --------------------------------------------------------------------------------------------------- | ------ |
-| 1   | N1          | HIGH severity; single helper unblocks all 4 integration packages. Prevents worker thread stalls.    | S      |
-| 2   | P0.1 + P0.2 | Migration drift gap widening; deploy-hazard compounds with every new SQL file.                      | M      |
-| 3   | P0.6        | Two-line fix per file — wire `checkLoginRateLimit` into `forgot-password.ts` + `reset-password.ts`. | S      |
-| 4   | P0.7        | Land a single `adminRateLimit(actorId)` middleware; apply incrementally per router.                 | M      |
-| 5   | N4          | Audit the new admin routes against `requirePermission`; codify the permission catalog.              | S–M    |
-| 6   | N2          | Atomic compare-and-set on MFA recovery-code consumption — one query instead of two.                 | S      |
-| 7   | N3          | Pre-destruction audit row in HIPAA sweep — single `logAudit` call after the batch UPDATE.           | S      |
-| 8   | P1.1        | Wrap order create + mirror in `db.transaction()`.                                                   | S      |
-| 9   | P1.3        | Apply CSRF middleware to storefront state-changing endpoints.                                       | M      |
-| 10  | P2.1 slice  | Extract one tab from `patient-detail.tsx` to set the precedent and stop the growth.                 | S      |
+| #   | ID          | Why                                                                                              | Effort |
+| --- | ----------- | ------------------------------------------------------------------------------------------------ | ------ |
+| 1   | N1          | HIGH severity; single helper unblocks all 4 integration packages. Prevents worker thread stalls. | S      |
+| 2   | P0.1 + P0.2 | Migration drift gap widening; deploy-hazard compounds with every new SQL file.                   | M      |
+| 3   | P0.7        | Land a single `adminRateLimit(actorId)` middleware; apply incrementally per router.              | M      |
+| 4   | N4          | Audit the new admin routes against `requirePermission`; codify the permission catalog.           | S–M    |
+| 5   | N2          | Atomic compare-and-set on MFA recovery-code consumption — one query instead of two.              | S      |
+| 6   | N3          | Pre-destruction audit row in HIPAA sweep — single `logAudit` call after the batch UPDATE.        | S      |
+| 7   | P1.1        | Wrap order create + mirror in `db.transaction()`.                                                | S      |
+| 8   | P1.3        | Apply CSRF middleware to storefront state-changing endpoints.                                    | M      |
+| 9   | P2.1 slice  | Extract one tab from `patient-detail.tsx` to set the precedent and stop the growth.              | S      |
 
-Items 1, 3, and 6 are all S-effort and unblock the loudest production
+Items 1 and 5 are S-effort and unblock the loudest production
 risks (timeouts, abuse, defense-in-depth on single-use credentials). A
 natural single PR opens the next wave.
 
@@ -277,16 +278,16 @@ natural single PR opens the next wave.
 
 ## Verification of findings in this doc
 
-| Finding                              | How verified                                                                                                                                                                                      |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| File LOC growth (P2.1, P2.2, P2.4)   | `wc -l` on the four SPA files.                                                                                                                                                                    |
-| Migration drift (P0.1)               | Count of `_journal.json` entries (51) vs `lib/resupply-db/drizzle/*.sql` files (119).                                                                                                             |
-| Auth-recovery rate-limit gaps (P0.6) | `grep -n "checkLoginRateLimit" lib/resupply-auth/src/http/{forgot-password,reset-password,verify-email}.ts` — call appears only in `verify-email.ts`.                                             |
-| Admin RBAC sparsity (N4)             | `grep -rln "requirePermission" artifacts/resupply-api/src/routes/admin/` → 7 files; `requireAdmin` → 101 files. Loss-claim file inspected directly.                                               |
-| N1 — missing timeouts                | `grep -n "fetch\|AbortController\|signal"` on the four integration `client.ts` files returns only the bare `fetch()` lines.                                                                       |
-| N2 — recovery-code TOCTOU            | Direct read of `auth-deps.ts:205–244` confirms SELECT then UPDATE without atomicity; contract docstring at `lib/resupply-auth/src/http/types.ts:224–236` acknowledges the serial-only assumption. |
-| N3 — no per-document audit           | Direct read of `patient-documents-retention-sweep.ts:100–115` — the only post-flag emission is `logger.info` with aggregate counts; no `logAudit` import in the file.                             |
-| N5 — env-var-only MFA enforcement    | Direct read of `routes/admin/mfa.ts:58–61` — `getEnforcementMode` reads `process.env.AUTH_REQUIRE_MFA_FOR_ADMINS` with no admin-route surface.                                                    |
+| Finding                            | How verified                                                                                                                                                                                                                                              |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File LOC growth (P2.1, P2.2, P2.4) | `wc -l` on the four SPA files.                                                                                                                                                                                                                            |
+| Migration drift (P0.1)             | Count of `_journal.json` entries (51) vs `lib/resupply-db/drizzle/*.sql` files (119).                                                                                                                                                                     |
+| Auth-recovery rate-limits (P0.6)   | `grep -n "checkLoginRateLimit" lib/resupply-auth/src/http/{forgot-password,reset-password,verify-email}.ts` — call appears in **all three** at lines 61, 54, 46 respectively. (P0.6 is FIXED; an earlier draft of this doc incorrectly reported PARTIAL.) |
+| Admin RBAC sparsity (N4)           | `grep -rln "requirePermission" artifacts/resupply-api/src/routes/admin/` → 7 files; `requireAdmin` → 101 files. Loss-claim file inspected directly.                                                                                                       |
+| N1 — missing timeouts              | `grep -n "fetch\|AbortController\|signal"` on the four integration `client.ts` files returns only the bare `fetch()` lines.                                                                                                                               |
+| N2 — recovery-code TOCTOU          | Direct read of `auth-deps.ts:205–244` confirms SELECT then UPDATE without atomicity; contract docstring at `lib/resupply-auth/src/http/types.ts:224–236` acknowledges the serial-only assumption.                                                         |
+| N3 — no per-document audit         | Direct read of `patient-documents-retention-sweep.ts:100–115` — the only post-flag emission is `logger.info` with aggregate counts; no `logAudit` import in the file.                                                                                     |
+| N5 — env-var-only MFA enforcement  | Direct read of `routes/admin/mfa.ts:58–61` — `getEnforcementMode` reads `process.env.AUTH_REQUIRE_MFA_FOR_ADMINS` with no admin-route surface.                                                                                                            |
 
 P1/P2/P3 status entries marked "FIXED" without an explicit citation
 above were verified by a separate Explore pass over the same files; the
