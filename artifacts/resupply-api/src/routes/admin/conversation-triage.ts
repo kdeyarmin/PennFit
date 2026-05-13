@@ -8,7 +8,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -30,7 +30,7 @@ const tagsBody = z
 
 router.patch(
   "/admin/conversations/:id/snooze",
-  requireAdmin,
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -63,7 +63,7 @@ router.patch(
 
 router.patch(
   "/admin/conversations/:id/tags",
-  requireAdmin,
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -100,7 +100,7 @@ router.patch(
 // claim so supervisors can see who self-assigned what.
 router.post(
   "/admin/conversations/:id/claim",
-  requireAdmin,
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -170,7 +170,7 @@ router.post(
 // requests, and patient transcript requests.
 router.get(
   "/admin/conversations/:id/transcript.csv",
-  requireAdmin,
+  requirePermission("audit.export"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

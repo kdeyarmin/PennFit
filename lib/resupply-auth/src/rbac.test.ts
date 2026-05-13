@@ -76,6 +76,36 @@ describe("roleHasPermission", () => {
     expect(roleHasPermission("agent", "audit.export")).toBe(false);
     expect(roleHasPermission("agent", "compliance.resolve")).toBe(false);
   });
+
+  it("returns.manage is broader than returns.approve", () => {
+    // returns.manage covers fulfillment-lifecycle ops (loss claims,
+    // POD updates) — sits BELOW the approve gate so CSRs and
+    // fulfillment can run the lifecycle without unlocking refunds.
+    expect(roleHasPermission("csr", "returns.manage")).toBe(true);
+    expect(roleHasPermission("csr", "returns.approve")).toBe(false);
+    expect(roleHasPermission("fulfillment", "returns.manage")).toBe(true);
+    expect(roleHasPermission("fulfillment", "returns.approve")).toBe(false);
+    // Supervisor + admin still have both (the approve gate implies
+    // the manage gate in practice).
+    expect(roleHasPermission("supervisor", "returns.manage")).toBe(true);
+    expect(roleHasPermission("supervisor", "returns.approve")).toBe(true);
+  });
+
+  it("conversations.manage covers CSR triage workflows", () => {
+    // CSRs run the inbox; agents (legacy) need parity to avoid a
+    // deploy-day regression.
+    expect(roleHasPermission("csr", "conversations.manage")).toBe(true);
+    expect(roleHasPermission("agent", "conversations.manage")).toBe(true);
+    expect(roleHasPermission("supervisor", "conversations.manage")).toBe(true);
+    // Read-only / non-CSR roles should not gain triage perms.
+    expect(roleHasPermission("fitter", "conversations.manage")).toBe(false);
+    expect(roleHasPermission("fulfillment", "conversations.manage")).toBe(
+      false,
+    );
+    expect(roleHasPermission("compliance_officer", "conversations.manage")).toBe(
+      false,
+    );
+  });
 });
 
 describe("permissionsForRole", () => {
