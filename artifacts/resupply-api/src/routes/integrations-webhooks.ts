@@ -43,7 +43,7 @@ const rawJson = express.raw({ type: "application/json", limit: "1mb" });
 interface VendorConfig {
   envVar: string;
   signatureHeader: string;
-  source: "resmed_airview" | "philips_care";
+  source: "resmed_airview" | "philips_care" | "react_health";
   prefix: string;
 }
 
@@ -59,6 +59,12 @@ const VENDORS: Record<string, VendorConfig> = {
     signatureHeader: "x-careorchestrator-signature",
     source: "philips_care",
     prefix: "care_orchestrator",
+  },
+  "react-health": {
+    envVar: "REACT_HEALTH_WEBHOOK_SECRET",
+    signatureHeader: "x-icode-signature",
+    source: "react_health",
+    prefix: "react_health",
   },
 };
 
@@ -91,7 +97,7 @@ router.post(
   rawJson,
   async (req, res) => {
     const vendorParam = z
-      .enum(["airview", "care-orchestrator"])
+      .enum(["airview", "care-orchestrator", "react-health"])
       .safeParse(req.params.vendor);
     if (!vendorParam.success) {
       res.status(404).json({ error: "unknown_vendor" });

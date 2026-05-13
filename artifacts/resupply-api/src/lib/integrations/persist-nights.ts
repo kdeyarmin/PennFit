@@ -22,6 +22,7 @@ const SOURCES = new Set([
   "resmed_airview",
   "philips_care",
   "health_connect",
+  "react_health",
 ] as const);
 
 /**

@@ -23,7 +23,8 @@ async function jsonFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 export type IntegrationSource =
   | "resmed_airview"
   | "philips_care"
-  | "health_connect";
+  | "health_connect"
+  | "react_health";
 
 export type AdapterAvailability =
   | { status: "configured" }

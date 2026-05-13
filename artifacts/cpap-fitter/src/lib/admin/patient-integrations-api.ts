@@ -6,7 +6,8 @@
 export type IntegrationSource =
   | "resmed_airview"
   | "philips_care"
-  | "health_connect";
+  | "health_connect"
+  | "react_health";
 
 export type AdapterAvailability =
   | { status: "configured" }
@@ -174,5 +175,7 @@ export function formatSourceLabel(source: IntegrationSource): string {
       return "Care Orchestrator";
     case "health_connect":
       return "Health Connect";
+    case "react_health":
+      return "React Health";
   }
 }

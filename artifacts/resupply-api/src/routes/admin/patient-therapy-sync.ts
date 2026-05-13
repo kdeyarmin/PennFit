@@ -36,7 +36,7 @@ const patientIdParam = z.string().uuid();
 
 const syncBody = z
   .object({
-    source: z.enum(["resmed_airview", "philips_care"]),
+    source: z.enum(["resmed_airview", "philips_care", "react_health"]),
     partnerPatientId: z.string().trim().min(1).max(200),
     /** Inclusive lower bound for the import. Defaults to 60 days
      *  back so we always catch a meaningful trend window. */

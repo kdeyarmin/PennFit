@@ -31,6 +31,7 @@ const SOURCE_LABELS: Record<IntegrationAdapterStatus["source"], string> = {
   resmed_airview: "ResMed AirView",
   philips_care: "Philips Care Orchestrator",
   health_connect: "Health Connect",
+  react_health: "React Health (3B iCode)",
 };
 
 export function AdminIntegrationsPage() {
