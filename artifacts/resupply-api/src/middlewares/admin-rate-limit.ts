@@ -69,16 +69,14 @@ export interface AdminRateLimitOptions {
 }
 
 /**
- * Build a rate-limit middleware keyed by the admin actor id. Apply
- * AFTER `requireAdmin` so `req.adminUserId` is populated.
+ * Create an Express middleware that rate-limits requests per admin actor.
  *
- * Example:
- *   router.post(
- *     "/admin/patient-documents/:id/destroy",
- *     requireAdmin,
- *     adminRateLimit({ name: "patient_documents.destroy", preset: "destroy" }),
- *     async (req, res) => { ... },
- *   );
+ * Use this after `requireAdmin` so `req.adminUserId` is populated; if the actor id
+ * is missing the middleware shares a single bucket using the key `"no-actor"`.
+ *
+ * @param opts - Configuration for the limiter: `name` is a required stable identifier
+ *   used in naming/reporting; `preset`, `max`, and `windowMs` control the cap and window.
+ * @returns An Express request handler that applies the configured per-actor rate limit.
  */
 export function adminRateLimit(opts: AdminRateLimitOptions): RequestHandler {
   const preset = PRESETS[opts.preset ?? "mutation"];
