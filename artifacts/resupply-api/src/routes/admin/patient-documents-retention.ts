@@ -20,6 +20,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { bucketRetention } from "../../lib/patient-documents/retention";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
 import {
   requireAdminOnly,
   requirePermission,
@@ -151,6 +152,10 @@ router.get(
 router.post(
   "/admin/patient-documents/:id/legal-hold",
   requirePermission("audit.export"),
+  adminRateLimit({
+    name: "patient_documents.legal_hold",
+    preset: "sensitive",
+  }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
@@ -231,6 +236,10 @@ router.post(
 router.post(
   "/admin/patient-documents/:id/destroy",
   requireAdminOnly,
+  adminRateLimit({
+    name: "patient_documents.destroy",
+    preset: "destroy",
+  }),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
