@@ -55,6 +55,7 @@ import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js"
 import integrationsWebhooksRouter from "./integrations-webhooks.js";
 import integrationsErrorsRouter from "./admin/integrations-errors.js";
 import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
+import integrationsSyncEquipmentRouter from "./admin/integrations-sync-equipment.js";
 import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
 import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
@@ -384,6 +385,11 @@ router.use(integrationsErrorsRouter);
 // hook that re-fetches just the vendor supply roster (preserves
 // prior nights + settings).
 router.use(integrationsRefreshSuppliesRouter);
+// /admin/patients/:id/integrations/sync-equipment — replay the
+// snapshot→equipment_assets auto-link + recall scan over every
+// cached snapshot for this patient. Useful after a recall lands
+// for a device class some patients already have on file.
+router.use(integrationsSyncEquipmentRouter);
 // /admin/productivity — per-agent throughput dashboard for
 // supervisors. reports.read-gated; CSRs see their own row too.
 router.use(productivityRouter);
