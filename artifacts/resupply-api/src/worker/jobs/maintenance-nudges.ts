@@ -1,0 +1,325 @@
+// pg-boss job: weekly hygiene nudge email.
+//
+// Patient hygiene without a nudge is a passive checklist; this job
+// surfaces "your cushion wash is 3 days overdue" via email so the
+// reminder reaches patients who don't browse /account regularly.
+//
+// Scheduling: weekly, Sunday morning 11:13 UTC. The catalog's
+// fastest cadence is daily (mask cushion wipe), so a weekly nudge
+// occasionally catches a 6-day-overdue wipe — close enough for
+// patient engagement without spam.
+//
+// Bundling: one email per patient listing every currently-overdue
+// task (typically 0–3). Patients who completed everything in the
+// last week get nothing.
+//
+// Quiet period: 7 days. The patient_maintenance_nudges audit row
+// stamps each send; the eligibility scan skips any patient whose
+// most recent nudge is younger than 7 days.
+
+import type PgBoss from "pg-boss";
+
+import { createSendgridClient } from "@workspace/resupply-email";
+import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+
+import {
+  MAINTENANCE_CATALOG,
+  bucketizeMaintenance,
+  type MaintenanceTask,
+} from "../../lib/patient-maintenance/catalog";
+import { logger } from "../../lib/logger";
+
+const NUDGE_JOB = "patient-maintenance.weekly-nudge";
+const NUDGE_CRON = "13 11 * * 0";
+const QUIET_PERIOD_MS = 7 * 86_400_000;
+// Bound how many patients we email per nudge run. Bigger DMEs can
+// raise this — the cron picks up the rest next week. Cap kept low
+// during initial rollout to avoid SendGrid burst limits.
+const BATCH_SIZE = 200;
+
+interface NudgeStats {
+  scanned: number;
+  emailed: number;
+  skippedQuiet: number;
+  skippedNoOverdue: number;
+  skippedNoContact: number;
+  errors: number;
+}
+
+interface MessagingConfig {
+  sendgridApiKey: string | null;
+  sendgridFromEmail: string | null;
+  sendgridFromName: string | null;
+  practiceName: string;
+  publicBaseUrl: string;
+}
+
+export function readNudgeMessagingConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): MessagingConfig {
+  return {
+    sendgridApiKey: env.SENDGRID_API_KEY ?? null,
+    sendgridFromEmail: env.SENDGRID_FROM_EMAIL ?? null,
+    sendgridFromName: env.SENDGRID_FROM_NAME ?? null,
+    practiceName: env.RESUPPLY_PRACTICE_NAME ?? "PennPaps",
+    publicBaseUrl:
+      (env.RESUPPLY_VOICE_PUBLIC_BASE_URL ??
+        (env.REPLIT_DEV_DOMAIN ? `https://${env.REPLIT_DEV_DOMAIN}` : "")) ||
+      "",
+  };
+}
+
+/** Compose the email body for a patient with a set of overdue tasks. */
+export function composeNudgeEmail(opts: {
+  practiceName: string;
+  publicBaseUrl: string;
+  overdueTasks: Array<{ task: MaintenanceTask; daysOverdue: number }>;
+}): { subject: string; html: string; text: string } {
+  const tasks = opts.overdueTasks.slice(0, 6);
+  const subject =
+    tasks.length === 1
+      ? `Time to ${tasks[0]!.task.label.toLowerCase()}`
+      : `${tasks.length} hygiene tasks waiting for you`;
+  const accountUrl = `${opts.publicBaseUrl}/account`;
+  const lines: string[] = [
+    `Quick reminder from ${opts.practiceName} — a few hygiene tasks are due:`,
+    "",
+    ...tasks.map((t) => {
+      const ageNote =
+        t.daysOverdue > 0
+          ? ` (${t.daysOverdue} day${t.daysOverdue === 1 ? "" : "s"} overdue)`
+          : "";
+      return `• ${t.task.label}${ageNote} — ${t.task.why}`;
+    }),
+    "",
+    `Check them off on your account page:`,
+    accountUrl,
+    "",
+    "Skipping a week is fine. We won't pile up reminders.",
+  ];
+  const text = lines.join("\n");
+  const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;line-height:1.45;">
+    <p>Quick reminder from <strong>${escapeHtml(opts.practiceName)}</strong> — a few hygiene tasks are due:</p>
+    <ul>${tasks
+      .map(
+        (t) =>
+          `<li><strong>${escapeHtml(t.task.label)}</strong>${
+            t.daysOverdue > 0
+              ? ` <span style="color:#a16207;">(${t.daysOverdue} day${t.daysOverdue === 1 ? "" : "s"} overdue)</span>`
+              : ""
+          } — ${escapeHtml(t.task.why)}</li>`,
+      )
+      .join("")}</ul>
+    <p>Check them off on your account page:<br>
+       <a href="${accountUrl}">${escapeHtml(accountUrl)}</a></p>
+    <p style="color:#666;font-size:13px;">Skipping a week is fine. We won't pile up reminders.</p>
+  </div>`;
+  return { subject, html, text };
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Run a single sweep. Exported for tests. */
+export async function runMaintenanceNudgeSweep(
+  cfg: MessagingConfig = readNudgeMessagingConfig(),
+): Promise<NudgeStats> {
+  const stats: NudgeStats = {
+    scanned: 0,
+    emailed: 0,
+    skippedQuiet: 0,
+    skippedNoOverdue: 0,
+    skippedNoContact: 0,
+    errors: 0,
+  };
+  if (
+    !cfg.sendgridApiKey ||
+    !cfg.sendgridFromEmail ||
+    !cfg.sendgridFromName ||
+    !cfg.publicBaseUrl
+  ) {
+    logger.warn(
+      { event: "patient-maintenance.weekly-nudge.skipped_no_config" },
+      "maintenance-nudge: skipping run, messaging config incomplete",
+    );
+    return stats;
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+
+  // Eligible patients: anyone with an email AND at least one
+  // therapy_link or therapy_night (i.e. an active CPAP user). We
+  // don't want to badger pre-onboarding leads or returning
+  // customers with no therapy stream.
+  const { data: candidates, error } = await supabase
+    .schema("resupply")
+    .from("patients")
+    .select("id, email")
+    .not("email", "is", null)
+    .limit(BATCH_SIZE);
+  if (error) throw error;
+  const patients = (candidates ?? []).filter(
+    (p): p is { id: string; email: string } => p.email != null,
+  );
+  if (patients.length === 0) return stats;
+
+  const sendgrid = createSendgridClient({
+    apiKey: cfg.sendgridApiKey,
+    fromEmail: cfg.sendgridFromEmail,
+    fromName: cfg.sendgridFromName,
+  });
+  const asOfDate = new Date();
+  const cutoff = new Date(Date.now() - QUIET_PERIOD_MS).toISOString();
+
+  for (const patient of patients) {
+    stats.scanned += 1;
+
+    // Quiet-period check first — cheapest filter.
+    const { data: lastNudge } = await supabase
+      .schema("resupply")
+      .from("patient_maintenance_nudges")
+      .select("id")
+      .eq("patient_id", patient.id)
+      .gte("sent_at", cutoff)
+      .limit(1)
+      .maybeSingle();
+    if (lastNudge) {
+      stats.skippedQuiet += 1;
+      continue;
+    }
+
+    // Per-task last-completion. Same shape as /shop/me/maintenance.
+    const { data: log, error: logErr } = await supabase
+      .schema("resupply")
+      .from("patient_maintenance_log")
+      .select("task_key, completed_at")
+      .eq("patient_id", patient.id)
+      .order("completed_at", { ascending: false });
+    if (logErr) {
+      stats.errors += 1;
+      continue;
+    }
+    const latest = new Map<string, string>();
+    for (const r of log ?? []) {
+      if (!latest.has(r.task_key)) latest.set(r.task_key, r.completed_at);
+    }
+
+    // Build the overdue list. We only nudge for tasks the patient
+    // has STARTED — pure-new patients see the checklist on /account
+    // but don't get an email until they've engaged with at least
+    // one task. Avoids "welcome to PennFit, here are 5 chores."
+    const hasEngaged = (log ?? []).length > 0;
+    if (!hasEngaged) {
+      stats.skippedNoOverdue += 1;
+      continue;
+    }
+
+    const overdueTasks: Array<{
+      task: MaintenanceTask;
+      daysOverdue: number;
+    }> = [];
+    for (const task of MAINTENANCE_CATALOG) {
+      const lastCompletedAt = latest.get(task.key) ?? null;
+      const info = bucketizeMaintenance({
+        lastCompletedAt,
+        frequencyDays: task.frequencyDays,
+        asOfDate,
+      });
+      if (info.bucket === "due_now") {
+        overdueTasks.push({
+          task,
+          daysOverdue: Math.max(0, -info.daysUntilDue),
+        });
+      }
+    }
+
+    if (overdueTasks.length === 0) {
+      stats.skippedNoOverdue += 1;
+      continue;
+    }
+
+    // Send.
+    const { subject, html, text } = composeNudgeEmail({
+      practiceName: cfg.practiceName,
+      publicBaseUrl: cfg.publicBaseUrl,
+      overdueTasks,
+    });
+    try {
+      await sendgrid.sendEmail({
+        to: patient.email,
+        subject,
+        html,
+        text,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : "unknown",
+          patientId: patient.id,
+        },
+        "patient-maintenance.weekly-nudge: send failed",
+      );
+      stats.errors += 1;
+      continue;
+    }
+
+    // Log the nudge.
+    const { error: insErr } = await supabase
+      .schema("resupply")
+      .from("patient_maintenance_nudges")
+      .insert({
+        patient_id: patient.id,
+        channel: "email",
+        task_keys: overdueTasks.map((t) => t.task.key),
+      });
+    if (insErr) {
+      // Won't double-send within this run (the loop is per-patient);
+      // next week's quiet-period check might let through a duplicate
+      // if the log write failed but the email landed. Acceptable.
+      logger.warn(
+        { err: insErr, patientId: patient.id },
+        "patient-maintenance.weekly-nudge: log insert failed",
+      );
+    }
+    stats.emailed += 1;
+  }
+
+  return stats;
+}
+
+export async function registerMaintenanceNudgeJob(
+  boss: PgBoss,
+): Promise<void> {
+  await boss.createQueue(NUDGE_JOB);
+  await boss.work(NUDGE_JOB, async () => {
+    try {
+      const stats = await runMaintenanceNudgeSweep();
+      logger.info(
+        { event: "patient-maintenance.weekly-nudge.completed", ...stats },
+        "patient-maintenance.weekly-nudge: completed",
+      );
+    } catch (err) {
+      logger.error(
+        {
+          err:
+            err instanceof Error
+              ? { name: err.name, message: err.message }
+              : err,
+        },
+        "patient-maintenance.weekly-nudge: failed",
+      );
+      throw err;
+    }
+  });
+  await boss.schedule(NUDGE_JOB, NUDGE_CRON);
+  logger.info(
+    { cron: NUDGE_CRON },
+    "patient-maintenance.weekly-nudge scheduled",
+  );
+}

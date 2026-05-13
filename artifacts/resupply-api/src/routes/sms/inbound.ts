@@ -73,6 +73,7 @@ import {
   pausePatient,
   placeResupplyOrderForConversation,
 } from "../../lib/messaging/order-flow";
+import { findActiveClosure } from "../../lib/office-closure/active";
 import { safeAudit } from "../../lib/messaging/safe-audit";
 
 const router: IRouter = Router();
@@ -270,6 +271,52 @@ router.post("/sms/inbound", signatureMiddleware, smsPhoneLimiter, async (req, re
     return;
   }
   const patientId = lookupMatches[0]?.id;
+
+  // Office closure auto-reply — STOP/HELP are already handled above
+  // and never reach here. Any other inbound during an active closure
+  // gets the configured auto-reply and short-circuits the normal
+  // dispatch (no conversation row created, no patient-side reply
+  // beyond the closure message). Surveyors and operations folks
+  // both expect a "we're closed today" voice on inbound messages.
+  if (earlyRouted.intent !== "stop" && earlyRouted.intent !== "help") {
+    try {
+      const activeClosure = await findActiveClosure(supabase);
+      if (activeClosure) {
+        await safeAudit({
+          action: "messaging.inbound.received",
+          adminEmail: null,
+          adminUserId: null,
+          targetTable: "office_closures",
+          targetId: activeClosure.id,
+          metadata: {
+            channel: "sms",
+            outcome: "closure_auto_reply",
+            twilio_message_sid: parsed.MessageSid,
+          },
+          ip: req.ip ?? null,
+          userAgent: req.get("user-agent") ?? null,
+        });
+        res
+          .status(200)
+          .type("text/xml")
+          .send(
+            `<Response><Message>${escapeXml(activeClosure.autoReplyMessage)}</Message></Response>`,
+          );
+        return;
+      }
+    } catch (err) {
+      // Closure lookup failed — log and continue with normal
+      // dispatch. We'd rather drop the auto-reply than block the
+      // patient's message.
+      logger.warn(
+        {
+          event: "sms_inbound_closure_lookup_failed",
+          err: serializeErr(err),
+        },
+        "sms.inbound: closure lookup failed; continuing with normal dispatch",
+      );
+    }
+  }
 
   if (!patientId) {
     // Unknown phone — but if the body is STOP or HELP we still honor

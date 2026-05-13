@@ -92,8 +92,20 @@ import { AccountMessagesSection } from "@/components/account-messages-section";
 import { CustomerChatSection } from "@/components/customer-chat-section";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { CommPrefsSection } from "@/components/comm-prefs-section";
+import {
+  EquipmentRegistrySection,
+  EsignFormsSection,
+  ReferralProgramSection,
+  RequestAppointmentSection,
+} from "@/components/self-service-sections";
 import { ReorderSuggestionsSection } from "@/components/reorder-suggestions-section";
 import { InsightsSection } from "@/components/insights-section";
+import { TherapySummarySection } from "@/components/therapy-summary-section";
+import { MaintenanceSection } from "@/components/maintenance-section";
+import { MaskLeakWizardSection } from "@/components/mask-leak-wizard-section";
+import { SubstitutionsSection } from "@/components/substitutions-section";
+import { EducationFeedSection } from "@/components/education-feed-section";
+import { MyReturnsSection } from "@/components/my-returns-section";
 import { BiometricLockGate } from "@/components/biometric-lock-gate";
 
 // sessionStorage key picked up by /shop/cart to render the "Loaded
@@ -325,6 +337,11 @@ function AccountInner() {
           */}
           <CustomerChatSection />
           <DocumentsSection />
+          <TherapySummarySection />
+          <SubstitutionsSection />
+          <MaintenanceSection />
+          <MaskLeakWizardSection />
+          <EducationFeedSection />
           <InsightsSection />
           <ReorderSuggestionsSection />
           <SubscriptionsSection previewMode={previewMode === true} />
@@ -332,6 +349,11 @@ function AccountInner() {
             orders={data.recentOrders ?? []}
             previewMode={previewMode === true}
           />
+          <MyReturnsSection />
+          <EquipmentRegistrySection />
+          <RequestAppointmentSection />
+          <EsignFormsSection />
+          <ReferralProgramSection />
           <CommPrefsSection />
           <DataExportSection />
         </div>
@@ -646,6 +668,12 @@ function ProfileSection({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [addrWarnings, setAddrWarnings] = useState<string[]>([]);
+  // When the user has been warned about a suspicious address and
+  // clicks Save a second time, we let it through. Cleared whenever
+  // any address field changes so a stale "override" doesn't ride
+  // forward into a new edit.
+  const [overrideAddrWarning, setOverrideAddrWarning] = useState(false);
 
   // Field-by-field comparison against the original profile snapshot
   // tells us whether the form has unsaved changes. We use trimmed
@@ -697,10 +725,40 @@ function ProfileSection({
         setSaving(false);
         return;
       }
+      if (hasAnyField && allRequiredFilled && !overrideAddrWarning) {
+        try {
+          const probe = await fetch("/resupply-api/shop/validate-address", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              line1: cleanAddr.line1,
+              line2: cleanAddr.line2,
+              city: cleanAddr.city,
+              state: cleanAddr.state,
+              postalCode: cleanAddr.postalCode,
+              country: cleanAddr.country,
+            }),
+          });
+          const json = (await probe.json()) as {
+            ok: boolean;
+            reasons?: string[];
+          };
+          if (!json.ok && Array.isArray(json.reasons) && json.reasons.length > 0) {
+            setAddrWarnings(json.reasons);
+            setSaving(false);
+            return;
+          }
+        } catch {
+          // Validation probe is advisory only — never block a save.
+        }
+      }
       await updateShopMe({
         displayName: displayName.trim() || null,
         shippingAddress: hasAnyField ? cleanAddr : null,
       });
+      setAddrWarnings([]);
+      setOverrideAddrWarning(false);
       setSavedAt(Date.now());
       onSaved();
     } catch (err) {
@@ -811,6 +869,27 @@ function ProfileSection({
           >
             {error}
           </p>
+        )}
+        {addrWarnings.length > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p className="font-semibold mb-1">Address looks unusual:</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              {addrWarnings.map((r) => (
+                <li key={r}>{r.replace(/_/g, " ")}</li>
+              ))}
+            </ul>
+            <p className="mt-2">
+              Fix it above, or{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => setOverrideAddrWarning(true)}
+              >
+                save anyway
+              </button>
+              .
+            </p>
+          </div>
         )}
         <div className="flex items-center gap-3 pt-2">
           <Button
@@ -1126,6 +1205,9 @@ function OrdersSection({
                   Details
                 </Link>
                 {o.status === "paid" && (
+                  <ReportLostLink orderId={o.id} />
+                )}
+                {o.status === "paid" && (
                   <Button
                     size="sm"
                     disabled={previewMode || reorderingId === o.sessionId}
@@ -1164,6 +1246,75 @@ function OrdersSection({
         </p>
       )}
     </section>
+  );
+}
+
+function ReportLostLink({ orderId }: { orderId: string }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<
+    | { kind: "ok" }
+    | { kind: "error"; message: string }
+    | null
+  >(null);
+  async function submit() {
+    setSubmitting(true);
+    setResult(null);
+    try {
+      const { reportLostShipment } = await import(
+        "@/lib/account/self-service-api"
+      );
+      await reportLostShipment(orderId, note.trim());
+      setResult({ kind: "ok" });
+    } catch (err) {
+      setResult({
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  if (result?.kind === "ok") {
+    return (
+      <span className="text-xs text-emerald-700">Reported — we&apos;ll follow up</span>
+    );
+  }
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="text-xs text-muted-foreground hover:text-destructive underline-offset-2 hover:underline"
+        onClick={() => setOpen(true)}
+      >
+        Report not received
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="text"
+        placeholder="Describe what happened (optional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        className="h-7 rounded border px-2 text-xs w-56"
+      />
+      <Button size="sm" onClick={() => void submit()} disabled={submitting}>
+        {submitting ? "…" : "Report"}
+      </Button>
+      <button
+        type="button"
+        className="text-xs text-muted-foreground"
+        onClick={() => setOpen(false)}
+      >
+        Cancel
+      </button>
+      {result?.kind === "error" && (
+        <span className="text-xs text-destructive ml-1">{result.message}</span>
+      )}
+    </div>
   );
 }
 

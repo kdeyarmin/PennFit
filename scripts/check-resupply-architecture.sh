@@ -352,6 +352,56 @@ forbid_imports_in lib/resupply-reminders/src \
   "@anthropic-ai/sdk['\"]" \
   "['\"]ws['\"]"
 
+# Rule 14: PennFit's DB does NOT own inventory / warehousing.
+#
+# Pacware is the inventory system of record. PennFit's DB tracks the
+# patient-facing side of the resupply pipeline (prescriptions,
+# episodes, fulfillments — the *intent* to ship, plus the tracking
+# echo back from Pacware) but does NOT model on-hand counts, lots,
+# serial numbers, purchase orders, receiving, transfers, or
+# warehouses. Reintroducing any of those concerns turns PennFit into
+# a half-WMS that competes with Pacware, splits the source of truth
+# for stock, and immediately becomes a reconciliation problem.
+#
+# This rule is enforced at the schema-file level: any new TS file
+# under lib/resupply-db/src/schema/ whose name matches one of the
+# forbidden patterns fails the gate. Adjust the catalog only with an
+# explicit ADR — the boundary is intentional, not accidental.
+#
+# Out-of-scope (allowed): existing `shop_inventory` ADMIN UI that
+# reads stock counts from Stripe metadata. That is a thin mirror,
+# not a system of record, and it lives in the API/SPA — not in this
+# schema directory.
+if [[ -d lib/resupply-db/src/schema ]]; then
+  forbidden_inventory_files="$(find lib/resupply-db/src/schema -maxdepth 1 -type f \( \
+      -name 'inventory*.ts' \
+      -o -name 'inventory_*.ts' \
+      -o -name 'lots.ts' -o -name 'lots-*.ts' -o -name 'lots_*.ts' \
+      -o -name 'purchase-orders*.ts' -o -name 'purchase_orders*.ts' \
+      -o -name 'receiving*.ts' \
+      -o -name 'warehouses*.ts' \
+      -o -name 'stock-transfers*.ts' -o -name 'stock_transfers*.ts' \
+    \) 2>/dev/null || true)"
+  if [[ -n "$forbidden_inventory_files" ]]; then
+    fail "lib/resupply-db/src/schema may not own inventory/warehousing — Pacware is the system of record. Move these to Pacware integration code, or open an ADR to change the boundary."
+    echo "$forbidden_inventory_files" | sed 's/^/    /' >&2
+  fi
+fi
+
+# Rule 14b: SQL-migration counterpart to Rule 14. A contributor might
+# bypass the schema-file rule by writing a hand-rolled migration. This
+# catches that by grepping for `CREATE TABLE resupply.<name>` patterns
+# matching the same forbidden vocabulary. Same Pacware-boundary
+# rationale — change only via ADR.
+if [[ -d lib/resupply-db/drizzle ]]; then
+  forbidden_inventory_sql="$(find lib/resupply-db/drizzle -maxdepth 1 -type f -name '*.sql' \
+    -exec grep -liE '(CREATE|ALTER)[[:space:]]+TABLE[[:space:]]+(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?"?resupply"?\."?(inventory_items|inventory_lots|purchase_orders|receiving_events|receiving_receipts|warehouses|stock_transfers)"?' {} \; 2>/dev/null || true)"
+  if [[ -n "$forbidden_inventory_sql" ]]; then
+    fail "SQL migrations may not own inventory/warehousing tables — Pacware is the system of record."
+    echo "$forbidden_inventory_sql" | sed 's/^/    /' >&2
+  fi
+fi
+
 if [[ "$errors" -gt 0 ]]; then
   echo "" >&2
   echo "$errors architecture rule violation(s). See docs/resupply/ARCHITECTURE.md for the full ruleset." >&2

@@ -2,7 +2,18 @@
 // Auth rides on the in-house `pf_session` cookie via
 // `credentials: "include"` — no bearer token bridge.
 
-export type TeamRole = "admin" | "agent";
+// RBAC Phase A: the team API now persists the granular role on
+// `admin_users.role`. The coarse "admin or agent" still drives
+// requireAdmin (staff-or-not); the granular role drives
+// requirePermission via the rbac catalog.
+export type TeamRole =
+  | "admin"
+  | "supervisor"
+  | "csr"
+  | "fitter"
+  | "fulfillment"
+  | "compliance_officer"
+  | "agent";
 export type TeamStatus = "pending" | "active" | "revoked";
 
 export interface TeamMember {

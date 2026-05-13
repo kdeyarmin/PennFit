@@ -16,6 +16,47 @@ import shopReviewRequestsRouter from "./admin/shop-review-requests.js";
 import teamRouter from "./admin/team.js";
 import opsStatusRouter from "./admin/ops-status.js";
 import inboxCountsRouter from "./admin/inbox-counts.js";
+import todayRouter from "./admin/today.js";
+import providersRouter from "./admin/providers.js";
+import swoRouter from "./admin/swo.js";
+import complianceAttestationRouter from "./admin/compliance-attestation.js";
+import inboundFaxesRouter from "./admin/inbound-faxes.js";
+import equipmentRecallsRouter from "./admin/equipment-recalls.js";
+import analyticsRouter from "./admin/analytics.js";
+import trainingRecordsRouter from "./admin/training-records.js";
+import grievancesRouter from "./admin/grievances.js";
+import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
+import productivityRouter from "./admin/productivity.js";
+import patientDocumentsRetentionRouter from "./admin/patient-documents-retention.js";
+import shopBackordersRouter from "./admin/shop-backorders.js";
+import officeClosuresRouter from "./admin/office-closures.js";
+import coachingPlansRouter from "./admin/coaching-plans.js";
+import conversationRoutingRouter from "./admin/conversation-routing.js";
+import conversationCoachingNotesRouter from "./admin/conversation-coaching-notes.js";
+import conversationTriageRouter from "./admin/conversation-triage.js";
+import patientAddressHistoryRouter from "./admin/patient-address-history.js";
+import patientTimelineRouter from "./admin/patient-timeline.js";
+import auditArchiveRouter from "./admin/audit-archive.js";
+import csrShiftsRouter from "./admin/csr-shifts.js";
+import appointmentRequestsRouter from "./admin/appointment-requests.js";
+import shopOrderLossClaimsRouter from "./admin/shop-order-loss-claims.js";
+import carrierLabelsRouter from "./admin/carrier-labels.js";
+import formAcknowledgementsRouter from "./admin/form-acknowledgements.js";
+import patientFitOverridesRouter from "./admin/patient-fit-overrides.js";
+import referralsAttributeRouter from "./admin/referrals-attribute.js";
+import patientMaintenanceLogRouter from "./admin/patient-maintenance-log.js";
+import resupplyFunnelRouter from "./admin/resupply-funnel.js";
+import patientTherapyNightsManualRouter from "./admin/patient-therapy-nights-manual.js";
+import patientIdentityVerificationsRouter from "./admin/patient-identity-verifications.js";
+import providerPortalRouter from "./provider-portal.js";
+import shopOrderPodRouter from "./admin/shop-order-pod.js";
+import integrationsStatusRouter from "./admin/integrations-status.js";
+import integrationsNightlySyncRouter from "./admin/integrations-nightly-sync.js";
+import integrationsWebhooksRouter from "./integrations-webhooks.js";
+import integrationsErrorsRouter from "./admin/integrations-errors.js";
+import integrationsRefreshSuppliesRouter from "./admin/integrations-refresh-supplies.js";
+import bulkCampaignsRouter from "./admin/bulk-campaigns.js";
+import mfaRouter from "./admin/mfa.js";
 import reportsRouter from "./admin/reports.js";
 import deliveryFailuresRouter from "./admin/delivery-failures.js";
 import lookupRouter from "./admin/lookup.js";
@@ -209,6 +250,151 @@ router.use(opsStatusRouter);
 // (awaiting-reply convs, pending returns, pending reviews). Read-
 // only, called on every nav render with a 30s SPA cache.
 router.use(inboxCountsRouter);
+// /admin/today — unified CSR work queue; top items across the
+// queues a CSR touches every day (conversations awaiting reply,
+// overdue followups, pending returns, compliance alerts, Rx
+// renewals due, documents to review). One round-trip; ~5 items
+// per queue. The /admin/today SPA page renders this directly.
+router.use(todayRouter);
+// /admin/providers/* — central physician/NP registry. Replaces the
+// free-text jsonb prescriber data scattered across prescriptions
+// and shop_customers. NPPES lookup endpoint proxies the public
+// NPI registry so CSRs autofill provider records instead of
+// re-keying.
+router.use(providersRouter);
+// /admin/patients/:id/prescriptions/:rxId/swo — render the
+// CMS-standardized Standard Written Order as a streaming PDF.
+// Consumes the providers FK + sleep_studies ICD-10 introduced in
+// the Tier-2a sprint.
+router.use(swoRouter);
+// /admin/patients/:id/compliance-attestation — render the 90-day
+// Medicare LCD L33718 adherence attestation as a streaming PDF.
+// Sliding 30-day window finder lives in
+// lib/compliance-attestation.ts and is unit-tested without pdfkit.
+router.use(complianceAttestationRouter);
+// /admin/inbound-faxes/* — triage queue for faxes Twilio delivers.
+// The webhook lives at /fax/inbound (mounted elsewhere); this is
+// the CSR-facing surface for listing, attaching to patient/Rx/
+// provider, and archiving.
+router.use(inboundFaxesRouter);
+// /admin/equipment-recalls/* — manufacturer recall registry + the
+// scan endpoint that surfaces affected patients. Required for
+// Philips-DreamStation-style workflows where every DME needs to
+// know which dispensed serials are in the recall lot.
+router.use(equipmentRecallsRouter);
+// /admin/analytics/* — clinical-side analytics (resupply funnel,
+// compliance cohorts, CSR productivity). Distinct from storefront
+// analytics at /admin/storefront/analytics which covers orders +
+// email health + mask popularity.
+router.use(analyticsRouter);
+// /admin/compliance/* — accreditation-binder surfaces: per-staff
+// training records (HIPAA, OSHA, fit-test, infection-control,
+// orientation) and patient grievances (complaints + grievances +
+// adverse events under one typed row). Surveyors (ACHC, BOC, TJC)
+// query these exact artifacts during DMEPOS site visits.
+router.use(trainingRecordsRouter);
+router.use(grievancesRouter);
+// /admin/accreditation/* — the policy catalog + per-staff
+// attestation surface + binder summary that ties the three
+// evidence sections (policies, training, grievances) together
+// for a single hand-off to a surveyor.
+router.use(accreditationPoliciesRouter);
+// /admin/patient-documents/retention/* — HIPAA retention sweep
+// review queue, legal-hold toggle, and (admin-only) destruction.
+router.use(patientDocumentsRetentionRouter);
+// /admin/shop/backorders + /admin/shop/sku-substitutes — resupply
+// substitution catalog. requireAdmin for backorder marks (CSR
+// day-to-day); requireAdminOnly for substitute rule changes
+// (clinical preference order).
+router.use(shopBackordersRouter);
+// /admin/office-closures — CSR-managed closure windows; inbound
+// SMS during an active window gets the closure auto-reply.
+router.use(officeClosuresRouter);
+// /admin/coaching-plans/* — adherence coaching workflow that
+// layers an outreach state machine on top of csr_compliance_alerts.
+router.use(coachingPlansRouter);
+// Skill-based conversation routing — PATCH skill arrays + a
+// GET assignee-suggestions endpoint that scores active admins.
+router.use(conversationRoutingRouter);
+// Supervisor coaching notes on conversations (Tier 1 J).
+router.use(conversationCoachingNotesRouter);
+// Conversation triage (Wave 1): snooze / tags / claim.
+router.use(conversationTriageRouter);
+// Patient address change history.
+router.use(patientAddressHistoryRouter);
+// Patient timeline — unified chronological feed across episodes,
+// fulfillments, conversations, address changes, grievances,
+// coaching plans, and recall notifications.
+router.use(patientTimelineRouter);
+// HIPAA audit-log archive — list flagged rows + admin destroy.
+router.use(auditArchiveRouter);
+// CSR shift schedule — who's on now + admin scheduling.
+router.use(csrShiftsRouter);
+// /admin/appointment-requests — CSR queue for patient-initiated
+// appointment requests (fitting help, telehealth, etc.).
+router.use(appointmentRequestsRouter);
+// /admin/shop/orders/:orderId/loss-claims — lost-shipment workflow
+// for paid orders that never arrived. Lifecycle: open →
+// carrier_filed → resolved_refunded | resolved_reshipped |
+// closed_unresolved.
+router.use(shopOrderLossClaimsRouter);
+// /admin/shop/returns/:returnId/label — adapter-backed carrier
+// label generation. Returns 503 until CARRIER_LABEL_VENDOR is set.
+router.use(carrierLabelsRouter);
+// /admin/form-acknowledgements — accreditation-binder summary +
+// per-patient HIPAA / AOB / ABN / FR / supplier-standards roster.
+router.use(formAcknowledgementsRouter);
+// /admin/patients/:id/fit-override — CSR override of the camera-
+// based mask-fit recommendation. One-row-per-patient.
+router.use(patientFitOverridesRouter);
+// /admin/referrals/scan-attribution — idempotent sweep that marks
+// pending patient_referrals rows as converted when a matching email
+// has placed a paid order.
+router.use(referralsAttributeRouter);
+// /admin/patients/:id/maintenance-log — CSR view of the patient's
+// hygiene checklist completion history.
+router.use(patientMaintenanceLogRouter);
+// /admin/analytics/resupply-funnel — episode-stage rollup with
+// confirm + fulfillment rates over a configurable window.
+router.use(resupplyFunnelRouter);
+// /admin/patients/:id/therapy-nights — manual entry path for nights
+// not delivered via the partner integration.
+router.use(patientTherapyNightsManualRouter);
+// /admin/patients/:id/identity-verifications — durable identity-check
+// log. We never store the SSN/ID; only the outcome + method.
+router.use(patientIdentityVerificationsRouter);
+// /provider-portal/:token — public token-gated read-only caseload
+// view for a physician/NP. Token minted by CSR.
+router.use(providerPortalRouter);
+// /admin/shop/orders/:orderId/pod — proof-of-delivery photo upload
+// stamp for accreditation + dispute resolution.
+router.use(shopOrderPodRouter);
+// /admin/integrations/status — vendor-adapter health dashboard.
+router.use(integrationsStatusRouter);
+// /admin/integrations/nightly-sync — manual trigger for the nightly
+// bulk-sync sweep. Same code path the scheduled job runs.
+router.use(integrationsNightlySyncRouter);
+// /integrations/webhooks/:vendor — vendor PUSH endpoints (AirView
+// and Care Orchestrator). HMAC-verified. Public mount because
+// vendors don't carry admin sessions.
+router.use(integrationsWebhooksRouter);
+// /admin/integrations/errors — sync-failure triage queue + retry.
+router.use(integrationsErrorsRouter);
+// /admin/patients/:id/integrations/refresh-supplies — post-shipment
+// hook that re-fetches just the vendor supply roster (preserves
+// prior nights + settings).
+router.use(integrationsRefreshSuppliesRouter);
+// /admin/productivity — per-agent throughput dashboard for
+// supervisors. reports.read-gated; CSRs see their own row too.
+router.use(productivityRouter);
+// /admin/bulk-campaigns/* — staging-side surface for bulk-email
+// campaigns. Phase A persists draft + cancelled; Phase B will add
+// the send-side worker that drains bulk_campaign_recipients.
+router.use(bulkCampaignsRouter);
+// /admin/mfa/* — TOTP enrollment for admin/CSR accounts. Phase A:
+// enrollment + status + disable only. Sign-in gating ships in Phase B
+// after the enrollment flow has been proven in production.
+router.use(mfaRouter);
 // /admin/reports/*.csv — date-bounded CSV exports for ops + finance.
 router.use(reportsRouter);
 // /admin/delivery-failures — webhook delivery error triage queue

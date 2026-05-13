@@ -31,6 +31,15 @@ export const fulfillments = resupplySchema.table(
 
     itemSku: text("item_sku").notNull(),
     quantity: integer("quantity").notNull().default(1),
+    /**
+     * When the resupply order-flow substitutes for a backordered
+     * primary SKU, this column records the SKU we WOULD have
+     * shipped (from prescriptions.item_sku) and `itemSku` carries
+     * the SKU we actually shipped. Null when no substitution
+     * happened — the common path. Drives the patient-facing "we
+     * substituted X for Y this cycle" surface on /account.
+     */
+    substitutedFromSku: text("substituted_from_sku"),
 
     status: text("status", {
       enum: [

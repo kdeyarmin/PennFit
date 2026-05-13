@@ -19,7 +19,8 @@ import { resupplySchema } from "./_schema";
 export type TherapyLinkSource =
   | "resmed_airview"
   | "philips_care"
-  | "health_connect";
+  | "health_connect"
+  | "react_health";
 export type TherapyLinkStatus = "active" | "paused" | "revoked";
 
 export const patientTherapyLinks = resupplySchema.table(
@@ -47,7 +48,7 @@ export const patientTherapyLinks = resupplySchema.table(
   (t) => ({
     sourceEnum: check(
       "patient_therapy_links_source_enum",
-      sql`${t.source} IN ('resmed_airview','philips_care','health_connect')`,
+      sql`${t.source} IN ('resmed_airview','philips_care','health_connect','react_health')`,
     ),
     statusEnum: check(
       "patient_therapy_links_status_enum",

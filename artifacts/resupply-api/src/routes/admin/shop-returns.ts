@@ -40,7 +40,10 @@ import {
   type ShopReturnStatus,
 } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import {
+  requireAdmin,
+  requirePermission,
+} from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
 import {
@@ -195,7 +198,12 @@ const approveBody = z
 
 router.post(
   "/admin/shop/returns/:id/approve",
-  requireAdmin,
+  // RBAC Phase A: approve is a supervisor-and-up gate. CSRs can
+  // VIEW the queue (returns.read) but cannot grant the refund or
+  // exchange window. `requirePermission` chains requireAdmin
+  // internally, so the previous behavior (401 if no session) is
+  // preserved.
+  requirePermission("returns.approve"),
   adminReturnLifecycleLimiter,
   async (req, res) => {
     const id = req.params.id;

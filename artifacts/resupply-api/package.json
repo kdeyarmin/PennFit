@@ -24,6 +24,7 @@
     "@workspace/resupply-integrations-airview": "workspace:*",
     "@workspace/resupply-integrations-care-orchestrator": "workspace:*",
     "@workspace/resupply-integrations-health-connect": "workspace:*",
+    "@workspace/resupply-integrations-react-health": "workspace:*",
     "@workspace/resupply-messaging": "workspace:*",
     "@workspace/resupply-reminders": "workspace:*",
     "@workspace/resupply-secrets": "workspace:*",

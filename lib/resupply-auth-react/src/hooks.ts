@@ -19,7 +19,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { AuthClient, AuthError, AuthMe } from "./client";
+import type { AuthClient, AuthError, AuthMe, SignInResult } from "./client";
 
 export const SESSION_QUERY_KEY = ["auth", "me"] as const;
 
@@ -32,9 +32,21 @@ export interface AuthHooks {
   useSession(): UseQueryResult<AuthMe | null, AuthError>;
 
   useSignIn(): UseMutationResult<
-    void,
+    SignInResult,
     AuthError,
     { email: string; password: string }
+  >;
+  /**
+   * Second step of the MFA sign-in flow. Pass the challenge token
+   * returned from `useSignIn` and the 6-digit code from the
+   * authenticator. On success the session cookie is set and
+   * `/me` invalidated.
+   */
+  useVerifySignInMfa(): UseMutationResult<
+    void,
+    AuthError,
+    | { challengeToken: string; code: string }
+    | { challengeToken: string; recoveryCode: string }
   >;
   useSignUp(): UseMutationResult<
     void,
@@ -90,6 +102,22 @@ export function createAuthHooks(
       const qc = useQueryClient();
       return useMutation({
         mutationFn: (input) => client.signIn(input),
+        onSuccess: (result) => {
+          // Only invalidate /me on the single-step path — the
+          // mfaRequired branch hasn't set a session cookie yet,
+          // and invalidating would trigger a /me probe that
+          // returns 401 and confuses any session-watching gates.
+          if (!result.mfaRequired) {
+            invalidateMe(qc);
+          }
+        },
+      });
+    },
+
+    useVerifySignInMfa() {
+      const qc = useQueryClient();
+      return useMutation({
+        mutationFn: (input) => client.verifySignInMfa(input),
         onSuccess: () => invalidateMe(qc),
       });
     },

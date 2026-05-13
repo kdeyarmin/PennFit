@@ -134,6 +134,112 @@ export interface AuthDeps {
    * customer table.
    */
   customerIdResolver?: CustomerIdResolver;
+  /**
+   * Optional MFA probe. When supplied, the sign-in handler calls
+   * `findActiveSecret(user.id)` AFTER the password verifies; if the
+   * user has an active TOTP enrollment, sign-in returns
+   * `{ ok: true, mfaRequired: true, challengeToken }` INSTEAD of
+   * issuing the session cookie, and the SPA must call
+   * `POST /sign-in/verify-mfa` to exchange the challenge + code for
+   * the session.
+   *
+   * The probe is OPTIONAL so the customer-facing storefront (which
+   * has no MFA surface in this phase) wires `undefined` and gets
+   * the legacy single-step flow. The dashboard wires a real
+   * implementation against `admin_mfa_secrets`.
+   *
+   * Both methods MUST fail closed: a thrown error from
+   * `findActiveSecret` short-circuits sign-in with a generic 500,
+   * preventing the password-only fallback. `recordVerify` is called
+   * AFTER a successful TOTP verify to bump last_used_counter +
+   * last_used_at.
+   */
+  mfa?: MfaProbe;
+  /**
+   * HMAC key used to sign the MFA challenge token (the bridge
+   * between password-verify and TOTP-verify). Bytes, not a string.
+   * Required when `mfa` is supplied; ignored otherwise.
+   */
+  mfaChallengeHmacKey?: Buffer | Uint8Array;
+}
+
+/**
+ * MFA probe contract — the auth lib stays DB-agnostic; the host
+ * artifact wires a real implementation against its DB.
+ */
+export interface MfaProbe {
+  /**
+   * Return an active TOTP secret for the user, or null when the
+   * user has NO MFA enrolled. "Active" means
+   * admin_mfa_secrets.verified_at IS NOT NULL.
+   *
+   * For multi-device support, this returns ANY active secret —
+   * the caller uses it to detect "does the user have MFA at all?"
+   * The verify path uses `findAllActiveSecrets` instead to try
+   * each enrolled device.
+   */
+  findActiveSecret(userId: string): Promise<MfaProbeSecret | null>;
+  /**
+   * Return every active TOTP secret for the user, ordered by
+   * created_at ascending (oldest first). Used by the sign-in
+   * verify-mfa path to try each enrolled device.
+   *
+   * Optional for backwards-compat: artifacts that haven't
+   * shipped multi-device yet can leave this unimplemented, and
+   * the verify path falls back to the single-secret findActiveSecret.
+   */
+  findAllActiveSecrets?(
+    userId: string,
+  ): Promise<Array<MfaProbeSecret & { id: string }>>;
+  /**
+   * Bump last_used_counter + last_used_at after a successful
+   * verify. Implementations should be best-effort — a write
+   * failure here MUST NOT prevent the user from signing in (the
+   * verify already passed), but should be logged.
+   *
+   * `secretId` is the specific admin_mfa_secrets row that matched.
+   * Optional for backwards-compat with single-device implementations
+   * (the user-scoped update still works for them).
+   */
+  recordVerify(
+    userId: string,
+    counter: number,
+    secretId?: string,
+  ): Promise<void>;
+  /**
+   * Recovery-code branch — look up a SPENDABLE (used_at IS NULL)
+   * recovery code by its SHA-256 hash, restricted to the given
+   * staff user. Returns the row id when found, null otherwise. The
+   * verify handler calls this when the SPA submits a recovery code
+   * in place of a TOTP code.
+   *
+   * Optional so artifacts that haven't shipped recovery codes yet
+   * can leave this unimplemented; the verify handler treats a
+   * missing method as "recovery branch disabled."
+   */
+  findRecoveryCodeMatch?(
+    userId: string,
+    codeHash: string,
+  ): Promise<{ id: string } | null>;
+  /**
+   * Mark a recovery code row as spent. Sets used_at = now() and
+   * used_ip = `ip` if supplied. Best-effort — like recordVerify,
+   * a write failure MUST NOT block sign-in (the user typed a
+   * valid, one-time code; the worst case is that the same code
+   * could be replayed, which the matching `findRecoveryCodeMatch`
+   * already gates on used_at IS NULL — so a write failure means
+   * the next attempt would also succeed, which is the rare correct
+   * recovery-from-DB-blip behaviour).
+   *
+   * Optional alongside `findRecoveryCodeMatch`.
+   */
+  markRecoveryCodeUsed?(rowId: string, ip: string | null): Promise<void>;
+}
+
+export interface MfaProbeSecret {
+  secretBase32: string;
+  /** Previously-used counter, null on first verify after enrollment. */
+  lastUsedCounter: number | null;
 }
 
 /** Locals attached by `requireSession` for downstream handlers. */

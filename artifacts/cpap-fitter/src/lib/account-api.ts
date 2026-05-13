@@ -503,6 +503,184 @@ export const dismissInsight = (id: string) =>
   });
 
 // ---------------------------------------------------------------------------
+// Therapy summary — patient-facing 30-night usage rollup. Mirrors the
+// shape returned by GET /shop/me/therapy-summary; see that route's
+// preamble for field semantics.
+// ---------------------------------------------------------------------------
+
+export interface TherapyNight {
+  date: string;
+  usageHours: number | null;
+  ahi: number | null;
+  leakLMin: number | null;
+  pressureP95Cmh2o: number | null;
+  source: string;
+}
+
+export interface TherapySummary {
+  hasData: boolean;
+  patientLinked: boolean;
+  windowNights: number;
+  nightsWithData: number;
+  windowStartDate: string | null;
+  windowEndDate: string | null;
+  avgUsageHours: number | null;
+  avgAhi: number | null;
+  avgLeakLMin: number | null;
+  compliantNights: number | null;
+  complianceRate: number | null;
+  nights: TherapyNight[];
+}
+
+export const fetchTherapySummary = () =>
+  meFetch<TherapySummary>("/shop/me/therapy-summary");
+
+// ---------------------------------------------------------------------------
+// Maintenance — patient-facing hygiene checklist (daily mask wipe,
+// weekly hose wash, monthly filter, etc.). Cadence catalog lives
+// on the server; the client receives task rows already decorated
+// with last-completed + next-due + bucket.
+// ---------------------------------------------------------------------------
+
+export type MaintenanceCategory =
+  | "mask"
+  | "tubing"
+  | "humidifier"
+  | "filter";
+export type MaintenanceDueBucket = "due_now" | "due_soon" | "current";
+
+export interface MaintenanceTask {
+  key: string;
+  label: string;
+  category: MaintenanceCategory;
+  frequencyDays: number;
+  why: string;
+  lastCompletedAt: string | null;
+  nextDueDate: string;
+  bucket: MaintenanceDueBucket;
+  daysUntilDue: number;
+}
+
+export interface MaintenanceSummary {
+  patientLinked: boolean;
+  asOfDate: string;
+  tasks: MaintenanceTask[];
+}
+
+export const fetchMaintenanceSummary = () =>
+  meFetch<MaintenanceSummary>("/shop/me/maintenance");
+
+export const logMaintenanceTask = (taskKey: string) =>
+  meFetch<{ id: string; taskKey: string; completedAt: string }>(
+    `/shop/me/maintenance/${encodeURIComponent(taskKey)}/log`,
+    { method: "POST" },
+  );
+
+// ---------------------------------------------------------------------------
+// Substitutions — patient-facing list of recent resupplies where the
+// shipped SKU differed from the prescription's SKU (because the
+// primary was backordered when the episode confirmed).
+// ---------------------------------------------------------------------------
+
+export interface SubstitutionRow {
+  id: string;
+  shippedSku: string;
+  requestedSku: string;
+  status: string;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+export interface SubstitutionsResponse {
+  patientLinked: boolean;
+  substitutions: SubstitutionRow[];
+}
+
+export const fetchSubstitutions = () =>
+  meFetch<SubstitutionsResponse>("/shop/me/substitutions");
+
+// ---------------------------------------------------------------------------
+// Education feed — onboarding-stage-personalized articles.
+// ---------------------------------------------------------------------------
+
+export type EducationStage =
+  | "new"
+  | "habituating"
+  | "steady"
+  | "experienced";
+
+export type EducationCategory =
+  | "comfort"
+  | "troubleshooting"
+  | "maintenance"
+  | "lifestyle";
+
+export interface EducationArticle {
+  slug: string;
+  title: string;
+  summary: string;
+  category: EducationCategory;
+}
+
+export interface EducationFeed {
+  patientLinked: boolean;
+  stage: EducationStage;
+  daysOnTherapy: number;
+  articles: EducationArticle[];
+}
+
+export const fetchEducationFeed = () =>
+  meFetch<EducationFeed>("/shop/me/education-feed");
+
+// ---------------------------------------------------------------------------
+// My returns — patient-facing list of return requests this customer
+// has opened. Mirrors GET /shop/me/returns; see the route preamble for
+// status/reason field semantics.
+// ---------------------------------------------------------------------------
+
+export type ShopReturnStatus =
+  | "requested"
+  | "approved"
+  | "rejected"
+  | "shipped_back"
+  | "received"
+  | "refunded"
+  | "replaced"
+  | "closed";
+
+export type ShopReturnReason =
+  | "fit"
+  | "defective"
+  | "wrong_item"
+  | "no_longer_needed"
+  | "other";
+
+export interface MyReturnRow {
+  id: string;
+  orderId: string;
+  sessionId: string;
+  status: ShopReturnStatus;
+  reason: ShopReturnReason;
+  reasonNote: string | null;
+  resolution: string | null;
+  refundCents: number | null;
+  returnLabelUrl: string | null;
+  returnCarrier: string | null;
+  returnTrackingNumber: string | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  receivedAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+}
+
+export const fetchMyReturns = () =>
+  meFetch<{ returns: MyReturnRow[] }>("/shop/me/returns");
+
+// ---------------------------------------------------------------------------
 // Patient document upload — insurance cards, prescriptions, referrals, etc.
 // ---------------------------------------------------------------------------
 

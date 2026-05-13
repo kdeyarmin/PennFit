@@ -21,6 +21,16 @@ import {
   type PatientTimelineEvent,
 } from "@workspace/api-client-react/admin";
 import { Card } from "@/components/admin/Card";
+import {
+  InsuranceCoveragesTab,
+  PriorAuthorizationsTab,
+  SleepStudiesTab,
+} from "@/components/admin/ClinicalTabs";
+import { EquipmentTab } from "@/components/admin/EquipmentTab";
+import {
+  openPdfInNewTab,
+  summarizePdfError,
+} from "@/lib/admin/pdf-download";
 import { Table, type Column } from "@/components/admin/Table";
 import {
   Badge,
@@ -47,9 +57,17 @@ import {
 import {
   enrollPatientOnboarding,
   fetchPatientOnboarding,
+  fetchPatientOnboardingAttempts,
   setPatientOnboardingStatus,
+  type OnboardingAttempt,
   type PatientOnboardingJourney,
 } from "@/lib/admin/patient-onboarding-api";
+import {
+  fetchPatientAddressHistory,
+  fetchPatientTimeline,
+  postPatientAddressChange,
+} from "@/lib/admin/patient-history-api";
+import { listPatientFormAcks } from "@/lib/admin/form-acks-api";
 import {
   prescriptionAttachmentDownloadUrl,
   removePrescriptionAttachment,
@@ -90,6 +108,8 @@ import {
 
 type Tab =
   | "timeline"
+  | "activity"
+  | "address"
   | "episodes"
   | "conversations"
   | "fulfillments"
@@ -100,7 +120,12 @@ type Tab =
   | "fax-outreach"
   | "documents"
   | "portal"
-  | "device-data";
+  | "device-data"
+  | "sleep-studies"
+  | "insurance"
+  | "prior-auths"
+  | "equipment"
+  | "forms";
 
 export function PatientDetailPage({ id }: { id: string }) {
   const [, setLocation] = useLocation();
@@ -258,6 +283,18 @@ export function PatientDetailPage({ id }: { id: string }) {
           Timeline
         </TabButton>
         <TabButton
+          active={tab === "activity"}
+          onClick={() => setTab("activity")}
+        >
+          Activity
+        </TabButton>
+        <TabButton
+          active={tab === "address"}
+          onClick={() => setTab("address")}
+        >
+          Address
+        </TabButton>
+        <TabButton
           active={tab === "episodes"}
           onClick={() => setTab("episodes")}
         >
@@ -320,6 +357,36 @@ export function PatientDetailPage({ id }: { id: string }) {
         >
           Device data
         </TabButton>
+        <TabButton
+          active={tab === "sleep-studies"}
+          onClick={() => setTab("sleep-studies")}
+        >
+          Sleep studies
+        </TabButton>
+        <TabButton
+          active={tab === "insurance"}
+          onClick={() => setTab("insurance")}
+        >
+          Insurance
+        </TabButton>
+        <TabButton
+          active={tab === "prior-auths"}
+          onClick={() => setTab("prior-auths")}
+        >
+          Prior auths
+        </TabButton>
+        <TabButton
+          active={tab === "equipment"}
+          onClick={() => setTab("equipment")}
+        >
+          Equipment
+        </TabButton>
+        <TabButton
+          active={tab === "forms"}
+          onClick={() => setTab("forms")}
+        >
+          Forms
+        </TabButton>
       </div>
 
       <Card>
@@ -331,6 +398,8 @@ export function PatientDetailPage({ id }: { id: string }) {
             }
           />
         )}
+        {tab === "activity" && <ActivityTab patientId={id} />}
+        {tab === "address" && <AddressHistoryTab patientId={id} />}
         {tab === "episodes" && <EpisodesTab episodes={data.episodes} />}
         {tab === "conversations" && (
           <ConversationsTab
@@ -359,6 +428,11 @@ export function PatientDetailPage({ id }: { id: string }) {
           <PortalTab patient={data} onChanged={() => void refetch()} />
         )}
         {tab === "device-data" && <IntegrationsTab patientId={id} />}
+        {tab === "sleep-studies" && <SleepStudiesTab patientId={id} />}
+        {tab === "insurance" && <InsuranceCoveragesTab patientId={id} />}
+        {tab === "prior-auths" && <PriorAuthorizationsTab patientId={id} />}
+        {tab === "equipment" && <EquipmentTab patientId={id} />}
+        {tab === "forms" && <FormAcksTab patientId={id} />}
       </Card>
     </div>
   );
@@ -675,6 +749,11 @@ function PrescriptionsTab({
   const cols: Column<Prescription>[] = [
     { key: "sku", header: "Item", render: (r) => r.itemSku },
     {
+      key: "hcpcs",
+      header: "HCPCS",
+      render: (r) => r.hcpcsCode ?? "—",
+    },
+    {
       key: "cadence",
       header: "Cadence",
       render: (r) => `${r.cadenceDays} days`,
@@ -721,6 +800,11 @@ function PrescriptionsTab({
       render: (r) =>
         r.status === "active" ? (
           <div className="flex gap-2 justify-end">
+            <GenerateSwoButton
+              patientId={patientId}
+              rx={r}
+              onError={(msg) => setActionError(msg)}
+            />
             <Button
               intent="secondary"
               isLoading={busyRxId === r.id}
@@ -773,6 +857,61 @@ function PrescriptionsTab({
         />
       )}
     </div>
+  );
+}
+
+// Inline button for the prescription row actions column. Pre-flights
+// the SWO endpoint (which returns 422 on incomplete inputs — missing
+// HCPCS code or unlinked provider) and either opens the PDF in a new
+// tab or surfaces the issue list inline on the prescriptions table.
+function GenerateSwoButton({
+  patientId,
+  rx,
+  onError,
+}: {
+  patientId: string;
+  rx: Prescription;
+  onError: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function handleClick() {
+    setBusy(true);
+    try {
+      const result = await openPdfInNewTab(
+        `/resupply-api/admin/patients/${encodeURIComponent(
+          patientId,
+        )}/prescriptions/${encodeURIComponent(rx.id)}/swo`,
+      );
+      if (!result.ok) {
+        onError(`SWO: ${summarizePdfError(result.error)}`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Disable when we already know the row is missing a required field.
+  // The route still validates server-side; the UI gate is purely to
+  // save the click-and-toast cycle.
+  const missingHcpcs = !rx.hcpcsCode;
+  const missingProvider = !rx.providerId;
+  const disabledTitle = missingHcpcs
+    ? "Add an HCPCS code on this prescription first"
+    : missingProvider
+      ? "Link a provider in the registry first"
+      : undefined;
+
+  return (
+    <Button
+      intent="secondary"
+      isLoading={busy}
+      disabled={busy || missingHcpcs || missingProvider}
+      onClick={() => void handleClick()}
+      title={disabledTitle}
+    >
+      Generate SWO
+    </Button>
   );
 }
 
@@ -1876,6 +2015,7 @@ function AddPrescriptionModal({
     new Date().toISOString().slice(0, 10),
   );
   const [validUntil, setValidUntil] = useState("");
+  const [hcpcsCode, setHcpcsCode] = useState("");
   const [prescriberName, setPrescriberName] = useState("");
   const [prescriberNpi, setPrescriberNpi] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
@@ -1917,12 +2057,20 @@ function AddPrescriptionModal({
       setError("Valid-until must be on or after valid-from.");
       return;
     }
+    const hcpcs = hcpcsCode.trim().toUpperCase();
+    if (hcpcs && !/^[A-Z]\d{4}(-[A-Z0-9]{2}){0,4}$/.test(hcpcs)) {
+      setError(
+        "HCPCS must be a code like E0601, optionally with modifiers (e.g. A7030-KX).",
+      );
+      return;
+    }
 
     const body: {
       itemSku: string;
       cadenceDays: number;
       validFrom: string;
       validUntil?: string | null;
+      hcpcsCode?: string | null;
       prescriberName?: string | null;
       prescriberNpi?: string | null;
       diagnosis?: string | null;
@@ -1933,6 +2081,7 @@ function AddPrescriptionModal({
       validFrom,
     };
     if (validUntil) body.validUntil = validUntil;
+    if (hcpcs) body.hcpcsCode = hcpcs;
     if (prescriberName.trim()) body.prescriberName = prescriberName.trim();
     if (prescriberNpi.trim()) body.prescriberNpi = prescriberNpi.trim();
     if (diagnosis.trim()) body.diagnosis = diagnosis.trim();
@@ -2024,6 +2173,18 @@ function AddPrescriptionModal({
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
                 disabled={isPending}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rx-hcpcs">HCPCS code (optional)</Label>
+              <Input
+                id="rx-hcpcs"
+                value={hcpcsCode}
+                maxLength={12}
+                placeholder="e.g. E0601 or A7030-KX"
+                onChange={(e) => setHcpcsCode(e.target.value)}
+                disabled={isPending}
+                autoComplete="off"
               />
             </div>
             <div>
@@ -2419,6 +2580,7 @@ function OnboardingTab({ patientId }: { patientId: string }) {
           statusMut.error instanceof Error ? statusMut.error.message : null
         }
       />
+      <OnboardingAttemptsView patientId={patientId} />
     </div>
   );
 }
@@ -2442,8 +2604,10 @@ function OnboardingJourneyView({
     offsetDays: number;
   }> = [
     { label: "Day 1", sentAt: journey.day1SentAt, offsetDays: 1 },
+    { label: "Day 3", sentAt: journey.day3SentAt, offsetDays: 3 },
     { label: "Day 7", sentAt: journey.day7SentAt, offsetDays: 7 },
     { label: "Day 30", sentAt: journey.day30SentAt, offsetDays: 30 },
+    { label: "Day 60", sentAt: journey.day60SentAt, offsetDays: 60 },
     { label: "Day 90", sentAt: journey.day90SentAt, offsetDays: 90 },
   ];
   const startedMs = new Date(journey.startedAt).getTime();
@@ -3613,6 +3777,17 @@ function IntegrationsTab({ patientId }: { patientId: string }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
+          Therapy data from each configured cloud. Refresh re-pulls
+          from the partner; the snapshot is cached for the dashboard
+          and the patient-facing adherence card.
+        </p>
+        <GenerateAttestationButton
+          patientId={patientId}
+          onError={setRefreshError}
+        />
+      </div>
       {refreshError && (
         <div
           className="rounded-md border px-3 py-2 text-sm"
@@ -3634,6 +3809,49 @@ function IntegrationsTab({ patientId }: { patientId: string }) {
         />
       ))}
     </div>
+  );
+}
+
+// "Generate adherence attestation" — pre-flights the
+// /admin/patients/:id/compliance-attestation endpoint and opens the
+// PDF in a new tab. The route returns 422 with `no_therapy_data`
+// when the patient has zero therapy_nights on file (no SD card
+// upload + no modem sync yet), which we surface inline rather than
+// rendering a JSON error in a new tab.
+function GenerateAttestationButton({
+  patientId,
+  onError,
+}: {
+  patientId: string;
+  onError: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function handleClick() {
+    setBusy(true);
+    try {
+      const result = await openPdfInNewTab(
+        `/resupply-api/admin/patients/${encodeURIComponent(
+          patientId,
+        )}/compliance-attestation`,
+      );
+      if (!result.ok) {
+        onError(`Attestation: ${summarizePdfError(result.error)}`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Button
+      intent="secondary"
+      isLoading={busy}
+      disabled={busy}
+      onClick={() => void handleClick()}
+    >
+      Generate 90-day attestation
+    </Button>
   );
 }
 
@@ -3944,5 +4162,361 @@ function Term({ label, value }: { label: string; value: string | null }) {
       </dt>
       <dd style={{ color: "hsl(var(--ink-1))" }}>{value ?? "—"}</dd>
     </>
+  );
+}
+
+// Per-checkpoint dispatch attempts — shows "tried email, then SMS"
+// trail so an admin can diagnose "why did Day 7 not actually
+// reach this patient?"
+function OnboardingAttemptsView({ patientId }: { patientId: string }) {
+  const { data, isPending, isError, error } = useQuery({
+    queryKey: ["admin", "patients", patientId, "onboarding", "attempts"] as const,
+    queryFn: () => fetchPatientOnboardingAttempts(patientId),
+  });
+  if (isPending) return null;
+  if (isError) {
+    return (
+      <p className="text-xs" style={{ color: "#b91c1c" }}>
+        {error instanceof Error ? error.message : "Failed to load attempts."}
+      </p>
+    );
+  }
+  if (data.attempts.length === 0) return null;
+
+  // Group by day_label so the trail reads "Day 7: email failed,
+  // SMS sent." Newest attempts already first per server order.
+  const grouped = new Map<string, OnboardingAttempt[]>();
+  for (const a of data.attempts) {
+    const list = grouped.get(a.dayLabel) ?? [];
+    list.push(a);
+    grouped.set(a.dayLabel, list);
+  }
+  const dayLabels = Array.from(grouped.keys());
+
+  return (
+    <div
+      className="rounded border p-3"
+      style={{ borderColor: "hsl(var(--line-2))" }}
+    >
+      <div
+        className="text-[10px] uppercase tracking-wider font-semibold mb-2"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        Dispatch trail
+      </div>
+      <ul className="space-y-2">
+        {dayLabels.map((label) => (
+          <li key={label}>
+            <div
+              className="text-xs font-semibold"
+              style={{ color: "hsl(var(--ink-2))" }}
+            >
+              {label}
+            </div>
+            <ul className="ml-3 text-[11px] space-y-0.5">
+              {grouped.get(label)!.map((a) => (
+                <li
+                  key={a.id}
+                  style={{
+                    color:
+                      a.outcome === "sent"
+                        ? "hsl(var(--ink-2))"
+                        : "#92400e",
+                  }}
+                >
+                  <span className="font-mono">{a.channel}</span> ·{" "}
+                  <span className="font-mono">{a.outcome}</span>
+                  {a.errorCode && (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({a.errorCode})
+                    </span>
+                  )}
+                  <span className="text-muted-foreground ml-2">
+                    {formatDateTime(a.attemptedAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ── Activity tab — broader timeline (coaching plans, grievances,
+// recall notifications, address changes) from /admin/patients/:id/timeline
+
+function ActivityTab({ patientId }: { patientId: string }) {
+  const { data, isPending, isError, error } = useQuery({
+    queryKey: ["admin", "patients", patientId, "activity"] as const,
+    queryFn: () => fetchPatientTimeline(patientId),
+  });
+  if (isPending) return <Spinner label="Loading activity…" />;
+  if (isError) {
+    return (
+      <p className="text-sm" style={{ color: "#b91c1c" }}>
+        {error instanceof Error ? error.message : "Failed to load."}
+      </p>
+    );
+  }
+  if (data.events.length === 0) {
+    return (
+      <EmptyState
+        title="No activity yet."
+        hint="Episodes, conversations, grievances, recalls, and coaching plans all show here as they happen."
+      />
+    );
+  }
+  return (
+    <ol className="space-y-2">
+      {data.events.map((e) => (
+        <li
+          key={`${e.kind}-${e.refId}-${e.at}`}
+          className="rounded border p-3 flex items-baseline justify-between gap-3"
+          style={{ borderColor: "hsl(var(--line-2))" }}
+        >
+          <div className="min-w-0">
+            <div className="text-sm font-medium">{e.title}</div>
+            <div className="text-xs text-muted-foreground">{e.detail}</div>
+          </div>
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+            {formatDateTime(e.at)}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ── Address history tab ──────────────────────────────────────────
+
+function AddressHistoryTab({ patientId }: { patientId: string }) {
+  const qc = useQueryClient();
+  const queryKey = ["admin", "patients", patientId, "address-history"] as const;
+  const { data, isPending, isError, error } = useQuery({
+    queryKey,
+    queryFn: () => fetchPatientAddressHistory(patientId),
+  });
+  const [showForm, setShowForm] = useState(false);
+
+  if (isPending) return <Spinner label="Loading address history…" />;
+  if (isError) {
+    return (
+      <p className="text-sm" style={{ color: "#b91c1c" }}>
+        {error instanceof Error ? error.message : "Failed to load."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold">Address changes</h3>
+        <Button
+          intent="ghost"
+          size="sm"
+          onClick={() => setShowForm((v) => !v)}
+        >
+          {showForm ? "Cancel" : "Record change"}
+        </Button>
+      </div>
+      {showForm && (
+        <AddressHistoryForm
+          patientId={patientId}
+          onSaved={() => {
+            setShowForm(false);
+            void qc.invalidateQueries({ queryKey });
+          }}
+        />
+      )}
+      {data.history.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No address changes on file.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {data.history.map((h) => (
+            <li
+              key={h.id}
+              className="rounded border p-3 text-sm"
+              style={{ borderColor: "hsl(var(--line-2))" }}
+            >
+              <div>
+                {[h.line1, h.line2, h.city, h.state, h.postalCode, h.country]
+                  .filter(Boolean)
+                  .join(" · ") || "(cleared)"}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1">
+                {h.reason ?? "—"} · {formatDateTime(h.createdAt)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AddressHistoryForm({
+  patientId,
+  onSaved,
+}: {
+  patientId: string;
+  onSaved: () => void;
+}) {
+  const [line1, setLine1] = useState("");
+  const [line2, setLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("US");
+  const [reason, setReason] = useState("");
+  const save = useMutation({
+    mutationFn: () =>
+      postPatientAddressChange(patientId, {
+        line1: line1 || null,
+        line2: line2 || null,
+        city: city || null,
+        state: state || null,
+        postalCode: postalCode || null,
+        country: country || null,
+        reason: reason.trim(),
+      }),
+    onSuccess: onSaved,
+  });
+  return (
+    <div
+      className="rounded border p-3 space-y-2"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="grid sm:grid-cols-2 gap-2">
+        <Input
+          placeholder="Line 1"
+          value={line1}
+          onChange={(e) => setLine1(e.target.value)}
+        />
+        <Input
+          placeholder="Line 2"
+          value={line2}
+          onChange={(e) => setLine2(e.target.value)}
+        />
+        <Input
+          placeholder="City"
+          value={city}
+          onChange={(e) => setCity(e.target.value)}
+        />
+        <Input
+          placeholder="State"
+          value={state}
+          onChange={(e) => setState(e.target.value)}
+        />
+        <Input
+          placeholder="Postal code"
+          value={postalCode}
+          onChange={(e) => setPostalCode(e.target.value)}
+        />
+        <Input
+          placeholder="Country (2-letter)"
+          value={country}
+          onChange={(e) => setCountry(e.target.value.toUpperCase())}
+          maxLength={2}
+        />
+      </div>
+      <Input
+        placeholder="Reason (required)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      {save.error instanceof Error && (
+        <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
+          {save.error.message}
+        </div>
+      )}
+      <Button
+        disabled={!reason.trim() || save.isPending}
+        isLoading={save.isPending}
+        onClick={() => save.mutate()}
+      >
+        Save
+      </Button>
+    </div>
+  );
+}
+
+function FormAcksTab({ patientId }: { patientId: string }) {
+  const { data, isPending, isError, error, refetch } = useQuery({
+    queryKey: ["admin", "patients", patientId, "form-acks"] as const,
+    queryFn: () => listPatientFormAcks(patientId),
+  });
+  if (isPending) return <Spinner />;
+  if (isError) {
+    return (
+      <ErrorPanel error={error} onRetry={() => void refetch()} />
+    );
+  }
+  if (data.acknowledgements.length === 0) {
+    return (
+      <p
+        className="text-sm py-3"
+        style={{ color: "hsl(var(--ink-3))" }}
+      >
+        No form acknowledgements on file for this patient.
+      </p>
+    );
+  }
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr
+          className="text-left border-b"
+          style={{ borderColor: "hsl(var(--line-1))" }}
+        >
+          <th className="py-2 font-semibold">Form</th>
+          <th className="py-2 font-semibold">Signed version</th>
+          <th className="py-2 font-semibold">Source</th>
+          <th className="py-2 font-semibold">Signed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.acknowledgements.map((a) => {
+          const stale =
+            a.currentVersion && a.formVersion !== a.currentVersion;
+          return (
+            <tr
+              key={a.id}
+              className="border-b"
+              style={{ borderColor: "hsl(var(--line-2))" }}
+            >
+              <td className="py-2 font-medium">{a.formKind}</td>
+              <td className="py-2">
+                <span className="font-mono text-xs">{a.formVersion}</span>
+                {stale && (
+                  <span
+                    className="ml-2 inline-block px-1 py-0.5 rounded text-[10px] uppercase"
+                    style={{
+                      backgroundColor: "hsl(var(--alert-bg))",
+                      color: "hsl(var(--alert))",
+                    }}
+                  >
+                    out of date
+                  </span>
+                )}
+              </td>
+              <td
+                className="py-2 text-xs"
+                style={{ color: "hsl(var(--ink-3))" }}
+              >
+                {a.source}
+              </td>
+              <td className="py-2 text-xs">
+                {new Date(a.signedAt).toLocaleDateString()}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

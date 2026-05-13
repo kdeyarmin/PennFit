@@ -136,6 +136,32 @@ export function CommPrefsSection() {
         />
       </div>
 
+      <div className="space-y-2 pt-3 border-t border-[hsl(var(--line-2))]">
+        <div className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+          Text messages
+        </div>
+        <Toggle
+          label="Account & order texts"
+          description="Order shipped, refund issued, urgent recall notices."
+          enabled={prefs.smsTransactional}
+          onChange={() => toggle("smsTransactional")}
+          disabled={saving}
+          testId="comm-toggle-sms-transactional"
+        />
+        <Toggle
+          label="Promotion texts"
+          description="Occasional product news. Opt-out anytime by replying STOP."
+          enabled={prefs.smsMarketing}
+          onChange={() => toggle("smsMarketing")}
+          disabled={saving}
+          testId="comm-toggle-sms-marketing"
+        />
+        <p className="text-[10px] text-muted-foreground">
+          STOP works on every text we send — replying STOP unsubscribes you
+          from BOTH categories above. You can re-enable here anytime.
+        </p>
+      </div>
+
       <PushNotificationToggle />
 
       <BiometricLockToggle />

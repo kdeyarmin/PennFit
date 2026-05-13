@@ -42,6 +42,7 @@ import {
   verifyPassword,
   verifyPasswordCredential,
 } from "../password";
+import { mintMfaChallengeToken } from "../mfa-challenge";
 import { checkLoginRateLimit, DEFAULT_RATE_LIMIT } from "../rate-limit";
 import { issueWindow } from "../session";
 import { issueToken } from "../token";
@@ -245,6 +246,88 @@ export function makeSignInHandler(deps: AuthDeps) {
         "Please verify your email address before signing in.",
       );
       return;
+    }
+
+    // MFA gate (Phase B). If the caller wired an MFA probe AND the
+    // user has an active TOTP enrollment, return a challenge token
+    // instead of the session cookie. The SPA will collect a 6-digit
+    // code and call POST /sign-in/verify-mfa to exchange it for the
+    // actual session. The login_attempts row is recorded as a
+    // SUCCESS here because password+account checks all passed —
+    // the rate-limit gate is about wrong-password storms, not
+    // wrong-TOTP storms (TOTP brute-force has its own narrow
+    // attack surface and is governed by the 30-second step window
+    // + last_used_counter replay reject).
+    if (deps.mfa) {
+      let mfaSecret;
+      try {
+        mfaSecret = await deps.mfa.findActiveSecret(user.id);
+      } catch (err) {
+        // Fail closed — don't fall back to password-only.
+        void deps.audit({
+          action: "auth.mfa_probe_failed",
+          adminEmail: emailLower,
+          adminUserId: user.id,
+          ip,
+          metadata: {
+            err: err instanceof Error ? err.message : String(err),
+          },
+        });
+        authError(
+          res,
+          500,
+          "mfa_probe_failed",
+          "Couldn't complete sign-in. Please try again.",
+        );
+        return;
+      }
+      if (mfaSecret) {
+        if (!deps.mfaChallengeHmacKey) {
+          // Probe present but the key is missing → mis-wiring.
+          // Refuse to issue the session and refuse to pretend MFA
+          // isn't there. The deploy needs the env var set.
+          void deps.audit({
+            action: "auth.mfa_misconfigured",
+            adminEmail: emailLower,
+            adminUserId: user.id,
+            ip,
+            metadata: { reason: "missing_challenge_hmac_key" },
+          });
+          authError(
+            res,
+            500,
+            "mfa_misconfigured",
+            "MFA is enabled on this account but the server isn't configured to challenge for it. Contact your administrator.",
+          );
+          return;
+        }
+
+        await deps.repo.recordLoginAttempt({
+          emailLower,
+          ip,
+          success: true,
+        });
+        const challengeToken = mintMfaChallengeToken({
+          uid: user.id,
+          hmacKey: deps.mfaChallengeHmacKey,
+          nowMs: now().getTime(),
+        });
+        void deps.audit({
+          action: "auth.mfa_challenge_issued",
+          adminEmail: user.emailLower,
+          adminUserId: user.id,
+          ip,
+          metadata: {},
+        });
+        res.status(200).json({
+          ok: true,
+          mfaRequired: true,
+          challengeToken,
+          // No session cookie yet — the SPA must complete
+          // /sign-in/verify-mfa to receive it.
+        });
+        return;
+      }
     }
 
     // Success: issue session.

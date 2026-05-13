@@ -38,6 +38,7 @@ import {
   ObjectStorageService,
 } from "../../lib/object-storage/objectStorage";
 import { ObjectAlreadyOwnedError } from "../../lib/object-storage/objectAcl";
+import { computeRetentionUntilAt } from "../../lib/patient-documents/retention";
 import { requireSignedIn } from "../../middlewares/requireSignedIn";
 
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -56,6 +57,11 @@ const ALLOWED_DOCUMENT_TYPES = new Set([
   "prescription",
   "referral",
   "eob", // Explanation of Benefits
+  // Patient-uploaded sleep-study report (PSG / HSAT PDF). The
+  // verifications team picks these out of the document-review
+  // queue and extracts the queryable findings into the
+  // sleep_studies table.
+  "sleep_study",
   "other",
 ]);
 
@@ -284,6 +290,13 @@ router.post(
 
     const supabase = getSupabaseServiceRoleClient();
     const nowIso = new Date().toISOString();
+    // Compute retention horizon at upload time. The nightly sweep
+    // backfills legacy rows; new rows get the column populated
+    // here so the catalog applies from day one.
+    const retentionUntilAt = computeRetentionUntilAt({
+      createdAt: new Date(nowIso),
+      documentType: body.data.documentType,
+    }).toISOString();
     const { data: insertedRow, error: insertErr } = await supabase
       .schema("resupply")
       .from("patient_documents")
@@ -294,6 +307,7 @@ router.post(
         filename: body.data.filename,
         content_type: actualContentType,
         size_bytes: actualSize,
+        retention_until_at: retentionUntilAt,
         created_at: nowIso,
         updated_at: nowIso,
       })

@@ -19,6 +19,10 @@ import prescriptionsAttachmentRouter from "./prescriptions-attachment";
 import patientDocumentsRouter from "./patient-documents";
 import prescriptionsCreateRouter from "./prescriptions-create";
 import prescriptionsUpdateRouter from "./prescriptions-update";
+import sleepStudiesRouter from "./sleep-studies";
+import insuranceCoveragesRouter from "./insurance-coverages";
+import priorAuthorizationsRouter from "./prior-authorizations";
+import equipmentRouter from "./equipment";
 import timelineRouter from "./timeline";
 import updateRouter from "./update";
 
@@ -49,6 +53,20 @@ router.use(prescriptionsAttachmentRouter);
 // /patients/:id/documents — admin-facing list/download/delete of
 // patient-uploaded documents (insurance cards, prescriptions, etc.).
 router.use(patientDocumentsRouter);
+// /patients/:id/sleep-studies — diagnostic sleep-study records that
+// document OSA diagnosis under Medicare LCD L33718. See
+// patients/sleep-studies.ts for the full state machine.
+router.use(sleepStudiesRouter);
+// /patients/:id/insurance-coverages — verified payer coverage
+// records (capture-only in this Tier-2a sprint).
+router.use(insuranceCoveragesRouter);
+// /patients/:id/prior-authorizations — payer auths to dispense a
+// specific HCPCS for a specific patient (capture-only in 2a).
+router.use(priorAuthorizationsRouter);
+// /patients/:id/equipment — clinical equipment asset registry
+// (patient ↔ device serial-number link). Required for manufacturer
+// recall workflows. Distinct from Pacware warehouse inventory.
+router.use(equipmentRouter);
 router.use(detailRouter);
 router.use(timelineRouter);
 router.use(updateRouter);

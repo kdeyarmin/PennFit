@@ -18,6 +18,9 @@ export const INTEGRATION_SOURCES = [
   "resmed_airview",
   "philips_care",
   "health_connect",
+  // 3B Medical's iCode Connect cloud — backs the Luna G3 line and the
+  // Lumin sanitizer ecosystem (consumer-marketed as React Health).
+  "react_health",
 ] as const;
 
 export type IntegrationSource = (typeof INTEGRATION_SOURCES)[number];

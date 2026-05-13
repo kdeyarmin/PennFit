@@ -28,14 +28,18 @@ import {
   EmailApiError,
   EmailConfigError,
 } from "@workspace/resupply-email";
+import { createHmac } from "node:crypto";
+
 import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import { getLinkHmacKey } from "@workspace/resupply-secrets";
 import {
   readAuthEnv,
   supabaseAuthRepository,
   type AuthDeps,
   type CustomerIdResolver,
   type EmailSender,
+  type MfaProbe,
 } from "@workspace/resupply-auth";
 
 import { logger } from "./logger";
@@ -93,8 +97,180 @@ export function getAuthDeps(): AuthDeps {
     secureCookies: process.env.NODE_ENV === "production",
     allowSignUp: false, // staff-facing API: no public sign-up
     customerIdResolver: makeCustomerIdResolver(),
+    mfa: makeMfaProbe(),
+    mfaChallengeHmacKey: deriveMfaChallengeKey(),
   };
   return cachedDeps;
+}
+
+/**
+ * MFA probe — looks up admin_mfa_secrets for the user_id the sign-
+ * in / verify-mfa handler resolves. Returns null when the user has
+ * NO active enrollment (either no row, or the row is mid-enrollment
+ * with verified_at IS NULL).
+ *
+ * The probe path is the slowest possible point in sign-in (one
+ * extra round-trip per admin signing in), so we keep the SELECT
+ * narrow and indexed on staff_user_id.
+ */
+function makeMfaProbe(): MfaProbe {
+  return {
+    async findActiveSecret(userId) {
+      const supabase = getSupabaseServiceRoleClient();
+      // staff_user_id on admin_mfa_secrets references admin_users.id,
+      // not auth.users.id. The sign-in handler passes auth.users.id;
+      // we bridge through admin_users.auth_user_id.
+      const { data: admin, error: adminErr } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (adminErr) throw adminErr;
+      if (!admin) return null;
+
+      // After the multi-device migration, this is "any active
+      // secret" — used by sign-in to detect "does this user have
+      // MFA at all?" The verify path uses findAllActiveSecrets to
+      // try each device.
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .select("secret_base32, verified_at, last_used_counter")
+        .eq("staff_user_id", admin.id)
+        .not("verified_at", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        secretBase32: data.secret_base32,
+        lastUsedCounter: data.last_used_counter,
+      };
+    },
+    async findAllActiveSecrets(userId) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: admin } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!admin) return [];
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .select("id, secret_base32, last_used_counter")
+        .eq("staff_user_id", admin.id)
+        .not("verified_at", "is", null)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((r) => ({
+        id: r.id,
+        secretBase32: r.secret_base32,
+        lastUsedCounter: r.last_used_counter,
+      }));
+    },
+    async recordVerify(userId, counter, secretId) {
+      const supabase = getSupabaseServiceRoleClient();
+      // Multi-device: when the verify path tells us WHICH secret
+      // matched (secretId), scope the counter bump to that row.
+      // Falls back to user-scoped update for legacy callers that
+      // don't pass secretId.
+      const nowIso = new Date().toISOString();
+      if (secretId) {
+        await supabase
+          .schema("resupply")
+          .from("admin_mfa_secrets")
+          .update({ last_used_counter: counter, last_used_at: nowIso })
+          .eq("id", secretId);
+        return;
+      }
+      const { data: admin } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!admin) return;
+      await supabase
+        .schema("resupply")
+        .from("admin_mfa_secrets")
+        .update({ last_used_counter: counter, last_used_at: nowIso })
+        .eq("staff_user_id", admin.id);
+    },
+    async findRecoveryCodeMatch(userId, codeHash) {
+      const supabase = getSupabaseServiceRoleClient();
+      const { data: admin } = await supabase
+        .schema("resupply")
+        .from("admin_users")
+        .select("id")
+        .eq("auth_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (!admin) return null;
+      // Spendable rows only — used_at IS NULL. The unique index on
+      // code_hash means at most one row matches; the staff_user_id
+      // filter prevents a code minted for admin A from being spent
+      // by admin B (defense in depth — the hash unique constraint
+      // alone would already block that since the hashes wouldn't
+      // collide in practice).
+      const { data, error } = await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .select("id")
+        .eq("staff_user_id", admin.id)
+        .eq("code_hash", codeHash)
+        .is("used_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return { id: data.id };
+    },
+    async markRecoveryCodeUsed(rowId, ip) {
+      const supabase = getSupabaseServiceRoleClient();
+      await supabase
+        .schema("resupply")
+        .from("admin_mfa_recovery_codes")
+        .update({
+          used_at: new Date().toISOString(),
+          used_ip: ip ?? null,
+        })
+        .eq("id", rowId);
+    },
+  };
+}
+
+/**
+ * Derive a domain-separated MFA challenge HMAC key from the
+ * existing RESUPPLY_LINK_HMAC_KEY. We don't add a second env var
+ * because:
+ *   1. Deployments shouldn't have to coordinate two secrets when
+ *      one is enough,
+ *   2. HMAC-SHA256(link_key, "mfa-challenge-v1") isolates the
+ *      keys cryptographically — a future compromise of one
+ *      doesn't compromise the other.
+ *
+ * Returns null when RESUPPLY_LINK_HMAC_KEY isn't set (dev/test
+ * environments). The auth lib's mfa branch refuses to issue a
+ * challenge in that case, so a misconfigured staging deploy will
+ * fail-closed visibly.
+ */
+function deriveMfaChallengeKey(): Buffer | undefined {
+  try {
+    const linkKey = getLinkHmacKey();
+    return createHmac("sha256", linkKey)
+      .update("mfa-challenge-v1")
+      .digest();
+  } catch {
+    // Boot env-check.ts requires RESUPPLY_LINK_HMAC_KEY for prod;
+    // in test setups it's typically absent and that's fine.
+    return undefined;
+  }
 }
 
 /**

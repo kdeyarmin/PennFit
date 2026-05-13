@@ -38,6 +38,8 @@ import {
 } from "@workspace/resupply-integrations";
 
 import { getIntegrationAdapters } from "../../lib/integrations/registry";
+import { persistTherapyNights } from "../../lib/integrations/persist-nights";
+import { diffSettings } from "../../lib/integrations/diff-settings";
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
 
@@ -299,6 +301,26 @@ router.post(
       };
     }
 
+    // Settings-change detection — pull the prior snapshot once so the
+    // diff and the upsert run side-by-side. Only meaningful when this
+    // refresh succeeded (fetchStatus === 'ok'); error refreshes
+    // shouldn't trigger "settings changed" audits.
+    let priorSettings: typeof payload.settings = null;
+    if (fetchStatus === "ok") {
+      const { data: prior } = await supabase
+        .schema("resupply")
+        .from("patient_integration_snapshots")
+        .select("payload")
+        .eq("patient_id", patientId)
+        .eq("source", source)
+        .limit(1)
+        .maybeSingle();
+      const priorPayload = prior?.payload as unknown as
+        | { settings?: typeof payload.settings }
+        | null;
+      priorSettings = priorPayload?.settings ?? null;
+    }
+
     // UPSERT — there's a unique on (patient_id, source). The
     // IntegrationSnapshot shape doesn't carry an index signature so
     // PostgREST's `Json` type rejects it without a cast.
@@ -366,7 +388,69 @@ router.post(
       return;
     }
 
-    res.json({ snapshot: snapshotRowToView(row) });
+    // Mirror the snapshot's recent nights into the canonical
+    // patient_therapy_nights table so the compliance scanner,
+    // /shop/me/therapy-summary, and smart-trigger evaluator all
+    // see the data without re-querying the partner. Best-effort —
+    // the snapshot upsert above is the authoritative success, and
+    // a persist failure shouldn't fail the refresh.
+    let nightsPersisted = 0;
+    if (
+      source === "resmed_airview" ||
+      source === "philips_care" ||
+      source === "health_connect"
+    ) {
+      try {
+        const r = await persistTherapyNights(
+          supabase,
+          patientId,
+          source,
+          payload.recentNights,
+        );
+        nightsPersisted = r.inserted;
+      } catch (err) {
+        logger.warn(
+          { err, patient_id: patientId, source },
+          "persistTherapyNights failed",
+        );
+      }
+    }
+
+    // Settings-change audit. Only emit when there's at least one
+    // tracked-field change; per-field values are NON-PHI categorical
+    // (mode, pressure number, level) so they're safe in metadata.
+    const settingsChanges = diffSettings(priorSettings, payload.settings);
+    if (settingsChanges.length > 0) {
+      await logAudit({
+        action: "patient.integration_snapshot.settings_changed",
+        adminEmail: req.adminEmail ?? null,
+        adminUserId: req.adminUserId ?? null,
+        targetTable: "patient_integration_snapshots",
+        targetId: row.id,
+        metadata: {
+          patient_id: patientId,
+          source,
+          changes: settingsChanges.map((c) => ({
+            field: c.field,
+            before: c.before == null ? null : String(c.before),
+            after: c.after == null ? null : String(c.after),
+          })),
+        },
+        ip: req.ip ?? null,
+        userAgent: req.get("user-agent") ?? null,
+      }).catch((err) => {
+        logger.warn(
+          { err },
+          "integration_snapshot.settings_changed audit write failed",
+        );
+      });
+    }
+
+    res.json({
+      snapshot: snapshotRowToView(row),
+      nightsPersisted,
+      settingsChanges,
+    });
   },
 );
 

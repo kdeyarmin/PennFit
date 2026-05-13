@@ -642,6 +642,58 @@ echo 'import { Pool } from "pg";' > "$WORK"/lib/resupply-reminders/src/ok.ts
 assert_pass "reminders importing pg (Pool type for helper signatures)"
 rm "$WORK"/lib/resupply-reminders/src/ok.ts
 
+# --- Rule 14: Pacware is the inventory system of record -------------
+# The DB must not grow inventory/warehousing tables. Pacware owns
+# stock; PennFit only tracks the patient-facing pipeline. Schema files
+# matching the forbidden inventory/WMS patterns fail the gate.
+mkdir -p "$WORK"/lib/resupply-db/src/schema
+
+echo "[self-test] Rule 14: schema may not declare inventory_items.ts"
+echo 'export const inventoryItems = {};' \
+  > "$WORK"/lib/resupply-db/src/schema/inventory_items.ts
+assert_fail_with "schema declaring inventory_items.ts" \
+  "lib/resupply-db/src/schema may not own inventory/warehousing"
+rm "$WORK"/lib/resupply-db/src/schema/inventory_items.ts
+
+echo "[self-test] Rule 14: schema may not declare purchase-orders.ts"
+echo 'export const purchaseOrders = {};' \
+  > "$WORK"/lib/resupply-db/src/schema/purchase-orders.ts
+assert_fail_with "schema declaring purchase-orders.ts" \
+  "lib/resupply-db/src/schema may not own inventory/warehousing"
+rm "$WORK"/lib/resupply-db/src/schema/purchase-orders.ts
+
+echo "[self-test] Rule 14: schema may not declare warehouses.ts"
+echo 'export const warehouses = {};' \
+  > "$WORK"/lib/resupply-db/src/schema/warehouses.ts
+assert_fail_with "schema declaring warehouses.ts" \
+  "lib/resupply-db/src/schema may not own inventory/warehousing"
+rm "$WORK"/lib/resupply-db/src/schema/warehouses.ts
+
+echo "[self-test] Rule 14: schema may not declare receiving.ts"
+echo 'export const receiving = {};' \
+  > "$WORK"/lib/resupply-db/src/schema/receiving.ts
+assert_fail_with "schema declaring receiving.ts" \
+  "lib/resupply-db/src/schema may not own inventory/warehousing"
+rm "$WORK"/lib/resupply-db/src/schema/receiving.ts
+
+echo "[self-test] Rule 14: schema may not declare lots.ts"
+echo 'export const lots = {};' \
+  > "$WORK"/lib/resupply-db/src/schema/lots.ts
+assert_fail_with "schema declaring lots.ts" \
+  "lib/resupply-db/src/schema may not own inventory/warehousing"
+rm "$WORK"/lib/resupply-db/src/schema/lots.ts
+
+echo "[self-test] Rule 14: schema may declare clinical tables (providers, sleep-studies)"
+# Sanity check that the rule is targeted at WMS concepts, not generic
+# clinical tables — these are the very Tier-2 schemas we ARE shipping.
+echo 'export const providers = {};' \
+  > "$WORK"/lib/resupply-db/src/schema/providers.ts
+echo 'export const sleepStudies = {};' \
+  > "$WORK"/lib/resupply-db/src/schema/sleep-studies.ts
+assert_pass "providers + sleep-studies schemas (clinical, not WMS)"
+rm "$WORK"/lib/resupply-db/src/schema/providers.ts \
+   "$WORK"/lib/resupply-db/src/schema/sleep-studies.ts
+
 echo "[self-test] Final clean-tree check"
 assert_pass "post-test cleanup"
 

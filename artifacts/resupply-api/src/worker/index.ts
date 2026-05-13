@@ -34,6 +34,13 @@ import { registerSmartTriggerSendJob } from "./jobs/smart-trigger-send.js";
 import { registerRxRenewalSendJob } from "./jobs/rx-renewal-send.js";
 import { registerIdempotencyKeysPruneJob } from "./jobs/idempotency-keys-prune.js";
 import { registerOnboardingCheckinJobs } from "./jobs/onboarding-checkins.js";
+import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
+import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
+import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
+import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
+import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
+import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
+import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -175,11 +182,41 @@ export async function startWorker(): Promise<void> {
   // Rows past their 24h TTL are functionally inert (treated as misses
   // by the middleware) but accumulate indefinitely without a prune.
   await registerIdempotencyKeysPruneJob(boss);
+  // HIPAA retention sweep — nightly. Backfills retention_until_at
+  // on legacy rows and flags expired rows for compliance review.
+  // Destruction itself is human-triggered via the admin UI.
+  await registerPatientDocumentsRetentionSweepJob(boss);
+  // Recall notification send-side worker — drains queued
+  // recall_notifications rows once per day. The matcher
+  // (POST /admin/equipment-recalls/:id/match-assets) populates
+  // the queue; this job actually delivers email + SMS.
+  await registerRecallNotificationSendJob(boss);
+  // Patient hygiene weekly nudge — emails patients with overdue
+  // mask-wipe / hose-wash / etc. tasks. Sunday 11:13 UTC.
+  await registerMaintenanceNudgeJob(boss);
+  // HIPAA audit-log retention sweep — nightly flag of rows past
+  // the 6-year floor. Destruction stays human-triggered.
+  await registerAuditLogArchiveSweepJob(boss);
+  // Adherence coaching progress sweep — refresh latest_compliance_pct
+  // on open plans and auto-flip outreach_made → improving when the
+  // patient's recent 30-night adherence crosses target.
+  await registerCoachingProgressJob(boss);
   // Phase B.1.1 — daily multi-channel onboarding check-in dispatch
   // (day 3 / 7 / 30 / 60 / 90) + daily compliance scan that creates
   // CSR alerts for at-risk patients. Both crons share the Supabase
   // service-role client and are idempotent on re-run.
   await registerOnboardingCheckinJobs(boss);
+
+  // Bulk-campaign send worker (Phase B). On-demand: tick jobs are
+  // enqueued by the /admin/bulk-campaigns/:id/start endpoint and
+  // self-re-enqueue every TICK_INTERVAL_SECONDS until the campaign
+  // is drained, paused, or cancelled.
+  await registerBulkCampaignTickJob(boss);
+
+  // Nightly bulk refresh of every active therapy-cloud link. Runs at
+  // 04:30 UTC; persists snapshot recentNights into the canonical
+  // patient_therapy_nights table for downstream consumers.
+  await registerTherapyNightlySyncJob(boss);
 
   workerReady = true;
   logger.info(

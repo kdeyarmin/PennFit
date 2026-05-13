@@ -93,6 +93,24 @@ export const philipsCareAdapterStub: TherapyCloudAdapter = {
   },
 };
 
+/**
+ * Stub for the React Health (3B Medical iCode Connect) adapter.
+ * Shape parity with ResMed/Philips; live implementation lives in
+ * @workspace/resupply-integrations-react-health and is exercised
+ * through the unified-registry path (lib/integrations/registry.ts),
+ * not this legacy pull registry.
+ */
+export const reactHealthAdapterStub: TherapyCloudAdapter = {
+  source: "react_health",
+  configured: Boolean(process.env.REACT_HEALTH_CLIENT_ID),
+  fetchNights: async () => {
+    throw new Error(
+      "React Health adapter is not implemented in the legacy sync path. " +
+        "Use the unified /integrations/refresh endpoint instead.",
+    );
+  },
+};
+
 /** Adapter registry keyed by source. The sync endpoint looks up
  *  here. Tests stub the registry by replacing entries.
  *  `health_connect` is patient-push and lives under
@@ -105,6 +123,7 @@ export const ADAPTERS: Record<
 > = {
   resmed_airview: resmedAirviewAdapterStub,
   philips_care: philipsCareAdapterStub,
+  react_health: reactHealthAdapterStub,
 };
 
 export function adapterFor(

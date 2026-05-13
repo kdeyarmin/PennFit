@@ -9,12 +9,41 @@ export interface PatientOnboardingJourney {
   id: string;
   startedAt: string;
   day1SentAt: string | null;
+  day3SentAt: string | null;
   day7SentAt: string | null;
   day30SentAt: string | null;
+  day60SentAt: string | null;
   day90SentAt: string | null;
   status: PatientOnboardingStatus;
   enrolledByEmail: string;
   createdAt: string;
+}
+
+export interface OnboardingAttempt {
+  id: string;
+  dayLabel: string;
+  channel: "email" | "sms" | "voice";
+  outcome:
+    | "sent"
+    | "skipped_no_contact"
+    | "skipped_not_configured"
+    | "vendor_error";
+  vendorRef: string | null;
+  errorCode: string | null;
+  attemptedAt: string;
+}
+
+export async function fetchPatientOnboardingAttempts(
+  patientId: string,
+): Promise<{ attempts: OnboardingAttempt[] }> {
+  const res = await fetch(
+    `/resupply-api/admin/patients/${encodeURIComponent(patientId)}/onboarding/attempts`,
+    { headers: { Accept: "application/json" }, credentials: "include" },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load attempts (${res.status})`);
+  }
+  return (await res.json()) as { attempts: OnboardingAttempt[] };
 }
 
 export async function fetchPatientOnboarding(

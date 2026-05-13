@@ -38,7 +38,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 import { logAudit } from "@workspace/resupply-audit";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const MAX_ROWS = 50_000;
 
@@ -110,7 +110,15 @@ const COLUMNS: ReadonlyArray<string> = [
 
 const router: IRouter = Router();
 
-router.get("/audit/export.csv", requireAdmin, exportLimiter, async (req, res) => {
+router.get(
+  "/audit/export.csv",
+  // RBAC Phase A: the audit CSV carries actor + target ids across
+  // every PHI surface in the app — it's the single highest-blast-
+  // radius read we have. Gate to roles that legitimately need it
+  // (admin / supervisor / compliance_officer per the catalog).
+  requirePermission("audit.export"),
+  exportLimiter,
+  async (req, res) => {
   const parsed = exportQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({

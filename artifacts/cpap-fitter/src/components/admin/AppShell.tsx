@@ -13,6 +13,7 @@ import {
 } from "@/lib/admin/inbox-counts-api";
 import {
   LayoutDashboard,
+  Inbox,
   MessageSquareText,
   ListChecks,
   CalendarClock,
@@ -25,9 +26,12 @@ import {
   ShoppingCart,
   PackageCheck,
   HeartHandshake,
+  HeartPulse,
   Star,
   HelpCircle,
   Boxes,
+  AlertOctagon,
+  CalendarOff,
   TruckIcon,
   Activity,
   BarChart3,
@@ -48,6 +52,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useDashboardIdentity } from "@/lib/admin/identity";
+import { getMfaStatus } from "@/lib/admin/mfa-api";
 import { BrandHeader, BrandFooter } from "./BrandHeader";
 import { GlobalLookup } from "./GlobalLookup";
 import { RoleProvider, type AdminRole } from "@/lib/admin/role-context";
@@ -82,7 +87,8 @@ type NavLink = {
     | "pendingReturns"
     | "pendingReviews"
     | "overdueFollowups"
-    | "newPatientDocuments";
+    | "newPatientDocuments"
+    | "newInboundFaxes";
 };
 
 type NavGroup = {
@@ -117,6 +123,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: LayoutDashboard,
         matchPrefix: "/admin",
         hint: "Today's queues and team workload at a glance",
+      },
+      {
+        href: "/admin/today",
+        label: "My Today",
+        icon: Inbox,
+        matchPrefix: "/admin/today",
+        hint: "Top items across every queue — conversations, returns, alerts, Rx renewals, documents",
       },
       {
         href: "/admin/conversations",
@@ -155,6 +168,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/templates",
         hint: "Edit the copy used by automated customer messages",
       },
+      {
+        href: "/admin/bulk-campaigns",
+        label: "Bulk Campaigns",
+        icon: BellRing,
+        matchPrefix: "/admin/bulk-campaigns",
+        hint: "Resolve audience + draft a bulk email send",
+      },
     ],
   },
   {
@@ -167,6 +187,28 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/patients",
         hint: "Patient roster, profiles, and 360 view",
         badgeKey: "newPatientDocuments",
+      },
+      {
+        href: "/admin/providers",
+        label: "Providers",
+        icon: HeartHandshake,
+        matchPrefix: "/admin/providers",
+        hint: "Central physician/NP registry — NPPES-backed",
+      },
+      {
+        href: "/admin/inbound-faxes",
+        label: "Inbound faxes",
+        icon: Inbox,
+        matchPrefix: "/admin/inbound-faxes",
+        hint: "Triage queue for faxes Twilio delivered — sleep studies, Rx renewals, chart notes",
+        badgeKey: "newInboundFaxes",
+      },
+      {
+        href: "/admin/equipment-recalls",
+        label: "Recalls",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/equipment-recalls",
+        hint: "Manufacturer recall registry + scan against dispensed serials",
       },
     ],
   },
@@ -194,6 +236,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         matchPrefix: "/admin/shop/returns",
         hint: "Return requests, restocks, refund decisions",
         badgeKey: "pendingReturns",
+      },
+      {
+        href: "/admin/shop/backorders",
+        label: "Backorders & subs",
+        icon: AlertOctagon,
+        matchPrefix: "/admin/shop/backorders",
+        hint: "Mark SKUs out of stock; manage resupply substitution rules",
       },
       {
         href: "/admin/shop/customers",
@@ -272,6 +321,20 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Operational KPIs and exports",
       },
       {
+        href: "/admin/productivity",
+        label: "Team throughput",
+        icon: Activity,
+        matchPrefix: "/admin/productivity",
+        hint: "Per-agent close / approve / resolve counts",
+      },
+      {
+        href: "/admin/analytics",
+        label: "Clinical Analytics",
+        icon: Activity,
+        matchPrefix: "/admin/analytics",
+        hint: "Resupply funnel, compliance cohorts, CSR productivity",
+      },
+      {
         href: "/admin/pennpaps/analytics",
         label: "Storefront Analytics",
         icon: BarChart3,
@@ -312,6 +375,27 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         hint: "Resupply admin activity trail",
       },
       {
+        href: "/admin/compliance",
+        label: "Compliance binder",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/compliance",
+        hint: "Staff training records + patient grievances for DMEPOS surveyors",
+      },
+      {
+        href: "/admin/coaching",
+        label: "Adherence coaching",
+        icon: HeartPulse,
+        matchPrefix: "/admin/coaching",
+        hint: "Outreach plans for patients with slipping CPAP adherence",
+      },
+      {
+        href: "/admin/security",
+        label: "Account security",
+        icon: ShieldCheck,
+        matchPrefix: "/admin/security",
+        hint: "Manage your own MFA / authenticator-app enrollment",
+      },
+      {
         href: "/admin/pennpaps/audit",
         label: "Storefront Audit",
         icon: FileSearch,
@@ -324,6 +408,13 @@ const NAV_GROUPS: ReadonlyArray<NavGroup> = [
         icon: UsersRound,
         matchPrefix: "/admin/team",
         hint: "Manage admin & agent accounts",
+      },
+      {
+        href: "/admin/closures",
+        label: "Closures",
+        icon: CalendarOff,
+        matchPrefix: "/admin/closures",
+        hint: "Holidays and weather closures with inbound-SMS auto-reply",
       },
       {
         href: "/admin/settings",
@@ -523,6 +614,55 @@ export function AdminHeaderChip({
   );
 }
 
+/**
+ * Sticky banner shown on every admin page when the org has flipped
+ * AUTH_REQUIRE_MFA_FOR_ADMINS=true AND this caller hasn't enrolled.
+ * We don't hard-redirect — the caller may legitimately be on
+ * /admin/security already, and a forced redirect mid-form would be
+ * jarring — but we surface the requirement visibly on every screen.
+ * Surveyors looking at the live admin UI see the enforcement and
+ * the path to compliance.
+ */
+function MfaEnforcementBanner() {
+  const [location] = useLocation();
+  const { data } = useQuery({
+    queryKey: ["admin", "mfa", "status"] as const,
+    queryFn: getMfaStatus,
+    // Cheap; refetching on focus keeps the banner accurate when an
+    // admin enrolls in another tab.
+    refetchOnWindowFocus: true,
+    staleTime: 30_000,
+  });
+  if (!data?.mustEnroll) return null;
+  if (location === "/admin/security") {
+    // Caller is already where they need to be — render a calmer
+    // inline notice rather than a redirect.
+    return (
+      <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        Enroll multi-factor authentication below to access the rest of
+        the admin console. This is a policy-level requirement; your team
+        flipped it on.
+      </div>
+    );
+  }
+  return (
+    <div className="mb-4 rounded border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900 flex items-start justify-between gap-3">
+      <div>
+        <strong>Multi-factor authentication is required.</strong> You
+        must enroll an authenticator app before you can keep using the
+        admin console. This policy applies to every admin / CSR
+        account.
+      </div>
+      <Link
+        href="/admin/security"
+        className="rounded bg-amber-900 text-white px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+      >
+        Enroll now
+      </Link>
+    </div>
+  );
+}
+
 export function AppShell({
   adminEmail,
   adminRole = "admin",
@@ -633,6 +773,7 @@ export function AppShell({
             </nav>
           </aside>
           <main className="flex-1 p-4 sm:p-6 overflow-x-hidden min-w-0">
+            <MfaEnforcementBanner />
             {children}
           </main>
         </div>

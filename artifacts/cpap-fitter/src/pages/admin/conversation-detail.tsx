@@ -27,7 +27,15 @@ import {
 } from "@/lib/admin/reply-templates";
 import { applyMacro, applyLegacyFirstName } from "@/lib/admin/macro-merge";
 import { listMacros, type CsrMacro } from "@/lib/admin/csr-macros-api";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  createConversationCoachingNote,
+  listConversationCoachingNotes,
+  type CoachingNote,
+  type CoachingNoteKind,
+} from "@/lib/admin/coaching-notes-api";
+import { triageApi } from "@/lib/admin/conversation-triage-api";
 import { Patient360Panel } from "@/components/admin/Patient360Panel";
 import { Customer360Panel } from "@/components/admin/Customer360Panel";
 import { ConversationAssignmentBar } from "@/components/admin/ConversationAssignmentBar";
@@ -276,6 +284,29 @@ export function ConversationDetailPage({ id }: { id: string }) {
               onAfterAction={() => void refetch()}
             />
           )}
+
+          <TriagePanel
+            conversationId={data.id}
+            initialTags={
+              ((data as { tags?: string[] }).tags ?? []) as string[]
+            }
+            initialSnoozedUntil={
+              (data as { snoozedUntil?: string | null }).snoozedUntil ?? null
+            }
+            isAssigned={
+              ((data as { assignedAdminUserId?: string | null })
+                .assignedAdminUserId ?? null) != null
+            }
+            onChanged={() => void refetch()}
+          />
+
+          <CoachingNotesPanel
+            conversationId={data.id}
+            currentAssigneeUserId={
+              (data as { assignedAdminUserId?: string | null })
+                .assignedAdminUserId ?? null
+            }
+          />
         </div>
         <aside className="space-y-4">
           {/*
@@ -968,4 +999,377 @@ function formatDraftSavedAt(savedAt: Date): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+// ── Supervisor coaching notes ─────────────────────────────────────
+
+const KIND_TONE: Record<CoachingNoteKind, string> = {
+  praise: "bg-emerald-100 text-emerald-900",
+  suggestion: "bg-blue-100 text-blue-900",
+  concern: "bg-rose-100 text-rose-900",
+};
+
+function CoachingNotesPanel({
+  conversationId,
+  currentAssigneeUserId,
+}: {
+  conversationId: string;
+  currentAssigneeUserId: string | null;
+}) {
+  const qc = useQueryClient();
+  const queryKey = [
+    "admin",
+    "conversation",
+    conversationId,
+    "coaching-notes",
+  ] as const;
+  const { data, isPending, isError, error } = useQuery({
+    queryKey,
+    queryFn: () => listConversationCoachingNotes(conversationId),
+  });
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          Coaching notes
+          <span className="text-[10px] uppercase tracking-wider font-normal text-muted-foreground">
+            supervisor only
+          </span>
+        </span>
+      }
+    >
+      {isPending ? (
+        <Spinner />
+      ) : isError ? (
+        <ErrorPanel error={error} onRetry={() => undefined} />
+      ) : (data?.notes ?? []).length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No coaching notes yet on this conversation.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {data!.notes.map((n) => (
+            <CoachingNoteRow key={n.id} note={n} />
+          ))}
+        </ul>
+      )}
+
+      {showForm ? (
+        <NewCoachingNoteForm
+          conversationId={conversationId}
+          defaultTargetUserId={currentAssigneeUserId}
+          onSaved={() => {
+            setShowForm(false);
+            void qc.invalidateQueries({ queryKey });
+          }}
+          onCancel={() => setShowForm(false)}
+        />
+      ) : (
+        <div className="mt-3">
+          <Button
+            intent="ghost"
+            size="sm"
+            onClick={() => setShowForm(true)}
+            disabled={!currentAssigneeUserId}
+            title={
+              currentAssigneeUserId
+                ? undefined
+                : "Assign the conversation first; notes target a specific CSR."
+            }
+          >
+            + Add coaching note
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function CoachingNoteRow({ note }: { note: CoachingNote }) {
+  return (
+    <li
+      className="rounded border p-3"
+      style={{ borderColor: "hsl(var(--line-2))" }}
+    >
+      <div className="flex items-baseline justify-between gap-2 mb-1 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wider ${KIND_TONE[note.kind]}`}
+          >
+            {note.kind}
+          </span>
+          <span className="text-[10px] text-muted-foreground font-mono">
+            target {note.targetUserId.slice(0, 8)} · author{" "}
+            {note.authorUserId.slice(0, 8)}
+          </span>
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          {new Date(note.createdAt).toLocaleString()}
+        </span>
+      </div>
+      <p className="text-sm whitespace-pre-wrap">{note.body}</p>
+    </li>
+  );
+}
+
+function NewCoachingNoteForm({
+  conversationId,
+  defaultTargetUserId,
+  onSaved,
+  onCancel,
+}: {
+  conversationId: string;
+  defaultTargetUserId: string | null;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [targetUserId, setTargetUserId] = useState(
+    defaultTargetUserId ?? "",
+  );
+  const [kind, setKind] = useState<CoachingNoteKind>("suggestion");
+  const [body, setBody] = useState("");
+  const create = useMutation({
+    mutationFn: () =>
+      createConversationCoachingNote(conversationId, {
+        targetUserId: targetUserId.trim(),
+        kind,
+        body: body.trim(),
+      }),
+    onSuccess: () => {
+      setBody("");
+      onSaved();
+    },
+  });
+  const valid = targetUserId.trim().length > 0 && body.trim().length > 0;
+  return (
+    <div
+      className="mt-3 rounded border p-3 space-y-2"
+      style={{ borderColor: "hsl(var(--line-1))" }}
+    >
+      <div className="flex flex-wrap gap-2">
+        <div className="flex-1 min-w-[12rem]">
+          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+            Target CSR (admin_user id)
+          </label>
+          <input
+            value={targetUserId}
+            onChange={(e) => setTargetUserId(e.target.value)}
+            className="w-full rounded border px-2 py-1.5 text-sm font-mono"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          />
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground block mb-1">
+            Kind
+          </label>
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as CoachingNoteKind)}
+            className="rounded border px-2 py-1.5 text-sm"
+            style={{ borderColor: "hsl(var(--line-1))" }}
+          >
+            <option value="praise">Praise</option>
+            <option value="suggestion">Suggestion</option>
+            <option value="concern">Concern</option>
+          </select>
+        </div>
+      </div>
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value.slice(0, 4000))}
+        rows={4}
+        className="w-full rounded border px-2 py-1.5 text-sm"
+        style={{ borderColor: "hsl(var(--line-1))" }}
+        placeholder="Concrete, behavior-focused. Stays in employment record."
+      />
+      {create.error instanceof Error && (
+        <div className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
+          {create.error.message}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button
+          disabled={!valid || create.isPending}
+          isLoading={create.isPending}
+          onClick={() => create.mutate()}
+        >
+          Save note
+        </Button>
+        <Button intent="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Conversation triage (snooze / tags / claim + transcript) ─────
+
+function TriagePanel({
+  conversationId,
+  initialTags,
+  initialSnoozedUntil,
+  isAssigned,
+  onChanged,
+}: {
+  conversationId: string;
+  initialTags: string[];
+  initialSnoozedUntil: string | null;
+  isAssigned: boolean;
+  onChanged: () => void;
+}) {
+  const [tags, setTags] = useState<string[]>(initialTags);
+  const [newTag, setNewTag] = useState("");
+  const [snoozeIso, setSnoozeIso] = useState<string | null>(
+    initialSnoozedUntil,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const saveTags = useMutation({
+    mutationFn: (next: string[]) => triageApi.setTags(conversationId, next),
+    onSuccess: (r) => {
+      setTags(r.tags);
+      onChanged();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+  const saveSnooze = useMutation({
+    mutationFn: (next: string | null) =>
+      triageApi.setSnooze(conversationId, next),
+    onSuccess: (_r, vars) => {
+      setSnoozeIso(vars);
+      onChanged();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+  const claim = useMutation({
+    mutationFn: () => triageApi.claim(conversationId),
+    onSuccess: onChanged,
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const addTag = () => {
+    const t = newTag.trim().toLowerCase();
+    if (!t || !/^[a-z0-9_-]{1,32}$/.test(t)) return;
+    if (tags.includes(t)) return;
+    saveTags.mutate([...tags, t]);
+    setNewTag("");
+  };
+  const removeTag = (t: string) =>
+    saveTags.mutate(tags.filter((x) => x !== t));
+  const snoozeFor = (days: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + days);
+    saveSnooze.mutate(d.toISOString());
+  };
+
+  const isSnoozed = snoozeIso && new Date(snoozeIso) > new Date();
+
+  return (
+    <Card title="Triage">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {!isAssigned && (
+            <Button
+              intent="ghost"
+              size="sm"
+              onClick={() => claim.mutate()}
+              isLoading={claim.isPending}
+            >
+              Claim
+            </Button>
+          )}
+          {isSnoozed ? (
+            <>
+              <span className="text-xs">
+                Snoozed until {new Date(snoozeIso!).toLocaleString()}
+              </span>
+              <Button
+                intent="ghost"
+                size="sm"
+                onClick={() => saveSnooze.mutate(null)}
+                isLoading={saveSnooze.isPending}
+              >
+                Un-snooze
+              </Button>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+                Snooze
+              </span>
+              {[1, 3, 7].map((d) => (
+                <Button
+                  key={d}
+                  intent="ghost"
+                  size="sm"
+                  onClick={() => snoozeFor(d)}
+                  isLoading={saveSnooze.isPending}
+                >
+                  {d}d
+                </Button>
+              ))}
+            </>
+          )}
+          <a
+            href={triageApi.transcriptCsvUrl(conversationId)}
+            className="rounded border px-2 py-1 text-xs font-semibold"
+            style={{
+              borderColor: "hsl(var(--line-1))",
+              color: "hsl(var(--penn-navy))",
+            }}
+          >
+            Transcript CSV
+          </a>
+        </div>
+
+        <div>
+          <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1">
+            Tags
+          </div>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {tags.map((t) => (
+              <span
+                key={t}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+                style={{
+                  backgroundColor: "hsl(var(--line-2))",
+                  color: "hsl(var(--ink-2))",
+                }}
+              >
+                {t}
+                <button
+                  type="button"
+                  onClick={() => removeTag(t)}
+                  aria-label={`Remove ${t}`}
+                  className="hover:opacity-70"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addTag();
+                }
+              }}
+              placeholder="add tag…"
+              maxLength={32}
+              className="rounded border px-2 py-0.5 text-xs"
+              style={{ borderColor: "hsl(var(--line-1))" }}
+            />
+          </div>
+        </div>
+        {error && (
+          <p className="text-xs text-rose-700">{error}</p>
+        )}
+      </div>
+    </Card>
+  );
 }

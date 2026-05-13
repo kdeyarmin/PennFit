@@ -41,12 +41,27 @@ import { AdminShopReviewsPage } from "@/pages/admin/admin-shop-reviews";
 import { AdminProductQuestionsPage } from "@/pages/admin/admin-product-questions";
 import { AdminShopReturnsPage } from "@/pages/admin/admin-shop-returns";
 import { AdminFollowupsPage } from "@/pages/admin/admin-followups";
+import { AdminTodayPage } from "@/pages/admin/admin-today";
+import { AdminProvidersPage } from "@/pages/admin/admin-providers";
+import { AdminInboundFaxesPage } from "@/pages/admin/admin-inbound-faxes";
+import { AdminEquipmentRecallsPage } from "@/pages/admin/admin-equipment-recalls";
+import { AdminAnalyticsPage } from "@/pages/admin/admin-analytics";
+import { AdminCompliancePage } from "@/pages/admin/admin-compliance";
+import { AdminBulkCampaignsPage } from "@/pages/admin/admin-bulk-campaigns";
+import { AdminSecurityPage } from "@/pages/admin/admin-security";
 import { AdminMacrosPage } from "@/pages/admin/admin-macros";
 import { AdminMessageTemplatesPage } from "@/pages/admin/admin-message-templates";
 import { AdminShopSubscriptionsPage } from "@/pages/admin/admin-shop-subscriptions";
 import { AdminTeamPage } from "@/pages/admin/admin-team";
 import { AdminOperationsPage } from "@/pages/admin/admin-operations";
 import { AdminReportsPage } from "@/pages/admin/admin-reports";
+import { AdminProductivityPage } from "@/pages/admin/admin-productivity";
+import { AdminBackordersPage } from "@/pages/admin/admin-backorders";
+import { AdminClosuresPage } from "@/pages/admin/admin-closures";
+import { AdminAppointmentRequestsPage } from "@/pages/admin/admin-appointment-requests";
+import { AdminAccreditationBinderPage } from "@/pages/admin/admin-accreditation-binder";
+import { AdminIntegrationsPage } from "@/pages/admin/admin-integrations";
+import { AdminCoachingPage } from "@/pages/admin/admin-coaching";
 import { AdminDeliveryFailuresPage } from "@/pages/admin/admin-delivery-failures";
 import { AdminRuleTesterPage } from "@/pages/admin/admin-rule-tester";
 import { AdminSettingsPage } from "@/pages/admin/admin-settings";
@@ -144,6 +159,23 @@ function AdminConsole() {
           </Route>
           <Route path="/admin/shop/returns" component={AdminShopReturnsPage} />
           <Route path="/admin/followups" component={AdminFollowupsPage} />
+          <Route path="/admin/today" component={AdminTodayPage} />
+          <Route path="/admin/providers" component={AdminProvidersPage} />
+          <Route
+            path="/admin/inbound-faxes"
+            component={AdminInboundFaxesPage}
+          />
+          <Route
+            path="/admin/equipment-recalls"
+            component={AdminEquipmentRecallsPage}
+          />
+          <Route path="/admin/analytics" component={AdminAnalyticsPage} />
+          <Route path="/admin/compliance" component={AdminCompliancePage} />
+          <Route
+            path="/admin/bulk-campaigns"
+            component={AdminBulkCampaignsPage}
+          />
+          <Route path="/admin/security" component={AdminSecurityPage} />
           <Route path="/admin/macros" component={AdminMacrosPage} />
           <Route
             path="/admin/templates"
@@ -156,6 +188,34 @@ function AdminConsole() {
           <Route path="/admin/team" component={AdminTeamPage} />
           <Route path="/admin/operations" component={AdminOperationsPage} />
           <Route path="/admin/reports" component={AdminReportsPage} />
+          <Route
+            path="/admin/productivity"
+            component={AdminProductivityPage}
+          />
+          <Route
+            path="/admin/shop/backorders"
+            component={AdminBackordersPage}
+          />
+          <Route
+            path="/admin/closures"
+            component={AdminClosuresPage}
+          />
+          <Route
+            path="/admin/appointment-requests"
+            component={AdminAppointmentRequestsPage}
+          />
+          <Route
+            path="/admin/accreditation-binder"
+            component={AdminAccreditationBinderPage}
+          />
+          <Route
+            path="/admin/integrations"
+            component={AdminIntegrationsPage}
+          />
+          <Route
+            path="/admin/coaching"
+            component={AdminCoachingPage}
+          />
           <Route
             path="/admin/delivery-failures"
             component={AdminDeliveryFailuresPage}

@@ -16,6 +16,7 @@ import {
 import { createAirviewAdapter } from "@workspace/resupply-integrations-airview";
 import { createCareOrchestratorAdapter } from "@workspace/resupply-integrations-care-orchestrator";
 import { createHealthConnectAdapter } from "@workspace/resupply-integrations-health-connect";
+import { createReactHealthAdapter } from "@workspace/resupply-integrations-react-health";
 
 let cached: Map<IntegrationSource, IntegrationAdapter> | null = null;
 
@@ -27,6 +28,7 @@ export function getIntegrationAdapters(
   m.set("resmed_airview", createAirviewAdapter(env));
   m.set("philips_care", createCareOrchestratorAdapter(env));
   m.set("health_connect", createHealthConnectAdapter(env));
+  m.set("react_health", createReactHealthAdapter(env));
   cached = m;
   return m;
 }

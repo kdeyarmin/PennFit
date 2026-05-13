@@ -24,6 +24,7 @@ import { makeRequireSession } from "./middleware";
 import { makeAuthRateLimiter } from "./rate-limit-middleware";
 import { makeResetPasswordHandler } from "./reset-password";
 import { makeSignInHandler } from "./sign-in";
+import { makeVerifySignInMfaHandler } from "./verify-sign-in-mfa";
 import { makeSignOutHandler } from "./sign-out";
 import { makeSignUpHandler } from "./sign-up";
 import { makeVerifyEmailHandler } from "./verify-email";
@@ -98,6 +99,17 @@ export function makeAuthRouter(
     router.post("/sign-up", signUpLimiter, makeSignUpHandler(deps, options));
   }
   router.post("/sign-in", signInLimiter, makeSignInHandler(deps));
+  // Phase B MFA — only mount the verify endpoint when the host
+  // wired an MFA probe + a challenge HMAC key. The customer-facing
+  // storefront mount doesn't supply either; it keeps the legacy
+  // single-step sign-in.
+  if (deps.mfa && deps.mfaChallengeHmacKey) {
+    router.post(
+      "/sign-in/verify-mfa",
+      signInLimiter,
+      makeVerifySignInMfaHandler(deps),
+    );
+  }
   router.post("/sign-out", makeSignOutHandler(deps));
   router.post(
     "/verify-email",
@@ -131,6 +143,8 @@ export type {
   AuthRequestLocals,
   CustomerIdResolver,
   EmailSender,
+  MfaProbe,
+  MfaProbeSecret,
 } from "./types";
 export { makeRequireSession, makeRequireRole } from "./middleware";
 export {

@@ -46,7 +46,15 @@
 // same Session ID, so the upsert is safe.
 
 import { sql } from "drizzle-orm";
-import { check, index, integer, jsonb, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  text,
+  timestamp,
+  varchar,
+} from "drizzle-orm/pg-core";
 
 import { resupplySchema } from "./_schema";
 import type { SavedShippingAddress } from "./shop-customers";
@@ -169,6 +177,16 @@ export const shopOrders = resupplySchema.table(
      * pre-migration historical orders. Migration 0017.
      */
     customerEmail: text("customer_email"),
+    /**
+     * Proof-of-Delivery photo — App Storage (GCS) object key. Set by
+     * the CSR-side POD upload endpoint. Image bytes never round-trip
+     * through our logger (CLAUDE.md hard rule); we keep only the key.
+     */
+    podObjectKey: text("pod_object_key"),
+    podUploadedAt: timestamp("pod_uploaded_at", { withTimezone: true }),
+    /** Optional name the carrier captured at the door (e.g.
+     *  "J. SMITH"). Free-text up to 160. */
+    podSignedName: varchar("pod_signed_name", { length: 160 }),
   },
   (t) => ({
     statusIdx: index("shop_orders_status_idx").on(t.status),
