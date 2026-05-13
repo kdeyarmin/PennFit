@@ -6,12 +6,28 @@ import {
 } from "./index";
 
 describe("INTEGRATION_SOURCES", () => {
-  it("includes the three target vendors", () => {
+  it("includes the expected target vendors", () => {
+    // Exact list — keep this in sync as new vendor adapters land.
+    // Order matches the unified-package declaration so the assertion
+    // catches accidental reorderings.
     expect(INTEGRATION_SOURCES).toEqual([
       "resmed_airview",
       "philips_care",
       "health_connect",
+      "react_health",
     ]);
+  });
+
+  it("contains exactly four sources", () => {
+    // Regression guard: any accidental addition or removal of a source
+    // should fail here before it silently drifts past review.
+    expect(INTEGRATION_SOURCES).toHaveLength(4);
+  });
+
+  it("includes react_health as a recognised source", () => {
+    // Targeted assertion for the vendor added in this PR (3B Medical /
+    // iCode Connect / Luna G3 / Lumin ecosystem).
+    expect(INTEGRATION_SOURCES).toContain("react_health");
   });
 });
 
@@ -58,5 +74,22 @@ describe("integrationSnapshotSchema", () => {
       supplies: [],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts react_health as a valid snapshot source", () => {
+    // Validates that the schema's z.enum is derived from the updated
+    // INTEGRATION_SOURCES tuple that now includes react_health.
+    const result = integrationSnapshotSchema.safeParse({
+      source: "react_health",
+      partnerPatientId: "rh-patient-001",
+      settings: null,
+      compliance: null,
+      recentNights: [],
+      supplies: [],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.source).toBe("react_health");
+    }
   });
 });
