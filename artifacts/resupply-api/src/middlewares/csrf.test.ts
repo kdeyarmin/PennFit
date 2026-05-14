@@ -240,11 +240,8 @@ describe("requireCsrf — response envelope", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it("does not call next() when both cookie and header are empty strings", () => {
-    // Empty-string tokens are not present tokens — the primitive
-    // must treat them the same as absent.
-    // We build the fake request with no cookie/header options so
-    // the Cookie header is absent entirely; verifies the default path.
+  it("does not call next() when both cookie and header are absent", () => {
+    // A request with no CSRF material at all must be blocked.
     const { res, nextCalled } = run(makeReq({}));
     expect(nextCalled).toBe(false);
     expect(res.statusCode).toBe(403);

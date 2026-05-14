@@ -17,12 +17,12 @@ import { describe, expect, it, vi } from "vitest";
 // Module mocks (hoisted before imports of the module under test).
 // ---------------------------------------------------------------------------
 
-vi.mock("../../middlewares/requireAdmin.js", () => ({
+vi.mock("../../middlewares/requireAdmin", () => ({
   requireAdmin: (_req: unknown, _res: unknown, next: () => void) => next(),
   requireAdminOnly: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
-vi.mock("../../lib/logger.js", () => ({
+vi.mock("../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -34,26 +34,6 @@ vi.mock("../../lib/logger.js", () => ({
 // Stub Supabase — the POST /admin/reminders/send-due handler queries
 // reminder_subscriptions then updates them.  The CSRF check fires before
 // any of that, so these stubs are only hit on the "CSRF passes" path.
-const mockSupabaseChain = {
-  select: vi.fn().mockReturnThis(),
-  eq: vi.fn().mockReturnThis(),
-  update: vi.fn().mockReturnThis(),
-  insert: vi.fn().mockReturnThis(),
-  from: vi.fn().mockReturnThis(),
-  schema: vi.fn().mockReturnThis(),
-  // Leaf resolvers for the "candidates" query.
-  then: undefined as unknown,
-};
-// Make the chain thenable so `await supabase.schema(...).from(...).select(...).eq(...)` works.
-Object.assign(mockSupabaseChain, {
-  // Override `select` at the leaf to resolve with an empty candidates list.
-  select: vi.fn((_cols?: string) => Promise.resolve({ data: [], error: null })),
-  update: vi.fn((_vals?: unknown) => ({
-    eq: vi.fn(() => Promise.resolve({ error: null })),
-  })),
-  insert: vi.fn((_vals?: unknown) => Promise.resolve({ error: null })),
-});
-
 vi.mock("@workspace/resupply-db", () => ({
   getSupabaseServiceRoleClient: () => ({
     schema: (_s: string) => ({
@@ -71,7 +51,7 @@ vi.mock("@workspace/resupply-db", () => ({
 }));
 
 // Stub the reminder email sender — never reaches real SendGrid in tests.
-vi.mock("../../lib/storefront/reminderEmail.js", () => ({
+vi.mock("../../lib/storefront/reminderEmail", () => ({
   sendReminderDue: vi.fn(async () => ({
     configured: false,
     delivered: false,
@@ -80,7 +60,7 @@ vi.mock("../../lib/storefront/reminderEmail.js", () => ({
 }));
 
 // admin.ts also mounts adminUsersRouter which imports auth helpers.
-vi.mock("../../lib/auth-deps.js", () => ({
+vi.mock("../../lib/auth-deps", () => ({
   getAuthDeps: () => {
     throw new Error("test: getAuthDeps should not be called in CSRF tests");
   },
@@ -99,7 +79,7 @@ vi.mock("@workspace/resupply-auth", async (importOriginal) => {
 // ---------------------------------------------------------------------------
 // Import the router under test.
 // ---------------------------------------------------------------------------
-import adminRouter from "./admin.js";
+import adminRouter from "./admin";
 
 function makeApp(): Express {
   const app = express();
@@ -165,6 +145,16 @@ describe("POST /admin/reminders/send-due — CSRF enforcement", () => {
     expect(res.status).toBe(403);
     expect(res.body.reason).toBeUndefined();
     expect(res.body.error).toBe("csrf_failed");
+  });
+
+  it("includes a human-readable message in the 403 response body", async () => {
+    const res = await request(makeApp())
+      .post("/admin/reminders/send-due")
+      .send({});
+
+    expect(res.status).toBe(403);
+    expect(typeof res.body.message).toBe("string");
+    expect(res.body.message.length).toBeGreaterThan(0);
   });
 
   it("passes the CSRF gate and reaches the handler when cookie and header match", async () => {
