@@ -34,6 +34,32 @@ class ClientError extends Error {
   }
 }
 
+// Per-call timeouts so a hanging upstream (Philips Care Orchestrator)
+// can't stall the in-process worker indefinitely.
+const OAUTH_TIMEOUT_MS = 30_000;
+const API_TIMEOUT_MS = 60_000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err instanceof Error) {
+      const name = err.name;
+      if (name === "TimeoutError" || name === "AbortError" || name === "TypeError") {
+        throw new ClientError("unavailable");
+      }
+    }
+    throw err;
+  }
+}
+
 async function getAccessToken(
   config: CareOrchestratorConfig,
 ): Promise<string> {
@@ -51,11 +77,15 @@ async function getAccessToken(
     client_secret: config.clientSecret,
     scope: `partner:${config.partnerId}`,
   });
-  const res = await fetch(config.oauthTokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
+  const res = await fetchWithTimeout(
+    config.oauthTokenUrl,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    },
+    OAUTH_TIMEOUT_MS,
+  );
   if (!res.ok) throw new ClientError("auth_failed");
   const json = (await res.json()) as {
     access_token?: string;
@@ -77,13 +107,17 @@ async function request<T>(
   path: string,
 ): Promise<T> {
   const token = await getAccessToken(config);
-  const res = await fetch(`${config.apiBaseUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      "X-Partner-Id": config.partnerId,
+  const res = await fetchWithTimeout(
+    `${config.apiBaseUrl}${path}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "X-Partner-Id": config.partnerId,
+      },
     },
-  });
+    API_TIMEOUT_MS,
+  );
   if (res.status === 404) throw new ClientError("not_found");
   if (res.status === 401 || res.status === 403)
     throw new ClientError("auth_failed");

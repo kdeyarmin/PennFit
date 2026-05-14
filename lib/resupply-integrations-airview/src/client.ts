@@ -35,6 +35,38 @@ function configKey(config: AirviewConfig): string {
   return `${config.oauthTokenUrl}|${config.clientId}|${config.dmeId}`;
 }
 
+class ClientError extends Error {
+  constructor(public readonly kind: AdapterError) {
+    super(kind);
+  }
+}
+
+// Per-call timeouts so a hanging upstream (ResMed AirView) can't stall
+// the in-process worker indefinitely.
+const OAUTH_TIMEOUT_MS = 30_000;
+const API_TIMEOUT_MS = 60_000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err instanceof Error) {
+      const name = err.name;
+      if (name === "TimeoutError" || name === "AbortError" || name === "TypeError") {
+        throw new ClientError("unavailable");
+      }
+    }
+    throw err;
+  }
+}
+
 async function getAccessToken(config: AirviewConfig): Promise<string> {
   const key = configKey(config);
   const now = Date.now();
@@ -51,11 +83,15 @@ async function getAccessToken(config: AirviewConfig): Promise<string> {
     client_secret: config.clientSecret,
     scope: `dme:${config.dmeId}`,
   });
-  const res = await fetch(config.oauthTokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
+  const res = await fetchWithTimeout(
+    config.oauthTokenUrl,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    },
+    OAUTH_TIMEOUT_MS,
+  );
   if (!res.ok) {
     throw new ClientError("auth_failed");
   }
@@ -74,24 +110,22 @@ async function getAccessToken(config: AirviewConfig): Promise<string> {
   return json.access_token;
 }
 
-class ClientError extends Error {
-  constructor(public readonly kind: AdapterError) {
-    super(kind);
-  }
-}
-
 async function request<T>(
   config: AirviewConfig,
   path: string,
 ): Promise<T> {
   const token = await getAccessToken(config);
-  const res = await fetch(`${config.apiBaseUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      "X-DME-Id": config.dmeId,
+  const res = await fetchWithTimeout(
+    `${config.apiBaseUrl}${path}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "X-DME-Id": config.dmeId,
+      },
     },
-  });
+    API_TIMEOUT_MS,
+  );
   if (res.status === 404) throw new ClientError("not_found");
   if (res.status === 401 || res.status === 403) {
     throw new ClientError("auth_failed");

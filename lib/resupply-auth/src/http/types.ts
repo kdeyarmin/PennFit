@@ -216,6 +216,10 @@ export interface MfaProbe {
    * Optional so artifacts that haven't shipped recovery codes yet
    * can leave this unimplemented; the verify handler treats a
    * missing method as "recovery branch disabled."
+   *
+   * Prefer `consumeRecoveryCode` (atomic find-and-spend) when both
+   * are implemented — this method is the legacy two-step contract
+   * and races under concurrent submissions of the same valid code.
    */
   findRecoveryCodeMatch?(
     userId: string,
@@ -231,9 +235,27 @@ export interface MfaProbe {
    * the next attempt would also succeed, which is the rare correct
    * recovery-from-DB-blip behaviour).
    *
-   * Optional alongside `findRecoveryCodeMatch`.
+   * Optional alongside `findRecoveryCodeMatch`. Superseded by
+   * `consumeRecoveryCode` when that is implemented.
    */
   markRecoveryCodeUsed?(rowId: string, ip: string | null): Promise<void>;
+  /**
+   * Atomic find-and-spend: locate a SPENDABLE recovery code AND
+   * mark it used in a single round-trip. Implementations MUST do
+   * this in one DB statement (e.g. `UPDATE … WHERE used_at IS NULL
+   * RETURNING id`) so two concurrent submissions of the same valid
+   * code can't both succeed. Returns the row id on first consume,
+   * null if the code doesn't exist or has already been spent.
+   *
+   * Optional — when present, the verify handler prefers this over
+   * the legacy `findRecoveryCodeMatch` + `markRecoveryCodeUsed`
+   * pair (which races under concurrent submissions).
+   */
+  consumeRecoveryCode?(
+    userId: string,
+    codeHash: string,
+    ip: string | null,
+  ): Promise<{ id: string } | null>;
 }
 
 export interface MfaProbeSecret {
