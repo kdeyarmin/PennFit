@@ -335,4 +335,88 @@ describe.skipIf(!dbUrl)("resupply-db migrate.mjs", () => {
     }
     expect(exitCode).toBe(2);
   });
+
+  // Regression test for the auth schema pre-creation added in this PR.
+  // Migration 0059 (not yet in _journal.json at time of writing) creates
+  // `auth.set_updated_at()` without first creating the `auth` schema —
+  // it was authored against a deployed DB that already had it.  The
+  // migrator must pre-create `auth` idempotently so fresh local and CI
+  // databases can apply the full migration history end-to-end once 0059
+  // lands in the journal.
+  it("pre-creates the auth schema so migration 0059 can run on a fresh database", async (ctx: TaskContext) => {
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const tempDbName = `resupply_auth_schema_${suffix}`;
+    const tempUrl = new URL(dbUrl!);
+    tempUrl.pathname = `/${tempDbName}`;
+    const tempDbUrl = tempUrl.toString();
+
+    let createdDb = false;
+    try {
+      try {
+        await pool.query(`CREATE DATABASE "${tempDbName}"`);
+        createdDb = true;
+      } catch (err) {
+        ctx.skip(
+          `Could not CREATE DATABASE for auth-schema pre-creation test ` +
+            `(likely missing CREATEDB privilege on this Postgres). ` +
+            `Underlying error: ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+        return;
+      }
+
+      // Run the migrator against the fresh DB. It must pre-create the
+      // `auth` schema before applying migrations.
+      const result = await execFile("node", [MIGRATE_SCRIPT], {
+        env: { ...process.env, DATABASE_URL: tempDbUrl },
+      });
+      expect(result.stdout).toMatch(/migrations applied/);
+
+      // Verify the `auth` schema was created by the migrator.
+      const verifyPool = new Pool({ connectionString: tempDbUrl, max: 1 });
+      try {
+        const { rows } = await verifyPool.query<{ exists: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM information_schema.schemata
+             WHERE schema_name = 'auth'
+           ) AS exists`,
+        );
+        expect(rows[0]?.exists).toBe(true);
+      } finally {
+        await verifyPool.end();
+      }
+    } finally {
+      if (createdDb) {
+        await pool
+          .query(
+            `SELECT pg_terminate_backend(pid)
+               FROM pg_stat_activity
+               WHERE datname = $1 AND pid <> pg_backend_pid()`,
+            [tempDbName],
+          )
+          .catch(() => undefined);
+        await pool
+          .query(`DROP DATABASE IF EXISTS "${tempDbName}"`)
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[test cleanup] DROP DATABASE ${tempDbName} failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          });
+      }
+    }
+  }, 60_000);
+
+  // Confirm `auth` schema creation is idempotent: running the migrator
+  // against a DB that already has the `auth` schema must not error.
+  it("does not error when the auth schema already exists (idempotent)", async () => {
+    // Ensure auth exists before migrate runs.
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS "auth"`);
+
+    // This would throw if the migrator failed; we assert a clean exit.
+    const result = await runMigrate();
+    expect(result.stdout).toMatch(/migrations applied/);
+  }, 30_000);
 });
