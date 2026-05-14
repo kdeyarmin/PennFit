@@ -15,6 +15,7 @@ import {
   requestContextMiddleware,
 } from "./lib/request-context";
 import { errorHandler } from "./middlewares/errorHandler";
+import { requireCsrfOnAdminMutations } from "./middlewares/csrf";
 import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
@@ -283,6 +284,17 @@ const storefrontChatLimiter = expressRateLimit({
   },
 });
 app.use("/api/chat", storefrontChatLimiter);
+
+// Defense-in-depth: a single CSRF gate covering every admin-tree
+// mutation on both mount prefixes. Pass-through for safe methods and
+// non-admin paths; enforces double-submit (`pf_csrf` cookie ⇄
+// `X-PF-CSRF` header) on POST/PATCH/PUT/DELETE under `/api/admin/*`
+// or `/resupply-api/admin/*`. The admin SPA already attaches the
+// header on every state-changing fetch, so this is a server-only
+// addition. Per-router `requireCsrf` calls (e.g. admin-users) remain
+// — double-checking is harmless and keeps the per-route contracts
+// self-documenting.
+app.use(requireCsrfOnAdminMutations);
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,

@@ -15,7 +15,11 @@
 import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 
-import { requireCsrf, requireCsrfWhenSession } from "./csrf";
+import {
+  requireCsrf,
+  requireCsrfOnAdminMutations,
+  requireCsrfWhenSession,
+} from "./csrf";
 
 interface FakeRes {
   statusCode: number;
@@ -218,6 +222,120 @@ describe("requireCsrfWhenSession", () => {
     const body = res.body as { error?: string; reason?: string };
     expect(body.reason).toBeUndefined();
     expect(body.error).toBe("csrf_failed");
+  });
+});
+
+describe("requireCsrfOnAdminMutations", () => {
+  function makePathReq(opts: {
+    method: string;
+    path: string;
+    cookie?: string;
+    header?: string;
+  }): Request {
+    const cookieHeader = opts.cookie ? `pf_csrf=${opts.cookie}` : undefined;
+    return {
+      headers: {
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+        ...(opts.header ? { "x-pf-csrf": opts.header } : {}),
+      },
+      method: opts.method,
+      path: opts.path,
+    } as unknown as Request;
+  }
+
+  function runPath(req: Request): { res: FakeRes; nextCalled: boolean } {
+    const res = makeRes();
+    let nextCalled = false;
+    requireCsrfOnAdminMutations(req, res as unknown as Response, () => {
+      nextCalled = true;
+    });
+    return { res, nextCalled };
+  }
+
+  it.each(["GET", "HEAD", "OPTIONS"])(
+    "passes through %s requests on admin paths",
+    (method) => {
+      const { res, nextCalled } = runPath(
+        makePathReq({ method, path: "/api/admin/users" }),
+      );
+      expect(nextCalled).toBe(true);
+      expect(res.statusCode).toBe(200);
+    },
+  );
+
+  it("passes through non-admin POST paths", () => {
+    // Storefront mutations (e.g. POST /api/orders) opt into CSRF on
+    // their own — this middleware must not gate them.
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/api/orders" }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("passes through non-admin POST under /resupply-api", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/resupply-api/voice/inbound" }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("enforces CSRF on POST /api/admin/* mutations", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/api/admin/users/invite" }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("enforces CSRF on PATCH /resupply-api/admin/* mutations", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "PATCH",
+        path: "/resupply-api/admin/shop/orders/abc/notes",
+      }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("enforces CSRF on DELETE under admin trees", () => {
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "DELETE",
+        path: "/resupply-api/admin/csr-macros/m_42",
+      }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("calls next() when CSRF cookie + header match on an admin path", () => {
+    const token = "valid-csrf-token";
+    const { res, nextCalled } = runPath(
+      makePathReq({
+        method: "POST",
+        path: "/api/admin/users/invite",
+        cookie: token,
+        header: token,
+      }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("does not match prefixes that merely contain 'admin' substrings", () => {
+    // Regression guard: '/api/admin-export' must NOT match
+    // '/api/admin/'. The middleware checks for a trailing slash on the
+    // admin prefix so look-alike paths fall through to their own gates.
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/api/admin-export" }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
   });
 });
 

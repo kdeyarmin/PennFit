@@ -125,3 +125,55 @@ export const requireCsrfWhenSession: RequestHandler = (
   }
   denyCsrf(req, res, result.reason);
 };
+
+/**
+ * App-level CSRF gate for admin mutations. Pass-through on:
+ *   * safe methods (GET / HEAD / OPTIONS) — no state change to forge.
+ *   * absolute paths that are not under an admin tree (`/api/admin/*`
+ *     or `/resupply-api/admin/*`). The non-admin storefront paths
+ *     either are anonymous (and have no session cookie to replay) or
+ *     opt in to CSRF on their own via `requireCsrf` /
+ *     `requireCsrfWhenSession`.
+ *
+ * Mount once at app level *before* the route routers so every new
+ * admin mutation that lands in the future is gated automatically —
+ * no per-router `requireCsrf` audit needed. The admin SPA already
+ * attaches the `X-PF-CSRF` header on every state-changing fetch
+ * (see lib/api-client-react/src/admin/custom-fetch.ts), so this is
+ * a server-only addition with no client coordination.
+ *
+ * Both per-router and app-level gates can co-exist; double-checking
+ * is harmless because the middleware short-circuits on success.
+ */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const ADMIN_PREFIXES = ["/api/admin/", "/resupply-api/admin/"] as const;
+
+function isAdminMutationPath(path: string): boolean {
+  for (const prefix of ADMIN_PREFIXES) {
+    if (path.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+export const requireCsrfOnAdminMutations: RequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  if (SAFE_METHODS.has(req.method)) {
+    next();
+    return;
+  }
+  // `req.path` strips the query string but preserves the absolute
+  // pathname when this middleware runs at the app level.
+  if (!isAdminMutationPath(req.path)) {
+    next();
+    return;
+  }
+  const result = checkCsrf(req);
+  if (result.ok) {
+    next();
+    return;
+  }
+  denyCsrf(req, res, result.reason);
+};
