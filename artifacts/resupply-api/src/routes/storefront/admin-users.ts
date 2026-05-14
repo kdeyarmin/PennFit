@@ -35,6 +35,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger.js";
 import { getAuthDeps } from "../../lib/auth-deps.js";
+import { requireCsrf } from "../../middlewares/csrf.js";
 import { requireAdminOnly } from "../../middlewares/requireAdmin.js";
 
 const router = Router();
@@ -215,7 +216,7 @@ function buildInviteRedirectUrl(req: import("express").Request): string {
   return `${proto}://${host}`;
 }
 
-router.post("/admin/users/invite", requireAdminOnly, adminUsersWriteLimiter, async (req, res) => {
+router.post("/admin/users/invite", requireAdminOnly, requireCsrf, adminUsersWriteLimiter, async (req, res) => {
   const parsed = inviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -280,6 +281,7 @@ router.post("/admin/users/invite", requireAdminOnly, adminUsersWriteLimiter, asy
 router.patch(
   "/admin/users/:userId/role",
   requireAdminOnly,
+  requireCsrf,
   adminUsersWriteLimiter,
   async (req, res) => {
     const userId = req.params.userId;
@@ -323,7 +325,7 @@ router.patch(
   },
 );
 
-router.delete("/admin/users/:userId", requireAdminOnly, adminUsersWriteLimiter, async (req, res) => {
+router.delete("/admin/users/:userId", requireAdminOnly, requireCsrf, adminUsersWriteLimiter, async (req, res) => {
   const userId = req.params.userId;
   if (!userId || typeof userId !== "string") {
     res.status(400).json({ error: "Missing user id." });
@@ -356,6 +358,7 @@ router.delete("/admin/users/:userId", requireAdminOnly, adminUsersWriteLimiter, 
 router.delete(
   "/admin/users/invitations/:invId",
   requireAdminOnly,
+  requireCsrf,
   adminUsersWriteLimiter,
   async (req, res) => {
     const invId = req.params.invId;

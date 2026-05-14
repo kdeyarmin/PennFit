@@ -181,7 +181,6 @@ describe("fetchWithTimeout → unknown error type", () => {
       vi.fn(async (url: string) => {
         if (String(url).includes("/oauth/token")) return makeTokenResponse();
         // Throwing a non-Error (string) must not accidentally map to unavailable.
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw "string exception";
       }),
     );
@@ -215,7 +214,6 @@ describe("fetchWithTimeout → successful request", () => {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
 
-    let callCount = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
@@ -224,7 +222,6 @@ describe("fetchWithTimeout → successful request", () => {
         if (s.includes("/devices")) return deviceResp;
         if (s.includes("/therapy")) return therapyResp;
         if (s.includes("/supplies")) return suppliesResp;
-        callCount++;
         return new Response(JSON.stringify({}), { status: 200 });
       }),
     );
