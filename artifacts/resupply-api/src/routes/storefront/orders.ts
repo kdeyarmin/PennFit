@@ -35,12 +35,17 @@ import {
   generateOrderReference,
 } from "../../lib/storefront/orderEmail.js";
 import { logger } from "../../lib/logger.js";
+import { requireCsrfWhenSession } from "../../middlewares/csrf.js";
 import { attachSignedIn } from "../../middlewares/requireSignedIn.js";
 import { ensureShopCustomerRow } from "../../lib/stripe/customer.js";
 
 const router = Router();
 
-router.post("/orders", attachSignedIn, async (req, res) => {
+router.post(
+  "/orders",
+  attachSignedIn,
+  requireCsrfWhenSession,
+  async (req, res) => {
   // Honeypot check — must run BEFORE schema parse, because Zod (with default
   // strip mode) would silently drop the unknown field and we'd lose the
   // signal. We deliberately return a fake-looking success so the bot

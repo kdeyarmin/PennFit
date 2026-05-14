@@ -20,6 +20,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
+import { requireCsrf } from "../../middlewares/csrf.js";
 import { requireAdmin } from "../../middlewares/requireAdmin.js";
 import { logger } from "../../lib/logger.js";
 import {
@@ -468,7 +469,7 @@ router.get("/admin/reminders", async (_req, res) => {
 // updates their dates from the manage page after they actually swap.
 const QUIET_PERIOD_DAYS = 7;
 
-router.post("/admin/reminders/send-due", async (req, res) => {
+router.post("/admin/reminders/send-due", requireCsrf, async (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const quietCutoff = new Date(
     Date.now() - QUIET_PERIOD_DAYS * 24 * 60 * 60 * 1000,

@@ -15,7 +15,7 @@ import { CSRF_COOKIE, CSRF_HEADER } from "../cookies";
 import { readAuthEnv } from "../env";
 import { mintMfaChallengeToken } from "../mfa-challenge";
 import { hashRecoveryCode } from "../mfa-recovery";
-import { makeMemoryRepo, seedUserWithPassword } from "../test-helpers";
+import { makeMemoryRepo } from "../test-helpers";
 
 import { makeVerifySignInMfaHandler } from "./verify-sign-in-mfa";
 import type { AuthDeps, AuditWriter, MfaProbe } from "./types";
@@ -71,15 +71,10 @@ function buildRecoveryHarness(mfaOverrides: Partial<MfaProbe> = {}): RecoveryHar
 
   const app = express();
   app.use(express.json());
-  // Attach a synthetic CSRF cookie + header for every request via a tiny
-  // middleware — the handler checks CSRF before everything else.
-  const csrfToken = "test-csrf-value";
-  app.use((req, _res, next) => {
-    // Inject the CSRF cookie into req.cookies shim used by checkCsrf.
-    // checkCsrf reads req.cookies[CSRF_COOKIE] and req.headers[CSRF_HEADER].
-    // We set the header here; cookie is set client-side via supertest.
-    next();
-  });
+  // No CSRF middleware is wired into the handler under test — the
+  // verify-mfa handler bypasses CSRF as part of the sign-in completion
+  // flow. Placeholder kept for legibility against the broader auth
+  // test scaffold.
   const handler = makeVerifySignInMfaHandler(deps);
   app.post("/verify-mfa", handler);
 
