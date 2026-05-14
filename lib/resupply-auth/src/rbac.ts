@@ -70,6 +70,8 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   grievances.read         — view patient grievance log
  *   grievances.resolve      — close out a grievance / adverse event
  *   conversations.manage    — triage admin inbox: snooze, tag, claim
+ *   admin.tools.manage      — supervisor-tier CSR-tool management
+ *                              (macro templates, future quick-actions)
  */
 export type Permission =
   | "patients.read"
@@ -89,7 +91,8 @@ export type Permission =
   | "training.manage"
   | "grievances.read"
   | "grievances.resolve"
-  | "conversations.manage";
+  | "conversations.manage"
+  | "admin.tools.manage";
 
 /** Full enumeration — handy for tests and for the `admin` role
  *  that should always have every permission. Kept in sync with the
@@ -113,6 +116,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "grievances.read",
   "grievances.resolve",
   "conversations.manage",
+  "admin.tools.manage",
 ];
 
 /** Role → permission set. Modify this when adjusting policy. */
@@ -137,6 +141,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
     "grievances.read",
     "grievances.resolve",
     "conversations.manage",
+    "admin.tools.manage",
   ]),
 
   csr: new Set<Permission>([

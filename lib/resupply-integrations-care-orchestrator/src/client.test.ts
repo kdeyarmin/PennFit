@@ -163,7 +163,6 @@ describe("fetchWithTimeout → unknown error type (CareOrchestrator)", () => {
       "fetch",
       vi.fn(async (url: string) => {
         if (String(url).includes("/oauth/token")) return makeTokenResponse();
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw "string exception";
       }),
     );
