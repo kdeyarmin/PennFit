@@ -24,7 +24,7 @@ import {
   type CoachingStatus,
 } from "../../lib/coaching/transitions";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 
 type CoachingUpdate =
   Database["resupply"]["Tables"]["patient_coaching_plans"]["Update"];
@@ -102,7 +102,7 @@ router.get(
 
 router.post(
   "/admin/coaching-plans",
-  requireAdmin,
+  requirePermission("patients.update"),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -178,7 +178,7 @@ router.post(
 
 router.patch(
   "/admin/coaching-plans/:id",
-  requireAdmin,
+  requirePermission("patients.update"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

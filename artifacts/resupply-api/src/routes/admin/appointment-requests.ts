@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requireAdmin, requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 const idParam = z.object({ id: z.string().uuid() });
@@ -54,7 +54,7 @@ router.get(
 
 router.patch(
   "/admin/appointment-requests/:id",
-  requireAdmin,
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {

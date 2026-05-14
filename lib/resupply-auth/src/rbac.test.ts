@@ -106,6 +106,22 @@ describe("roleHasPermission", () => {
       false,
     );
   });
+
+  it("admin.tools.manage is supervisor-and-up only", () => {
+    // CSR-tool templates (macros, future quick-actions) are
+    // SUPERVISOR tooling — CSRs USE the macros they create, but
+    // creating/editing/deleting them is a tier above. Non-supervisor
+    // roles do not get write access.
+    expect(roleHasPermission("admin", "admin.tools.manage")).toBe(true);
+    expect(roleHasPermission("supervisor", "admin.tools.manage")).toBe(true);
+    expect(roleHasPermission("csr", "admin.tools.manage")).toBe(false);
+    expect(roleHasPermission("agent", "admin.tools.manage")).toBe(false);
+    expect(roleHasPermission("fitter", "admin.tools.manage")).toBe(false);
+    expect(roleHasPermission("fulfillment", "admin.tools.manage")).toBe(false);
+    expect(roleHasPermission("compliance_officer", "admin.tools.manage")).toBe(
+      false,
+    );
+  });
 });
 
 describe("permissionsForRole", () => {
