@@ -13,7 +13,8 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { adminRateLimit } from "../../middlewares/admin-rate-limit";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -26,7 +27,8 @@ const body = z
 
 router.patch(
   "/admin/shop/orders/:orderId/pod",
-  requireAdmin,
+  requirePermission("returns.manage"),
+  adminRateLimit({ name: "shop_orders.pod_update", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.orderId);
     if (!idParse.success) {

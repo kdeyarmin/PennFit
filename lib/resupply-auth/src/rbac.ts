@@ -53,6 +53,9 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   returns.read            — view the returns queue
  *   returns.approve         — approve/deny a return request (gating
  *                              decision; supervisor-and-up)
+ *   returns.manage          — open / transition / annotate loss claims,
+ *                              proof-of-delivery, and other fulfillment-
+ *                              lifecycle ops below the approve gate
  *   compliance.read         — view compliance alerts + reports
  *   compliance.resolve      — close out a compliance alert
  *   audit.export            — download audit-log CSV
@@ -66,12 +69,14 @@ import type { AdminRole } from "@workspace/resupply-db";
  *   training.manage         — assign / mark complete staff trainings
  *   grievances.read         — view patient grievance log
  *   grievances.resolve      — close out a grievance / adverse event
+ *   conversations.manage    — triage admin inbox: snooze, tag, claim
  */
 export type Permission =
   | "patients.read"
   | "patients.update"
   | "returns.read"
   | "returns.approve"
+  | "returns.manage"
   | "compliance.read"
   | "compliance.resolve"
   | "audit.export"
@@ -83,7 +88,8 @@ export type Permission =
   | "inventory.read"
   | "training.manage"
   | "grievances.read"
-  | "grievances.resolve";
+  | "grievances.resolve"
+  | "conversations.manage";
 
 /** Full enumeration — handy for tests and for the `admin` role
  *  that should always have every permission. Kept in sync with the
@@ -93,6 +99,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "patients.update",
   "returns.read",
   "returns.approve",
+  "returns.manage",
   "compliance.read",
   "compliance.resolve",
   "audit.export",
@@ -105,6 +112,7 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "training.manage",
   "grievances.read",
   "grievances.resolve",
+  "conversations.manage",
 ];
 
 /** Role → permission set. Modify this when adjusting policy. */
@@ -116,6 +124,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
     "patients.update",
     "returns.read",
     "returns.approve",
+    "returns.manage",
     "compliance.read",
     "compliance.resolve",
     "audit.read",
@@ -127,16 +136,19 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
     "training.manage",
     "grievances.read",
     "grievances.resolve",
+    "conversations.manage",
   ]),
 
   csr: new Set<Permission>([
     "patients.read",
     "patients.update",
     "returns.read",
+    "returns.manage",
     "compliance.read",
     "reports.read",
     "inventory.read",
     "grievances.read",
+    "conversations.manage",
   ]),
 
   fitter: new Set<Permission>([
@@ -149,6 +161,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
   fulfillment: new Set<Permission>([
     "patients.read",
     "returns.read",
+    "returns.manage",
     "inventory.read",
   ]),
 
@@ -171,10 +184,12 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
     "patients.read",
     "patients.update",
     "returns.read",
+    "returns.manage",
     "compliance.read",
     "reports.read",
     "inventory.read",
     "grievances.read",
+    "conversations.manage",
   ]),
 };
 

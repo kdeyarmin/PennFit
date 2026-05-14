@@ -25,7 +25,7 @@ import {
   type AdherenceNight,
   type AttestationInputs,
 } from "../../lib/compliance-attestation";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -48,7 +48,7 @@ const SOURCE_PRIORITY: Record<string, number> = {
 
 router.get(
   "/admin/patients/:id/compliance-attestation",
-  requireAdmin,
+  requirePermission("audit.read"),
   async (req, res) => {
     const params = paramsSchema.safeParse(req.params);
     if (!params.success) {

@@ -14,7 +14,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { adminRateLimit } from "../../middlewares/admin-rate-limit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -46,7 +46,7 @@ function canTransition(from: ClaimStatus, to: ClaimStatus): boolean {
 
 router.get(
   "/admin/shop/orders/:orderId/loss-claims",
-  requireAdmin,
+  requirePermission("returns.read"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.orderId);
     if (!idParse.success) {
@@ -87,7 +87,7 @@ const createBody = z
 
 router.post(
   "/admin/shop/orders/:orderId/loss-claims",
-  requireAdmin,
+  requirePermission("returns.manage"),
   adminRateLimit({ name: "loss_claims.open", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.orderId);
@@ -153,7 +153,7 @@ const patchBody = z
 
 router.patch(
   "/admin/shop/loss-claims/:id",
-  requireAdmin,
+  requirePermission("returns.manage"),
   adminRateLimit({ name: "loss_claims.update", preset: "mutation" }),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
