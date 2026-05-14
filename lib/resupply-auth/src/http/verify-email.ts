@@ -47,6 +47,7 @@ export function makeVerifyEmailHandler(deps: AuthDeps) {
       deps.repo,
       { emailLower: ipSentinel, ip: null },
       VERIFY_RATE_LIMIT,
+      deps.rateLimitOnError,
     );
     if (!rl.allowed) {
       res.setHeader("Retry-After", String(rl.retryAfterSeconds));

@@ -62,6 +62,7 @@ export function makeForgotPasswordHandler(
       deps.repo,
       { emailLower: ipSentinel, ip: null },
       FORGOT_RATE_LIMIT,
+      deps.rateLimitOnError,
     );
     if (!rl.allowed) {
       res.setHeader("Retry-After", String(rl.retryAfterSeconds));

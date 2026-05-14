@@ -2,7 +2,7 @@
 
 import type { AuthEnv } from "../env";
 import type { AuthRepository, AuthUser } from "../repository";
-import type { RateLimitConfig } from "../rate-limit";
+import type { RateLimitConfig, RateLimitErrorHandler } from "../rate-limit";
 
 /**
  * Pluggable audit-log sink. The resupply-api wires this to
@@ -99,6 +99,14 @@ export interface AuthDeps {
   now?: () => Date;
   /** Override the rate-limit config (tests). Defaults to library defaults. */
   rateLimit?: RateLimitConfig;
+  /**
+   * Observability hook invoked when `checkLoginRateLimit` falls open
+   * because the DB threw — i.e. rate-limiting is silently disabled
+   * for this request. Wire to a structured logger AND a metric so a
+   * sustained DB issue (which turns the brute-force gate off) is
+   * visible to ops. Optional; default = `console.error`.
+   */
+  rateLimitOnError?: RateLimitErrorHandler;
   /**
    * Whether the response should set Secure cookies. Pass
    * `process.env.NODE_ENV === "production"` from the caller.

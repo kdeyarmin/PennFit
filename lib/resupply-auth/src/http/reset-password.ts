@@ -55,6 +55,7 @@ export function makeResetPasswordHandler(deps: AuthDeps) {
       deps.repo,
       { emailLower: ipSentinel, ip: null },
       RESET_RATE_LIMIT,
+      deps.rateLimitOnError,
     );
     if (!rl.allowed) {
       res.setHeader("Retry-After", String(rl.retryAfterSeconds));

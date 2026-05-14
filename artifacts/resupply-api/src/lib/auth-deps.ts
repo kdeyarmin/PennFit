@@ -88,6 +88,24 @@ export function getAuthDeps(): AuthDeps {
     "http://localhost:5173"
   ).replace(/\/$/, "");
 
+  // Surface fail-open rate-limit events via the structured logger so
+  // ops can alert when a DB hiccup silently disables the gate.
+  // emailLower may carry a per-endpoint sentinel ("__forgot:<ip>",
+  // "__reset:<ip>", "__verify:<ip>") rather than a real address; the
+  // bucket value alone is enough for triage and never exposes a real
+  // user email when a sentinel is in use.
+  const rateLimitOnError: AuthDeps["rateLimitOnError"] = (err, context) => {
+    logger.warn(
+      {
+        event: "auth_rate_limit_check_failed",
+        emailBucket: context.emailLower,
+        ip: context.ip,
+        err: err instanceof Error ? err.message : "unknown",
+      },
+      "auth rate-limit check failed (fail-open)",
+    );
+  };
+
   cachedDeps = {
     env,
     repo,
@@ -99,6 +117,7 @@ export function getAuthDeps(): AuthDeps {
     customerIdResolver: makeCustomerIdResolver(),
     mfa: makeMfaProbe(),
     mfaChallengeHmacKey: deriveMfaChallengeKey(),
+    rateLimitOnError,
   };
   return cachedDeps;
 }

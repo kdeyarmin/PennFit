@@ -109,6 +109,7 @@ export function makeSignInHandler(deps: AuthDeps) {
       deps.repo,
       { emailLower, ip },
       rateConfig,
+      deps.rateLimitOnError,
     );
     if (!rl.allowed) {
       res.setHeader("Retry-After", String(rl.retryAfterSeconds));
