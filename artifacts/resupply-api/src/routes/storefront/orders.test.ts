@@ -29,14 +29,14 @@ import { describe, expect, it, vi } from "vitest";
 // the test does not need a real DB. Note: requireCsrfWhenSession reads the
 // raw Cookie header directly (via readCookie), so mocking attachSignedIn
 // does NOT affect whether requireCsrfWhenSession sees the pf_session cookie.
-vi.mock("../../middlewares/requireSignedIn.js", () => ({
+vi.mock("../../middlewares/requireSignedIn", () => ({
   attachSignedIn: (_req: unknown, _res: unknown, next: () => void) => next(),
   requireSignedIn: (_req: unknown, res: { status: (c: number) => { json: (b: unknown) => void } }, _next: () => void) => {
     res.status(401).json({ error: "sign_in_required" });
   },
 }));
 
-vi.mock("../../lib/logger.js", () => ({
+vi.mock("../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -50,7 +50,13 @@ vi.mock("@workspace/resupply-db", () => ({
   getSupabaseServiceRoleClient: () => ({
     schema: (_s: string) => ({
       from: (_t: string) => ({
-        insert: (_v: unknown) => Promise.resolve({ data: [{ id: "order-1" }], error: null }),
+        insert: (_v: unknown) => ({
+          select: (_c: string) => ({
+            limit: (_n: number) => ({
+              maybeSingle: async () => ({ data: { id: "order-1" }, error: null }),
+            }),
+          }),
+        }),
         update: (_v: unknown) => ({
           eq: (_col: string, _val: unknown) =>
             Promise.resolve({ error: null }),
@@ -68,7 +74,7 @@ vi.mock("@workspace/resupply-db", () => ({
 }));
 
 // Stub the order-email sender.
-vi.mock("../../lib/storefront/orderEmail.js", () => ({
+vi.mock("../../lib/storefront/orderEmail", () => ({
   sendOrderToPenn: vi.fn(async () => ({
     delivered: false,
     configured: false,
@@ -78,14 +84,14 @@ vi.mock("../../lib/storefront/orderEmail.js", () => ({
 }));
 
 // Stub the Stripe customer helper.
-vi.mock("../../lib/stripe/customer.js", () => ({
+vi.mock("../../lib/stripe/customer", () => ({
   ensureShopCustomerRow: vi.fn(async () => "cus_test"),
 }));
 
 // ---------------------------------------------------------------------------
 // Import the router under test.
 // ---------------------------------------------------------------------------
-import ordersRouter from "./orders.js";
+import ordersRouter from "./orders";
 
 function makeApp(): Express {
   const app = express();
@@ -107,7 +113,7 @@ describe("POST /orders — requireCsrfWhenSession: anonymous pass-through", () =
     // Anonymous patient: no session cookie at all. The CSRF gate must
     // allow this through, regardless of CSRF material presence.
     // The handler will receive the request and return some non-403 response
-    // (likely 400 due to missing required body fields).
+    // (likely 400 due to missing required body fields, or 503 if sendgrid not configured).
     const res = await request(makeApp())
       .post("/orders")
       .send({});
@@ -195,6 +201,17 @@ describe("POST /orders — requireCsrfWhenSession: authenticated enforcement", (
     expect(res.status).toBe(403);
     expect(res.body.reason).toBeUndefined();
     expect(res.body.error).toBe("csrf_failed");
+  });
+
+  it("includes a human-readable message in the 403 response body", async () => {
+    const res = await request(makeApp())
+      .post("/orders")
+      .set("Cookie", SESSION_COOKIE)
+      .send({});
+
+    expect(res.status).toBe(403);
+    expect(typeof res.body.message).toBe("string");
+    expect(res.body.message.length).toBeGreaterThan(0);
   });
 
   it("passes the CSRF gate and reaches the handler when cookie and header match", async () => {
