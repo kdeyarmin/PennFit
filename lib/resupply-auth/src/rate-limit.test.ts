@@ -68,10 +68,60 @@ describe("checkLoginRateLimit", () => {
         throw new Error("db down");
       },
     };
-    const decision = await checkLoginRateLimit(broken, {
+    const decision = await checkLoginRateLimit(
+      broken,
+      {
+        emailLower: "alice@example.com",
+        ip: "1.1.1.1",
+      },
+      DEFAULT_RATE_LIMIT,
+      // Silence the default console.error so tests stay clean.
+      () => {},
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("invokes the onError hook with the input context on fail-open", async () => {
+    const broken: AuthRepository = {
+      ...fakeRepo({ byEmail: 0, byIp: 0 }),
+      async countRecentFailures() {
+        throw new Error("db down");
+      },
+    };
+    const calls: Array<{
+      err: unknown;
+      ctx: { emailLower: string; ip: string | null };
+    }> = [];
+    const decision = await checkLoginRateLimit(
+      broken,
+      { emailLower: "alice@example.com", ip: "1.1.1.1" },
+      DEFAULT_RATE_LIMIT,
+      (err, ctx) => calls.push({ err, ctx }),
+    );
+    expect(decision.allowed).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.ctx).toEqual({
       emailLower: "alice@example.com",
       ip: "1.1.1.1",
     });
+    expect(calls[0]!.err).toBeInstanceOf(Error);
+  });
+
+  it("swallows a throwing onError so observability never blocks the gate", async () => {
+    const broken: AuthRepository = {
+      ...fakeRepo({ byEmail: 0, byIp: 0 }),
+      async countRecentFailures() {
+        throw new Error("db down");
+      },
+    };
+    const decision = await checkLoginRateLimit(
+      broken,
+      { emailLower: "alice@example.com", ip: "1.1.1.1" },
+      DEFAULT_RATE_LIMIT,
+      () => {
+        throw new Error("logger blew up");
+      },
+    );
     expect(decision.allowed).toBe(true);
   });
 

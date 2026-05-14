@@ -86,6 +86,7 @@ export function StarRating({
                 type="button"
                 role="radio"
                 aria-checked={value === s}
+                aria-label={`${s} ${s === 1 ? "star" : "stars"}`}
                 onClick={() => onChange?.(s)}
                 className="p-0.5 -m-0.5 rounded hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-gold))]/40"
                 data-testid={testId ? `${testId}-star-${s}` : undefined}

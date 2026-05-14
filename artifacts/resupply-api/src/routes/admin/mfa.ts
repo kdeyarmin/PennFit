@@ -34,8 +34,24 @@ import {
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
+
+// Defence-in-depth rate limit on every endpoint that accepts a TOTP
+// code. The verify path already enforces `minCounter` (a leaked code
+// can't be replayed) but online brute force against the live 30-second
+// window is still cheap without a per-actor cap. 30 attempts/hour per
+// admin is well above any honest workflow (one user typing into a
+// phone) but well below what a script trying random 6-digit codes
+// needs to land a hit. Keyed by adminUserId so two admins on the same
+// office NAT don't share a bucket.
+const adminMfaCodeAttemptLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  name: "admin_mfa_code_attempt",
+  keyFn: (req) => req.adminUserId ?? "unknown",
+});
 
 const verifyBody = z
   .object({
@@ -247,6 +263,7 @@ router.post(
 router.post(
   "/admin/mfa/enroll/verify",
   requireAdmin,
+  adminMfaCodeAttemptLimiter,
   async (req, res) => {
     const adminUserId = req.adminUserId;
     const adminEmail = req.adminEmail;
@@ -418,7 +435,7 @@ router.post(
   },
 );
 
-router.post("/admin/mfa/disable", requireAdmin, async (req, res) => {
+router.post("/admin/mfa/disable", requireAdmin, adminMfaCodeAttemptLimiter, async (req, res) => {
   const adminUserId = req.adminUserId;
   const adminEmail = req.adminEmail;
   if (!adminUserId || !adminEmail) {
@@ -524,6 +541,7 @@ const deviceIdParam = z.object({ id: z.string().uuid() });
 router.post(
   "/admin/mfa/devices/:id/disable",
   requireAdmin,
+  adminMfaCodeAttemptLimiter,
   async (req, res) => {
     const adminUserId = req.adminUserId;
     const adminEmail = req.adminEmail;
@@ -631,6 +649,7 @@ router.post(
 router.post(
   "/admin/mfa/recovery-codes/regenerate",
   requireAdmin,
+  adminMfaCodeAttemptLimiter,
   async (req, res) => {
     const adminUserId = req.adminUserId;
     const adminEmail = req.adminEmail;

@@ -41,17 +41,44 @@ export interface RateLimitDecision {
 }
 
 /**
+ * Observability hook invoked when the rate-limit check throws and
+ * we fall back to fail-open. Callers should plumb this to their
+ * structured logger AND emit a metric so a sustained DB issue
+ * (which silently disables rate limiting and creates a brute-force
+ * window) is visible to ops. Default = `console.error`.
+ */
+export type RateLimitErrorHandler = (
+  err: unknown,
+  context: { emailLower: string; ip: string | null },
+) => void;
+
+const defaultErrorHandler: RateLimitErrorHandler = (err) => {
+  // Bare console fallback so a missing handler never crashes auth.
+  // Production callers should override this with a structured
+  // logger + a metric (e.g. `auth.rate_limit.check_failed`).
+  console.error(
+    "[resupply-auth] rate-limit check failed (fail-open):",
+    err instanceof Error ? err.message : String(err),
+  );
+};
+
+/**
  * Decide whether a sign-in attempt is allowed right now. The check
  * fails OPEN on a DB error: we'd rather let one extra attempt
  * through than silently lock everyone out if the rate-limit table
  * is briefly unreadable. The handler still records the attempt
  * regardless of the decision, so the next call sees the latest
  * state.
+ *
+ * Pass `onError` to plumb fail-open events into your structured
+ * logger and metrics. A sustained DB failure means rate-limit is
+ * effectively off — ops needs to see it.
  */
 export async function checkLoginRateLimit(
   repo: AuthRepository,
   input: { emailLower: string; ip: string | null },
   config: RateLimitConfig = DEFAULT_RATE_LIMIT,
+  onError: RateLimitErrorHandler = defaultErrorHandler,
 ): Promise<RateLimitDecision> {
   try {
     const [emailFails, ipFails] = await Promise.all([
@@ -85,12 +112,11 @@ export async function checkLoginRateLimit(
     }
     return { allowed: true, retryAfterSeconds: 0 };
   } catch (err) {
-    // Fail open so a DB hiccup does not lock all users out. Log so
-    // operators can detect a pattern (sustained degradation = real risk).
-    console.error(
-      "[resupply-auth] rate-limit check failed (fail-open):",
-      err instanceof Error ? err.message : String(err),
-    );
+    try {
+      onError(err, input);
+    } catch {
+      // Observability must never throw past the rate-limit gate.
+    }
     return { allowed: true, retryAfterSeconds: 0 };
   }
 }

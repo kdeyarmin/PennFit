@@ -42,9 +42,34 @@ class ClientError extends Error {
 }
 
 // Per-call timeouts so a hanging upstream (ResMed AirView) can't stall
-// the in-process worker indefinitely.
-const OAUTH_TIMEOUT_MS = 30_000;
-const API_TIMEOUT_MS = 60_000;
+// the in-process worker indefinitely. Defaults match the original
+// hardcoded values; env overrides exist so ops can extend them under
+// a partner-side incident without a deploy.
+const DEFAULT_OAUTH_TIMEOUT_MS = 30_000;
+const DEFAULT_API_TIMEOUT_MS = 60_000;
+
+function parseTimeoutEnv(
+  name: string,
+  fallback: number,
+): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  // Cap at 5 minutes so a misconfigured value can't park a worker
+  // task forever; ops can lift the cap with a code change if a real
+  // partner outage justifies it.
+  return Math.min(n, 5 * 60_000);
+}
+
+const OAUTH_TIMEOUT_MS = parseTimeoutEnv(
+  "RESUPPLY_AIRVIEW_OAUTH_TIMEOUT_MS",
+  DEFAULT_OAUTH_TIMEOUT_MS,
+);
+const API_TIMEOUT_MS = parseTimeoutEnv(
+  "RESUPPLY_AIRVIEW_API_TIMEOUT_MS",
+  DEFAULT_API_TIMEOUT_MS,
+);
 
 async function fetchWithTimeout(
   url: string,

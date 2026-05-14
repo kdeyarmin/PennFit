@@ -27,6 +27,7 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requireCsrf } from "../../middlewares/csrf";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 const router: IRouter = Router();
@@ -144,6 +145,7 @@ router.get(
 router.post(
   "/admin/shop/customers/:userId/followups",
   requireAdmin,
+  requireCsrf,
   adminFollowupMutationLimiter,
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
@@ -227,6 +229,7 @@ router.post(
 router.patch(
   "/admin/shop/customers/:userId/followups/:id/complete",
   requireAdmin,
+  requireCsrf,
   adminFollowupMutationLimiter,
   async (req, res) => {
     const idCheck = userIdParam.safeParse(req.params.userId);
