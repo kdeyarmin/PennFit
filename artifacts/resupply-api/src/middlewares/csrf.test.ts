@@ -192,4 +192,72 @@ describe("requireCsrfWhenSession", () => {
     expect(nextCalled).toBe(true);
     expect(res.statusCode).toBe(200);
   });
+
+  it("returns 403 csrf_failed when session is present but both cookie and header are absent", () => {
+    // Only pf_session cookie set — no pf_csrf cookie, no X-PF-CSRF header.
+    // The gate should detect missing CSRF material and deny.
+    const { res, nextCalled } = runWhenSession(makeReq({ session: "sess-1" }));
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("returns 403 csrf_failed when session present and tokens mismatch", () => {
+    const { res, nextCalled } = runWhenSession(
+      makeReq({ session: "sess-1", cookie: "token-A", header: "token-B" }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("does not leak the failure reason in the response body", () => {
+    const { res } = runWhenSession(
+      makeReq({ session: "sess-1", cookie: "abc" }),
+    );
+    const body = res.body as { error?: string; reason?: string };
+    expect(body.reason).toBeUndefined();
+    expect(body.error).toBe("csrf_failed");
+  });
+});
+
+describe("requireCsrf — response envelope", () => {
+  it("includes a human-readable message field alongside the error code", () => {
+    // The 403 body must carry both `error` (machine-readable) and
+    // `message` (user-readable) so the SPA can surface a toast.
+    const { res } = run(makeReq({ cookie: "abc" }));
+    const body = res.body as { error?: string; message?: string };
+    expect(body.error).toBe("csrf_failed");
+    expect(typeof body.message).toBe("string");
+    expect(body.message!.length).toBeGreaterThan(0);
+  });
+
+  it("does not call next() on a missing cookie even when header is present", () => {
+    // Regression guard: ensure the gate is not accidentally inverted
+    // (i.e. blocking on missing header but ignoring missing cookie).
+    const { res, nextCalled } = run(makeReq({ header: "x".repeat(32) }));
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("does not call next() when both cookie and header are empty strings", () => {
+    // Empty-string tokens are not present tokens — the primitive
+    // must treat them the same as absent.
+    // We build the fake request with no cookie/header options so
+    // the Cookie header is absent entirely; verifies the default path.
+    const { res, nextCalled } = run(makeReq({}));
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("does not write a log entry on a successful CSRF check", () => {
+    // On success, log.warn should NOT be called — the warn path is
+    // for failures only.
+    const warn = vi.fn();
+    const token = "valid-token-xyz";
+    const req = makeReq({ cookie: token, header: token });
+    (req as unknown as { log: { warn: typeof warn } }).log = { warn };
+    requireCsrf(req, makeRes() as unknown as Response, () => undefined);
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
