@@ -2,19 +2,15 @@
 #
 # Resupply DB co-change check.
 #
-# Catches the same class of bug as scripts/check-drizzle-drift.sh
-# ("developer edited a Drizzle schema TS file but forgot to ship a
-# matching migration") for the @workspace/resupply-db package, where
-# the structural drift checker can't run because the journal /
-# snapshot chain in lib/resupply-db/drizzle/meta is incomplete (the
-# journal lists migrations 0000..0025 but only 0000..0003 have
-# corresponding *_snapshot.json files, so drizzle-kit short-circuits
-# with a "snapshot collision" error before computing a diff). See
-# scripts/check-drizzle-drift.sh and the lib/resupply-db README for
-# the full deferral rationale.
+# Catches the class of bug where a developer edits a schema TS file
+# but forgets to ship a matching migration SQL. drizzle-kit's
+# structural drift checker that used to enforce this mechanically
+# was retired alongside the rest of the Drizzle tooling — the SQL
+# files in lib/resupply-db/drizzle/ are now the source of truth for
+# migration history, with this co-change rule enforcing the human
+# discipline.
 #
-# Until the snapshot chain is repaired, this script enforces a
-# weaker but useful invariant on every commit:
+# Invariant enforced on every commit:
 #
 #   IF this commit modifies any file under lib/resupply-db/src/schema/
 #   THEN this same commit MUST also add at least one new migration

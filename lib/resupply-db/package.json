@@ -12,9 +12,6 @@
     "test:watch": "vitest",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json",
-    "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push:force": "drizzle-kit push --force --config ./drizzle.config.ts",
-    "generate": "drizzle-kit generate --config ./drizzle.config.ts",
     "migrate": "node scripts/migrate.mjs",
     "rotate-to-master-key": "node scripts/rotate-to-master-key.mjs"
   },
@@ -22,14 +19,12 @@
     "@supabase/supabase-js": "^2.105.3",
     "@workspace/resupply-secrets": "workspace:*",
     "drizzle-orm": "catalog:",
-    "drizzle-zod": "^0.8.3",
     "pg": "^8.20.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "^8.18.0",
-    "drizzle-kit": "^0.31.10",
     "vitest": "^3.2.4"
   }
 }
