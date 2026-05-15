@@ -275,7 +275,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <footer className="relative mt-12">
+      <footer
+        // On mobile the MobileCtaBar (fixed bottom-0, ~60px tall) and
+        // the FloatingContactLauncher (bottom-20, ~56px button) both
+        // sit on top of the page. Without bottom padding here, the
+        // last footer rows — copyright + Staff sign-in — are
+        // unreachable. We DON'T migrate the padding to the outer
+        // wrapper because the FloatingContactLauncher's "below the
+        // fold" hint relies on the surrounding content scrolling
+        // independently. pb-28 (7rem) clears the CTA bar plus the
+        // safe-area inset on iOS home-indicator devices.
+        className="relative mt-12 pb-28 md:pb-0"
+      >
         <div className="aurora-divider-live" aria-hidden="true" />
         <div className="glass-panel border-x-0 border-b-0">
           <div className="container mx-auto px-4 md:px-6 py-6">
