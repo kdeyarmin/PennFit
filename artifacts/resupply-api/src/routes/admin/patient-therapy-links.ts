@@ -24,7 +24,7 @@ import {
 } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 
 type TherapyLinkRow =
@@ -132,7 +132,8 @@ function toResponse(row: TherapyLinkRow): LinkResponse {
 
 router.get(
   "/admin/patients/:id/therapy-links",
-  requireAdmin,
+  // Read-only — list of partner-account mappings. `patients.read`.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -160,7 +161,10 @@ router.get(
 
 router.post(
   "/admin/patients/:id/therapy-links",
-  requireAdmin,
+  // Creates a new partner mapping — mis-routing every subsequent
+  // sync. `patients.update` scope; tightens fulfillment +
+  // compliance_officer.
+  requirePermission("patients.update"),
   adminTherapyLinkMutationLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
@@ -273,7 +277,7 @@ router.post(
 
 router.patch(
   "/admin/patients/:id/therapy-links/:linkId",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminTherapyLinkMutationLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
@@ -371,7 +375,7 @@ router.patch(
 
 router.delete(
   "/admin/patients/:id/therapy-links/:linkId",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminTherapyLinkMutationLimiter,
   async (req, res) => {
     // DELETE is a soft-revoke (status='revoked') so the audit

@@ -12,7 +12,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -20,7 +20,8 @@ const idParam = z.object({ id: z.string().uuid() });
 
 router.get(
   "/admin/patients/:id/fit-override",
-  requireAdmin,
+  // Read-only — current override or null. `patients.read`.
+  requirePermission("patients.read"),
   async (req, res) => {
     const p = idParam.safeParse(req.params);
     if (!p.success) {
@@ -64,7 +65,12 @@ const putBody = z
 
 router.put(
   "/admin/patients/:id/fit-override",
-  requireAdmin,
+  // Upsert — overrides the camera recommendation. Existing roles
+  // with `patients.update` keep access; the `fit_session.override`
+  // perm exists in the catalog but is held only by admin/supervisor/
+  // fitter (not csr/agent), so we use `patients.update` here as the
+  // broader, role-accurate gate to match the existing access matrix.
+  requirePermission("patients.update"),
   async (req, res) => {
     const p = idParam.safeParse(req.params);
     if (!p.success) {
@@ -116,7 +122,8 @@ router.put(
 
 router.delete(
   "/admin/patients/:id/fit-override",
-  requireAdmin,
+  // Revert to camera recommendation. Same scope as the PUT.
+  requirePermission("patients.update"),
   async (req, res) => {
     const p = idParam.safeParse(req.params);
     if (!p.success) {
