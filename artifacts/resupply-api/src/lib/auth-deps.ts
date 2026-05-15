@@ -92,15 +92,24 @@ export function getAuthDeps(): AuthDeps {
 
   // Surface fail-open rate-limit events via the structured logger so
   // ops can alert when a DB hiccup silently disables the gate.
-  // emailLower may carry a per-endpoint sentinel ("__forgot:<ip>",
-  // "__reset:<ip>", "__verify:<ip>") rather than a real address; the
-  // bucket value alone is enough for triage and never exposes a real
-  // user email when a sentinel is in use.
+  //
+  // PII posture: `context.emailLower` carries a per-endpoint sentinel
+  // for the non-sign-in flows ("__forgot:<ip>", "__reset:<ip>",
+  // "__verify:<ip>") that's safe to log verbatim, but on the
+  // /auth/sign-in path it carries the REAL normalized user email.
+  // We surface the bucket only when it's a sentinel; otherwise we
+  // emit a redaction marker so the operator can still tell the
+  // sign-in flow tripped without the actual address ending up in
+  // searchable log storage.
+  const SENTINEL_PREFIX = "__";
   const rateLimitOnError: AuthDeps["rateLimitOnError"] = (err, context) => {
+    const emailBucket = context.emailLower.startsWith(SENTINEL_PREFIX)
+      ? context.emailLower
+      : "<sign-in-email-redacted>";
     logger.warn(
       {
         event: "auth_rate_limit_check_failed",
-        emailBucket: context.emailLower,
+        emailBucket,
         ip: context.ip,
         err: err instanceof Error ? err.message : "unknown",
       },

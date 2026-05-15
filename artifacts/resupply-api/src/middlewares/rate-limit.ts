@@ -22,6 +22,8 @@
 
 import type { RequestHandler } from "express";
 
+import { isAdminMutationRequest } from "./admin-path";
+
 interface Bucket {
   count: number;
   resetAt: number;
@@ -138,33 +140,10 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
  * IP across all admin mutations on this process. Well above any
  * honest CSR workflow; well below what a session-stealing attacker
  * needs to flood any single endpoint.
- */
-const ADMIN_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-// See the matching constants in middlewares/csrf.ts for the rationale.
-// Express routes are case-insensitive by default, but `req.path`
-// preserves the original casing — a mixed-case URL otherwise bypasses
-// this gate.
-const ADMIN_LC_PATH_PREFIXES = ["/api/admin", "/resupply-api/admin"] as const;
-
-/**
- * Determines whether the request targets an admin mutation endpoint using a non-safe HTTP method.
  *
- * @param req - The Express request to evaluate.
- * @returns `true` if the method is not GET/HEAD/OPTIONS and the request path (case-insensitive) equals or is nested under an admin prefix, `false` otherwise.
- */
-function isAdminMutationRequest(req: import("express").Request): boolean {
-  if (ADMIN_SAFE_METHODS.has(req.method)) return false;
-  const lc = req.path.toLowerCase();
-  for (const prefix of ADMIN_LC_PATH_PREFIXES) {
-    if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
-  }
-  return false;
-}
-
-/**
- * Applies an IP-keyed loose rate limit to mutating admin routes.
- *
- * @returns An Express RequestHandler that enforces a 300-requests-per-60-seconds limit for requests identified as admin mutation requests; requests that are not admin mutations are passed through unchanged.
+ * The path+method matcher lives in `./admin-path` so this gate and
+ * the CSRF gate in `./csrf` stay in lockstep on what counts as an
+ * admin mutation.
  */
 export function adminMutationLooseLimit(): RequestHandler {
   const inner = rateLimit({

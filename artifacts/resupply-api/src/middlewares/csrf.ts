@@ -35,6 +35,8 @@ import {
   SESSION_COOKIE,
 } from "@workspace/resupply-auth";
 
+import { isAdminMutationRequest } from "./admin-path";
+
 function denyCsrf(req: Request, res: Response, reason?: string): void {
   // Best-effort structured log so ops can grep by reason without the
   // browser ever seeing it. `req.log` is the pino-http child logger
@@ -144,48 +146,17 @@ export const requireCsrfWhenSession: RequestHandler = (
  *
  * Both per-router and app-level gates can co-exist; double-checking
  * is harmless because the middleware short-circuits on success.
- */
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-// Lowercase ASCII variants. Express's default routing is
-// case-insensitive (the `case sensitive routing` setting is off),
-// which means a request to `POST /API/ADMIN/users/invite` will match
-// the route registered at `/api/admin/users/invite` — but `req.path`
-// preserves the original casing. A naive `startsWith` check on the
-// lowercase prefix would therefore miss the mixed-case request and
-// silently bypass this gate. We compare against `req.path.toLowerCase()`
-// to neutralize the mismatch.
-const ADMIN_LC_PREFIXES = ["/api/admin", "/resupply-api/admin"] as const;
-
-/**
- * Determines whether a request path targets an admin API tree.
  *
- * @param path - The request path to test (compared case-insensitively)
- * @returns `true` if `path` equals an admin prefix or is nested under one (e.g., `/api/admin` or `/api/admin/...`), `false` otherwise.
+ * The path+method matcher lives in `./admin-path` so this gate and
+ * the loose-IP rate limit gate in `./rate-limit` stay in lockstep
+ * on what counts as an admin mutation.
  */
-function isAdminMutationPath(path: string): boolean {
-  const lc = path.toLowerCase();
-  for (const prefix of ADMIN_LC_PREFIXES) {
-    // Match `<prefix>` (the bare admin path — defensive: no route
-    // mounts here today, but the contract should hold) or
-    // `<prefix>/...` (every nested admin route). We deliberately
-    // do NOT match `<prefix>-export` or `<prefix>foo` look-alikes.
-    if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
-  }
-  return false;
-}
-
 export const requireCsrfOnAdminMutations: RequestHandler = (
   req: Request,
   res: Response,
   next: NextFunction,
 ): void => {
-  if (SAFE_METHODS.has(req.method)) {
-    next();
-    return;
-  }
-  // `req.path` strips the query string but preserves the absolute
-  // pathname when this middleware runs at the app level.
-  if (!isAdminMutationPath(req.path)) {
+  if (!isAdminMutationRequest(req)) {
     next();
     return;
   }
