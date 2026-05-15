@@ -124,18 +124,25 @@ describe("renderResupplyReminder", () => {
   it("escapes a URL containing a double-quote to prevent href injection", () => {
     // An attacker-controlled URL with a literal `"` would close the href
     // attribute and allow injecting additional attributes. escapeHtml
-    // must encode it as &quot; so the href boundary is maintained.
+    // must encode it as &quot; so the attribute boundary is maintained.
     const maliciousUrl =
       'https://api.example/click?t=conf" onmouseover="alert(1)';
     const out = renderResupplyReminder({
       ...base,
       confirmUrl: maliciousUrl,
     });
-    // The injected onmouseover attribute MUST NOT appear as a raw string.
-    expect(out.html).not.toContain('href="' + maliciousUrl + '"');
-    expect(out.html).not.toContain("onmouseover=");
-    // The &quot; entity must appear in its place.
-    expect(out.html).toContain("&quot;");
+    // The raw unescaped URL with literal quotes MUST NOT appear inside
+    // the href — otherwise the attacker breaks out of the attribute.
+    expect(out.html).not.toContain(`href="${maliciousUrl}"`);
+    // The literal `"` from the payload must be entity-encoded so the
+    // attacker can't terminate the attribute. This is the load-bearing
+    // assertion. (Note: the text `onmouseover=` itself can still appear
+    // as plain text INSIDE the encoded href value — it's harmless there
+    // because the surrounding `&quot;` prevents the browser from parsing
+    // it as a real attribute.)
+    expect(out.html).toContain(
+      'href="https://api.example/click?t=conf&quot; onmouseover=&quot;alert(1)"',
+    );
   });
 });
 
@@ -200,7 +207,7 @@ describe("renderClickLanding", () => {
 });
 
 describe("renderClickConfirmation", () => {
-
+  it("renders a confirm-success page without PHI", () => {
     const html = renderClickConfirmation({
       practiceName: "Penn Sleep Center",
       action: "confirm",

@@ -96,7 +96,9 @@ describe("checkLoginRateLimit", () => {
       broken,
       { emailLower: "alice@example.com", ip: "1.1.1.1" },
       DEFAULT_RATE_LIMIT,
-      (err, ctx) => calls.push({ err, ctx }),
+      (err, ctx) => {
+        calls.push({ err, ctx });
+      },
     );
     expect(decision.allowed).toBe(true);
     expect(calls).toHaveLength(1);
@@ -166,7 +168,6 @@ describe("checkLoginRateLimit", () => {
     const broken: AuthRepository = {
       ...fakeRepo({ byEmail: 0, byIp: 0 }),
       async countRecentFailures() {
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw "string-thrown error";
       },
     };
@@ -175,7 +176,9 @@ describe("checkLoginRateLimit", () => {
       broken,
       { emailLower: "alice@example.com", ip: "1.1.1.1" },
       DEFAULT_RATE_LIMIT,
-      (err) => received.push(err),
+      (err) => {
+        received.push(err);
+      },
     );
     expect(received).toHaveLength(1);
     expect(received[0]).toBe("string-thrown error");
@@ -193,7 +196,9 @@ describe("checkLoginRateLimit", () => {
       broken,
       { emailLower: "__forgot:10.0.0.1", ip: null },
       DEFAULT_RATE_LIMIT,
-      (_err, ctx) => contexts.push(ctx),
+      (_err, ctx) => {
+        contexts.push(ctx);
+      },
     );
     expect(contexts).toHaveLength(1);
     expect(contexts[0]).toEqual({ emailLower: "__forgot:10.0.0.1", ip: null });
