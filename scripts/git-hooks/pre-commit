@@ -11,18 +11,17 @@
 #           when an OpenAPI spec or its generated client tree changes
 #       * scripts/check-resupply-architecture.sh
 #           when resupply lib/ or artifact code changes
-#       * scripts/check-resupply-migration-pair.sh
-#           when a @workspace/resupply-db schema file changes
-#           (co-change rule: any schema TS edit must ship with a new
-#           migration SQL in the same commit; weaker than a structural
-#           diff but enforces the human discipline drizzle-kit used
-#           to enforce mechanically)
 #       * scripts/check-resupply-migration-prefix.sh
 #           when a new SQL file is added under
 #           lib/resupply-db/drizzle/. Enforces the moratorium on new
 #           migrations with prefix <= 0066 while the journal/files
 #           drift is being reconciled (see the README in that
 #           directory for the full rationale).
+#
+# (The previous schema/migration co-change check was retired when the
+#  Drizzle schema directory was deleted — there is no schema TS file
+#  to "edit and forget to migrate" anymore. New migrations are
+#  hand-written SQL.)
 #   - Both checks run against an isolated snapshot of the staged
 #     index — unstaged edits and untracked files are stashed for the
 #     duration of the hook and restored after, so the checks see
@@ -90,7 +89,6 @@ fi
 
 need_codegen=0
 need_arch=0
-need_resupply_pair=0
 need_resupply_prefix=0
 
 while IFS= read -r file; do
@@ -111,15 +109,6 @@ while IFS= read -r file; do
       need_arch=1
       ;;
   esac
-  # Resupply DB co-change rule: any schema TS edit must ship with a
-  # new migration SQL in the same commit. Trigger off the schema dir
-  # only — touching a migration file alone is a valid commit shape
-  # (e.g. a hand-authored data backfill) and the script handles that.
-  case "$file" in
-    lib/resupply-db/src/schema/*|lib/resupply-db/src/schema/*/*)
-      need_resupply_pair=1
-      ;;
-  esac
   # Resupply DB migration-prefix moratorium: while the journal/files
   # drift is being reconciled (see lib/resupply-db/drizzle/README.md),
   # any newly-added migration SQL is checked to ensure it doesn't
@@ -134,7 +123,7 @@ while IFS= read -r file; do
 done <<< "$staged"
 
 if [[ $need_codegen -eq 0 && $need_arch -eq 0 \
-      && $need_resupply_pair -eq 0 && $need_resupply_prefix -eq 0 ]]; then
+      && $need_resupply_prefix -eq 0 ]]; then
   exit 0
 fi
 
@@ -157,12 +146,6 @@ run_checks() {
   if [[ $need_codegen -eq 1 ]]; then
     printf '[pre-commit] Running OpenAPI codegen drift check…\n' >&2
     if ! bash "$REPO_ROOT/scripts/check-codegen.sh"; then
-      f=1
-    fi
-  fi
-  if [[ $need_resupply_pair -eq 1 ]]; then
-    printf '[pre-commit] Running resupply schema/migration co-change check…\n' >&2
-    if ! bash "$REPO_ROOT/scripts/check-resupply-migration-pair.sh"; then
       f=1
     fi
   fi

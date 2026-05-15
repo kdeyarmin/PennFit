@@ -3,10 +3,10 @@
 //
 // Public surface:
 //   - Pure types and constants from `./types` (AdminRole,
-//     EmailTokenPurpose, CommunicationPreferences, etc.). These were
-//     extracted out of the per-table Drizzle schema files when the
-//     Drizzle tooling was retired so this package's public boundary
-//     no longer depends on `drizzle-orm`.
+//     EmailTokenPurpose, CommunicationPreferences, etc.). The
+//     `./schema/` directory of Drizzle table definitions was
+//     deleted when the Drizzle tooling was retired — these types
+//     are now declared directly in `./types.ts`.
 //   - `getSupabaseServiceRoleClient()` — the shared, lazily-initialized
 //     Supabase JS client used by every resupply package that needs
 //     to read/write Postgres at runtime.
@@ -16,12 +16,10 @@
 //   - `getDbPool` is retained for the migration tooling under
 //     `./scripts`. No production runtime path calls it.
 //
-// The Drizzle schema TS files under `./schema/**` are NOT re-exported
-// here anymore — they're now an internal implementation detail of
-// the historical migration generation, kept around because the SQL
-// files in `./drizzle/*.sql` remain the source of truth for
-// migration history. Consumers should never need to import from
-// `./schema/**`.
+// Migration history lives in the SQL files under `./drizzle/*.sql`.
+// The directory name is historical — new migrations are hand-written
+// SQL (no drizzle-kit involved). The directory will be renamed in
+// a separate operational change.
 //
 // PHI is stored as plaintext (text/jsonb). Earlier revisions used
 // pgcrypto column-level encryption; migration 0025 stripped it.

@@ -2,17 +2,14 @@
 // `@workspace/resupply-db` package barrel.
 //
 // History: these types used to live inside individual Drizzle schema
-// files under `./schema/**`. They were extracted here when the
-// Drizzle tooling was retired so the package's public surface no
-// longer transitively depends on `drizzle-orm` for type inference.
-// The schema files now import from this module — never the other
-// way around.
+// files under `./schema/**`. The Drizzle tooling was retired and the
+// schema directory was deleted; this module is now the only home
+// for the public DB-level types.
 //
 // Adding a new type to the public surface:
 //   1. Declare it here.
-//   2. Re-export from `./index.ts` (already a barrel: just add it
-//      to the existing `export * from "./types"` line — no action
-//      needed for a new symbol).
+//   2. It's automatically re-exported by `./index.ts`'s
+//      `export * from "./types"`.
 
 // ────────────────────────────────────────────────────────────────
 // Admin / staff roles

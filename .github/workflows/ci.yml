@@ -83,9 +83,6 @@ jobs:
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh
 
-      - name: Migration co-change
-        run: scripts/check-resupply-migration-pair.sh
-
   test:
     name: Tests
     runs-on: ubuntu-latest
