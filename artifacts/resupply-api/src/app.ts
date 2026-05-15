@@ -16,6 +16,7 @@ import {
 } from "./lib/request-context";
 import { errorHandler } from "./middlewares/errorHandler";
 import { requireCsrfOnAdminMutations } from "./middlewares/csrf";
+import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
@@ -295,6 +296,15 @@ app.use("/api/chat", storefrontChatLimiter);
 // — double-checking is harmless and keeps the per-route contracts
 // self-documenting.
 app.use(requireCsrfOnAdminMutations);
+
+// Defense-in-depth IP-keyed loose rate limit on admin-tree
+// mutations. Catches the gap surfaced by docs/app-review-2026-05-13.md
+// P0.7 — only ~12 of ~89 admin route files had per-route limiters.
+// Per-route limiters that key by adminUserId (csr-compliance-alerts,
+// customer-followups, mfa, etc.) keep their tighter, action-specific
+// budgets and fire AFTER `requireAdmin`; this gate sits in front of
+// them as a generous IP-based safety net.
+app.use(adminMutationLooseLimit());
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,

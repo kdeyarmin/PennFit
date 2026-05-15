@@ -101,3 +101,54 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
     next();
   };
 }
+
+/**
+ * Defense-in-depth IP rate limit applied at the app level on
+ * mutating `/admin/*` requests across both mount prefixes. Mirrors
+ * the architecture of `requireCsrfOnAdminMutations`: pass-through
+ * for safe methods (GET/HEAD/OPTIONS) and non-admin paths; a single
+ * shared bucket otherwise.
+ *
+ * Why path-aware at the app level: per the 5/13 app review (P0.7),
+ * only 12 of ~89 admin route files defined their own per-route
+ * limiter. Touching the remaining 77 individually is fragile; one
+ * global cap covers them all and any new admin router that lands
+ * later is automatically gated.
+ *
+ * Why IP and not adminUserId: this middleware runs BEFORE the
+ * per-router `requireAdmin` middleware that populates
+ * `req.adminUserId`, so an IP key is what's actually available
+ * here. Per-route limiters that need a tighter, admin-scoped
+ * budget keep their existing keyFn — they fire AFTER `requireAdmin`
+ * and apply on top of this safety net.
+ *
+ * Default budget: 300 requests / 60 seconds (5 RPS sustained) per
+ * IP across all admin mutations on this process. Well above any
+ * honest CSR workflow; well below what a session-stealing attacker
+ * needs to flood any single endpoint.
+ */
+const ADMIN_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const ADMIN_PATH_PREFIXES = ["/api/admin/", "/resupply-api/admin/"] as const;
+
+function isAdminMutationRequest(req: import("express").Request): boolean {
+  if (ADMIN_SAFE_METHODS.has(req.method)) return false;
+  for (const prefix of ADMIN_PATH_PREFIXES) {
+    if (req.path.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+export function adminMutationLooseLimit(): RequestHandler {
+  const inner = rateLimit({
+    windowMs: 60 * 1000,
+    max: 300,
+    name: "admin_mutation_loose_ip",
+  });
+  return (req, res, next) => {
+    if (!isAdminMutationRequest(req)) {
+      next();
+      return;
+    }
+    inner(req, res, next);
+  };
+}
