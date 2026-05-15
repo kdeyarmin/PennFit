@@ -197,6 +197,162 @@ describe("fetchWithTimeout → unknown error type", () => {
   });
 });
 
+// ── parseTimeoutEnv — env-variable-driven timeout configuration ───────────────
+//
+// parseTimeoutEnv is module-level code evaluated at import time.
+// To test it with different env values we must reset the module registry
+// so the module re-evaluates with fresh process.env values.
+
+describe("parseTimeoutEnv via env variable overrides", () => {
+  // Save / restore the env vars touched by these tests.
+  const OAUTH_KEY = "RESUPPLY_AIRVIEW_OAUTH_TIMEOUT_MS";
+  const API_KEY = "RESUPPLY_AIRVIEW_API_TIMEOUT_MS";
+  const originalOauth = process.env[OAUTH_KEY];
+  const originalApi = process.env[API_KEY];
+
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    if (originalOauth === undefined) delete process.env[OAUTH_KEY];
+    else process.env[OAUTH_KEY] = originalOauth;
+    if (originalApi === undefined) delete process.env[API_KEY];
+    else process.env[API_KEY] = originalApi;
+  });
+
+  it("uses the default 30 s OAuth timeout when env var is unset", async () => {
+    delete process.env[OAUTH_KEY];
+    vi.resetModules();
+
+    // Spy on AbortSignal.timeout BEFORE loading the module so we capture
+    // the timeout value passed to it on the OAuth fetch.
+    const timeouts: number[] = [];
+    const origTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      timeouts.push(ms);
+      return origTimeout(ms);
+    });
+
+    // Import fresh module to pick up the (reset) env.
+    const { fetchAirviewSnapshot: snap } = await import("./client");
+
+    // Make OAuth call fail immediately so we only capture the OAuth timeout.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw Object.assign(new Error("abort"), { name: "TimeoutError" });
+      }),
+    );
+
+    await snap(CONFIG, { partnerPatientId: "px", windowDays: 30 });
+
+    // The first AbortSignal.timeout call is from the OAuth fetch (30 s default).
+    expect(timeouts[0]).toBe(30_000);
+  });
+
+  it("applies an explicit OAuth timeout from env var", async () => {
+    process.env[OAUTH_KEY] = "10000"; // 10 seconds
+    vi.resetModules();
+
+    const timeouts: number[] = [];
+    const origTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      timeouts.push(ms);
+      return origTimeout(ms);
+    });
+
+    const { fetchAirviewSnapshot: snap } = await import("./client");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw Object.assign(new Error("abort"), { name: "TimeoutError" });
+      }),
+    );
+
+    await snap(CONFIG, { partnerPatientId: "px", windowDays: 30 });
+
+    expect(timeouts[0]).toBe(10_000);
+  });
+
+  it("caps the OAuth timeout at 5 minutes (300 000 ms) for extreme values", async () => {
+    process.env[OAUTH_KEY] = "999999999"; // way over 5 min
+    vi.resetModules();
+
+    const timeouts: number[] = [];
+    const origTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      timeouts.push(ms);
+      return origTimeout(ms);
+    });
+
+    const { fetchAirviewSnapshot: snap } = await import("./client");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw Object.assign(new Error("abort"), { name: "TimeoutError" });
+      }),
+    );
+
+    await snap(CONFIG, { partnerPatientId: "px", windowDays: 30 });
+
+    // Must be capped at exactly 5 * 60 * 1000.
+    expect(timeouts[0]).toBe(5 * 60_000);
+  });
+
+  it("falls back to the default when env var is not a valid number", async () => {
+    process.env[OAUTH_KEY] = "not-a-number";
+    vi.resetModules();
+
+    const timeouts: number[] = [];
+    const origTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      timeouts.push(ms);
+      return origTimeout(ms);
+    });
+
+    const { fetchAirviewSnapshot: snap } = await import("./client");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw Object.assign(new Error("abort"), { name: "TimeoutError" });
+      }),
+    );
+
+    await snap(CONFIG, { partnerPatientId: "px", windowDays: 30 });
+
+    // Non-numeric env var must fall through to 30 s default.
+    expect(timeouts[0]).toBe(30_000);
+  });
+
+  it("falls back to the default when env var is zero or negative", async () => {
+    process.env[OAUTH_KEY] = "0";
+    vi.resetModules();
+
+    const timeouts: number[] = [];
+    const origTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      timeouts.push(ms);
+      return origTimeout(ms);
+    });
+
+    const { fetchAirviewSnapshot: snap } = await import("./client");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw Object.assign(new Error("abort"), { name: "TimeoutError" });
+      }),
+    );
+
+    await snap(CONFIG, { partnerPatientId: "px", windowDays: 30 });
+
+    expect(timeouts[0]).toBe(30_000);
+  });
+});
+
 // ── Happy path (regression guard) ────────────────────────────────────────────
 
 describe("fetchWithTimeout → successful request", () => {

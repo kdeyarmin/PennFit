@@ -4,6 +4,7 @@ import {
   escapeHtml,
   renderClickConfirmation,
   renderClickError,
+  renderClickLanding,
   renderResupplyReminder,
 } from "./email-templates";
 
@@ -14,6 +15,28 @@ describe("escapeHtml", () => {
 
   it("leaves safe text untouched", () => {
     expect(escapeHtml("Hello world 123")).toBe("Hello world 123");
+  });
+
+  // PR change: escapeHtml is now documented as safe for double-quoted
+  // attribute values (href/src/action). Verify that `"` and `&` are
+  // encoded so an attacker-controlled string cannot break out of an
+  // HTML attribute or corrupt query parameters.
+  it("encodes double-quotes so an attacker cannot break out of an attribute value", () => {
+    // Input that would close the attribute and inject onclick if not escaped.
+    const malicious = '"onmouseover="alert(1)"';
+    const result = escapeHtml(malicious);
+    expect(result).not.toContain('"onmouseover=');
+    expect(result).toContain("&quot;onmouseover=&quot;alert(1)&quot;");
+  });
+
+  it("encodes & in a URL query string to &amp; (safe for href attribute context)", () => {
+    const url = "https://example.com/click?t=abc&s=xyz";
+    expect(escapeHtml(url)).toBe("https://example.com/click?t=abc&amp;s=xyz");
+  });
+
+  it("is idempotent on already-safe strings (no double-encoding of non-special chars)", () => {
+    const safe = "https://example.com/path?key=value";
+    expect(escapeHtml(safe)).toBe(safe);
   });
 });
 
@@ -77,10 +100,107 @@ describe("renderResupplyReminder", () => {
     expect(out.text).toContain(base.editUrl);
     expect(out.text).toContain(base.stopUrl);
   });
+
+  // PR change: URLs that contain `&` in query parameters must now be
+  // escaped to `&amp;` inside href attributes (HTML spec requirement).
+  // The plain-text body must NOT be HTML-escaped (entity literals in
+  // a plain-text email would confuse the recipient).
+  it("encodes & in URL query params as &amp; in href attributes but NOT in plain text", () => {
+    const urlWithAmpersand = "https://api.example/email/click?t=abc&s=xyz&v=1";
+    const out = renderResupplyReminder({
+      ...base,
+      confirmUrl: urlWithAmpersand,
+    });
+    // HTML body: & must be &amp; inside the href value.
+    expect(out.html).toContain('href="https://api.example/email/click?t=abc&amp;s=xyz&amp;v=1"');
+    // HTML body: must NOT contain the raw & in the href context.
+    expect(out.html).not.toContain(`href="${urlWithAmpersand}"`);
+    // Plain-text body: raw URL is preserved exactly so email clients
+    // render a clickable link and recipients can copy it.
+    expect(out.text).toContain(urlWithAmpersand);
+    expect(out.text).not.toContain("&amp;");
+  });
+
+  it("escapes a URL containing a double-quote to prevent href injection", () => {
+    // An attacker-controlled URL with a literal `"` would close the href
+    // attribute and allow injecting additional attributes. escapeHtml
+    // must encode it as &quot; so the href boundary is maintained.
+    const maliciousUrl =
+      'https://api.example/click?t=conf" onmouseover="alert(1)';
+    const out = renderResupplyReminder({
+      ...base,
+      confirmUrl: maliciousUrl,
+    });
+    // The injected onmouseover attribute MUST NOT appear as a raw string.
+    expect(out.html).not.toContain('href="' + maliciousUrl + '"');
+    expect(out.html).not.toContain("onmouseover=");
+    // The &quot; entity must appear in its place.
+    expect(out.html).toContain("&quot;");
+  });
+});
+
+// PR change: renderClickLanding now also escapes the formActionUrl via
+// escapeHtml so a URL with `&` is valid inside the form action attribute.
+describe("renderClickLanding", () => {
+  it("renders a confirm landing page with the correct heading", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: "https://api.example/email/click?t=conf",
+    });
+    expect(html).toContain("Confirm your CPAP resupply order");
+    expect(html).toContain("Penn Sleep Center");
+    expect(html).toContain("Confirm my order");
+  });
+
+  it("renders a stop-reminders landing page", () => {
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "stop",
+      formActionUrl: "https://api.example/email/click?t=stop",
+    });
+    expect(html).toContain("Stop CPAP refill reminders");
+    expect(html).toContain("Stop reminders");
+  });
+
+  // PR change: formActionUrl is now passed through escapeHtml so `&`
+  // in the form action attribute is encoded to &amp;.
+  it("encodes & in formActionUrl query params as &amp; in the form action attribute", () => {
+    const urlWithAmp = "https://api.example/email/click?t=conf&v=2";
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: urlWithAmp,
+    });
+    expect(html).toContain('action="https://api.example/email/click?t=conf&amp;v=2"');
+    expect(html).not.toContain(`action="${urlWithAmp}"`);
+  });
+
+  it("escapes double-quotes in formActionUrl to prevent form action attribute injection", () => {
+    const maliciousUrl = 'https://api.example/click?t=conf" method="GET';
+    const html = renderClickLanding({
+      practiceName: "Penn Sleep Center",
+      action: "confirm",
+      formActionUrl: maliciousUrl,
+    });
+    // The injected method override must NOT survive.
+    expect(html).not.toContain(`action="${maliciousUrl}"`);
+    expect(html).toContain("&quot;");
+  });
+
+  it("escapes practice name in landing page to prevent XSS", () => {
+    const html = renderClickLanding({
+      practiceName: '<script>alert("xss")</script>',
+      action: "edit",
+      formActionUrl: "https://api.example/email/click?t=edit",
+    });
+    expect(html).not.toContain('<script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
 });
 
 describe("renderClickConfirmation", () => {
-  it("renders a confirm-success page without PHI", () => {
+
     const html = renderClickConfirmation({
       practiceName: "Penn Sleep Center",
       action: "confirm",
