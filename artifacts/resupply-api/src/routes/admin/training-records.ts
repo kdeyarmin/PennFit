@@ -23,7 +23,7 @@ import {
 
 import { bucketizeTrainingExpiry } from "../../lib/compliance/training-expiry";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type StaffTrainingUpdate =
   Database["resupply"]["Tables"]["staff_training_records"]["Update"];
@@ -67,7 +67,11 @@ const patchBody = z
 
 router.get(
   "/admin/compliance/training-records",
-  requireAdmin,
+  // Per-staff training-record roster. `training.manage` is the
+  // catalog's training-domain perm — held by admin / supervisor /
+  // compliance_officer. Tightens out csr / fitter / fulfillment /
+  // agent (HR/compliance domain; not in operational workflows).
+  requirePermission("training.manage"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
     const { data, error } = await supabase
@@ -110,7 +114,7 @@ router.get(
 
 router.post(
   "/admin/compliance/training-records",
-  requireAdmin,
+  requirePermission("training.manage"),
   async (req, res) => {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
@@ -181,7 +185,7 @@ router.post(
 
 router.patch(
   "/admin/compliance/training-records/:id",
-  requireAdmin,
+  requirePermission("training.manage"),
   async (req, res) => {
     const params = idParam.safeParse(req.params);
     if (!params.success) {
