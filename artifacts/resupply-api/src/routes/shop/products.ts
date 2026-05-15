@@ -88,6 +88,11 @@ router.get("/shop/products", async (req, res) => {
       // we don't expect more than 100 active shop products in the
       // foreseeable future, but if we ever do, switch to autoPagingEach.
       let list: Awaited<ReturnType<typeof stripe.products.list>> | null = null;
+      // Hoisted out of the catch so the `else` branch below can reuse
+      // the same stale snapshot without re-reading Date.now() — the
+      // second call would otherwise have a (theoretical, sub-ms)
+      // chance of crossing the TTL+grace boundary mid-request.
+      let stale: ShopProductView[] | null = null;
       try {
         list = await stripe.products.list({
           active: true,
@@ -106,7 +111,7 @@ router.get("/shop/products", async (req, res) => {
         //   2. Otherwise return 503 + Retry-After so the SPA can show
         //      the same retry UX with correct HTTP semantics for
         //      load balancers and uptime monitors.
-        const stale = cacheStaleButUsable(keyPrefix);
+        stale = cacheStaleButUsable(keyPrefix);
         req.log?.warn(
           {
             event: "shop_products_stripe_list_failed",
@@ -128,9 +133,10 @@ router.get("/shop/products", async (req, res) => {
           });
           return;
         }
-        // Fall through with `list === null`; below we use the stale
-        // catalog directly and SKIP the cache write so the stale
-        // window can't be extended indefinitely by repeated failures.
+        // Fall through with `list === null` and a non-null `stale`;
+        // below we use that snapshot directly and SKIP the cache
+        // write so the stale window can't be extended indefinitely
+        // by repeated failures.
       }
 
       if (list) {
@@ -185,13 +191,13 @@ router.get("/shop/products", async (req, res) => {
         // can't keep refreshing the stale timestamp forever.
         cache = { keyPrefix, fetchedAt: Date.now(), products };
       } else {
-        // Stale path: cacheStaleButUsable(...) returned a value above
-        // (otherwise we'd have already returned 503). Serve it as-is —
-        // recurring prices are already attached from when it was fresh.
-        // The non-null assertion is justified by the control flow:
-        // we only reach this `else` after the catch ran and didn't
-        // return, which means `stale` was non-null.
-        products = cacheStaleButUsable(keyPrefix)!;
+        // Stale path: `stale` was assigned in the catch branch
+        // (otherwise we'd have already returned 503). Serve it as-is
+        // — recurring prices are already attached from when it was
+        // fresh. The non-null assertion is justified by the control
+        // flow: we only reach this `else` after the catch ran and
+        // didn't return.
+        products = stale!;
       }
     }
   }
