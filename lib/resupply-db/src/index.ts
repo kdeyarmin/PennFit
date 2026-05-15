@@ -5,14 +5,17 @@
 //   - Drizzle table definitions under `./schema/` — kept as the
 //     single source of truth for `drizzle-kit` migration generation.
 //     Runtime callers do NOT use these types for queries; they call
-//     PostgREST through the Supabase client below.
+//     PostgREST through the Supabase client below. (Phase-out plan:
+//     these schemas move off Drizzle once the migration-drift work
+//     in docs/migration-drift-status-2026-05-13.md is unblocked.)
 //   - `getSupabaseServiceRoleClient()` — the shared, lazily-initialized
 //     Supabase JS client used by every resupply package that needs to
 //     read/write Postgres at runtime.
 //   - The patient_latest_message projection helpers (Supabase-flavored).
-//   - `getDbPool` is retained for the migration tooling under `./scripts`
-//     and for the legacy `pgAuthRepository` fallback in
-//     `@workspace/resupply-auth`. No production runtime path calls it.
+//   - `getDbPool` is retained for the migration tooling under
+//     `./scripts`. No production runtime path calls it; the legacy
+//     `pgAuthRepository` fallback in `@workspace/resupply-auth` was
+//     removed in the Drizzle → Supabase migration.
 //
 // PHI is stored as plaintext (text/jsonb). Earlier revisions used
 // pgcrypto column-level encryption; migration 0025 stripped it.

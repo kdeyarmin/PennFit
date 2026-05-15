@@ -519,9 +519,6 @@ importers:
       express-rate-limit:
         specifier: ^8.4.1
         version: 8.4.1(express@5.2.1)
-      pg:
-        specifier: ^8.20.0
-        version: 8.20.0
       zod:
         specifier: 'catalog:'
         version: 3.25.76
@@ -532,9 +529,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
-      '@types/pg':
-        specifier: ^8.18.0
-        version: 8.18.0
       '@types/supertest':
         specifier: ^6.0.3
         version: 6.0.3

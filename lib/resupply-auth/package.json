@@ -19,13 +19,11 @@
     "argon2": "^0.43.0",
     "express": "^5",
     "express-rate-limit": "^8.4.1",
-    "pg": "^8.20.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
-    "@types/pg": "^8.18.0",
     "@types/supertest": "^6.0.3",
     "supertest": "^7.1.4",
     "vitest": "^3.2.4"
