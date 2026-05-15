@@ -34,11 +34,24 @@ interface CacheEntry {
 
 let cache: CacheEntry | null = null;
 const CACHE_TTL_MS = 60_000;
+// How long we'll keep serving the in-process catalog as "stale" when
+// Stripe is briefly unreachable. Beyond this, we'd rather 503 than
+// serve a catalog that may no longer reflect prices / availability.
+// 15 minutes covers the typical Stripe incident window and the
+// in-process worker restart cadence.
+const STALE_GRACE_MS = 15 * 60_000;
 
 function cacheFresh(keyPrefix: string): ShopProductView[] | null {
   if (!cache) return null;
   if (cache.keyPrefix !== keyPrefix) return null;
   if (Date.now() - cache.fetchedAt > CACHE_TTL_MS) return null;
+  return cache.products;
+}
+
+function cacheStaleButUsable(keyPrefix: string): ShopProductView[] | null {
+  if (!cache) return null;
+  if (cache.keyPrefix !== keyPrefix) return null;
+  if (Date.now() - cache.fetchedAt > CACHE_TTL_MS + STALE_GRACE_MS) return null;
   return cache.products;
 }
 
@@ -74,58 +87,112 @@ router.get("/shop/products", async (req, res) => {
       // without a second round-trip. Stripe's pagination caps at 100;
       // we don't expect more than 100 active shop products in the
       // foreseeable future, but if we ever do, switch to autoPagingEach.
-      const list = await stripe.products.list({
-        active: true,
-        limit: 100,
-        expand: ["data.default_price"],
-      });
-      products = list.data
-        .map(projectProduct)
-        .filter((p): p is ShopProductView => p !== null);
-
-      // Subscribe & Save: enumerate active recurring prices in one
-      // pass and attach the cheapest match per product. Doing this as
-      // a single list call avoids N+1 (one per product) without
-      // bloating the products.list expand path. Stripe's prices.list
-      // pagination caps at 100; we don't expect to exceed that until
-      // the catalog is much larger than today (ten-ish active SKUs).
+      let list: Awaited<ReturnType<typeof stripe.products.list>> | null = null;
       try {
-        const priceList = await stripe.prices.list({
+        list = await stripe.products.list({
           active: true,
-          type: "recurring",
           limit: 100,
+          expand: ["data.default_price"],
         });
-        const cheapestByProduct = new Map<
-          string,
-          ReturnType<typeof projectRecurringPrice>
-        >();
-        for (const price of priceList.data) {
-          const productId =
-            typeof price.product === "string"
-              ? price.product
-              : price.product?.id;
-          if (!productId) continue;
-          const projected = projectRecurringPrice(price);
-          if (!projected) continue;
-          const existing = cheapestByProduct.get(productId);
-          if (!existing || projected.unitAmount < existing.unitAmount) {
-            cheapestByProduct.set(productId, projected);
-          }
-        }
-        for (const product of products) {
-          const recurring = cheapestByProduct.get(product.id);
-          if (recurring) product.recurringPrice = recurring;
-        }
       } catch (err) {
-        // Non-fatal — products still render with one-time prices, the
-        // subscribe toggle simply won't appear.
+        // Stripe hiccup, network blip, rate limit, or invalid key.
+        // Previously the throw escaped to the error handler and the
+        // SPA surfaced "We couldn't load the shop right now."
+        // (artifacts/cpap-fitter/src/lib/shop-api.ts). Two-step
+        // degradation now:
+        //   1. If we still have an in-process cache from earlier (up
+        //      to STALE_GRACE_MS old), serve THAT — better than going
+        //      hard-down for the entire 60s TTL window.
+        //   2. Otherwise return 503 + Retry-After so the SPA can show
+        //      the same retry UX with correct HTTP semantics for
+        //      load balancers and uptime monitors.
+        const stale = cacheStaleButUsable(keyPrefix);
         req.log?.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          "stripe prices.list failed; subscribe toggle disabled this request",
+          {
+            event: "shop_products_stripe_list_failed",
+            err: err instanceof Error ? err.message : String(err),
+            servedStale: stale !== null,
+            staleAgeSeconds:
+              cache && stale
+                ? Math.round((Date.now() - cache.fetchedAt) / 1000)
+                : null,
+          },
+          "stripe products.list failed",
         );
+        if (!stale) {
+          res.setHeader("Retry-After", "30");
+          res.status(503).json({
+            error: "shop_unavailable",
+            message:
+              "The shop is temporarily unavailable. Please try again in a few minutes.",
+          });
+          return;
+        }
+        // Fall through with `list === null`; below we use the stale
+        // catalog directly and SKIP the cache write so the stale
+        // window can't be extended indefinitely by repeated failures.
       }
 
-      cache = { keyPrefix, fetchedAt: Date.now(), products };
+      if (list) {
+        products = list.data
+          .map(projectProduct)
+          .filter((p): p is ShopProductView => p !== null);
+
+        // Subscribe & Save: enumerate active recurring prices in one
+        // pass and attach the cheapest match per product. Doing this as
+        // a single list call avoids N+1 (one per product) without
+        // bloating the products.list expand path. Stripe's prices.list
+        // pagination caps at 100; we don't expect to exceed that until
+        // the catalog is much larger than today (ten-ish active SKUs).
+        try {
+          const priceList = await stripe.prices.list({
+            active: true,
+            type: "recurring",
+            limit: 100,
+          });
+          const cheapestByProduct = new Map<
+            string,
+            ReturnType<typeof projectRecurringPrice>
+          >();
+          for (const price of priceList.data) {
+            const productId =
+              typeof price.product === "string"
+                ? price.product
+                : price.product?.id;
+            if (!productId) continue;
+            const projected = projectRecurringPrice(price);
+            if (!projected) continue;
+            const existing = cheapestByProduct.get(productId);
+            if (!existing || projected.unitAmount < existing.unitAmount) {
+              cheapestByProduct.set(productId, projected);
+            }
+          }
+          for (const product of products) {
+            const recurring = cheapestByProduct.get(product.id);
+            if (recurring) product.recurringPrice = recurring;
+          }
+        } catch (err) {
+          // Non-fatal — products still render with one-time prices, the
+          // subscribe toggle simply won't appear.
+          req.log?.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            "stripe prices.list failed; subscribe toggle disabled this request",
+          );
+        }
+
+        // Only write the cache on a successful fresh fetch. The stale
+        // path below intentionally skips this so a sustained outage
+        // can't keep refreshing the stale timestamp forever.
+        cache = { keyPrefix, fetchedAt: Date.now(), products };
+      } else {
+        // Stale path: cacheStaleButUsable(...) returned a value above
+        // (otherwise we'd have already returned 503). Serve it as-is —
+        // recurring prices are already attached from when it was fresh.
+        // The non-null assertion is justified by the control flow:
+        // we only reach this `else` after the catch ran and didn't
+        // return, which means `stale` was non-null.
+        products = cacheStaleButUsable(keyPrefix)!;
+      }
     }
   }
 
