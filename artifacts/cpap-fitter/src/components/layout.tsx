@@ -276,16 +276,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       <footer
-        // On mobile the MobileCtaBar (fixed bottom-0, ~60px tall) and
-        // the FloatingContactLauncher (bottom-20, ~56px button) both
-        // sit on top of the page. Without bottom padding here, the
-        // last footer rows — copyright + Staff sign-in — are
-        // unreachable. We DON'T migrate the padding to the outer
-        // wrapper because the FloatingContactLauncher's "below the
-        // fold" hint relies on the surrounding content scrolling
-        // independently. pb-28 (7rem) clears the CTA bar plus the
-        // safe-area inset on iOS home-indicator devices.
-        className="relative mt-12 pb-28 md:pb-0"
+        // On mobile two fixed-position elements occlude the footer:
+        //   * MobileCtaBar — `fixed bottom-0`, ~60px tall.
+        //   * FloatingContactLauncher button — `fixed bottom-20` (80px)
+        //     with `h-14` (56px), top edge at 136px from viewport
+        //     bottom. The button is `right-4` so it only covers the
+        //     right strip, but the footer's "Staff sign-in" link sits
+        //     on the right of a `flex-row justify-between` row
+        //     (col-stacked on mobile but still right-aligned in its
+        //     parent), so it sits in the FCL zone.
+        // Padding therefore must clear the FCL top edge (136px) PLUS
+        // the iOS home-indicator safe-area inset (up to ~34px on
+        // home-indicator devices). 9rem (144px) + env(safe-area-...)
+        // gives a 144–178px range — clears the FCL with ~8px margin
+        // on every device. Desktop unaffected (both fixed elements
+        // hide at `md:`).
+        className="relative mt-12 pb-[calc(9rem+env(safe-area-inset-bottom))] md:pb-0"
       >
         <div className="aurora-divider-live" aria-hidden="true" />
         <div className="glass-panel border-x-0 border-b-0">

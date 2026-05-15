@@ -329,13 +329,43 @@ describe("requireCsrfOnAdminMutations", () => {
 
   it("does not match prefixes that merely contain 'admin' substrings", () => {
     // Regression guard: '/api/admin-export' must NOT match
-    // '/api/admin/'. The middleware checks for a trailing slash on the
-    // admin prefix so look-alike paths fall through to their own gates.
+    // '/api/admin/'. The middleware accepts only an exact match of
+    // the admin prefix or a continuation with a trailing slash, so
+    // look-alike paths fall through to their own gates.
     const { res, nextCalled } = runPath(
       makePathReq({ method: "POST", path: "/api/admin-export" }),
     );
     expect(nextCalled).toBe(true);
     expect(res.statusCode).toBe(200);
+  });
+
+  it.each([
+    "/API/ADMIN/users/invite",
+    "/Api/Admin/users/invite",
+    "/api/Admin/users/invite",
+    "/RESUPPLY-API/ADMIN/shop/orders/abc/notes",
+  ])("enforces CSRF on the mixed-case admin path %s", (path) => {
+    // Express's default routing is case-insensitive (`case sensitive
+    // routing` is off), so a mutation aimed at the admin route
+    // arrives here with whatever casing the attacker chose. A
+    // case-sensitive `startsWith` would silently bypass the gate —
+    // verify the lowercase-normalized check holds.
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ error: "csrf_failed" });
+  });
+
+  it("gates a request to the bare /api/admin path (no trailing slash)", () => {
+    // Defensive: no route mounts at exactly `/api/admin` today, but
+    // the contract should hold if a future router lands there.
+    const { res, nextCalled } = runPath(
+      makePathReq({ method: "POST", path: "/api/admin" }),
+    );
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(403);
   });
 });
 

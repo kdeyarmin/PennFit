@@ -54,8 +54,14 @@ function parseTimeoutEnv(
 ): number {
   const raw = process.env[name];
   if (!raw) return fallback;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
+  // Strict digits-only check. `Number.parseInt("1e3", 10)` returns 1
+  // and `Number.parseInt("30000ms", 10)` returns 30000 — both would
+  // silently misconfigure the timeout. Reject anything that isn't a
+  // pure positive integer.
+  const normalized = raw.trim();
+  if (!/^\d+$/.test(normalized)) return fallback;
+  const n = Number(normalized);
+  if (!Number.isSafeInteger(n) || n <= 0) return fallback;
   // Cap at 5 minutes so a misconfigured value can't park a worker
   // task forever; ops can lift the cap with a code change if a real
   // partner outage justifies it.

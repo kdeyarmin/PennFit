@@ -50,6 +50,17 @@ export interface RenderedEmail {
  * controlled string can't break out of the attribute, and `&` becomes
  * `&amp;` per the HTML spec for attribute contexts. It does NOT
  * URL-encode — pass already-well-formed URLs in.
+ *
+ * IMPORTANT — this protects against HTML-injection but NOT against
+ * dangerous URI schemes. An attacker-controlled `javascript:alert(1)`
+ * or `data:text/html,...` placed into `href`/`src` will be rendered
+ * verbatim and executed by browsers. Callers are responsible for
+ * restricting URLs to a safe scheme allowlist (typically `http:`,
+ * `https:`, and `mailto:` for email templates) BEFORE handing them
+ * to this function. None of the templates in this file accept
+ * attacker-controlled URLs — every `href` here is server-minted from
+ * a signed-link key — but a future caller should not assume escaping
+ * alone is sufficient.
  */
 export function escapeHtml(s: string): string {
   return s

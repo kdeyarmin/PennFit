@@ -146,11 +146,24 @@ export const requireCsrfWhenSession: RequestHandler = (
  * is harmless because the middleware short-circuits on success.
  */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-const ADMIN_PREFIXES = ["/api/admin/", "/resupply-api/admin/"] as const;
+// Lowercase ASCII variants. Express's default routing is
+// case-insensitive (the `case sensitive routing` setting is off),
+// which means a request to `POST /API/ADMIN/users/invite` will match
+// the route registered at `/api/admin/users/invite` — but `req.path`
+// preserves the original casing. A naive `startsWith` check on the
+// lowercase prefix would therefore miss the mixed-case request and
+// silently bypass this gate. We compare against `req.path.toLowerCase()`
+// to neutralize the mismatch.
+const ADMIN_LC_PREFIXES = ["/api/admin", "/resupply-api/admin"] as const;
 
 function isAdminMutationPath(path: string): boolean {
-  for (const prefix of ADMIN_PREFIXES) {
-    if (path.startsWith(prefix)) return true;
+  const lc = path.toLowerCase();
+  for (const prefix of ADMIN_LC_PREFIXES) {
+    // Match `<prefix>` (the bare admin path — defensive: no route
+    // mounts here today, but the contract should hold) or
+    // `<prefix>/...` (every nested admin route). We deliberately
+    // do NOT match `<prefix>-export` or `<prefix>foo` look-alikes.
+    if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
   }
   return false;
 }

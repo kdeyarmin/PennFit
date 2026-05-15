@@ -128,12 +128,17 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
  * needs to flood any single endpoint.
  */
 const ADMIN_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-const ADMIN_PATH_PREFIXES = ["/api/admin/", "/resupply-api/admin/"] as const;
+// See the matching constants in middlewares/csrf.ts for the rationale.
+// Express routes are case-insensitive by default, but `req.path`
+// preserves the original casing — a mixed-case URL otherwise bypasses
+// this gate.
+const ADMIN_LC_PATH_PREFIXES = ["/api/admin", "/resupply-api/admin"] as const;
 
 function isAdminMutationRequest(req: import("express").Request): boolean {
   if (ADMIN_SAFE_METHODS.has(req.method)) return false;
-  for (const prefix of ADMIN_PATH_PREFIXES) {
-    if (req.path.startsWith(prefix)) return true;
+  const lc = req.path.toLowerCase();
+  for (const prefix of ADMIN_LC_PATH_PREFIXES) {
+    if (lc === prefix || lc.startsWith(`${prefix}/`)) return true;
   }
   return false;
 }

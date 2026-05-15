@@ -101,8 +101,8 @@ describe("adminMutationLooseLimit", () => {
 
   it("does not match look-alike admin prefixes", () => {
     // Regression guard: '/api/admin-export' must NOT match
-    // '/api/admin/'. The middleware uses a trailing slash to bound
-    // the prefix so look-alike paths fall through.
+    // '/api/admin/'. Match is exact prefix or trailing-slash
+    // continuation so look-alike paths fall through.
     const mw = adminMutationLooseLimit();
     const { res, nextCalled } = drive(
       mw,
@@ -110,6 +110,23 @@ describe("adminMutationLooseLimit", () => {
     );
     expect(nextCalled).toBe(true);
     expect(res.statusCode).toBe(200);
+  });
+
+  it.each([
+    "/API/ADMIN/users",
+    "/Api/Admin/users",
+    "/RESUPPLY-API/ADMIN/shop/orders/abc",
+  ])("gates mixed-case admin path %s", (path) => {
+    // Express routing is case-insensitive by default; the limiter
+    // must lowercase-normalize before its prefix check or attackers
+    // could bypass the per-IP budget with mixed-case URLs.
+    const mw = adminMutationLooseLimit();
+    const { res, nextCalled } = drive(
+      mw,
+      makeReq({ method: "POST", path, ip: "5.5.5.5" }),
+    );
+    expect(nextCalled).toBe(true);
+    expect(res.headers["X-RateLimit-Limit"]).toBe("300");
   });
 
   it("gates POST on /api/admin/* and PATCH on /resupply-api/admin/*", () => {

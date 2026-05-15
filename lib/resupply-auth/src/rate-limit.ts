@@ -46,11 +46,17 @@ export interface RateLimitDecision {
  * structured logger AND emit a metric so a sustained DB issue
  * (which silently disables rate limiting and creates a brute-force
  * window) is visible to ops. Default = `console.error`.
+ *
+ * The return type is `void | Promise<void>` so async loggers (e.g.
+ * a backend that fires-and-forgets a network log shipper) can be
+ * passed directly. `checkLoginRateLimit` awaits the result inside
+ * its own try/catch so a rejected Promise never escapes past the
+ * gate.
  */
 export type RateLimitErrorHandler = (
   err: unknown,
   context: { emailLower: string; ip: string | null },
-) => void;
+) => void | Promise<void>;
 
 const defaultErrorHandler: RateLimitErrorHandler = (err) => {
   // Bare console fallback so a missing handler never crashes auth.
@@ -113,7 +119,10 @@ export async function checkLoginRateLimit(
     return { allowed: true, retryAfterSeconds: 0 };
   } catch (err) {
     try {
-      onError(err, input);
+      // Await so an async handler's rejection lands in this catch
+      // rather than escaping as an unhandled-promise rejection.
+      // Synchronous handlers `await undefined` cheaply.
+      await onError(err, input);
     } catch {
       // Observability must never throw past the rate-limit gate.
     }

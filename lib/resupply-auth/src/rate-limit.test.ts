@@ -96,7 +96,9 @@ describe("checkLoginRateLimit", () => {
       broken,
       { emailLower: "alice@example.com", ip: "1.1.1.1" },
       DEFAULT_RATE_LIMIT,
-      (err, ctx) => calls.push({ err, ctx }),
+      (err, ctx) => {
+        calls.push({ err, ctx });
+      },
     );
     expect(decision.allowed).toBe(true);
     expect(calls).toHaveLength(1);
@@ -120,6 +122,28 @@ describe("checkLoginRateLimit", () => {
       DEFAULT_RATE_LIMIT,
       () => {
         throw new Error("logger blew up");
+      },
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("swallows a rejecting async onError so observability never blocks the gate", async () => {
+    // Regression guard: prior to wiring `await` on the onError
+    // invocation, an async handler's rejection would escape as an
+    // unhandled promise rejection — silently violating the
+    // "observability never throws past the gate" contract.
+    const broken: AuthRepository = {
+      ...fakeRepo({ byEmail: 0, byIp: 0 }),
+      async countRecentFailures() {
+        throw new Error("db down");
+      },
+    };
+    const decision = await checkLoginRateLimit(
+      broken,
+      { emailLower: "alice@example.com", ip: "1.1.1.1" },
+      DEFAULT_RATE_LIMIT,
+      async () => {
+        throw new Error("async logger blew up");
       },
     );
     expect(decision.allowed).toBe(true);
