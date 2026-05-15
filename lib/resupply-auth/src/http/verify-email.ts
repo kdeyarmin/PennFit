@@ -30,6 +30,12 @@ const VERIFY_RATE_LIMIT = {
   windowMs: 15 * 60 * 1000,
 };
 
+/**
+ * Create an Express handler for POST /auth/verify-email that consumes a `signup_verify` token and activates the associated user account.
+ *
+ * @param deps - Dependency bag required by the handler (repository, audit function, optional `now`, and rate-limit error behavior).
+ * @returns An Express request handler that verifies a signup token, marks the user's email as verified, records the attempt and audit entry, responds with `{ ok: true }` on success, returns `410` for invalid or already-consumed tokens, and returns `429` when rate-limited.
+ */
 export function makeVerifyEmailHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
 

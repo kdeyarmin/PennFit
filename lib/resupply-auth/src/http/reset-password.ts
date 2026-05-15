@@ -39,6 +39,16 @@ const RESET_RATE_LIMIT = {
   windowMs: 15 * 60 * 1000,
 };
 
+/**
+ * Create an Express handler that processes password-reset requests for POST /auth/reset-password.
+ *
+ * Uses provided dependencies to enforce per-endpoint rate limits, validate and consume a reset token,
+ * validate the new password against policy, update the user's credentials, mark the email verified,
+ * revoke active sessions, emit audit events, and respond with success or an auth error.
+ *
+ * @param deps - Runtime dependencies (repository, hashing/audit utilities, rate-limit behavior, and time provider) required by the handler
+ * @returns An Express request handler that accepts a reset token and new password and responds with `{ ok: true }` on success or an auth error on failure
+ */
 export function makeResetPasswordHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
 

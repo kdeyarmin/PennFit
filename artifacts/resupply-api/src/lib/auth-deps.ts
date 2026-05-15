@@ -47,11 +47,13 @@ import { logger } from "./logger";
 let cachedDeps: AuthDeps | undefined;
 
 /**
- * Build (and memoize) the AuthDeps. Always returns a value after
- * Stage 5a — the kill switch is gone. Exceptions during
- * construction (missing required env, missing DB pool, etc.)
- * propagate so a misconfigured deploy fails LOUD at first
- * call rather than at the first sign-in attempt.
+ * Constructs and memoizes the AuthDeps object used by the authentication handlers.
+ *
+ * The constructed object is cached and returned on subsequent calls. Any exception
+ * raised during the initial construction (for example, due to missing environment
+ * configuration or repository initialization failures) will propagate to the caller.
+ *
+ * @returns The assembled `AuthDeps` instance; the same cached instance is returned on subsequent calls.
  */
 export function getAuthDeps(): AuthDeps {
   if (cachedDeps !== undefined) return cachedDeps;

@@ -44,23 +44,16 @@ export interface RenderedEmail {
 }
 
 /**
- * Minimal HTML escaper — the five characters HTML actually requires.
- * Safe for both element content and double-quoted attribute values
- * (including `href`/`src`): `"` becomes `&quot;` so an attacker-
- * controlled string can't break out of the attribute, and `&` becomes
- * `&amp;` per the HTML spec for attribute contexts. It does NOT
- * URL-encode — pass already-well-formed URLs in.
+ * Escape the five HTML-sensitive characters for safe embedding in element content and double-quoted attributes.
  *
- * IMPORTANT — this protects against HTML-injection but NOT against
- * dangerous URI schemes. An attacker-controlled `javascript:alert(1)`
- * or `data:text/html,...` placed into `href`/`src` will be rendered
- * verbatim and executed by browsers. Callers are responsible for
- * restricting URLs to a safe scheme allowlist (typically `http:`,
- * `https:`, and `mailto:` for email templates) BEFORE handing them
- * to this function. None of the templates in this file accept
- * attacker-controlled URLs — every `href` here is server-minted from
- * a signed-link key — but a future caller should not assume escaping
- * alone is sufficient.
+ * Replaces `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;`, and `'` → `&#39;`.
+ * This does not perform URL-encoding; pass already-well-formed URLs when escaping attribute values.
+ *
+ * Note: escaping prevents HTML injection but does not mitigate dangerous URI schemes (for example `javascript:` or `data:`).
+ * Callers must validate or restrict URL schemes before using escaped values in `href`/`src` attributes.
+ *
+ * @param s - The input string to escape
+ * @returns The input string with HTML-special characters replaced by their entity equivalents
  */
 export function escapeHtml(s: string): string {
   return s

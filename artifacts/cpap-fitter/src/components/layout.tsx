@@ -87,6 +87,14 @@ function YourOrdersNavLink() {
   );
 }
 
+/**
+ * Application shell that renders the global header, navigation, fit-flow stepper, main content area, and footer while managing mobile navigation state and accessibility helpers.
+ *
+ * The component auto-closes the mobile navigation when the route changes, mounts ScrollToTop, provides a skip-to-content link, and renders children inside the main landmark.
+ *
+ * @param children - Page content to render inside the layout's main region
+ * @returns The layout element containing header, navigation, main content, and footer
+ */
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);

@@ -156,6 +156,12 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 // to neutralize the mismatch.
 const ADMIN_LC_PREFIXES = ["/api/admin", "/resupply-api/admin"] as const;
 
+/**
+ * Determines whether a request path targets an admin API tree.
+ *
+ * @param path - The request path to test (compared case-insensitively)
+ * @returns `true` if `path` equals an admin prefix or is nested under one (e.g., `/api/admin` or `/api/admin/...`), `false` otherwise.
+ */
 function isAdminMutationPath(path: string): boolean {
   const lc = path.toLowerCase();
   for (const prefix of ADMIN_LC_PREFIXES) {

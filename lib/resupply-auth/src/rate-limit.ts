@@ -69,16 +69,14 @@ const defaultErrorHandler: RateLimitErrorHandler = (err) => {
 };
 
 /**
- * Decide whether a sign-in attempt is allowed right now. The check
- * fails OPEN on a DB error: we'd rather let one extra attempt
- * through than silently lock everyone out if the rate-limit table
- * is briefly unreadable. The handler still records the attempt
- * regardless of the decision, so the next call sees the latest
- * state.
+ * Determine whether a sign-in attempt should be allowed immediately under the configured rate limits.
  *
- * Pass `onError` to plumb fail-open events into your structured
- * logger and metrics. A sustained DB failure means rate-limit is
- * effectively off — ops needs to see it.
+ * Evaluates separate rolling-window failure counts for the provided email (case-normalized) and IP, and applies the stricter limit. On database or other errors the check fails open (permits the attempt) and invokes `onError` so observability can record the failure; failures in `onError` are swallowed and do not change the fail-open behavior.
+ *
+ * @param input - Context for the attempt. `emailLower` is the lowercased email identifier; `ip` is the client IP or `null` when unavailable.
+ * @param config - Rate-limit parameters (`maxPerEmail`, `maxPerIp`, `windowMs`). Defaults are used when omitted.
+ * @param onError - Optional callback invoked with the caught error and `input` when the check cannot complete due to an exception.
+ * @returns A RateLimitDecision: `allowed` indicates if the attempt is permitted; when blocked the `reason` is `"email_locked"` or `"ip_locked"` and `retryAfterSeconds` suggests how many seconds to wait before retrying.
  */
 export async function checkLoginRateLimit(
   repo: AuthRepository,

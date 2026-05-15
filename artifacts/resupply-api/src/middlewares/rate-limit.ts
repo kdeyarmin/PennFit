@@ -45,6 +45,18 @@ export interface RateLimitOptions {
   keyFn?: (req: import("express").Request) => string;
 }
 
+/**
+ * Create an Express middleware that enforces a fixed-window rate limit per derived key.
+ *
+ * The middleware sets `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` on every response.
+ * When the configured limit is exceeded it sets `Retry-After` and responds with HTTP 429 and JSON containing
+ * `error: "too_many_requests"`, `limiter`, `retryAfterSeconds`, and a short user-facing `message`.
+ *
+ * @param opts - Rate limit configuration (window length, max requests, stable limiter `name`, and optional `keyFn`).
+ *               If `keyFn` is omitted the middleware uses `req.ip`, then `req.socket.remoteAddress`, falling back to `"unknown"`.
+ *               If `keyFn` returns a falsy value the key becomes `"unknown"`.
+ * @returns An Express `RequestHandler` that enforces the configured fixed-window rate limit and either calls `next()` or responds with HTTP 429 when the limit is exceeded.
+ */
 export function rateLimit(opts: RateLimitOptions): RequestHandler {
   const buckets = new Map<string, Bucket>();
 
@@ -134,6 +146,12 @@ const ADMIN_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 // this gate.
 const ADMIN_LC_PATH_PREFIXES = ["/api/admin", "/resupply-api/admin"] as const;
 
+/**
+ * Determines whether the request targets an admin mutation endpoint using a non-safe HTTP method.
+ *
+ * @param req - The Express request to evaluate.
+ * @returns `true` if the method is not GET/HEAD/OPTIONS and the request path (case-insensitive) equals or is nested under an admin prefix, `false` otherwise.
+ */
 function isAdminMutationRequest(req: import("express").Request): boolean {
   if (ADMIN_SAFE_METHODS.has(req.method)) return false;
   const lc = req.path.toLowerCase();
@@ -143,6 +161,11 @@ function isAdminMutationRequest(req: import("express").Request): boolean {
   return false;
 }
 
+/**
+ * Applies an IP-keyed loose rate limit to mutating admin routes.
+ *
+ * @returns An Express RequestHandler that enforces a 300-requests-per-60-seconds limit for requests identified as admin mutation requests; requests that are not admin mutations are passed through unchanged.
+ */
 export function adminMutationLooseLimit(): RequestHandler {
   const inner = rateLimit({
     windowMs: 60 * 1000,

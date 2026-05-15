@@ -48,6 +48,15 @@ class ClientError extends Error {
 const DEFAULT_OAUTH_TIMEOUT_MS = 30_000;
 const DEFAULT_API_TIMEOUT_MS = 60_000;
 
+/**
+ * Reads an environment variable and returns a validated timeout value in milliseconds.
+ *
+ * Accepts only a positive integer string; if the variable is missing or invalid the provided `fallback` is returned.
+ *
+ * @param name - The environment variable name to read
+ * @param fallback - The fallback timeout in milliseconds to use when the env var is missing or invalid
+ * @returns The parsed timeout in milliseconds, capped at 5 minutes (300000 ms), or `fallback` when parsing fails
+ */
 function parseTimeoutEnv(
   name: string,
   fallback: number,
@@ -77,6 +86,16 @@ const API_TIMEOUT_MS = parseTimeoutEnv(
   DEFAULT_API_TIMEOUT_MS,
 );
 
+/**
+ * Performs an HTTP fetch with a hard deadline and maps common timeout/network failures to a `ClientError` with kind `"unavailable"`.
+ *
+ * @param url - The request URL
+ * @param init - Fetch init options (headers, method, body, etc.)
+ * @param timeoutMs - Milliseconds to wait before aborting the request
+ * @returns The successful fetch `Response`
+ * @throws ClientError with kind `"unavailable"` when the request times out or a common network/abort error occurs
+ * @throws Re-throws any other errors thrown by `fetch`
+ */
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,

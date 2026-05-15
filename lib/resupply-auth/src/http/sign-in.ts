@@ -70,6 +70,24 @@ function hashUserAgent(req: Request): Buffer | null {
   return createHash("sha256").update(ua).digest();
 }
 
+/**
+ * Create an Express handler for the sign-in endpoint that authenticates users, enforces rate limits and MFA, and issues sessions or MFA challenges.
+ *
+ * The produced handler implements the application's sign-in flow: CSRF check, input validation, email normalization, rate-limit gating, user/credential lookup, password verification (with best-effort algorithm upgrade), email verification enforcement, optional MFA challenge issuance, and session creation with cookies on success.
+ *
+ * @param deps - Dependencies and configuration required by the handler. Important fields:
+ *   - `repo`: persistence operations for users, credentials, sessions, and login attempts.
+ *   - `env.sessionTtlDays`: session lifetime in days.
+ *   - `passwordHashParams`: parameters used when rehashing passwords.
+ *   - `mfa` (optional): MFA service used to probe for active secrets.
+ *   - `mfaChallengeHmacKey` (optional): HMAC key used to mint MFA challenge tokens.
+ *   - `secureCookies`: whether cookies should be marked secure.
+ *   - `now` (optional): clock function; defaults to `() => new Date()`.
+ *   - `rateLimit` (optional): overrides for rate-limit configuration; defaults to `DEFAULT_RATE_LIMIT`.
+ *   - `rateLimitOnError` (optional): behavior used when rate-limit checks encounter errors.
+ *
+ * @returns An Express request handler for POST /auth/sign-in that either issues a session cookie on successful authentication, returns an MFA challenge when required, or responds with appropriate authentication error responses.
+ */
 export function makeSignInHandler(deps: AuthDeps) {
   const now = deps.now ?? (() => new Date());
   const rateConfig = deps.rateLimit ?? DEFAULT_RATE_LIMIT;

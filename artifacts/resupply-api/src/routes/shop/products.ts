@@ -41,6 +41,12 @@ const CACHE_TTL_MS = 60_000;
 // in-process worker restart cadence.
 const STALE_GRACE_MS = 15 * 60_000;
 
+/**
+ * Retrieve cached product views when the cached entry matches the provided key prefix and is still within the freshness window.
+ *
+ * @param keyPrefix - Prefix derived from the Stripe secret key used to scope the cache
+ * @returns The cached `ShopProductView[]` when available and fresh, `null` otherwise
+ */
 function cacheFresh(keyPrefix: string): ShopProductView[] | null {
   if (!cache) return null;
   if (cache.keyPrefix !== keyPrefix) return null;
@@ -48,6 +54,12 @@ function cacheFresh(keyPrefix: string): ShopProductView[] | null {
   return cache.products;
 }
 
+/**
+ * Retrieve cached product views that are still usable within the stale-grace window for a specific cache key prefix.
+ *
+ * @param keyPrefix - The cache key prefix (derived from the Stripe secret key) used to scope the cached snapshot
+ * @returns The cached array of `ShopProductView` when a cache exists for `keyPrefix` and its age is less than or equal to `CACHE_TTL_MS + STALE_GRACE_MS`, `null` otherwise
+ */
 function cacheStaleButUsable(keyPrefix: string): ShopProductView[] | null {
   if (!cache) return null;
   if (cache.keyPrefix !== keyPrefix) return null;
