@@ -1,44 +1,52 @@
-// Granular RBAC catalog — Phase A.
+// Granular RBAC catalog — Phase B (3-role effective model).
+//
+// The product now exposes only THREE conceptual roles to the team UI
+// and ops: `super_admin`, `admin`, and `customer_service_rep`. The
+// DB enum on admin_users.role still carries the historical 7-role
+// set ('admin', 'supervisor', 'csr', 'fitter', 'fulfillment',
+// 'compliance_officer', 'agent') so we don't have to gate this on a
+// schema migration; we collapse the 7 DB names into 3 effective
+// buckets at lookup time via `toEffectiveRole(...)`. A follow-up PR
+// will land the enum change once the migration-drift work in
+// docs/migration-drift-status-2026-05-13.md is unblocked.
 //
 // What lives here
 // ---------------
-//   * The PERMISSION enum (the universe of fine-grained actions
-//     the admin console can guard).
-//   * The role → permissions map (which roles can do what).
-//   * `roleHasPermission` — the one-call lookup the middleware
-//     uses on every gated route.
+//   * The Permission enum (fine-grained actions the admin console
+//     can guard).
+//   * EffectiveRole — the 3 roles the rest of the app cares about.
+//   * `toEffectiveRole(dbRole)` — the DB → effective normalizer.
+//   * EFFECTIVE_ROLE_PERMISSIONS — the role → permissions map keyed
+//     by EffectiveRole.
+//   * `roleHasPermission(dbRole, perm)` — the one-call lookup the
+//     middleware uses on every gated route. Normalizes internally.
+//
+// Mapping (union of perms; no role loses access on the rollover):
+//   * super_admin           ← db: admin
+//   * admin                 ← db: supervisor + compliance_officer
+//   * customer_service_rep  ← db: csr + fitter + fulfillment + agent
 //
 // What does NOT live here
 // -----------------------
-//   * HTTP-level wiring (express middleware sits in
-//     lib/resupply-auth/src/http/permissions.ts).
-//   * DB rows. We deliberately keep the catalog in code:
-//       - The set of permissions changes with the codebase (a new
-//         feature adds a new perm), so versioning it in TypeScript
-//         keeps catalog + consumers in lockstep.
-//       - There's no operational reason to mutate it at runtime;
-//         "who has which role" is the per-row decision (in
-//         admin_users.role) and that's the surface we need to
-//         change without a deploy. Changing the rules themselves
-//         IS a deploy.
+//   * HTTP-level wiring (lib/resupply-auth/src/http/permissions.ts).
+//   * DB rows. The catalog stays in code: the set of permissions
+//     changes with the codebase (a new feature adds a new perm),
+//     so versioning it in TypeScript keeps catalog + consumers in
+//     lockstep. Per-row role assignments live in admin_users.role
+//     and remain the runtime surface ops change without a deploy.
 //
 // Adding a new permission
 // -----------------------
 //   1. Add a key to the Permission union below.
-//   2. Add it to the ROLE_PERMISSIONS map for every role that
-//      should have it.
-//   3. The middleware `requirePermission(perm)` picks it up
-//      automatically; no other wiring.
+//   2. Add it to the EFFECTIVE_ROLE_PERMISSIONS map for every
+//      effective role that should have it.
+//   3. `requirePermission(perm)` picks it up automatically.
 //
 // Posture notes
 // -------------
-//   * `admin` always has every permission. We assert this at
-//     module load time so a future drift doesn't accidentally
-//     lock the team out of their own console.
-//   * `agent` is the legacy "everything-CSR" role — it carries
-//     the CSR perm set plus a couple of leftovers so existing
-//     production admins don't get locked out at deploy. New
-//     invites should pick a specific role rather than `agent`.
+//   * `super_admin` always has every permission. We assert this at
+//     module load so a future drift can't lock the team out of
+//     their own console.
 
 import type { AdminRole } from "@workspace/resupply-db";
 
@@ -119,11 +127,65 @@ const ALL_PERMISSIONS: ReadonlyArray<Permission> = [
   "admin.tools.manage",
 ];
 
-/** Role → permission set. Modify this when adjusting policy. */
-const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
-  admin: new Set(ALL_PERMISSIONS),
+/**
+ * The three roles the product actually distinguishes:
+ *   * super_admin           — full surface; team management;
+ *                              destructive ops (audit-archive
+ *                              destruction, etc.).
+ *   * admin                 — broad management without the most
+ *                              destructive ops; can approve returns,
+ *                              export audit, resolve grievances,
+ *                              manage training records.
+ *   * customer_service_rep  — operational CSR + clinical fitter +
+ *                              fulfillment + legacy "agent" all
+ *                              folded together. Day-to-day patient
+ *                              and returns work; no money-out, no
+ *                              compliance resolution.
+ */
+export type EffectiveRole =
+  | "super_admin"
+  | "admin"
+  | "customer_service_rep";
 
-  supervisor: new Set<Permission>([
+/**
+ * Normalize a DB-persisted role to the 3-bucket effective model.
+ *
+ * The DB enum still carries the historical 7-role set (see
+ * lib/resupply-db/src/schema/admin-users.ts). This collapse layer
+ * keeps the runtime permission catalog small while preserving every
+ * production row's access — each DB role maps to exactly one
+ * effective role and the effective role's perm set is the UNION of
+ * the DB roles that fold into it.
+ */
+export function toEffectiveRole(role: AdminRole): EffectiveRole {
+  switch (role) {
+    case "admin":
+      return "super_admin";
+    case "supervisor":
+    case "compliance_officer":
+      return "admin";
+    case "csr":
+    case "fitter":
+    case "fulfillment":
+    case "agent":
+    default:
+      return "customer_service_rep";
+  }
+}
+
+/** Effective-role → permission set. */
+const EFFECTIVE_ROLE_PERMISSIONS: Record<
+  EffectiveRole,
+  ReadonlySet<Permission>
+> = {
+  // Full surface. Asserted below to always equal ALL_PERMISSIONS so
+  // a forgotten entry can't accidentally lock the team out.
+  super_admin: new Set(ALL_PERMISSIONS),
+
+  // Union of legacy `supervisor` + `compliance_officer`. Excludes
+  // only `admin_team.manage` — team management stays super-admin-
+  // only, matching the pre-collapse posture.
+  admin: new Set<Permission>([
     "patients.read",
     "patients.update",
     "returns.read",
@@ -144,7 +206,12 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
     "admin.tools.manage",
   ]),
 
-  csr: new Set<Permission>([
+  // Union of legacy `csr` + `fitter` + `fulfillment` + `agent`.
+  // CSR was the largest contributor; fitter added
+  // `fit_session.override`; fulfillment's returns perms were
+  // already in csr; agent was a CSR mirror. No new perms beyond
+  // what those four roles collectively held.
+  customer_service_rep: new Set<Permission>([
     "patients.read",
     "patients.update",
     "returns.read",
@@ -154,81 +221,43 @@ const ROLE_PERMISSIONS: Record<AdminRole, ReadonlySet<Permission>> = {
     "inventory.read",
     "grievances.read",
     "conversations.manage",
-  ]),
-
-  fitter: new Set<Permission>([
-    "patients.read",
-    "patients.update",
     "fit_session.override",
-    "inventory.read",
-  ]),
-
-  fulfillment: new Set<Permission>([
-    "patients.read",
-    "returns.read",
-    "returns.manage",
-    "inventory.read",
-  ]),
-
-  compliance_officer: new Set<Permission>([
-    "patients.read",
-    "compliance.read",
-    "compliance.resolve",
-    "audit.read",
-    "audit.export",
-    "reports.read",
-    "training.manage",
-    "grievances.read",
-    "grievances.resolve",
-  ]),
-
-  // Legacy "everything-CSR" role. Mirrors `csr` so existing
-  // production rows don't lose access at deploy. New invites
-  // should pick a specific role.
-  agent: new Set<Permission>([
-    "patients.read",
-    "patients.update",
-    "returns.read",
-    "returns.manage",
-    "compliance.read",
-    "reports.read",
-    "inventory.read",
-    "grievances.read",
-    "conversations.manage",
   ]),
 };
 
-/** Constant-time-ish lookup. Returns true when the role's permission
- *  set contains `perm`. */
+/**
+ * Constant-time-ish lookup. Normalizes the DB role to the 3-bucket
+ * effective role, then asks whether that bucket contains `perm`.
+ */
 export function roleHasPermission(
   role: AdminRole,
   perm: Permission,
 ): boolean {
-  const set = ROLE_PERMISSIONS[role];
-  if (!set) return false;
+  const effective = toEffectiveRole(role);
+  const set = EFFECTIVE_ROLE_PERMISSIONS[effective];
   return set.has(perm);
 }
 
-/** Convenience: full permission set for a role. Returns a fresh
- *  array so callers can't mutate the catalog. */
+/** Convenience: full permission set for a DB role (via its effective
+ *  bucket). Returns a fresh array so callers can't mutate the
+ *  catalog. */
 export function permissionsForRole(role: AdminRole): Permission[] {
-  const set = ROLE_PERMISSIONS[role];
-  if (!set) return [];
-  return Array.from(set);
+  const effective = toEffectiveRole(role);
+  return Array.from(EFFECTIVE_ROLE_PERMISSIONS[effective]);
 }
 
 // ────────────────────────────────────────────────────────────────
 // Module-load assertions.
 //
-// The admin role MUST have every permission. If a future edit adds
-// a permission and forgets to slot it into admin, fail noisily at
-// boot rather than at the first 403.
+// The super_admin effective role MUST hold every permission. If a
+// future edit adds a permission and forgets to slot it into
+// super_admin, fail noisily at boot rather than at the first 403.
 // ────────────────────────────────────────────────────────────────
 for (const perm of ALL_PERMISSIONS) {
-  if (!ROLE_PERMISSIONS.admin.has(perm)) {
+  if (!EFFECTIVE_ROLE_PERMISSIONS.super_admin.has(perm)) {
     throw new Error(
-      `RBAC catalog drift: admin role is missing permission "${perm}". ` +
-        `Update ROLE_PERMISSIONS.admin in lib/resupply-auth/src/rbac.ts.`,
+      `RBAC catalog drift: super_admin role is missing permission "${perm}". ` +
+        `Update EFFECTIVE_ROLE_PERMISSIONS.super_admin in lib/resupply-auth/src/rbac.ts.`,
     );
   }
 }
