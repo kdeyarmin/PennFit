@@ -11,8 +11,8 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import {
-  requireAdmin,
   requireAdminOnly,
+  requirePermission,
 } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
@@ -30,7 +30,10 @@ const createBody = z
     message: "endsAt must be later than startsAt",
   });
 
-router.get("/admin/csr-shifts", requireAdmin, async (req, res) => {
+// Schedule visibility — every CSR who handles the inbox wants to
+// know who else is on shift. `conversations.manage` matches the
+// rest of the CSR-tier coordination surface.
+router.get("/admin/csr-shifts", requirePermission("conversations.manage"), async (req, res) => {
   const from =
     (typeof req.query.from === "string" && req.query.from) || undefined;
   const to = (typeof req.query.to === "string" && req.query.to) || undefined;
@@ -63,7 +66,8 @@ router.get("/admin/csr-shifts", requireAdmin, async (req, res) => {
 
 router.get(
   "/admin/csr-shifts/on-now",
-  requireAdmin,
+  // Who's on shift right now — same CSR-visible scope.
+  requirePermission("conversations.manage"),
   async (_req, res) => {
     const iso = new Date().toISOString();
     const supabase = getSupabaseServiceRoleClient();

@@ -18,7 +18,7 @@ import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { INTAKE_FORMS } from "../../lib/intake-forms/catalog";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -28,7 +28,10 @@ const FORM_KINDS = Object.keys(INTAKE_FORMS) as Array<
 
 router.get(
   "/admin/form-acknowledgements/summary",
-  requireAdmin,
+  // Accreditation-binder rollup — surveyor-facing read. `audit.read`
+  // is the catalog's compliance-tier read perm (admin / supervisor /
+  // compliance_officer / agent).
+  requirePermission("audit.read"),
   async (_req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 
@@ -96,7 +99,9 @@ router.get(
 
 router.get(
   "/admin/patients/:id/form-acknowledgements",
-  requireAdmin,
+  // Per-patient acknowledgement list. Same compliance-tier read
+  // scope as the summary endpoint.
+  requirePermission("audit.read"),
   async (req, res) => {
     const idParse = z.string().uuid().safeParse(req.params.id);
     if (!idParse.success) {
