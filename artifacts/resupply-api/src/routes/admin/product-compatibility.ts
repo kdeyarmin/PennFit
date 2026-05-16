@@ -20,7 +20,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -50,7 +50,10 @@ const addEntryBody = z
 
 router.post(
   "/admin/shop/products/:productId/compatibility",
-  requireAdmin,
+  // Catalog mapping — `admin.tools.manage` matches the rest of
+  // the cash-pay catalog admin surface (stock counts, thresholds,
+  // back-in-stock dispatch).
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const idParsed = productIdParam.safeParse(req.params.productId);
     if (!idParsed.success) {
@@ -123,7 +126,7 @@ router.post(
 
 router.delete(
   "/admin/shop/products/:productId/compatibility/:entryId",
-  requireAdmin,
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const idParsed = productIdParam.safeParse(req.params.productId);
     if (!idParsed.success) {

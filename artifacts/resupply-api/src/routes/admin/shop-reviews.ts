@@ -22,7 +22,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { encodeCompositeCursor, parseCompositeCursor } from "../../lib/cursor";
 import {
   sendReviewApprovedEmail,
@@ -78,7 +78,10 @@ const noteBody = z
   })
   .strict();
 
-router.get("/admin/shop/reviews", requireAdmin, async (req, res) => {
+// Customer-review moderation queue. Treated as inbox-tier work
+// alongside product-questions and customer-followups — every CSR
+// who handles inbound customer touchpoints uses this surface.
+router.get("/admin/shop/reviews", requirePermission("conversations.manage"), async (req, res) => {
   const parse = reviewListQuery.safeParse(req.query);
   if (!parse.success) {
     res.status(400).json({ error: "invalid_query" });
@@ -145,7 +148,7 @@ router.get("/admin/shop/reviews", requireAdmin, async (req, res) => {
 
 router.post(
   "/admin/shop/reviews/:id/approve",
-  requireAdmin,
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -214,7 +217,7 @@ router.post(
 
 router.post(
   "/admin/shop/reviews/:id/reject",
-  requireAdmin,
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -300,7 +303,7 @@ router.post(
 // trigger the proper email.
 router.post(
   "/admin/shop/reviews/:id/unreject",
-  requireAdmin,
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const id = String(req.params.id ?? "");
     if (!id) {
@@ -358,7 +361,7 @@ router.post(
 // customer already got one when the review was first rejected. If a
 // fresh notice is desired, the operator should un-reject and
 // re-reject, which goes through the existing email path.
-router.patch("/admin/shop/reviews/:id/note", requireAdmin, async (req, res) => {
+router.patch("/admin/shop/reviews/:id/note", requirePermission("conversations.manage"), async (req, res) => {
   const id = String(req.params.id ?? "");
   if (!id) {
     res.status(400).json({ error: "missing_id" });

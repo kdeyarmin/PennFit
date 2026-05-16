@@ -20,7 +20,7 @@ import { Router, type IRouter } from "express";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import {
   getStripeClient,
   readStripeConfigOrNull,
@@ -44,7 +44,9 @@ interface QueueRow {
 
 router.get(
   "/admin/shop/back-in-stock-queue",
-  requireAdmin,
+  // Read view of the back-in-stock notification queue —
+  // operational inventory data.
+  requirePermission("inventory.read"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 
@@ -210,7 +212,9 @@ router.get(
 // log the result and return the counts so the UI can show "sent N".
 router.post(
   "/admin/shop/back-in-stock-queue/:productId/dispatch",
-  requireAdmin,
+  // Manual fanout — sends notifications to every queued
+  // subscriber. Treated as catalog/inventory admin tooling.
+  requirePermission("admin.tools.manage"),
   async (req, res) => {
     const productId = String(req.params.productId ?? "");
     if (!/^prod_[A-Za-z0-9_-]+$/.test(productId)) {
