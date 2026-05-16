@@ -40,7 +40,7 @@ import {
   type CommunicationPreferences,
 } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { isInDndWindow } from "../../lib/comm-prefs";
 import { sendReviewRequestEmail } from "../../lib/messaging/review-request-email";
 
@@ -51,7 +51,11 @@ const SCAN_LIMIT = 100;
 
 router.post(
   "/admin/shop/review-requests/send-due",
-  requireAdmin,
+  // Manual dispatcher for post-purchase review-request emails.
+  // CSR-tier operational action (atomic-claim + comm-prefs aware) —
+  // `conversations.manage` matches the rest of the customer-touch
+  // operational surface.
+  requirePermission("conversations.manage"),
   async (req, res) => {
     const supabase = getSupabaseServiceRoleClient();
 
