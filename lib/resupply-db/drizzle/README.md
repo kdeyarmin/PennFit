@@ -68,23 +68,29 @@ link to the rewrite ticket.
 ## Why we don't "just regenerate the journal"
 
 It's tempting to hand-rewrite `_journal.json` from the current SQL
-file set and ship it. **Don't.** That breaks under any of the
-scenarios listed in the investigation doc:
+file set and ship it. **Don't.** The migrator
+(`lib/resupply-db/scripts/migrate.mjs`) gates **only** on
+`MAX(created_at)` in `drizzle.resupply_migrations` — it does not
+compare hashes or tags, and will not "reject" a renamed migration
+outright. The actual breakage modes:
 
-- If production applied these files under their current names (via a
-  manual `psql` session or a previous tooling generation),
-  production's `drizzle.resupply_migrations` table holds the original
-  tags. After a rename + journal rebuild, those tags no longer match
-  → next deploy either fails on a missing-tag check or treats the
-  migrations as new and re-applies them (e.g. `42P07 duplicate_object`
-  from a second `CREATE TABLE patient_therapy_links`).
+- If production applied any of these files under different names
+  (via a manual `psql` session or a previous tooling generation),
+  rebuilding the journal locally will pick fresh `when` timestamps
+  for every entry. The next deploy then sees those `when` values as
+  strictly greater than production's `MAX(created_at)` and tries to
+  re-apply every migration from the rebuild point forward —
+  typically blowing up with `42P07 duplicate_object` from a repeated
+  `CREATE TABLE patient_therapy_links`.
 - If production hasn't redeployed since the journal was last in sync,
   we'd be rebuilding on a stale baseline; the next deploy attempts a
   from-scratch reapply that races with whatever else is in flight.
 
 The repo cannot answer "which one"; that requires a read-only
-`SELECT id, hash, created_at, migration_name FROM
+`SELECT id, hash, created_at FROM
 drizzle.resupply_migrations ORDER BY created_at` against production.
+Only after that data is in hand can the journal be reconciled
+in a way that leaves the deploy migrator a no-op.
 
 ## Duplicate-prefix inventory
 
