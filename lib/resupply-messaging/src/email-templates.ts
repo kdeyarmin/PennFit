@@ -13,9 +13,14 @@
 //     mail filters drop HTML-only mail, and the text version is what
 //     screen readers read aloud.
 //   - All interpolated strings pass through `escapeHtml` for the HTML
-//     body. URLs are NOT escaped (they end up as `href` values where
-//     escaping would corrupt query parameters); callers are responsible
-//     for passing well-formed URLs in.
+//     body — INCLUDING URLs that land in `href` attributes. The HTML
+//     spec requires `&` inside an attribute value to be encoded as
+//     `&amp;`, and browsers correctly decode it back when navigating,
+//     so `?t=x&s=y` becomes `?t=x&amp;s=y` in the markup and `?t=x&s=y`
+//     when followed. Callers are still responsible for passing
+//     well-formed URLs in (we do not URL-encode query parameters here).
+//   - Plain-text bodies are NOT HTML-escaped. Doing so would render
+//     entity literals (`&amp;`) to recipients reading the text part.
 
 export interface RenderResupplyReminderInput {
   /** Practice display name (e.g. "Penn Sleep Center"). Already admin-vetted. */
@@ -39,9 +44,16 @@ export interface RenderedEmail {
 }
 
 /**
- * Minimal HTML escaper — the five characters HTML actually requires.
- * Sufficient for body text + element-content interpolation; do NOT
- * use this for `href`, `src`, or other attribute contexts.
+ * Escape the five HTML-sensitive characters for safe embedding in element content and double-quoted attributes.
+ *
+ * Replaces `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;`, and `'` → `&#39;`.
+ * This does not perform URL-encoding; pass already-well-formed URLs when escaping attribute values.
+ *
+ * Note: escaping prevents HTML injection but does not mitigate dangerous URI schemes (for example `javascript:` or `data:`).
+ * Callers must validate or restrict URL schemes before using escaped values in `href`/`src` attributes.
+ *
+ * @param s - The input string to escape
+ * @returns The input string with HTML-special characters replaced by their entity equivalents
  */
 export function escapeHtml(s: string): string {
   return s

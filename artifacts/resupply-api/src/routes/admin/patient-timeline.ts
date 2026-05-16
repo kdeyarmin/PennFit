@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -44,7 +44,13 @@ interface TimelineEvent {
 
 router.get(
   "/admin/patients/:id/timeline",
-  requireAdmin,
+  // Read-only aggregator over the patient's clinical history. Every
+  // current admin role holds `patients.read` (see rbac.ts), so this
+  // tightening preserves access for all of admin/supervisor/csr/
+  // fitter/fulfillment/compliance_officer/agent but documents the
+  // scope contract so a future role with narrower permissions can't
+  // accidentally land in this route unguarded.
+  requirePermission("patients.read"),
   async (req, res) => {
     const params = patientIdParam.safeParse(req.params);
     if (!params.success) {

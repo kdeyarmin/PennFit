@@ -42,7 +42,7 @@ import {
 
 import { getAuthDeps } from "../../lib/auth-deps";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 type PatientUpdate = Database["resupply"]["Tables"]["patients"]["Update"];
 
@@ -110,7 +110,9 @@ const inviteBody = z
 
 router.post(
   "/admin/patients/:id/portal-invite",
-  requireAdmin,
+  // Mints a portal access invite (sends an email + writes a token).
+  // `patients.update` scope.
+  requirePermission("patients.update"),
   adminInviteLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
@@ -365,7 +367,7 @@ router.post(
 
 router.post(
   "/admin/patients/:id/portal-invite/resend",
-  requireAdmin,
+  requirePermission("patients.update"),
   adminInviteLimiter,
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
@@ -495,7 +497,8 @@ router.post(
 
 router.delete(
   "/admin/patients/:id/portal-invite",
-  requireAdmin,
+  // Revokes an outstanding invite. `patients.update` scope.
+  requirePermission("patients.update"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {

@@ -41,17 +41,48 @@ export interface RateLimitDecision {
 }
 
 /**
- * Decide whether a sign-in attempt is allowed right now. The check
- * fails OPEN on a DB error: we'd rather let one extra attempt
- * through than silently lock everyone out if the rate-limit table
- * is briefly unreadable. The handler still records the attempt
- * regardless of the decision, so the next call sees the latest
- * state.
+ * Observability hook invoked when the rate-limit check throws and
+ * we fall back to fail-open. Callers should plumb this to their
+ * structured logger AND emit a metric so a sustained DB issue
+ * (which silently disables rate limiting and creates a brute-force
+ * window) is visible to ops. Default = `console.error`.
+ *
+ * The return type is `void | Promise<void>` so async loggers (e.g.
+ * a backend that fires-and-forgets a network log shipper) can be
+ * passed directly. `checkLoginRateLimit` awaits the result inside
+ * its own try/catch so a rejected Promise never escapes past the
+ * gate.
+ */
+export type RateLimitErrorHandler = (
+  err: unknown,
+  context: { emailLower: string; ip: string | null },
+) => void | Promise<void>;
+
+const defaultErrorHandler: RateLimitErrorHandler = (err) => {
+  // Bare console fallback so a missing handler never crashes auth.
+  // Production callers should override this with a structured
+  // logger + a metric (e.g. `auth.rate_limit.check_failed`).
+  console.error(
+    "[resupply-auth] rate-limit check failed (fail-open):",
+    err instanceof Error ? err.message : String(err),
+  );
+};
+
+/**
+ * Determine whether a sign-in attempt should be allowed immediately under the configured rate limits.
+ *
+ * Evaluates separate rolling-window failure counts for the provided email (case-normalized) and IP, and applies the stricter limit. On database or other errors the check fails open (permits the attempt) and invokes `onError` so observability can record the failure; failures in `onError` are swallowed and do not change the fail-open behavior.
+ *
+ * @param input - Context for the attempt. `emailLower` is the lowercased email identifier; `ip` is the client IP or `null` when unavailable.
+ * @param config - Rate-limit parameters (`maxPerEmail`, `maxPerIp`, `windowMs`). Defaults are used when omitted.
+ * @param onError - Optional callback invoked with the caught error and `input` when the check cannot complete due to an exception.
+ * @returns A RateLimitDecision: `allowed` indicates if the attempt is permitted; when blocked the `reason` is `"email_locked"` or `"ip_locked"` and `retryAfterSeconds` suggests how many seconds to wait before retrying.
  */
 export async function checkLoginRateLimit(
   repo: AuthRepository,
   input: { emailLower: string; ip: string | null },
   config: RateLimitConfig = DEFAULT_RATE_LIMIT,
+  onError: RateLimitErrorHandler = defaultErrorHandler,
 ): Promise<RateLimitDecision> {
   try {
     const [emailFails, ipFails] = await Promise.all([
@@ -85,12 +116,14 @@ export async function checkLoginRateLimit(
     }
     return { allowed: true, retryAfterSeconds: 0 };
   } catch (err) {
-    // Fail open so a DB hiccup does not lock all users out. Log so
-    // operators can detect a pattern (sustained degradation = real risk).
-    console.error(
-      "[resupply-auth] rate-limit check failed (fail-open):",
-      err instanceof Error ? err.message : String(err),
-    );
+    try {
+      // Await so an async handler's rejection lands in this catch
+      // rather than escaping as an unhandled-promise rejection.
+      // Synchronous handlers `await undefined` cheaply.
+      await onError(err, input);
+    } catch {
+      // Observability must never throw past the rate-limit gate.
+    }
     return { allowed: true, retryAfterSeconds: 0 };
   }
 }

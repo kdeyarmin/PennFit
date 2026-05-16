@@ -22,7 +22,7 @@ import {
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { getIntegrationAdapters } from "../../lib/integrations/registry";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -42,7 +42,12 @@ interface AdapterSummary {
   >;
 }
 
-router.get("/admin/integrations/status", requireAdmin, async (_req, res) => {
+// Vendor-adapter health dashboard. Used by CSRs + ops to answer
+// "is AirView still talking to us?" — surveyors-and-ops audience.
+// `admin.tools.manage` is the catalog's "supervisor-tier admin
+// tooling" perm (admin / supervisor / compliance_officer
+// post-Phase-B).
+router.get("/admin/integrations/status", requirePermission("admin.tools.manage"), async (_req, res) => {
   const adapters = getIntegrationAdapters();
   const supabase = getSupabaseServiceRoleClient();
   const cutoff = new Date(

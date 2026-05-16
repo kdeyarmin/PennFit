@@ -22,7 +22,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -45,7 +45,8 @@ const bodySchema = z
 
 router.get(
   "/admin/shop/returns/:returnId/notes",
-  requireAdmin,
+  // Read-only — list of CSR notes on this return. `returns.read`.
+  requirePermission("returns.read"),
   async (req, res) => {
     const parsed = returnIdParam.safeParse(req.params.returnId);
     if (!parsed.success) {
@@ -102,7 +103,8 @@ router.get(
 
 router.post(
   "/admin/shop/returns/:returnId/notes",
-  requireAdmin,
+  // Append-only — CSR notes attached to the return. `returns.manage`.
+  requirePermission("returns.manage"),
   async (req, res) => {
     const idCheck = returnIdParam.safeParse(req.params.returnId);
     if (!idCheck.success) {

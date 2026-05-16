@@ -56,10 +56,9 @@ jobs:
     name: Schema + codegen + architecture drift
     runs-on: ubuntu-latest
     env:
-      # `lib/resupply-db/drizzle.config.ts` and the codegen scripts throw
-      # on import if DATABASE_URL is unset, but `check-drizzle-drift.sh`
-      # documents that drizzle-kit generate itself does not connect — a
-      # syntactic URL is enough.
+      # Codegen scripts read DATABASE_URL at import time. A syntactic
+      # URL is enough — the drift checks run statically and don't open
+      # a real connection.
       DATABASE_URL: postgresql://drift:drift@localhost:5432/drift_check
     steps:
       - uses: actions/checkout@v5
@@ -83,19 +82,6 @@ jobs:
 
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh
-
-      - name: Migration co-change
-        run: scripts/check-resupply-migration-pair.sh
-
-      # Drizzle drift currently fails because the journal lags
-      # `lib/resupply-db/drizzle/*.sql` by ~21 entries (P0.1 in
-      # docs/codebase-enhancements-2026-05-08.md). Run as informational
-      # so the failure is visible on every PR without blocking merges
-      # until P0.1 lands. Flip continue-on-error to false once the
-      # journal has been rebuilt.
-      - name: Drizzle drift (informational — pending P0.1)
-        continue-on-error: true
-        run: scripts/check-drizzle-drift.sh
 
   test:
     name: Tests

@@ -44,7 +44,19 @@ export interface StarRatingProps {
 }
 
 const FILLED_COLOR = "hsl(var(--penn-gold))";
-const EMPTY_COLOR = "rgb(203 213 225)"; // slate-300
+const EMPTY_COLOR = "rgb(203 213 225)"; /**
+ * Render a 0–5 star rating display, optionally interactive for selecting an integer rating.
+ *
+ * @param value - Rating to display, expected in the range 0 to 5; fractional values render partial star fills.
+ * @param count - Optional review count to show as a suffix; hidden when `undefined` or when `hideCount` is true.
+ * @param size - Visual scale of stars and text; one of `"sm" | "md" | "lg"`. Default: `"md"`.
+ * @param interactive - When true, renders each star as a keyboard-focusable radio button allowing selection. Default: `false`.
+ * @param onChange - Optional callback invoked with an integer `1 | 2 | 3 | 4 | 5` when an interactive star is clicked.
+ * @param hideCount - When true, suppresses the numeric `(N)` suffix even if `count` is provided. Default: `false`.
+ * @param className - Additional class names appended to the outer container.
+ * @param testId - Optional test identifier applied to the wrapper and to interactive stars as `"{testId}-star-{s}"`.
+ * @returns The JSX element rendering the star rating and optional count.
+ */
 
 export function StarRating({
   value,
@@ -86,6 +98,7 @@ export function StarRating({
                 type="button"
                 role="radio"
                 aria-checked={value === s}
+                aria-label={`${s} ${s === 1 ? "star" : "stars"}`}
                 onClick={() => onChange?.(s)}
                 className="p-0.5 -m-0.5 rounded hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-[hsl(var(--penn-gold))]/40"
                 data-testid={testId ? `${testId}-star-${s}` : undefined}

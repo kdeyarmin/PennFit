@@ -10,7 +10,7 @@ import { logAudit } from "@workspace/resupply-audit";
 import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -30,7 +30,9 @@ const addressBody = z
 
 router.get(
   "/admin/patients/:id/address-history",
-  requireAdmin,
+  // Read-only audit-trail view. `patients.read` is held by every
+  // current role, so this preserves access while codifying scope.
+  requirePermission("patients.read"),
   async (req, res) => {
     const params = patientIdParam.safeParse(req.params);
     if (!params.success) {
@@ -67,7 +69,16 @@ router.get(
 
 router.post(
   "/admin/patients/:id/address-history",
-  requireAdmin,
+  // Mutating route — records a new address-change row + audit entry.
+  // Scoped to `patients.update` (admin/supervisor/csr/fitter/agent).
+  // INTENTIONAL TIGHTENING: removes access for `fulfillment` and
+  // `compliance_officer`, neither of which has a workflow that
+  // requires editing a patient's address history (fulfillment ships
+  // to the address already on file; compliance officer audits but
+  // does not edit). If a workflow surfaces that requires either
+  // role, grant `patients.update` to the role in rbac.ts rather
+  // than loosening this route.
+  requirePermission("patients.update"),
   async (req, res) => {
     const params = patientIdParam.safeParse(req.params);
     if (!params.success) {

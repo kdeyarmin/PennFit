@@ -63,10 +63,17 @@ describe("GET /admin/productivity", () => {
     expect(res.status).toBe(401);
   });
 
-  it("403s for a role that lacks reports.read", async () => {
+  it("allows customer_service_rep bucket roles (fulfillment folds in)", async () => {
+    // Phase B 3-role collapse (lib/resupply-auth/src/rbac.ts):
+    // `fulfillment` now folds into the `customer_service_rep`
+    // effective bucket, which inherits `reports.read` from the old
+    // csr role. So the productivity dashboard is no longer hidden
+    // from fulfillment-row holders. Pre-collapse this asserted 403;
+    // post-collapse the positive path is the meaningful coverage.
     mockAdmin.current = FULFILLMENT;
-    const res = await request(makeApp()).get("/admin/productivity");
-    expect(res.status).toBe(403);
+    stageSupabaseResponse("admin_users", "select", { data: [] });
+    const res = await request(makeApp()).get("/admin/productivity?window=7d");
+    expect(res.status).toBe(200);
   });
 
   it("400s on an invalid window value", async () => {

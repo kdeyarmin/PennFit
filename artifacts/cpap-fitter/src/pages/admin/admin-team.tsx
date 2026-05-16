@@ -1,6 +1,20 @@
 // /admin/team — invite, list, and manage admin / customer-service
-// reps. Only `admin` role can see and use this page; `agent` (CSR)
-// callers receive 403 from the underlying API.
+// reps. Only `admin` (super-admin) role can see and use this page;
+// other roles receive 403 from the underlying API.
+//
+// 3-role model (Phase B collapse):
+//   * admin               — super admin; full surface; only role
+//                            that can use this page.
+//   * supervisor          — admin tier (broad management). Legacy
+//                            DB names supervisor + compliance_officer
+//                            both render as "Admin" here.
+//   * customer service    — CSR tier. Legacy DB names csr + fitter
+//                            + fulfillment + agent all render as
+//                            "Customer service rep".
+//
+// The DB still carries the 7-role enum for backward compat; the
+// per-row permission lookup in lib/resupply-auth/src/rbac.ts
+// normalizes those 7 names into the 3 effective buckets.
 //
 // Layout:
 //   - Invite form at the top (email + role + optional display name + notes)
@@ -21,31 +35,26 @@ import {
   type TeamStatus,
 } from "@/lib/admin/admin-team-api";
 
+// Display labels for every DB-persisted role. Legacy values map onto
+// one of the 3 effective buckets so the UI shows a consistent
+// "Super admin / Admin / Customer service rep" vocabulary even for
+// rows persisted under one of the older role names.
 const ROLE_LABEL: Record<TeamRole, string> = {
-  admin: "Admin",
-  supervisor: "Supervisor",
-  csr: "Customer service",
-  fitter: "Fitter",
-  fulfillment: "Fulfillment",
-  compliance_officer: "Compliance officer",
-  // Legacy "everything-CSR" role — new invites should pick a
-  // specific role rather than `agent`. The label calls it out so
-  // an admin doesn't pick it by accident.
-  agent: "Agent (legacy)",
+  admin: "Super admin",
+  supervisor: "Admin",
+  compliance_officer: "Admin",
+  csr: "Customer service rep",
+  fitter: "Customer service rep",
+  fulfillment: "Customer service rep",
+  agent: "Customer service rep",
 };
 
-/** Roles offered in the invite + edit selectors. Order roughly
- *  matches the rbac catalog: senior → frontline → specialist. The
- *  legacy `agent` is intentionally at the bottom. */
-const ROLE_OPTIONS: TeamRole[] = [
-  "admin",
-  "supervisor",
-  "csr",
-  "fitter",
-  "fulfillment",
-  "compliance_officer",
-  "agent",
-];
+/** Roles offered in the invite + edit selectors — the 3 effective
+ *  buckets only. Existing rows persisted under one of the legacy
+ *  names (supervisor, compliance_officer, fitter, fulfillment, agent)
+ *  continue to resolve correctly through ROLE_LABEL above; new
+ *  invites pick exactly one of these three. */
+const ROLE_OPTIONS: TeamRole[] = ["admin", "supervisor", "csr"];
 
 const STATUS_TONE: Record<TeamStatus, string> = {
   active: "bg-emerald-100 text-emerald-900 border-emerald-300",

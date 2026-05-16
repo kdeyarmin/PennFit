@@ -41,7 +41,7 @@ import { getIntegrationAdapters } from "../../lib/integrations/registry";
 import { persistTherapyNights } from "../../lib/integrations/persist-nights";
 import { diffSettings } from "../../lib/integrations/diff-settings";
 import { logger } from "../../lib/logger";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -99,7 +99,9 @@ function snapshotRowToView(row: SnapshotRow): UnifiedSourceView["snapshot"] {
 
 router.get(
   "/admin/patients/:id/integrations",
-  requireAdmin,
+  // Read-only — unified vendor-snapshot view. `patients.read` is
+  // held by every current role.
+  requirePermission("patients.read"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {
@@ -192,7 +194,10 @@ router.get(
 
 router.post(
   "/admin/patients/:id/integrations/refresh",
-  requireAdmin,
+  // Triggers vendor adapter call + DB upsert of the snapshot.
+  // `patients.update` scope; tightens out fulfillment +
+  // compliance_officer.
+  requirePermission("patients.update"),
   async (req, res) => {
     const idCheck = patientIdParam.safeParse(req.params.id);
     if (!idCheck.success) {

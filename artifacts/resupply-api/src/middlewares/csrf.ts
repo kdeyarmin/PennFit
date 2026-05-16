@@ -35,6 +35,8 @@ import {
   SESSION_COOKIE,
 } from "@workspace/resupply-auth";
 
+import { isAdminMutationRequest } from "./admin-path";
+
 function denyCsrf(req: Request, res: Response, reason?: string): void {
   // Best-effort structured log so ops can grep by reason without the
   // browser ever seeing it. `req.log` is the pino-http child logger
@@ -115,6 +117,46 @@ export const requireCsrfWhenSession: RequestHandler = (
   next: NextFunction,
 ): void => {
   if (!readCookie(req, SESSION_COOKIE)) {
+    next();
+    return;
+  }
+  const result = checkCsrf(req);
+  if (result.ok) {
+    next();
+    return;
+  }
+  denyCsrf(req, res, result.reason);
+};
+
+/**
+ * App-level CSRF gate for admin mutations. Pass-through on:
+ *   * safe methods (GET / HEAD / OPTIONS) — no state change to forge.
+ *   * absolute paths that are not under an admin tree (`/api/admin/*`
+ *     or `/resupply-api/admin/*`). The non-admin storefront paths
+ *     either are anonymous (and have no session cookie to replay) or
+ *     opt in to CSRF on their own via `requireCsrf` /
+ *     `requireCsrfWhenSession`.
+ *
+ * Mount once at app level *before* the route routers so every new
+ * admin mutation that lands in the future is gated automatically —
+ * no per-router `requireCsrf` audit needed. The admin SPA already
+ * attaches the `X-PF-CSRF` header on every state-changing fetch
+ * (see lib/api-client-react/src/admin/custom-fetch.ts), so this is
+ * a server-only addition with no client coordination.
+ *
+ * Both per-router and app-level gates can co-exist; double-checking
+ * is harmless because the middleware short-circuits on success.
+ *
+ * The path+method matcher lives in `./admin-path` so this gate and
+ * the loose-IP rate limit gate in `./rate-limit` stay in lockstep
+ * on what counts as an admin mutation.
+ */
+export const requireCsrfOnAdminMutations: RequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  if (!isAdminMutationRequest(req)) {
     next();
     return;
   }

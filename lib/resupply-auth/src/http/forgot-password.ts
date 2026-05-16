@@ -37,6 +37,13 @@ interface MakeForgotPasswordHandlerOptions {
   uiPathPrefix?: string;
 }
 
+/**
+ * Create an Express handler for the forgot-password endpoint that enforces per-endpoint rate limits, preserves non-enumeration, issues password-reset tokens, logs audit events, and attempts to send reset emails.
+ *
+ * @param deps - Dependencies required by the handler (repositories, email sender, environment, audit, and helper utilities).
+ * @param options - Handler configuration (UI path prefix and product name used when rendering emails).
+ * @returns An async Express request handler that always responds with `{ ok: true }` and performs rate limiting, audit logging, token issuance, token persistence, and best-effort email delivery for password resets.
+ */
 export function makeForgotPasswordHandler(
   deps: AuthDeps,
   options: MakeForgotPasswordHandlerOptions,
@@ -62,6 +69,7 @@ export function makeForgotPasswordHandler(
       deps.repo,
       { emailLower: ipSentinel, ip: null },
       FORGOT_RATE_LIMIT,
+      deps.rateLimitOnError,
     );
     if (!rl.allowed) {
       res.setHeader("Retry-After", String(rl.retryAfterSeconds));

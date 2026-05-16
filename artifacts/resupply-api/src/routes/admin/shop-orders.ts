@@ -51,7 +51,7 @@ import {
 type ShopOrderUpdate = Database["resupply"]["Tables"]["shop_orders"]["Update"];
 
 import { logAudit } from "@workspace/resupply-audit";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 import { rateLimit } from "../../middlewares/rate-limit";
 import { withMetrics } from "../../lib/observability";
 import {
@@ -456,7 +456,9 @@ function projectOrder(row: OrderRow) {
 // CURRENT parcel ship").
 router.post(
   "/admin/shop/orders/:orderId/tracking",
-  requireAdmin,
+  // Set carrier + tracking number on a shipped order. Operational —
+  // `returns.manage` (admin / supervisor / csr / fulfillment / agent).
+  requirePermission("returns.manage"),
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
@@ -576,7 +578,8 @@ router.post(
 // double-clicks).
 router.post(
   "/admin/shop/orders/:orderId/delivered",
-  requireAdmin,
+  // Mark delivered — same operational tier as tracking entry.
+  requirePermission("returns.manage"),
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
@@ -648,7 +651,9 @@ router.post(
 // records who did it via req.adminEmail in the structured log).
 router.patch(
   "/admin/shop/orders/:orderId/shipping-address",
-  requireAdmin,
+  // Address override before ship — operational; reuses returns.manage
+  // matrix so the same CSRs who handle returns can fix bad addresses.
+  requirePermission("returns.manage"),
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);
     if (!orderId) {
@@ -724,7 +729,13 @@ router.patch(
 // follows on the next webhook redelivery (typically <2s).
 router.post(
   "/admin/shop/orders/:orderId/refund",
-  requireAdmin,
+  // Money-out path — tighter gate. `returns.approve` is held by
+  // admin / supervisor only, removing csr / fulfillment / agent from
+  // direct refund issuance (they can request via the returns RMA
+  // lifecycle which goes through the same approve scope). This
+  // matches the documented refund-issuance posture in the route
+  // file's header comment ("Refund issuance is a supervisor action").
+  requirePermission("returns.approve"),
   adminOrderRefundLimiter,
   async (req, res) => {
     const orderId = validateOrderId(req.params.orderId);

@@ -33,7 +33,6 @@
     "argon2": "^0.43.0",
     "busboy": "^1.6.0",
     "cors": "^2",
-    "drizzle-orm": "catalog:",
     "express": "^5",
     "express-rate-limit": "^8.4.1",
     "pdfkit": "^0.15.2",

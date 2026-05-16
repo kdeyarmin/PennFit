@@ -39,7 +39,7 @@ This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
 | `artifacts/shared`       | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
 | `lib/resupply-*`         | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`.                                                                                      |
 | `lib/api-client-react`   | Generated API client + React hooks.                                                                                                                                                                                              |
-| `scripts/`               | Codegen + drift checks (`check-codegen`, `check-drizzle-drift`, `check-resupply-architecture`, `check-resupply-migration-pair`).                                                                                                 |
+| `scripts/`               | Codegen + drift checks (`check-codegen`, `check-resupply-architecture`, `check-resupply-migration-pair`).                                                                                                                        |
 | `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
 
 There is **one** customer-facing site (`pennfit.replit.app/`). The former
@@ -114,16 +114,19 @@ read — lives in [`README.md`](./README.md#environment-variables) and
 - **DB:** the runtime data path is the **Supabase service-role client**
   exported from `@workspace/resupply-db` as
   `getSupabaseServiceRoleClient()`; every route, worker, and helper
-  reads/writes through PostgREST via that client. Drizzle is retained
-  ONLY for the migration source-of-truth: the table definitions under
-  `lib/resupply-db/src/schema/**` drive `drizzle-kit generate` and
-  `lib/resupply-db/scripts/migrate.mjs` applies the SQL via raw `pg`.
-  No production runtime path imports `drizzle-orm` or constructs a
-  `pg.Pool`. Migration drift is enforced by
-  `scripts/check-drizzle-drift.sh`; migration pairs by
-  `scripts/check-resupply-migration-pair.sh`. The
-  "no direct `pg` outside `lib/resupply-db`" invariant is enforced by
-  Rule 7 in `scripts/check-resupply-architecture.sh`.
+  reads/writes through PostgREST via that client. **Supabase is the
+  only data path** — drizzle-kit, drizzle.config.ts, and the
+  structural drizzle-drift CI check have all been retired. The SQL
+  files in `lib/resupply-db/drizzle/*.sql` are the source of truth
+  for migration history; `lib/resupply-db/scripts/migrate.mjs`
+  applies them via raw `pg`. New migrations are hand-written SQL
+  (or generated via Supabase's own tooling). The schema TS files
+  under `lib/resupply-db/src/schema/**` still import `drizzle-orm`
+  for type-only inference, but no production runtime path imports
+  it. Schema/migration co-change is enforced by
+  `scripts/check-resupply-migration-pair.sh`. The "no direct `pg`
+  outside `lib/resupply-db`" invariant is enforced by Rule 7 in
+  `scripts/check-resupply-architecture.sh`.
 - **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies.
   Admin auth flows live under `/admin/sign-in`, `/admin/forgot-password`,
   `/admin/reset-password`, `/admin/verify-email`.

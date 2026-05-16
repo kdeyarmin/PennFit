@@ -22,6 +22,8 @@
 
 import type { RequestHandler } from "express";
 
+import { isAdminMutationRequest } from "./admin-path";
+
 interface Bucket {
   count: number;
   resetAt: number;
@@ -45,6 +47,18 @@ export interface RateLimitOptions {
   keyFn?: (req: import("express").Request) => string;
 }
 
+/**
+ * Create an Express middleware that enforces a fixed-window rate limit per derived key.
+ *
+ * The middleware sets `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` on every response.
+ * When the configured limit is exceeded it sets `Retry-After` and responds with HTTP 429 and JSON containing
+ * `error: "too_many_requests"`, `limiter`, `retryAfterSeconds`, and a short user-facing `message`.
+ *
+ * @param opts - Rate limit configuration (window length, max requests, stable limiter `name`, and optional `keyFn`).
+ *               If `keyFn` is omitted the middleware uses `req.ip`, then `req.socket.remoteAddress`, falling back to `"unknown"`.
+ *               If `keyFn` returns a falsy value the key becomes `"unknown"`.
+ * @returns An Express `RequestHandler` that enforces the configured fixed-window rate limit and either calls `next()` or responds with HTTP 429 when the limit is exceeded.
+ */
 export function rateLimit(opts: RateLimitOptions): RequestHandler {
   const buckets = new Map<string, Bucket>();
 
@@ -99,5 +113,49 @@ export function rateLimit(opts: RateLimitOptions): RequestHandler {
     }
 
     next();
+  };
+}
+
+/**
+ * Defense-in-depth IP rate limit applied at the app level on
+ * mutating `/admin/*` requests across both mount prefixes. Mirrors
+ * the architecture of `requireCsrfOnAdminMutations`: pass-through
+ * for safe methods (GET/HEAD/OPTIONS) and non-admin paths; a single
+ * shared bucket otherwise.
+ *
+ * Why path-aware at the app level: per the 5/13 app review (P0.7),
+ * only 12 of ~89 admin route files defined their own per-route
+ * limiter. Touching the remaining 77 individually is fragile; one
+ * global cap covers them all and any new admin router that lands
+ * later is automatically gated.
+ *
+ * Why IP and not adminUserId: this middleware runs BEFORE the
+ * per-router `requireAdmin` middleware that populates
+ * `req.adminUserId`, so an IP key is what's actually available
+ * here. Per-route limiters that need a tighter, admin-scoped
+ * budget keep their existing keyFn — they fire AFTER `requireAdmin`
+ * and apply on top of this safety net.
+ *
+ * Default budget: 300 requests / 60 seconds (5 RPS sustained) per
+ * IP across all admin mutations on this process. Well above any
+ * honest CSR workflow; well below what a session-stealing attacker
+ * needs to flood any single endpoint.
+ *
+ * The path+method matcher lives in `./admin-path` so this gate and
+ * the CSRF gate in `./csrf` stay in lockstep on what counts as an
+ * admin mutation.
+ */
+export function adminMutationLooseLimit(): RequestHandler {
+  const inner = rateLimit({
+    windowMs: 60 * 1000,
+    max: 300,
+    name: "admin_mutation_loose_ip",
+  });
+  return (req, res, next) => {
+    if (!isAdminMutationRequest(req)) {
+      next();
+      return;
+    }
+    inner(req, res, next);
   };
 }

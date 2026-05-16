@@ -15,6 +15,8 @@ import {
   requestContextMiddleware,
 } from "./lib/request-context";
 import { errorHandler } from "./middlewares/errorHandler";
+import { requireCsrfOnAdminMutations } from "./middlewares/csrf";
+import { adminMutationLooseLimit } from "./middlewares/rate-limit";
 import { securityHeaders } from "./middlewares/securityHeaders";
 import { stripeWebhookHandler } from "./lib/stripe/webhook-handler";
 
@@ -283,6 +285,26 @@ const storefrontChatLimiter = expressRateLimit({
   },
 });
 app.use("/api/chat", storefrontChatLimiter);
+
+// Defense-in-depth: a single CSRF gate covering every admin-tree
+// mutation on both mount prefixes. Pass-through for safe methods and
+// non-admin paths; enforces double-submit (`pf_csrf` cookie ⇄
+// `X-PF-CSRF` header) on POST/PATCH/PUT/DELETE under `/api/admin/*`
+// or `/resupply-api/admin/*`. The admin SPA already attaches the
+// header on every state-changing fetch, so this is a server-only
+// addition. Per-router `requireCsrf` calls (e.g. admin-users) remain
+// — double-checking is harmless and keeps the per-route contracts
+// self-documenting.
+app.use(requireCsrfOnAdminMutations);
+
+// Defense-in-depth IP-keyed loose rate limit on admin-tree
+// mutations. Catches the gap surfaced by docs/app-review-2026-05-13.md
+// P0.7 — only ~12 of ~89 admin route files had per-route limiters.
+// Per-route limiters that key by adminUserId (csr-compliance-alerts,
+// customer-followups, mfa, etc.) keep their tighter, action-specific
+// budgets and fire AFTER `requireAdmin`; this gate sits in front of
+// them as a generous IP-based safety net.
+app.use(adminMutationLooseLimit());
 
 // Routes are mounted under /resupply-api (matches the artifact.toml path
 // list). Phase 0 ships /resupply-api/healthz, /resupply-api/readyz,

@@ -35,7 +35,7 @@ import {
   type SwoPrescription,
   type SwoProvider,
 } from "../../lib/swo-pdf";
-import { requireAdmin } from "../../middlewares/requireAdmin";
+import { requirePermission } from "../../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -46,7 +46,10 @@ const paramsSchema = z.object({
 
 router.get(
   "/admin/patients/:id/prescriptions/:rxId/swo",
-  requireAdmin,
+  // CMS-standardized SWO PDF render. Read-only and per-patient —
+  // every role with `patients.read` (i.e. every current role) can
+  // pull it.
+  requirePermission("patients.read"),
   async (req, res) => {
     const params = paramsSchema.safeParse(req.params);
     if (!params.success) {
