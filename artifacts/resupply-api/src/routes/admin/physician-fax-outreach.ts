@@ -43,7 +43,7 @@ import {
 import { signFaxDocumentToken } from "../../lib/fax-document-token.js";
 import { logger } from "../../lib/logger.js";
 import { rateLimit } from "../../middlewares/rate-limit.js";
-import { requireAdmin } from "../../middlewares/requireAdmin.js";
+import { requirePermission } from "../../middlewares/requireAdmin.js";
 
 const router: IRouter = Router();
 
@@ -216,7 +216,11 @@ async function dispatchFax(outreachId: string, to: string): Promise<DispatchResu
 // POST /admin/physician-fax-outreach — create + dispatch
 // ---------------------------------------------------------------------------
 
-router.post("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
+// Create + record Rx-renewal physician faxes (Twilio dispatch when
+// configured, else pending). Writes per-patient outreach state, so
+// `patients.update` matches the rest of the patient-tier write
+// matrix.
+router.post("/admin/physician-fax-outreach", requirePermission("patients.update"), async (req, res) => {
   const parsed = createBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -322,7 +326,8 @@ const retryLimiter = rateLimit({
 
 router.post(
   "/admin/physician-fax-outreach/:id/retry",
-  requireAdmin,
+  // Retry — same write scope as the initial create.
+  requirePermission("patients.update"),
   retryLimiter,
   async (req, res) => {
     const rawId = req.params.id;
@@ -416,7 +421,9 @@ router.post(
 // GET /admin/physician-fax-outreach — list rows for a patient
 // ---------------------------------------------------------------------------
 
-router.get("/admin/physician-fax-outreach", requireAdmin, async (req, res) => {
+// Per-CSR read of the queue. `patients.read` matches the rest of
+// the patient-tier read matrix (every current role holds it).
+router.get("/admin/physician-fax-outreach", requirePermission("patients.read"), async (req, res) => {
   const parsed = listQuery.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_query" });
