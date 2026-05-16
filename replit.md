@@ -45,7 +45,7 @@ Facial image processing is performed entirely on-device using MediaPipe Face Mes
 
 ### Technical Stack
 
-The project is built as a monorepo using `pnpm workspaces`, `Node.js v24`, and `TypeScript v5.9`. The API uses `Express 5` with `Zod` for validation. The frontend is developed with `React`, `Vite`, `Tailwind CSS`, and `Wouter`. `Drizzle ORM` with `node-postgres` handles database interactions. Authentication is an in-house solution using `argon2id` and DB-backed `pf_session` cookies.
+The project is built as a monorepo using `pnpm workspaces`, `Node.js v24`, and `TypeScript v5.9`. The API uses `Express 5` with `Zod` for validation. The frontend is developed with `React`, `Vite`, `Tailwind CSS`, and `Wouter`. Database access goes through the `Supabase` service-role client exported from `@workspace/resupply-db` — every route, worker, and helper reads/writes via PostgREST. A small `node-postgres` pool is retained inside `@workspace/resupply-db` for the migration tooling and a handful of legacy worker paths that have not yet been ported. Authentication is an in-house solution using `argon2id` and DB-backed `pf_session` cookies.
 
 ### Application Flow and Design
 

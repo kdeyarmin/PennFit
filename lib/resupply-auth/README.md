@@ -9,11 +9,14 @@ this app — no third-party identity vendor in the loop. See
 
 What lands in Stage 1:
 
-- Drizzle schema definitions for the new `auth` Postgres schema
-  (`auth.users`, `auth.password_credentials`, `auth.sessions`,
-  `auth.email_tokens`, `auth.login_attempts`). Tables are created by
-  the hand-written migration `0022_in_house_auth.sql` in
-  `lib/resupply-db/drizzle/`.
+- The `auth` Postgres schema (`auth.users`, `auth.password_credentials`,
+  `auth.sessions`, `auth.email_tokens`, `auth.login_attempts`) is
+  created by the hand-written migration `0022_in_house_auth.sql`
+  under `lib/resupply-db/drizzle/` (directory name is historical;
+  see `lib/resupply-db/README.md`). Row shapes are now sourced from
+  the generated Supabase `Database` types in
+  `@workspace/resupply-db`; callers read and write via the
+  service-role client.
 - Pure helpers: password hashing (argon2id), opaque session
   token generation + hashing, session expiry math, email-token
   generation.

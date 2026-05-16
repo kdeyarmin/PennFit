@@ -115,18 +115,25 @@ read — lives in [`README.md`](./README.md#environment-variables) and
   exported from `@workspace/resupply-db` as
   `getSupabaseServiceRoleClient()`; every route, worker, and helper
   reads/writes through PostgREST via that client. **Supabase is the
-  only data path** — drizzle-kit, drizzle.config.ts, and the
-  structural drizzle-drift CI check have all been retired. The SQL
-  files in `lib/resupply-db/drizzle/*.sql` are the source of truth
-  for migration history; `lib/resupply-db/scripts/migrate.mjs`
+  only data path** — `drizzle-orm`, `drizzle-kit`, `drizzle-zod`,
+  `drizzle.config.ts`, the `src/schema/**` TS schema directory, and
+  the structural `check-drizzle-drift.sh` CI check have all been
+  retired. The SQL files in `lib/resupply-db/drizzle/*.sql` are the
+  source of truth for migration history; `lib/resupply-db/scripts/migrate.mjs`
   applies them via raw `pg`. New migrations are hand-written SQL
-  (or generated via Supabase's own tooling). The schema TS files
-  under `lib/resupply-db/src/schema/**` still import `drizzle-orm`
-  for type-only inference, but no production runtime path imports
-  it. Schema/migration co-change is enforced by
-  `scripts/check-resupply-migration-pair.sh`. The "no direct `pg`
-  outside `lib/resupply-db`" invariant is enforced by Rule 7 in
-  `scripts/check-resupply-architecture.sh`.
+  (or generated via Supabase's own tooling). The directory name and
+  the on-DB `drizzle.resupply_migrations` history schema are kept
+  unchanged so production's applied-migration rows continue to gate
+  new deploys cleanly; a rename is tracked as a separate operational
+  change. `getDbPool` is still called by `scripts/migrate.mjs` and a
+  small number of legacy worker paths (e.g.
+  `artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts`).
+  The "no direct `pg` outside `lib/resupply-db`" invariant is enforced
+  by Rule 7 in `scripts/check-resupply-architecture.sh`; the same
+  script also forbids `drizzle-orm` imports in `lib/resupply-domain`
+  (Rule 2). The remaining schema-drift pre-commit guard is
+  `scripts/check-resupply-migration-prefix.sh` (the historical
+  co-change pair-check was retired with the TS schema directory).
 - **Auth:** in-house, `argon2id` + DB-backed `pf_session` cookies.
   Admin auth flows live under `/admin/sign-in`, `/admin/forgot-password`,
   `/admin/reset-password`, `/admin/verify-email`.
