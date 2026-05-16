@@ -2,7 +2,14 @@
 
 > **Stop. Read this before adding a migration here.**
 
-The Drizzle migration journal in this directory is currently out of sync
+The directory name is **historical** — Drizzle has been fully retired
+and new migrations are hand-written SQL applied by
+`scripts/migrate.mjs` via raw `pg`. The directory and the on-DB
+`drizzle.resupply_migrations` history table keep their names so the
+existing production rows continue to gate new migrations cleanly; a
+rename is tracked as a separate operational change.
+
+The migration journal in this directory is currently out of sync
 with the SQL files on disk. There are 73 `.sql` files but only 52 entries
 in `meta/_journal.json`, and six prefixes are duplicated. Until that drift
 is reconciled with production state, **no new migration may be added with
@@ -14,10 +21,10 @@ collected first, and the coordinated rewrite procedure live in
 
 ## What you need to know in 30 seconds
 
-1. **`scripts/post-merge.sh` runs `migrate.mjs` with no `drizzle-kit
-   generate` step beforehand.** The migrator only applies files
-   referenced by `meta/_journal.json`. Files in this directory that are
-   not journaled are silently skipped at deploy time.
+1. **`scripts/post-merge.sh` runs `migrate.mjs` at deploy time.** The
+   migrator only applies files referenced by `meta/_journal.json`. Files
+   in this directory that are not journaled are silently skipped at
+   deploy time.
 2. **The journal stops at `0049_physician_fax_outreach_status_pending_idx`.**
    Every SQL file from `0049_patient_documents.sql` through `0066_*` is
    present on disk but **not journaled** — meaning the schema state these
@@ -60,21 +67,17 @@ link to the rewrite ticket.
 
 ## Why we don't "just regenerate the journal"
 
-It's tempting to run `pnpm --filter @workspace/resupply-db run generate`,
-let drizzle-kit rewrite `_journal.json` from the current TS schema, and
-ship it. **Don't.** That breaks under any of the three scenarios listed
-in the investigation doc:
+It's tempting to hand-rewrite `_journal.json` from the current SQL
+file set and ship it. **Don't.** That breaks under any of the
+scenarios listed in the investigation doc:
 
-- If production applied these files under their current names (via
-  `drizzle-kit push` or a manual `psql` session), production's
-  `drizzle.resupply_migrations` table holds the original tags. After a
-  rename + journal rebuild, those tags no longer match → next deploy
-  either fails on a missing-tag check or treats the migrations as new
-  and re-applies them (e.g. `42P07 duplicate_object` from a second
-  `CREATE TABLE patient_therapy_links`).
-- If production runs `drizzle-kit generate` mid-deploy somewhere, the
-  journal it produced won't match what we'd rebuild here (timestamps
-  and hashes differ), so the next run synthesizes "new" migrations.
+- If production applied these files under their current names (via a
+  manual `psql` session or a previous tooling generation),
+  production's `drizzle.resupply_migrations` table holds the original
+  tags. After a rename + journal rebuild, those tags no longer match
+  → next deploy either fails on a missing-tag check or treats the
+  migrations as new and re-applies them (e.g. `42P07 duplicate_object`
+  from a second `CREATE TABLE patient_therapy_links`).
 - If production hasn't redeployed since the journal was last in sync,
   we'd be rebuilding on a stale baseline; the next deploy attempts a
   from-scratch reapply that races with whatever else is in flight.
@@ -104,8 +107,7 @@ script has shipped:
 
 1. The duplicate-prefix list goes to zero.
 2. `meta/_journal.json` matches the on-disk SQL files.
-3. `scripts/check-drizzle-drift.sh` passes without `continue-on-error`.
-4. `scripts/check-resupply-migration-prefix.sh` is updated (or removed)
+3. `scripts/check-resupply-migration-prefix.sh` is updated (or removed)
    so new migrations can be added in the normal `<next-prefix>` slot.
 
-Until all four are true, this guardrail stays.
+Until all three are true, this guardrail stays.
