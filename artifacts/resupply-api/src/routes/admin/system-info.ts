@@ -19,13 +19,12 @@ import { requireAdmin } from "../../middlewares/requireAdmin";
 const router: IRouter = Router();
 
 router.get("/admin/system-info", requireAdmin, async (_req, res) => {
-  // The Drizzle → Supabase migration replaces the per-row Drizzle
-  // migrations table reads with placeholder values: PostgREST doesn't
-  // expose `SHOW server_version` and the `__drizzle_migrations`
-  // bookkeeping table is going away with Drizzle anyway. The Supabase
-  // dashboard surfaces both pieces directly to operators; here we
-  // return nulls to keep the response shape stable for the existing
-  // SPA renderer.
+  // pgVersion / migrationCount / lastMigrationAt are returned as
+  // placeholders: PostgREST doesn't expose `SHOW server_version`, and
+  // the on-DB migration bookkeeping table is only consulted by the
+  // deploy migrator (`scripts/migrate.mjs`). The Supabase dashboard
+  // surfaces both pieces directly to operators; here we return nulls
+  // to keep the response shape stable for the existing SPA renderer.
   const pgVersion: string | null = null;
   const migrationCount = 0;
   const lastMigrationAt: string | null = null;

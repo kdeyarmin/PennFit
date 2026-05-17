@@ -1,90 +1,97 @@
 # @workspace/resupply-db
 
-Drizzle schema + Postgres connection for the CPAP resupply system. Owns the patients, equipment, supplies, orders, consents, suppression, audit, outbound-message, and conversation tables. Patient fields are stored as plaintext `text`/`jsonb`; column-level pgcrypto encryption was removed in migration `0025_strip_phi_encryption.sql`. ADR 003's hand-authored migration contract still applies.
+Supabase service-role client + pure types for the CPAP resupply system.
+Owns the patients, equipment, supplies, orders, consents, suppression,
+audit, outbound-message, and conversation tables. Patient fields are
+stored as plaintext `text`/`jsonb`; column-level pgcrypto encryption was
+removed in migration `0025_strip_phi_encryption.sql`. ADR 003's
+hand-authored migration contract still applies.
 
-## Status
+## Public surface
 
-Phase 0 — scaffolding only. No exports yet. See `docs/resupply/adr/` for the
-architectural decisions that govern this package.
+- `getSupabaseServiceRoleClient()` — the shared, lazily-initialized
+  Supabase JS client. Every resupply package that needs to read or
+  write Postgres at runtime goes through it. **This is the only
+  production data path.**
+- `Database`, `Json` — generated PostgREST row shapes from
+  `./supabase-types.ts`.
+- Pure types and constants from `./types.ts` (`AdminRole`,
+  `EmailTokenPurpose`, `CommunicationPreferences`, etc.).
+- The `patient_latest_message` projection helpers
+  (Supabase-flavored).
+- `getDbPool` — direct `pg` pool. Used by the migration tooling
+  under `./scripts` and by a small number of legacy worker paths
+  that have not yet been ported to PostgREST (e.g.
+  `artifacts/resupply-api/src/worker/jobs/bulk-campaign-tick.ts`).
+  Architecture Rule 7 in `scripts/check-resupply-architecture.sh`
+  enforces that nothing outside `lib/resupply-db` opens its own
+  `pg` connection — callers must go through `getDbPool()` from this
+  package or, preferably, the Supabase client.
 
-## Schema-drift guard
+Drizzle has been fully retired: no `drizzle-orm`, `drizzle-kit`, or
+`drizzle-zod` dependency is declared anywhere, and no runtime code
+imports it. `scripts/check-resupply-architecture.sh` additionally
+forbids `drizzle-orm` imports in `lib/resupply-domain` (Rule 2) so
+the pure-domain layer can't quietly take a dependency on a vendor
+SDK; the rest of the workspace is covered by the absence of the
+package from the lockfile.
 
-This package is guarded against the "edited the schema, forgot the
-migration" failure mode by **two** layered checks:
+## Migrations
 
-1. `scripts/check-resupply-migration-pair.sh` — a **co-change rule**:
-   any commit that modifies a file under `src/schema/` must also add
-   a new migration SQL file under `drizzle/`. Runs from the
-   pre-commit hook and is exercised by
-   `scripts/check-resupply-migration-pair.sh.test`.
+SQL migration files live in `./drizzle/`. The directory name is
+**historical** — new migrations are hand-written SQL (no `drizzle-kit`
+involved). The directory will be renamed in a separate operational
+change; see `./drizzle/README.md` and the comments at the top of
+`scripts/migrate.mjs` for why the on-DB schema name
+(`drizzle.resupply_migrations`) is preserved.
 
-2. `scripts/check-drizzle-drift.sh` — a **structural check**: runs
-   `drizzle-kit generate` and asserts no new files would be emitted.
-   Catches subtle mismatches the co-change rule can't (e.g. "I
-   edited the schema **and** committed an unrelated migration in the
-   same commit"). Self-tested by
-   `scripts/check-drizzle-drift.sh.test` against a sandboxed clone
-   of this lib.
+### Apply path
 
-### Snapshot meta layout
+`scripts/migrate.mjs` is the canonical apply script. It is invoked
+by `scripts/post-merge.sh` at deploy time and reads
+`./drizzle/meta/_journal.json` to know what to apply. The on-DB
+history table is `drizzle.resupply_migrations(id, hash, created_at)`.
 
-`drizzle/meta/_journal.json` lists every shipped migration (idx
-0–29 → tags 0000–0027, with two duplicate-numbered pairs at 0016/0017
-that ADR 003 explicitly allows). The runtime migrator
-(`scripts/migrate.mjs`) hashes each journal entry against
-`drizzle.resupply_migrations` and **requires the journal + SQL files
-to stay byte-identical** to what production has applied. Renaming or
-re-tagging would cause it to reject the deploy or attempt to re-apply
-already-applied migrations.
+Gating at deploy time looks **only** at `MAX(created_at)` in the
+history table: any journal entry whose `when` is strictly greater
+than that value gets applied, anything else is silently skipped.
+The migrator does not compare hashes or tags. That means:
 
-`drizzle/meta/` itself, however, only needs to satisfy
-`drizzle-kit generate`. drizzle-kit walks the prevId chain across
-every snapshot file present in `meta/` and only diffs the schema
-against the **last** (highest-indexed) one. Task #39 collapsed the
-old, partial snapshot chain (0000–0003 only) into a single
-**consolidated snapshot** named to match the last journal entry's
-idx — currently `0029_snapshot.json`. This is enough for drift
-detection without forcing us to backfill 30 historically-accurate
-intermediate snapshots.
+- Renaming an already-applied migration on disk is invisible to the
+  deploy migrator (the `when` is unchanged, so nothing re-runs), but
+  it will break a fresh-DB build that has to apply the whole journal
+  from zero.
+- Bumping the `when` of an already-applied migration to a higher
+  value causes the migrator to re-run that file against production,
+  typically blowing up with `42P07 duplicate_object` from a repeated
+  `CREATE TABLE`.
 
-### Rebuilding the snapshot meta
+So the journal + SQL files must stay byte-identical to what
+production has applied — that constraint is enforced by code review
+and ADR 003, not by the migrator itself.
 
-If a future migration grows the journal (say to idx 30) the
-consolidated snapshot must be rebuilt at the new index. The
-procedure is reproducible in-place:
+### Pre-commit guards
 
-```sh
-cd lib/resupply-db
-# 1. Stash the current journal + SQL files (they MUST stay byte-
-#    identical for production).
-mkdir -p /tmp/drizzle-stash
-cp -a drizzle/. /tmp/drizzle-stash/
+`scripts/git-hooks/pre-commit` (installed via
+`scripts/install-hooks.sh`) selectively runs:
 
-# 2. Empty drizzle/ so drizzle-kit regenerates from scratch as a
-#    single consolidated baseline.
-rm -f drizzle/*.sql
-rm -rf drizzle/meta
+- `scripts/check-resupply-architecture.sh` — when any
+  `lib/resupply-*` or `artifacts/resupply-*` file changes. Enforces
+  the architecture rules summarized above and in
+  `docs/resupply/ARCHITECTURE.md`.
+- `scripts/check-resupply-migration-prefix.sh` — when a new SQL
+  file is added under `./drizzle/`. Enforces the prefix moratorium
+  (see below).
 
-# 3. Generate the consolidated snapshot.
-DATABASE_URL="postgres://drift-rebuild/none" \
-  pnpm exec drizzle-kit generate
+The historical schema/migration co-change rule and
+`check-drizzle-drift.sh` were retired when the Drizzle schema
+directory was deleted (there is no TS schema to diff against
+anymore). New migrations are hand-written SQL and reviewed manually.
 
-# 4. Capture the just-generated snapshot, then restore originals.
-cp drizzle/meta/0000_snapshot.json /tmp/drizzle-stash/_consolidated_snapshot.json
-rm -f drizzle/0000_*.sql
-rm -f drizzle/meta/0000_snapshot.json
-cp /tmp/drizzle-stash/*.sql drizzle/
-cp /tmp/drizzle-stash/meta/_journal.json drizzle/meta/_journal.json
+## Migration prefix moratorium
 
-# 5. Install the consolidated snapshot at the LAST journal idx
-#    (e.g. 0030 if the new entry is at idx=30). The 4-digit prefix
-#    must equal the highest "idx" field in _journal.json.
-cp /tmp/drizzle-stash/_consolidated_snapshot.json drizzle/meta/<NN>_snapshot.json
-
-# 6. Verify: drift checker should report no changes.
-DATABASE_URL="postgres://drift-rebuild/none" \
-  bash ../../scripts/check-drizzle-drift.sh
-```
-
-Then commit only the new `<NN>_snapshot.json` (the SQL + journal
-should be byte-identical to before).
+Because the journal and on-disk SQL files have temporarily diverged,
+any *added* migration file must use a 4-digit prefix strictly greater
+than `0066`. See `./drizzle/README.md` and
+`docs/migration-state-investigation-2026-05-08.md` for the full
+investigation and the eventual rewrite procedure.
