@@ -160,7 +160,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
   it("401 when unsigned", async () => {
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/pause`,
     ).send({});
     expect(r.status).toBe(401);
     expect(r.body.error).toBe("sign_in_required");
@@ -171,7 +171,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     stageSupabaseResponse("shop_subscriptions", "select", { data: null });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/pause`,
     ).send({});
     expect(r.status).toBe(404);
     expect(r.body.error).toBe("subscription_not_found");
@@ -185,7 +185,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/pause`,
     ).send({});
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("subscription_canceled");
@@ -200,7 +200,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     stripeConfigured = false;
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/pause`,
     ).send({});
     expect(r.status).toBe(503);
     expect(r.body.error).toBe("shop_unavailable");
@@ -216,7 +216,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     );
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/pause`,
     ).send({});
     expect(r.status).toBe(502);
     expect(r.body.error).toBe("stripe_update_failed");
@@ -232,7 +232,7 @@ describe("POST /shop/me/subscriptions/:id/pause", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/pause`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/pause`,
     ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
@@ -256,7 +256,7 @@ describe("POST /shop/me/subscriptions/:id/resume", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/resume`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/resume`,
     ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
@@ -272,7 +272,7 @@ describe("POST /shop/me/subscriptions/:id/resume", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/resume`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/resume`,
     ).send({});
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("subscription_canceled");
@@ -286,7 +286,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
   it("401 when unsigned", async () => {
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(401);
   });
@@ -295,7 +295,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     stubSignedIn(USER_ID);
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({});
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("invalid_body");
@@ -306,7 +306,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     stageSupabaseResponse("shop_subscriptions", "select", { data: null });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(404);
   });
@@ -318,7 +318,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("subscription_canceled");
@@ -352,7 +352,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe("multi_item_subscription");
@@ -365,7 +365,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: CURRENT_PRICE_ID });
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true, unchanged: true });
@@ -380,7 +380,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     stripePricesRetrieveMock.mockRejectedValueOnce(new Error("no such price"));
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("invalid_price");
@@ -399,7 +399,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("price_not_recurring");
@@ -418,7 +418,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe("price_product_mismatch");
@@ -440,7 +440,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     );
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(502);
     expect(r.body.error).toBe("stripe_fetch_failed");
@@ -468,7 +468,7 @@ describe("POST /shop/me/subscriptions/:id/cadence", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence`,
     ).send({ priceId: NEW_PRICE_ID });
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
@@ -485,7 +485,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
   it("401 when unsigned", async () => {
     const r = await get(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence-options`,
     );
     expect(r.status).toBe(401);
   });
@@ -495,7 +495,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
     stageSupabaseResponse("shop_subscriptions", "select", { data: null });
     const r = await get(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence-options`,
     );
     expect(r.status).toBe(404);
     expect(stripePricesListMock).not.toHaveBeenCalled();
@@ -529,7 +529,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
     });
     const r = await get(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence-options`,
     );
     expect(r.status).toBe(409);
   });
@@ -565,7 +565,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
     });
     const r = await get(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence-options`,
     );
     expect(r.status).toBe(200);
     expect(r.body.options).toEqual([
@@ -605,7 +605,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
     stripePricesListMock.mockRejectedValueOnce(new Error("network blip"));
     const r = await get(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cadence-options`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cadence-options`,
     );
     expect(r.status).toBe(200);
     expect(r.body.options).toEqual([]);
@@ -616,7 +616,7 @@ describe("GET /shop/me/subscriptions/:id/cadence-options", () => {
 
 describe("GET /shop/me/subscriptions (smoke)", () => {
   it("401 when unsigned", async () => {
-    const r = await get(makeApp(), "/resupply-api/me/subscriptions");
+    const r = await get(makeApp(), "/resupply-api/shop/me/subscriptions");
     expect(r.status).toBe(401);
   });
 
@@ -636,7 +636,7 @@ describe("GET /shop/me/subscriptions (smoke)", () => {
         },
       ],
     });
-    const r = await get(makeApp(), "/resupply-api/me/subscriptions");
+    const r = await get(makeApp(), "/resupply-api/shop/me/subscriptions");
     expect(r.status).toBe(200);
     expect(r.body.subscriptions).toHaveLength(1);
     expect(r.body.subscriptions[0].id).toBe(VALID_ID);
@@ -666,7 +666,7 @@ describe("POST /shop/me/subscriptions/:id/cancel (smoke)", () => {
     });
     const r = await post(
       makeApp(),
-      `/resupply-api/me/subscriptions/${VALID_ID}/cancel`,
+      `/resupply-api/shop/me/subscriptions/${VALID_ID}/cancel`,
     ).send({});
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
