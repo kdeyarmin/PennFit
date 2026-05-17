@@ -496,6 +496,19 @@ export interface Database {
         Update: Partial<Database["resupply"]["Tables"]["insurance_leads"]["Row"]>;
         Relationships: [];
       };
+      fitter_leads: {
+        Row: {
+          id: string;
+          email: string;
+          marketing_opt_in: boolean;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
+        Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
+        Relationships: [];
+      };
       shop_product_questions: {
         Row: {
           id: string;

@@ -23,6 +23,7 @@ import {
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useFitterStore } from "@/hooks/use-fitter-store";
+import { submitFitterLead } from "@/lib/shop-api";
 
 // Lightweight RFC-5322-ish check. The order form's zod schema runs a
 // stricter validation at submit time; this one just guards the
@@ -54,8 +55,22 @@ export function Consent() {
 
   const handleContinue = () => {
     if (!canContinue) return;
-    setEmailConsent(trimmedEmail.toLowerCase(), true);
+    const normalizedEmail = trimmedEmail.toLowerCase();
+    setEmailConsent(normalizedEmail, true);
     track("consent_given");
+    // Fire-and-forget the server-side record so the opt-in row exists
+    // even for patients who don't make it to /order. We deliberately
+    // don't await — the in-memory FitterStore is the source of truth
+    // for the rest of the flow, and the endpoint itself is best-effort
+    // on the server side too. A failure here is logged for ops triage
+    // and the patient still advances.
+    submitFitterLead({
+      email: normalizedEmail,
+      marketingOptIn: true,
+      website: "",
+    }).catch((err) => {
+      console.warn("fitter-lead submit failed (continuing)", err);
+    });
     setLocation("/capture");
   };
 
