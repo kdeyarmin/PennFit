@@ -504,6 +504,7 @@ export interface Database {
           submitter_ip: string | null;
           user_agent: string | null;
           created_at: string;
+          nudged_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
