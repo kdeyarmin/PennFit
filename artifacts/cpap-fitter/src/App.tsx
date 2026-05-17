@@ -210,8 +210,27 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
  * pattern, which left the URL out of sync with rendered content during
  * the redirect tick.
  */
+/**
+ * Email + marketing-consent gate that fronts every fitter step. The
+ * `/consent` page collects both before navigating to `/capture`; a
+ * patient who deep-links into `/capture` (or refreshes a tab whose
+ * sessionStorage was cleared) gets bounced back here.
+ */
+function useFitterEmailGate(): boolean {
+  const { email, emailConsent } = useFitterStore();
+  return Boolean(email && emailConsent);
+}
+
+function GuardedCapture() {
+  const consented = useFitterEmailGate();
+  if (!consented) return <Redirect to="/consent" />;
+  return <Capture />;
+}
+
 function GuardedMeasure() {
   const { capturedImage, measurements } = useFitterStore();
+  const consented = useFitterEmailGate();
+  if (!consented) return <Redirect to="/consent" />;
   // See canStayOnMeasure for the invariant. The non-obvious case is the
   // brief post-extraction window where capturedImage has been cleared
   // for privacy but /measure hasn't navigated to /questionnaire yet —
@@ -222,11 +241,15 @@ function GuardedMeasure() {
 }
 function GuardedQuestionnaire() {
   const { measurements } = useFitterStore();
+  const consented = useFitterEmailGate();
+  if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/capture" />;
   return <Questionnaire />;
 }
 function GuardedResults() {
   const { measurements } = useFitterStore();
+  const consented = useFitterEmailGate();
+  if (!consented) return <Redirect to="/consent" />;
   if (!measurements) return <Redirect to="/" />;
   return <Results />;
 }
@@ -254,6 +277,8 @@ function LegacyResupplyRedirect({ rest }: { rest: string }) {
 
 function GuardedOrder() {
   const { chosenMask } = useFitterStore();
+  const consented = useFitterEmailGate();
+  if (!consented) return <Redirect to="/consent" />;
   if (!chosenMask) return <Redirect to="/results" />;
   return <Order />;
 }
@@ -315,7 +340,7 @@ function PatientRouter() {
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/consent" component={Consent} />
-          <Route path="/capture" component={Capture} />
+          <Route path="/capture" component={GuardedCapture} />
           <Route path="/masks" component={Masks} />
           <Route path="/how-it-works" component={HowItWorks} />
           <Route path="/faq" component={Faq} />

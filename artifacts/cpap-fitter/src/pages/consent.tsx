@@ -10,20 +10,37 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   ShieldCheck,
   Camera,
   ServerOff,
   AlertCircle,
   Database,
+  Mail,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useFitterStore } from "@/hooks/use-fitter-store";
+
+// Lightweight RFC-5322-ish check. The order form's zod schema runs a
+// stricter validation at submit time; this one just guards the
+// in-flow gate so the patient sees a clear error before clicking
+// Continue, not a 400 from /capture.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function Consent() {
   useDocumentTitle("Privacy consent");
   const [, setLocation] = useLocation();
+  const {
+    email: storedEmail,
+    emailConsent: storedEmailConsent,
+    setEmailConsent,
+  } = useFitterStore();
   const [agreed, setAgreed] = useState(false);
+  const [email, setEmail] = useState(storedEmail ?? "");
+  const [emailOptIn, setEmailOptIn] = useState(storedEmailConsent);
 
   // home_view fires on mount — the consent page is the first content view
   // after the landing CTA, so it's the right anchor for the funnel.
@@ -31,11 +48,15 @@ export function Consent() {
     track("home_view");
   }, []);
 
+  const trimmedEmail = email.trim();
+  const emailValid = EMAIL_RE.test(trimmedEmail);
+  const canContinue = agreed && emailValid && emailOptIn;
+
   const handleContinue = () => {
-    if (agreed) {
-      track("consent_given");
-      setLocation("/capture");
-    }
+    if (!canContinue) return;
+    setEmailConsent(trimmedEmail.toLowerCase(), true);
+    track("consent_given");
+    setLocation("/capture");
   };
 
   return (
@@ -168,6 +189,71 @@ export function Consent() {
               </p>
             </div>
           </div>
+
+          {/*
+            Email gate. The fitter walks the patient through ~five
+            screens of measurement + recommendation work; without an
+            email on file we can't follow up with the mask suggestion,
+            answer questions, or remind them to finish if they drop
+            off. We collect both fields here so the gate is explicit
+            (and the order page later can pre-fill from this value).
+          */}
+          <div className="space-y-3 rounded-xl border border-border/60 glass-panel p-5">
+            <div className="flex items-center gap-3">
+              <div className="shrink-0 h-9 w-9 rounded-lg icon-halo-navy flex items-center justify-center">
+                <Mail className="w-4 h-4" />
+              </div>
+              <Label
+                htmlFor="fitter-email"
+                className="font-medium tracking-tight"
+              >
+                Email address
+              </Label>
+            </div>
+            <Input
+              id="fitter-email"
+              data-testid="input-fitter-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              aria-invalid={email.length > 0 && !emailValid}
+              aria-describedby="fitter-email-help"
+            />
+            <p
+              id="fitter-email-help"
+              className="text-sm text-muted-foreground"
+            >
+              We need an email on file so we can send you the mask
+              recommendation and any follow-up about your order.
+            </p>
+            <div
+              className="flex flex-row items-start space-x-3 space-y-0 pt-2 cursor-pointer"
+              onClick={() => setEmailOptIn(!emailOptIn)}
+            >
+              <Checkbox
+                id="email-consent"
+                checked={emailOptIn}
+                onCheckedChange={(checked) =>
+                  setEmailOptIn(checked as boolean)
+                }
+              />
+              <div className="space-y-1 leading-none">
+                <label
+                  htmlFor="email-consent"
+                  className="font-medium cursor-pointer"
+                >
+                  I agree to receive emails from PennPaps
+                </label>
+                <p className="text-sm text-muted-foreground">
+                  Mask recommendation, fitting follow-ups, and product news.
+                  You can unsubscribe at any time.
+                </p>
+              </div>
+            </div>
+          </div>
         </CardContent>
         <CardFooter className="flex justify-between border-t border-border/40 p-6">
           <Link href="/">
@@ -175,7 +261,8 @@ export function Consent() {
           </Link>
           <Button
             onClick={handleContinue}
-            disabled={!agreed}
+            disabled={!canContinue}
+            data-testid="button-continue-to-camera"
             className="px-8 btn-primary-glow disabled:shadow-none rounded-full"
           >
             I Consent, Continue to Camera
