@@ -171,21 +171,36 @@ export async function runFitterLeadReengageSweep(
   if (candidates.length === 0) return stats;
 
   // Bulk-check conversion: pull every public.orders row whose
-  // patient_email matches one of our candidates. PostgREST's
-  // .in("col", values) handles up to ~1k values in one round-trip,
-  // well under our BATCH_SIZE cap. The result is the set of emails
-  // we should SKIP — patients who already ordered.
+  // patient_email case-insensitively matches one of our candidates.
+  //
+  // Case normalization: fitter_leads rows are lowercased at write
+  // (the /shop/fitter-leads zod schema .toLowerCase()s before insert),
+  // but public.orders.patient_email is stored as-entered (see
+  // routes/storefront/orders.ts), so a mixed-case order email would
+  // miss a plain `.in("patient_email", emails)` filter and the
+  // dispatcher would re-email a patient who already converted.
+  //
+  // PostgREST .in() is case-sensitive, so we compose an OR of
+  // case-insensitive ILIKE clauses — one per candidate email — and
+  // lowercase the returned values before set-membership tests.
+  // The candidate cap (BATCH_SIZE) keeps the OR clause bounded.
   const emails = Array.from(new Set(candidates.map((c) => c.email)));
+  // Escape the candidate emails for the PostgREST or= filter. Commas
+  // delimit clauses; periods don't need escaping inside ilike values.
+  const orClauses = emails
+    .map((e) => `patient_email.ilike.${e.replace(/,/g, "")}`)
+    .join(",");
   const { data: converted, error: convErr } = await supabase
     .schema("public")
     .from("orders")
     .select("patient_email")
-    .in("patient_email", emails);
+    .or(orClauses);
   if (convErr) throw convErr;
   const convertedSet = new Set(
     (converted ?? [])
       .map((r) => r.patient_email)
-      .filter((e): e is string => typeof e === "string"),
+      .filter((e): e is string => typeof e === "string")
+      .map((e) => e.toLowerCase()),
   );
 
   const sendgrid = createSendgridClient({
@@ -205,6 +220,7 @@ export async function runFitterLeadReengageSweep(
       continue;
     }
 
+    let sendOk = true;
     try {
       await sendgrid.sendEmail({
         to: lead.email,
@@ -213,20 +229,24 @@ export async function runFitterLeadReengageSweep(
         text,
       });
     } catch (err) {
+      // Pass the Error object so pino's err.message / err.stack /
+      // err.cause.* redact rules engage; logging err.message as a
+      // bare string would bypass them.
       logger.warn(
-        {
-          err: err instanceof Error ? err.message : "unknown",
-          leadId: lead.id,
-        },
+        { err, leadId: lead.id },
         "fitter-lead-reengage: send failed",
       );
       stats.errors += 1;
-      continue;
+      sendOk = false;
     }
 
-    // Stamp the row so the next sweep skips it. If the stamp fails
-    // the patient might get nudged again tomorrow — acceptable;
-    // double-send is annoying, double-stamp is silent.
+    // Stamp regardless of send outcome. On success the stamp is the
+    // "we delivered" record; on failure it's a "we tried and won't
+    // retry" sentinel — without this, a persistently-failing send
+    // (bad address, SendGrid 5xx on a single recipient) would re-fire
+    // every day for ~27 days until the lead aged out of the 30-day
+    // window. One nudge attempt per session is the policy; spam-side
+    // failure is preferable to spam-side success.
     const { error: stampErr } = await supabase
       .schema("resupply")
       .from("fitter_leads")
@@ -238,7 +258,7 @@ export async function runFitterLeadReengageSweep(
         "fitter-lead-reengage: nudged_at stamp failed",
       );
     }
-    stats.emailed += 1;
+    if (sendOk) stats.emailed += 1;
   }
 
   return stats;
@@ -247,6 +267,21 @@ export async function runFitterLeadReengageSweep(
 export async function registerFitterLeadReengageJob(
   boss: PgBoss,
 ): Promise<void> {
+  // Opt-in via env. Without RESUPPLY_FITTER_REENGAGE_ENABLED=1 we
+  // skip registration entirely — no queue, no schedule, no handler.
+  // This keeps the cron OFF by default so a staging deploy with real
+  // SendGrid keys can't accidentally email production patient
+  // addresses; production sets the flag explicitly to turn it on.
+  // The runtime sweep (runFitterLeadReengageSweep) already self-skips
+  // on missing SendGrid creds, but credentialed staging environments
+  // exist and would otherwise start firing the moment this lands.
+  if (process.env.RESUPPLY_FITTER_REENGAGE_ENABLED !== "1") {
+    logger.info(
+      { event: "fitter-lead.reengage.disabled" },
+      "fitter-lead-reengage: not registered (RESUPPLY_FITTER_REENGAGE_ENABLED!=1)",
+    );
+    return;
+  }
   await boss.createQueue(NUDGE_JOB);
   await boss.work(NUDGE_JOB, async () => {
     try {

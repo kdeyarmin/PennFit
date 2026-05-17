@@ -49,11 +49,18 @@ export async function recordFitterLead(
     if (error) throw error;
     return { id: inserted?.id ?? null };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    // Pass the Error object so pino's err.message / err.stack /
+    // err.cause.* redact rules engage; logging the bare string under
+    // the `err` key would bypass redaction. The returned `error`
+    // string is the caller's choice — it goes into a counts-only
+    // log line, not the audit table.
     logger.warn(
-      { err: msg },
+      { err },
       "fitter-lead-record: insert failed (continuing best-effort)",
     );
-    return { id: null, error: msg };
+    return {
+      id: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }

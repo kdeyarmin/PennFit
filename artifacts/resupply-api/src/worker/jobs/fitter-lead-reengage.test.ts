@@ -172,7 +172,7 @@ describe("runFitterLeadReengageSweep", () => {
     expect(sendEmailMock).not.toHaveBeenCalled();
   });
 
-  it("counts a send failure as errors and does not stamp the row", async () => {
+  it("counts a send failure as errors AND stamps the row to prevent retry storm", async () => {
     stageSupabaseResponse("fitter_leads", "select", {
       data: [
         {
@@ -183,6 +183,7 @@ describe("runFitterLeadReengageSweep", () => {
       ],
     });
     stageSupabaseResponse("orders", "select", { data: [] });
+    stageSupabaseResponse("fitter_leads", "update", { data: null });
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid 5xx"));
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
@@ -192,8 +193,14 @@ describe("runFitterLeadReengageSweep", () => {
       emailed: 0,
       errors: 1,
     });
-    // No update call was made — without a successful send we don't
-    // burn the only nudge slot.
-    expect(getSupabaseWritePayloads("fitter_leads", "update")).toHaveLength(0);
+    // Stamp happens regardless of send outcome. Without this, a
+    // permanently-bad address (or a SendGrid 5xx for a specific
+    // recipient) would re-fire every day for ~27 days until the row
+    // aged out of the 30-day window. Policy is one attempt per
+    // session — spam-side failure is preferable to spam-side success.
+    const updates = getSupabaseWritePayloads("fitter_leads", "update");
+    expect(updates).toHaveLength(1);
+    const u = updates[0] as { nudged_at?: string };
+    expect(typeof u.nudged_at).toBe("string");
   });
 });

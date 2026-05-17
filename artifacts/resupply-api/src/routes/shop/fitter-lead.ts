@@ -36,9 +36,27 @@ const leadBody = z
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX = 3;
 const rateBucket = new Map<string, number[]>();
+// Sweep every N requests to drop fully-expired buckets so the map
+// can't grow unbounded over time on a public endpoint. The sweep is
+// O(map size); at the volumes this endpoint sees (a public lead-
+// capture form), a sweep every 200 calls is cheap. Without it, every
+// distinct sender IP leaves a permanent entry in the map.
+const RATE_SWEEP_EVERY = 200;
+let rateBucketSweepCounter = 0;
+
+function sweepRateBucket(now: number): void {
+  for (const [key, timestamps] of rateBucket) {
+    if (timestamps.every((t) => now - t >= RATE_WINDOW_MS)) {
+      rateBucket.delete(key);
+    }
+  }
+}
 
 function rateLimited(key: string): boolean {
   const now = Date.now();
+  if (++rateBucketSweepCounter % RATE_SWEEP_EVERY === 0) {
+    sweepRateBucket(now);
+  }
   const arr = (rateBucket.get(key) ?? []).filter(
     (t) => now - t < RATE_WINDOW_MS,
   );
@@ -122,4 +140,5 @@ export default router;
 // runs so a 429 from one test doesn't leak into the next.
 export function _resetFitterLeadRateBucketForTests(): void {
   rateBucket.clear();
+  rateBucketSweepCounter = 0;
 }
