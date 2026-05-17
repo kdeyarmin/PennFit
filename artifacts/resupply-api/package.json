@@ -38,11 +38,11 @@
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "pg-boss": "^10.4.2",
-    "pino": "^9",
-    "pino-http": "^10",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
     "sanitize-html": "^2.17.4",
     "stripe": "^22.1.1",
-    "twilio": "^5.13.1",
+    "twilio": "^6.0.2",
     "web-push": "^3.6.7",
     "ws": "^8.20.1",
     "zod": "catalog:"
@@ -55,14 +55,14 @@
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
     "@types/sanitize-html": "^2.16.1",
-    "@types/supertest": "^6.0.3",
+    "@types/supertest": "^7.2.0",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.5.13",
     "esbuild": "^0.28.0",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",
     "supertest": "^7.1.4",
-    "thread-stream": "3.1.0",
+    "thread-stream": "4.2.0",
     "vitest": "^3.2.4"
   }
 }

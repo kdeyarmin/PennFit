@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/react": "catalog:",
-    "jsdom": "^25.0.1",
+    "jsdom": "^29.1.1",
     "react": "catalog:",
     "vitest": "^3.2.4"
   }
