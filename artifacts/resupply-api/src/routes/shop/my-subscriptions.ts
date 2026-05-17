@@ -107,7 +107,7 @@ async function findOwnedSubscription(
     stripeSubscriptionId: data.stripe_subscription_id,
     status: data.status,
     cancelAtPeriodEnd: data.cancel_at_period_end,
-    items: ((data.items ?? []) as unknown as SubscriptionItemSnapshot[]) ?? [],
+    items: (data.items ?? []) as unknown as SubscriptionItemSnapshot[],
   };
 }
 
