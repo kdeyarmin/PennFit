@@ -149,7 +149,7 @@ describe("POST /admin/accreditation/policies", () => {
 });
 
 describe("PATCH /admin/accreditation/policies/:id", () => {
-  const POLICY_ID = "11111111-1111-1111-1111-111111111111";
+  const POLICY_ID = "11111111-1111-4111-8111-111111111111";
 
   it("400s when activate + retire are both true", async () => {
     mockAdmin.current = ADMIN;
@@ -190,7 +190,7 @@ describe("PATCH /admin/accreditation/policies/:id", () => {
 });
 
 describe("POST /admin/accreditation/policies/:id/attest", () => {
-  const POLICY_ID = "22222222-2222-2222-2222-222222222222";
+  const POLICY_ID = "22222222-2222-4222-8222-222222222222";
 
   it("401s without a session", async () => {
     const res = await request(makeApp())
