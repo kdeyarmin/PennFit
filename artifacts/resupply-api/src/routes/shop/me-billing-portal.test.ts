@@ -161,8 +161,9 @@ describe("POST /shop/me/billing-portal", () => {
   it("uses /account as default returnPath when body is empty", async () => {
     stubSignedIn();
     stubStripeConfigured();
-    const createMock = getStripeClientMock.mock.results[0]?.value?.billingPortal?.sessions?.create;
-    // Use fresh mock to capture the call arg
+    // Use a fresh mock to capture the call arg so we can assert
+    // the returnPath default (the stub returns a fresh client every
+    // call so the previous test's mock is not reused).
     const sessionCreateMock = vi.fn().mockResolvedValue({ url: PORTAL_URL });
     getStripeClientMock.mockReturnValue({
       billingPortal: {

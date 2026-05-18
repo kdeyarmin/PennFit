@@ -34,7 +34,8 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
-  // @ts-expect-error
+  // @ts-expect-error — the test runs in node where globalThis.document
+  // is undefined; we restore the (possibly-undefined) original.
   globalThis.document = ORIGINAL_DOCUMENT;
   vi.restoreAllMocks();
 });

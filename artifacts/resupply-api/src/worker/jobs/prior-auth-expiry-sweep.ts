@@ -105,6 +105,7 @@ function addDays(base: Date, days: number): Date {
  * @param today - Reference date used to determine expirations; comparisons are performed at the day (YYYY-MM-DD) level in UTC.
  * @returns The populated `ExpirySweepStats` containing counts of expired records, total heads-up alerts queued, and per-window counts for 30, 14, and 7 day windows.
  * @throws If the initial query for overdue prior authorizations fails.
+ */
 export async function runPriorAuthExpirySweep(
   today: Date = new Date(),
 ): Promise<ExpirySweepStats> {
