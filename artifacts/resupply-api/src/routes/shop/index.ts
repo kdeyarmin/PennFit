@@ -46,6 +46,7 @@ import meSleepStudyRouter from "./me-sleep-study";
 import meFormAcknowledgementsRouter from "./me-form-acknowledgements";
 import meReferralsRouter from "./me-referrals";
 import meDocumentsRouter from "./me-documents";
+import meBillingPortalRouter from "./me-billing-portal";
 
 const router: IRouter = Router();
 router.use(productsRouter);
@@ -122,6 +123,11 @@ router.use(meReferralsRouter);
 // /shop/me/documents/* — patient self-service document upload.
 // Patients upload insurance cards, prescriptions, etc. for CSR review.
 router.use(meDocumentsRouter);
+// /shop/me/billing-portal — Stripe Customer Portal session minter.
+// Customer can change saved card, billing address, and review
+// invoices without going through a checkout flow. Replaces the
+// previous "read-only saved card" stub on /account.
+router.use(meBillingPortalRouter);
 router.use(meExportRouter);
 router.use(meReorderSuggestionsRouter);
 router.use(myOrdersRouter);

@@ -135,6 +135,22 @@ async function meFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const fetchShopMe = () => meFetch<ShopMeResponse>("/shop/me");
 
+/**
+ * Open a Stripe Customer Portal session. Backend returns a short-lived
+ * Stripe-hosted URL; the caller is responsible for navigating the
+ * browser to it. After the customer closes the portal, Stripe bounces
+ * them back to `returnPath` on our SPA.
+ *
+ * Throws AccountApiError on 503 (shop not configured) so callers can
+ * surface a friendly "billing not available in this environment"
+ * message instead of a generic error.
+ */
+export const openBillingPortal = (returnPath = "/account") =>
+  meFetch<{ url: string }>("/shop/me/billing-portal", {
+    method: "POST",
+    body: JSON.stringify({ returnPath }),
+  });
+
 export const updateShopMe = (input: {
   displayName?: string | null;
   shippingAddress?: SavedShippingAddress | null;

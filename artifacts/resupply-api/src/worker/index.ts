@@ -42,6 +42,7 @@ import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
+import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -223,6 +224,14 @@ export async function startWorker(): Promise<void> {
   // 04:30 UTC; persists snapshot recentNights into the canonical
   // patient_therapy_nights table for downstream consumers.
   await registerTherapyNightlySyncJob(boss);
+
+  // Daily prior-authorization expiry sweep — flips approved → expired
+  // on the day after approved_through, and emits CSR heads-up alerts
+  // at T-30 / T-14 / T-7 days so billing can chase a renewal before
+  // claims start denying. The /patients/:id/prior-authorizations
+  // route header has long claimed this sweep existed; this is its
+  // implementation. Runs at 03:47 UTC daily.
+  await registerPriorAuthExpirySweepJob(boss);
 
   workerReady = true;
   logger.info(

@@ -969,6 +969,30 @@ function Field({
 }
 
 function SavedCardSection({ card }: { card: SavedCard | null }) {
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function openPortal() {
+    setOpening(true);
+    setError(null);
+    try {
+      const { openBillingPortal } = await import("@/lib/account-api");
+      const { url } = await openBillingPortal("/account");
+      // Hard navigate so we leave the SPA. Stripe will bounce us back
+      // to /account when the customer closes the portal.
+      window.location.href = url;
+    } catch (err) {
+      if (err instanceof AccountApiError && err.status === 503) {
+        setError("Billing isn't available in this environment yet.");
+      } else {
+        setError(
+          "We couldn't open the billing portal. Please try again in a moment.",
+        );
+      }
+      setOpening(false);
+    }
+  }
+
   return (
     <section
       className="glass-card rounded-2xl p-6"
@@ -997,10 +1021,36 @@ function SavedCardSection({ card }: { card: SavedCard | null }) {
               </p>
             )}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={openPortal}
+            disabled={opening}
+            data-testid="account-card-update"
+            className="w-full mb-2"
+          >
+            {opening ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Opening…
+              </>
+            ) : (
+              <>Update card or billing details</>
+            )}
+          </Button>
           <p className="text-xs text-muted-foreground">
-            We never see your card number. Stripe holds the actual data — we
-            only see the last 4 digits for display.
+            We never see your card number. The update opens Stripe&apos;s secure
+            billing portal in this tab and brings you back here when you&apos;re
+            done.
           </p>
+          {error && (
+            <p
+              className="text-xs text-destructive mt-2"
+              data-testid="account-card-error"
+            >
+              {error}
+            </p>
+          )}
         </div>
       ) : (
         <div>

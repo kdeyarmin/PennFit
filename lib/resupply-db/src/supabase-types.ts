@@ -591,7 +591,13 @@ export interface Database {
           id: string;
           patient_id: string;
           journey_id: string | null;
-          alert_type: "low_usage" | "no_response" | "send_failure" | "manual";
+          alert_type:
+            | "low_usage"
+            | "no_response"
+            | "send_failure"
+            | "manual"
+            | "prior_auth_expiring"
+            | "prior_auth_expired";
           severity: "info" | "warning" | "critical";
           summary: string;
           metric_snapshot: Record<string, unknown> | null;
