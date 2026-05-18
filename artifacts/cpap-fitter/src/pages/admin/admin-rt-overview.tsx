@@ -11,10 +11,12 @@
 // looks off." A chart would slow that down. Trending lives on the
 // per-patient detail page; this view is for triage.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CloudOff,
   Download,
   HeartPulse,
@@ -31,9 +33,12 @@ import {
   dismissSmartTrigger,
   fetchRtOverview,
   rtOverviewCsvUrl,
+  sortRtRows,
   type RtOverviewAlert,
   type RtOverviewResponse,
   type RtOverviewRow,
+  type RtSortDir,
+  type RtSortKey,
 } from "@/lib/admin/rt-overview-api";
 
 const WINDOW_OPTIONS: { label: string; days: number }[] = [
@@ -45,6 +50,8 @@ const WINDOW_OPTIONS: { label: string; days: number }[] = [
 
 export function AdminRtOverviewPage() {
   const [days, setDays] = useState(7);
+  const [sortKey, setSortKey] = useState<RtSortKey>("default");
+  const [sortDir, setSortDir] = useState<RtSortDir>("desc");
   const queryClient = useQueryClient();
 
   const query = useQuery<RtOverviewResponse>({
@@ -82,6 +89,32 @@ export function AdminRtOverviewPage() {
       reason: reason.trim() || null,
     });
   };
+
+  /**
+   * Click a header to sort by that column. Clicking the same header
+   * again toggles direction; clicking a different header keeps the
+   * current direction (RTs tend to want "worst first" across every
+   * metric, so preserving direction across switches matches that).
+   * The 9th click of the same header returns to default (server)
+   * order so there's a clear path back.
+   */
+  const onHeaderClick = (key: RtSortKey) => {
+    if (sortKey === key) {
+      // toggle: current desc → asc; current asc → default.
+      if (sortDir === "desc") setSortDir("asc");
+      else setSortKey("default");
+    } else {
+      setSortKey(key);
+      // Reset to descending for the new column. "Worst first" is what
+      // the RT almost always wants when they click a metric header.
+      setSortDir("desc");
+    }
+  };
+
+  const sortedRows = useMemo(
+    () => (query.data ? sortRtRows(query.data.rows, sortKey, sortDir) : []),
+    [query.data, sortKey, sortDir],
+  );
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -162,7 +195,13 @@ export function AdminRtOverviewPage() {
             onRetry={() => void query.refetch()}
           />
         ) : query.data && query.data.rows.length > 0 ? (
-          <PatientTable rows={query.data.rows} onDismiss={handleDismiss} />
+          <PatientTable
+            rows={sortedRows}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onHeaderClick={onHeaderClick}
+            onDismiss={handleDismiss}
+          />
         ) : (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No patients have an active therapy link yet. Once an
@@ -215,9 +254,15 @@ function WindowSelector({
 
 function PatientTable({
   rows,
+  sortKey,
+  sortDir,
+  onHeaderClick,
   onDismiss,
 }: {
   rows: RtOverviewRow[];
+  sortKey: RtSortKey;
+  sortDir: RtSortDir;
+  onHeaderClick: (key: RtSortKey) => void;
   onDismiss: (alert: RtOverviewAlert, patientName: string) => void;
 }) {
   return (
@@ -228,13 +273,66 @@ function PatientTable({
             className="text-xs uppercase tracking-wider"
             style={{ color: "hsl(var(--ink-3))" }}
           >
-            <Th>Patient</Th>
-            <Th>Status</Th>
-            <Th>Nights</Th>
-            <Th>Last</Th>
-            <Th align="right">AHI</Th>
-            <Th align="right">Leak</Th>
-            <Th align="right">Use (h)</Th>
+            <SortableTh
+              sortKey="patient"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onHeaderClick}
+            >
+              Patient
+            </SortableTh>
+            <SortableTh
+              sortKey="alerts"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onHeaderClick}
+            >
+              Status
+            </SortableTh>
+            <SortableTh
+              sortKey="nights"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onHeaderClick}
+              align="left"
+            >
+              Nights
+            </SortableTh>
+            <SortableTh
+              sortKey="lastNight"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onHeaderClick}
+            >
+              Last
+            </SortableTh>
+            <SortableTh
+              sortKey="ahi"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onHeaderClick}
+              align="right"
+            >
+              AHI
+            </SortableTh>
+            <SortableTh
+              sortKey="leak"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onHeaderClick}
+              align="right"
+            >
+              Leak
+            </SortableTh>
+            <SortableTh
+              sortKey="usage"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onHeaderClick}
+              align="right"
+            >
+              Use (h)
+            </SortableTh>
             <Th>Sources</Th>
           </tr>
         </thead>
@@ -245,6 +343,55 @@ function PatientTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Header that toggles a column's sort. Shows an arrow when this
+ * column is the active sort key. Single-button design keeps the
+ * table header keyboard-navigable without nesting interactive
+ * elements (a clickable `<th>` content + a separate sort icon button
+ * would be two tab stops per column, which gets noisy fast on an
+ * eight-column table).
+ */
+function SortableTh({
+  sortKey,
+  activeKey,
+  dir,
+  onClick,
+  align = "left",
+  children,
+}: {
+  sortKey: RtSortKey;
+  activeKey: RtSortKey;
+  dir: RtSortDir;
+  onClick: (key: RtSortKey) => void;
+  align?: "left" | "right";
+  children: React.ReactNode;
+}) {
+  const isActive = activeKey === sortKey;
+  const Icon = dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th className={`px-3 py-2 text-${align} font-medium`}>
+      <button
+        type="button"
+        onClick={() => onClick(sortKey)}
+        className={`inline-flex items-center gap-1 text-xs uppercase tracking-wider ${
+          isActive ? "font-semibold" : "font-medium"
+        }`}
+        style={{
+          color: isActive
+            ? "hsl(var(--penn-navy))"
+            : "hsl(var(--ink-3))",
+        }}
+        aria-sort={
+          isActive ? (dir === "asc" ? "ascending" : "descending") : "none"
+        }
+      >
+        {children}
+        {isActive && <Icon className="w-3 h-3" />}
+      </button>
+    </th>
   );
 }
 

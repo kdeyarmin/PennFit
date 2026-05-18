@@ -42,6 +42,82 @@ export interface RtOverviewResponse {
   rows: RtOverviewRow[];
 }
 
+/**
+ * Sort keys supported by the RT board's column headers. Each value
+ * here maps 1:1 to a column on the patient table. `default` is the
+ * server-provided order (alerting-first, then alphabetical) — the
+ * UI uses it when no header has been clicked.
+ */
+export type RtSortKey =
+  | "default"
+  | "patient"
+  | "alerts"
+  | "nights"
+  | "lastNight"
+  | "ahi"
+  | "leak"
+  | "usage";
+
+export type RtSortDir = "asc" | "desc";
+
+/**
+ * Sort a fleet by the chosen column. Pure function — no DOM, no
+ * side-effects — so the comparator is unit-testable.
+ *
+ * Null handling: rows with a null sort key always sink to the
+ * bottom regardless of direction. That keeps "patients we have no
+ * AHI data for" out of the way when the RT is sorting AHI desc to
+ * find the worst-controlled cases, AND out of the way when sorting
+ * AHI asc to find the best-controlled ones. Null isn't 0 here; it
+ * means "no data," which has different semantics.
+ */
+export function sortRtRows(
+  rows: RtOverviewRow[],
+  key: RtSortKey,
+  dir: RtSortDir,
+): RtOverviewRow[] {
+  if (key === "default") return rows;
+  const out = [...rows];
+  const sign = dir === "asc" ? 1 : -1;
+  out.sort((a, b) => {
+    const av = sortValue(a, key);
+    const bv = sortValue(b, key);
+    if (av === null && bv === null) return 0;
+    // Null always sinks regardless of direction.
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    if (typeof av === "number" && typeof bv === "number") {
+      return (av - bv) * sign;
+    }
+    return String(av).localeCompare(String(bv)) * sign;
+  });
+  return out;
+}
+
+function sortValue(
+  row: RtOverviewRow,
+  key: RtSortKey,
+): number | string | null {
+  switch (key) {
+    case "patient":
+      return `${row.lastName} ${row.firstName}`.toLowerCase();
+    case "alerts":
+      return row.activeAlerts.length;
+    case "nights":
+      return row.nightsInWindow;
+    case "lastNight":
+      return row.lastNightDate;
+    case "ahi":
+      return row.ahiAvg;
+    case "leak":
+      return row.leakAvg;
+    case "usage":
+      return row.usageMinutesAvg;
+    case "default":
+      return 0;
+  }
+}
+
 export async function fetchRtOverview(
   days: number,
 ): Promise<RtOverviewResponse> {
