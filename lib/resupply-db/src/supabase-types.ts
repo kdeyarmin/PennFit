@@ -511,6 +511,9 @@ export interface Database {
           user_agent: string | null;
           created_at: string;
           nudged_at: string | null;
+          phone_e164: string | null;
+          sms_opt_in: boolean;
+          source: "consent" | "sleep_apnea_quiz" | "insurance_quote";
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;

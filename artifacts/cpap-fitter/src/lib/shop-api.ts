@@ -703,6 +703,19 @@ export async function submitInsuranceLead(
 export interface FitterLeadInput {
   email: string;
   marketingOptIn: boolean;
+  /**
+   * Optional US phone number. Accepted in any common format; the
+   * server normalizes to E.164 and silently drops anything that
+   * isn't a US 10- or 11-digit number.
+   */
+  phone?: string;
+  /**
+   * SMS opt-in checkbox. Server-side only honors this when `phone`
+   * normalizes to non-null — a tick without a valid number is
+   * dropped, so the patient can't accidentally subscribe to "SMS
+   * from nowhere."
+   */
+  smsOptIn?: boolean;
   /** Honeypot — must be passed through but should always be empty. */
   website: string;
 }

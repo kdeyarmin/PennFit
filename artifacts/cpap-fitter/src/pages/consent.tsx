@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Database,
   Mail,
+  MessageSquare,
 } from "lucide-react";
 import { track } from "@/lib/track";
 import { useDocumentTitle } from "@/hooks/use-document-title";
@@ -31,6 +32,11 @@ import { submitFitterLead } from "@/lib/shop-api";
 // Continue, not a 400 from /capture.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Loose 10-or-11-digit US-phone check. Server-side does the canonical
+// normalize-or-reject; this guard is purely UX so a clearly-wrong
+// number gets an inline error before the patient clicks Continue.
+const PHONE_DIGIT_RE = /^\d{10}$|^1\d{10}$/;
+
 export function Consent() {
   useDocumentTitle("Privacy consent");
   const [, setLocation] = useLocation();
@@ -42,6 +48,12 @@ export function Consent() {
   const [agreed, setAgreed] = useState(false);
   const [email, setEmail] = useState(storedEmail ?? "");
   const [emailOptIn, setEmailOptIn] = useState(storedEmailConsent);
+  // Phone is optional. SMS opt-in is a separate checkbox; the server
+  // enforces that smsOptIn=true without a valid phone is dropped, but
+  // the UI also disables the checkbox until a phone is present so the
+  // intent is clear.
+  const [phone, setPhone] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
 
   // home_view fires on mount — the consent page is the first content view
   // after the landing CTA, so it's the right anchor for the funnel.
@@ -51,7 +63,11 @@ export function Consent() {
 
   const trimmedEmail = email.trim();
   const emailValid = EMAIL_RE.test(trimmedEmail);
-  const canContinue = agreed && emailValid && emailOptIn;
+  const phoneDigits = phone.replace(/[^\d]/g, "");
+  // Phone is optional → either empty (skip block) or 10/11 US digits.
+  const phoneValid = phoneDigits.length === 0 || PHONE_DIGIT_RE.test(phoneDigits);
+  const phoneFilled = phoneDigits.length > 0;
+  const canContinue = agreed && emailValid && emailOptIn && phoneValid;
 
   const handleContinue = () => {
     if (!canContinue) return;
@@ -67,6 +83,8 @@ export function Consent() {
     submitFitterLead({
       email: normalizedEmail,
       marketingOptIn: true,
+      phone: phoneFilled ? phone.trim() : undefined,
+      smsOptIn: phoneFilled && smsOptIn,
       website: "",
     }).catch((err) => {
       console.warn("fitter-lead submit failed (continuing)", err);
@@ -266,6 +284,82 @@ export function Consent() {
                   Mask recommendation, fitting follow-ups, and product news.
                   You can unsubscribe at any time.
                 </p>
+              </div>
+            </div>
+
+            {/*
+              Optional phone + SMS opt-in. Phone is the single biggest
+              top-of-funnel channel uplift we have access to (SMS open
+              rates are 4-5× email across every demographic). We keep
+              both fields fully optional — the consent gate above
+              only requires email — so adding the field can't make
+              consent strictly harder for the patient.
+            */}
+            <div className="space-y-3 pt-4 border-t border-border/40">
+              <div className="flex items-center gap-2">
+                <div className="shrink-0 h-8 w-8 rounded-lg icon-halo-navy flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <Label
+                  htmlFor="fitter-phone"
+                  className="font-medium tracking-tight"
+                >
+                  Phone number{" "}
+                  <span className="text-muted-foreground font-normal text-sm">
+                    (optional)
+                  </span>
+                </Label>
+              </div>
+              <Input
+                id="fitter-phone"
+                data-testid="input-fitter-phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="(555) 123-4567"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                aria-invalid={phoneFilled && !phoneValid}
+                aria-describedby="fitter-phone-help"
+              />
+              <p
+                id="fitter-phone-help"
+                className="text-sm text-muted-foreground"
+              >
+                We&apos;ll only text if you opt in below. Useful for shipment
+                updates and a faster way to reach our team than email.
+              </p>
+              <div
+                className={`flex flex-row items-start space-x-3 space-y-0 pt-1 ${
+                  phoneFilled && phoneValid
+                    ? "cursor-pointer"
+                    : "cursor-not-allowed opacity-60"
+                }`}
+                onClick={() => {
+                  if (phoneFilled && phoneValid) setSmsOptIn(!smsOptIn);
+                }}
+              >
+                <Checkbox
+                  id="sms-consent"
+                  checked={smsOptIn && phoneFilled && phoneValid}
+                  disabled={!phoneFilled || !phoneValid}
+                  onCheckedChange={(checked) =>
+                    setSmsOptIn(checked as boolean)
+                  }
+                />
+                <div className="space-y-1 leading-none">
+                  <label
+                    htmlFor="sms-consent"
+                    className="font-medium cursor-pointer"
+                  >
+                    I agree to receive text messages from PennPaps
+                  </label>
+                  <p className="text-sm text-muted-foreground">
+                    Order shipped &amp; delivered notifications, fitting
+                    follow-ups. Msg &amp; data rates may apply. Reply STOP to
+                    unsubscribe.
+                  </p>
+                </div>
               </div>
             </div>
           </div>

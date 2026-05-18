@@ -24,10 +24,39 @@ import { recordFitterLead } from "../../lib/fitter-lead-record";
 
 const router: IRouter = Router();
 
+// Loose US-phone normalizer. We accept any input the user typed,
+// strip non-digits, and only accept the 10-digit (US) or 11-digit
+// (1 + 10 US) shapes. Anything else is rejected at the field level
+// rather than persisted, so downstream SMS sends never see garbage.
+function normalizeUsPhone(raw: string): string | null {
+  const digits = raw.replace(/[^\d]/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
 const leadBody = z
   .object({
     email: z.string().trim().toLowerCase().email().max(200),
     marketingOptIn: z.boolean(),
+    /**
+     * Optional phone. Accepted in any US format ("(555) 123-4567",
+     * "5551234567", "1-555-123-4567"). Anything that doesn't normalize
+     * to a 10- or 11-digit US number is dropped silently — the lead
+     * still records by email; we just don't get an SMS channel.
+     */
+    phone: z
+      .string()
+      .trim()
+      .max(40)
+      .optional()
+      .transform((v) => (v ? normalizeUsPhone(v) : null)),
+    /**
+     * SMS opt-in. Only takes effect when phone normalized to non-null;
+     * the helper enforces this so a checkbox tick without a valid
+     * phone can't slip through as "subscribed to nothing in particular."
+     */
+    smsOptIn: z.boolean().optional(),
     /** Honeypot. Real users never fill this. */
     website: z.string().max(200).optional(),
   })
@@ -120,6 +149,12 @@ router.post("/shop/fitter-leads", async (req, res) => {
       typeof req.headers["user-agent"] === "string"
         ? req.headers["user-agent"].slice(0, 500)
         : null,
+    phoneE164: data.phone,
+    smsOptIn: data.smsOptIn ?? false,
+    // Default 'consent' is applied by the helper; explicit here for
+    // self-documentation against future quiz/insurance lead routes
+    // that reuse the same helper.
+    source: "consent",
   });
 
   // Counts-only log — never the patient's email.
