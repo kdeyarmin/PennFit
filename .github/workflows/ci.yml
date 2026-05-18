@@ -77,9 +77,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Codegen drift
-        run: scripts/check-codegen.sh
-
       - name: Architecture drift
         run: scripts/check-resupply-architecture.sh
 

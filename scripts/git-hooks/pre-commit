@@ -7,8 +7,6 @@
 # Behavior:
 #   - Skipped entirely when no staged file touches the relevant trees.
 #   - Selectively runs:
-#       * scripts/check-codegen.sh
-#           when an OpenAPI spec or its generated client tree changes
 #       * scripts/check-resupply-architecture.sh
 #           when resupply lib/ or artifact code changes
 #       * scripts/check-resupply-migration-prefix.sh
@@ -17,6 +15,10 @@
 #           migrations with prefix <= 0066 while the journal/files
 #           drift is being reconciled (see the README in that
 #           directory for the full rationale).
+#
+# (The previous OpenAPI codegen drift check was retired when Task #37
+#  deleted the spec packages; the per-file dispatch below no longer
+#  routes to a `need_codegen` branch.)
 #
 # (The previous schema/migration co-change check was retired when the
 #  Drizzle schema directory was deleted — there is no schema TS file
@@ -87,21 +89,11 @@ if [[ -z "$staged" ]]; then
   exit 0
 fi
 
-need_codegen=0
 need_arch=0
 need_resupply_prefix=0
 
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
-  # Spec/client trees: drift only matters when the spec or its generated
-  # client changes. Touching unrelated files in those packages (e.g.
-  # README) still triggers the check, which is fine — it's cheap when
-  # nothing actually drifted.
-  case "$file" in
-    lib/resupply-api-spec/*|lib/api-spec/*|lib/resupply-api-client/*|lib/api-client-react/*|lib/api-zod/*)
-      need_codegen=1
-      ;;
-  esac
   # Resupply trees: any change to resupply libs or artifacts can violate
   # an architecture rule, so run the check defensively.
   case "$file" in
@@ -122,8 +114,7 @@ while IFS= read -r file; do
   esac
 done <<< "$staged"
 
-if [[ $need_codegen -eq 0 && $need_arch -eq 0 \
-      && $need_resupply_prefix -eq 0 ]]; then
+if [[ $need_arch -eq 0 && $need_resupply_prefix -eq 0 ]]; then
   exit 0
 fi
 
@@ -140,12 +131,6 @@ run_checks() {
   if [[ $need_arch -eq 1 ]]; then
     printf '[pre-commit] Running resupply architecture check…\n' >&2
     if ! bash "$REPO_ROOT/scripts/check-resupply-architecture.sh"; then
-      f=1
-    fi
-  fi
-  if [[ $need_codegen -eq 1 ]]; then
-    printf '[pre-commit] Running OpenAPI codegen drift check…\n' >&2
-    if ! bash "$REPO_ROOT/scripts/check-codegen.sh"; then
       f=1
     fi
   fi

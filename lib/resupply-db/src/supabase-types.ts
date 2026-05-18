@@ -215,6 +215,9 @@ export interface Database {
           user_agent: string | null;
           occurred_at: string;
           archived_at: string | null;
+          chain_seq: number | null;
+          prev_signature: string | null;
+          signature: string | null;
         };
         Insert: {
           id?: string;
@@ -228,6 +231,9 @@ export interface Database {
           user_agent?: string | null;
           occurred_at?: string;
           archived_at?: string | null;
+          chain_seq?: number | null;
+          prev_signature?: string | null;
+          signature?: string | null;
         };
         Update: Partial<Database["resupply"]["Tables"]["audit_log"]["Insert"]>;
         Relationships: [];
