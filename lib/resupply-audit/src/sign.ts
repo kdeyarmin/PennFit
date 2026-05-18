@@ -19,6 +19,15 @@
 //   reproduce. The signer canonicalises this at `signAuditRow`'s
 //   first `h.update(...)` call.
 //
+// chain_seq contract (verifier-relevant):
+//   The `chain_seq` column is bigint in the database but is
+//   canonicalised as a STRING in the signing input — so the
+//   signature is robust past JS's 2^53 safe-integer boundary. A
+//   verifier reading the chain_seq column MUST stringify it before
+//   feeding it back into the canonical JSON form, regardless of
+//   how its language represents the underlying bigint. Every other
+//   field is canonicalised in its native JSON shape.
+//
 // Why a separate module and not inlined in index.ts:
 //   * The signing function is pure and exhaustively unit-testable
 //     without the Supabase client mocked.
@@ -187,6 +196,15 @@ export interface AuditChainContent {
 /**
  * Produce the base64-encoded HMAC-SHA-256 signature for a single audit-chain row.
  *
+ * `chain_seq` is stringified before it's fed into the canonical JSON
+ * encoding so the signature is robust past JS's safe-integer
+ * boundary (2^53). The application-side guard in `logAudit` refuses
+ * to sign past that boundary as defense in depth, but a verifier
+ * (in JS or any other language) only needs to read the bigint
+ * column as text and feed it back in to reproduce the signature —
+ * no float-precision quirk to worry about. The other fields stay
+ * in their native shape; only `chain_seq` rides the bigint rail.
+ *
  * @param key - Raw HMAC key bytes used to compute the signature
  * @param prevSignatureB64 - Base64-encoded predecessor signature, or `null` for the genesis row
  * @param content - The row content (including `chain_seq`) to be canonically serialized and signed
@@ -200,6 +218,13 @@ export function signAuditRow(
   const h = createHmac("sha256", key);
   h.update(prevSignatureB64 ?? "");
   h.update("\x00");
-  h.update(canonicalJson(content));
+  // Canonicalise chain_seq as a string so the encoding doesn't
+  // depend on JS's number precision. Every other field is already
+  // a string/null/object that JSON.stringify renders losslessly.
+  const canonicalContent = {
+    ...content,
+    chain_seq: String(content.chain_seq),
+  };
+  h.update(canonicalJson(canonicalContent));
   return h.digest("base64");
 }

@@ -4,6 +4,8 @@
 // key registers one via `registerAuditHmacKeyForTesting` and clears
 // it in afterEach so suites don't leak state.
 
+import { createHmac } from "node:crypto";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -85,6 +87,38 @@ describe("signAuditRow", () => {
     const a = signAuditRow(key, null, content);
     const b = signAuditRow(key, null, { ...content, chain_seq: 2 });
     expect(a).not.toBe(b);
+  });
+
+  it("canonicalises chain_seq as a STRING so the signature is robust past 2^53", () => {
+    // Lock the verifier contract: chain_seq fed into the HMAC is the
+    // string form of the integer, NOT the JSON number form. Compare
+    // the signature for the same row built two ways — one with the
+    // canonical (number) input, one with a pre-stringified field —
+    // and confirm the function produces the SAME signature when the
+    // caller hands it a numeric chain_seq, because the function
+    // does the stringification itself.
+    //
+    // If a future refactor accidentally reverts to encoding
+    // chain_seq as a JSON number, this test fails because the
+    // hand-built canonical JSON (with a string) would no longer
+    // match the function's output.
+    const sigFromFn = signAuditRow(key, null, {
+      ...content,
+      chain_seq: 12345,
+    });
+
+    // Recompute what we expect by canonicalising the row the same
+    // way the function should: chain_seq as a string.
+    const expectedCanonical = canonicalJson({
+      ...content,
+      chain_seq: "12345",
+    });
+    const h = createHmac("sha256", key);
+    h.update(""); // prev_signature ?? ""
+    h.update("\x00"); // separator
+    h.update(expectedCanonical);
+    const sigExpected = h.digest("base64");
+    expect(sigFromFn).toBe(sigExpected);
   });
 
   it("differs when any content field changes", () => {
