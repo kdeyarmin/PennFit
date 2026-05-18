@@ -5,7 +5,7 @@
 // a 5xx routing crash); the route mount itself is what we care
 // about. Removed after the run.
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 
@@ -13,6 +13,15 @@ import type { Express } from "express";
 // actually hit a DB — the routes that need Postgres will throw on
 // the supabase client call, which surfaces as 5xx; we don't probe
 // those here.
+const origEnv: Record<string, string | undefined> = {
+  NODE_ENV: process.env.NODE_ENV,
+  DATABASE_URL: process.env.DATABASE_URL,
+  RESUPPLY_LINK_HMAC_KEY: process.env.RESUPPLY_LINK_HMAC_KEY,
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+};
+
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://x:x@127.0.0.1:1/x";
@@ -28,6 +37,17 @@ let app: Express;
 beforeAll(async () => {
   const mod = (await import("./app")) as { default: Express };
   app = mod.default;
+});
+
+afterAll(() => {
+  for (const key of Object.keys(origEnv)) {
+    const originalValue = origEnv[key];
+    if (originalValue === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = originalValue;
+    }
+  }
 });
 
 describe("shop route tree mount (smoke)", () => {
