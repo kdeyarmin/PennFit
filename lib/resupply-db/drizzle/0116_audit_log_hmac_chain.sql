@@ -56,8 +56,18 @@ CREATE INDEX IF NOT EXISTS "audit_log_chain_seq_desc_idx"
   WHERE "chain_seq" IS NOT NULL;
 --> statement-breakpoint
 
--- Pairing check: chain_seq and signature must be set together or
--- not at all. prev_signature is independent (null on genesis).
+-- Structural invariants. Split into two CHECK constraints so a
+-- violation's error name pinpoints which invariant was broken.
+--
+-- 1. Pairing: chain_seq and signature are set together or not at
+--    all. (Legacy unsigned rows are valid; partially-signed rows
+--    are not.)
+-- 2. Prev-signature shape: a signed row with chain_seq = 1 (the
+--    genesis row) has prev_signature = NULL; every later signed
+--    row has prev_signature NOT NULL. Without this, the chain
+--    could grow a "headless" run that points at nothing and
+--    appear correctly signed in isolation, defeating the
+--    point-of-chain check during verification.
 ALTER TABLE "resupply"."audit_log"
   DROP CONSTRAINT IF EXISTS "audit_log_signature_pair_chk";
 --> statement-breakpoint
@@ -69,19 +79,18 @@ ALTER TABLE "resupply"."audit_log"
     ("chain_seq" IS NOT NULL AND "signature" IS NOT NULL)
   );
 --> statement-breakpoint
-
--- Chain integrity check: enforce prev_signature nullability based on chain position.
--- Unsigned rows, genesis rows (chain_seq = 1), and non-genesis rows must follow
--- the three-way logic for prev_signature.
 ALTER TABLE "resupply"."audit_log"
-  DROP CONSTRAINT IF EXISTS "audit_log_chain_integrity_chk";
+  DROP CONSTRAINT IF EXISTS "audit_log_prev_signature_chk";
 --> statement-breakpoint
 ALTER TABLE "resupply"."audit_log"
-  ADD CONSTRAINT "audit_log_chain_integrity_chk"
+  ADD CONSTRAINT "audit_log_prev_signature_chk"
   CHECK (
-    ("chain_seq" IS NULL AND "signature" IS NULL AND "prev_signature" IS NULL)
+    -- legacy unsigned row
+    ("chain_seq" IS NULL AND "prev_signature" IS NULL)
     OR
-    ("chain_seq" = 1 AND "signature" IS NOT NULL AND "prev_signature" IS NULL)
+    -- genesis: chain_seq = 1, no predecessor
+    ("chain_seq" = 1 AND "prev_signature" IS NULL)
     OR
-    ("chain_seq" > 1 AND "signature" IS NOT NULL AND "prev_signature" IS NOT NULL)
+    -- non-genesis signed row: predecessor signature required
+    ("chain_seq" > 1 AND "prev_signature" IS NOT NULL)
   );
