@@ -156,6 +156,12 @@ const createEventBody = z
   })
   .strict();
 
+/**
+ * Convert a database `insurance_claims` row (snake_case) into the API-facing camelCase shape.
+ *
+ * @param r - A raw row from the `resupply.insurance_claims` table with snake_case fields
+ * @returns An object representing the insurance claim with camelCase property names and equivalent values
+ */
 function rowToApi(r: {
   id: string;
   insurance_coverage_id: string | null;
@@ -198,6 +204,12 @@ function rowToApi(r: {
   };
 }
 
+/**
+ * Recalculates and updates an insurance claim's total billed, allowed, and paid cents from its line items.
+ *
+ * @param claimId - UUID of the claim whose totals will be recomputed and persisted
+ * @throws If a Supabase query or update fails, the underlying error is thrown
+ */
 async function recomputeTotals(
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   claimId: string,

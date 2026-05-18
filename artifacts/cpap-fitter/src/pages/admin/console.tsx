@@ -86,6 +86,16 @@ import { AdminAnalytics as PennpapsAnalyticsPage } from "@/pages/admin/pennpaps-
 // storefront bundle.
 import "@/admin.css";
 
+/**
+ * Gate access to the admin console and render the admin routes inside the application shell.
+ *
+ * Queries the current admin identity and, depending on the result, either:
+ * - renders an authorization error page with a specific reason,
+ * - renders the app shell with a loading spinner while access is being confirmed, or
+ * - renders the full set of `/admin/*` routes (wrapped in an error boundary) with the admin's email and role provided to the shell.
+ *
+ * @returns The admin console UI: an authorization gate (error or loading) or the routed admin pages inside the app shell.
+ */
 function AdminConsole() {
   const { data, isPending, isError, error } = useGetAdminMe();
 

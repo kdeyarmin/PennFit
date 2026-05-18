@@ -54,6 +54,12 @@ import {
   type PatchInsuranceClaimRequest,
 } from "@/lib/admin/clinical-tabs-api";
 
+/**
+ * Format an amount given in cents as a US dollar string.
+ *
+ * @param cents - The amount in cents (integer). May be `null` or `undefined`.
+ * @returns The amount formatted as `$X.XX`, or `—` when `cents` is `null` or `undefined`.
+ */
 function formatMoneyCents(cents: number | null | undefined): string {
   if (cents == null) return "—";
   return `$${(cents / 100).toFixed(2)}`;
@@ -94,6 +100,13 @@ const VALID_TRANSITIONS: Record<
   closed: [],
 };
 
+/**
+ * Admin page for viewing and managing all insurance claims for a single patient.
+ *
+ * Renders a list of payer claims with totals, provides a "New claim" dialog, and opens a per-claim drawer for viewing line items, event history, and performing status transitions.
+ *
+ * @returns The React element for the admin insurance claims page scoped to the given patient ID.
+ */
 export function AdminInsuranceClaimsPage({
   patientId,
 }: {
@@ -189,6 +202,13 @@ export function AdminInsuranceClaimsPage({
   );
 }
 
+/**
+ * Renders a clickable list row summarizing an insurance claim.
+ *
+ * @param claim - The insurance claim to display in the row.
+ * @param onOpen - Callback invoked when the row is clicked (e.g., to open the claim drawer).
+ * @returns A list item element containing a button that displays payer, status, DOS/claim number, and billed/paid totals.
+ */
 function ClaimRow({
   claim,
   onOpen,
@@ -247,6 +267,16 @@ function ClaimRow({
   );
 }
 
+/**
+ * Renders a modal dialog to create a new insurance claim for a patient.
+ *
+ * The dialog collects payer name, date of service, optional payer claim number,
+ * and optional internal notes; creating the claim opens it in draft state and
+ * invalidates the patient’s insurance-claims query on success.
+ *
+ * @param patientId - ID of the patient the new claim will belong to
+ * @param onClose - Callback invoked to close the dialog (also called after successful create)
+ */
 function CreateClaimDialog({
   patientId,
   onClose,
@@ -372,6 +402,14 @@ function CreateClaimDialog({
   );
 }
 
+/**
+ * Render a right-side drawer that displays a single insurance claim's details and provides controls to transition status, add HCPCS line items, and append claim events.
+ *
+ * @param patientId - Identifier of the patient whose claim is being viewed; used to fetch and mutate claim data
+ * @param claimId - Identifier of the claim to display
+ * @param onClose - Callback invoked when the drawer should be closed
+ * @returns The drawer element containing claim summary, move-state controls, line-item management, and event history
+ */
 function ClaimDrawer({
   patientId,
   claimId,
@@ -456,6 +494,18 @@ function ClaimDrawer({
   );
 }
 
+/**
+ * Render the drawer content for a single insurance claim, including header summary,
+ * allowed state transition controls, HCPCS line items with an add form, and the event history with an add form.
+ *
+ * @param claim - The insurance claim to display (summary, status, totals, and optional denial reason)
+ * @param lineItems - Array of HCPCS line items for the claim
+ * @param events - Array of claim events (history) for the claim
+ * @param onTransition - Called to request a status transition; second argument is a trimmed denial reason or `null`
+ * @param onAddLine - Called with a new claim line request when the Add Line form is submitted
+ * @param onAddEvent - Called with a new claim event request when the Add Event form is submitted
+ * @returns A React node containing the fully rendered claim drawer content
+ */
 function ClaimDrawerContent({
   claim,
   lineItems,
@@ -615,6 +665,15 @@ function ClaimDrawerContent({
   );
 }
 
+/**
+ * Render a button (or inline prompt) to initiate a claim status transition.
+ *
+ * When `to` is `"denied"`, the component presents an inline reason input and calls
+ * `onConfirm` with the trimmed denial reason. For other transitions, it calls
+ * `onConfirm` with `null` immediately when clicked.
+ *
+ * @param onConfirm - Callback invoked to confirm the transition. Receives the trimmed denial reason when required, or `null` otherwise.
+ */
 function TransitionButton({
   from,
   to,
@@ -663,6 +722,12 @@ function TransitionButton({
   );
 }
 
+/**
+ * Renders a form for adding an HCPCS line item and calls `onAdd` with a normalized payload when the user submits.
+ *
+ * @param onAdd - Callback invoked with the new line body. `modifier` and `description` are `null` when empty; `quantity` is coerced to an integer >= 1; `billedCents` is coerced to an integer >= 0.
+ * @returns The form element that collects HCPCS code, modifier(s), description, quantity, and billed (cents), validates inputs, and resets after a successful add.
+ */
 function AddLineForm({
   onAdd,
 }: {
@@ -762,6 +827,17 @@ const EVENT_TYPES: { value: InsuranceClaimEventType; label: string }[] = [
   { value: "note", label: "Note" },
 ];
 
+/**
+ * UI form to append an insurance claim event and reset inputs after submission.
+ *
+ * Calls `onAdd` with a `CreateInsuranceClaimEventRequest` containing:
+ * - `eventType` from the selected event type
+ * - `amountCents` parsed from the amount input or `null` when empty
+ * - `payerRef` trimmed or `null` when empty
+ * - `note` trimmed or `null` when empty
+ *
+ * @param onAdd - Callback invoked with the event payload when the user clicks "Append event"
+ */
 function AddEventForm({
   onAdd,
 }: {

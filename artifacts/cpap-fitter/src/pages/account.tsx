@@ -951,6 +951,13 @@ function ProfileSection({
   );
 }
 
+/**
+ * Renders a labeled form field wrapper.
+ *
+ * @param label - Visible label text shown above the field content
+ * @param children - Field input or other inline content to render beneath the label
+ * @returns A JSX element containing the label and its associated children
+ */
 function Field({
   label,
   children,
@@ -968,6 +975,14 @@ function Field({
   );
 }
 
+/**
+ * Render the "Saved card" section on the Account page and provide a control to open Stripe's billing portal.
+ *
+ * Displays card brand, masked number, and expiry when `card` is present; otherwise shows a prompt to browse the shop.
+ *
+ * @param card - The saved payment card information, or `null` when no card is on file
+ * @returns A React element representing the saved card section with update and fallback UI
+ */
 function SavedCardSection({ card }: { card: SavedCard | null }) {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -72,6 +72,12 @@ export interface ExpirySweepStats {
   windows: Record<(typeof HEADS_UP_WINDOWS)[number], number>;
 }
 
+/**
+ * Convert a Date to a UTC `YYYY-MM-DD` date string.
+ *
+ * @param d - The input Date to convert
+ * @returns The UTC date in `YYYY-MM-DD` format
+ */
 function isoDate(d: Date): string {
   // YYYY-MM-DD in UTC. approved_through is a `date` column with no
   // timezone, so we compare day-by-day in UTC and accept that a PA
@@ -80,6 +86,13 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Returns a new Date representing `base` shifted by `days` days using UTC date arithmetic.
+ *
+ * @param base - The starting date
+ * @param days - Number of days to add (may be negative to subtract days)
+ * @returns A new `Date` advanced from `base` by `days` days using UTC-based date math
+ */
 function addDays(base: Date, days: number): Date {
   const d = new Date(base);
   d.setUTCDate(d.getUTCDate() + days);
@@ -87,9 +100,11 @@ function addDays(base: Date, days: number): Date {
 }
 
 /**
- * Exported for testability. Pure DB work — no clock dependency
- * other than the injected `today` parameter (defaults to "now").
- */
+ * Sweep prior authorizations: transition overdue `approved` records to `expired` and queue pre-expiry heads-up alerts.
+ *
+ * @param today - Reference date used to determine expirations; comparisons are performed at the day (YYYY-MM-DD) level in UTC.
+ * @returns The populated `ExpirySweepStats` containing counts of expired records, total heads-up alerts queued, and per-window counts for 30, 14, and 7 day windows.
+ * @throws If the initial query for overdue prior authorizations fails.
 export async function runPriorAuthExpirySweep(
   today: Date = new Date(),
 ): Promise<ExpirySweepStats> {
@@ -244,6 +259,13 @@ export async function runPriorAuthExpirySweep(
   return stats;
 }
 
+/**
+ * Register and schedule the daily "prior-auth.expiry-sweep" job on a PgBoss instance.
+ *
+ * Sets up the queue and worker that execute the expiry sweep (runPriorAuthExpirySweep), logs completion or failure, and schedules the job using the configured cron.
+ *
+ * @param boss - The PgBoss client used to create the queue, register the worker, and schedule the cron job
+ */
 export async function registerPriorAuthExpirySweepJob(
   boss: PgBoss,
 ): Promise<void> {
