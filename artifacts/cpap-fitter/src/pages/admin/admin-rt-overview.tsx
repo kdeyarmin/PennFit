@@ -21,6 +21,7 @@ import {
   Download,
   HeartPulse,
   RefreshCcw,
+  Search,
   X,
 } from "lucide-react";
 import { Link } from "wouter";
@@ -29,11 +30,16 @@ import { Card, KpiCard } from "@/components/admin/Card";
 import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
+import { Input } from "@/components/admin/Input";
 import {
+  distinctSources,
   dismissSmartTrigger,
   fetchRtOverview,
+  filterRtRows,
+  RT_FILTER_DEFAULT,
   rtOverviewCsvUrl,
   sortRtRows,
+  type RtFilter,
   type RtOverviewAlert,
   type RtOverviewResponse,
   type RtOverviewRow,
@@ -52,6 +58,7 @@ export function AdminRtOverviewPage() {
   const [days, setDays] = useState(7);
   const [sortKey, setSortKey] = useState<RtSortKey>("default");
   const [sortDir, setSortDir] = useState<RtSortDir>("desc");
+  const [filter, setFilter] = useState<RtFilter>(RT_FILTER_DEFAULT);
   const queryClient = useQueryClient();
 
   const query = useQuery<RtOverviewResponse>({
@@ -111,10 +118,41 @@ export function AdminRtOverviewPage() {
     }
   };
 
-  const sortedRows = useMemo(
-    () => (query.data ? sortRtRows(query.data.rows, sortKey, sortDir) : []),
-    [query.data, sortKey, sortDir],
+  /**
+   * filter → sort. Order matters: dropping rows first means the
+   * comparator sees less data. For a 200-patient board it's a wash
+   * but the composition is the clearer mental model regardless.
+   *
+   * `sources` for the filter chip strip comes from the unfiltered
+   * fleet — if we derived it from the post-filter rows, applying a
+   * source filter would shrink the chip list to just the chosen one
+   * and the user couldn't un-toggle to a different source from there.
+   */
+  const allSources = useMemo(
+    () => (query.data ? distinctSources(query.data.rows) : []),
+    [query.data],
   );
+  const visibleRows = useMemo(() => {
+    if (!query.data) return [];
+    const filtered = filterRtRows(query.data.rows, filter);
+    return sortRtRows(filtered, sortKey, sortDir);
+  }, [query.data, filter, sortKey, sortDir]);
+
+  const totalRows = query.data?.rows.length ?? 0;
+  const filterIsActive =
+    filter.alertingOnly ||
+    filter.staleOnly ||
+    filter.sources.size > 0 ||
+    filter.search.trim().length > 0;
+
+  const toggleSource = (source: string) => {
+    setFilter((prev) => {
+      const next = new Set(prev.sources);
+      if (next.has(source)) next.delete(source);
+      else next.add(source);
+      return { ...prev, sources: next };
+    });
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -180,10 +218,20 @@ export function AdminRtOverviewPage() {
         title="Patients"
         subtitle={
           query.data
-            ? `${query.data.rows.length} tracked · window ${query.data.windowDays} days`
+            ? filterIsActive
+              ? `${visibleRows.length} of ${totalRows} tracked · window ${query.data.windowDays} days`
+              : `${totalRows} tracked · window ${query.data.windowDays} days`
             : undefined
         }
       >
+        {query.data && totalRows > 0 && (
+          <FilterBar
+            filter={filter}
+            onFilterChange={setFilter}
+            allSources={allSources}
+            onToggleSource={toggleSource}
+          />
+        )}
         {query.isLoading ? (
           <div className="flex items-center justify-center py-10">
             <Spinner />
@@ -194,14 +242,32 @@ export function AdminRtOverviewPage() {
             error={query.error}
             onRetry={() => void query.refetch()}
           />
-        ) : query.data && query.data.rows.length > 0 ? (
-          <PatientTable
-            rows={sortedRows}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            onHeaderClick={onHeaderClick}
-            onDismiss={handleDismiss}
-          />
+        ) : query.data && totalRows > 0 ? (
+          visibleRows.length > 0 ? (
+            <PatientTable
+              rows={visibleRows}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onHeaderClick={onHeaderClick}
+              onDismiss={handleDismiss}
+            />
+          ) : (
+            <p
+              className="text-sm py-6 text-center"
+              style={{ color: "hsl(var(--ink-3))" }}
+            >
+              No patients match the current filters.{" "}
+              <button
+                type="button"
+                onClick={() => setFilter(RT_FILTER_DEFAULT)}
+                className="underline"
+                style={{ color: "hsl(var(--penn-navy))" }}
+              >
+                Clear filters
+              </button>
+              .
+            </p>
+          )
         ) : (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No patients have an active therapy link yet. Once an
@@ -249,6 +315,128 @@ function WindowSelector({
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Filter bar above the patient table. Pure controlled component —
+ * no internal filter state, no debouncing. Search is filtered as you
+ * type because the underlying data is already in memory and the
+ * filter is cheap; debouncing would just add latency.
+ */
+function FilterBar({
+  filter,
+  onFilterChange,
+  allSources,
+  onToggleSource,
+}: {
+  filter: RtFilter;
+  onFilterChange: (next: RtFilter) => void;
+  allSources: string[];
+  onToggleSource: (source: string) => void;
+}) {
+  const filterIsActive =
+    filter.alertingOnly ||
+    filter.staleOnly ||
+    filter.sources.size > 0 ||
+    filter.search.trim().length > 0;
+  return (
+    <div className="mb-4 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4"
+            style={{ color: "hsl(var(--ink-3))" }}
+          />
+          <Input
+            type="search"
+            placeholder="Search name or pacware id…"
+            value={filter.search}
+            onChange={(e) =>
+              onFilterChange({ ...filter, search: e.target.value })
+            }
+            className="pl-8"
+            aria-label="Search patients"
+          />
+        </div>
+        <FilterChip
+          active={filter.alertingOnly}
+          onClick={() =>
+            onFilterChange({ ...filter, alertingOnly: !filter.alertingOnly })
+          }
+        >
+          Alerting only
+        </FilterChip>
+        <FilterChip
+          active={filter.staleOnly}
+          onClick={() =>
+            onFilterChange({ ...filter, staleOnly: !filter.staleOnly })
+          }
+        >
+          Stale only
+        </FilterChip>
+        {filterIsActive && (
+          <button
+            type="button"
+            onClick={() => onFilterChange(RT_FILTER_DEFAULT)}
+            className="text-xs underline ml-1"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+      {allSources.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="text-xs uppercase tracking-wider"
+            style={{ color: "hsl(var(--ink-3))" }}
+          >
+            Source:
+          </span>
+          {allSources.map((s) => (
+            <FilterChip
+              key={s}
+              active={filter.sources.has(s)}
+              onClick={() => onToggleSource(s)}
+            >
+              {s}
+            </FilterChip>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="px-2.5 py-1 text-xs rounded-full border transition-colors"
+      style={{
+        borderColor: active
+          ? "hsl(var(--penn-navy))"
+          : "hsl(var(--line-1))",
+        background: active
+          ? "hsla(var(--penn-navy) / 0.1)"
+          : "transparent",
+        color: active ? "hsl(var(--penn-navy))" : "hsl(var(--ink-2))",
+        fontWeight: active ? 600 : 400,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -118,6 +118,71 @@ function sortValue(
   }
 }
 
+/**
+ * Client-side filter for the RT board. Composes with sortRtRows.
+ *
+ * Filters are AND-ed together — a row must satisfy every active
+ * predicate to remain visible. Each filter has a defined "off"
+ * value so callers can pass a single object that captures the full
+ * filter state without optionality plumbing.
+ *
+ * The `search` term is matched case-insensitively against the
+ * concatenation of last name + first name + pacware id. Pacware ids
+ * are the field RTs most often have on hand from a paper chart, so
+ * a partial pacware id ("PW-001") needs to find the row even when
+ * the RT didn't type the patient's name.
+ *
+ * `sources` is a SET of partner integration source values to keep
+ * (empty set = no source filter, NOT "show nothing"); a row passes
+ * when ANY of its therapy_links matches one of the listed sources.
+ */
+export interface RtFilter {
+  alertingOnly: boolean;
+  staleOnly: boolean;
+  sources: ReadonlySet<string>;
+  search: string;
+}
+
+export const RT_FILTER_DEFAULT: RtFilter = {
+  alertingOnly: false,
+  staleOnly: false,
+  sources: new Set(),
+  search: "",
+};
+
+export function filterRtRows(
+  rows: RtOverviewRow[],
+  filter: RtFilter,
+): RtOverviewRow[] {
+  const search = filter.search.trim().toLowerCase();
+  const sourceFilter = filter.sources;
+  const useSourceFilter = sourceFilter.size > 0;
+  return rows.filter((r) => {
+    if (filter.alertingOnly && r.activeAlerts.length === 0) return false;
+    if (filter.staleOnly && r.nightsInWindow !== 0) return false;
+    if (useSourceFilter) {
+      const match = r.therapyLinks.some((l) => sourceFilter.has(l.source));
+      if (!match) return false;
+    }
+    if (search.length > 0) {
+      const hay =
+        `${r.lastName} ${r.firstName} ${r.pacwareId}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+/** Distinct list of therapy-link sources across the fleet, for the
+ *  filter-chip render. Stable order: alphabetical. */
+export function distinctSources(rows: RtOverviewRow[]): string[] {
+  const set = new Set<string>();
+  for (const r of rows) {
+    for (const l of r.therapyLinks) set.add(l.source);
+  }
+  return [...set].sort();
+}
+
 export async function fetchRtOverview(
   days: number,
 ): Promise<RtOverviewResponse> {
