@@ -22,11 +22,10 @@ git reset --hard subrepl-3ppc2e03/main
 (remote-tracking name in Replit: `subrepl-3ppc2e03/main`).
 
 **Where new work lands:** push a feature branch and open a PR on GitHub.
-Never commit directly to local `main`. The pre-commit pipeline (see
-`lefthook.yml` — install with `pnpm dlx lefthook install`) prints a
-non-blocking warning when `main` is more than 10 commits behind canonical
-via `scripts/check-main-canonical-drift.sh`; bypass with `SKIP_HOOKS=1`
-only for genuine emergencies.
+Never commit directly to local `main`. The pre-commit hook (installed
+via `scripts/install-hooks.sh`, source in `scripts/git-hooks/pre-commit`)
+prints a non-blocking warning when `main` is more than 10 commits behind
+canonical; bypass with `SKIP_HOOKS=1` only for genuine emergencies.
 
 Post-mortem of the drift event: [`docs/git-state-2026-05-01.md`](./docs/git-state-2026-05-01.md).
 
