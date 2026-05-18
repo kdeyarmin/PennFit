@@ -1775,6 +1775,8 @@ export interface Database {
           physician_info_json: Json | null;
           facial_measurements_json: Json | null;
           auth_user_id: string | null;
+          winback_sent_at: string | null;
+          deductible_reset_year: number | null;
           created_at: string;
           updated_at: string;
         };

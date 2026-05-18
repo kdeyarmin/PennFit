@@ -45,6 +45,8 @@ import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
 import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
 import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
+import { registerLapsedCustomerWinbackJob } from "./jobs/lapsed-customer-winback.js";
+import { registerDeductibleResetPushJob } from "./jobs/deductible-reset-push.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -258,6 +260,20 @@ export async function startWorker(): Promise<void> {
   // paired with the therapy nightly sync (04:30) so we work against
   // fresh data.
   await registerTherapyMilestonesJob(boss);
+
+  // Weekly lapsed-customer win-back. Mondays at 13:17 UTC. Sends one
+  // "we miss you" email to any shop_customers row whose last paid
+  // order is 180–730 days old (lapsed but not stale-registration)
+  // and who hasn't been win-back'd within the past 12 months. Honors
+  // communication_preferences.emailMarketing.
+  await registerLapsedCustomerWinbackJob(boss);
+
+  // Daily deductible-reset push — short-circuits unless current month
+  // is November. Sends a "use your benefits before Jan 1" email to
+  // every active customer (paid order within the past 730 days) who
+  // hasn't been stamped for the current year. Daily-and-short-circuit
+  // makes the cron self-healing across deploys that miss Nov 1.
+  await registerDeductibleResetPushJob(boss);
 
   workerReady = true;
   logger.info(
