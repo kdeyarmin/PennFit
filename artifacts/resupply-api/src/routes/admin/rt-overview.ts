@@ -58,7 +58,14 @@ interface RtOverviewRow {
   ahiAvg: number | null;
   leakAvg: number | null;
   usageMinutesAvg: number | null;
-  activeAlerts: { kind: string; label: string; detectedAt: string }[];
+  activeAlerts: {
+    /** The patient_smart_trigger_events row id; lets the RT board
+     *  call POST /admin/smart-triggers/:id/dismiss inline. */
+    id: string;
+    kind: string;
+    label: string;
+    detectedAt: string;
+  }[];
   therapyLinks: {
     source: string;
     status: string;
@@ -80,6 +87,7 @@ interface RawNight extends TherapyNightInput {
 }
 
 interface RawSmartTriggerEvent {
+  id: string;
   patient_id: string;
   kind: string;
   detected_at: string;
@@ -162,7 +170,7 @@ export async function buildRtOverview(days: number): Promise<{
   const { data: triggersRaw, error: triggersErr } = await supabase
     .schema("resupply")
     .from("patient_smart_trigger_events")
-    .select("patient_id, kind, detected_at")
+    .select("id, patient_id, kind, detected_at")
     .in("patient_id", linkedPatientIds)
     .is("dismissed_at", null)
     .order("detected_at", { ascending: false });
@@ -207,6 +215,7 @@ export async function buildRtOverview(days: number): Promise<{
       leakAvg: window.leakAvg,
       usageMinutesAvg: window.usageMinutesAvg,
       activeAlerts: patientTriggers.map((t) => ({
+        id: t.id,
         kind: t.kind,
         label: labelForTriggerKind(t.kind),
         detectedAt: t.detected_at,

@@ -148,6 +148,7 @@ describe("GET /admin/rt-overview", () => {
     stageSupabaseResponse("patient_smart_trigger_events", "select", {
       data: [
         {
+          id: "evt_test_1",
           patient_id: P2,
           kind: "leak_rising",
           detected_at: "2026-05-15T02:00:00Z",
@@ -163,6 +164,7 @@ describe("GET /admin/rt-overview", () => {
     expect(res.body.rows[0].patientId).toBe(P2);
     expect(res.body.rows[0].activeAlerts).toEqual([
       {
+        id: "evt_test_1",
         kind: "leak_rising",
         label: "Leak rising",
         detectedAt: "2026-05-15T02:00:00Z",

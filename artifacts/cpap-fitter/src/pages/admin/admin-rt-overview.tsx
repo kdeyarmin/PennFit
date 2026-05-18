@@ -12,13 +12,14 @@
 // per-patient detail page; this view is for triage.
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CloudOff,
   Download,
   HeartPulse,
   RefreshCcw,
+  X,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -27,8 +28,10 @@ import { Spinner } from "@/components/admin/Spinner";
 import { ErrorPanel } from "@/components/admin/ErrorPanel";
 import { Button } from "@/components/admin/Button";
 import {
+  dismissSmartTrigger,
   fetchRtOverview,
   rtOverviewCsvUrl,
+  type RtOverviewAlert,
   type RtOverviewResponse,
   type RtOverviewRow,
 } from "@/lib/admin/rt-overview-api";
@@ -42,11 +45,43 @@ const WINDOW_OPTIONS: { label: string; days: number }[] = [
 
 export function AdminRtOverviewPage() {
   const [days, setDays] = useState(7);
+  const queryClient = useQueryClient();
 
   const query = useQuery<RtOverviewResponse>({
     queryKey: ["rt-overview", days],
     queryFn: () => fetchRtOverview(days),
   });
+
+  const dismissMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string | null }) =>
+      dismissSmartTrigger(id, reason),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["rt-overview"] });
+    },
+  });
+
+  /**
+   * Inline dismiss handler. The RT confirms the dismiss + optionally
+   * captures a one-line reason ("called pt, mask refit booked",
+   * "duplicate of earlier event", etc.) which lands in the audit
+   * trail via the existing /admin/smart-triggers/:id/dismiss endpoint.
+   * The prompt() flow is intentionally minimal — closing the loop on
+   * the board is the win; a fancier modal can land later.
+   */
+  const handleDismiss = (alert: RtOverviewAlert, patientName: string) => {
+    const reason = window.prompt(
+      `Dismiss "${alert.label}" for ${patientName}?\n\n` +
+        `Optional reason (logged for audit; leave blank to skip):`,
+      "",
+    );
+    // prompt() returns null when the user cancels; treat that as
+    // a cancel, not as an empty-reason dismiss.
+    if (reason === null) return;
+    dismissMutation.mutate({
+      id: alert.id,
+      reason: reason.trim() || null,
+    });
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
@@ -127,7 +162,7 @@ export function AdminRtOverviewPage() {
             onRetry={() => void query.refetch()}
           />
         ) : query.data && query.data.rows.length > 0 ? (
-          <PatientTable rows={query.data.rows} />
+          <PatientTable rows={query.data.rows} onDismiss={handleDismiss} />
         ) : (
           <p className="text-sm" style={{ color: "hsl(var(--ink-3))" }}>
             No patients have an active therapy link yet. Once an
@@ -178,7 +213,13 @@ function WindowSelector({
   );
 }
 
-function PatientTable({ rows }: { rows: RtOverviewRow[] }) {
+function PatientTable({
+  rows,
+  onDismiss,
+}: {
+  rows: RtOverviewRow[];
+  onDismiss: (alert: RtOverviewAlert, patientName: string) => void;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -199,7 +240,7 @@ function PatientTable({ rows }: { rows: RtOverviewRow[] }) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <PatientRow key={r.patientId} row={r} />
+            <PatientRow key={r.patientId} row={r} onDismiss={onDismiss} />
           ))}
         </tbody>
       </table>
@@ -207,9 +248,16 @@ function PatientTable({ rows }: { rows: RtOverviewRow[] }) {
   );
 }
 
-function PatientRow({ row }: { row: RtOverviewRow }) {
+function PatientRow({
+  row,
+  onDismiss,
+}: {
+  row: RtOverviewRow;
+  onDismiss: (alert: RtOverviewAlert, patientName: string) => void;
+}) {
   const isStale = row.nightsInWindow === 0;
   const hasAlerts = row.activeAlerts.length > 0;
+  const patientName = `${row.lastName}, ${row.firstName}`;
   return (
     <tr
       className="border-t"
@@ -220,7 +268,7 @@ function PatientRow({ row }: { row: RtOverviewRow }) {
           href={`/admin/patients/${row.patientId}`}
           className="font-medium hover:underline"
         >
-          {row.lastName}, {row.firstName}
+          {patientName}
         </Link>
         <div className="text-xs" style={{ color: "hsl(var(--ink-3))" }}>
           {row.pacwareId}
@@ -230,10 +278,11 @@ function PatientRow({ row }: { row: RtOverviewRow }) {
         <div className="flex flex-wrap gap-1">
           {hasAlerts &&
             row.activeAlerts.map((a) => (
-              <Badge key={a.kind} tone="gold" title={`Detected ${a.detectedAt}`}>
-                <AlertTriangle className="w-3 h-3" />
-                {a.label}
-              </Badge>
+              <AlertBadge
+                key={a.id}
+                alert={a}
+                onDismiss={() => onDismiss(a, patientName)}
+              />
             ))}
           {isStale && !hasAlerts && (
             <Badge tone="muted">
@@ -302,6 +351,46 @@ function Td({
     >
       {children}
     </td>
+  );
+}
+
+/**
+ * Alert badge with an inline dismiss button. The badge itself shows
+ * the trigger kind + the detected timestamp on hover; the trailing
+ * `x` opens a confirmation prompt and POSTs to the existing dismiss
+ * endpoint. The dismiss button is intentionally not announced to
+ * screen readers as a separate landmark — it's a per-row action; the
+ * aria-label carries the alert context so a SR user knows what's
+ * being dismissed.
+ */
+function AlertBadge({
+  alert,
+  onDismiss,
+}: {
+  alert: RtOverviewAlert;
+  onDismiss: () => void;
+}) {
+  return (
+    <span
+      title={`Detected ${alert.detectedAt}`}
+      className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium"
+      style={{
+        background: "hsla(var(--penn-gold-deep) / 0.12)",
+        color: "hsl(var(--penn-gold-deep))",
+      }}
+    >
+      <AlertTriangle className="w-3 h-3" />
+      {alert.label}
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label={`Dismiss ${alert.label} alert`}
+        className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-black/10 focus-visible:outline-none focus-visible:ring-1"
+        style={{ color: "hsl(var(--penn-gold-deep))" }}
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </span>
   );
 }
 
