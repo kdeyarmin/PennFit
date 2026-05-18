@@ -376,6 +376,14 @@ export function PatientDetailPage({ id }: { id: string }) {
           Prior auths
         </TabButton>
         <TabButton
+          active={false}
+          onClick={() =>
+            setLocation(`/admin/patients/${id}/insurance-claims`)
+          }
+        >
+          Claims
+        </TabButton>
+        <TabButton
           active={tab === "equipment"}
           onClick={() => setTab("equipment")}
         >

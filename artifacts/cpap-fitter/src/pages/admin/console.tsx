@@ -71,6 +71,7 @@ import { AdminShopProductNewPage } from "@/pages/admin/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-carts";
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
+import { AdminInsuranceClaimsPage } from "@/pages/admin/admin-insurance-claims";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
 import { AdminOrders as PennpapsOrdersPage } from "@/pages/admin/pennpaps-orders";
@@ -116,6 +117,11 @@ function AdminConsole() {
             <Redirect to="/admin" replace />
           </Route>
           <Route path="/admin/patients" component={PatientsPage} />
+          <Route path="/admin/patients/:patientId/insurance-claims">
+            {(params) => (
+              <AdminInsuranceClaimsPage patientId={params.patientId} />
+            )}
+          </Route>
           <Route path="/admin/patients/:id">
             {(params) => <PatientDetailPage id={params.id} />}
           </Route>

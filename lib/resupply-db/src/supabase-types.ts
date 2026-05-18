@@ -931,6 +931,95 @@ export interface Database {
         >;
         Relationships: [];
       };
+      insurance_claims: {
+        Row: {
+          id: string;
+          patient_id: string;
+          insurance_coverage_id: string | null;
+          payer_name: string;
+          claim_number: string | null;
+          date_of_service: string;
+          fulfillment_id: string | null;
+          status:
+            | "draft"
+            | "submitted"
+            | "accepted"
+            | "denied"
+            | "paid"
+            | "appealed"
+            | "closed";
+          total_billed_cents: number;
+          total_allowed_cents: number;
+          total_paid_cents: number;
+          patient_responsibility_cents: number;
+          submitted_at: string | null;
+          decision_at: string | null;
+          paid_at: string | null;
+          denial_reason: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_claims"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_claims"]["Row"]
+        >;
+        Relationships: [];
+      };
+      insurance_claim_line_items: {
+        Row: {
+          id: string;
+          claim_id: string;
+          hcpcs_code: string;
+          modifier: string | null;
+          description: string | null;
+          quantity: number;
+          billed_cents: number;
+          allowed_cents: number;
+          paid_cents: number;
+          status: "pending" | "accepted" | "denied" | "paid";
+          denial_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+        >;
+        Relationships: [];
+      };
+      insurance_claim_events: {
+        Row: {
+          id: string;
+          claim_id: string;
+          event_type:
+            | "submitted"
+            | "accepted"
+            | "denied"
+            | "partial_pay"
+            | "paid"
+            | "appealed"
+            | "closed"
+            | "note";
+          amount_cents: number | null;
+          payer_ref: string | null;
+          document_id: string | null;
+          note: string | null;
+          actor_email: string;
+          occurred_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]
+        >;
+        Relationships: [];
+      };
       inbound_faxes: {
         Row: {
           id: string;
