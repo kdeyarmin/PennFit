@@ -745,6 +745,49 @@ export async function submitFitterLead(
   return (await res.json()) as { ok: true };
 }
 
+// ─────────────────────────────────────────── sleep apnea quiz capture
+//
+// Posts to /shop/quiz-leads. The sleep-apnea quiz on /learn calls this
+// when the patient clicks "email me my results." The endpoint sends a
+// transactional results email (no marketing opt-in required — the
+// patient explicitly asked for it) and persists a fitter_leads row
+// with source='sleep_apnea_quiz' for downstream attribution.
+export interface QuizLeadInput {
+  email: string;
+  score: number;
+  band: "low" | "intermediate" | "high";
+  symptoms?: string[];
+  /** Additional follow-up marketing emails. False by default. */
+  marketingOptIn?: boolean;
+  /** Honeypot — must be passed through but should always be empty. */
+  website?: string;
+}
+
+export async function submitQuizLead(
+  input: QuizLeadInput,
+): Promise<{ ok: true }> {
+  const res = await fetch("/resupply-api/shop/quiz-leads", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  return (await res.json()) as { ok: true };
+}
+
 export async function submitBackInStockNotify(input: {
   productId: string;
   email: string;

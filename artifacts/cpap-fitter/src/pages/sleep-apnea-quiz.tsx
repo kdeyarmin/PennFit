@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import {
   Activity,
@@ -11,12 +12,14 @@ import {
   ClipboardList,
   Heart,
   Info,
+  Mail,
   Moon,
   RefreshCw,
   ShieldCheck,
   Stethoscope,
   User,
 } from "lucide-react";
+import { submitQuizLead } from "@/lib/shop-api";
 
 // Sleep-apnea self-screener.
 //
@@ -398,7 +401,17 @@ export function SleepApneaQuiz() {
         data-testid="quiz-result"
       >
         {result ? (
-          <ResultCard score={score} copy={result} onReset={reset} />
+          <ResultCard
+            score={score}
+            copy={result}
+            // Symptom labels for the email — we send the question
+            // prompts the patient answered "yes" to, so the email
+            // recipient can show them to a physician verbatim.
+            yesSymptoms={QUESTIONS.filter((q) => answers[q.id] === true).map(
+              (q) => q.prompt,
+            )}
+            onReset={reset}
+          />
         ) : (
           <div className="glass-card rounded-2xl p-6 sm:p-8 text-center space-y-2">
             <p className="text-sm text-muted-foreground">
@@ -540,10 +553,17 @@ function QuestionCard({ question, value, onChange }: QuestionCardProps) {
 interface ResultCardProps {
   score: number;
   copy: RiskCopy;
+  /**
+   * Question prompts the patient answered "yes" to. Used by the
+   * email-me-my-results capture so the email lists symptoms back
+   * verbatim — the patient can show them to a physician without
+   * having to re-derive from the score.
+   */
+  yesSymptoms: string[];
   onReset: () => void;
 }
 
-function ResultCard({ score, copy, onReset }: ResultCardProps) {
+function ResultCard({ score, copy, yesSymptoms, onReset }: ResultCardProps) {
   const {
     Icon,
     label,
@@ -646,6 +666,16 @@ function ResultCard({ score, copy, onReset }: ResultCardProps) {
           </ul>
         </div>
 
+        {/* Optional email capture — patients can email themselves the
+            results so they have it in writing to share with a physician.
+            Transactional under CAN-SPAM (they're asking for the document),
+            so no marketing opt-in checkbox required. */}
+        <EmailMyResultsBlock
+          score={score}
+          band={copy.band}
+          yesSymptoms={yesSymptoms}
+        />
+
         <div className="flex flex-col sm:flex-row gap-3 pt-1">
           <Link href="/learn" className="sm:flex-1">
             <Button
@@ -670,6 +700,120 @@ function ResultCard({ score, copy, onReset }: ResultCardProps) {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Lightweight email-shape guard. The server runs canonical validation;
+// this guard just stops the patient from typing nonsense and hitting
+// Send with an obvious typo.
+const QUIZ_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface EmailMyResultsBlockProps {
+  score: number;
+  band: RiskBand;
+  yesSymptoms: string[];
+}
+
+function EmailMyResultsBlock({
+  score,
+  band,
+  yesSymptoms,
+}: EmailMyResultsBlockProps) {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState<"idle" | "sent" | "error">("idle");
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const trimmed = email.trim();
+  const valid = QUIZ_EMAIL_RE.test(trimmed);
+  const canSend = valid && !sending && status !== "sent";
+
+  async function handleSend() {
+    if (!canSend) return;
+    setSending(true);
+    setErrMsg(null);
+    try {
+      await submitQuizLead({
+        email: trimmed.toLowerCase(),
+        score,
+        band,
+        symptoms: yesSymptoms,
+        website: "",
+      });
+      setStatus("sent");
+    } catch (err) {
+      setStatus("error");
+      setErrMsg(
+        err instanceof Error && err.message === "rate_limited"
+          ? "We just sent one already — please try again in a few minutes."
+          : "Something went wrong. Please try again in a moment.",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (status === "sent") {
+    return (
+      <div
+        className="rounded-xl glass-panel p-4 sm:p-5 space-y-1"
+        data-testid="quiz-email-sent"
+      >
+        <p className="text-sm font-semibold text-primary flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[hsl(var(--penn-gold))]" />
+          Sent — check your inbox
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Your STOP-BANG result is on its way. It may take a minute to land.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl glass-panel p-4 sm:p-5 space-y-3">
+      <div className="space-y-1">
+        <p className="text-sm font-semibold text-primary flex items-center gap-2">
+          <Mail className="w-4 h-4" />
+          Email me my results
+        </p>
+        <p className="text-xs text-muted-foreground">
+          We&apos;ll email you a one-page summary you can forward to your
+          physician. No marketing — just the result.
+        </p>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Input
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-invalid={email.length > 0 && !valid}
+          data-testid="quiz-email-input"
+          className="sm:flex-1"
+        />
+        <Button
+          type="button"
+          onClick={handleSend}
+          disabled={!canSend}
+          size="lg"
+          className="rounded-full sm:w-auto"
+          data-testid="quiz-email-submit"
+        >
+          {sending ? "Sending…" : "Send"}
+        </Button>
+      </div>
+      {status === "error" && errMsg && (
+        <p
+          className="text-xs text-destructive"
+          data-testid="quiz-email-error"
+        >
+          {errMsg}
+        </p>
+      )}
     </div>
   );
 }

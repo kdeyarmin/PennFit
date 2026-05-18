@@ -11,6 +11,7 @@ import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import insuranceLeadRouter from "./insurance-lead";
 import fitterLeadRouter from "./fitter-lead";
+import quizLeadRouter from "./quiz-lead";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
@@ -163,6 +164,11 @@ router.use(insuranceLeadRouter);
 // flow re-engagement dispatcher can scan for opt-ins without an
 // order row.
 router.use(fitterLeadRouter);
+// Public email-capture for the sleep-apnea quiz on /learn. Posts a
+// fitter_leads row with source='sleep_apnea_quiz' and fires a
+// transactional results email so the patient has the score in
+// writing to share with their physician.
+router.use(quizLeadRouter);
 router.use(backInStockRouter);
 
 export default router;
