@@ -40,7 +40,7 @@ This is a `pnpm` workspaces monorepo (Node v24, TypeScript 5.9, pnpm 10.33).
 | `artifacts/shared`       | Cross-artifact static assets (favicons served at root).                                                                                                                                                                          |
 | `lib/resupply-*`         | Shared workspace packages: `db`, `auth` (+ `auth-react`), `messaging`, `email`, `ai`, `telecom`, `audit`, `domain`, `secrets`, `reminders`.                                                                                      |
 | `lib/api-client-react`   | Generated API client + React hooks.                                                                                                                                                                                              |
-| `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`, `check-main-canonical-drift`). The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages. |
+| `scripts/`               | Architecture + migration drift checks (`check-resupply-architecture`, `check-resupply-migration-prefix`). The historical `check-codegen.sh` was retired when Task #37 removed the OpenAPI spec packages.                         |
 | `docs/`                  | Architecture notes, post-mortems, production readiness.                                                                                                                                                                          |
 
 There is **one** customer-facing site (`pennfit.replit.app/`). The former

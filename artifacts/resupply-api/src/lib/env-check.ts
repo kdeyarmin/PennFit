@@ -74,17 +74,6 @@ export function assertRequiredEnv(): void {
   }
   missing.push(...validateSupabaseEnv());
 
-  // Validate RESUPPLY_AUDIT_HMAC_KEY format and length (must be base64-encoded, >= 32 bytes decoded).
-  // requireAuditHmacKey throws AuditHmacKeyError with a detailed message if the key is missing or too short.
-  try {
-    requireAuditHmacKey();
-  } catch (err) {
-    if (err instanceof AuditHmacKeyError) {
-      throw err;
-    }
-    throw err;
-  }
-
   if (missing.length === 0) return;
 
   throw new Error(
