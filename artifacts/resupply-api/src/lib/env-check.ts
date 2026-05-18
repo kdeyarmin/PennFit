@@ -38,11 +38,7 @@ import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 // migration: most query sites haven't been ported yet and continue
 // to use the shared pg pool. Once every site is on the Supabase JS
 // client, drop DATABASE_URL from this list and from .env.example.
-const REQUIRED_PLAIN_ENV_VARS = [
-  "PORT",
-  "DATABASE_URL",
-  AUDIT_HMAC_KEY_ENV,
-] as const;
+const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
 
 /**
  * Validates that required environment variables are present and throws a single error listing any that are missing.
@@ -60,6 +56,22 @@ export function assertRequiredEnv(): void {
     }
   }
   if (!hasLinkHmacKey()) missing.push(LINK_HMAC_KEY_ENV);
+  // Boot-time decode + length check for the audit HMAC key. Adding
+  // it to REQUIRED_PLAIN_ENV_VARS would only verify the var is
+  // non-empty; a deploy with a malformed base64 string or a key
+  // that decodes to fewer than 32 bytes would pass that check and
+  // then fail on the very first audited write. Re-using the
+  // production decoder makes the boot check and the runtime check
+  // see exactly the same bytes.
+  try {
+    requireAuditHmacKey();
+  } catch (err) {
+    if (err instanceof AuditHmacKeyError) {
+      missing.push(AUDIT_HMAC_KEY_ENV);
+    } else {
+      throw err;
+    }
+  }
   missing.push(...validateSupabaseEnv());
 
   // Validate RESUPPLY_AUDIT_HMAC_KEY format and length (must be base64-encoded, >= 32 bytes decoded).
