@@ -140,4 +140,17 @@ describe("shop route tree mount (smoke)", () => {
       .send({});
     expect(res.status).not.toBe(404);
   });
+
+  // /admin/rt-overview: must require admin auth (not 404) and the
+  // CSV variant must mount alongside the JSON one.
+  it("rejects unauthenticated GET /admin/rt-overview with 401", async () => {
+    const res = await request(app).get("/resupply-api/admin/rt-overview");
+    expect(res.status).toBe(401);
+  });
+  it("rejects unauthenticated GET /admin/rt-overview.csv with 401", async () => {
+    const res = await request(app).get(
+      "/resupply-api/admin/rt-overview.csv",
+    );
+    expect(res.status).toBe(401);
+  });
 });
