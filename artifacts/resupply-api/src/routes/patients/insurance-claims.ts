@@ -38,6 +38,7 @@ import {
 
 import { logger } from "../../lib/logger";
 import { requireAdmin } from "../../middlewares/requireAdmin";
+import { sendEobExplainerEmail } from "../../lib/order-emails/send-eob-explainer-email";
 
 type ClaimRow = Database["resupply"]["Tables"]["insurance_claims"]["Row"];
 type ClaimStatus = ClaimRow["status"];
@@ -759,6 +760,84 @@ router.post(
     }).catch((err) => {
       logger.warn({ err }, "insurance_claim.event.create audit write failed");
     });
+
+    // Best-effort EOB explainer email. Fires for paid / partial_pay /
+    // denied events because those are the points where the patient
+    // would otherwise call us asking "what happened with my claim?"
+    // 'submitted', 'accepted', 'appealed', 'closed', 'note' are
+    // internal-audience events; we don't email on those.
+    //
+    // The send is fire-and-forget against the response. A SendGrid
+    // outage or a missing patient.email never 500s the admin's
+    // event POST.
+    const eobKind: "paid" | "partial_pay" | "denied" | null =
+      b.eventType === "paid"
+        ? "paid"
+        : b.eventType === "partial_pay"
+          ? "partial_pay"
+          : b.eventType === "denied"
+            ? "denied"
+            : null;
+    if (eobKind) {
+      void (async () => {
+        try {
+          const { data: claimFull } = await supabase
+            .schema("resupply")
+            .from("insurance_claims")
+            .select(
+              "payer_name, claim_number, date_of_service, total_billed_cents, total_allowed_cents, total_paid_cents, patient_responsibility_cents, denial_reason",
+            )
+            .eq("id", idParsed.data.claimId)
+            .limit(1)
+            .maybeSingle();
+          if (!claimFull) return;
+          const { data: patient } = await supabase
+            .schema("resupply")
+            .from("patients")
+            .select("email, legal_first_name")
+            .eq("id", idParsed.data.id)
+            .limit(1)
+            .maybeSingle();
+          if (!patient?.email) return;
+          const result = await sendEobExplainerEmail({
+            toEmail: patient.email,
+            firstName: patient.legal_first_name,
+            kind: eobKind,
+            payerName: claimFull.payer_name,
+            claimNumber: claimFull.claim_number,
+            dateOfService: claimFull.date_of_service,
+            totals: {
+              billedCents: claimFull.total_billed_cents,
+              allowedCents: claimFull.total_allowed_cents,
+              paidCents: claimFull.total_paid_cents,
+              patientResponsibilityCents:
+                claimFull.patient_responsibility_cents,
+            },
+            denialReason: claimFull.denial_reason,
+          });
+          if (!result.configured) {
+            logger.info(
+              { eventId: event.id },
+              "eob_explainer: skipped — sendgrid not configured",
+            );
+          } else if (!result.delivered) {
+            logger.warn(
+              { eventId: event.id, error: result.error },
+              "eob_explainer: send failed",
+            );
+          }
+        } catch (sendErr) {
+          logger.warn(
+            {
+              err:
+                sendErr instanceof Error ? sendErr.message : String(sendErr),
+              eventId: event.id,
+            },
+            "eob_explainer: send threw (non-fatal)",
+          );
+        }
+      })();
+    }
 
     res.status(201).json({ id: event.id });
   },

@@ -43,6 +43,8 @@ import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
 import { registerPriorAuthExpirySweepJob } from "./jobs/prior-auth-expiry-sweep.js";
+import { registerShopOrderDeliveryFollowupJob } from "./jobs/shop-order-delivery-followup.js";
+import { registerTherapyMilestonesJob } from "./jobs/therapy-milestones.js";
 
 let bossInstance: PgBoss | null = null;
 let workerReady = false;
@@ -240,6 +242,22 @@ export async function startWorker(): Promise<void> {
   // route header has long claimed this sweep existed; this is its
   // implementation. Runs at 03:47 UTC daily.
   await registerPriorAuthExpirySweepJob(boss);
+
+  // Daily post-delivery follow-up dispatcher. Scans paid shop orders
+  // that delivered 3-14 days ago without a follow-up stamp and sends
+  // a "how did it go?" email + push. Highest-ROI satisfaction surface
+  // a DME supplier has; also creates a clean intake for early returns
+  // before the patient gives up. Runs at 14:23 UTC daily.
+  await registerShopOrderDeliveryFollowupJob(boss);
+
+  // Daily therapy-milestone evaluator + sender. Scans
+  // patient_therapy_nights for engagement signals (100th night, first
+  // anniversary, first 30-night adherence window) and sends a
+  // celebration email per detected milestone. Idempotent via the
+  // patient_therapy_milestones UNIQUE constraint. Runs at 04:53 UTC,
+  // paired with the therapy nightly sync (04:30) so we work against
+  // fresh data.
+  await registerTherapyMilestonesJob(boss);
 
   workerReady = true;
   logger.info(

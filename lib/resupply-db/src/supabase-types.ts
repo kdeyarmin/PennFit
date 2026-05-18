@@ -1837,12 +1837,35 @@ export interface Database {
           pod_object_key: string | null;
           pod_uploaded_at: string | null;
           pod_signed_name: string | null;
+          delivery_followup_sent_at: string | null;
           created_at: string;
           updated_at: string;
           paid_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
+        Relationships: [];
+      };
+      patient_therapy_milestones: {
+        Row: {
+          id: string;
+          patient_id: string;
+          milestone_kind:
+            | "100_nights"
+            | "365_nights"
+            | "first_adherence_month";
+          achieved_on: string;
+          metric_snapshot: Json | null;
+          notified_at: string | null;
+          notification_channel: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_milestones"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_milestones"]["Row"]
+        >;
         Relationships: [];
       };
       shop_order_notes: {
