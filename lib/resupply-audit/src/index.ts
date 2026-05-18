@@ -250,6 +250,7 @@ export async function logAudit(event: AuditEvent): Promise<void> {
  * @param options.contextLabel - Stable label identifying the callsite context (e.g. "post_login_audit").
  * @param options.onWriteFailure - Optional callback invoked with a failure envelope when a non-programmer/transient write error occurs.
  * @returns `true` if the audit write succeeded, `false` if a DB/transient failure was swallowed.
+ */
 export async function logAuditBestEffort(
   event: AuditEvent,
   options: {

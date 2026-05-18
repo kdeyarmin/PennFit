@@ -68,3 +68,20 @@ ALTER TABLE "resupply"."audit_log"
     OR
     ("chain_seq" IS NOT NULL AND "signature" IS NOT NULL)
   );
+--> statement-breakpoint
+
+-- Chain integrity check: enforce prev_signature nullability based on chain position.
+-- Unsigned rows, genesis rows (chain_seq = 1), and non-genesis rows must follow
+-- the three-way logic for prev_signature.
+ALTER TABLE "resupply"."audit_log"
+  DROP CONSTRAINT IF EXISTS "audit_log_chain_integrity_chk";
+--> statement-breakpoint
+ALTER TABLE "resupply"."audit_log"
+  ADD CONSTRAINT "audit_log_chain_integrity_chk"
+  CHECK (
+    ("chain_seq" IS NULL AND "signature" IS NULL AND "prev_signature" IS NULL)
+    OR
+    ("chain_seq" = 1 AND "signature" IS NOT NULL AND "prev_signature" IS NULL)
+    OR
+    ("chain_seq" > 1 AND "signature" IS NOT NULL AND "prev_signature" IS NOT NULL)
+  );
