@@ -286,6 +286,26 @@ const storefrontChatLimiter = expressRateLimit({
 });
 app.use("/api/chat", storefrontChatLimiter);
 
+// Reminder subscription + manage routes. The manage token is a 64-char
+// random capability secret delivered only by email, but the routes
+// themselves are unauthenticated, so a per-IP ceiling stops both
+// (a) signup-spam against POST /reminders and (b) token-guessing
+// sweeps against GET|PATCH /reminders/manage. Budget covers a
+// patient legitimately tuning their schedule across a few items
+// without throttling support agents who proxy on a customer's behalf.
+const storefrontReminderLimiter = expressRateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
+  message: {
+    error:
+      "Too many reminder requests from this network. Please wait a few minutes and try again.",
+  },
+});
+app.use("/api/reminders", storefrontReminderLimiter);
+
 // Defense-in-depth: a single CSRF gate covering every admin-tree
 // mutation on both mount prefixes. Pass-through for safe methods and
 // non-admin paths; enforces double-submit (`pf_csrf` cookie ⇄
