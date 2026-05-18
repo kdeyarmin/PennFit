@@ -51,6 +51,7 @@ interface ReengageStats {
   emailed: number;
   skippedConverted: number;
   skippedNoConfig: number;
+  skippedAlreadyClaimed: number;
   errors: number;
 }
 
@@ -131,6 +132,7 @@ export async function runFitterLeadReengageSweep(
     emailed: 0,
     skippedConverted: 0,
     skippedNoConfig: 0,
+    skippedAlreadyClaimed: 0,
     errors: 0,
   };
   if (
@@ -230,7 +232,33 @@ export async function runFitterLeadReengageSweep(
       continue;
     }
 
-    let sendOk = true;
+    // Atomic claim: update nudged_at only if it's still null. If
+    // another worker already claimed this lead, we skip it to avoid
+    // duplicate sends.
+    const { data: claimResult, error: claimErr } = await supabase
+      .schema("resupply")
+      .from("fitter_leads")
+      .update({ nudged_at: new Date().toISOString() })
+      .eq("id", lead.id)
+      .is("nudged_at", null)
+      .select();
+
+    if (claimErr) {
+      logger.warn(
+        { err: claimErr, leadId: lead.id },
+        "fitter-lead-reengage: claim failed",
+      );
+      stats.errors += 1;
+      continue;
+    }
+
+    if (!claimResult || claimResult.length === 0) {
+      // Another worker claimed this lead already.
+      stats.skippedAlreadyClaimed += 1;
+      continue;
+    }
+
+    // Claim succeeded, proceed to send.
     try {
       await sendgrid.sendEmail({
         to: lead.email,
@@ -238,6 +266,7 @@ export async function runFitterLeadReengageSweep(
         html,
         text,
       });
+      stats.emailed += 1;
     } catch (err) {
       // Pass the Error object so pino's err.message / err.stack /
       // err.cause.* redact rules engage; logging err.message as a
@@ -247,28 +276,11 @@ export async function runFitterLeadReengageSweep(
         "fitter-lead-reengage: send failed",
       );
       stats.errors += 1;
-      sendOk = false;
+      // The claim stamp remains in place; we won't retry this lead
+      // even though the send failed. One nudge attempt per session
+      // is the policy; spam-side failure is preferable to spam-side
+      // success.
     }
-
-    // Stamp regardless of send outcome. On success the stamp is the
-    // "we delivered" record; on failure it's a "we tried and won't
-    // retry" sentinel — without this, a persistently-failing send
-    // (bad address, SendGrid 5xx on a single recipient) would re-fire
-    // every day for ~27 days until the lead aged out of the 30-day
-    // window. One nudge attempt per session is the policy; spam-side
-    // failure is preferable to spam-side success.
-    const { error: stampErr } = await supabase
-      .schema("resupply")
-      .from("fitter_leads")
-      .update({ nudged_at: new Date().toISOString() })
-      .eq("id", lead.id);
-    if (stampErr) {
-      logger.warn(
-        { err: stampErr, leadId: lead.id },
-        "fitter-lead-reengage: nudged_at stamp failed",
-      );
-    }
-    if (sendOk) stats.emailed += 1;
   }
 
   return stats;
