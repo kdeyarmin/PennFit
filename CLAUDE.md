@@ -100,11 +100,12 @@ third-party credential.
 
 Required at boot for `resupply-api`:
 
-| Variable                 | Notes                                                                                                                                                    |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                   | HTTP listen port.                                                                                                                                        |
-| `DATABASE_URL`           | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                         |
-| `RESUPPLY_LINK_HMAC_KEY` | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links. |
+| Variable                  | Notes                                                                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | HTTP listen port.                                                                                                                                                                                  |
+| `DATABASE_URL`            | Postgres v14+ (no extensions; only `gen_random_uuid()` is used).                                                                                                                                   |
+| `RESUPPLY_LINK_HMAC_KEY`  | 32+ random bytes. Signs short-lived patient links in SMS/email reminders. Generate with `openssl rand -base64 48`. Rotation invalidates in-flight links.                                           |
+| `RESUPPLY_AUDIT_HMAC_KEY` | 32+ bytes (base64). HMAC-chains every row written to `resupply.audit_log` (migration 0116) for HIPAA §164.312(b) tamper-evidence. Generate with `openssl rand -base64 48`. Rotation does NOT invalidate prior rows. |
 
 The full env table — including every optional variable and where it's
 read — lives in [`README.md`](./README.md#environment-variables) and

@@ -31,6 +31,11 @@ import {
 } from "@workspace/resupply-db";
 
 import { sanitizeMetadata } from "./sanitize";
+import {
+  type AuditChainContent,
+  requireAuditHmacKey,
+  signAuditRow,
+} from "./sign";
 
 export {
   AUDIT_METADATA_MAX_BYTES,
@@ -41,6 +46,24 @@ export {
   AuditMetadataSizeError,
   sanitizeMetadata,
 } from "./sanitize";
+export {
+  AUDIT_HMAC_KEY_ENV,
+  AuditHmacKeyError,
+  canonicalJson,
+  registerAuditHmacKeyForTesting,
+  requireAuditHmacKey,
+  signAuditRow,
+  type AuditChainContent,
+} from "./sign";
+
+/**
+ * Max number of retries when two writers race on the same
+ * chain_seq. Each retry costs one fast indexed SELECT plus the
+ * losing INSERT, so the budget can be generous — 8 retries with
+ * a unique constraint is dominated by the contention rate, not the
+ * retry ceiling.
+ */
+const CHAIN_INSERT_MAX_ATTEMPTS = 8;
 
 export interface AuditEvent {
   /**
@@ -132,21 +155,72 @@ export async function logAudit(event: AuditEvent): Promise<void> {
       ? { ...event.metadata, _request_id: requestId }
       : event.metadata;
   const metadata = sanitizeMetadata(metadataInput);
+  const key = requireAuditHmacKey();
+  const supabase = getSupabaseServiceRoleClient();
 
-  const { error } = await getSupabaseServiceRoleClient()
-    .schema("resupply")
-    .from("audit_log")
-    .insert({
+  // HMAC chain: read the current tip, sign, insert with the next
+  // chain_seq. Two concurrent writers can both read tip N and try
+  // to insert N+1 — the unique partial index throws 23505 on the
+  // loser, who reads the now-updated tip and retries.
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < CHAIN_INSERT_MAX_ATTEMPTS; attempt++) {
+    const { data: latest, error: latestErr } = await supabase
+      .schema("resupply")
+      .from("audit_log")
+      .select("chain_seq, signature")
+      .not("chain_seq", "is", null)
+      .order("chain_seq", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestErr) throw latestErr;
+
+    const prevSeq = latest?.chain_seq ?? 0;
+    const prevSignature = latest?.signature ?? null;
+    const chainSeq = prevSeq + 1;
+
+    const content: AuditChainContent = {
+      chain_seq: chainSeq,
       operator_email: event.adminEmail ?? null,
       operator_user_id: event.adminUserId ?? null,
       action: event.action,
       target_table: event.targetTable ?? null,
       target_id: event.targetId ?? null,
-      metadata: metadata as unknown as Json,
+      metadata,
       ip: event.ip ?? null,
       user_agent: event.userAgent ?? null,
-    });
-  if (error) throw error;
+    };
+    const signature = signAuditRow(key, prevSignature, content);
+
+    const { error } = await supabase
+      .schema("resupply")
+      .from("audit_log")
+      .insert({
+        operator_email: event.adminEmail ?? null,
+        operator_user_id: event.adminUserId ?? null,
+        action: event.action,
+        target_table: event.targetTable ?? null,
+        target_id: event.targetId ?? null,
+        metadata: metadata as unknown as Json,
+        ip: event.ip ?? null,
+        user_agent: event.userAgent ?? null,
+        chain_seq: chainSeq,
+        prev_signature: prevSignature,
+        signature,
+      });
+    if (!error) return;
+    // Retry only on chain_seq unique-violation; any other error
+    // surfaces immediately so a permission / shape / network issue
+    // doesn't masquerade as contention.
+    if ((error as { code?: string }).code === "23505") {
+      lastError = error;
+      continue;
+    }
+    throw error;
+  }
+  throw new Error(
+    `audit_log chain insert: chain_seq contention exceeded ${CHAIN_INSERT_MAX_ATTEMPTS} attempts` +
+      (lastError ? ` (last: ${String(lastError)})` : ""),
+  );
 }
 
 /**
@@ -208,7 +282,8 @@ export async function logAuditBestEffort(
       name === "AuditMetadataPhiError" ||
       name === "AuditMetadataSizeError" ||
       name === "AuditMetadataDepthError" ||
-      name === "AuditMetadataShapeError"
+      name === "AuditMetadataShapeError" ||
+      name === "AuditHmacKeyError"
     ) {
       throw err;
     }

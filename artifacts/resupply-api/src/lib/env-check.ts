@@ -16,12 +16,17 @@
  * every third-party credential. Those vars are documented as
  * optional / feature-gated in the top-level README.
  *
- * `RESUPPLY_LINK_HMAC_KEY` is the only resupply-specific secret left
- * after migration 0025 stripped pgcrypto column-level encryption.
- * Validate it here so the very first link-issuing or link-verifying
- * request doesn't fail mid-flight on a misconfigured deploy.
+ * `RESUPPLY_LINK_HMAC_KEY` and `RESUPPLY_AUDIT_HMAC_KEY` are the
+ * two resupply-specific secrets validated here. The link key signs
+ * patient reminder URLs (migration 0025 stripped the pgcrypto
+ * column-level encryption secrets); the audit key signs every
+ * row written to `resupply.audit_log` (migration 0116 — required
+ * for HIPAA §164.312(b) tamper-evidence). Both are checked at boot
+ * so the first signing or verifying request doesn't fail
+ * mid-flight on a misconfigured deploy.
  */
 
+import { AUDIT_HMAC_KEY_ENV } from "@workspace/resupply-audit";
 import { validateSupabaseEnv } from "@workspace/resupply-db";
 import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 
@@ -29,7 +34,11 @@ import { hasLinkHmacKey, LINK_HMAC_KEY_ENV } from "@workspace/resupply-secrets";
 // migration: most query sites haven't been ported yet and continue
 // to use the shared pg pool. Once every site is on the Supabase JS
 // client, drop DATABASE_URL from this list and from .env.example.
-const REQUIRED_PLAIN_ENV_VARS = ["PORT", "DATABASE_URL"] as const;
+const REQUIRED_PLAIN_ENV_VARS = [
+  "PORT",
+  "DATABASE_URL",
+  AUDIT_HMAC_KEY_ENV,
+] as const;
 
 export function assertRequiredEnv(): void {
   const missing: string[] = [];
