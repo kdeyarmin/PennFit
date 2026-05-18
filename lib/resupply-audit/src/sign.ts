@@ -46,22 +46,23 @@ export class AuditHmacKeyError extends Error {
 let registeredKey: Buffer | null = null;
 
 /**
- * Test seam: provide a key directly instead of reading the env.
- * Pass `null` to clear (afterEach hooks). The application's boot
- * path does NOT call this — it relies on the env var so a
- * misconfigured deploy fails loudly on first audit write.
+ * Register or clear a test-only HMAC key override used instead of the environment variable.
+ *
+ * @param key - Buffer containing the raw HMAC key to register for testing, or `null` to clear the override
  */
 export function registerAuditHmacKeyForTesting(key: Buffer | null): void {
   registeredKey = key;
 }
 
 /**
- * Returns the HMAC key as raw bytes. Looks up the registered test
- * key first, then falls back to decoding `RESUPPLY_AUDIT_HMAC_KEY`
- * as base64. Throws (rather than returning a sentinel) when the
- * env is unset or too short — every caller is on the write path
- * where signing must succeed, and a silent fallback would defeat
- * the §164.312(b) intent of the whole feature.
+ * Obtain the raw HMAC key used to sign audit-log rows.
+ *
+ * Prefers a test-registered override when present; otherwise reads the
+ * base64-encoded value from the environment variable named by
+ * `AUDIT_HMAC_KEY_ENV`, decodes it, and validates its length.
+ *
+ * @returns The decoded HMAC key bytes as a `Buffer`.
+ * @throws {AuditHmacKeyError} if the environment variable is unset/empty or if the decoded key is shorter than `MIN_KEY_BYTES` bytes.
  */
 export function requireAuditHmacKey(): Buffer {
   if (registeredKey !== null) return registeredKey;
@@ -85,13 +86,14 @@ export function requireAuditHmacKey(): Buffer {
 }
 
 /**
- * Deterministic JSON encoding: object keys sorted, arrays
- * preserved in order. Required so the signer and any future
- * verifier produce the same bytes for the same content regardless
- * of which JS engine wrote them.
+ * Produce a deterministic JSON string with object keys sorted and array order preserved.
  *
- * Notably: distinct from `JSON.stringify(v)` because that
- * preserves insertion order, which Postgres' jsonb does not.
+ * null and undefined are encoded as `"null"`. Strings, numbers, and booleans use
+ * `JSON.stringify`. Arrays are encoded with elements canonicalized in order.
+ * Objects are encoded with keys sorted lexicographically and each value canonicalized.
+ * The result is a stable JSON text appropriate for signing or cross-engine verification.
+ *
+ * @returns A canonical JSON text encoding of `value` with stable ordering suitable for signing and verification
  */
 export function canonicalJson(value: unknown): string {
   if (value === null || value === undefined) return "null";
@@ -136,14 +138,12 @@ export interface AuditChainContent {
 }
 
 /**
- * Compute one row's signature. `prevSignatureB64` is `null` for the
- * genesis row (chain_seq === 1) and the predecessor's signature
- * everywhere else.
+ * Produce the base64-encoded HMAC-SHA-256 signature for a single audit-chain row.
  *
- * The separator byte between prev_signature and canonical content
- * keeps the prev/content boundary unambiguous; without it a
- * crafted prev_signature could be a prefix of canonical content
- * with the same total digest input.
+ * @param key - Raw HMAC key bytes used to compute the signature
+ * @param prevSignatureB64 - Base64-encoded predecessor signature, or `null` for the genesis row
+ * @param content - The row content (including `chain_seq`) to be canonically serialized and signed
+ * @returns The row signature encoded as a base64 string
  */
 export function signAuditRow(
   key: Buffer,

@@ -143,6 +143,23 @@ export function registerAuditRequestIdResolver(
   resolveRequestId = fn;
 }
 
+/**
+ * Appends a single signed audit row to the `resupply.audit_log` table after validating metadata.
+ *
+ * The function augments the provided metadata with a resolved request id (if available), runs
+ * metadata sanitization, constructs an HMAC-signed chain entry, and inserts the new row with the
+ * next `chain_seq` and signature. On concurrent writers it retries the insert when the database
+ * reports a `chain_seq` uniqueness violation, up to `CHAIN_INSERT_MAX_ATTEMPTS`.
+ *
+ * @param event - Audit event fields (action, optional operator/target info, metadata, ip, userAgent)
+ * @throws AuditMetadataPhiError | AuditMetadataSizeError | AuditMetadataDepthError | AuditMetadataShapeError
+ *         When metadata fails sanitization.
+ * @throws AuditHmacKeyError
+ *         When the required audit HMAC key cannot be loaded.
+ * @throws Error
+ *         On database/insert failures other than retriable chain-sequence contention, or when the
+ *         retry budget for chain-sequence contention is exhausted.
+ */
 export async function logAudit(event: AuditEvent): Promise<void> {
   const requestId = resolveRequestId?.() ?? null;
   // Don't mutate the caller's metadata object. `_request_id` uses an
@@ -224,31 +241,15 @@ export async function logAudit(event: AuditEvent): Promise<void> {
 }
 
 /**
- * Best-effort variant of `logAudit` for call sites where audit-write
- * failure must NOT block the user-visible flow (post-success
- * background tasks, webhook handlers, worker jobs).
+ * Attempts to write an audit row but does not allow transient write failures to block the caller.
  *
- * Behavior:
- *   * Sanitizer errors (PHI, shape, size, depth) STILL THROW. The
- *     metadata-validation gate is a programmer correctness check —
- *     a silent-eat there would defeat its purpose, so we re-throw
- *     so the call site sees the bug.
- *   * DB-level errors (pool exhaustion, deadlock, transient
- *     connection issue) are swallowed and logged via the caller-
- *     provided `onWriteFailure` callback (or no-op if none given).
- *   * The callback receives the original error AND a stable event
- *     name (`audit_write_failed`) so a logging adapter can grep
- *     for systemic outages: a single failure is normal noise; a
- *     run of them under a few minutes is a signal that the audit
- *     DB or pool is unhealthy.
+ * Re-throws metadata/sanitizer and HMAC-key errors; calls `onWriteFailure` and returns `false` for DB/transient failures; returns `true` on successful write.
  *
- * Returns `true` on successful write, `false` on swallowed DB
- * failure, and re-throws on sanitizer / programmer errors.
- *
- * Call sites adopt this helper instead of try/catch so the
- * categorization of "what's a programmer bug vs what's transient"
- * stays in one place.
- */
+ * @param event - The audit event to write.
+ * @param options - Callsite options controlling failure handling.
+ * @param options.contextLabel - Stable label identifying the callsite context (e.g. "post_login_audit").
+ * @param options.onWriteFailure - Optional callback invoked with a failure envelope when a non-programmer/transient write error occurs.
+ * @returns `true` if the audit write succeeded, `false` if a DB/transient failure was swallowed.
 export async function logAuditBestEffort(
   event: AuditEvent,
   options: {

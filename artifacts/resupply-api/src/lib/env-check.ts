@@ -40,6 +40,13 @@ const REQUIRED_PLAIN_ENV_VARS = [
   AUDIT_HMAC_KEY_ENV,
 ] as const;
 
+/**
+ * Validates that required environment variables are present and throws a single error listing any that are missing.
+ *
+ * Collects missing names from a fixed required list, the link HMAC key check, and Supabase-specific validations; if any are absent, throws an Error containing a comma-separated list of the missing variables.
+ *
+ * @throws Error - when one or more required environment variables are missing; the error message lists the missing variable names.
+ */
 export function assertRequiredEnv(): void {
   const missing: string[] = [];
   for (const name of REQUIRED_PLAIN_ENV_VARS) {
