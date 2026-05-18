@@ -88,6 +88,7 @@ describe("runFitterLeadReengageSweep", () => {
       emailed: 0,
       skippedConverted: 0,
       skippedNoConfig: 1,
+      skippedAlreadyClaimed: 0,
       errors: 0,
     });
     expect(sendEmailMock).not.toHaveBeenCalled();
@@ -106,8 +107,13 @@ describe("runFitterLeadReengageSweep", () => {
     });
     // Conversion check — alice has not ordered.
     stageSupabaseResponse("orders", "select", { data: [] });
-    // Stamp update.
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    // Atomic claim: returning a non-empty array means the conditional
+    // UPDATE matched and "won" the claim. An empty array (or null)
+    // would mean another worker already stamped nudged_at — exactly
+    // the skippedAlreadyClaimed branch we DON'T want here.
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_1" }],
+    });
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
 
@@ -149,7 +155,12 @@ describe("runFitterLeadReengageSweep", () => {
     stageSupabaseResponse("orders", "select", {
       data: [{ patient_email: "bob@example.com" }],
     });
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    // Only carol reaches the claim step; the response represents
+    // the row returned by `UPDATE ... .select()` after a successful
+    // conditional update.
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_3" }],
+    });
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
 
@@ -184,7 +195,9 @@ describe("runFitterLeadReengageSweep", () => {
       ],
     });
     stageSupabaseResponse("orders", "select", { data: [] });
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_4" }],
+    });
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid 5xx"));
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
@@ -223,8 +236,14 @@ describe("runFitterLeadReengageSweep", () => {
     stageSupabaseResponse("orders", "select", { data: [] });
     // First send fails; second succeeds.
     sendEmailMock.mockRejectedValueOnce(new Error("sendgrid transient"));
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
-    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    // Both leads win their atomic claim — staged in the order the
+    // sweep processes them.
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_5" }],
+    });
+    stageSupabaseResponse("fitter_leads", "update", {
+      data: [{ id: "fl_6" }],
+    });
 
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
 
