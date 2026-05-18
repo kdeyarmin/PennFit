@@ -114,9 +114,6 @@ export async function buildRtOverview(days: number): Promise<{
   const supabase = getSupabaseServiceRoleClient();
   const asOf = new Date().toISOString();
   const asOfDate = asOf.slice(0, 10);
-  const lowerBoundDate = new Date();
-  lowerBoundDate.setUTCDate(lowerBoundDate.getUTCDate() - (days - 1));
-  const lowerBoundIso = lowerBoundDate.toISOString().slice(0, 10);
 
   // 1. Active therapy links — these define "patients being tracked
   //    by an integration." Status `active` only; revoked / errored
