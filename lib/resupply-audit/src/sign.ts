@@ -1,14 +1,23 @@
 // HMAC-SHA-256 chain signing for resupply.audit_log rows.
 //
 // Each signed row commits to:
-//   * the predecessor's signature (or the empty string for the
-//     genesis row), and
+//   * the predecessor's signature, and
 //   * a canonical JSON encoding of the row's content + chain_seq.
 //
 // A verifier replays the chain offline: walk rows in chain_seq
 // order, recompute the signature from the previous row's signature
 // and the canonical content, and compare. Any in-place mutation or
 // dropped row breaks the chain at that point.
+//
+// Genesis-row contract (verifier-relevant):
+//   The genesis row (chain_seq = 1) has `prev_signature = NULL` in
+//   the database. The signing function treats `null` and the empty
+//   string as the same input — both produce the same HMAC bytes
+//   before the inter-field separator. A verifier reading rows from
+//   Postgres MUST coerce the SQL NULL to the empty string before
+//   feeding it to the HMAC; otherwise the genesis signature won't
+//   reproduce. The signer canonicalises this at `signAuditRow`'s
+//   first `h.update(...)` call.
 //
 // Why a separate module and not inlined in index.ts:
 //   * The signing function is pure and exhaustively unit-testable
@@ -74,7 +83,24 @@ export function requireAuditHmacKey(): Buffer {
         `32+ byte secret (generate with: openssl rand -base64 48).`,
     );
   }
+  // Buffer.from(raw, "base64") silently drops any character outside
+  // the base64 alphabet. A non-base64 string of the right length
+  // (e.g. 64 hex chars) would otherwise pass the >= 32 byte check
+  // but produce a key that doesn't match what the operator
+  // configured, making cross-environment chain verification fail
+  // silently. Reject anything that isn't strict base64 OR doesn't
+  // round-trip through encode→decode.
+  if (!/^[A-Za-z0-9+/]+=*$/.test(raw)) {
+    throw new AuditHmacKeyError(
+      `${AUDIT_HMAC_KEY_ENV} is not strict base64 (only A-Z, a-z, 0-9, +, /, = padding allowed). Generate with: openssl rand -base64 48`,
+    );
+  }
   const decoded = Buffer.from(raw, "base64");
+  if (decoded.toString("base64") !== raw) {
+    throw new AuditHmacKeyError(
+      `${AUDIT_HMAC_KEY_ENV} did not round-trip through base64 decode/encode; the source string is probably not what you think it is. Generate with: openssl rand -base64 48`,
+    );
+  }
   if (decoded.length < MIN_KEY_BYTES) {
     throw new AuditHmacKeyError(
       `${AUDIT_HMAC_KEY_ENV} decoded to ${decoded.length} bytes; ` +

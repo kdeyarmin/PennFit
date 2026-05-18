@@ -193,6 +193,18 @@ export async function logAudit(event: AuditEvent): Promise<void> {
 
     const prevSeq = latest?.chain_seq ?? 0;
     const prevSignature = latest?.signature ?? null;
+    // chain_seq is bigint in Postgres but `number` in the generated
+    // Supabase types. JS numbers stay precise up to 2^53; the
+    // canonical JSON encoding of chain_seq also goes through
+    // JSON.stringify, so once the chain crosses that threshold the
+    // signature input is lossy and verification breaks. Fail loudly
+    // if we ever approach the boundary so the chain can be
+    // rotated/segmented operationally before silent corruption.
+    if (!Number.isSafeInteger(prevSeq) || prevSeq < 0) {
+      throw new Error(
+        `audit_log chain_seq ${prevSeq} is outside the safe-integer range; rotate the audit chain before continuing`,
+      );
+    }
     const chainSeq = prevSeq + 1;
 
     const content: AuditChainContent = {

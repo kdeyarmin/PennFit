@@ -154,4 +154,35 @@ describe("requireAuditHmacKey", () => {
       else process.env[AUDIT_HMAC_KEY_ENV] = prior;
     }
   });
+
+  it("throws AuditHmacKeyError when env key is not strict base64 (e.g. hex)", () => {
+    const prior = process.env[AUDIT_HMAC_KEY_ENV];
+    // 64 hex chars = 32 bytes of would-be entropy, but '0123456789abcdef'
+    // contains characters outside the strict base64 alphabet ('a'–'f'
+    // are fine, but hex strings won't round-trip through encode/decode
+    // — and a string with non-base64 chars must be rejected outright).
+    // Use a string that has '_' which is definitely not base64.
+    process.env[AUDIT_HMAC_KEY_ENV] = "a".repeat(40) + "_b";
+    try {
+      expect(() => requireAuditHmacKey()).toThrow(AuditHmacKeyError);
+    } finally {
+      if (prior === undefined) delete process.env[AUDIT_HMAC_KEY_ENV];
+      else process.env[AUDIT_HMAC_KEY_ENV] = prior;
+    }
+  });
+
+  it("throws AuditHmacKeyError when env key isn't a base64 quantum (no padding, wrong length)", () => {
+    const prior = process.env[AUDIT_HMAC_KEY_ENV];
+    // 43 A's: matches the strict-base64 regex, decodes to 32 bytes
+    // (so the length floor passes), but re-encoding adds an `=` so
+    // the round-trip check fires. Realistic shape for an operator
+    // who omitted the padding when pasting into a secrets manager.
+    process.env[AUDIT_HMAC_KEY_ENV] = "A".repeat(43);
+    try {
+      expect(() => requireAuditHmacKey()).toThrow(AuditHmacKeyError);
+    } finally {
+      if (prior === undefined) delete process.env[AUDIT_HMAC_KEY_ENV];
+      else process.env[AUDIT_HMAC_KEY_ENV] = prior;
+    }
+  });
 });
