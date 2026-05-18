@@ -10,6 +10,7 @@ import { Router, type IRouter } from "express";
 import cartSnapshotRouter from "./cart-snapshot";
 import checkoutRouter from "./checkout";
 import insuranceLeadRouter from "./insurance-lead";
+import fitterLeadRouter from "./fitter-lead";
 import backInStockRouter from "./back-in-stock";
 import meRouter from "./me";
 import meClinicalInfoRouter from "./me-clinical-info";
@@ -151,6 +152,11 @@ router.use(productCompatibilityRouter);
 // emails (team notification + patient confirmation); does not
 // write to the DB — the verifications team works the inbox.
 router.use(insuranceLeadRouter);
+// Public email + marketing-opt-in capture from the /consent page in
+// cpap-fitter. Persists to resupply.fitter_leads so the abandoned-
+// flow re-engagement dispatcher can scan for opt-ins without an
+// order row.
+router.use(fitterLeadRouter);
 router.use(backInStockRouter);
 
 export default router;

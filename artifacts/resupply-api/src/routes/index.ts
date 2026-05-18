@@ -23,6 +23,7 @@ import complianceAttestationRouter from "./admin/compliance-attestation.js";
 import inboundFaxesRouter from "./admin/inbound-faxes.js";
 import equipmentRecallsRouter from "./admin/equipment-recalls.js";
 import analyticsRouter from "./admin/analytics.js";
+import rtOverviewRouter from "./admin/rt-overview.js";
 import trainingRecordsRouter from "./admin/training-records.js";
 import grievancesRouter from "./admin/grievances.js";
 import accreditationPoliciesRouter from "./admin/accreditation-policies.js";
@@ -287,6 +288,10 @@ router.use(equipmentRecallsRouter);
 // analytics at /admin/storefront/analytics which covers orders +
 // email health + mask popularity.
 router.use(analyticsRouter);
+// /admin/rt-overview — respiratory-therapist at-a-glance board.
+// Reads patient_therapy_links + patient_therapy_nights +
+// patient_smart_trigger_events for the daily clinical review.
+router.use(rtOverviewRouter);
 // /admin/compliance/* — accreditation-binder surfaces: per-staff
 // training records (HIPAA, OSHA, fit-test, infection-control,
 // orientation) and patient grievances (complaints + grievances +

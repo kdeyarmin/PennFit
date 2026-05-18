@@ -43,7 +43,7 @@ export const sendgridEventSchema = z
     conversation_id: z.string().optional(),
     outbound_message_id: z.string().optional(),
   })
-  .passthrough();
+  .loose();
 
 export type SendgridEvent = z.infer<typeof sendgridEventSchema>;
 

@@ -13,9 +13,8 @@
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "catalog:",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.6"
   }
 }

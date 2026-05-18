@@ -17,7 +17,7 @@ function fakeSdk(
   send: ReturnType<typeof vi.fn>,
   setApiKey: ReturnType<typeof vi.fn> = vi.fn(),
 ): RawSendgridSdk {
-  return { send, setApiKey };
+  return { send, setApiKey } as unknown as RawSendgridSdk;
 }
 
 describe("createSendgridClient", () => {

@@ -38,6 +38,7 @@ import { registerBulkCampaignTickJob } from "./jobs/bulk-campaign-tick.js";
 import { registerPatientDocumentsRetentionSweepJob } from "./jobs/patient-documents-retention-sweep.js";
 import { registerRecallNotificationSendJob } from "./jobs/recall-notifications-send.js";
 import { registerMaintenanceNudgeJob } from "./jobs/maintenance-nudges.js";
+import { registerFitterLeadReengageJob } from "./jobs/fitter-lead-reengage.js";
 import { registerAuditLogArchiveSweepJob } from "./jobs/audit-log-archive-sweep.js";
 import { registerTherapyNightlySyncJob } from "./jobs/therapy-integrations-nightly-sync.js";
 import { registerCoachingProgressJob } from "./jobs/coaching-plan-progress.js";
@@ -194,6 +195,11 @@ export async function startWorker(): Promise<void> {
   // Patient hygiene weekly nudge — emails patients with overdue
   // mask-wipe / hose-wash / etc. tasks. Sunday 11:13 UTC.
   await registerMaintenanceNudgeJob(boss);
+  // Abandoned-fitter re-engagement — daily 09:37 UTC. Scans
+  // resupply.fitter_leads for opted-in rows aged 3–30 days that
+  // never produced a public.orders row, emails a "finish your
+  // fitting" nudge, and stamps nudged_at so it never re-sends.
+  await registerFitterLeadReengageJob(boss);
   // HIPAA audit-log retention sweep — nightly flag of rows past
   // the 6-year floor. Destruction stays human-triggered.
   await registerAuditLogArchiveSweepJob(boss);

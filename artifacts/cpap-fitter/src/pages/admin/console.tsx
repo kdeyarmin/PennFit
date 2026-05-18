@@ -47,6 +47,7 @@ import { AdminInboundFaxesPage } from "@/pages/admin/admin-inbound-faxes";
 import { AdminEquipmentRecallsPage } from "@/pages/admin/admin-equipment-recalls";
 import { AdminAnalyticsPage } from "@/pages/admin/admin-analytics";
 import { AdminCompliancePage } from "@/pages/admin/admin-compliance";
+import { AdminRtOverviewPage } from "@/pages/admin/admin-rt-overview";
 import { AdminBulkCampaignsPage } from "@/pages/admin/admin-bulk-campaigns";
 import { AdminSecurityPage } from "@/pages/admin/admin-security";
 import { AdminMacrosPage } from "@/pages/admin/admin-macros";
@@ -171,6 +172,7 @@ function AdminConsole() {
           />
           <Route path="/admin/analytics" component={AdminAnalyticsPage} />
           <Route path="/admin/compliance" component={AdminCompliancePage} />
+          <Route path="/admin/rt-overview" component={AdminRtOverviewPage} />
           <Route
             path="/admin/bulk-campaigns"
             component={AdminBulkCampaignsPage}

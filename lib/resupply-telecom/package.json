@@ -15,11 +15,11 @@
   },
   "dependencies": {
     "@workspace/resupply-domain": "workspace:*",
-    "twilio": "^5.4.0",
+    "twilio": "^6.0.2",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.6"
   }
 }

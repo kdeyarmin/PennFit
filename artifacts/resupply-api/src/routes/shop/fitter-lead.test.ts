@@ -102,7 +102,6 @@ describe("POST /shop/fitter-leads", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
   });
-
   it("lowercases and trims the email before persisting", async () => {
     const res = await request(makeApp())
       .post("/resupply-api/shop/fitter-leads")

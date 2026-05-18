@@ -691,6 +691,47 @@ export async function submitInsuranceLead(
   return (await res.json()) as { ok: true; delivered: boolean };
 }
 
+// ─────────────────────────────────────────── fitter consent capture
+//
+// Posts to /shop/fitter-leads. The /consent page calls this right
+// after the patient checks both privacy + marketing-opt-in and clicks
+// Continue. The endpoint is best-effort on the server side (it 200s
+// even when the DB insert fails) and the caller treats it the same
+// way — a failure does NOT block the patient from advancing into
+// /capture, since the in-memory FitterStore already has the email +
+// opt-in flag.
+export interface FitterLeadInput {
+  email: string;
+  marketingOptIn: boolean;
+  /** Honeypot — must be passed through but should always be empty. */
+  website: string;
+}
+
+export async function submitFitterLead(
+  input: FitterLeadInput,
+): Promise<{ ok: true }> {
+  const res = await fetch("/resupply-api/shop/fitter-leads", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  return (await res.json()) as { ok: true };
+}
+
 export async function submitBackInStockNotify(input: {
   productId: string;
   email: string;

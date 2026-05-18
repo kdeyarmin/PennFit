@@ -16,6 +16,21 @@
 
 import { type TriggerKind } from "./index";
 
+/**
+ * Renderer fallback for any TriggerKind that isn't a patient-facing
+ * nudge (the RT clinical kinds in particular). The dispatcher already
+ * filters these out before invoking the renderers; if one reaches us
+ * here, it's a routing bug — fail loudly rather than ship an empty
+ * subject / body to SendGrid.
+ */
+function notPatientFacing(kind: TriggerKind): never {
+  throw new Error(
+    `smart-trigger renderer invoked for non-patient kind '${kind}'. ` +
+      `Only PATIENT_DISPATCH_KINDS should reach the renderer; see ` +
+      `lib/smart-triggers/index.ts.`,
+  );
+}
+
 export function subjectForKind(kind: TriggerKind): string {
   switch (kind) {
     case "leak_rising":
@@ -26,6 +41,9 @@ export function subjectForKind(kind: TriggerKind): string {
       return "Your mask cushion may be wearing out";
     case "humidifier_drop":
       return "Time to refresh your tubing?";
+    case "ahi_elevated":
+    case "non_adherent_30d":
+      return notPatientFacing(kind);
   }
 }
 
@@ -40,6 +58,9 @@ export function textBody(greeting: string, kind: TriggerKind): string {
       return `${safeGreeting},\n\nYour AHI and leak rate have both ticked up over the last two weeks — usually a sign your mask cushion is at the end of its life. A replacement cushion takes about 5 minutes to swap and typically clears both readings.\n\nReply YES to ship a fresh cushion (no charge if you're on insurance through us).\n\n— Penn Home Medical Supply\n`;
     case "humidifier_drop":
       return `${safeGreeting},\n\nWith warmer weather your tubing may be due for a refresh — older tubing collects condensation and reduces airflow, which can make therapy feel less comfortable in the summer.\n\nReply YES and we'll ship a fresh hose.\n\n— Penn Home Medical Supply\n`;
+    case "ahi_elevated":
+    case "non_adherent_30d":
+      return notPatientFacing(kind);
   }
 }
 
@@ -86,6 +107,9 @@ export function pushBody(kind: TriggerKind): string {
       return "We have a new CPAP insight for you. Tap to see the details.";
     case "humidifier_drop":
       return "Your CPAP care may need attention. Tap to view your insight.";
+    case "ahi_elevated":
+    case "non_adherent_30d":
+      return notPatientFacing(kind);
   }
 }
 
@@ -116,5 +140,8 @@ export function smsBody(firstName: string, kind: TriggerKind): string {
       return `${head}, your AHI + leak rate are both up - usually a worn cushion. Reply YES to ship a fresh one, or STOP to opt out. - Penn Home`;
     case "humidifier_drop":
       return `${head}, your tubing may be due for a refresh. Reply YES to ship a fresh hose, or STOP to opt out. - Penn Home`;
+    case "ahi_elevated":
+    case "non_adherent_30d":
+      return notPatientFacing(kind);
   }
 }

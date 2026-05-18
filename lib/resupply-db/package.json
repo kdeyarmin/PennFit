@@ -16,14 +16,14 @@
     "rotate-to-master-key": "node scripts/rotate-to-master-key.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.3",
+    "@supabase/supabase-js": "^2.105.4",
     "@workspace/resupply-secrets": "workspace:*",
     "pg": "^8.20.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/pg": "^8.18.0",
-    "vitest": "^3.2.4"
+    "@types/pg": "^8.20.0",
+    "vitest": "^4.1.6"
   }
 }
