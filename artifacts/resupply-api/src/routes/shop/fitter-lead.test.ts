@@ -102,4 +102,42 @@ describe("POST /shop/fitter-leads", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
   });
+  it("lowercases and trims the email before persisting", async () => {
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-leads")
+      .send({ ...VALID, email: "  Alice@EXAMPLE.COM  " });
+    expect(res.status).toBe(200);
+    const payload = recordMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload.email).toBe("alice@example.com");
+  });
+
+  it("rejects missing email field with 400 invalid_body", async () => {
+    const { email: _omit, ...noEmail } = VALID;
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-leads")
+      .send(noEmail);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown extra fields (strict schema)", async () => {
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-leads")
+      .send({ ...VALID, extraField: "should-fail" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("invalid_body");
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT trip the honeypot for a whitespace-only website value", async () => {
+    // The route trims the website field before checking length.
+    // A blank/whitespace string is not a bot signal.
+    const res = await request(makeApp())
+      .post("/resupply-api/shop/fitter-leads")
+      .send({ ...VALID, website: "   " });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(recordMock).toHaveBeenCalledTimes(1);
+  });
 });

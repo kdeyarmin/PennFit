@@ -7,7 +7,7 @@
 //   * converted skip — a lead whose email already appears in
 //     public.orders is left untouched.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import {
   installSupabaseMock,
@@ -26,6 +26,7 @@ vi.mock("@workspace/resupply-email", () => ({
 
 import {
   composeReengageEmail,
+  readReengageMessagingConfig,
   runFitterLeadReengageSweep,
 } from "./fitter-lead-reengage";
 
@@ -202,5 +203,119 @@ describe("runFitterLeadReengageSweep", () => {
     expect(updates).toHaveLength(1);
     const u = updates[0] as { nudged_at?: string };
     expect(typeof u.nudged_at).toBe("string");
+  });
+
+  it("processes remaining leads after one send failure (sweep is not halted)", async () => {
+    stageSupabaseResponse("fitter_leads", "select", {
+      data: [
+        {
+          id: "fl_5",
+          email: "err@example.com",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+        {
+          id: "fl_6",
+          email: "ok@example.com",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("orders", "select", { data: [] });
+    // First send fails; second succeeds.
+    sendEmailMock.mockRejectedValueOnce(new Error("sendgrid transient"));
+    stageSupabaseResponse("fitter_leads", "update", { data: null });
+    stageSupabaseResponse("fitter_leads", "update", { data: null });
+
+    const stats = await runFitterLeadReengageSweep(FULL_CFG);
+
+    expect(stats).toMatchObject({
+      scanned: 2,
+      emailed: 1,
+      errors: 1,
+    });
+    expect(sendEmailMock).toHaveBeenCalledTimes(2);
+    // Each scanned lead gets a nudged_at stamp, regardless of send outcome.
+    expect(getSupabaseWritePayloads("fitter_leads", "update")).toHaveLength(2);
+  });
+
+  it("skips the run when publicBaseUrl is an empty string", async () => {
+    const stats = await runFitterLeadReengageSweep({
+      ...FULL_CFG,
+      publicBaseUrl: "",
+    });
+    expect(stats.skippedNoConfig).toBe(1);
+    expect(stats.scanned).toBe(0);
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("composeReengageEmail — HTML escaping", () => {
+  it("escapes ampersands in the practice name", () => {
+    const out = composeReengageEmail({
+      practiceName: "Penn & Paps",
+      publicBaseUrl: "https://x",
+    });
+    expect(out.html).not.toContain("Penn & Paps");
+    expect(out.html).toContain("Penn &amp; Paps");
+    // Plain-text version is NOT escaped
+    expect(out.text).toContain("Penn & Paps");
+  });
+
+  it("escapes double-quotes in the practice name", () => {
+    const out = composeReengageEmail({
+      practiceName: 'A "CPAP" Clinic',
+      publicBaseUrl: "https://x",
+    });
+    expect(out.html).not.toContain('"CPAP"');
+    expect(out.html).toContain("&quot;CPAP&quot;");
+  });
+});
+
+describe("readReengageMessagingConfig", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("reads all expected env vars", () => {
+    vi.stubEnv("SENDGRID_API_KEY", "SG.testkey");
+    vi.stubEnv("SENDGRID_FROM_EMAIL", "from@example.com");
+    vi.stubEnv("SENDGRID_FROM_NAME", "Test Sender");
+    vi.stubEnv("RESUPPLY_PRACTICE_NAME", "Test Practice");
+    vi.stubEnv("RESUPPLY_VOICE_PUBLIC_BASE_URL", "https://test.example");
+
+    const cfg = readReengageMessagingConfig(process.env);
+    expect(cfg.sendgridApiKey).toBe("SG.testkey");
+    expect(cfg.sendgridFromEmail).toBe("from@example.com");
+    expect(cfg.sendgridFromName).toBe("Test Sender");
+    expect(cfg.practiceName).toBe("Test Practice");
+    expect(cfg.publicBaseUrl).toBe("https://test.example");
+  });
+
+  it("falls back to 'PennPaps' when RESUPPLY_PRACTICE_NAME is not set", () => {
+    const cfg = readReengageMessagingConfig({
+      SENDGRID_API_KEY: "SG.x",
+      SENDGRID_FROM_EMAIL: "f@x.com",
+      SENDGRID_FROM_NAME: "X",
+      RESUPPLY_VOICE_PUBLIC_BASE_URL: "https://x.example",
+    });
+    expect(cfg.practiceName).toBe("PennPaps");
+  });
+
+  it("falls back to REPLIT_DEV_DOMAIN when RESUPPLY_VOICE_PUBLIC_BASE_URL is absent", () => {
+    const cfg = readReengageMessagingConfig({
+      SENDGRID_API_KEY: "SG.x",
+      SENDGRID_FROM_EMAIL: "f@x.com",
+      SENDGRID_FROM_NAME: "X",
+      REPLIT_DEV_DOMAIN: "my-repl.repl.co",
+    });
+    expect(cfg.publicBaseUrl).toBe("https://my-repl.repl.co");
+  });
+
+  it("returns null for credentials that are not in env", () => {
+    const cfg = readReengageMessagingConfig({});
+    expect(cfg.sendgridApiKey).toBeNull();
+    expect(cfg.sendgridFromEmail).toBeNull();
+    expect(cfg.sendgridFromName).toBeNull();
+    expect(cfg.publicBaseUrl).toBe("");
   });
 });
