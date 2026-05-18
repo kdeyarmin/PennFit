@@ -184,6 +184,8 @@ export const SMART_TRIGGER_LABELS: Record<string, string> = {
   usage_dropping: "Usage dropping",
   cushion_wear: "Cushion wear",
   humidifier_drop: "Humidifier drop",
+  ahi_elevated: "AHI elevated",
+  non_adherent_30d: "Non-adherent 30d",
 };
 
 export function labelForTriggerKind(kind: string): string {

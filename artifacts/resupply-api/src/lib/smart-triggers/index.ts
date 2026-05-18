@@ -18,7 +18,38 @@ export type TriggerKind =
   | "leak_rising"
   | "usage_dropping"
   | "cushion_wear"
-  | "humidifier_drop";
+  | "humidifier_drop"
+  | "ahi_elevated"
+  | "non_adherent_30d";
+
+/**
+ * Subset of TriggerKind that the patient-facing dispatcher
+ * (lib/smart-triggers/dispatcher.ts) is allowed to auto-send to
+ * patients via email / SMS / push.
+ *
+ * The first four are nudges that prescribe a clear, self-serve next
+ * step ("reply YES to ship a fresh cushion") and have been clinically
+ * reviewed as safe to send without RT intervention.
+ *
+ * `ahi_elevated` and `non_adherent_30d` are CLINICAL signals — they
+ * indicate the patient's therapy itself may not be working, which is
+ * a conversation the RT should own. Auto-emailing a patient "your AHI
+ * is elevated" without clinician context risks alarming them or
+ * implying a diagnosis we're not licensed to make. These kinds still
+ * land in patient_smart_trigger_events so the RT board surfaces them,
+ * but the dispatcher skips them on its way to SendGrid/Twilio.
+ */
+export const PATIENT_DISPATCH_KINDS: ReadonlyArray<TriggerKind> = [
+  "leak_rising",
+  "usage_dropping",
+  "cushion_wear",
+  "humidifier_drop",
+];
+
+/** True when the dispatcher is allowed to auto-message the patient. */
+export function isPatientDispatchableKind(kind: string): boolean {
+  return (PATIENT_DISPATCH_KINDS as readonly string[]).includes(kind);
+}
 
 export interface NightDatum {
   /** YYYY-MM-DD. */
@@ -165,6 +196,82 @@ export function evaluateHumidifierDrop(
   };
 }
 
+/**
+ * Rule: AHI is clinically elevated in the very recent window.
+ *
+ * AHI < 5 is the line CMS treats as "well controlled apnea" and is
+ * the threshold every CPAP titration aims to keep the patient under.
+ * When a previously-controlled patient logs ≥3 of the last 7 nights
+ * with AHI > 5, that's a strong signal for the RT to investigate —
+ * mask fit, pressure setting, weight change, sleep position. The
+ * existing leak_rising / cushion_wear rules trend across 14 nights;
+ * this rule is the short-window companion that catches "AHI jumped
+ * this week, the patient hasn't called yet."
+ *
+ * Requires ≥5 nights of data (so a single noisy reading doesn't
+ * fire it) and at least 3 nights breaching the threshold.
+ */
+const AHI_THRESHOLD = 5;
+const AHI_BREACH_COUNT = 3;
+const AHI_WINDOW_NIGHTS = 7;
+
+export function evaluateAhiElevated(
+  nights: NightDatum[],
+): TriggerProposal | null {
+  const window = trailingWindow(nights, AHI_WINDOW_NIGHTS);
+  if (window.length < 5) return null;
+  let breaches = 0;
+  for (const n of window) {
+    if (n.ahi !== null && n.ahi > AHI_THRESHOLD) breaches += 1;
+  }
+  if (breaches < AHI_BREACH_COUNT) return null;
+  return {
+    kind: "ahi_elevated",
+    windowStartDate: window[0]!.date,
+    windowEndDate: window[window.length - 1]!.date,
+  };
+}
+
+/**
+ * Rule: CMS Medicare adherence is failing across the 30-day window.
+ *
+ * CMS requires "≥4 hours on ≥70% of nights in any 30-consecutive-
+ * night window in the first 90 days" for continued PAP coverage.
+ * The compliance scanner (lib/compliance-scanner.ts) tracks the
+ * formal `csr_compliance_alerts` row used for the PA renewal
+ * paperwork; this rule fires a SOFT signal for the RT board so the
+ * patient appears in the daily review BEFORE the compliance scan
+ * flips them to "non-adherent" status.
+ *
+ * Requires ≥21 nights of data (avoids firing on a brand-new patient
+ * before their 30-night window has filled).
+ */
+const ADHERENCE_USAGE_MIN = 240; // 4 hours
+const ADHERENCE_TARGET_RATE = 0.7;
+const ADHERENCE_WINDOW_NIGHTS = 30;
+const ADHERENCE_MIN_DATA = 21;
+
+export function evaluateNonAdherent30d(
+  nights: NightDatum[],
+): TriggerProposal | null {
+  const window = trailingWindow(nights, ADHERENCE_WINDOW_NIGHTS);
+  if (window.length < ADHERENCE_MIN_DATA) return null;
+  let adherent = 0;
+  let counted = 0;
+  for (const n of window) {
+    if (n.usageMinutes === null) continue;
+    counted += 1;
+    if (n.usageMinutes >= ADHERENCE_USAGE_MIN) adherent += 1;
+  }
+  if (counted < ADHERENCE_MIN_DATA) return null;
+  if (adherent / counted >= ADHERENCE_TARGET_RATE) return null;
+  return {
+    kind: "non_adherent_30d",
+    windowStartDate: window[0]!.date,
+    windowEndDate: window[window.length - 1]!.date,
+  };
+}
+
 /** Run every rule and return the proposals that fire. */
 export function evaluateAll(nights: NightDatum[]): TriggerProposal[] {
   const out: TriggerProposal[] = [];
@@ -173,6 +280,8 @@ export function evaluateAll(nights: NightDatum[]): TriggerProposal[] {
     evaluateUsageDropping,
     evaluateCushionWear,
     evaluateHumidifierDrop,
+    evaluateAhiElevated,
+    evaluateNonAdherent30d,
   ]) {
     const r = fn(nights);
     if (r) out.push(r);

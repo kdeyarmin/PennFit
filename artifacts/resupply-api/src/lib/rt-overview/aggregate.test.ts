@@ -137,6 +137,8 @@ describe("labelForTriggerKind", () => {
     expect(labelForTriggerKind("usage_dropping")).toBe("Usage dropping");
     expect(labelForTriggerKind("cushion_wear")).toBe("Cushion wear");
     expect(labelForTriggerKind("humidifier_drop")).toBe("Humidifier drop");
+    expect(labelForTriggerKind("ahi_elevated")).toBe("AHI elevated");
+    expect(labelForTriggerKind("non_adherent_30d")).toBe("Non-adherent 30d");
   });
 
   it("passes through unknown kinds verbatim", () => {

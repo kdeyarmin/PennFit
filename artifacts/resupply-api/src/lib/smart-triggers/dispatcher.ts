@@ -42,7 +42,7 @@ import {
 import { logger } from "../logger";
 import { sendPushToCustomerByEmail } from "../web-push";
 import { withRetry } from "../with-retry";
-import { type TriggerKind } from "./index";
+import { PATIENT_DISPATCH_KINDS, type TriggerKind } from "./index";
 
 /** Per-dispatcher-run cap. Same value the route uses. */
 const PER_RUN_SEND_CAP = 50;
@@ -114,10 +114,16 @@ export async function runSmartTriggerSendDue(
   // because the channel-specific contact filter (email / phone_e164
   // present) and the patient-active filter run JS-side in step 2; a
   // batch with many ineligible rows would otherwise short-deliver.
+  //
+  // Kind filter: only auto-message PATIENT_DISPATCH_KINDS — the
+  // self-serve nudges. RT clinical kinds (ahi_elevated,
+  // non_adherent_30d) sit in the table for the RT board but the
+  // dispatcher leaves them alone so a clinician decides the next step.
   const { data: eventCandidates, error: candidatesErr } = await supabase
     .schema("resupply")
     .from("patient_smart_trigger_events")
     .select("id, patient_id, kind")
+    .in("kind", PATIENT_DISPATCH_KINDS as readonly string[])
     .is("sent_at", null)
     .is("dismissed_at", null)
     .order("detected_at", { ascending: true })
