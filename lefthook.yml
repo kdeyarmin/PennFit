@@ -1,0 +1,16 @@
+# Pre-commit pipeline. Mirrors the existing per-script checks
+# already shipped in this repo — adopting a runner just makes
+# composition (and SKIP_HOOKS=1) consistent across them.
+#
+# To install locally:  pnpm dlx lefthook install
+# To bypass once:      SKIP_HOOKS=1 git commit ...
+
+pre-commit:
+  parallel: true
+  commands:
+    architecture:
+      run: scripts/check-resupply-architecture.sh
+    migration-prefix:
+      run: scripts/check-resupply-migration-prefix.sh
+    main-drift:
+      run: scripts/check-main-canonical-drift.sh
