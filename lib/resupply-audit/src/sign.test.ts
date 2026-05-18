@@ -185,4 +185,39 @@ describe("requireAuditHmacKey", () => {
       else process.env[AUDIT_HMAC_KEY_ENV] = prior;
     }
   });
+
+  it("memoizes the env-derived key across calls", () => {
+    const prior = process.env[AUDIT_HMAC_KEY_ENV];
+    process.env[AUDIT_HMAC_KEY_ENV] = Buffer.alloc(32, 0x77).toString("base64");
+    try {
+      const first = requireAuditHmacKey();
+      const second = requireAuditHmacKey();
+      // Same Buffer instance — proves the cache short-circuited.
+      // A re-decode would produce a fresh Buffer with identical
+      // contents but a different identity.
+      expect(second).toBe(first);
+    } finally {
+      if (prior === undefined) delete process.env[AUDIT_HMAC_KEY_ENV];
+      else process.env[AUDIT_HMAC_KEY_ENV] = prior;
+    }
+  });
+
+  it("re-decodes when the env value changes after caching", () => {
+    const prior = process.env[AUDIT_HMAC_KEY_ENV];
+    const keyA = Buffer.alloc(32, 0xaa).toString("base64");
+    const keyB = Buffer.alloc(32, 0xbb).toString("base64");
+    process.env[AUDIT_HMAC_KEY_ENV] = keyA;
+    try {
+      const first = requireAuditHmacKey();
+      expect(first.every((b) => b === 0xaa)).toBe(true);
+      process.env[AUDIT_HMAC_KEY_ENV] = keyB;
+      const second = requireAuditHmacKey();
+      // Cache key is the raw env string, so a value swap forces a
+      // fresh decode rather than returning the stale buffer.
+      expect(second.every((b) => b === 0xbb)).toBe(true);
+    } finally {
+      if (prior === undefined) delete process.env[AUDIT_HMAC_KEY_ENV];
+      else process.env[AUDIT_HMAC_KEY_ENV] = prior;
+    }
+  });
 });

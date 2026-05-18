@@ -54,6 +54,13 @@ export class AuditHmacKeyError extends Error {
 
 let registeredKey: Buffer | null = null;
 
+// Memoized env-derived key. Populated on the first successful decode
+// of `RESUPPLY_AUDIT_HMAC_KEY` so subsequent audit writes skip the
+// regex + base64 round-trip cost. Cleared when the test override is
+// re-registered so suites that mutate the env var don't see stale
+// material from a previous run.
+let cachedEnvKey: { raw: string; decoded: Buffer } | null = null;
+
 /**
  * Register or clear a test-only HMAC key override used instead of the environment variable.
  *
@@ -61,6 +68,10 @@ let registeredKey: Buffer | null = null;
  */
 export function registerAuditHmacKeyForTesting(key: Buffer | null): void {
   registeredKey = key;
+  // Wipe the env cache too so a test that subsequently mutates
+  // `process.env.RESUPPLY_AUDIT_HMAC_KEY` after calling this clear
+  // function sees the new value, not the previously-cached one.
+  cachedEnvKey = null;
 }
 
 /**
@@ -68,7 +79,10 @@ export function registerAuditHmacKeyForTesting(key: Buffer | null): void {
  *
  * Prefers a test-registered override when present; otherwise reads the
  * base64-encoded value from the environment variable named by
- * `AUDIT_HMAC_KEY_ENV`, decodes it, and validates its length.
+ * `AUDIT_HMAC_KEY_ENV`, decodes it, and validates its length. The
+ * env-derived key is memoized after the first successful decode so
+ * the hot audit write path doesn't repeat regex + base64 work on
+ * every row.
  *
  * @returns The decoded HMAC key bytes as a `Buffer`.
  * @throws {AuditHmacKeyError} if the environment variable is unset/empty or if the decoded key is shorter than `MIN_KEY_BYTES` bytes.
@@ -76,6 +90,9 @@ export function registerAuditHmacKeyForTesting(key: Buffer | null): void {
 export function requireAuditHmacKey(): Buffer {
   if (registeredKey !== null) return registeredKey;
   const raw = process.env[AUDIT_HMAC_KEY_ENV]?.trim();
+  if (cachedEnvKey !== null && raw === cachedEnvKey.raw) {
+    return cachedEnvKey.decoded;
+  }
   if (!raw) {
     throw new AuditHmacKeyError(
       `${AUDIT_HMAC_KEY_ENV} is not set — refusing to write unsigned ` +
@@ -108,6 +125,10 @@ export function requireAuditHmacKey(): Buffer {
         `openssl rand -base64 48`,
     );
   }
+  // Memoize after every validation has passed. Only stored once the
+  // bytes survive every check, so a future env mutation back to a
+  // malformed value still has to re-validate.
+  cachedEnvKey = { raw, decoded };
   return decoded;
 }
 
