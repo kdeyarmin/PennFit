@@ -185,6 +185,28 @@ describe("logAuditBestEffort", () => {
     expect(row.prev_signature).toBe("prev-sig-base64");
   });
 
+  it("retries on chain_seq unique-violation and succeeds on a later attempt", async () => {
+    // First two inserts return 23505 (chain_seq collision). The
+    // third returns success. The chain loop should call insert
+    // three times and resolve to true.
+    const insert = vi.fn<(row: Record<string, unknown>) => Promise<InsertResult>>(
+      async () => ({ error: null }),
+    );
+    insert
+      .mockResolvedValueOnce({ error: { code: "23505" } })
+      .mockResolvedValueOnce({ error: { code: "23505" } })
+      .mockResolvedValueOnce({ error: null });
+    vi.mocked(getSupabaseServiceRoleClient).mockReturnValue(
+      makeSupabaseStub({ insert, latest: null }),
+    );
+    const ok = await logAuditBestEffort(
+      { action: "test.contention" },
+      { contextLabel: "contention" },
+    );
+    expect(ok).toBe(true);
+    expect(insert).toHaveBeenCalledTimes(3);
+  });
+
   it("throws when the audit HMAC key is unregistered and env is unset", async () => {
     registerAuditHmacKeyForTesting(null);
     const prior = process.env.RESUPPLY_AUDIT_HMAC_KEY;

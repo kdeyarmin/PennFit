@@ -58,12 +58,39 @@ export {
 
 /**
  * Max number of retries when two writers race on the same
- * chain_seq. Each retry costs one fast indexed SELECT plus the
- * losing INSERT, so the budget can be generous — 8 retries with
- * a unique constraint is dominated by the contention rate, not the
- * retry ceiling.
+ * `chain_seq`. Each retry costs one fast indexed SELECT plus the
+ * losing INSERT plus a brief sleep, so the ceiling is conservative
+ * relative to peak contention. The reviewer's preferred fix
+ * (advisory-lock RPC computing the HMAC server-side) is blocked by
+ * the repo's no-extensions invariant — PL/pgSQL has no built-in
+ * HMAC, and `pgcrypto` was explicitly stripped by migration 0025.
+ * Until that constraint changes, optimistic retries with jittered
+ * exponential backoff are the right shape: cheap, correct, and
+ * able to absorb a burst that 8-no-backoff retries could not.
  */
-const CHAIN_INSERT_MAX_ATTEMPTS = 8;
+const CHAIN_INSERT_MAX_ATTEMPTS = 32;
+
+/**
+ * Jittered exponential backoff between chain_seq contention
+ * retries: 1ms doubling to a 64ms ceiling, multiplied by a random
+ * factor in [0, 1) so colliding writers don't re-collide on the
+ * same wake-up. The total worst-case wait at MAX_ATTEMPTS is
+ * bounded at ~32 * 64ms = ~2s.
+ */
+const CHAIN_BACKOFF_BASE_MS = 1;
+const CHAIN_BACKOFF_CAP_MS = 64;
+
+function chainBackoffMs(attempt: number): number {
+  const exp = Math.min(
+    CHAIN_BACKOFF_CAP_MS,
+    CHAIN_BACKOFF_BASE_MS * 2 ** attempt,
+  );
+  return Math.floor(Math.random() * exp);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface AuditEvent {
   /**
@@ -242,6 +269,12 @@ export async function logAudit(event: AuditEvent): Promise<void> {
     // doesn't masquerade as contention.
     if ((error as { code?: string }).code === "23505") {
       lastError = error;
+      // Jittered backoff so colliding writers don't immediately
+      // re-collide on the same wake-up. The first retry is "almost
+      // immediate" — the jitter factor in chainBackoffMs can return
+      // 0 — which keeps the happy path fast under one-off races
+      // while spreading sustained bursts across a wider window.
+      await sleep(chainBackoffMs(attempt));
       continue;
     }
     throw error;
