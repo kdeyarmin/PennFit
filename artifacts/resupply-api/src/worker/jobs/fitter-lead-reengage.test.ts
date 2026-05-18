@@ -177,6 +177,37 @@ describe("runFitterLeadReengageSweep", () => {
     expect(sentTo).toBe("carol@example.com");
   });
 
+  it("skips leads that a concurrent worker already claimed", async () => {
+    // Two workers can run the sweep in overlapping windows. The
+    // `update(...).is("nudged_at", null).select()` claim is the
+    // serialization point: only the first worker's conditional
+    // UPDATE matches, the second sees zero rows returned. This
+    // branch increments `skippedAlreadyClaimed` and MUST NOT send.
+    stageSupabaseResponse("fitter_leads", "select", {
+      data: [
+        {
+          id: "fl_race",
+          email: "race@example.com",
+          created_at: "2026-05-01T00:00:00Z",
+        },
+      ],
+    });
+    stageSupabaseResponse("orders", "select", { data: [] });
+    // Empty array = the conditional UPDATE matched zero rows, i.e.
+    // another worker already stamped `nudged_at`.
+    stageSupabaseResponse("fitter_leads", "update", { data: [] });
+
+    const stats = await runFitterLeadReengageSweep(FULL_CFG);
+
+    expect(stats).toMatchObject({
+      scanned: 1,
+      emailed: 0,
+      skippedAlreadyClaimed: 1,
+      errors: 0,
+    });
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
   it("returns early with scanned=0 when no leads match", async () => {
     stageSupabaseResponse("fitter_leads", "select", { data: [] });
     const stats = await runFitterLeadReengageSweep(FULL_CFG);
