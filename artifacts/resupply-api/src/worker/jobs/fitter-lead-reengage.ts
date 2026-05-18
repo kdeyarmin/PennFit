@@ -31,7 +31,10 @@
 import type PgBoss from "pg-boss";
 
 import { createSendgridClient } from "@workspace/resupply-email";
-import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
+import {
+  escapePostgRESTFilterValue,
+  getSupabaseServiceRoleClient,
+} from "@workspace/resupply-db";
 
 import { logger } from "../../lib/logger";
 
@@ -183,25 +186,32 @@ export async function runFitterLeadReengageSweep(
   // PostgREST .in() is case-sensitive, so we compose an OR of
   // case-insensitive ILIKE clauses — one per candidate email — and
   // lowercase the returned values before set-membership tests.
-  // The candidate cap (BATCH_SIZE) keeps the OR clause bounded.
+  //
+  // Chunked at CHUNK to keep each PostgREST URI well below the 8KB
+  // default limit even when the candidate list approaches BATCH_SIZE.
+  // Special characters in the email (`,`, `(`, `)`, quotes) are
+  // escaped via escapePostgRESTFilterValue so they can't break out
+  // of the filter expression.
   const emails = Array.from(new Set(candidates.map((c) => c.email)));
-  // Escape the candidate emails for the PostgREST or= filter. Commas
-  // delimit clauses; periods don't need escaping inside ilike values.
-  const orClauses = emails
-    .map((e) => `patient_email.ilike.${e.replace(/,/g, "")}`)
-    .join(",");
-  const { data: converted, error: convErr } = await supabase
-    .schema("public")
-    .from("orders")
-    .select("patient_email")
-    .or(orClauses);
-  if (convErr) throw convErr;
-  const convertedSet = new Set(
-    (converted ?? [])
-      .map((r) => r.patient_email)
-      .filter((e): e is string => typeof e === "string")
-      .map((e) => e.toLowerCase()),
-  );
+  const CHUNK = 50;
+  const convertedSet = new Set<string>();
+  for (let i = 0; i < emails.length; i += CHUNK) {
+    const chunk = emails.slice(i, i + CHUNK);
+    const orClauses = chunk
+      .map((e) => `patient_email.ilike.${escapePostgRESTFilterValue(e)}`)
+      .join(",");
+    const { data: converted, error: convErr } = await supabase
+      .schema("public")
+      .from("orders")
+      .select("patient_email")
+      .or(orClauses);
+    if (convErr) throw convErr;
+    for (const r of converted ?? []) {
+      if (typeof r.patient_email === "string") {
+        convertedSet.add(r.patient_email.toLowerCase());
+      }
+    }
+  }
 
   const sendgrid = createSendgridClient({
     apiKey: cfg.sendgridApiKey,
