@@ -45,7 +45,7 @@ export async function evaluatePatientSmartTriggers(
       "night_date, usage_minutes, ahi, leak_rate_l_min, pressure_p95_cmh2o",
     )
     .eq("patient_id", patientId)
-    .order("night_date", { ascending: true })
+    .order("night_date", { ascending: false })
     .limit(60);
   if (nightsErr) throw nightsErr;
   const nights = nightRows ?? [];

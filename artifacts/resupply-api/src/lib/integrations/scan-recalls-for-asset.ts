@@ -4,11 +4,10 @@
 //
 // Idempotency
 // -----------
-// recall_notifications has a (recall_id, asset_id) unique-ish
-// semantic — re-running is a no-op when the row already exists for
-// a (recall, asset) pair. We enforce that here with a SELECT-first;
-// the table doesn't have a hard unique index on the pair, so we
-// guard application-side rather than relying on a 23505 round-trip.
+// recall_notifications has a (recall_id, asset_id) unique index
+// (recall_notifications_recall_asset_unique). We rely on that
+// constraint: a duplicate insert returns a 23505 error which we
+// treat as a no-op, the same pattern used by evaluatePatientSmartTriggers.
 
 import { type getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
@@ -35,12 +34,13 @@ export async function scanRecallsForAsset(
   const { data: asset, error: aErr } = await supabase
     .schema("resupply")
     .from("equipment_assets")
-    .select("id, patient_id, manufacturer, model, serial_number")
+    .select("id, patient_id, manufacturer, model, serial_number, status")
     .eq("id", assetId)
     .limit(1)
     .maybeSingle();
   if (aErr) throw aErr;
   if (!asset) return { matchedRecallIds: [], notificationsQueued: 0 };
+  if (asset.status !== "active") return { matchedRecallIds: [], notificationsQueued: 0 };
 
   const { data: recalls, error: rErr } = await supabase
     .schema("resupply")
@@ -73,16 +73,6 @@ export async function scanRecallsForAsset(
     if (!matches) continue;
     matched.push(recall.id);
 
-    const { data: priorRow } = await supabase
-      .schema("resupply")
-      .from("recall_notifications")
-      .select("id")
-      .eq("recall_id", recall.id)
-      .eq("asset_id", asset.id)
-      .limit(1)
-      .maybeSingle();
-    if (priorRow) continue;
-
     const { error: insErr } = await supabase
       .schema("resupply")
       .from("recall_notifications")
@@ -92,7 +82,10 @@ export async function scanRecallsForAsset(
         patient_id: asset.patient_id,
         status: "queued",
       });
-    if (insErr) throw insErr;
+    if (insErr) {
+      if ((insErr as { code?: string }).code === "23505") continue;
+      throw insErr;
+    }
     queued += 1;
   }
   return { matchedRecallIds: matched, notificationsQueued: queued };
