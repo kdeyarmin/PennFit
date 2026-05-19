@@ -104,9 +104,12 @@ router.post(
       });
       res.status(200).json({ url: session.url });
     } catch (err) {
+      // Log the error NAME only, never the .message — Stripe error
+      // messages can occasionally embed key fragments and the test
+      // contract explicitly pins this contract.
       logger.error(
         {
-          err: err instanceof Error ? err.message : String(err),
+          errName: err instanceof Error ? err.name : "unknown",
           customerId,
         },
         "billing-portal: stripe session create failed",

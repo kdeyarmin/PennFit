@@ -65,13 +65,11 @@ function rateLimited(key: string): boolean {
   return false;
 }
 
-const BAND_VALUES = ["low", "intermediate", "high"] as const;
-
 /**
  * Compute the risk band from a STOP-BANG score.
  * Score 0-2: low, 3-4: intermediate, 5-8: high.
  */
-function computeBand(score: number): typeof BAND_VALUES[number] {
+function computeBand(score: number): "low" | "intermediate" | "high" {
   if (score <= 2) return "low";
   if (score <= 4) return "intermediate";
   return "high";

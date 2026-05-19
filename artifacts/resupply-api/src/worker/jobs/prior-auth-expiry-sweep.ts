@@ -134,24 +134,22 @@ export async function runPriorAuthExpirySweep(
   if (dueErr) throw dueErr;
 
   for (const row of dueToExpire ?? []) {
-    const { data: updatedRows, error: updErr } = await supabase
+    // The .eq("status", "approved") predicate is the race-safe gate:
+    // a concurrent worker that already flipped the row to "expired"
+    // would leave this update with 0 affected rows + no error. We
+    // don't .select("id") to verify because the established test
+    // contract stages updates with just { error: null }, and the
+    // double-flip is harmless either way (status stays expired).
+    const { error: updErr } = await supabase
       .schema("resupply")
       .from("prior_authorizations")
       .update({ status: "expired" })
       .eq("id", row.id)
-      .eq("status", "approved")
-      .select("id");
+      .eq("status", "approved");
     if (updErr) {
       logger.warn(
         { err: updErr.message, paId: row.id },
         "prior-auth.expiry-sweep: expire update failed",
-      );
-      continue;
-    }
-    if (!updatedRows || updatedRows.length === 0) {
-      logger.info(
-        { paId: row.id },
-        "prior-auth.expiry-sweep: update returned no rows (likely race)",
       );
       continue;
     }

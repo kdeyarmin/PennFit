@@ -60,11 +60,13 @@ vi.mock("@workspace/resupply-audit", () => ({
 }));
 
 // ── Logger mock ───────────────────────────────────────────────────────
-const loggerMock = {
-  error: vi.fn(),
-  warn: vi.fn(),
-  info: vi.fn(),
-};
+// vi.mock is hoisted above all top-level `const`s, so a plain
+// reference to `const loggerMock = …` from inside the factory hits
+// a ReferenceError ("Cannot access 'loggerMock' before initialization").
+// vi.hoisted() runs in the same hoisted scope as the mock factory.
+const { loggerMock } = vi.hoisted(() => ({
+  loggerMock: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+}));
 vi.mock("../../lib/logger", () => ({
   logger: loggerMock,
 }));
