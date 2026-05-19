@@ -71,6 +71,8 @@ import { AdminShopProductNewPage } from "@/pages/admin/admin-shop-product-new";
 import { AdminShopAbandonedCartsPage } from "@/pages/admin/admin-shop-abandoned-carts";
 import { AdminShopBackInStockPage } from "@/pages/admin/admin-shop-back-in-stock";
 import { AdminInsuranceLeadsPage } from "@/pages/admin/admin-insurance-leads";
+import { AdminInsuranceClaimsPage } from "@/pages/admin/admin-insurance-claims";
+import { AdminNpsPage } from "@/pages/admin/admin-nps";
 import { AdminCustomerDetailPage } from "@/pages/admin/admin-customer-detail";
 import { AdminShopCustomersPage } from "@/pages/admin/admin-shop-customers";
 import { AdminOrders as PennpapsOrdersPage } from "@/pages/admin/pennpaps-orders";
@@ -85,6 +87,16 @@ import { AdminAnalytics as PennpapsAnalyticsPage } from "@/pages/admin/pennpaps-
 // storefront bundle.
 import "@/admin.css";
 
+/**
+ * Gate access to the admin console and render the admin routes inside the application shell.
+ *
+ * Queries the current admin identity and, depending on the result, either:
+ * - renders an authorization error page with a specific reason,
+ * - renders the app shell with a loading spinner while access is being confirmed, or
+ * - renders the full set of `/admin/*` routes (wrapped in an error boundary) with the admin's email and role provided to the shell.
+ *
+ * @returns The admin console UI: an authorization gate (error or loading) or the routed admin pages inside the app shell.
+ */
 function AdminConsole() {
   const { data, isPending, isError, error } = useGetAdminMe();
 
@@ -116,6 +128,11 @@ function AdminConsole() {
             <Redirect to="/admin" replace />
           </Route>
           <Route path="/admin/patients" component={PatientsPage} />
+          <Route path="/admin/patients/:patientId/insurance-claims">
+            {(params) => (
+              <AdminInsuranceClaimsPage patientId={params.patientId} />
+            )}
+          </Route>
           <Route path="/admin/patients/:id">
             {(params) => <PatientDetailPage id={params.id} />}
           </Route>
@@ -190,6 +207,7 @@ function AdminConsole() {
           <Route path="/admin/team" component={AdminTeamPage} />
           <Route path="/admin/operations" component={AdminOperationsPage} />
           <Route path="/admin/reports" component={AdminReportsPage} />
+          <Route path="/admin/nps" component={AdminNpsPage} />
           <Route
             path="/admin/productivity"
             component={AdminProductivityPage}

@@ -13,11 +13,27 @@ import { getSupabaseServiceRoleClient } from "@workspace/resupply-db";
 
 import { logger } from "./logger";
 
+/**
+ * Allowed sources for a fitter_leads row. See migration 0121 for the
+ * full enum rationale; defaulting to "consent" preserves back-compat
+ * with legacy rows + the existing /consent route.
+ */
+export type FitterLeadSource =
+  | "consent"
+  | "sleep_apnea_quiz"
+  | "insurance_quote";
+
 export interface RecordFitterLeadInput {
   email: string;
   marketingOptIn: boolean;
   submitterIp: string | null;
   userAgent: string | null;
+  /** E.164-formatted phone, optional. SMS opt-in is independent. */
+  phoneE164?: string | null;
+  /** Whether the patient ticked the SMS opt-in checkbox. */
+  smsOptIn?: boolean;
+  /** Origin of the lead. Defaults to "consent" for back-compat. */
+  source?: FitterLeadSource;
 }
 
 export interface RecordFitterLeadResult {
@@ -41,6 +57,12 @@ export async function recordFitterLead(
         marketing_opt_in: input.marketingOptIn,
         submitter_ip: input.submitterIp,
         user_agent: input.userAgent,
+        // sms_opt_in defaults to false in the schema; only persist
+        // true when the row carries an actual phone, otherwise the
+        // checkbox is meaningless.
+        phone_e164: input.phoneE164 ?? null,
+        sms_opt_in: Boolean(input.phoneE164 && input.smsOptIn),
+        source: input.source ?? "consent",
         // id + created_at default at the DB layer.
       })
       .select("id")

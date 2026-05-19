@@ -26,6 +26,9 @@ import { Learn } from "@/pages/learn";
 import { Privacy } from "@/pages/privacy";
 import { Terms } from "@/pages/terms";
 import { Insurance } from "@/pages/insurance";
+import { InsuranceEstimate } from "@/pages/insurance-estimate";
+import { TrackOrder } from "@/pages/track-order";
+import { NpsLanding } from "@/pages/nps";
 
 // Lazy-loaded pages. Each is its own webpack/Rollup chunk so the
 // heavy dependencies they pull in (e.g. @mediapipe/tasks-vision in
@@ -170,6 +173,7 @@ const RemindersManage = lazy(() =>
 );
 
 import { FitterProvider, useFitterStore } from "@/hooks/use-fitter-store";
+import { TranslationProvider } from "@/i18n/provider";
 import { useShopIdentity } from "@/lib/identity";
 import { canStayOnMeasure } from "@/lib/measure-flow";
 
@@ -353,6 +357,9 @@ function PatientRouter() {
           <Route path="/learn/sleep-apnea-quiz" component={SleepApneaQuiz} />
           <Route path="/comfort-guarantee" component={ComfortGuaranteePage} />
           <Route path="/insurance" component={Insurance} />
+          <Route path="/insurance/estimate" component={InsuranceEstimate} />
+          <Route path="/track-order" component={TrackOrder} />
+          <Route path="/nps" component={NpsLanding} />
           <Route path="/shop" component={Shop} />
           <Route path="/shop/p/:productId">
             {(params) => <ShopProductDetail productId={params.productId} />}
@@ -465,19 +472,21 @@ function AppInner() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <FitterProvider>
-          {/*
-            ErrorBoundary wraps the router so any thrown render error in a
-            page falls back to a recoverable on-brand screen instead of a
-            blank white page.
-          */}
-          <ErrorBoundary>
-            <WouterRouter base={basePath}>
-              <TopRouter />
-            </WouterRouter>
-          </ErrorBoundary>
-          <Toaster />
-        </FitterProvider>
+        <TranslationProvider>
+          <FitterProvider>
+            {/*
+              ErrorBoundary wraps the router so any thrown render error in a
+              page falls back to a recoverable on-brand screen instead of a
+              blank white page.
+            */}
+            <ErrorBoundary>
+              <WouterRouter base={basePath}>
+                <TopRouter />
+              </WouterRouter>
+            </ErrorBoundary>
+            <Toaster />
+          </FitterProvider>
+        </TranslationProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

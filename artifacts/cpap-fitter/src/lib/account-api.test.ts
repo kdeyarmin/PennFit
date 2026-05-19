@@ -1,139 +1,248 @@
-// Tests for the openBillingPortal function added in the insurance-claims PR.
+// Tests for the openBillingPortal API wrapper in account-api.ts.
 //
-// Coverage:
-//   * openBillingPortal POSTs to /resupply-api/shop/me/billing-portal
-//   * default returnPath is "/account"
-//   * custom returnPath is passed through in the body
-//   * returns the { url } object from the server
-//   * throws AccountApiError on 503 (shop not configured)
-//   * throws AccountApiError on other 4xx/5xx with status attached
-//   * JSON parse failure on error still throws AccountApiError
+// openBillingPortal() is the only new export introduced in this PR.
+// It delegates to the private meFetch helper which:
+//   * sends credentials: "include"
+//   * reads pf_csrf from document.cookie for write requests
+//   * adds X-PF-CSRF header when a CSRF token is present
+//   * throws AccountApiError on non-OK responses
+//
+// In the vitest node environment `document` is undefined so
+// getCsrfToken() returns null and no CSRF header is emitted. We
+// verify the header is absent in that case and also simulate a
+// browser environment with a stubbed cookie string.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { AccountApiError, openBillingPortal } from "./account-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
+// document is undefined in the node test environment; we poke a fake
+// one in when we need to test CSRF header behaviour.
+const ORIGINAL_DOCUMENT = globalThis.document;
 
 let fetchMock: Mock;
+
 beforeEach(() => {
   fetchMock = vi.fn();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
+  // Ensure document is clean before each test.
+  // @ts-expect-error – assigning undefined to a required global for testing
+  globalThis.document = undefined;
 });
+
 afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
+  // @ts-expect-error — the test runs in node where globalThis.document
+  // is undefined; we restore the (possibly-undefined) original.
+  globalThis.document = ORIGINAL_DOCUMENT;
   vi.restoreAllMocks();
 });
 
-function okFetch(body: unknown): void {
-  fetchMock.mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => body,
-  });
-}
-
-function errorFetch(status: number, body: unknown = null): void {
-  fetchMock.mockResolvedValue({
-    ok: false,
-    status,
-    json: async () => body,
-  });
-}
-
 describe("openBillingPortal", () => {
-  it("POSTs to /resupply-api/shop/me/billing-portal", async () => {
-    okFetch({ url: "https://billing.stripe.com/session/xyz" });
+  test("posts to /resupply-api/shop/me/billing-portal", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
     await openBillingPortal();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/resupply-api/shop/me/billing-portal");
+  });
+
+  test("uses POST method", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
+    await openBillingPortal();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe("POST");
   });
 
-  it("uses credentials: include for the request", async () => {
-    okFetch({ url: "https://billing.stripe.com/session/xyz" });
+  test("sends credentials: include", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
     await openBillingPortal();
+
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe("include");
   });
 
-  it("sends Accept: application/json header", async () => {
-    okFetch({ url: "https://billing.stripe.com/session/xyz" });
+  test("serialises returnPath as JSON body with default /account", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
     await openBillingPortal();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ returnPath: "/account" });
+  });
+
+  test("serialises a custom returnPath into the body", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
+    await openBillingPortal("/account?tab=billing");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      returnPath: "/account?tab=billing",
+    });
+  });
+
+  test("sends Content-Type: application/json because a body is present", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
+    await openBillingPortal();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBe("application/json");
+  });
+
+  test("sends Accept: application/json", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
+    await openBillingPortal();
+
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
     expect(headers["Accept"]).toBe("application/json");
   });
 
-  it("defaults returnPath to /account", async () => {
-    okFetch({ url: "https://billing.stripe.com/session/abc" });
+  test("does NOT send X-PF-CSRF when document is undefined (node env)", async () => {
+    // document is undefined in the node test environment.
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
     await openBillingPortal();
+
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string) as { returnPath: string };
-    expect(body.returnPath).toBe("/account");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBeUndefined();
   });
 
-  it("passes a custom returnPath in the request body", async () => {
-    okFetch({ url: "https://billing.stripe.com/session/abc" });
-    await openBillingPortal("/account/billing");
+  test("sends X-PF-CSRF header when pf_csrf cookie is present", async () => {
+    // Simulate browser environment with a CSRF cookie.
+    // @ts-expect-error – assigning a fake document for testing
+    globalThis.document = { cookie: "pf_csrf=test-csrf-token-abc" };
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/session/test" }),
+    });
+
+    await openBillingPortal();
+
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string) as { returnPath: string };
-    expect(body.returnPath).toBe("/account/billing");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-PF-CSRF"]).toBe("test-csrf-token-abc");
   });
 
-  it("returns the url from the server response", async () => {
-    const expectedUrl = "https://billing.stripe.com/session/return-me";
-    okFetch({ url: expectedUrl });
+  test("returns the url from the response", async () => {
+    const portalUrl = "https://billing.stripe.com/session/xyz123";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: portalUrl }),
+    });
+
     const result = await openBillingPortal();
-    expect(result.url).toBe(expectedUrl);
+    expect(result.url).toBe(portalUrl);
   });
 
-  it("throws AccountApiError with status 503 when shop is not configured", async () => {
-    errorFetch(503, { error: "shop_unavailable" });
-    await expect(openBillingPortal()).rejects.toMatchObject(
-      expect.objectContaining({ status: 503 }),
-    );
-  });
+  test("throws AccountApiError with status 503 on shop-unavailable response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        error: "shop_unavailable",
+        message: "Shop is not configured",
+      }),
+    });
 
-  it("throws AccountApiError (not a plain Error) on 503", async () => {
-    errorFetch(503, { error: "shop_unavailable" });
-    await expect(openBillingPortal()).rejects.toBeInstanceOf(AccountApiError);
-  });
-
-  it("throws AccountApiError with the server status on 502", async () => {
-    errorFetch(502, { error: "stripe_portal_unavailable" });
     const err = await openBillingPortal().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AccountApiError);
-    expect((err as AccountApiError).status).toBe(502);
+    expect((err as AccountApiError).status).toBe(503);
   });
 
-  it("throws AccountApiError with status on 401 (sign in required)", async () => {
-    errorFetch(401, { error: "sign_in_required" });
+  test("throws AccountApiError with status 401 on unauthenticated response", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "sign_in_required" }),
+    });
+
     const err = await openBillingPortal().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AccountApiError);
     expect((err as AccountApiError).status).toBe(401);
   });
 
-  it("still throws AccountApiError when the error response body is not JSON", async () => {
+  test("throws AccountApiError when response.json() throws (no body)", async () => {
     fetchMock.mockResolvedValue({
       ok: false,
-      status: 500,
+      status: 502,
       json: async () => {
-        throw new SyntaxError("Unexpected token");
+        throw new Error("no body");
       },
     });
+
     const err = await openBillingPortal().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AccountApiError);
-    expect((err as AccountApiError).status).toBe(500);
+    expect((err as AccountApiError).status).toBe(502);
   });
 
-  it("serialises the body as JSON (Content-Type reflects the body presence)", async () => {
-    okFetch({ url: "https://billing.stripe.com/session/x" });
-    await openBillingPortal("/account");
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    // meFetch adds Content-Type when body is present
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Content-Type"]).toBe("application/json");
+  test("AccountApiError.payload carries the error code from the response body", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: "shop_unavailable" }),
+    });
+
+    const err = await openBillingPortal().catch((e: unknown) => e);
+    expect((err as AccountApiError).payload).toEqual({
+      error: "shop_unavailable",
+    });
+  });
+
+  test("calls fetch exactly once per invocation", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ url: "https://billing.stripe.com/test" }),
+    });
+
+    await openBillingPortal();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

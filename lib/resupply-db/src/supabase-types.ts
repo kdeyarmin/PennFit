@@ -351,6 +351,9 @@ export interface Database {
           portal_auth_user_id: string | null;
           portal_invited_at: string | null;
           portal_invited_by: string | null;
+          quarterly_summary_last_sent_at: string | null;
+          birthday_email_year_sent: number | null;
+          sleep_anniversary_year_sent: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -511,6 +514,10 @@ export interface Database {
           user_agent: string | null;
           created_at: string;
           nudged_at: string | null;
+          phone_e164: string | null;
+          sms_opt_in: boolean;
+          source: "consent" | "sleep_apnea_quiz" | "insurance_quote";
+          first_day_nudged_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["fitter_leads"]["Row"]>;
@@ -591,7 +598,13 @@ export interface Database {
           id: string;
           patient_id: string;
           journey_id: string | null;
-          alert_type: "low_usage" | "no_response" | "send_failure" | "manual";
+          alert_type:
+            | "low_usage"
+            | "no_response"
+            | "send_failure"
+            | "manual"
+            | "prior_auth_expiring"
+            | "prior_auth_expired";
           severity: "info" | "warning" | "critical";
           summary: string;
           metric_snapshot: Record<string, unknown> | null;
@@ -922,6 +935,95 @@ export interface Database {
         >;
         Update: Partial<
           Database["resupply"]["Tables"]["prior_authorizations"]["Row"]
+        >;
+        Relationships: [];
+      };
+      insurance_claims: {
+        Row: {
+          id: string;
+          patient_id: string;
+          insurance_coverage_id: string | null;
+          payer_name: string;
+          claim_number: string | null;
+          date_of_service: string;
+          fulfillment_id: string | null;
+          status:
+            | "draft"
+            | "submitted"
+            | "accepted"
+            | "denied"
+            | "paid"
+            | "appealed"
+            | "closed";
+          total_billed_cents: number;
+          total_allowed_cents: number;
+          total_paid_cents: number;
+          patient_responsibility_cents: number;
+          submitted_at: string | null;
+          decision_at: string | null;
+          paid_at: string | null;
+          denial_reason: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_claims"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_claims"]["Row"]
+        >;
+        Relationships: [];
+      };
+      insurance_claim_line_items: {
+        Row: {
+          id: string;
+          claim_id: string;
+          hcpcs_code: string;
+          modifier: string | null;
+          description: string | null;
+          quantity: number;
+          billed_cents: number;
+          allowed_cents: number;
+          paid_cents: number;
+          status: "pending" | "accepted" | "denied" | "paid";
+          denial_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_line_items"]["Row"]
+        >;
+        Relationships: [];
+      };
+      insurance_claim_events: {
+        Row: {
+          id: string;
+          claim_id: string;
+          event_type:
+            | "submitted"
+            | "accepted"
+            | "denied"
+            | "partial_pay"
+            | "paid"
+            | "appealed"
+            | "closed"
+            | "note";
+          amount_cents: number | null;
+          payer_ref: string | null;
+          document_id: string | null;
+          note: string | null;
+          actor_email: string;
+          occurred_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["insurance_claim_events"]["Row"]
         >;
         Relationships: [];
       };
@@ -1677,6 +1779,12 @@ export interface Database {
           physician_info_json: Json | null;
           facial_measurements_json: Json | null;
           auth_user_id: string | null;
+          winback_sent_at: string | null;
+          deductible_reset_year: number | null;
+          caregiver_email: string | null;
+          caregiver_name: string | null;
+          caregiver_consent_at: string | null;
+          caregiver_revoked_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1742,12 +1850,35 @@ export interface Database {
           pod_object_key: string | null;
           pod_uploaded_at: string | null;
           pod_signed_name: string | null;
+          delivery_followup_sent_at: string | null;
           created_at: string;
           updated_at: string;
           paid_at: string | null;
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_orders"]["Row"]>;
+        Relationships: [];
+      };
+      patient_therapy_milestones: {
+        Row: {
+          id: string;
+          patient_id: string;
+          milestone_kind:
+            | "100_nights"
+            | "365_nights"
+            | "first_adherence_month";
+          achieved_on: string;
+          metric_snapshot: Json | null;
+          notified_at: string | null;
+          notification_channel: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_milestones"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["patient_therapy_milestones"]["Row"]
+        >;
         Relationships: [];
       };
       shop_order_notes: {
@@ -1761,6 +1892,24 @@ export interface Database {
         };
         Insert: Partial<Database["resupply"]["Tables"]["shop_order_notes"]["Row"]>;
         Update: Partial<Database["resupply"]["Tables"]["shop_order_notes"]["Row"]>;
+        Relationships: [];
+      };
+      shop_order_nps_responses: {
+        Row: {
+          id: string;
+          order_id: string;
+          score: number;
+          comment: string | null;
+          submitter_ip: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: Partial<
+          Database["resupply"]["Tables"]["shop_order_nps_responses"]["Row"]
+        >;
+        Update: Partial<
+          Database["resupply"]["Tables"]["shop_order_nps_responses"]["Row"]
+        >;
         Relationships: [];
       };
       shop_customer_notes: {

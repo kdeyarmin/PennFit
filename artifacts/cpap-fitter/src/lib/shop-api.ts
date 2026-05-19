@@ -703,6 +703,19 @@ export async function submitInsuranceLead(
 export interface FitterLeadInput {
   email: string;
   marketingOptIn: boolean;
+  /**
+   * Optional US phone number. Accepted in any common format; the
+   * server normalizes to E.164 and silently drops anything that
+   * isn't a US 10- or 11-digit number.
+   */
+  phone?: string;
+  /**
+   * SMS opt-in checkbox. Server-side only honors this when `phone`
+   * normalizes to non-null — a tick without a valid number is
+   * dropped, so the patient can't accidentally subscribe to "SMS
+   * from nowhere."
+   */
+  smsOptIn?: boolean;
   /** Honeypot — must be passed through but should always be empty. */
   website: string;
 }
@@ -711,6 +724,101 @@ export async function submitFitterLead(
   input: FitterLeadInput,
 ): Promise<{ ok: true }> {
   const res = await fetch("/resupply-api/shop/fitter-leads", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  return (await res.json()) as { ok: true };
+}
+
+// ─────────────────────────────────────────── sleep apnea quiz capture
+//
+// Posts to /shop/quiz-leads. The sleep-apnea quiz on /learn calls this
+// when the patient clicks "email me my results." The endpoint sends a
+// transactional results email (no marketing opt-in required — the
+// patient explicitly asked for it) and persists a fitter_leads row
+// with source='sleep_apnea_quiz' for downstream attribution.
+// ─────────────────────────────────────────── insurance quick estimate
+//
+// Posts to /shop/insurance-estimates. Lightweight cousin of the full
+// /shop/insurance-leads form: payer slug + email, returns a
+// conservative range. Server persists a fitter_leads row with
+// source='insurance_quote' and sends a written confirmation email.
+
+export interface InsuranceEstimateInput {
+  email: string;
+  payerSlug: string;
+  zip?: string;
+  marketingOptIn?: boolean;
+  /** Honeypot — must be passed through but should always be empty. */
+  website?: string;
+}
+
+export interface InsuranceEstimateResponse {
+  ok: true;
+  estimate: {
+    slug: string;
+    label: string;
+    lowDollars: number;
+    highDollars: number;
+    note: string;
+  };
+}
+
+export async function submitInsuranceEstimate(
+  input: InsuranceEstimateInput,
+): Promise<InsuranceEstimateResponse> {
+  const res = await fetch("/resupply-api/shop/insurance-estimates", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...csrfHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body && typeof body.error === "string") code = body.error;
+    } catch {
+      /* keep http_<status> */
+    }
+    throw new Error(code);
+  }
+  return (await res.json()) as InsuranceEstimateResponse;
+}
+
+export interface QuizLeadInput {
+  email: string;
+  score: number;
+  band: "low" | "intermediate" | "high";
+  symptoms?: string[];
+  /** Additional follow-up marketing emails. False by default. */
+  marketingOptIn?: boolean;
+  /** Honeypot — must be passed through but should always be empty. */
+  website?: string;
+}
+
+export async function submitQuizLead(
+  input: QuizLeadInput,
+): Promise<{ ok: true }> {
+  const res = await fetch("/resupply-api/shop/quiz-leads", {
     method: "POST",
     headers: {
       Accept: "application/json",
